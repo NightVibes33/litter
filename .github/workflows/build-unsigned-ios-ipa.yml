@@ -1,0 +1,227 @@
+name: Build unsigned iOS 25.4 IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      required_ios_sdk:
+        description: "Minimum required iPhoneOS SDK version"
+        required: true
+        default: "25.4"
+      configuration:
+        description: "Xcode configuration"
+        required: true
+        default: "Debug"
+        type: choice
+        options:
+          - Debug
+          - Release
+
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-unsigned-ios-ipa.yml"
+      - "Makefile"
+      - "apps/ios/**"
+      - "shared/**"
+      - "patches/**"
+      - "tools/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unsigned-ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build unsigned real-device IPA
+    runs-on: macos-latest
+
+    env:
+      IOS_SCHEME: Litter
+      XCODE_CONFIG: ${{ inputs.configuration || 'Debug' }}
+      REQUIRED_IOS_SDK: ${{ inputs.required_ios_sdk || '25.4' }}
+      DERIVED_DATA: ${{ github.workspace }}/DerivedData
+      EXPORT_DIR: ${{ github.workspace }}/unsigned-ipa
+      IPA_NAME: Litter-iOS25.4-LiquidGlass-unsigned.ipa
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+      CODE_SIGNING_ALLOWED: "NO"
+      CODE_SIGNING_REQUIRED: "NO"
+      CODE_SIGN_IDENTITY: ""
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Select newest installed Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Installed Xcodes:"
+          ls -d /Applications/Xcode*.app || true
+
+          XCODE_APP="$(ls -d /Applications/Xcode*.app | sort -V | tail -n 1)"
+          echo "Selecting: ${XCODE_APP}"
+
+          sudo xcode-select -s "${XCODE_APP}/Contents/Developer"
+
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Require iPhoneOS SDK ${{ env.REQUIRED_IOS_SDK }} or newer
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+          REQUIRED="${REQUIRED_IOS_SDK}"
+
+          echo "Installed iPhoneOS SDK: ${SDK_VERSION}"
+          echo "Required iPhoneOS SDK:  ${REQUIRED}"
+
+          python3 - "${SDK_VERSION}" "${REQUIRED}" <<'PY'
+          import re
+          import sys
+
+          def version_tuple(value):
+              parts = re.findall(r"\d+", value)
+              return tuple(int(part) for part in parts)
+
+          installed_raw = sys.argv[1]
+          required_raw = sys.argv[2]
+          installed = version_tuple(installed_raw)
+          required = version_tuple(required_raw)
+
+          max_len = max(len(installed), len(required))
+          installed = installed + (0,) * (max_len - len(installed))
+          required = required + (0,) * (max_len - len(required))
+
+          if installed < required:
+              print(
+                  f"::error::Installed iPhoneOS SDK {installed_raw} is older than required {required_raw}. "
+                  "Use a newer GitHub runner image/Xcode, or lower required_ios_sdk."
+              )
+              sys.exit(1)
+
+          print(f"OK: iPhoneOS SDK {installed_raw} >= {required_raw}")
+          PY
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          brew update
+          brew install meson ninja xcodegen pkg-config
+
+          # The development guide warns Homebrew Rust can shadow rustup and break iOS cross-compilation.
+          if brew list rust >/dev/null 2>&1; then
+            brew uninstall rust
+          fi
+
+      - name: Install Rust iOS target
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rustup show
+          rustup target add aarch64-apple-ios
+
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+
+      - name: Cache Cargo registry and git data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache Rust target
+        uses: actions/cache@v4
+        with:
+          path: |
+            shared/rust-bridge/target
+          key: rust-target-ios-device-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/**/Cargo.lock', 'shared/rust-bridge/**/*.rs') }}
+          restore-keys: |
+            rust-target-ios-device-${{ runner.os }}-
+
+      - name: Sync Codex submodule and generate iOS prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          make rust-ios-device-fast
+          make alpine-fs
+          make xcgen
+
+      - name: Build unsigned iPhoneOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          xcodebuild \
+            -project apps/ios/Litter.xcodeproj \
+            -scheme "${IOS_SCHEME}" \
+            -configuration "${XCODE_CONFIG}" \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "${DERIVED_DATA}" \
+            -sdk iphoneos \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA for AltStore and SideStore
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_PATH="$(find "${DERIVED_DATA}/Build/Products" -type d -name 'Litter.app' -path '*iphoneos*' | head -n 1)"
+
+          if [ -z "${APP_PATH}" ]; then
+            echo "::error::Could not find Litter.app in DerivedData iPhoneOS products."
+            find "${DERIVED_DATA}/Build/Products" -maxdepth 4 -print || true
+            exit 1
+          fi
+
+          echo "Found app: ${APP_PATH}"
+
+          rm -rf "${EXPORT_DIR}"
+          mkdir -p "${EXPORT_DIR}/Payload"
+
+          cp -R "${APP_PATH}" "${EXPORT_DIR}/Payload/Litter.app"
+
+          # Remove any existing signatures/profiles so AltStore or SideStore can sign cleanly.
+          find "${EXPORT_DIR}/Payload/Litter.app" -name "_CodeSignature" -type d -prune -exec rm -rf {} +
+          find "${EXPORT_DIR}/Payload/Litter.app" -name "embedded.mobileprovision" -type f -delete
+
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "${EXPORT_DIR}/Payload/Litter.app/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "${EXPORT_DIR}/Payload/Litter.app/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${EXPORT_DIR}/Payload/Litter.app/Info.plist" || true
+
+          cd "${EXPORT_DIR}"
+          /usr/bin/zip -qry "${IPA_NAME}" Payload
+
+          echo "Created ${EXPORT_DIR}/${IPA_NAME}"
+          ls -lh "${EXPORT_DIR}/${IPA_NAME}"
+
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Litter-iOS25.4-LiquidGlass-unsigned-ipa
+          path: unsigned-ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14
