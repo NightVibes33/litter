@@ -74,6 +74,22 @@ jobs:
 
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 -m pip install --upgrade pip setuptools wheel packaging
+          python3 --version
+          python3 -m pip --version
 
       - name: Require iPhoneOS SDK ${{ env.REQUIRED_IOS_SDK }} or newer
         shell: bash
@@ -87,54 +103,99 @@ jobs:
           echo "Required iPhoneOS SDK:  ${REQUIRED}"
 
           python3 - "${SDK_VERSION}" "${REQUIRED}" <<'PY'
-          import re
           import sys
-
-          def version_tuple(value):
-              parts = re.findall(r"\d+", value)
-              return tuple(int(part) for part in parts)
+          from packaging.version import Version
 
           installed_raw = sys.argv[1]
           required_raw = sys.argv[2]
-          installed = version_tuple(installed_raw)
-          required = version_tuple(required_raw)
 
-          max_len = max(len(installed), len(required))
-          installed = installed + (0,) * (max_len - len(installed))
-          required = required + (0,) * (max_len - len(required))
+          installed = Version(installed_raw)
+          required = Version(required_raw)
 
           if installed < required:
               print(
                   f"::error::Installed iPhoneOS SDK {installed_raw} is older than required {required_raw}. "
-                  "Use a newer GitHub runner image/Xcode, or lower required_ios_sdk."
+                  "Use a newer GitHub runner image/Xcode, use a self-hosted macOS runner with the needed Xcode, "
+                  "or lower required_ios_sdk when manually dispatching the workflow."
               )
               sys.exit(1)
 
           print(f"OK: iPhoneOS SDK {installed_raw} >= {required_raw}")
           PY
 
-      - name: Install build dependencies
+      - name: Install Homebrew build requirements
         shell: bash
         run: |
           set -euo pipefail
 
           brew update
-          brew install meson ninja xcodegen pkg-config
+
+          # Explicit build requirements used by the iOS/Rust pipeline.
+          # meson/ninja: required by webrtc-audio-processing-sys.
+          # xcodegen: regenerates apps/ios/Litter.xcodeproj from project.yml.
+          # pkg-config/cmake/autoconf/automake/libtool/protobuf: common Rust native build-script requirements.
+          brew install \
+            autoconf \
+            automake \
+            cmake \
+            libtool \
+            meson \
+            ninja \
+            pkg-config \
+            protobuf \
+            xcodegen
 
           # The development guide warns Homebrew Rust can shadow rustup and break iOS cross-compilation.
           if brew list rust >/dev/null 2>&1; then
             brew uninstall rust
           fi
 
-      - name: Install Rust iOS target
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Verify all required tools
         shell: bash
         run: |
           set -euo pipefail
 
-          rustup show
-          rustup target add aarch64-apple-ios
+          for tool in \
+            bash \
+            git \
+            make \
+            python3 \
+            pip3 \
+            rustup \
+            rustc \
+            cargo \
+            meson \
+            ninja \
+            xcodegen \
+            pkg-config \
+            cmake \
+            protoc \
+            zip \
+            xcodebuild \
+            xcrun; do
+            command -v "${tool}"
+          done
 
-          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+          python3 - <<'PY'
+          import packaging.version
+          print("Python packaging module is available")
+          PY
+
+          rustup target list --installed | grep -x 'aarch64-apple-ios'
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          rustc --version
+          cargo --version
+          meson --version
+          ninja --version
+          xcodegen --version
+          cmake --version | head -n 1
+          protoc --version
 
       - name: Cache Cargo registry and git data
         uses: actions/cache@v4
@@ -178,6 +239,8 @@ jobs:
             -sdk iphoneos \
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=NO \
+            SWIFT_ACTIVE_COMPILATION_CONDITIONS="$(inherited) LIQUID_GLASS" \
+            GCC_PREPROCESSOR_DEFINITIONS="$(inherited) LIQUID_GLASS=1" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
