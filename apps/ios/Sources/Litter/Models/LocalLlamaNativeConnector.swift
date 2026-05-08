@@ -8,10 +8,14 @@ enum LocalLlamaNativeConnector {
         #if os(iOS) && !targetEnvironment(macCatalyst)
         guard LitterLlamaBridge.isAvailable() else { return }
         Task.detached(priority: .utility) {
+            let supportedModes = LitterLlamaBridge.supportedKVCacheModes().compactMap { LocalModelKVCacheMode(rawValue: $0) }
+            let turboQuant: TurboQuantAvailability = LitterLlamaBridge.supportsTurboQuant()
+                ? .available(supportedModes.filter { $0.requiresTurboQuant })
+                : .unavailable("This build links standard llama.cpp KV cache support. Rebuild with a TurboQuant-capable llama.cpp fork to enable TurboQuant modes.")
             await LocalLlamaRuntime.shared.configureCapabilities(LocalLlamaRuntimeCapabilities(
                 isAvailable: true,
-                turboQuant: .unavailable("This build links the standard llama.cpp bridge. Rebuild with a TurboQuant-capable llama.cpp fork to enable TurboQuant KV cache modes."),
-                supportedKVCacheModes: [.automatic, .f16, .q8, .q4]
+                turboQuant: turboQuant,
+                supportedKVCacheModes: supportedModes.isEmpty ? [.automatic, .f16, .q8, .q4] : supportedModes
             ))
             await LocalLlamaRuntime.shared.configureCancellationHandler {
                 LitterLlamaBridge.unload()
@@ -26,6 +30,13 @@ enum LocalLlamaNativeConnector {
                         contextTokens: request.options.contextTokens,
                         maxTokens: request.maxTokens,
                         temperature: request.temperature,
+                        topP: request.options.topP,
+                        topK: request.options.topK,
+                        repeatPenalty: request.options.repeatPenalty,
+                        threadCount: request.options.preferredThreadCount,
+                        metalEnabled: request.options.metalEnabled,
+                        cpuFallbackAllowed: request.options.cpuFallbackAllowed,
+                        kvCacheMode: request.options.kvCacheMode.rawValue,
                         messages: objcMessages,
                         onToken: { token in onToken(token) }
                     )
