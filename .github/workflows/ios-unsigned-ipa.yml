@@ -101,14 +101,9 @@ jobs:
           restore-keys: |
             ios-cargo-registry-${{ runner.os }}-
 
-      - name: Cache Rust target
-        uses: actions/cache@v4
-        with:
-          path: |
-            shared/rust-bridge/target
-          key: ios-rust-target-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml') }}
-          restore-keys: |
-            ios-rust-target-${{ runner.os }}-
+      # Intentionally do not cache shared/rust-bridge/target here. That cache is huge,
+      # frequently times out during restore, and is redundant with the generated
+      # iOS static library cache below for unsigned IPA builds.
 
       - name: Restore prebuilt Rust iOS device library
         id: rust_generated_cache
