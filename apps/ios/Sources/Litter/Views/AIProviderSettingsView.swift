@@ -7,6 +7,7 @@ struct AIProviderSettingsView: View {
     @State private var showAddProvider = false
     @State private var showImporter = false
     @State private var statusMessage: String?
+    @State private var isImportingModel = false
 
     var body: some View {
         List {
@@ -37,26 +38,34 @@ struct AIProviderSettingsView: View {
             allowedContentTypes: [.data],
             allowsMultipleSelection: false
         ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                guard url.pathExtension.lowercased() == "gguf" else {
-                    statusMessage = "Only .gguf model files are supported for on-device import."
-                    return
-                }
-                do {
-                    let record = try providerStore.importLocalModel(from: url, capability: capability)
-                    statusMessage = "Imported \(record.fileName): \(record.safety.displayName)."
-                } catch {
-                    statusMessage = error.localizedDescription
-                }
-            case .failure(let error):
-                statusMessage = error.localizedDescription
-            }
+            Task { await handleModelImport(result) }
         }
         .onAppear {
             capability = .current()
             providerStore.reload()
+        }
+    }
+
+
+    private func handleModelImport(_ result: Result<[URL], Error>) async {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            guard url.pathExtension.lowercased() == "gguf" else {
+                statusMessage = "Only .gguf model files are supported for on-device import."
+                return
+            }
+            isImportingModel = true
+            statusMessage = "Importing \(url.lastPathComponent)..."
+            defer { isImportingModel = false }
+            do {
+                let record = try await providerStore.importLocalModel(from: url, capability: capability)
+                statusMessage = "Imported \(record.fileName): \(record.safety.displayName)."
+            } catch {
+                statusMessage = error.localizedDescription
+            }
+        case .failure(let error):
+            statusMessage = error.localizedDescription
         }
     }
 
@@ -70,7 +79,7 @@ struct AIProviderSettingsView: View {
                     Button("Rescan") { capability = .current() }
                         .litterFont(.caption)
                 }
-                capabilityRow("Device", "\(capability.deviceName) Â· \(capability.modelIdentifier)")
+                capabilityRow("Device", "\(capability.deviceName) · \(capability.modelIdentifier)")
                 capabilityRow("iOS", capability.systemVersion)
                 capabilityRow("Memory", String(format: "%.1f GB", capability.memoryGB))
                 capabilityRow("Free Storage", String(format: "%.1f GB", capability.freeDiskGB))
@@ -131,9 +140,16 @@ struct AIProviderSettingsView: View {
             Button {
                 showImporter = true
             } label: {
-                Label("Import GGUF Model", systemImage: "square.and.arrow.down")
-                    .foregroundColor(LitterTheme.accent)
+                HStack {
+                    Label("Import GGUF Model", systemImage: "square.and.arrow.down")
+                    Spacer()
+                    if isImportingModel {
+                        ProgressView().scaleEffect(0.8)
+                    }
+                }
+                .foregroundColor(LitterTheme.accent)
             }
+            .disabled(isImportingModel)
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             if let statusMessage {
@@ -161,7 +177,7 @@ struct AIProviderSettingsView: View {
                                 .litterFont(.caption)
                                 .foregroundColor(color(for: model.safety))
                         }
-                        Text("\(model.displaySize)\(model.quantizationHint.map { " Â· \($0)" } ?? "")")
+                        Text("\(model.displaySize)\(model.quantizationHint.map { " · \($0)" } ?? "")")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                         Text(model.recommendation)
@@ -211,8 +227,8 @@ struct AIProviderSettingsView: View {
 
     private func providerSubtitle(_ provider: AIProviderProfile) -> String {
         switch provider.kind {
-        case .openAI: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) Â· \(provider.baseURL)"
-        case .openAICompatible: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) Â· \(provider.baseURL)"
+        case .openAI: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
+        case .openAICompatible: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
         case .localGGUF: return "\(providerStore.localModels.count) imported models"
         }
     }

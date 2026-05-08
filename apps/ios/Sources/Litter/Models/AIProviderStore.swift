@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import Security
 
+@MainActor
 final class AIProviderStore: ObservableObject {
     static let shared = AIProviderStore()
 
@@ -70,7 +71,7 @@ final class AIProviderStore: ObservableObject {
         }
     }
 
-    func importLocalModel(from sourceURL: URL, capability: DeviceCapabilityProfile = .current()) throws -> LocalModelRecord {
+    func importLocalModel(from sourceURL: URL, capability: DeviceCapabilityProfile = .current()) async throws -> LocalModelRecord {
         let didStartAccessing = sourceURL.startAccessingSecurityScopedResource()
         defer {
             if didStartAccessing { sourceURL.stopAccessingSecurityScopedResource() }
@@ -78,26 +79,30 @@ final class AIProviderStore: ObservableObject {
 
         let modelsDir = try localModelsDirectory()
         let destination = modelsDir.appendingPathComponent(sourceURL.lastPathComponent)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-        }
-        try FileManager.default.copyItem(at: sourceURL, to: destination)
+        let size = try await Task.detached(priority: .utility) {
+            let fileManager = FileManager.default
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+            try fileManager.copyItem(at: sourceURL, to: destination)
+            let attributes = try fileManager.attributesOfItem(atPath: destination.path)
+            return (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        }.value
 
-        let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
-        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-        let safety = capability.safety(forFileSize: size, fileName: destination.lastPathComponent)
+        let fileName = destination.lastPathComponent
+        let safety = capability.safety(forFileSize: size, fileName: fileName)
         let record = LocalModelRecord(
             id: UUID(),
-            fileName: destination.lastPathComponent,
-            fileURL: destination,
+            fileName: fileName,
+            storageFileName: fileName,
             fileSizeBytes: size,
-            parameterHint: DeviceCapabilityProfile.parameterHint(from: destination.lastPathComponent.lowercased()),
-            quantizationHint: DeviceCapabilityProfile.quantizationHint(from: destination.lastPathComponent.lowercased()),
+            parameterHint: DeviceCapabilityProfile.parameterHint(from: fileName.lowercased()),
+            quantizationHint: DeviceCapabilityProfile.quantizationHint(from: fileName.lowercased()),
             importedAt: Date(),
             safety: safety.0,
             recommendation: safety.1
         )
-        localModels.removeAll { $0.fileURL == destination }
+        localModels.removeAll { ($0.storageFileName ?? $0.fileName) == fileName }
         localModels.append(record)
         try persistLocalModels()
         ensureLocalProviderExists()
@@ -106,8 +111,9 @@ final class AIProviderStore: ObservableObject {
 
     func removeLocalModel(_ record: LocalModelRecord) throws {
         localModels.removeAll { $0.id == record.id }
-        if FileManager.default.fileExists(atPath: record.fileURL.path) {
-            try FileManager.default.removeItem(at: record.fileURL)
+        let fileURL = record.fileURL
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try FileManager.default.removeItem(at: fileURL)
         }
         try persistLocalModels()
     }

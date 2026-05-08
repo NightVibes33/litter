@@ -126,7 +126,7 @@ struct AIProviderHealthReport: Equatable {
     var summary: String {
         switch status {
         case .unknown: return "Not tested"
-        case .healthy: return models.isEmpty ? "Reachable" : "Reachable Â· \(models.count) models"
+        case .healthy: return models.isEmpty ? "Reachable" : "Reachable · \(models.count) models"
         case .warning(let message): return message
         case .failed(let message): return message
         }
@@ -152,13 +152,19 @@ enum LocalModelSafety: String, Codable, CaseIterable {
 struct LocalModelRecord: Codable, Identifiable, Equatable {
     var id: UUID
     var fileName: String
-    var fileURL: URL
+    var storageFileName: String?
     var fileSizeBytes: Int64
     var parameterHint: Double?
     var quantizationHint: String?
     var importedAt: Date
     var safety: LocalModelSafety
     var recommendation: String
+
+    var fileURL: URL {
+        URL.documentsDirectory
+            .appendingPathComponent("Models", isDirectory: true)
+            .appendingPathComponent(storageFileName ?? fileName)
+    }
 
     var displaySize: String {
         ByteCountFormatter.string(fromByteCount: fileSizeBytes, countStyle: .file)
