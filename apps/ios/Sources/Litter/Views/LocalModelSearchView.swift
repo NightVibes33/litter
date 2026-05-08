@@ -15,6 +15,7 @@ struct LocalModelSearchView: View {
     var body: some View {
         List {
             deviceFitSection
+            downloadProgressSection
             recommendedSection
             searchSection
             customURLSection
@@ -53,6 +54,56 @@ struct LocalModelSearchView: View {
         } header: {
             Text("Device Fit")
                 .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
+    @ViewBuilder
+    private var downloadProgressSection: some View {
+        if let progress = providerStore.localModelDownloadProgress {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(progress.fileName)
+                                .litterFont(.subheadline, weight: .semibold)
+                                .foregroundColor(LitterTheme.textPrimary)
+                                .lineLimit(1)
+                            Text(downloadSubtitle(for: progress))
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
+                        Spacer()
+                        if !progress.isFinished {
+                            Button {
+                                providerStore.cancelLocalModelDownload()
+                            } label: {
+                                Label("Cancel", systemImage: "xmark.circle.fill")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .foregroundColor(LitterTheme.danger)
+                        }
+                    }
+
+                    if let fraction = progress.fractionCompleted {
+                        ProgressView(value: fraction)
+                            .tint(LitterTheme.accent)
+                        Text("\(Int(fraction * 100))% · \(byteString(progress.bytesWritten)) of \(byteString(progress.totalBytes)) · \(speedString(progress.bytesPerSecond))")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textMuted)
+                    } else {
+                        ProgressView()
+                            .tint(LitterTheme.accent)
+                        Text("\(byteString(progress.bytesWritten)) downloaded · \(speedString(progress.bytesPerSecond))")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textMuted)
+                    }
+                }
+                .padding(.vertical, 6)
+                .listRowBackground(LitterTheme.surface.opacity(0.72))
+            } header: {
+                Text("Active Download")
+                    .foregroundColor(LitterTheme.textSecondary)
+            }
         }
     }
 
@@ -251,6 +302,26 @@ struct LocalModelSearchView: View {
         Text(modalities.map(\.displayName).joined(separator: " · "))
             .litterFont(.caption)
             .foregroundColor(LitterTheme.accent)
+    }
+
+    private func downloadSubtitle(for progress: LocalModelDownloadProgress) -> String {
+        switch progress.phase {
+        case .starting: return "Preparing secure download..."
+        case .downloading: return "Downloading from \(progress.sourceURL.host ?? "remote host")"
+        case .verifying: return progress.message ?? "Verifying model integrity..."
+        case .finished: return "Download finished. Installing model..."
+        case .cancelled: return "Download cancelled."
+        case .failed: return progress.message ?? "Download failed."
+        }
+    }
+
+    private func byteString(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: max(0, bytes), countStyle: .file)
+    }
+
+    private func speedString(_ bytesPerSecond: Double) -> String {
+        guard bytesPerSecond > 0 else { return "calculating speed" }
+        return "\(ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .file))/s"
     }
 
     private func search() async {

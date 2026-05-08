@@ -9,6 +9,7 @@ final class AIProviderStore: ObservableObject {
 
     @Published private(set) var providers: [AIProviderProfile] = []
     @Published private(set) var localModels: [LocalModelRecord] = []
+    @Published private(set) var localModelDownloadProgress: LocalModelDownloadProgress?
 
     private let providersKey = "ai-provider-profiles-v1"
     private let localModelsKey = "local-gguf-models-v1"
@@ -16,6 +17,7 @@ final class AIProviderStore: ObservableObject {
     private let defaults = UserDefaults.standard
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private var activeModelDownload: TrackedModelDownload?
 
     private init() {
         encoder.dateEncodingStrategy = .iso8601
@@ -208,6 +210,11 @@ final class AIProviderStore: ObservableObject {
         )
     }
 
+    func cancelLocalModelDownload() {
+        activeModelDownload?.cancel()
+        localModelDownloadProgress = localModelDownloadProgress?.cancelledCopy()
+    }
+
     func downloadCustomModel(url: URL, capability: DeviceCapabilityProfile = .current()) async throws -> LocalModelRecord {
         guard url.pathExtension.lowercased() == "gguf" else {
             throw NSError(domain: "AIProviderStore", code: 32, userInfo: [NSLocalizedDescriptionKey: "Only direct .gguf URLs are supported."])
@@ -292,22 +299,43 @@ final class AIProviderStore: ObservableObject {
     }
 
     private func downloadModelFile(url: URL, fileName: String, expectedSHA256: String? = nil) async throws -> DownloadedModelFile {
-        let (temporaryURL, response) = try await URLSession.shared.download(from: url)
-        try validate(response)
-        let attributes = try FileManager.default.attributesOfItem(atPath: temporaryURL.path)
-        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-        let actualSHA = try sha256(of: temporaryURL)
-        if let expectedSHA256, !expectedSHA256.isEmpty, actualSHA.lowercased() != expectedSHA256.lowercased() {
-            try? FileManager.default.removeItem(at: temporaryURL)
-            throw NSError(domain: "AIProviderStore", code: 34, userInfo: [NSLocalizedDescriptionKey: "Downloaded file checksum did not match."])
+        let download = TrackedModelDownload(url: url, fileName: fileName)
+        activeModelDownload = download
+        localModelDownloadProgress = .starting(fileName: fileName, sourceURL: url)
+        defer {
+            activeModelDownload = nil
+            if localModelDownloadProgress?.isFinished == false {
+                localModelDownloadProgress = nil
+            }
         }
-        return DownloadedModelFile(
-            temporaryURL: temporaryURL,
-            sourceURL: url,
-            fileName: fileName,
-            sizeBytes: size,
-            sha256: actualSHA
-        )
+
+        do {
+            let (temporaryURL, response) = try await download.start { [weak self] progress in
+                Task { @MainActor in
+                    self?.localModelDownloadProgress = progress
+                }
+            }
+            try validate(response)
+            localModelDownloadProgress = localModelDownloadProgress?.verifyingCopy()
+            let attributes = try FileManager.default.attributesOfItem(atPath: temporaryURL.path)
+            let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+            let actualSHA = try sha256(of: temporaryURL)
+            if let expectedSHA256, !expectedSHA256.isEmpty, actualSHA.lowercased() != expectedSHA256.lowercased() {
+                try? FileManager.default.removeItem(at: temporaryURL)
+                throw NSError(domain: "AIProviderStore", code: 34, userInfo: [NSLocalizedDescriptionKey: "Downloaded file checksum did not match."])
+            }
+            localModelDownloadProgress = localModelDownloadProgress?.finishedCopy()
+            return DownloadedModelFile(
+                temporaryURL: temporaryURL,
+                sourceURL: url,
+                fileName: fileName,
+                sizeBytes: size,
+                sha256: actualSHA
+            )
+        } catch {
+            localModelDownloadProgress = error is CancellationError ? localModelDownloadProgress?.cancelledCopy() : localModelDownloadProgress?.failedCopy(error.localizedDescription)
+            throw error
+        }
     }
 
     private func sha256(of url: URL) throws -> String {
@@ -522,4 +550,207 @@ private struct DownloadedModelFile {
 private struct OpenAIModelsResponse: Decodable {
     struct Model: Decodable { let id: String }
     let data: [Model]
+}
+
+
+struct LocalModelDownloadProgress: Equatable, Identifiable {
+    enum Phase: String, Equatable {
+        case starting
+        case downloading
+        case verifying
+        case finished
+        case cancelled
+        case failed
+    }
+
+    var id: String
+    var fileName: String
+    var sourceURL: URL
+    var phase: Phase
+    var bytesWritten: Int64
+    var totalBytes: Int64
+    var bytesPerSecond: Double
+    var startedAt: Date
+    var updatedAt: Date
+    var message: String?
+
+    var fractionCompleted: Double? {
+        guard totalBytes > 0 else { return nil }
+        return min(1, max(0, Double(bytesWritten) / Double(totalBytes)))
+    }
+
+    var isFinished: Bool { [.finished, .cancelled, .failed].contains(phase) }
+
+    static func starting(fileName: String, sourceURL: URL) -> LocalModelDownloadProgress {
+        let now = Date()
+        return LocalModelDownloadProgress(
+            id: fileName,
+            fileName: fileName,
+            sourceURL: sourceURL,
+            phase: .starting,
+            bytesWritten: 0,
+            totalBytes: 0,
+            bytesPerSecond: 0,
+            startedAt: now,
+            updatedAt: now,
+            message: nil
+        )
+    }
+
+    func verifyingCopy() -> LocalModelDownloadProgress {
+        copy(phase: .verifying, message: "Verifying checksum")
+    }
+
+    func finishedCopy() -> LocalModelDownloadProgress {
+        copy(phase: .finished, bytesWritten: max(bytesWritten, totalBytes), message: "Download complete")
+    }
+
+    func cancelledCopy() -> LocalModelDownloadProgress {
+        copy(phase: .cancelled, message: "Download cancelled")
+    }
+
+    func failedCopy(_ message: String) -> LocalModelDownloadProgress {
+        copy(phase: .failed, message: message)
+    }
+
+    private func copy(
+        phase: Phase,
+        bytesWritten: Int64? = nil,
+        totalBytes: Int64? = nil,
+        bytesPerSecond: Double? = nil,
+        message: String? = nil
+    ) -> LocalModelDownloadProgress {
+        LocalModelDownloadProgress(
+            id: id,
+            fileName: fileName,
+            sourceURL: sourceURL,
+            phase: phase,
+            bytesWritten: bytesWritten ?? self.bytesWritten,
+            totalBytes: totalBytes ?? self.totalBytes,
+            bytesPerSecond: bytesPerSecond ?? self.bytesPerSecond,
+            startedAt: startedAt,
+            updatedAt: Date(),
+            message: message ?? self.message
+        )
+    }
+}
+
+private final class TrackedModelDownload: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    private let url: URL
+    private let fileName: String
+    private let startedAt = Date()
+    private var session: URLSession?
+    private var task: URLSessionDownloadTask?
+    private var progressHandler: ((LocalModelDownloadProgress) -> Void)?
+    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var movedTemporaryURL: URL?
+    private var completionResponse: URLResponse?
+    private var didResume = false
+    private let lock = NSLock()
+
+    init(url: URL, fileName: String) {
+        self.url = url
+        self.fileName = fileName
+        super.init()
+    }
+
+    func start(progress: @escaping (LocalModelDownloadProgress) -> Void) async throws -> (URL, URLResponse) {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.lock()
+                self.progressHandler = progress
+                self.continuation = continuation
+                lock.unlock()
+
+                let configuration = URLSessionConfiguration.default
+                configuration.waitsForConnectivity = true
+                configuration.timeoutIntervalForRequest = 60
+                configuration.timeoutIntervalForResource = 60 * 60 * 6
+                let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+                let task = session.downloadTask(with: url)
+                self.session = session
+                self.task = task
+                progress(.starting(fileName: fileName, sourceURL: url))
+                task.resume()
+            }
+        } onCancel: {
+            cancel()
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        let elapsed = max(0.001, Date().timeIntervalSince(startedAt))
+        let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : 0
+        progressHandler?(LocalModelDownloadProgress(
+            id: fileName,
+            fileName: fileName,
+            sourceURL: url,
+            phase: .downloading,
+            bytesWritten: totalBytesWritten,
+            totalBytes: total,
+            bytesPerSecond: Double(totalBytesWritten) / elapsed,
+            startedAt: startedAt,
+            updatedAt: Date(),
+            message: nil
+        ))
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        do {
+            let destination = FileManager.default.temporaryDirectory.appendingPathComponent("litter-model-")
+                .appendingPathExtension(UUID().uuidString)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: location, to: destination)
+            movedTemporaryURL = destination
+            completionResponse = downloadTask.response
+        } catch {
+            finish(.failure(error))
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            if (error as NSError).code == NSURLErrorCancelled {
+                finish(.failure(CancellationError()))
+            } else {
+                finish(.failure(error))
+            }
+            return
+        }
+        guard let movedTemporaryURL, let response = completionResponse ?? task.response else {
+            finish(.failure(NSError(domain: "AIProviderStore", code: 35, userInfo: [NSLocalizedDescriptionKey: "The model download did not produce a file."])))
+            return
+        }
+        finish(.success((movedTemporaryURL, response)))
+    }
+
+    private func finish(_ result: Result<(URL, URLResponse), Error>) {
+        lock.lock()
+        guard !didResume else {
+            lock.unlock()
+            return
+        }
+        didResume = true
+        let continuation = continuation
+        self.continuation = nil
+        lock.unlock()
+
+        session?.invalidateAndCancel()
+        switch result {
+        case .success(let value): continuation?.resume(returning: value)
+        case .failure(let error): continuation?.resume(throwing: error)
+        }
+    }
 }
