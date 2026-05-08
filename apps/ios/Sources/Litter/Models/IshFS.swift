@@ -71,17 +71,27 @@ enum IshFS {
 
     static func writeFile(path: String, data: Data) async throws {
         let target = shellQuote(path)
-        let truncate = await run(": > \(target)")
-        guard truncate.exitCode == 0 else { throw error("Could not write \(path)", result: truncate) }
-        let encoded = data.base64EncodedString()
-        let chunkSize = 48_000
-        var index = encoded.startIndex
-        while index < encoded.endIndex {
-            let next = encoded.index(index, offsetBy: chunkSize, limitedBy: encoded.endIndex) ?? encoded.endIndex
-            let chunk = String(encoded[index..<next])
-            let result = await run("printf %s \(shellQuote(chunk)) | base64 -d >> \(target)")
-            guard result.exitCode == 0 else { throw error("Could not write \(path)", result: result) }
-            index = next
+        let tempPath = "\(path).litter-write-\(UUID().uuidString).tmp"
+        let temp = shellQuote(tempPath)
+        let create = await run(": > \(temp)")
+        guard create.exitCode == 0 else { throw error("Could not write \(path)", result: create) }
+
+        do {
+            let encoded = data.base64EncodedString()
+            let chunkSize = 48_000
+            var index = encoded.startIndex
+            while index < encoded.endIndex {
+                let next = encoded.index(index, offsetBy: chunkSize, limitedBy: encoded.endIndex) ?? encoded.endIndex
+                let chunk = String(encoded[index..<next])
+                let result = await run("printf %s \(shellQuote(chunk)) | base64 -d >> \(temp)")
+                guard result.exitCode == 0 else { throw error("Could not write \(path)", result: result) }
+                index = next
+            }
+            let move = await run("mv \(temp) \(target)")
+            guard move.exitCode == 0 else { throw error("Could not replace \(path)", result: move) }
+        } catch {
+            _ = await run("rm -f \(temp)")
+            throw error
         }
     }
 

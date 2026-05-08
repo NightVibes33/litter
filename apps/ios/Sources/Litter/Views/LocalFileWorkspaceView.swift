@@ -174,9 +174,12 @@ struct LocalFileWorkspaceView: View {
     }
 
     private func create(kind: LocalFileEntry.Kind) async {
-        let name = sanitizedName(draftName)
+        let validation = validateName(draftName)
         draftName = ""
-        guard !name.isEmpty else { return }
+        guard case .valid(let name) = validation else {
+            alertMessage = validation.errorMessage
+            return
+        }
         do {
             try await model.create(name: name, kind: kind)
         } catch {
@@ -186,9 +189,13 @@ struct LocalFileWorkspaceView: View {
 
     private func renameSelected() async {
         guard let target = renameTarget else { return }
-        let name = sanitizedName(renameText)
+        let validation = validateName(renameText)
         renameTarget = nil
-        guard !name.isEmpty, name != target.name else { return }
+        guard case .valid(let name) = validation else {
+            alertMessage = validation.errorMessage
+            return
+        }
+        guard name != target.name else { return }
         do {
             try await model.rename(target, to: name)
         } catch {
@@ -217,9 +224,24 @@ struct LocalFileWorkspaceView: View {
         }
     }
 
-    private func sanitizedName(_ raw: String) -> String {
-        raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/\\"))
+    private enum NameValidation {
+        case valid(String)
+        case invalid(String)
+
+        var errorMessage: String? {
+            guard case .invalid(let message) = self else { return nil }
+            return message
+        }
+    }
+
+    private func validateName(_ raw: String) -> NameValidation {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return .invalid("Name cannot be empty.") }
+        guard name != ".", name != ".." else { return .invalid("That name is reserved by the filesystem.") }
+        guard !name.contains("/"), !name.contains("\\") else {
+            return .invalid("Use a single file or folder name, not a path.")
+        }
+        return .valid(name)
     }
 }
 
