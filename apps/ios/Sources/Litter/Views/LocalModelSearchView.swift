@@ -12,6 +12,7 @@ struct LocalModelSearchView: View {
     @State private var isLoading = false
     @State private var isLoadingDetails = false
     @State private var activeDownloadId: String?
+    @State private var localAgentModel: LocalModelRecord?
 
     var body: some View {
         List {
@@ -27,6 +28,9 @@ struct LocalModelSearchView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             capability = .current()
+        }
+        .sheet(item: $localAgentModel) { model in
+            LocalModelAgentView(model: model)
         }
     }
 
@@ -309,6 +313,12 @@ struct LocalModelSearchView: View {
                             .foregroundColor(validationColor(for: model.validationStatus))
                         modalityLine(model.modalities)
                         HStack {
+                            Button {
+                                localAgentModel = model
+                            } label: {
+                                Label("Open Local Agent", systemImage: "bolt.horizontal.circle")
+                            }
+                            .disabled(!model.canRunLocally)
                             Button {
                                 Task { await providerStore.validateLocalModel(model) }
                             } label: {
