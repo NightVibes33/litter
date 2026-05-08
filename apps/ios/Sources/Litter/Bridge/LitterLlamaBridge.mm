@@ -95,7 +95,8 @@ static BOOL LitterLlamaSupportsTurboQuant(void) {
 }
 
 static ggml_type LitterLlamaKVType(NSString *mode, NSError **error) {
-    NSString *lower = [[mode ?: @"automatic"] lowercaseString];
+    NSString *selectedMode = mode == nil ? @"automatic" : mode;
+    NSString *lower = [selectedMode lowercaseString];
     if ([lower isEqualToString:@"automatic"] || lower.length == 0) { return GGML_TYPE_F16; }
     if ([lower isEqualToString:@"f16"]) { return GGML_TYPE_F16; }
     if ([lower isEqualToString:@"q8"]) { return GGML_TYPE_Q8_0; }
@@ -134,7 +135,6 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
     contextParams.n_threads_batch = threads;
     contextParams.type_k = kvType;
     contextParams.type_v = kvType;
-    contextParams.flash_attn = true;
     return llama_init_from_model(model, contextParams);
 }
 
@@ -158,6 +158,8 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
                                      messages:(NSArray<NSDictionary<NSString *, NSString *> *> *)messages
                                       onToken:(void (^)(NSString *token))onToken
                                         error:(NSError **)error {
+    NSInteger cpuCount = (NSInteger)[[NSProcessInfo processInfo] processorCount];
+    NSInteger defaultThreads = std::max((NSInteger)2, std::min((NSInteger)6, cpuCount - 1));
     return [self generateWithModelPath:modelPath
                          contextTokens:contextTokens
                               maxTokens:maxTokens
@@ -165,7 +167,7 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
                                    topP:0.95
                                    topK:40
                           repeatPenalty:1.08
-                            threadCount:std::max(2, std::min(6, [[NSProcessInfo processInfo] processorCount] - 1))
+                            threadCount:defaultThreads
                            metalEnabled:YES
                      cpuFallbackAllowed:YES
                             kvCacheMode:@"automatic"
