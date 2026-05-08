@@ -149,6 +149,189 @@ enum LocalModelSafety: String, Codable, CaseIterable {
     }
 }
 
+
+
+enum AIModelRoutingMode: String, Codable, CaseIterable, Identifiable {
+    case automatic
+    case openAI
+    case openAICompatible
+    case localGGUF
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .automatic: return "Automatic"
+        case .openAI: return "OpenAI"
+        case .openAICompatible: return "Ollama / OpenAI-Compatible"
+        case .localGGUF: return "On-Device GGUF"
+        }
+    }
+}
+
+enum LocalModelToolUseMode: String, Codable, CaseIterable, Identifiable {
+    case off
+    case readOnly
+    case approvalRequired
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .readOnly: return "Read-only tools"
+        case .approvalRequired: return "Approve shell/write"
+        }
+    }
+}
+
+enum LocalModelKVCacheMode: String, Codable, CaseIterable, Identifiable {
+    case automatic
+    case f16
+    case q8
+    case q4
+    case turbo3
+    case turbo4
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .automatic: return "Automatic"
+        case .f16: return "F16"
+        case .q8: return "Q8"
+        case .q4: return "Q4"
+        case .turbo3: return "TurboQuant 3-bit"
+        case .turbo4: return "TurboQuant 4-bit"
+        }
+    }
+
+    var requiresTurboQuant: Bool {
+        switch self {
+        case .turbo3, .turbo4: return true
+        default: return false
+        }
+    }
+}
+
+enum TurboQuantPreference: String, Codable, CaseIterable, Identifiable {
+    case disabled
+    case autoWhenAvailable
+    case forceTurbo3
+    case forceTurbo4
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .disabled: return "Disabled"
+        case .autoWhenAvailable: return "Auto when available"
+        case .forceTurbo3: return "Force TurboQuant 3-bit"
+        case .forceTurbo4: return "Force TurboQuant 4-bit"
+        }
+    }
+}
+
+enum TurboQuantAvailability: Codable, Equatable {
+    case unavailable(String)
+    case available([LocalModelKVCacheMode])
+
+    var isAvailable: Bool {
+        if case .available = self { return true }
+        return false
+    }
+
+    var summary: String {
+        switch self {
+        case .available(let modes):
+            let labels = modes.map(\.displayName).joined(separator: ", ")
+            return labels.isEmpty ? "TurboQuant runtime available" : "Available: \(labels)"
+        case .unavailable(let reason):
+            return reason
+        }
+    }
+}
+
+struct GlobalModelSettings: Codable, Equatable {
+    var routingMode: AIModelRoutingMode
+    var preferredProviderId: UUID?
+    var autoValidateDownloads: Bool
+    var allowCellularDownloads: Bool
+    var autoUnloadAfterIdle: Bool
+    var warnOnThermalPressure: Bool
+    var turboQuantPreference: TurboQuantPreference
+
+    static let defaults = GlobalModelSettings(
+        routingMode: .automatic,
+        preferredProviderId: nil,
+        autoValidateDownloads: true,
+        allowCellularDownloads: false,
+        autoUnloadAfterIdle: true,
+        warnOnThermalPressure: true,
+        turboQuantPreference: .autoWhenAvailable
+    )
+}
+
+struct LocalModelRuntimeSettings: Codable, Equatable {
+    var contextTokens: Int
+    var maxOutputTokens: Int
+    var temperature: Double
+    var topP: Double
+    var topK: Int
+    var repeatPenalty: Double
+    var preferredThreadCount: Int
+    var metalEnabled: Bool
+    var cpuFallbackAllowed: Bool
+    var streamingEnabled: Bool
+    var toolUseMode: LocalModelToolUseMode
+    var maxToolRounds: Int
+    var kvCacheMode: LocalModelKVCacheMode
+    var systemPromptOverride: String
+
+    static func defaults(for capability: DeviceCapabilityProfile = .current()) -> LocalModelRuntimeSettings {
+        LocalModelRuntimeSettings(
+            contextTokens: max(512, capability.recommendedContextTokens),
+            maxOutputTokens: 768,
+            temperature: 0.2,
+            topP: 0.9,
+            topK: 40,
+            repeatPenalty: 1.08,
+            preferredThreadCount: max(2, min(6, ProcessInfo.processInfo.processorCount)),
+            metalEnabled: capability.hasMetal,
+            cpuFallbackAllowed: false,
+            streamingEnabled: true,
+            toolUseMode: .approvalRequired,
+            maxToolRounds: 4,
+            kvCacheMode: .automatic,
+            systemPromptOverride: ""
+        )
+    }
+
+    func sanitized(for capability: DeviceCapabilityProfile = .current(), turboQuantAvailable: Bool = false) -> LocalModelRuntimeSettings {
+        var next = self
+        let recommended = capability.recommendedContextTokens == 0 ? 2_048 : capability.recommendedContextTokens
+        if capability.isThermallyConstrained || capability.isLowPowerModeEnabled {
+            next.contextTokens = min(next.contextTokens, 2_048)
+            next.maxOutputTokens = min(next.maxOutputTokens, 512)
+        } else {
+            next.contextTokens = min(max(next.contextTokens, 512), max(2_048, recommended * 2))
+            next.maxOutputTokens = min(max(next.maxOutputTokens, 64), 4_096)
+        }
+        next.temperature = min(max(next.temperature, 0), 2)
+        next.topP = min(max(next.topP, 0.05), 1)
+        next.topK = min(max(next.topK, 1), 200)
+        next.repeatPenalty = min(max(next.repeatPenalty, 0.8), 1.5)
+        next.preferredThreadCount = min(max(next.preferredThreadCount, 1), max(1, ProcessInfo.processInfo.processorCount))
+        if !capability.hasMetal {
+            next.metalEnabled = false
+        }
+        if next.kvCacheMode.requiresTurboQuant, !turboQuantAvailable {
+            next.kvCacheMode = .automatic
+        }
+        return next
+    }
+}
+
 enum LocalModelValidationStatus: Codable, Equatable {
     case untested
     case validating

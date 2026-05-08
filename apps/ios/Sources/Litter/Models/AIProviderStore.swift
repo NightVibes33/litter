@@ -11,9 +11,14 @@ final class AIProviderStore: ObservableObject {
     @Published private(set) var localModels: [LocalModelRecord] = []
     @Published private(set) var localModelDownloadProgress: LocalModelDownloadProgress?
     @Published private(set) var validatingLocalModelId: UUID?
+    @Published private(set) var globalModelSettings: GlobalModelSettings = .defaults
+    @Published private(set) var localModelRuntimeSettings: [String: LocalModelRuntimeSettings] = [:]
+    @Published private(set) var turboQuantAvailability: TurboQuantAvailability = .unavailable("Runtime capability has not been scanned yet.")
 
     private let providersKey = "ai-provider-profiles-v1"
     private let localModelsKey = "local-gguf-models-v1"
+    private let globalModelSettingsKey = "global-model-settings-v1"
+    private let localModelRuntimeSettingsKey = "local-model-runtime-settings-v1"
     private let keychainService = "com.sigkitten.litter.ai-provider-secret"
     private let defaults = UserDefaults.standard
     private let encoder = JSONEncoder()
@@ -29,6 +34,44 @@ final class AIProviderStore: ObservableObject {
 
     func reload() {
         load()
+        Task { await refreshRuntimeCapabilities() }
+    }
+
+    func refreshRuntimeCapabilities() async {
+        let capabilities = await LocalLlamaRuntime.shared.capabilities()
+        turboQuantAvailability = capabilities.turboQuant
+        if !capabilities.turboQuant.isAvailable {
+            sanitizeTurboQuantSettings()
+        }
+    }
+
+    func updateGlobalModelSettings(_ update: (inout GlobalModelSettings) -> Void) {
+        var next = globalModelSettings
+        update(&next)
+        globalModelSettings = next
+        try? persistGlobalModelSettings()
+        sanitizeTurboQuantSettings()
+    }
+
+    func runtimeSettings(for model: LocalModelRecord, capability: DeviceCapabilityProfile = .current()) -> LocalModelRuntimeSettings {
+        let stored = localModelRuntimeSettings[model.id.uuidString] ?? .defaults(for: capability)
+        return stored.sanitized(for: capability, turboQuantAvailable: turboQuantAvailability.isAvailable)
+    }
+
+    func updateRuntimeSettings(
+        for model: LocalModelRecord,
+        capability: DeviceCapabilityProfile = .current(),
+        _ update: (inout LocalModelRuntimeSettings) -> Void
+    ) {
+        var next = runtimeSettings(for: model, capability: capability)
+        update(&next)
+        localModelRuntimeSettings[model.id.uuidString] = next.sanitized(for: capability, turboQuantAvailable: turboQuantAvailability.isAvailable)
+        try? persistLocalModelRuntimeSettings()
+    }
+
+    func resetRuntimeSettings(for model: LocalModelRecord) {
+        localModelRuntimeSettings.removeValue(forKey: model.id.uuidString)
+        try? persistLocalModelRuntimeSettings()
     }
 
     func upsertProvider(_ provider: AIProviderProfile, apiKey: String?) throws {
@@ -131,7 +174,9 @@ final class AIProviderStore: ObservableObject {
         localModels.append(record)
         try persistLocalModels()
         ensureLocalProviderExists()
-        Task { await validateLocalModel(record) }
+        if globalModelSettings.autoValidateDownloads {
+            Task { await validateLocalModel(record) }
+        }
         return record
     }
 
@@ -261,6 +306,7 @@ final class AIProviderStore: ObservableObject {
 
     func removeLocalModel(_ record: LocalModelRecord) throws {
         localModels.removeAll { $0.id == record.id }
+        localModelRuntimeSettings.removeValue(forKey: record.id.uuidString)
         let fileURL = record.fileURL
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try FileManager.default.removeItem(at: fileURL)
@@ -269,6 +315,7 @@ final class AIProviderStore: ObservableObject {
             try FileManager.default.removeItem(at: projectorURL)
         }
         try persistLocalModels()
+        try persistLocalModelRuntimeSettings()
     }
 
     func localModelsDirectory() throws -> URL {
@@ -324,7 +371,9 @@ final class AIProviderStore: ObservableObject {
         localModels.append(record)
         try persistLocalModels()
         ensureLocalProviderExists()
-        Task { await validateLocalModel(record) }
+        if globalModelSettings.autoValidateDownloads {
+            Task { await validateLocalModel(record) }
+        }
         return record
     }
 
@@ -422,8 +471,11 @@ final class AIProviderStore: ObservableObject {
     private func load() {
         providers = decode([AIProviderProfile].self, key: providersKey) ?? []
         localModels = decode([LocalModelRecord].self, key: localModelsKey) ?? []
+        globalModelSettings = decode(GlobalModelSettings.self, key: globalModelSettingsKey) ?? .defaults
+        localModelRuntimeSettings = decode([String: LocalModelRuntimeSettings].self, key: localModelRuntimeSettingsKey) ?? [:]
         ensureDefaultOpenAIProvider()
         ensureLocalProviderExists()
+        sanitizeTurboQuantSettings()
     }
 
     private func ensureDefaultOpenAIProvider() {
@@ -464,6 +516,32 @@ final class AIProviderStore: ObservableObject {
     private func persistLocalModels() throws {
         let data = try encoder.encode(localModels)
         defaults.set(data, forKey: localModelsKey)
+    }
+
+    private func persistGlobalModelSettings() throws {
+        let data = try encoder.encode(globalModelSettings)
+        defaults.set(data, forKey: globalModelSettingsKey)
+    }
+
+    private func persistLocalModelRuntimeSettings() throws {
+        let data = try encoder.encode(localModelRuntimeSettings)
+        defaults.set(data, forKey: localModelRuntimeSettingsKey)
+    }
+
+    private func sanitizeTurboQuantSettings() {
+        guard !turboQuantAvailability.isAvailable else { return }
+        if globalModelSettings.turboQuantPreference == .forceTurbo3 || globalModelSettings.turboQuantPreference == .forceTurbo4 {
+            globalModelSettings.turboQuantPreference = .autoWhenAvailable
+            try? persistGlobalModelSettings()
+        }
+        var changed = false
+        for (key, settings) in localModelRuntimeSettings where settings.kvCacheMode.requiresTurboQuant {
+            var next = settings
+            next.kvCacheMode = .automatic
+            localModelRuntimeSettings[key] = next
+            changed = true
+        }
+        if changed { try? persistLocalModelRuntimeSettings() }
     }
 
     private func decode<T: Decodable>(_ type: T.Type, key: String) -> T? {

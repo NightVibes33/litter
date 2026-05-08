@@ -45,13 +45,38 @@ struct LocalLlamaGenerationOptions: Equatable {
     var allowToolCalls: Bool
     var maxToolRounds: Int
     var retryPolicy: LocalLlamaRetryPolicy
+    var topP: Double
+    var topK: Int
+    var repeatPenalty: Double
+    var preferredThreadCount: Int
+    var metalEnabled: Bool
+    var cpuFallbackAllowed: Bool
+    var streamingEnabled: Bool
+    var kvCacheMode: LocalModelKVCacheMode
 
     static func defaults(for capability: DeviceCapabilityProfile = .current()) -> LocalLlamaGenerationOptions {
-        LocalLlamaGenerationOptions(
-            contextTokens: capability.recommendedContextTokens,
-            allowToolCalls: true,
-            maxToolRounds: 4,
-            retryPolicy: .localDefault
+        from(settings: .defaults(for: capability), capability: capability, turboQuantAvailable: false)
+    }
+
+    static func from(
+        settings: LocalModelRuntimeSettings,
+        capability: DeviceCapabilityProfile = .current(),
+        turboQuantAvailable: Bool
+    ) -> LocalLlamaGenerationOptions {
+        let safe = settings.sanitized(for: capability, turboQuantAvailable: turboQuantAvailable)
+        return LocalLlamaGenerationOptions(
+            contextTokens: safe.contextTokens,
+            allowToolCalls: safe.toolUseMode != .off,
+            maxToolRounds: safe.maxToolRounds,
+            retryPolicy: .localDefault,
+            topP: safe.topP,
+            topK: safe.topK,
+            repeatPenalty: safe.repeatPenalty,
+            preferredThreadCount: safe.preferredThreadCount,
+            metalEnabled: safe.metalEnabled,
+            cpuFallbackAllowed: safe.cpuFallbackAllowed,
+            streamingEnabled: safe.streamingEnabled,
+            kvCacheMode: safe.kvCacheMode
         )
     }
 }
@@ -102,6 +127,18 @@ private final class LocalLlamaTokenBuffer: @unchecked Sendable {
 /// The repository now has the download/import layer, guarded fakefs tools,
 /// approval events, retries, and stream state. A production build still needs
 /// the native llama.cpp Swift/C bridge to call `configureTokenGenerator`.
+struct LocalLlamaRuntimeCapabilities: Equatable {
+    var isAvailable: Bool
+    var turboQuant: TurboQuantAvailability
+    var supportedKVCacheModes: [LocalModelKVCacheMode]
+
+    static let unavailable = LocalLlamaRuntimeCapabilities(
+        isAvailable: false,
+        turboQuant: .unavailable("The linked llama.cpp bridge does not report TurboQuant support in this build."),
+        supportedKVCacheModes: [.automatic, .f16, .q8, .q4]
+    )
+}
+
 actor LocalLlamaRuntime {
     typealias TokenGenerator = @Sendable (
         _ request: LocalLlamaGenerationRequest,
@@ -114,6 +151,7 @@ actor LocalLlamaRuntime {
 
     private var tokenGenerator: TokenGenerator?
     private var cancellationHandler: CancellationHandler?
+    private var runtimeCapabilities = LocalLlamaRuntimeCapabilities.unavailable
 
     private init() {}
 
@@ -123,6 +161,14 @@ actor LocalLlamaRuntime {
 
     func configureCancellationHandler(_ handler: CancellationHandler?) {
         cancellationHandler = handler
+    }
+
+    func configureCapabilities(_ capabilities: LocalLlamaRuntimeCapabilities) {
+        runtimeCapabilities = capabilities
+    }
+
+    func capabilities() -> LocalLlamaRuntimeCapabilities {
+        runtimeCapabilities
     }
 
     func toolSystemMessage(for request: LocalLlamaGenerationRequest) -> LocalLlamaMessage {
@@ -211,7 +257,15 @@ actor LocalLlamaRuntime {
                 contextTokens: max(512, min(DeviceCapabilityProfile.current().recommendedContextTokens, 2_048)),
                 allowToolCalls: false,
                 maxToolRounds: 0,
-                retryPolicy: .disabled
+                retryPolicy: .disabled,
+                topP: 0.9,
+                topK: 40,
+                repeatPenalty: 1.08,
+                preferredThreadCount: max(1, min(4, ProcessInfo.processInfo.processorCount)),
+                metalEnabled: DeviceCapabilityProfile.current().hasMetal,
+                cpuFallbackAllowed: false,
+                streamingEnabled: true,
+                kvCacheMode: .automatic
             ),
             approvalHandler: nil
         )

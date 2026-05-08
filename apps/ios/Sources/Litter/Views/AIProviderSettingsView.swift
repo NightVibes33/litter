@@ -12,6 +12,7 @@ struct AIProviderSettingsView: View {
     var body: some View {
         List {
             deviceSection
+            modelSettingsSection
             providersSection
             localModelsSection
             notesSection
@@ -43,6 +44,7 @@ struct AIProviderSettingsView: View {
         .onAppear {
             capability = .current()
             providerStore.reload()
+            Task { await providerStore.refreshRuntimeCapabilities() }
         }
     }
 
@@ -83,11 +85,15 @@ struct AIProviderSettingsView: View {
                 capabilityRow("iOS", capability.systemVersion)
                 capabilityRow("Memory", String(format: "%.1f GB", capability.memoryGB))
                 capabilityRow("Free Storage", String(format: "%.1f GB", capability.freeDiskGB))
+                capabilityRow("Thermal", capability.thermalDisplayName, valueColor: thermalColor)
                 capabilityRow("Metal", capability.metalDeviceName ?? "Unavailable")
                 capabilityRow("Local Context", capability.recommendedContextTokens > 0 ? "\(capability.recommendedContextTokens) tokens" : "PC-hosted recommended")
                 if !capability.supportedGPUFamilies.isEmpty {
                     capabilityRow("GPU Families", capability.supportedGPUFamilies.joined(separator: ", "))
                 }
+                Text(capability.modelSafetySummary)
+                    .litterFont(.caption)
+                    .foregroundColor(capability.isThermallyConstrained ? LitterTheme.warning : LitterTheme.textMuted)
                 if capability.isLowPowerModeEnabled {
                     Text("Low Power Mode is on. Local model recommendations are downgraded.")
                         .litterFont(.caption)
@@ -98,6 +104,40 @@ struct AIProviderSettingsView: View {
         } header: {
             Text("This iPhone")
                 .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
+
+    private var modelSettingsSection: some View {
+        Section {
+            Picker("Default Route", selection: globalRoutingBinding) {
+                ForEach(AIModelRoutingMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            Toggle("Validate after import/download", isOn: globalBoolBinding(\.autoValidateDownloads))
+            Toggle("Allow cellular model downloads", isOn: globalBoolBinding(\.allowCellularDownloads))
+            Toggle("Unload idle local models", isOn: globalBoolBinding(\.autoUnloadAfterIdle))
+            Toggle("Warn on thermal pressure", isOn: globalBoolBinding(\.warnOnThermalPressure))
+            Picker("TurboQuant", selection: turboPreferenceBinding) {
+                ForEach(TurboQuantPreference.allCases) { preference in
+                    Text(preference.displayName).tag(preference)
+                }
+            }
+            .disabled(!providerStore.turboQuantAvailability.isAvailable)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(providerStore.turboQuantAvailability.isAvailable ? "TurboQuant KV cache" : "TurboQuant unavailable")
+                    .litterFont(.caption, weight: .semibold)
+                    .foregroundColor(providerStore.turboQuantAvailability.isAvailable ? LitterTheme.success : LitterTheme.warning)
+                Text(providerStore.turboQuantAvailability.summary)
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textMuted)
+            }
+        } header: {
+            Text("Model Settings")
+                .foregroundColor(LitterTheme.textSecondary)
+        } footer: {
+            Text("TurboQuant is only enabled when the linked llama.cpp runtime reports support. Standard builds keep it unavailable instead of showing a fake switch.")
         }
     }
 
@@ -186,7 +226,7 @@ struct AIProviderSettingsView: View {
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
             } else {
                 ForEach(providerStore.localModels) { model in
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text(model.fileName)
                                 .litterFont(.subheadline)
@@ -197,12 +237,16 @@ struct AIProviderSettingsView: View {
                                 .litterFont(.caption)
                                 .foregroundColor(color(for: model.safety))
                         }
-                        Text("\(model.displaySize)\(model.quantizationHint.map { " · \($0)" } ?? "")")
+                        Text("\(model.displaySize)\(model.quantizationHint.map { " · \($0)" } ?? "") · \(model.validationStatus.displayName)")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                         Text(model.recommendation)
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textMuted)
+                        NavigationLink("Runtime Settings") {
+                            LocalModelRuntimeSettingsView(model: model)
+                        }
+                        .litterFont(.caption, weight: .semibold)
                     }
                     .swipeActions {
                         Button(role: .destructive) {
@@ -232,7 +276,7 @@ struct AIProviderSettingsView: View {
         }
     }
 
-    private func capabilityRow(_ title: String, _ value: String) -> some View {
+    private func capabilityRow(_ title: String, _ value: String, valueColor: Color = LitterTheme.textSecondary) -> some View {
         HStack(alignment: .top) {
             Text(title)
                 .litterFont(.caption)
@@ -240,9 +284,39 @@ struct AIProviderSettingsView: View {
             Spacer()
             Text(value)
                 .litterFont(.caption)
-                .foregroundColor(LitterTheme.textSecondary)
+                .foregroundColor(valueColor)
                 .multilineTextAlignment(.trailing)
         }
+    }
+
+    private var thermalColor: Color {
+        switch capability.thermalSeverityRank {
+        case 3: return LitterTheme.danger
+        case 2: return LitterTheme.warning
+        case 1: return LitterTheme.textSecondary
+        default: return LitterTheme.success
+        }
+    }
+
+    private var globalRoutingBinding: Binding<AIModelRoutingMode> {
+        Binding(
+            get: { providerStore.globalModelSettings.routingMode },
+            set: { value in providerStore.updateGlobalModelSettings { $0.routingMode = value } }
+        )
+    }
+
+    private var turboPreferenceBinding: Binding<TurboQuantPreference> {
+        Binding(
+            get: { providerStore.globalModelSettings.turboQuantPreference },
+            set: { value in providerStore.updateGlobalModelSettings { $0.turboQuantPreference = value } }
+        )
+    }
+
+    private func globalBoolBinding(_ keyPath: WritableKeyPath<GlobalModelSettings, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { providerStore.globalModelSettings[keyPath: keyPath] },
+            set: { value in providerStore.updateGlobalModelSettings { $0[keyPath: keyPath] = value } }
+        )
     }
 
     private func providerSubtitle(_ provider: AIProviderProfile) -> String {
@@ -434,5 +508,143 @@ private struct AIProviderDetailView: View {
         isTesting = true
         report = await providerStore.testProvider(provider, apiKey: nil)
         isTesting = false
+    }
+}
+
+
+private struct LocalModelRuntimeSettingsView: View {
+    @StateObject private var providerStore = AIProviderStore.shared
+    let model: LocalModelRecord
+    @State private var capability = DeviceCapabilityProfile.current()
+
+    var body: some View {
+        Form {
+            Section {
+                Stepper("Context: \(settings.contextTokens) tokens", value: intBinding(\.contextTokens), in: 512...16_384, step: 512)
+                Stepper("Max output: \(settings.maxOutputTokens) tokens", value: intBinding(\.maxOutputTokens), in: 64...4_096, step: 64)
+                Stepper("Tool rounds: \(settings.maxToolRounds)", value: intBinding(\.maxToolRounds), in: 0...12)
+                Picker("Tool Use", selection: toolModeBinding) {
+                    ForEach(LocalModelToolUseMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+            } header: {
+                Text("Agent Behavior")
+            }
+
+            Section {
+                SliderRow(title: "Temperature", value: doubleBinding(\.temperature), range: 0...2)
+                SliderRow(title: "Top P", value: doubleBinding(\.topP), range: 0.05...1)
+                Stepper("Top K: \(settings.topK)", value: intBinding(\.topK), in: 1...200)
+                SliderRow(title: "Repeat penalty", value: doubleBinding(\.repeatPenalty), range: 0.8...1.5)
+            } header: {
+                Text("Sampling")
+            }
+
+            Section {
+                Toggle("Use Metal GPU", isOn: boolBinding(\.metalEnabled))
+                    .disabled(!capability.hasMetal)
+                Toggle("Allow CPU fallback", isOn: boolBinding(\.cpuFallbackAllowed))
+                Toggle("Stream tokens", isOn: boolBinding(\.streamingEnabled))
+                Stepper("Threads: \(settings.preferredThreadCount)", value: intBinding(\.preferredThreadCount), in: 1...max(1, ProcessInfo.processInfo.processorCount))
+                Picker("KV Cache", selection: kvCacheBinding) {
+                    ForEach(LocalModelKVCacheMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .disabled(!providerStore.turboQuantAvailability.isAvailable && settings.kvCacheMode.requiresTurboQuant)
+                Text(providerStore.turboQuantAvailability.summary)
+                    .litterFont(.caption)
+                    .foregroundColor(providerStore.turboQuantAvailability.isAvailable ? LitterTheme.success : LitterTheme.warning)
+            } header: {
+                Text("Runtime")
+            }
+
+            Section {
+                TextEditor(text: stringBinding(\.systemPromptOverride))
+                    .frame(minHeight: 90)
+                    .font(.system(.caption, design: .monospaced))
+                Text("Optional. Leave empty to use the Gemma/Qwen/Llama-aware prompt template.")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textMuted)
+            } header: {
+                Text("System Prompt Override")
+            }
+
+            Section {
+                Button("Reset This Model") { providerStore.resetRuntimeSettings(for: model) }
+                    .foregroundColor(LitterTheme.warning)
+            }
+        }
+        .navigationTitle("Model Runtime")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            capability = .current()
+            Task { await providerStore.refreshRuntimeCapabilities() }
+        }
+    }
+
+    private var settings: LocalModelRuntimeSettings {
+        providerStore.runtimeSettings(for: model, capability: capability)
+    }
+
+    private func intBinding(_ keyPath: WritableKeyPath<LocalModelRuntimeSettings, Int>) -> Binding<Int> {
+        Binding(
+            get: { settings[keyPath: keyPath] },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    private func doubleBinding(_ keyPath: WritableKeyPath<LocalModelRuntimeSettings, Double>) -> Binding<Double> {
+        Binding(
+            get: { settings[keyPath: keyPath] },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    private func boolBinding(_ keyPath: WritableKeyPath<LocalModelRuntimeSettings, Bool>) -> Binding<Bool> {
+        Binding(
+            get: { settings[keyPath: keyPath] },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    private func stringBinding(_ keyPath: WritableKeyPath<LocalModelRuntimeSettings, String>) -> Binding<String> {
+        Binding(
+            get: { settings[keyPath: keyPath] },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0[keyPath: keyPath] = value } }
+        )
+    }
+
+    private var toolModeBinding: Binding<LocalModelToolUseMode> {
+        Binding(
+            get: { settings.toolUseMode },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0.toolUseMode = value } }
+        )
+    }
+
+    private var kvCacheBinding: Binding<LocalModelKVCacheMode> {
+        Binding(
+            get: { settings.kvCacheMode },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0.kvCacheMode = value } }
+        )
+    }
+}
+
+private struct SliderRow: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(String(format: "%.2f", value))
+                    .foregroundColor(LitterTheme.textSecondary)
+            }
+            Slider(value: $value, in: range)
+        }
     }
 }

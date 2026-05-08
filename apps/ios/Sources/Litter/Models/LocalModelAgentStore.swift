@@ -164,7 +164,19 @@ final class LocalModelAgentStore: ObservableObject {
             guard let self else { return }
             do {
                 let context = await LocalModelContextBuilder.build(paths: contextPaths)
-                let system = LocalModelPromptTemplate.systemPrompt(for: model, context: context)
+                let runtimeSettings = AIProviderStore.shared.runtimeSettings(for: model)
+                let system = runtimeSettings.systemPromptOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    ? LocalModelPromptTemplate.systemPrompt(for: model, context: context)
+                    : "\(runtimeSettings.systemPromptOverride)
+
+Context pack:
+\(context.isEmpty ? "No files selected." : context)"
+                let turboAvailable = AIProviderStore.shared.turboQuantAvailability.isAvailable
+                let options = LocalLlamaGenerationOptions.from(
+                    settings: runtimeSettings,
+                    capability: .current(),
+                    turboQuantAvailable: turboAvailable
+                )
                 let request = LocalLlamaGenerationRequest(
                     model: model,
                     projector: nil,
@@ -172,11 +184,11 @@ final class LocalModelAgentStore: ObservableObject {
                         LocalLlamaMessage(role: .system, text: system),
                         LocalLlamaMessage(role: .user, text: prompt)
                     ],
-                    maxTokens: 768,
-                    temperature: 0.2,
-                    tools: LocalModelToolLoop.defaultToolSpecs,
+                    maxTokens: runtimeSettings.maxOutputTokens,
+                    temperature: runtimeSettings.temperature,
+                    tools: runtimeSettings.toolUseMode == .off ? [] : LocalModelToolLoop.defaultToolSpecs,
                     toolPolicy: .readOnly,
-                    options: .defaults(),
+                    options: options,
                     approvalHandler: { [weak self] approval in
                         await self?.requestApproval(approval) ?? .denied
                     }

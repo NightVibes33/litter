@@ -35,6 +35,33 @@ struct DeviceCapabilityProfile: Codable, Equatable {
     var memoryGB: Double { Double(physicalMemoryBytes) / 1_073_741_824 }
     var freeDiskGB: Double { Double(freeDiskBytes) / 1_073_741_824 }
 
+    var thermalDisplayName: String {
+        let lower = thermalState.lowercased()
+        if lower.contains("critical") { return "Critical" }
+        if lower.contains("serious") { return "Serious" }
+        if lower.contains("fair") { return "Fair" }
+        if lower.contains("nominal") { return "Nominal" }
+        return thermalState.isEmpty ? "Unknown" : thermalState
+    }
+
+    var thermalSeverityRank: Int {
+        switch thermalDisplayName {
+        case "Critical": return 3
+        case "Serious": return 2
+        case "Fair": return 1
+        default: return 0
+        }
+    }
+
+    var isThermallyConstrained: Bool { thermalSeverityRank >= 2 }
+
+    var modelSafetySummary: String {
+        if !hasMetal { return "Local inference will be CPU-only; use Ollama/LM Studio on a PC for serious work." }
+        if isThermallyConstrained { return "Thermal pressure is high. Keep context small or unload the model." }
+        if isLowPowerModeEnabled { return "Low Power Mode is on. Litter will prefer small local settings." }
+        return localGenerationSummary
+    }
+
     var recommendedContextTokens: Int {
         if isLowPowerModeEnabled || thermalState.lowercased().contains("serious") || thermalState.lowercased().contains("critical") {
             return 2_048
@@ -151,7 +178,7 @@ struct DeviceCapabilityProfile: Codable, Equatable {
         guard hasMetal, freeDiskBytes > 2_000_000_000 else { return .unavailable }
         if thermalState == .critical { return .unavailable }
         let memoryGB = Double(physicalMemoryBytes) / 1_073_741_824
-        if memoryGB >= 10, !isLowPowerModeEnabled, thermalState == .nominal || thermalState == .fair {
+        if memoryGB >= 10, !isLowPowerModeEnabled, (thermalState == .nominal || thermalState == .fair) {
             return .largeWithWarnings
         }
         if memoryGB >= 7 { return .medium }
