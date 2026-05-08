@@ -148,7 +148,7 @@ struct LocalModelAgentView: View {
             .disabled(store.isRunning || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding()
-        .background(LitterTheme.background.opacity(0.96))
+        .background(LitterTheme.surface.opacity(0.96))
     }
 
     private func color(for role: LocalModelAgentMessage.Role) -> Color {
