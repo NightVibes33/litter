@@ -37,9 +37,14 @@ struct LocalModelSearchView: View {
                 Label(capability.localInferenceTier.displayName, systemImage: capability.hasMetal ? "gpu" : "exclamationmark.triangle")
                     .litterFont(.subheadline, weight: .semibold)
                     .foregroundColor(capability.hasMetal ? LitterTheme.accent : LitterTheme.danger)
-                Text("Downloads are checked against this device's RAM, Metal support, thermal state, and free storage before install.")
+                Text(capability.localGenerationSummary)
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.textSecondary)
+                if capability.recommendedContextTokens > 0 {
+                    Text("Default local generation context: \(capability.recommendedContextTokens) tokens. Bigger GGUFs can still overheat or fail if storage is tight.")
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textMuted)
+                }
                 Text("Large models may still be better on an Ollama or LM Studio server, especially if Low Power Mode or thermal pressure is active.")
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.textMuted)

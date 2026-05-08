@@ -84,6 +84,7 @@ struct AIProviderSettingsView: View {
                 capabilityRow("Memory", String(format: "%.1f GB", capability.memoryGB))
                 capabilityRow("Free Storage", String(format: "%.1f GB", capability.freeDiskGB))
                 capabilityRow("Metal", capability.metalDeviceName ?? "Unavailable")
+                capabilityRow("Local Context", capability.recommendedContextTokens > 0 ? "\(capability.recommendedContextTokens) tokens" : "PC-hosted recommended")
                 if !capability.supportedGPUFamilies.isEmpty {
                     capabilityRow("GPU Families", capability.supportedGPUFamilies.joined(separator: ", "))
                 }
@@ -221,7 +222,7 @@ struct AIProviderSettingsView: View {
 
     private var notesSection: some View {
         Section {
-            Text("PC-hosted Ollama or LM Studio is the best path for powerful local models. On-device models now have a guarded local tool schema and parser for fakefs reads, but full Codex parity still requires llama.cpp token generation, approval UI, retries, and streaming tool-call state. Choose models based on device RAM, Metal support, thermal state, and storage.")
+            Text("PC-hosted Ollama or LM Studio is the best path for powerful models. On-device models now have guarded fakefs tools, approval requests for shell/write actions, retry events, streaming tool-call state, and device-derived context defaults. Full Codex parity still requires the native llama.cpp token generator bridge to be connected.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))

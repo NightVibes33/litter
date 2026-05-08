@@ -9,7 +9,7 @@ enum LocalLlamaRuntimeError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unavailable:
-            return "The on-device llama.cpp runtime is not linked in this build."
+            return "The on-device llama.cpp token generator is not linked in this build."
         case .missingModel:
             return "The local model file is missing."
         case .toolLoopUnavailable:
@@ -25,13 +25,40 @@ struct LocalLlamaMessage: Equatable {
         case system
         case user
         case assistant
+        case tool
     }
 
     var role: Role
     var text: String
 }
 
+struct LocalLlamaRetryPolicy: Equatable {
+    var maxAttempts: Int
+    var retryDelayNanoseconds: UInt64
+
+    static let disabled = LocalLlamaRetryPolicy(maxAttempts: 1, retryDelayNanoseconds: 0)
+    static let localDefault = LocalLlamaRetryPolicy(maxAttempts: 2, retryDelayNanoseconds: 250_000_000)
+}
+
+struct LocalLlamaGenerationOptions: Equatable {
+    var contextTokens: Int
+    var allowToolCalls: Bool
+    var maxToolRounds: Int
+    var retryPolicy: LocalLlamaRetryPolicy
+
+    static func defaults(for capability: DeviceCapabilityProfile = .current()) -> LocalLlamaGenerationOptions {
+        LocalLlamaGenerationOptions(
+            contextTokens: capability.recommendedContextTokens,
+            allowToolCalls: true,
+            maxToolRounds: 4,
+            retryPolicy: .localDefault
+        )
+    }
+}
+
 struct LocalLlamaGenerationRequest {
+    typealias ApprovalHandler = @Sendable (LocalModelToolApprovalRequest) async -> LocalModelToolApprovalDecision
+
     var model: LocalModelRecord
     var projector: LocalModelRecord?
     var messages: [LocalLlamaMessage]
@@ -39,21 +66,65 @@ struct LocalLlamaGenerationRequest {
     var temperature: Double
     var tools: [LocalModelToolSpec] = LocalModelToolLoop.defaultToolSpecs
     var toolPolicy: LocalModelToolPolicy = .readOnly
+    var options: LocalLlamaGenerationOptions = .defaults()
+    var approvalHandler: ApprovalHandler?
+}
+
+enum LocalLlamaStreamEvent: Equatable {
+    case started(modelName: String, contextTokens: Int)
+    case token(String)
+    case retry(attempt: Int, reason: String)
+    case toolCall(LocalModelToolCall)
+    case approvalRequired(LocalModelToolApprovalRequest)
+    case toolResult(LocalModelToolResult)
+    case completed(String)
+}
+
+private final class LocalLlamaTokenBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = ""
+
+    func append(_ token: String) {
+        lock.lock()
+        storage += token
+        lock.unlock()
+    }
+
+    var text: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
 }
 
 /// App-side contract for the native llama.cpp engine.
 ///
-/// The current repository does not include a C/Swift bridge for llama.cpp yet,
-/// so production builds expose a clear unavailable error instead of silently
-/// pretending local inference is wired. The downloader and model library can
-/// still be used to prepare GGUF files.
+/// The repository now has the download/import layer, guarded fakefs tools,
+/// approval events, retries, and stream state. A production build still needs
+/// the native llama.cpp Swift/C bridge to call `configureTokenGenerator`.
 actor LocalLlamaRuntime {
+    typealias TokenGenerator = @Sendable (
+        _ request: LocalLlamaGenerationRequest,
+        _ messages: [LocalLlamaMessage],
+        _ onToken: @escaping @Sendable (String) -> Void
+    ) async throws -> String
+
     static let shared = LocalLlamaRuntime()
+
+    private var tokenGenerator: TokenGenerator?
 
     private init() {}
 
+    func configureTokenGenerator(_ generator: TokenGenerator?) {
+        tokenGenerator = generator
+    }
+
     func toolSystemMessage(for request: LocalLlamaGenerationRequest) -> LocalLlamaMessage {
         LocalLlamaMessage(role: .system, text: LocalModelToolLoop.systemInstructions(for: request.tools))
+    }
+
+    func approvalRequest(for call: LocalModelToolCall) -> LocalModelToolApprovalRequest {
+        LocalModelToolLoop.approvalRequest(for: call)
     }
 
     func executeToolCall(_ call: LocalModelToolCall, policy: LocalModelToolPolicy = .readOnly) async -> LocalModelToolResult {
@@ -62,15 +133,150 @@ actor LocalLlamaRuntime {
 
     func generate(_ request: LocalLlamaGenerationRequest) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
-            guard FileManager.default.fileExists(atPath: request.model.fileURL.path) else {
-                continuation.finish(throwing: LocalLlamaRuntimeError.missingModel)
-                return
+            let task = Task {
+                do {
+                    for try await event in await self.generateEvents(request) {
+                        if case .token(let token) = event {
+                            continuation.yield(token)
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
             }
-            continuation.finish(throwing: LocalLlamaRuntimeError.unavailable)
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    func generateEvents(_ request: LocalLlamaGenerationRequest) -> AsyncThrowingStream<LocalLlamaStreamEvent, Error> {
+        let generator = tokenGenerator
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                guard FileManager.default.fileExists(atPath: request.model.fileURL.path) else {
+                    continuation.finish(throwing: LocalLlamaRuntimeError.missingModel)
+                    return
+                }
+                guard let generator else {
+                    continuation.finish(throwing: LocalLlamaRuntimeError.unavailable)
+                    return
+                }
+
+                continuation.yield(.started(modelName: request.model.displayName, contextTokens: request.options.contextTokens))
+                do {
+                    let text = try await Self.runToolAwareGeneration(
+                        request: request,
+                        generator: generator,
+                        continuation: continuation
+                    )
+                    continuation.yield(.completed(text))
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
     func cancel() async {}
 
-    func unload() async {}
+    func unload() async {
+        tokenGenerator = nil
+    }
+
+    private static func runToolAwareGeneration(
+        request: LocalLlamaGenerationRequest,
+        generator: TokenGenerator,
+        continuation: AsyncThrowingStream<LocalLlamaStreamEvent, Error>.Continuation
+    ) async throws -> String {
+        var messages = request.messages
+        if request.options.allowToolCalls, !request.tools.isEmpty {
+            messages.insert(LocalLlamaMessage(role: .system, text: LocalModelToolLoop.systemInstructions(for: request.tools)), at: 0)
+        }
+
+        var finalText = ""
+        var lastError: Error?
+        let attempts = max(1, request.options.retryPolicy.maxAttempts)
+
+        for attempt in 1...attempts {
+            do {
+                let buffer = LocalLlamaTokenBuffer()
+                let generated = try await generator(request, messages) { token in
+                    buffer.append(token)
+                    continuation.yield(.token(token))
+                }
+                finalText = generated.isEmpty ? buffer.text : generated
+                break
+            } catch {
+                lastError = error
+                guard attempt < attempts else { throw error }
+                continuation.yield(.retry(attempt: attempt + 1, reason: error.localizedDescription))
+                if request.options.retryPolicy.retryDelayNanoseconds > 0 {
+                    try await Task.sleep(nanoseconds: request.options.retryPolicy.retryDelayNanoseconds)
+                }
+            }
+        }
+
+        if finalText.isEmpty, let lastError {
+            throw lastError
+        }
+
+        guard request.options.allowToolCalls else { return finalText }
+
+        var rounds = 0
+        while rounds < request.options.maxToolRounds {
+            let calls = LocalModelToolLoop.parseToolCalls(from: finalText)
+            guard !calls.isEmpty else { break }
+            rounds += 1
+
+            for call in calls {
+                continuation.yield(.toolCall(call))
+                let policy = await approvedPolicy(for: call, request: request, continuation: continuation)
+                let result = await LocalModelToolLoop.execute(call, policy: policy)
+                continuation.yield(.toolResult(result))
+                messages.append(LocalLlamaMessage(role: .assistant, text: finalText))
+                messages.append(LocalLlamaMessage(role: .tool, text: toolResultMessage(result)))
+            }
+
+            let buffer = LocalLlamaTokenBuffer()
+            let generated = try await generator(request, messages) { token in
+                buffer.append(token)
+                continuation.yield(.token(token))
+            }
+            finalText = generated.isEmpty ? buffer.text : generated
+        }
+
+        return finalText
+    }
+
+    private static func approvedPolicy(
+        for call: LocalModelToolCall,
+        request: LocalLlamaGenerationRequest,
+        continuation: AsyncThrowingStream<LocalLlamaStreamEvent, Error>.Continuation
+    ) async -> LocalModelToolPolicy {
+        let approval = LocalModelToolLoop.approvalRequest(for: call)
+        guard approval.requiresUserApproval else { return request.toolPolicy }
+        continuation.yield(.approvalRequired(approval))
+        guard let decision = await request.approvalHandler?(approval), decision.isApproved else {
+            return .readOnly
+        }
+        return decision.policy
+    }
+
+    private static func toolResultMessage(_ result: LocalModelToolResult) -> String {
+        let payload: [String: Any] = [
+            "tool_result": [
+                "id": result.callId,
+                "tool": result.toolName,
+                "success": result.success,
+                "output": result.output
+            ]
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let text = String(data: data, encoding: .utf8) else {
+            return result.output
+        }
+        return text
+    }
 }

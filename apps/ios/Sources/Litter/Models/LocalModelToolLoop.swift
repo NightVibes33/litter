@@ -19,6 +19,35 @@ struct LocalModelToolResult: Equatable {
     var output: String
 }
 
+enum LocalModelToolRisk: String, Equatable {
+    case safeRead
+    case shell
+    case write
+    case unknown
+
+    var requiresUserApproval: Bool {
+        self != .safeRead
+    }
+}
+
+struct LocalModelToolApprovalRequest: Equatable, Identifiable {
+    var id: String { call.id }
+    var call: LocalModelToolCall
+    var risk: LocalModelToolRisk
+    var reason: String
+
+    var requiresUserApproval: Bool { risk.requiresUserApproval }
+}
+
+struct LocalModelToolApprovalDecision: Equatable {
+    var isApproved: Bool
+    var policy: LocalModelToolPolicy
+
+    static let denied = LocalModelToolApprovalDecision(isApproved: false, policy: .readOnly)
+    static let approveShellReadOnly = LocalModelToolApprovalDecision(isApproved: true, policy: .approvedShellReadOnly)
+    static let approveWrite = LocalModelToolApprovalDecision(isApproved: true, policy: .approvedWrite)
+}
+
 struct LocalModelToolPolicy: Equatable {
     var allowsShell: Bool
     var allowsWrites: Bool
@@ -30,6 +59,20 @@ struct LocalModelToolPolicy: Equatable {
         allowsWrites: false,
         maxReadBytes: 32_000,
         maxShellOutputBytes: 24_000
+    )
+
+    static let approvedShellReadOnly = LocalModelToolPolicy(
+        allowsShell: true,
+        allowsWrites: false,
+        maxReadBytes: 64_000,
+        maxShellOutputBytes: 48_000
+    )
+
+    static let approvedWrite = LocalModelToolPolicy(
+        allowsShell: true,
+        allowsWrites: true,
+        maxReadBytes: 64_000,
+        maxShellOutputBytes: 48_000
     )
 }
 
@@ -96,6 +139,7 @@ enum LocalModelToolLoop {
         return """
         You can request local app tools by replying with a single JSON object and no markdown.
         Use this exact shape: {"tool":"tool_name","arguments":{"key":"value"}}
+        Read-only fakefs tools can run automatically. Shell and write tools require explicit user approval.
         After a tool result is returned, answer normally or request another tool.
         Available local tools:
         \(specs)
@@ -111,6 +155,37 @@ enum LocalModelToolLoop {
                 return [call]
             }
             return []
+        }
+    }
+
+    static func risk(for call: LocalModelToolCall) -> LocalModelToolRisk {
+        switch call.name {
+        case "list_dir", "read_file", "search_files":
+            return .safeRead
+        case "shell":
+            return .shell
+        case "write_file":
+            return .write
+        default:
+            return .unknown
+        }
+    }
+
+    static func approvalRequest(for call: LocalModelToolCall) -> LocalModelToolApprovalRequest {
+        let risk = risk(for: call)
+        return LocalModelToolApprovalRequest(call: call, risk: risk, reason: approvalReason(for: call, risk: risk))
+    }
+
+    private static func approvalReason(for call: LocalModelToolCall, risk: LocalModelToolRisk) -> String {
+        switch risk {
+        case .safeRead:
+            return "Read-only fakefs lookup."
+        case .shell:
+            return "The local model wants to run a shell command: \(call.arguments["command"] ?? call.name)"
+        case .write:
+            return "The local model wants to write to: \(call.arguments["path"] ?? "unknown path")"
+        case .unknown:
+            return "The local model requested an unknown tool: \(call.name)"
         }
     }
 

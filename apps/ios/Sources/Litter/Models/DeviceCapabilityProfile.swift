@@ -35,6 +35,24 @@ struct DeviceCapabilityProfile: Codable, Equatable {
     var memoryGB: Double { Double(physicalMemoryBytes) / 1_073_741_824 }
     var freeDiskGB: Double { Double(freeDiskBytes) / 1_073_741_824 }
 
+    var recommendedContextTokens: Int {
+        if isLowPowerModeEnabled || thermalState.lowercased().contains("serious") || thermalState.lowercased().contains("critical") {
+            return 2_048
+        }
+        switch localInferenceTier {
+        case .unavailable: return 0
+        case .small: return 2_048
+        case .medium: return 4_096
+        case .largeWithWarnings: return 8_192
+        }
+    }
+
+    var localGenerationSummary: String {
+        guard hasMetal else { return "Metal is unavailable; use a PC-hosted OpenAI-compatible Ollama or LM Studio endpoint." }
+        let context = recommendedContextTokens > 0 ? "~\(recommendedContextTokens) context tokens" : "no on-device context"
+        return "\(localInferenceTier.displayName) · \(String(format: "%.1f", memoryGB)) GB RAM · \(String(format: "%.1f", freeDiskGB)) GB free · \(context)."
+    }
+
     static func current() -> DeviceCapabilityProfile {
         let process = ProcessInfo.processInfo
         let device = UIDevice.current
