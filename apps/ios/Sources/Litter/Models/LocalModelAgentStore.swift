@@ -167,10 +167,12 @@ final class LocalModelAgentStore: ObservableObject {
                 let runtimeSettings = AIProviderStore.shared.runtimeSettings(for: model)
                 let system = runtimeSettings.systemPromptOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? LocalModelPromptTemplate.systemPrompt(for: model, context: context)
-                    : "\(runtimeSettings.systemPromptOverride)
+                    : """
+                    \(runtimeSettings.systemPromptOverride)
 
-Context pack:
-\(context.isEmpty ? "No files selected." : context)"
+                    Context pack:
+                    \(context.isEmpty ? "No files selected." : context)
+                    """
                 let turboAvailable = AIProviderStore.shared.turboQuantAvailability.isAvailable
                 let options = LocalLlamaGenerationOptions.from(
                     settings: runtimeSettings,
