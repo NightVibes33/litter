@@ -160,16 +160,16 @@ jobs:
             echo "No valid cached llama.cpp XCFramework found."
           fi
 
-      - name: Repair restored Rust binding cache
+      - name: Ensure Swift UniFFI binding
         run: |
           set -euo pipefail
-          BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
-          if [ "$BUILD_MODE" = "fast-device" ]             && [ -s apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a ]             && [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h ]             && [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap ]             && [ ! -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
-            echo "Rust staticlib cache restored, but the generated Swift binding is missing."
-            echo "Regenerating Swift UniFFI binding only instead of rebuilding the iOS Rust staticlib."
+          if [ ! -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
+            echo "Generated Swift UniFFI binding is missing."
+            echo "Regenerating Swift binding only; this does not rebuild the iOS Rust staticlib."
             time make bindings-swift
           else
-            echo "No Rust binding cache repair needed."
+            echo "Generated Swift UniFFI binding already exists."
+            ls -lh apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
           fi
 
       - name: Check prebuilt Rust device library
@@ -206,8 +206,6 @@ jobs:
           require_nonempty apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a
           require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
           require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
-          require_file apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
-
           if [ "$missing" -eq 0 ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
             echo "Using cached prebuilt Rust iOS device library."
