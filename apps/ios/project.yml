@@ -172,6 +172,7 @@ targets:
           - Views/LockScreenCardView.swift
           - Views/RealtimeVoiceScreen.swift
           - Views/VoiceCallView.swift
+          - Bridge/LitterLlamaBridge.mm
           - "**/*.h"
     resources:
       - path: Sources/Litter/Resources/Fonts
