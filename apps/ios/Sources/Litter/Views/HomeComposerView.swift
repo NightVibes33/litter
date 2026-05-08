@@ -150,7 +150,7 @@ struct HomeComposerView: View {
             return true
         }
         .dropDestination(for: Data.self) { items, _ in
-            guard let image = items.lazy.compactMap({ UIImage(data: $0) }).first else {
+            guard let image = items.lazy.compactMap({ ConversationAttachmentSupport.loadImageData($0) }).first else {
                 return false
             }
             attachedImage = image
@@ -297,7 +297,7 @@ struct HomeComposerView: View {
 
     private func loadSelectedPhoto(_ item: PhotosPickerItem) async {
         if let data = try? await item.loadTransferable(type: Data.self),
-           let image = UIImage(data: data) {
+           let image = ConversationAttachmentSupport.loadImageData(data) {
             attachedImage = image
         }
         selectedPhoto = nil

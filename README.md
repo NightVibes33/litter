@@ -46,15 +46,15 @@ tools/scripts/             Cross-platform helper scripts
 
 ## Architecture
 
-Litter uses a Rust core (`codex-mobile-client`) through UniFFI-generated Swift bindings. Swift owns the iOS UI, permissions, notifications, document import surfaces, and platform APIs. Session state, streaming, hydration, discovery, and auth logic live in Rust.
+Litter uses a Rust core (`codex-mobile-client`) through UniFFI-generated Swift bindings. Swift owns the iOS UI, permissions, notifications, document import surfaces, and platform APIs. Session state, streaming, hydration, discovery, and auth logic live in Rust. Chat image attachments are downsampled before upload so large iPhone photos do not become oversized base64 payloads.
 
 ## iOS File Workspace
 
-The Files button on the home toolbar opens a real local iSH file workspace rooted at `/root`. It lists actual fakefs folders and files through `ishRun`, supports hidden files, folder navigation, creating files/folders, renaming, deleting, importing documents from iOS Files, and opening/saving text/code files in a built-in editor. This is intentionally local-first; remote file management should use SSH/Codex tools until a dedicated remote file API is wired.
+The Files button on the home toolbar opens a real local iSH file workspace rooted at `/root`. It lists actual fakefs folders and files through `ishRun`, supports hidden files, folder navigation, creating files/folders, renaming, deleting, importing documents from iOS Files, and opening/saving text/code files in a built-in editor. iOS Files imports stream into the fakefs instead of loading the full source file into memory, and imported names are collision-safe so an existing fakefs file is not silently overwritten. This is intentionally local-first; remote file management should use SSH/Codex tools until a dedicated remote file API is wired.
 
 ## AI Providers and Local Models
 
-Litter supports a provider foundation for hosted OpenAI, OpenAI-compatible LAN endpoints such as Ollama or LM Studio, and on-device GGUF model imports. PC-hosted endpoints should use an OpenAI-compatible `/v1` base URL such as `http://192.168.1.20:11434/v1`. On-device model imports are checked against the current device profile, including RAM, storage, thermal state, Low Power Mode, and Metal availability, so the app can recommend safe model sizes before users try to load them.
+Litter supports a provider foundation for hosted OpenAI, OpenAI-compatible LAN endpoints such as Ollama or LM Studio, and on-device GGUF model imports. PC-hosted endpoints should use an OpenAI-compatible `/v1` base URL such as `http://192.168.1.20:11434/v1`. On-device model imports are checked against the current device profile, including RAM, storage, thermal state, Low Power Mode, and Metal availability, so the app can recommend safe model sizes before users try to load them. Re-importing a model with the same filename creates a numbered copy instead of replacing the existing GGUF record.
 
 ## iOS Local Runtime Notes
 
@@ -62,7 +62,7 @@ On iOS, local terminal commands run inside an embedded iSH Alpine Linux fakefs. 
 
 ## Unsigned iOS IPA
 
-The workflow at `.github/workflows/ios-unsigned-ipa.yml` builds a real-device unsigned IPA artifact named `Litter-iOS26-Unsigned-SideStore-AltStore.ipa`. It uses the repo's iOS 26 build lane on GitHub-hosted `macos-26` with Xcode `26.3`, packages `Payload/Litter.app`, and removes signing leftovers. The artifact is intended for SideStore/AltStore-style re-signing; it will not install directly on a stock iPhone while unsigned.
+The workflow at `.github/workflows/ios-unsigned-ipa.yml` builds a real-device unsigned IPA artifact named `Litter-iOS26-Unsigned-SideStore-AltStore.ipa`. It uses the repo's iOS 26 build lane on GitHub-hosted `macos-26` with Xcode `26.3`, packages `Payload/Litter.app`, and removes signing leftovers. New pushes still trigger CI, but in-progress Rust prebuild runs are not cancelled so the generated device-library cache can finish saving. The artifact is intended for SideStore/AltStore-style re-signing; it will not install directly on a stock iPhone while unsigned.
 
 ## Contributing
 

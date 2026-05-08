@@ -78,15 +78,35 @@ final class AIProviderStore: ObservableObject {
         }
 
         let modelsDir = try localModelsDirectory()
-        let destination = modelsDir.appendingPathComponent(sourceURL.lastPathComponent)
+        let destination = try availableLocalModelDestination(
+            preferredFileName: sourceURL.lastPathComponent,
+            in: modelsDir
+        )
+        let tempDestination = modelsDir.appendingPathComponent(
+            ".\(sourceURL.lastPathComponent).litter-import-\(UUID().uuidString).tmp"
+        )
         let size = try await Task.detached(priority: .utility) {
             let fileManager = FileManager.default
-            if fileManager.fileExists(atPath: destination.path) {
-                try fileManager.removeItem(at: destination)
+            do {
+                if fileManager.fileExists(atPath: tempDestination.path) {
+                    try fileManager.removeItem(at: tempDestination)
+                }
+                try fileManager.copyItem(at: sourceURL, to: tempDestination)
+                let attributes = try fileManager.attributesOfItem(atPath: tempDestination.path)
+                let copiedSize = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+                if fileManager.fileExists(atPath: destination.path) {
+                    throw NSError(
+                        domain: "AIProviderStore",
+                        code: 4,
+                        userInfo: [NSLocalizedDescriptionKey: "A local model with that filename already exists."]
+                    )
+                }
+                try fileManager.moveItem(at: tempDestination, to: destination)
+                return copiedSize
+            } catch {
+                try? fileManager.removeItem(at: tempDestination)
+                throw error
             }
-            try fileManager.copyItem(at: sourceURL, to: destination)
-            let attributes = try fileManager.attributesOfItem(atPath: destination.path)
-            return (attributes[.size] as? NSNumber)?.int64Value ?? 0
         }.value
 
         let fileName = destination.lastPathComponent
@@ -122,6 +142,37 @@ final class AIProviderStore: ObservableObject {
         let url = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func availableLocalModelDestination(preferredFileName: String, in directory: URL) throws -> URL {
+        let fallback = "model.gguf"
+        let cleaned = preferredFileName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fileName = cleaned.isEmpty ? fallback : cleaned
+        let nsName = fileName as NSString
+        let stem = nsName.deletingPathExtension.isEmpty ? fileName : nsName.deletingPathExtension
+        let ext = nsName.pathExtension
+        let existingStorageNames = Set(localModels.map { ($0.storageFileName ?? $0.fileName).lowercased() })
+
+        for index in 0..<100 {
+            let candidate: String
+            if index == 0 {
+                candidate = fileName
+            } else if ext.isEmpty {
+                candidate = "\(stem) \(index + 1)"
+            } else {
+                candidate = "\(stem) \(index + 1).\(ext)"
+            }
+            let url = directory.appendingPathComponent(candidate)
+            if !FileManager.default.fileExists(atPath: url.path), !existingStorageNames.contains(candidate.lowercased()) {
+                return url
+            }
+        }
+
+        throw NSError(
+            domain: "AIProviderStore",
+            code: 3,
+            userInfo: [NSLocalizedDescriptionKey: "Could not find a free local model filename."]
+        )
     }
 
     private func load() {

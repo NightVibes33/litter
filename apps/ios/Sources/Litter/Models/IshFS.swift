@@ -66,10 +66,40 @@ enum IshFS {
     }
 
     static func writeTextFile(path: String, text: String) async throws {
-        try await writeFile(path: path, data: Data(text.utf8))
+        try await writeFile(path: path, data: Data(text.utf8), replaceExisting: true)
     }
 
-    static func writeFile(path: String, data: Data) async throws {
+    static func writeFile(path: String, data: Data, replaceExisting: Bool = true) async throws {
+        try await writeChunks(path: path, replaceExisting: replaceExisting) { appendChunk in
+            let encoded = data.base64EncodedString()
+            let chunkSize = 48_000
+            var index = encoded.startIndex
+            while index < encoded.endIndex {
+                let next = encoded.index(index, offsetBy: chunkSize, limitedBy: encoded.endIndex) ?? encoded.endIndex
+                try await appendChunk(String(encoded[index..<next]))
+                index = next
+            }
+        }
+    }
+
+    static func writeFile(path: String, sourceURL: URL, replaceExisting: Bool = true) async throws {
+        try await writeChunks(path: path, replaceExisting: replaceExisting) { appendChunk in
+            let handle = try FileHandle(forReadingFrom: sourceURL)
+            defer { try? handle.close() }
+
+            while true {
+                let chunk = try handle.read(upToCount: 36_000) ?? Data()
+                guard !chunk.isEmpty else { break }
+                try await appendChunk(chunk.base64EncodedString())
+            }
+        }
+    }
+
+    private static func writeChunks(
+        path: String,
+        replaceExisting: Bool,
+        body: ((String) async throws -> Void) async throws -> Void
+    ) async throws {
         let target = shellQuote(path)
         let tempPath = "\(path).litter-write-\(UUID().uuidString).tmp"
         let temp = shellQuote(tempPath)
@@ -77,17 +107,17 @@ enum IshFS {
         guard create.exitCode == 0 else { throw error("Could not write \(path)", result: create) }
 
         do {
-            let encoded = data.base64EncodedString()
-            let chunkSize = 48_000
-            var index = encoded.startIndex
-            while index < encoded.endIndex {
-                let next = encoded.index(index, offsetBy: chunkSize, limitedBy: encoded.endIndex) ?? encoded.endIndex
-                let chunk = String(encoded[index..<next])
+            try await body { chunk in
                 let result = await run("printf %s \(shellQuote(chunk)) | base64 -d >> \(temp)")
                 guard result.exitCode == 0 else { throw error("Could not write \(path)", result: result) }
-                index = next
             }
-            let move = await run("mv \(temp) \(target)")
+            let moveCommand: String
+            if replaceExisting {
+                moveCommand = "mv \(temp) \(target)"
+            } else {
+                moveCommand = "[ ! -e \(target) ] || exit 17; mv \(temp) \(target)"
+            }
+            let move = await run(moveCommand)
             guard move.exitCode == 0 else { throw error("Could not replace \(path)", result: move) }
         } catch {
             _ = await run("rm -f \(temp)")
@@ -111,8 +141,8 @@ enum IshFS {
     }
 
     static func rename(path: String, to destination: String) async throws {
-        let result = await run("mv \(shellQuote(path)) \(shellQuote(destination))")
-        guard result.exitCode == 0 else { throw error("Could not rename item", result: result) }
+        let result = await run("dest=\(shellQuote(destination)); [ ! -e \"$dest\" ] || exit 17; mv \(shellQuote(path)) \"$dest\"")
+        guard result.exitCode == 0 else { throw error("Could not rename item. An item with that name may already exist.", result: result) }
     }
 
     static func delete(path: String) async throws {

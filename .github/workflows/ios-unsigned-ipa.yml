@@ -29,7 +29,9 @@ permissions:
 
 concurrency:
   group: ios-unsigned-ipa-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel an active Rust prebuild run. New pushes still trigger CI,
+  # but they queue behind the current run so the generated Rust cache can save.
+  cancel-in-progress: false
 
 jobs:
   build-unsigned-ipa:

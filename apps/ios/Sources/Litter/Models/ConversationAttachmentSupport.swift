@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import UIKit
 
 struct PreparedImageAttachment {
@@ -19,17 +20,20 @@ struct PreparedImageAttachment {
 }
 
 enum ConversationAttachmentSupport {
+    private static let attachmentMaxPixelSize = 2_048
+
     static func prepareImage(_ image: UIImage) -> PreparedImageAttachment? {
-        guard let encodedImage = encodedImageData(for: image) else { return nil }
+        let imageForUpload = resizedImageIfNeeded(image, maxPixelSize: attachmentMaxPixelSize) ?? image
+        guard let encodedImage = encodedImageData(for: imageForUpload) else { return nil }
         return PreparedImageAttachment(data: encodedImage.data, mimeType: encodedImage.mimeType)
     }
 
     static func loadImageFile(at url: URL) -> UIImage? {
-        guard let data = try? Data(contentsOf: url),
-              let image = UIImage(data: data) else {
-            return nil
-        }
-        return image
+        downsampledImage(source: CGImageSourceCreateWithURL(url as CFURL, nil), maxPixelSize: attachmentMaxPixelSize)
+    }
+
+    static func loadImageData(_ data: Data) -> UIImage? {
+        downsampledImage(source: CGImageSourceCreateWithData(data as CFData, nil), maxPixelSize: attachmentMaxPixelSize)
     }
 
     static func buildTurnInputs(text: String, additionalInput: [AppUserInput]) -> [AppUserInput] {
@@ -41,11 +45,38 @@ enum ConversationAttachmentSupport {
         return inputs
     }
 
+    private static func downsampledImage(source: CGImageSource?, maxPixelSize: Int) -> UIImage? {
+        guard let source else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage, scale: UIScreen.main.scale, orientation: .up)
+    }
+
+    private static func resizedImageIfNeeded(_ image: UIImage, maxPixelSize: Int) -> UIImage? {
+        let maxCurrentPixels = max(image.size.width * image.scale, image.size.height * image.scale)
+        guard maxCurrentPixels > CGFloat(maxPixelSize), maxCurrentPixels > 0 else { return image }
+
+        let ratio = CGFloat(maxPixelSize) / maxCurrentPixels
+        let targetSize = CGSize(width: image.size.width * ratio, height: image.size.height * ratio)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        format.opaque = !image.litterHasAlpha
+        return UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
+
     private static func encodedImageData(for image: UIImage) -> (data: Data, mimeType: String)? {
         if image.litterHasAlpha, let pngData = image.pngData() {
             return (pngData, "image/png")
         }
-        if let jpegData = image.jpegData(compressionQuality: 0.85) {
+        if let jpegData = image.jpegData(compressionQuality: 0.82) {
             return (jpegData, "image/jpeg")
         }
         if let pngData = image.pngData() {

@@ -456,12 +456,9 @@ private final class LocalFileWorkspaceModel {
     func importFile(from url: URL) async throws {
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }
-        let data = try await Task.detached(priority: .userInitiated) {
-            try Data(contentsOf: url)
-        }.value
         let targetName = try await availableImportName(preferredName: url.lastPathComponent)
         let target = RemotePath.parse(path: currentPath).join(name: targetName).asString()
-        try await IshFS.writeFile(path: target, data: data)
+        try await IshFS.writeFile(path: target, sourceURL: url, replaceExisting: false)
         await reload()
     }
 }
