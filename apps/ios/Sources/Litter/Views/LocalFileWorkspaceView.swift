@@ -411,7 +411,7 @@ private final class LocalFileWorkspaceModel {
         case .directory:
             try await IshFS.createDirectory(path: target)
         case .file:
-            try await IshFS.writeTextFile(path: target, text: "")
+            try await IshFS.createEmptyFile(path: target)
         }
         await reload()
     }
@@ -427,13 +427,40 @@ private final class LocalFileWorkspaceModel {
         await reload()
     }
 
+
+    private func availableImportName(preferredName: String) async throws -> String {
+        let baseName = preferredName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !baseName.isEmpty else {
+            throw NSError(domain: "LocalFileWorkspace", code: 1, userInfo: [NSLocalizedDescriptionKey: "Imported file name is empty."])
+        }
+        let nsName = baseName as NSString
+        let stem = nsName.deletingPathExtension.isEmpty ? baseName : nsName.deletingPathExtension
+        let ext = nsName.pathExtension
+        for index in 0..<100 {
+            let candidate: String
+            if index == 0 {
+                candidate = baseName
+            } else if ext.isEmpty {
+                candidate = "\(stem) \(index + 1)"
+            } else {
+                candidate = "\(stem) \(index + 1).\(ext)"
+            }
+            let target = RemotePath.parse(path: currentPath).join(name: candidate).asString()
+            if !(await IshFS.exists(path: target)) {
+                return candidate
+            }
+        }
+        throw NSError(domain: "LocalFileWorkspace", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not find a free import filename."])
+    }
+
     func importFile(from url: URL) async throws {
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }
         let data = try await Task.detached(priority: .userInitiated) {
             try Data(contentsOf: url)
         }.value
-        let target = RemotePath.parse(path: currentPath).join(name: url.lastPathComponent).asString()
+        let targetName = try await availableImportName(preferredName: url.lastPathComponent)
+        let target = RemotePath.parse(path: currentPath).join(name: targetName).asString()
         try await IshFS.writeFile(path: target, data: data)
         await reload()
     }

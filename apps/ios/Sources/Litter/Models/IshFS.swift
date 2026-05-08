@@ -95,9 +95,19 @@ enum IshFS {
         }
     }
 
+    static func createEmptyFile(path: String) async throws {
+        let result = await run("set -C; : > \(shellQuote(path))")
+        guard result.exitCode == 0 else { throw error("Could not create file. An item with that name may already exist.", result: result) }
+    }
+
+    static func exists(path: String) async -> Bool {
+        let result = await run("[ -e \(shellQuote(path)) ]")
+        return result.exitCode == 0
+    }
+
     static func createDirectory(path: String) async throws {
-        let result = await run("mkdir -p \(shellQuote(path))")
-        guard result.exitCode == 0 else { throw error("Could not create folder", result: result) }
+        let result = await run("mkdir \(shellQuote(path))")
+        guard result.exitCode == 0 else { throw error("Could not create folder. An item with that name may already exist.", result: result) }
     }
 
     static func rename(path: String, to destination: String) async throws {
