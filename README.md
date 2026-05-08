@@ -5,15 +5,13 @@
 </p>
 
 <p align="center">
-  Native iOS + Android client for <a href="https://github.com/openai/codex">Codex</a>. Connect to local or remote servers, manage sessions, and run agentic coding workflows from your phone.
+  Native iOS client for <a href="https://github.com/openai/codex">Codex</a>. Connect to local or remote servers, manage sessions, browse and edit iSH files, and run agentic coding workflows from iPhone and iPad.
 </p>
 
 <p align="center">
   <a href="https://kittylitter.app"><img src="docs/badges/website.svg" alt="kittylitter.app" /></a>
   &nbsp;
   <a href="https://apps.apple.com/us/app/kittylitter/id6759521788"><img src="docs/badges/app-store.svg" alt="App Store" /></a>
-  &nbsp;
-  <a href="https://kittylitter.app/android-beta"><img src="docs/badges/android-beta.svg" alt="Android Beta" /></a>
 </p>
 
 ## Screenshots (iOS)
@@ -28,9 +26,8 @@
 ## Quick Start
 
 ```bash
-make ios-device-fast   # fast device build
-make ios-sim-fast      # fast simulator build
-make android-emulator-fast  # fast Android emulator build
+make ios-device-fast   # fast iOS device build
+make ios-sim-fast      # fast iOS simulator build
 ```
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for prerequisites, full build options, TestFlight/App Store release, and SSH setup.
@@ -39,9 +36,8 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for prerequisites, full build opt
 
 ```
 apps/ios/                  iOS app (Litter scheme, project.yml is source of truth)
-apps/android/              Android app (Compose UI, Gradle build)
 shared/rust-bridge/
-  codex-mobile-client/     Shared Rust client crate + UniFFI surface (iOS & Android)
+  codex-mobile-client/     Shared Rust client crate + UniFFI surface for iOS
   codex-ios-audio/         iOS-only audio/AEC crate
 shared/third_party/codex/  Upstream Codex submodule
 patches/codex/             Local patch set applied during builds
@@ -50,7 +46,11 @@ tools/scripts/             Cross-platform helper scripts
 
 ## Architecture
 
-Both platforms share a single Rust core (`codex-mobile-client`) via UniFFI-generated bindings. Platform code (Swift/Kotlin) stays thin: UI, permissions, notifications, and platform APIs only. Session state, streaming, hydration, discovery, and auth logic live in Rust.
+Litter uses a Rust core (`codex-mobile-client`) through UniFFI-generated Swift bindings. Swift owns the iOS UI, permissions, notifications, document import surfaces, and platform APIs. Session state, streaming, hydration, discovery, and auth logic live in Rust.
+
+## iOS File Workspace
+
+The Files button on the home toolbar opens a real local iSH file workspace rooted at `/root`. It lists actual fakefs folders and files through `ishRun`, supports hidden files, folder navigation, creating files/folders, renaming, deleting, importing documents from iOS Files, and opening/saving text/code files in a built-in editor. This is intentionally local-first; remote file management should use SSH/Codex tools until a dedicated remote file API is wired.
 
 ## AI Providers and Local Models
 
@@ -66,11 +66,11 @@ The workflow at `.github/workflows/ios-unsigned-ipa.yml` builds a real-device un
 
 ## Contributing
 
-Litter is under active development and a lot of features are in flight. PRs are welcome but will likely only be merged if they're small and target a specific problem â sweeping refactors and new features tend to collide with work already underway. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening one.
+Litter is under active development and a lot of features are in flight. PRs are welcome but will likely only be merged if they're small and target a specific problem — sweeping refactors and new features tend to collide with work already underway. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening one.
 
 ## License
 
-Litter is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and Google Play distribution. See [LICENSE](LICENSE).
+Litter is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and iOS distribution. See [LICENSE](LICENSE).
 
 ## Make Targets
 
@@ -79,10 +79,8 @@ Litter is licensed under the GNU General Public License version 3 with an additi
 | `make ios-device-fast` | Fast device build (raw staticlib) |
 | `make ios-sim-fast` | Fast simulator build |
 | `make ios` | Full package lane (device + sim + xcframework) |
-| `make android-emulator-fast` | Fast Android emulator build |
-| `make android` | Full Android pipeline |
 | `make rust-check` | Host `cargo check` for shared Rust crates |
 | `make rust-test` | Host `cargo test` for shared Rust crates |
-| `make bindings` | Regenerate UniFFI Swift + Kotlin bindings |
+| `make bindings` | Regenerate UniFFI Swift bindings |
 | `make xcgen` | Regenerate Xcode project from `project.yml` |
 | `make clean` | Remove all build artifacts |

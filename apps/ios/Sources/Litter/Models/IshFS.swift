@@ -32,4 +32,81 @@ enum IshFS {
             return Result(exitCode: res.exitCode, output: output)
         }.value
     }
+
+    static func listDirectory(path: String, includeHidden: Bool) async throws -> [LocalFileEntry] {
+        let quoted = shellQuote(path)
+        let hiddenGuard = includeHidden ? "" : "case \"$name\" in .*) continue ;; esac;"
+        let command = """
+        dir=\(quoted); [ -d "$dir" ] || exit 2; for p in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do [ -e "$p" ] || continue; name=${p##*/}; \(hiddenGuard) if [ -d "$p" ]; then printf 'd\t0\t%s\t%s\n' "$name" "$p"; else size=$(wc -c < "$p" 2>/dev/null || echo 0); printf 'f\t%s\t%s\t%s\n' "$size" "$name" "$p"; fi; done | sort -f -k3
+        """
+        let result = await run(command)
+        guard result.exitCode == 0 else { throw error("Could not list \(path)", result: result) }
+        return result.output.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
+            let parts = line.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 4 else { return nil }
+            return LocalFileEntry(
+                kind: parts[0] == "d" ? .directory : .file,
+                name: parts[2],
+                path: parts[3],
+                size: Int64(parts[1].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            )
+        }
+    }
+
+    static func readTextFile(path: String, maxBytes: Int64) async throws -> String {
+        let sizeResult = await run("wc -c < \(shellQuote(path)) 2>/dev/null || exit 2")
+        guard sizeResult.exitCode == 0 else { throw error("Could not read \(path)", result: sizeResult) }
+        let size = Int64(sizeResult.output.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        guard size <= maxBytes else {
+            throw NSError(domain: "IshFS", code: 1, userInfo: [NSLocalizedDescriptionKey: "File is too large for the built-in text editor."])
+        }
+        let result = await run("cat \(shellQuote(path))")
+        guard result.exitCode == 0 else { throw error("Could not read \(path)", result: result) }
+        return result.output
+    }
+
+    static func writeTextFile(path: String, text: String) async throws {
+        try await writeFile(path: path, data: Data(text.utf8))
+    }
+
+    static func writeFile(path: String, data: Data) async throws {
+        let target = shellQuote(path)
+        let truncate = await run(": > \(target)")
+        guard truncate.exitCode == 0 else { throw error("Could not write \(path)", result: truncate) }
+        let encoded = data.base64EncodedString()
+        let chunkSize = 48_000
+        var index = encoded.startIndex
+        while index < encoded.endIndex {
+            let next = encoded.index(index, offsetBy: chunkSize, limitedBy: encoded.endIndex) ?? encoded.endIndex
+            let chunk = String(encoded[index..<next])
+            let result = await run("printf %s \(shellQuote(chunk)) | base64 -d >> \(target)")
+            guard result.exitCode == 0 else { throw error("Could not write \(path)", result: result) }
+            index = next
+        }
+    }
+
+    static func createDirectory(path: String) async throws {
+        let result = await run("mkdir -p \(shellQuote(path))")
+        guard result.exitCode == 0 else { throw error("Could not create folder", result: result) }
+    }
+
+    static func rename(path: String, to destination: String) async throws {
+        let result = await run("mv \(shellQuote(path)) \(shellQuote(destination))")
+        guard result.exitCode == 0 else { throw error("Could not rename item", result: result) }
+    }
+
+    static func delete(path: String) async throws {
+        let result = await run("rm -rf \(shellQuote(path))")
+        guard result.exitCode == 0 else { throw error("Could not delete item", result: result) }
+    }
+
+    private static func error(_ fallback: String, result: Result) -> NSError {
+        let message = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return NSError(
+            domain: "IshFS",
+            code: Int(result.exitCode),
+            userInfo: [NSLocalizedDescriptionKey: message.isEmpty ? fallback : message]
+        )
+    }
+
 }

@@ -609,6 +609,8 @@ private struct HomeNavigationView: View {
         /// with `.conversation(key)` so the bottom composer visually
         /// inherits the hero composer's position.
         case newThread
+        /// Real local iSH file workspace.
+        case filesWorkspace
         /// Saved apps list — always-visible.
         case appsList
         /// Saved-app detail, pushed when the user taps a home-screen thread
@@ -831,6 +833,8 @@ private struct HomeNavigationView: View {
                     )
                     .toolbar(.hidden, for: .navigationBar)
                     .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                case .filesWorkspace:
+                    LocalFileWorkspaceView()
                 case .appsList:
                     AppsListView()
                 case .savedApp(let appId):
@@ -1337,6 +1341,7 @@ private struct HomeNavigationView: View {
             onThreadCreated: { key in homeDashboardModel.pinThread(key) },
             onShowSettings: { appState.showSettings = true },
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
+            onShowFiles: { navigationPath.append(.filesWorkspace) },
             onPinThread: pinThread,
             onUnpinThread: unpinThread,
             onHideThread: hideThread,
@@ -1378,6 +1383,7 @@ private struct HomeNavigationView: View {
             onThreadCreated: { key in homeDashboardModel.pinThread(key) },
             onShowSettings: { appState.showSettings = true },
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
+            onShowFiles: { navigationPath.append(.filesWorkspace) },
             onPinThread: pinThread,
             onUnpinThread: unpinThread,
             onHideThread: hideThread,

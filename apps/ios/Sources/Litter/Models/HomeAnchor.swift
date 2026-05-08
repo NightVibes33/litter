@@ -8,9 +8,8 @@ import Foundation
 /// by the local-server directory picker to scope navigation. Never used
 /// for remote-server paths.
 ///
-/// Note: the iOS-side `DirectoryPickerView` walks paths via `FileManager`,
-/// which cannot see inside the fakefs. Picker UX for local iSH paths is a
-/// separate follow-up.
+/// Local iSH browsing must go through `IshFS`/`ishRun`; the iOS host
+/// `FileManager` cannot see the fakefs directly.
 enum HomeAnchor {
     static let path: String = "/root"
 }

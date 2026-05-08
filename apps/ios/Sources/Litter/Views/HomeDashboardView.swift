@@ -35,6 +35,8 @@ struct HomeDashboardView: View {
     /// Optional: surface an "Apps" button alongside Settings. Wired by the
     /// hosting navigation when a "Saved Apps" launcher should be exposed.
     var onShowApps: (() -> Void)? = nil
+    /// Opens the real local iSH file workspace.
+    var onShowFiles: (() -> Void)? = nil
     let onPinThread: (ThreadKey) -> Void
     let onUnpinThread: (ThreadKey) -> Void
     let onHideThread: (ThreadKey) -> Void
@@ -282,6 +284,13 @@ struct HomeDashboardView: View {
                 Button(action: onShowSettings) {
                     Image(systemName: "gearshape")
                         .foregroundColor(LitterTheme.textSecondary)
+                }
+                if let onShowFiles {
+                    Button(action: onShowFiles) {
+                        Image(systemName: "folder")
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                    .accessibilityLabel("Files")
                 }
                 if let onShowApps {
                     Button(action: onShowApps) {
