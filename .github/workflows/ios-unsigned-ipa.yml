@@ -21,7 +21,7 @@ on:
       - 'patches/codex/**'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
-      - 'tools/scripts/**'
+      - 'tools/scripts/load-sccache-aws-creds.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
 
 permissions:
