@@ -52,6 +52,10 @@ tools/scripts/             Cross-platform helper scripts
 
 Both platforms share a single Rust core (`codex-mobile-client`) via UniFFI-generated bindings. Platform code (Swift/Kotlin) stays thin: UI, permissions, notifications, and platform APIs only. Session state, streaming, hydration, discovery, and auth logic live in Rust.
 
+## AI Providers and Local Models
+
+Litter supports a provider foundation for hosted OpenAI, OpenAI-compatible LAN endpoints such as Ollama or LM Studio, and on-device GGUF model imports. PC-hosted endpoints should use an OpenAI-compatible `/v1` base URL such as `http://192.168.1.20:11434/v1`. On-device model imports are checked against the current device profile, including RAM, storage, thermal state, Low Power Mode, and Metal availability, so the app can recommend safe model sizes before users try to load them.
+
 ## iOS Local Runtime Notes
 
 On iOS, local terminal commands run inside an embedded iSH Alpine Linux fakefs. The default local home is `/root`, app-created files can be bridged through `/mnt/apps`, and Codex settings live at `/root/.codex`. Litter bridges `/root/.codex` to the app's native Codex home, so custom skills installed from the local terminal under `$CODEX_HOME/skills` are stored where the app runtime can read them. Restart or reload Codex after adding a new skill if it does not appear immediately.

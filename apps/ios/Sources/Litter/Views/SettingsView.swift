@@ -34,6 +34,7 @@ struct SettingsView: View {
                     conversationSection
                     petSection
                     experimentalSection
+                    aiProvidersSection
                     accountSection
                     serversSection
                 }
@@ -216,6 +217,35 @@ struct SettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Support")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
+
+    // MARK: - AI Providers Section
+
+    private var aiProvidersSection: some View {
+        Section {
+            NavigationLink {
+                AIProviderSettingsView()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "brain.head.profile")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("AI Providers")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("OpenAI, Ollama/PC servers, and on-device models")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("AI")
                 .foregroundColor(LitterTheme.textSecondary)
         }
     }

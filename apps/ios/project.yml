@@ -88,6 +88,7 @@ targets:
       - sdk: Security.framework
       - sdk: SystemConfiguration.framework
       - sdk: Network.framework
+      - sdk: Metal.framework
       - package: Hairball
         product: HairballUI
       - package: WebRTC
@@ -178,6 +179,7 @@ targets:
       - sdk: Security.framework
       - sdk: SystemConfiguration.framework
       - sdk: Network.framework
+      - sdk: Metal.framework
       - package: Hairball
         product: HairballUI
     settings:
