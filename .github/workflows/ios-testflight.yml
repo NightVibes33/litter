@@ -53,7 +53,6 @@ jobs:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios,i686-unknown-linux-musl
 
       - name: Setup sccache
-        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
         uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Prime sccache
@@ -69,6 +68,7 @@ jobs:
           CARGO_INCREMENTAL: "0"
           CARGO_BUILD_JOBS: "1"
           IOS_RUST_PROFILE: mobile-release
+          RUSTC_WRAPPER: sccache
         run: |
           set -euo pipefail
           export SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-ios.log"
