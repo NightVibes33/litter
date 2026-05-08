@@ -304,7 +304,7 @@ final class AIProviderStore: ObservableObject {
         localModelDownloadProgress = .starting(fileName: fileName, sourceURL: url)
         defer {
             activeModelDownload = nil
-            if localModelDownloadProgress?.isFinished == false {
+            if let progress = localModelDownloadProgress, progress.phase == .finished || !progress.isFinished {
                 localModelDownloadProgress = nil
             }
         }

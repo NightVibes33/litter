@@ -10,6 +10,7 @@ struct LocalModelSearchView: View {
     @State private var customURL = ""
     @State private var statusMessage: String?
     @State private var isLoading = false
+    @State private var isLoadingDetails = false
     @State private var activeDownloadId: String?
 
     var body: some View {
@@ -18,8 +19,8 @@ struct LocalModelSearchView: View {
             downloadProgressSection
             recommendedSection
             searchSection
-            customURLSection
             detailsSection
+            customURLSection
             installedSection
         }
         .navigationTitle("Local Models")
@@ -174,12 +175,19 @@ struct LocalModelSearchView: View {
                         Text(result.modelId)
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("\(result.downloads ?? 0) downloads · \(result.likes ?? 0) likes")
+                        Text("\(result.downloads ?? 0) downloads · \(result.likes ?? 0) likes · tap to show GGUF files")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
+                    Spacer()
+                    if selectedRepository == result.modelId, isLoadingDetails {
+                        ProgressView().scaleEffect(0.8)
+                    } else {
+                        Image(systemName: selectedRepository == result.modelId ? "chevron.down.circle.fill" : "chevron.right.circle")
+                            .foregroundColor(LitterTheme.accent)
+                    }
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(selectedRepository == result.modelId ? LitterTheme.accent.opacity(0.14) : LitterTheme.surface.opacity(0.6))
             }
         } header: {
             Text("Search")
@@ -232,6 +240,18 @@ struct LocalModelSearchView: View {
                         .foregroundColor(LitterTheme.textSecondary)
                 }
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+                if selectedDetails.ggufFiles.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("No downloadable GGUF files found", systemImage: "exclamationmark.triangle")
+                            .litterFont(.subheadline, weight: .semibold)
+                            .foregroundColor(LitterTheme.warning)
+                        Text("Hugging Face returned this model page, but the API did not expose a .gguf sibling file. Try another result or paste a direct .gguf URL.")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                }
 
                 ForEach(selectedDetails.ggufFiles) { file in
                     VStack(alignment: .leading, spacing: 7) {
@@ -330,18 +350,25 @@ struct LocalModelSearchView: View {
         do {
             results = try await providerStore.searchHuggingFaceModels(query: query)
             statusMessage = results.isEmpty ? "No GGUF models found." : nil
+            selectedDetails = nil
+            selectedRepository = nil
+            if let first = results.first {
+                await loadDetails(repository: first.modelId)
+            }
         } catch {
             statusMessage = error.localizedDescription
         }
     }
 
     private func loadDetails(repository: String) async {
-        isLoading = true
-        defer { isLoading = false }
+        selectedRepository = repository
+        isLoadingDetails = true
+        defer { isLoadingDetails = false }
         do {
             selectedDetails = try await providerStore.fetchHuggingFaceModelDetails(repository: repository)
-            selectedRepository = repository
+            statusMessage = selectedDetails?.ggufFiles.isEmpty == true ? "No downloadable GGUF files found for \(repository)." : nil
         } catch {
+            selectedDetails = nil
             statusMessage = error.localizedDescription
         }
     }
