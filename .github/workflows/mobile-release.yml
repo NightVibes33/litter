@@ -169,7 +169,6 @@ jobs:
       - name: Generate shared mobile bindings
         if: steps.mobile-bindings-cache.outputs.cache-hit != 'true'
         env:
-          RUSTC_WRAPPER: sccache
           CARGO_INCREMENTAL: "0"
         run: |
           cd shared/rust-bridge
@@ -321,8 +320,6 @@ jobs:
           touch .build-stamps/sync .build-stamps/bindings-kotlin
 
       - name: Install cargo-ndk
-        env:
-          RUSTC_WRAPPER: sccache
         run: cargo install cargo-ndk --locked
 
       - name: Setup Gradle
@@ -366,7 +363,6 @@ jobs:
           CARGO_BUILD_JOBS: "1"
           ANDROID_ABIS: arm64-v8a
           ANDROID_RUST_PROFILE: mobile-release
-          RUSTC_WRAPPER: sccache
         run: |
           set -euo pipefail
           export SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-android.log"
@@ -525,7 +521,6 @@ jobs:
           CARGO_INCREMENTAL: "0"
           CARGO_BUILD_JOBS: "1"
           IOS_RUST_PROFILE: mobile-release
-          RUSTC_WRAPPER: sccache
         run: |
           set -euo pipefail
           export SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-ios.log"
@@ -836,7 +831,6 @@ jobs:
           CARGO_INCREMENTAL: "0"
           CARGO_BUILD_JOBS: "1"
           IOS_RUST_PROFILE: mobile-release
-          RUSTC_WRAPPER: sccache
         run: |
           set -euo pipefail
           export SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-mac.log"
@@ -1029,7 +1023,7 @@ jobs:
 
   mac-direct-dist:
     # Reuses the same `mac-release-prep` artifact the TestFlight job
-    # consumes — no second Rust build, no second xcgen. The xcarchive +
+    # consumes â no second Rust build, no second xcgen. The xcarchive +
     # signing + notarization steps run fresh per channel because the
     # signatures and entitlements differ between Mac App Store and
     # Developer ID. Skipped if the Developer ID secrets aren't set, so
@@ -1067,7 +1061,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${MAC_DEVELOPER_ID_CERT_P12_B64:-}" || -z "${MAC_DEVELOPER_ID_CERT_PASSWORD:-}" ]]; then
-            echo "Direct distribution secrets not configured — skipping."
+            echo "Direct distribution secrets not configured â skipping."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -1220,14 +1214,14 @@ jobs:
           EOF
           )
 
-          # Three states: (a) release already exists → just clobber the asset,
-          # (b) git tag exists but no release → create release against tag,
-          # (c) neither exists → create both (tag targets current SHA).
+          # Three states: (a) release already exists â just clobber the asset,
+          # (b) git tag exists but no release â create release against tag,
+          # (c) neither exists â create both (tag targets current SHA).
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG exists — updating notes + clobbering asset"
+            echo "Release $TAG exists â updating notes + clobbering asset"
             gh release edit "$TAG" --notes "$BODY"
           elif git rev-parse --verify --quiet "refs/tags/${TAG}" >/dev/null 2>&1; then
-            echo "Tag $TAG exists but no release — creating release"
+            echo "Tag $TAG exists but no release â creating release"
             gh release create "$TAG" --title "$TAG" --notes "$BODY"
           else
             echo "Creating tag $TAG + release targeting ${GITHUB_SHA}"
