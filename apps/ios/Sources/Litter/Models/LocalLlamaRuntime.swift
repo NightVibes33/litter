@@ -135,7 +135,7 @@ actor LocalLlamaRuntime {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    for try await event in await self.generateEvents(request) {
+                    for try await event in self.generateEvents(request) {
                         if case .token(let token) = event {
                             continuation.yield(token)
                         }
@@ -162,7 +162,7 @@ actor LocalLlamaRuntime {
                     return
                 }
 
-                continuation.yield(.started(modelName: request.model.displayName, contextTokens: request.options.contextTokens))
+                continuation.yield(.started(modelName: request.model.fileName, contextTokens: request.options.contextTokens))
                 do {
                     let text = try await Self.runToolAwareGeneration(
                         request: request,
