@@ -10,6 +10,7 @@ final class AIProviderStore: ObservableObject {
     @Published private(set) var providers: [AIProviderProfile] = []
     @Published private(set) var localModels: [LocalModelRecord] = []
     @Published private(set) var localModelDownloadProgress: LocalModelDownloadProgress?
+    @Published private(set) var validatingLocalModelId: UUID?
 
     private let providersKey = "ai-provider-profiles-v1"
     private let localModelsKey = "local-gguf-models-v1"
@@ -130,6 +131,7 @@ final class AIProviderStore: ObservableObject {
         localModels.append(record)
         try persistLocalModels()
         ensureLocalProviderExists()
+        Task { await validateLocalModel(record) }
         return record
     }
 
@@ -230,6 +232,33 @@ final class AIProviderStore: ObservableObject {
         )
     }
 
+    func validateLocalModel(_ record: LocalModelRecord) async {
+        guard let index = localModels.firstIndex(where: { $0.id == record.id }) else { return }
+        validatingLocalModelId = record.id
+        localModels[index].validationStatus = .validating
+        try? persistLocalModels()
+        do {
+            _ = try await LocalLlamaRuntime.shared.smokeTest(localModels[index])
+            if let currentIndex = localModels.firstIndex(where: { $0.id == record.id }) {
+                localModels[currentIndex].validationStatus = .verified(Date())
+                try? persistLocalModels()
+            }
+        } catch {
+            if let currentIndex = localModels.firstIndex(where: { $0.id == record.id }) {
+                localModels[currentIndex].validationStatus = .failed(error.localizedDescription, Date())
+                try? persistLocalModels()
+            }
+        }
+        if validatingLocalModelId == record.id {
+            validatingLocalModelId = nil
+        }
+    }
+
+    func cancelLocalModelValidation() {
+        Task { await LocalLlamaRuntime.shared.cancel() }
+        validatingLocalModelId = nil
+    }
+
     func removeLocalModel(_ record: LocalModelRecord) throws {
         localModels.removeAll { $0.id == record.id }
         let fileURL = record.fileURL
@@ -295,6 +324,7 @@ final class AIProviderStore: ObservableObject {
         localModels.append(record)
         try persistLocalModels()
         ensureLocalProviderExists()
+        Task { await validateLocalModel(record) }
         return record
     }
 

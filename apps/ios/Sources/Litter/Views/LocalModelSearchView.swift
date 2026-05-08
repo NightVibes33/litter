@@ -3,7 +3,7 @@ import SwiftUI
 struct LocalModelSearchView: View {
     @StateObject private var providerStore = AIProviderStore.shared
     @State private var capability = DeviceCapabilityProfile.current()
-    @State private var query = "gemma-4"
+    @State private var query = ""
     @State private var results: [HuggingFaceModelSearchResult] = []
     @State private var selectedDetails: HuggingFaceModelDetails?
     @State private var selectedRepository: String?
@@ -27,9 +27,6 @@ struct LocalModelSearchView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             capability = .current()
-            if results.isEmpty {
-                await search()
-            }
         }
     }
 
@@ -304,10 +301,26 @@ struct LocalModelSearchView: View {
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
                             .lineLimit(1)
-                        Text("\(model.displaySize) · \(model.safety.displayName)")
+                        Text("\(model.displaySize) · \(model.safety.displayName) · \(model.validationStatus.displayName)")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
+                        Text(model.validationStatus.message)
+                            .litterFont(.caption)
+                            .foregroundColor(validationColor(for: model.validationStatus))
                         modalityLine(model.modalities)
+                        HStack {
+                            Button {
+                                Task { await providerStore.validateLocalModel(model) }
+                            } label: {
+                                Label(providerStore.validatingLocalModelId == model.id ? "Verifying..." : "Verify Model", systemImage: "checkmark.seal")
+                            }
+                            .disabled(providerStore.validatingLocalModelId != nil)
+                            if providerStore.validatingLocalModelId == model.id {
+                                Button("Cancel") { providerStore.cancelLocalModelValidation() }
+                                    .foregroundColor(LitterTheme.danger)
+                            }
+                        }
+                        .litterFont(.caption, weight: .semibold)
                     }
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
                 }
@@ -322,6 +335,15 @@ struct LocalModelSearchView: View {
         Text(modalities.map(\.displayName).joined(separator: " · "))
             .litterFont(.caption)
             .foregroundColor(LitterTheme.accent)
+    }
+
+    private func validationColor(for status: LocalModelValidationStatus) -> Color {
+        switch status {
+        case .verified: return LitterTheme.success
+        case .failed: return LitterTheme.danger
+        case .validating: return LitterTheme.warning
+        case .untested: return LitterTheme.textMuted
+        }
     }
 
     private func downloadSubtitle(for progress: LocalModelDownloadProgress) -> String {
