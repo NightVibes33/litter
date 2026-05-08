@@ -137,7 +137,7 @@ trap cleanup_patch EXIT
 
 mkdir -p "$FRAMEWORKS_DIR" "$GENERATED_HEADERS_DIR" "$GENERATED_DEVICE_DIR" "$GENERATED_SIM_DIR" "$GENERATED_MACABI_DIR"
 
-if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
+if [ "${SCCACHE_DISABLE:-0}" != "1" ] && [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
   export RUSTC_WRAPPER="$(command -v sccache)"
 fi
 

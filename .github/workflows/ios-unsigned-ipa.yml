@@ -85,31 +85,62 @@ jobs:
         with:
           targets: aarch64-apple-ios,i686-unknown-linux-musl
 
-      - name: Cache Cargo and generated iOS assets
+      - name: Cache Cargo registry
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+          key: ios-cargo-registry-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock') }}
+          restore-keys: |
+            ios-cargo-registry-${{ runner.os }}-
+
+      - name: Cache Rust target
+        uses: actions/cache@v4
+        with:
+          path: |
             shared/rust-bridge/target
+          key: ios-rust-target-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml') }}
+          restore-keys: |
+            ios-rust-target-${{ runner.os }}-
+
+      - name: Cache generated iOS assets
+        uses: actions/cache@v4
+        with:
+          path: |
             apps/ios/GeneratedRust
             apps/ios/Resources/fs
             .build-stamps
             build/DerivedData
-          key: ios-unsigned-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          key: ios-generated-assets-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'patches/codex/**') }}
           restore-keys: |
-            ios-unsigned-${{ runner.os }}-
+            ios-generated-assets-${{ runner.os }}-
 
-      - name: Prepare unsigned device build assets
+      - name: Build Rust iOS device library
         run: |
           set -euo pipefail
           BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
+          echo "Using build mode: $BUILD_MODE"
           if [ "$BUILD_MODE" = "fast-device" ]; then
-            ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --skip-bindings
+            if [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h ] && [ -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
+              time ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --skip-bindings
+            else
+              echo "Generated UniFFI bindings are missing; generating them once before the fast device build."
+              time ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device
+            fi
           else
-            ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
+            time ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
           fi
-          make alpine-fs xcgen
+
+      - name: Prepare Alpine filesystem
+        run: |
+          set -euo pipefail
+          time make alpine-fs
+
+      - name: Generate Xcode project
+        run: |
+          set -euo pipefail
+          time make xcgen
 
       - name: Build unsigned archive
         run: |
