@@ -74,7 +74,7 @@ jobs:
         with:
           path: |
             ~/Library/Caches/Homebrew
-          key: homebrew-ios-${{ runner.os }}-xcodegen-meson-ninja-llvm-lld-v1
+          key: homebrew-ios-${{ runner.os }}-xcodegen-meson-ninja-llvm-lld-cmake-v1
 
       - name: Install build dependencies
         run: |
@@ -84,6 +84,7 @@ jobs:
           brew list ninja >/dev/null 2>&1 || brew install ninja
           brew list llvm >/dev/null 2>&1 || brew install llvm
           brew list lld >/dev/null 2>&1 || brew install lld
+          brew list cmake >/dev/null 2>&1 || brew install cmake
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -125,6 +126,8 @@ jobs:
           path: |
             apps/ios/Resources/fs
             apps/ios/Frameworks/llama.xcframework
+            apps/ios/Frameworks/llama.version
+            ~/Library/Caches/litter-build/llama.cpp
             .build-stamps
             build/DerivedData
           key: ios-generated-assets-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**') }}
@@ -188,7 +191,7 @@ jobs:
           set -euo pipefail
           time make alpine-fs
 
-      - name: Prepare llama.cpp XCFramework
+      - name: Build llama.cpp XCFramework
         run: |
           set -euo pipefail
           time make llama-ios

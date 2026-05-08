@@ -497,9 +497,9 @@ $(STAMP_BINDINGS_K): $(STAMP_SYNC) $(BOUNDARY_SOURCES)
 	@touch $@
 
 llama-ios: $(STAMP_LLAMA_IOS)
-$(STAMP_LLAMA_IOS): $(IOS_SCRIPTS)/download-llama-xcframework.sh
-	@echo "==> Preparing llama.cpp iOS XCFramework..."
-	@$(IOS_SCRIPTS)/download-llama-xcframework.sh
+$(STAMP_LLAMA_IOS): $(IOS_SCRIPTS)/build-llama-xcframework.sh
+	@echo "==> Building llama.cpp iOS XCFramework..."
+	@$(IOS_SCRIPTS)/build-llama-xcframework.sh
 	@touch $@
 
 ish-dev-random:
