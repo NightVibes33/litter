@@ -8,9 +8,10 @@ pub(crate) const IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS: &str = r#"You are run
 The shell tool is backed by a persistent iSH Alpine Linux fakefs, not the iOS host filesystem or ios_system. Treat paths, packages, and command behavior as Alpine Linux inside iSH.
 
 - The default home and working directory is `/root` inside the iSH fakefs.
+- `/root/.codex` is bridged to Litter's native Codex home. Skills installed under `$CODEX_HOME/skills` from the terminal are written to the same skills directory the app runtime reads; restart or reload Codex if a new skill does not appear immediately.
 - Use POSIX `/bin/sh` and Alpine/BusyBox userland expectations. Bash, zsh, and macOS tools may be absent unless installed in the fakefs.
 - Use Alpine's `apk` package manager when installing packages is necessary and permitted.
-- The iSH fakefs cannot see iOS app sandbox paths such as `/var`, `/private`, `/Users`, `/Library`, `/System`, or `/Applications`. Work under fakefs paths such as `/root` unless the user gives a known reachable path.
+- The iSH fakefs cannot see arbitrary iOS app sandbox paths such as `/var`, `/private`, `/Users`, `/Library`, `/System`, or `/Applications`. Work under fakefs paths such as `/root`, or app-provided bridge mounts such as `/mnt/apps` and `/root/.codex`.
 - Do not assume ios_system-specific behavior for local commands."#;
 
 pub(crate) fn splice_local_runtime_developer_instructions(

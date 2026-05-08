@@ -6,10 +6,11 @@
 //! 2. `chmod 0644` the fakefs `meta.db` so SQLite can write.
 //! 3. Boot the iSH kernel at `<app_support>/fs/data` with `/root` as cwd.
 //! 4. Install small runtime directories and pass the iSH environment on every
-//!    command (`LANG`, `TMPDIR`, `CODEX_HOME`, …).
+//!    command (`LANG`, `TMPDIR`, `CODEX_HOME`, â¦).
 //! 5. Snapshot host DNS into `/etc/resolv.conf` inside the fakefs.
 //! 6. Mount `<documents>/Apps/` at `/mnt/apps/` via iSH's `realfs` driver.
-//! 7. Register the `codex_core` exec hook (`ish_exec::install()`).
+//! 7. Mount native Codex home at `/mnt/codex` and bridge `/root/.codex`.
+//! 8. Register the `codex_core` exec hook (`ish_exec::install()`).
 //!
 //! After `bootstrap`, `run(cmd, cwd)` dispatches command strings through the
 //! persistent `/bin/sh` the same way `codex_ish_run` did in Obj-C.
@@ -52,11 +53,11 @@ static INSTANCE: OnceLock<IshInstance> = OnceLock::new();
 /// IshBridge.m. After this returns `Ok`, `run()` is safe to call and the
 /// codex_core exec hook has been installed.
 ///
-/// * `bundle_fs_path` — absolute path to the `fs` directory inside the app
-///   bundle (Swift resolves this via `Bundle.main.url(forResource:"fs", …)`).
-/// * `application_support_dir` — Application Support dir for the app; the
+/// * `bundle_fs_path` â absolute path to the `fs` directory inside the app
+///   bundle (Swift resolves this via `Bundle.main.url(forResource:"fs", â¦)`).
+/// * `application_support_dir` â Application Support dir for the app; the
 ///   rootfs lives under `<application_support_dir>/fs/`.
-/// * `documents_dir` — the app's Documents directory; `Apps/` inside it is
+/// * `documents_dir` â the app's Documents directory; `Apps/` inside it is
 ///   bind-mounted at `/mnt/apps` inside the fakefs.
 pub fn bootstrap(
     bundle_fs_path: &Path,
@@ -95,6 +96,7 @@ pub fn bootstrap(
     // normal run() path, which takes the shared lock and honors the same
     // ordering guarantees as regular command dispatch.
     runtime_setup();
+    mount_codex_home(application_support_dir);
     write_resolv_conf();
     mount_apps_dir(documents_dir);
 
@@ -104,7 +106,7 @@ pub fn bootstrap(
 }
 
 /// Default working directory for iSH-backed local sessions. Port of
-/// `codex_ish_default_cwd` — always `/root` (Alpine's root home).
+/// `codex_ish_default_cwd` â always `/root` (Alpine's root home).
 pub fn default_cwd() -> &'static str {
     "/root"
 }
@@ -113,7 +115,7 @@ pub fn default_cwd() -> &'static str {
 /// command is wrapped as `cd '<cwd>' && <cmd>` (same shell-quote pass as the
 /// Obj-C port). Returns (exit_code, merged stdout+stderr bytes). If the kernel
 /// has not been booted or the FFI call fails, returns a negative ISH_E_* code
-/// and an empty byte vector — matching the IshBridge.m error semantics so the
+/// and an empty byte vector â matching the IshBridge.m error semantics so the
 /// exec-hook path can surface the failure without a nil pointer panic.
 pub fn run(cmd: &str, cwd: Option<&str>, timeout_ms: Option<u64>) -> (i32, Vec<u8>) {
     let Some(instance) = INSTANCE.get() else {
@@ -136,16 +138,12 @@ pub fn run(cmd: &str, cwd: Option<&str>, timeout_ms: Option<u64>) -> (i32, Vec<u
     instance.run_oneshot(&argv, &cwd_path, &env, timeout_ms)
 }
 
-// ── post-init setup helpers ──────────────────────────────────────────────
+// ââ post-init setup helpers ââââââââââââââââââââââââââââââââââââââââââââââ
 // These mirror codex_ish_runtime_setup / codex_ish_write_resolv_conf /
 // codex_ish_mount_apps_dir from IshBridge.m. They call run() internally; the
 // ish crate's own lock serializes the actual dispatches.
 
-const RUNTIME_SETUP_SCRIPT: &str = concat!(
-    "mkdir -p /root/.codex /tmp ;",
-    "chmod 700 /root/.codex ;",
-    "chmod 1777 /tmp",
-);
+const RUNTIME_SETUP_SCRIPT: &str = "mkdir -p /tmp ; chmod 1777 /tmp";
 
 fn runtime_env() -> HashMap<String, String> {
     HashMap::from([
@@ -164,8 +162,8 @@ fn runtime_env() -> HashMap<String, String> {
         ("PAGER".to_string(), "cat".to_string()),
         ("EDITOR".to_string(), "vi".to_string()),
         ("HOSTNAME".to_string(), "litter".to_string()),
-        // Symmetric with the native CODEX_HOME used by the Rust process.
-        // Tools inside iSH need a fakefs-local config path.
+        // This fakefs path is symlinked to the app's native Codex home
+        // during bootstrap, so shell-installed skills are visible to Codex.
         ("CODEX_HOME".to_string(), "/root/.codex".to_string()),
     ])
 }
@@ -179,6 +177,47 @@ fn runtime_setup() {
     if rc != 0 {
         eprintln!("[ish] runtime setup failed rc={rc}");
     }
+}
+
+fn mount_codex_home(application_support_dir: &Path) {
+    let codex_home = application_support_dir.join("codex");
+    if let Err(err) = fs::create_dir_all(codex_home.join("skills")) {
+        eprintln!("[ish] could not create {}: {err}", codex_home.display());
+        return;
+    }
+    let Some(codex_home_str) = codex_home.to_str() else {
+        eprintln!("[ish] CODEX_HOME dir not utf-8: {}", codex_home.display());
+        return;
+    };
+
+    let cmd = codex_home_bridge_script(codex_home_str);
+    let (rc, output) = run(&cmd, None, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS));
+    if rc != 0 {
+        let message = String::from_utf8_lossy(&output);
+        eprintln!("[ish] mount /root/.codex bridge failed rc={rc}: {message}");
+    } else {
+        eprintln!("[ish] /root/.codex bridged to '{}'", codex_home_str);
+    }
+}
+
+fn codex_home_bridge_script(codex_home: &str) -> String {
+    format!(
+        concat!(
+            "mkdir -p /mnt/codex /tmp ;",
+            "chmod 1777 /tmp ;",
+            "mount -t real {} /mnt/codex || exit $? ;",
+            "if [ -L /root/.codex ]; then rm /root/.codex; fi ;",
+            "if [ -d /root/.codex ]; then ",
+            "cp -a /root/.codex/. /mnt/codex/ 2>/dev/null || true ;",
+            "backup=\"/root/.codex.fakefs.$(date +%s)\" ;",
+            "mv /root/.codex \"$backup\" 2>/dev/null || rm -rf /root/.codex ;",
+            "fi ;",
+            "ln -s /mnt/codex /root/.codex ;",
+            "mkdir -p /root/.codex/skills ;",
+            "chmod 700 /root/.codex"
+        ),
+        shell_quote(codex_home)
+    )
 }
 
 fn write_resolv_conf() {
@@ -214,7 +253,7 @@ fn mount_apps_dir(documents_dir: &Path) {
     }
 }
 
-// ── bundled rootfs extraction ────────────────────────────────────────────
+// ââ bundled rootfs extraction ââââââââââââââââââââââââââââââââââââââââââââ
 
 fn extract_rootfs_if_needed(source: &Path, dest: &Path) -> Result<(), IshBootstrapError> {
     if dest.is_dir() {
@@ -256,19 +295,19 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
 
 use crate::shell_quoting::posix_quote as shell_quote;
 
-// ── resolv.conf snapshot (libresolv FFI) ─────────────────────────────────
+// ââ resolv.conf snapshot (libresolv FFI) âââââââââââââââââââââââââââââââââ
 //
 // Apple's <resolv.h> macro-renames `res_ninit` / `res_getservers` /
 // `res_ndestroy` to `res_9_*`, so libresolv.9.tbd on iPhoneOS.sdk exports
 // the `res_9_*` symbols. The Rust FFI declares those names directly.
 //
 // We reproduce `codex_ish_resolv_conf_body()` from IshBridge.m with one
-// intentional scope narrowing: we do not emit the `search …` line. Reading
+// intentional scope narrowing: we do not emit the `search â¦` line. Reading
 // `struct __res_state::dnsrch` requires reaching into an opaque Apple
 // resolver struct with no stable ABI contract; nameservers alone are enough
 // for the bootstrap script to reach apk/curl, which is what the original
 // Obj-C path was protecting. Empty search list falls through to the public
-// resolver fallback below, matching the Obj-C "empty ⇒ fallback" semantic.
+// resolver fallback below, matching the Obj-C "empty â fallback" semantic.
 
 // Size chosen generously: the 64-bit Apple `struct __res_state` layout is
 // around 1 KB (see resolv.h:182-232; includes MAXNS=3 sockaddr_in slots,
@@ -279,7 +318,7 @@ const RES_STATE_BUF: usize = 4096;
 // `union res_sockaddr_union` is 128-byte `__space` plus alignment padding
 // (resolv.h:242-253). 256 bytes is the safe upper bound.
 const RES_SOCKADDR_UNION_BUF: usize = 256;
-// `<arpa/nameser.h>` / `<resolv.h>` — maximum name servers res_getservers
+// `<arpa/nameser.h>` / `<resolv.h>` â maximum name servers res_getservers
 // will return.
 const MAXNS: c_int = 3;
 
@@ -327,7 +366,7 @@ fn resolv_conf_body() -> String {
             // SAFETY: Each sockaddr_union slot is RES_SOCKADDR_UNION_BUF
             // bytes; the first byte is sin_len (Apple BSD sockaddr has
             // sa_len as the first byte). A zero sin_len means the slot was
-            // left empty by the resolver — skip it, matching IshBridge.m.
+            // left empty by the resolver â skip it, matching IshBridge.m.
             let slot = unsafe { servers.as_ptr().add(i as usize * RES_SOCKADDR_UNION_BUF) };
             let sa_len = unsafe { *slot };
             if sa_len == 0 {
@@ -383,5 +422,17 @@ mod tests {
     #[test]
     fn shell_quote_path_with_spaces() {
         assert_eq!(shell_quote("/var/Documents/Apps"), "'/var/Documents/Apps'");
+    }
+
+    #[test]
+    fn codex_home_bridge_script_mounts_and_preserves_existing_home() {
+        let script = codex_home_bridge_script("/var/mobile/Application Support/codex");
+
+        assert!(script.contains(
+            "mount -t real '/var/mobile/Application Support/codex' /mnt/codex"
+        ));
+        assert!(script.contains("cp -a /root/.codex/. /mnt/codex/"));
+        assert!(script.contains("ln -s /mnt/codex /root/.codex"));
+        assert!(script.contains("mkdir -p /root/.codex/skills"));
     }
 }

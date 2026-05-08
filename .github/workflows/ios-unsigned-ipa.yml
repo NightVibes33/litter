@@ -1,0 +1,125 @@
+name: Build Unsigned iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Makefile'
+      - 'Package.swift'
+      - 'apps/ios/**'
+      - 'patches/codex/**'
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/codex/**'
+      - 'tools/scripts/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-unsigned-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-unsigned-ipa:
+    name: Build unsigned SideStore/AltStore IPA
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      CARGO_INCREMENTAL: "0"
+      CARGO_BUILD_JOBS: "1"
+      IOS_RUST_PROFILE: mobile-release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+
+      - name: Show toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          swift --version
+
+      - name: Install build dependencies
+        run: brew install xcodegen meson ninja llvm lld
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,i686-unknown-linux-musl
+
+      - name: Prepare unsigned device build assets
+        run: |
+          set -euo pipefail
+          ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
+          make alpine-fs xcgen
+
+      - name: Build unsigned archive
+        run: |
+          set -euo pipefail
+          ARCHIVE_PATH="$PWD/build/Litter.xcarchive"
+          rm -rf "$ARCHIVE_PATH" build/unsigned-ipa Payload
+          xcodebuild archive \
+            -project apps/ios/Litter.xcodeproj \
+            -scheme Litter \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package SideStore/AltStore IPA artifact
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found in archive" >&2
+            find build/Litter.xcarchive -print
+            exit 1
+          fi
+
+          mkdir -p Payload build/unsigned-ipa
+          cp -R "$APP_PATH" Payload/
+          rm -rf Payload/*.app/_CodeSignature Payload/*.app/embedded.mobileprovision
+
+          IPA_NAME="Litter-iOS26-Unsigned-SideStore-AltStore.ipa"
+          /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
+
+          INFO_PLIST="Payload/$(basename "$APP_PATH")/Info.plist"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST" 2>/dev/null || true)"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST" 2>/dev/null || true)"
+          BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST" 2>/dev/null || true)"
+          cat > build/unsigned-ipa/build-metadata.json <<JSON
+          {
+            "name": "Litter",
+            "bundleIdentifier": "$BUNDLE_ID",
+            "version": "$VERSION",
+            "build": "$BUILD",
+            "commit": "${GITHUB_SHA}",
+            "minimumIOSFamily": "26",
+            "xcode": "26.3",
+            "artifact": "$IPA_NAME",
+            "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing"
+          }
+          JSON
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Litter-Unsigned-iOS26-SideStore-AltStore
+          path: build/unsigned-ipa
+          if-no-files-found: error
