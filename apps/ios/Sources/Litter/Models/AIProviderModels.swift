@@ -149,6 +149,24 @@ enum LocalModelSafety: String, Codable, CaseIterable {
     }
 }
 
+enum LocalModelModality: String, Codable, CaseIterable, Identifiable {
+    case text
+    case image
+    case audio
+    case video
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .text: return "Text"
+        case .image: return "Images"
+        case .audio: return "Audio"
+        case .video: return "Video frames"
+        }
+    }
+}
+
 struct LocalModelRecord: Codable, Identifiable, Equatable {
     var id: UUID
     var fileName: String
@@ -159,6 +177,74 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
     var importedAt: Date
     var safety: LocalModelSafety
     var recommendation: String
+    var sourceRepository: String?
+    var sourceURL: String?
+    var architecture: String?
+    var modalities: [LocalModelModality]
+    var projectorStorageFileName: String?
+    var sha256: String?
+    var downloadedAt: Date?
+
+    init(
+        id: UUID,
+        fileName: String,
+        storageFileName: String?,
+        fileSizeBytes: Int64,
+        parameterHint: Double?,
+        quantizationHint: String?,
+        importedAt: Date,
+        safety: LocalModelSafety,
+        recommendation: String,
+        sourceRepository: String? = nil,
+        sourceURL: String? = nil,
+        architecture: String? = nil,
+        modalities: [LocalModelModality] = [.text],
+        projectorStorageFileName: String? = nil,
+        sha256: String? = nil,
+        downloadedAt: Date? = nil
+    ) {
+        self.id = id
+        self.fileName = fileName
+        self.storageFileName = storageFileName
+        self.fileSizeBytes = fileSizeBytes
+        self.parameterHint = parameterHint
+        self.quantizationHint = quantizationHint
+        self.importedAt = importedAt
+        self.safety = safety
+        self.recommendation = recommendation
+        self.sourceRepository = sourceRepository
+        self.sourceURL = sourceURL
+        self.architecture = architecture
+        self.modalities = modalities.isEmpty ? [.text] : modalities
+        self.projectorStorageFileName = projectorStorageFileName
+        self.sha256 = sha256
+        self.downloadedAt = downloadedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, fileName, storageFileName, fileSizeBytes, parameterHint, quantizationHint, importedAt, safety, recommendation
+        case sourceRepository, sourceURL, architecture, modalities, projectorStorageFileName, sha256, downloadedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        fileName = try container.decode(String.self, forKey: .fileName)
+        storageFileName = try container.decodeIfPresent(String.self, forKey: .storageFileName)
+        fileSizeBytes = try container.decode(Int64.self, forKey: .fileSizeBytes)
+        parameterHint = try container.decodeIfPresent(Double.self, forKey: .parameterHint)
+        quantizationHint = try container.decodeIfPresent(String.self, forKey: .quantizationHint)
+        importedAt = try container.decode(Date.self, forKey: .importedAt)
+        safety = try container.decode(LocalModelSafety.self, forKey: .safety)
+        recommendation = try container.decode(String.self, forKey: .recommendation)
+        sourceRepository = try container.decodeIfPresent(String.self, forKey: .sourceRepository)
+        sourceURL = try container.decodeIfPresent(String.self, forKey: .sourceURL)
+        architecture = try container.decodeIfPresent(String.self, forKey: .architecture)
+        modalities = try container.decodeIfPresent([LocalModelModality].self, forKey: .modalities) ?? [.text]
+        projectorStorageFileName = try container.decodeIfPresent(String.self, forKey: .projectorStorageFileName)
+        sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
+        downloadedAt = try container.decodeIfPresent(Date.self, forKey: .downloadedAt)
+    }
 
     var fileURL: URL {
         URL.documentsDirectory
@@ -166,7 +252,132 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
             .appendingPathComponent(storageFileName ?? fileName)
     }
 
+    var projectorURL: URL? {
+        guard let projectorStorageFileName else { return nil }
+        return URL.documentsDirectory
+            .appendingPathComponent("Models", isDirectory: true)
+            .appendingPathComponent(projectorStorageFileName)
+    }
+
     var displaySize: String {
         ByteCountFormatter.string(fromByteCount: fileSizeBytes, countStyle: .file)
+    }
+
+    var supportsMultimodalInput: Bool {
+        modalities.contains(.image) || modalities.contains(.audio) || modalities.contains(.video)
+    }
+}
+
+struct LocalModelCatalogItem: Identifiable, Equatable {
+    var id: String
+    var repository: String
+    var title: String
+    var subtitle: String
+    var recommendedFileName: String
+    var projectorFileName: String?
+    var architecture: String
+    var modalities: [LocalModelModality]
+    var sizeBytes: Int64
+    var warning: String?
+
+    var downloadURL: URL? {
+        URL(string: "https://huggingface.co/\(repository)/resolve/main/\(recommendedFileName)")
+    }
+
+    var projectorDownloadURL: URL? {
+        guard let projectorFileName else { return nil }
+        return URL(string: "https://huggingface.co/\(repository)/resolve/main/\(projectorFileName)")
+    }
+
+    var displaySize: String {
+        ByteCountFormatter.string(fromByteCount: sizeBytes, countStyle: .file)
+    }
+
+    static let recommended: [LocalModelCatalogItem] = [
+        LocalModelCatalogItem(
+            id: "gemma-4-e2b-it-q8",
+            repository: "ggml-org/gemma-4-E2B-it-GGUF",
+            title: "Gemma 4 E2B IT",
+            subtitle: "Best Gemma 4 starting point for iPhone",
+            recommendedFileName: "gemma-4-E2B-it-Q8_0.gguf",
+            projectorFileName: "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+            architecture: "gemma4",
+            modalities: [.text, .image, .audio, .video],
+            sizeBytes: 4_967_494_592,
+            warning: "Requires several GB of free storage and a current high-memory iPhone."
+        ),
+        LocalModelCatalogItem(
+            id: "gemma-4-e4b-it-q4",
+            repository: "ggml-org/gemma-4-E4B-it-GGUF",
+            title: "Gemma 4 E4B IT",
+            subtitle: "Higher quality, heavier iPhone option",
+            recommendedFileName: "gemma-4-E4B-it-Q4_K_M.gguf",
+            projectorFileName: "mmproj-gemma-4-E4B-it-Q8_0.gguf",
+            architecture: "gemma4",
+            modalities: [.text, .image, .audio, .video],
+            sizeBytes: 5_335_289_824,
+            warning: "Large model. Expect heat, slower output, and aggressive storage checks."
+        ),
+        LocalModelCatalogItem(
+            id: "gemma-3-1b-it-q4",
+            repository: "ggml-org/gemma-3-1b-it-GGUF",
+            title: "Gemma 3 1B IT",
+            subtitle: "Small fallback for older devices",
+            recommendedFileName: "gemma-3-1b-it-Q4_K_M.gguf",
+            projectorFileName: nil,
+            architecture: "gemma3",
+            modalities: [.text],
+            sizeBytes: 806_058_240,
+            warning: nil
+        )
+    ]
+}
+
+struct HuggingFaceModelSearchResult: Decodable, Identifiable, Equatable {
+    var id: String { modelId }
+    let modelId: String
+    let downloads: Int?
+    let likes: Int?
+    let tags: [String]?
+}
+
+struct HuggingFaceModelDetails: Decodable, Equatable {
+    struct GGUF: Decodable, Equatable {
+        let architecture: String?
+        let contextLength: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case architecture
+            case contextLength = "context_length"
+        }
+    }
+
+    struct Sibling: Decodable, Equatable, Identifiable {
+        struct LFS: Decodable, Equatable {
+            let sha256: String?
+            let size: Int64?
+        }
+
+        var id: String { rfilename }
+        let rfilename: String
+        let size: Int64?
+        let lfs: LFS?
+
+        var isGGUF: Bool { rfilename.lowercased().hasSuffix(".gguf") }
+        var isProjector: Bool { rfilename.lowercased().hasPrefix("mmproj-") }
+    }
+
+    let modelId: String
+    let downloads: Int?
+    let likes: Int?
+    let gguf: GGUF?
+    let siblings: [Sibling]
+
+    var ggufFiles: [Sibling] {
+        siblings.filter { $0.isGGUF && !$0.isProjector }
+    }
+
+    var projectorFiles: [Sibling] {
+        siblings.filter { $0.isGGUF && $0.isProjector }
     }
 }

@@ -152,6 +152,14 @@ struct AIProviderSettingsView: View {
             .disabled(isImportingModel)
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
+            NavigationLink {
+                LocalModelSearchView()
+            } label: {
+                Label("Download or Search Models", systemImage: "magnifyingglass.circle")
+                    .foregroundColor(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
             if let statusMessage {
                 Text(statusMessage)
                     .litterFont(.caption)

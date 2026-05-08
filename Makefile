@@ -151,6 +151,7 @@ STAMP_SYNC := $(STAMPS)/sync
 STAMP_BINDINGS_S := $(STAMPS)/bindings-swift
 STAMP_BINDINGS_K := $(STAMPS)/bindings-kotlin
 STAMP_XCGEN := $(STAMPS)/xcgen
+STAMP_LLAMA_IOS := $(STAMPS)/llama-ios-b9070
 
 # Pinned release tag of the prebuilt Alpine rootfs tarball (still hosted
 # on the dnakov/litter-ish releases page). The iSH kernel itself is built
@@ -174,7 +175,7 @@ $(shell mkdir -p $(STAMPS))
 	android android-fast android-tools android-emulator-fast android-emulator-run android-device-run android-release android-debug android-install android-emulator-install \
 	rust-ios rust-ios-package rust-ios-device-release rust-mac-release rust-ios-device-fast rust-ios-sim-fast rust-ios-macabi-fast rust-android rust-check rust-test rust-host-dev \
 	bindings bindings-swift bindings-kotlin \
-	sync patch unpatch xcgen alpine-fs \
+	sync patch unpatch xcgen alpine-fs llama-ios ish-dev-random \
 	ios-build ios-build-sim ios-build-sim-fast ios-build-device ios-build-device-fast \
 	watch watch-sim watch-sim-run watch-device watch-typecheck \
 	test test-rust test-ios test-android \
@@ -186,12 +187,12 @@ all: ios android
 
 # ios-build-* targets declare their real prerequisites so that `make -j`
 # can run rust-ios-package, alpine-fs download, and xcgen in parallel.
-ios-build-sim: rust-ios-package alpine-fs xcgen
-ios-build-device: rust-ios-package alpine-fs xcgen
+ios-build-sim: rust-ios-package alpine-fs llama-ios xcgen
+ios-build-device: rust-ios-package alpine-fs llama-ios xcgen
 
 # Fast lanes use lightweight raw staticlib outputs instead of full packaging.
-ios-build-sim-fast: rust-ios-sim-fast alpine-fs xcgen
-ios-build-device-fast: rust-ios-device-fast alpine-fs xcgen
+ios-build-sim-fast: rust-ios-sim-fast alpine-fs llama-ios xcgen
+ios-build-device-fast: rust-ios-device-fast alpine-fs llama-ios xcgen
 
 ios: ios-build-sim
 ios-sim: ios-build-sim
@@ -495,6 +496,15 @@ $(STAMP_BINDINGS_K): $(STAMP_SYNC) $(BOUNDARY_SOURCES)
 	@cd $(RUST_DIR) && ./generate-bindings.sh --kotlin-only
 	@touch $@
 
+llama-ios: $(STAMP_LLAMA_IOS)
+$(STAMP_LLAMA_IOS): $(IOS_SCRIPTS)/download-llama-xcframework.sh
+	@echo "==> Preparing llama.cpp iOS XCFramework..."
+	@$(IOS_SCRIPTS)/download-llama-xcframework.sh
+	@touch $@
+
+ish-dev-random:
+	@tools/scripts/ensure-ish-dev-random.sh
+
 xcgen: $(STAMP_XCGEN)
 $(STAMP_XCGEN): $(IOS_DIR)/project.yml
 	@echo "==> Regenerating Xcode project..."
@@ -661,7 +671,7 @@ test-android:
 	@echo "==> Running Android tests..."
 	@cd $(ANDROID_DIR) && ./gradlew :app:testDebugUnitTest
 
-ios-release-prep: rust-ios-device-release alpine-fs xcgen
+ios-release-prep: rust-ios-device-release alpine-fs llama-ios xcgen
 
 mac-release-prep: rust-mac-release xcgen
 

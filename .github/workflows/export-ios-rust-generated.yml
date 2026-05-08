@@ -1,0 +1,50 @@
+name: Export iOS Rust Runtime
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  export-generated-rust:
+    name: Export cached GeneratedRust
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Restore prebuilt Rust iOS device library
+        id: rust_generated_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/ios/GeneratedRust
+          key: ios-rust-generated-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          restore-keys: |
+            ios-rust-generated-${{ runner.os }}-
+
+      - name: Validate cached runtime
+        run: |
+          set -euo pipefail
+          test "${{ steps.rust_generated_cache.outputs.cache-hit }}" = "true" || {
+            echo "No exact GeneratedRust cache hit. Refusing to upload a partial or stale runtime." >&2
+            exit 1
+          }
+          test -s apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a
+          test -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
+          test -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
+          test -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+          find apps/ios/GeneratedRust -maxdepth 3 -type f -print
+
+      - name: Upload GeneratedRust artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Litter-Rust-iOS-GeneratedRust
+          path: apps/ios/GeneratedRust
+          if-no-files-found: error

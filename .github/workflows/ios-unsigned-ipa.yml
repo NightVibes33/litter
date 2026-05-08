@@ -124,6 +124,7 @@ jobs:
         with:
           path: |
             apps/ios/Resources/fs
+            apps/ios/Frameworks/llama.xcframework
             .build-stamps
             build/DerivedData
           key: ios-generated-assets-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**') }}
@@ -186,6 +187,11 @@ jobs:
         run: |
           set -euo pipefail
           time make alpine-fs
+
+      - name: Prepare llama.cpp XCFramework
+        run: |
+          set -euo pipefail
+          time make llama-ios
 
       - name: Generate Xcode project
         run: |

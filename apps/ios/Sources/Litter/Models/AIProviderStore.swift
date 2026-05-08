@@ -1,4 +1,5 @@
 import Combine
+import CryptoKit
 import Foundation
 import Security
 
@@ -120,7 +121,8 @@ final class AIProviderStore: ObservableObject {
             quantizationHint: DeviceCapabilityProfile.quantizationHint(from: fileName.lowercased()),
             importedAt: Date(),
             safety: safety.0,
-            recommendation: safety.1
+            recommendation: safety.1,
+            modalities: [.text]
         )
         localModels.removeAll { ($0.storageFileName ?? $0.fileName) == fileName }
         localModels.append(record)
@@ -129,11 +131,106 @@ final class AIProviderStore: ObservableObject {
         return record
     }
 
+    func searchHuggingFaceModels(query: String) async throws -> [HuggingFaceModelSearchResult] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        var components = URLComponents(string: "https://huggingface.co/api/models")!
+        components.queryItems = [
+            URLQueryItem(name: "search", value: trimmed),
+            URLQueryItem(name: "limit", value: "30"),
+            URLQueryItem(name: "filter", value: "gguf")
+        ]
+        guard let url = components.url else { return [] }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        try validate(response)
+        return try JSONDecoder().decode([HuggingFaceModelSearchResult].self, from: data)
+            .filter { ($0.tags ?? []).contains("gguf") || $0.modelId.lowercased().contains("gguf") }
+    }
+
+    func fetchHuggingFaceModelDetails(repository: String) async throws -> HuggingFaceModelDetails {
+        let cleaned = repository.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else {
+            throw NSError(domain: "AIProviderStore", code: 20, userInfo: [NSLocalizedDescriptionKey: "Missing model repository."])
+        }
+        guard let url = URL(string: "https://huggingface.co/api/models/\(cleaned)?blobs=true") else {
+            throw NSError(domain: "AIProviderStore", code: 21, userInfo: [NSLocalizedDescriptionKey: "Invalid model repository."])
+        }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        try validate(response)
+        return try JSONDecoder().decode(HuggingFaceModelDetails.self, from: data)
+    }
+
+    func downloadCatalogModel(_ item: LocalModelCatalogItem, capability: DeviceCapabilityProfile = .current()) async throws -> LocalModelRecord {
+        guard let url = item.downloadURL else {
+            throw NSError(domain: "AIProviderStore", code: 30, userInfo: [NSLocalizedDescriptionKey: "Invalid model download URL."])
+        }
+        let projector: DownloadedModelFile?
+        if let projectorURL = item.projectorDownloadURL, let projectorFileName = item.projectorFileName {
+            projector = try await downloadModelFile(url: projectorURL, fileName: projectorFileName)
+        } else {
+            projector = nil
+        }
+        let model = try await downloadModelFile(url: url, fileName: item.recommendedFileName)
+        return try await storeDownloadedModel(
+            model,
+            projector: projector,
+            sourceRepository: item.repository,
+            architecture: item.architecture,
+            modalities: item.modalities,
+            capability: capability
+        )
+    }
+
+    func downloadHuggingFaceFile(
+        repository: String,
+        file: HuggingFaceModelDetails.Sibling,
+        projector: HuggingFaceModelDetails.Sibling?,
+        architecture: String?,
+        capability: DeviceCapabilityProfile = .current()
+    ) async throws -> LocalModelRecord {
+        guard let url = URL(string: "https://huggingface.co/\(repository)/resolve/main/\(file.rfilename)") else {
+            throw NSError(domain: "AIProviderStore", code: 31, userInfo: [NSLocalizedDescriptionKey: "Invalid model file URL."])
+        }
+        let projectorDownload: DownloadedModelFile?
+        if let projector, let projectorURL = URL(string: "https://huggingface.co/\(repository)/resolve/main/\(projector.rfilename)") {
+            projectorDownload = try await downloadModelFile(url: projectorURL, fileName: projector.rfilename, expectedSHA256: projector.lfs?.sha256)
+        } else {
+            projectorDownload = nil
+        }
+        let model = try await downloadModelFile(url: url, fileName: file.rfilename, expectedSHA256: file.lfs?.sha256)
+        return try await storeDownloadedModel(
+            model,
+            projector: projectorDownload,
+            sourceRepository: repository,
+            architecture: architecture,
+            modalities: modalities(forArchitecture: architecture, hasProjector: projectorDownload != nil),
+            capability: capability
+        )
+    }
+
+    func downloadCustomModel(url: URL, capability: DeviceCapabilityProfile = .current()) async throws -> LocalModelRecord {
+        guard url.pathExtension.lowercased() == "gguf" else {
+            throw NSError(domain: "AIProviderStore", code: 32, userInfo: [NSLocalizedDescriptionKey: "Only direct .gguf URLs are supported."])
+        }
+        let model = try await downloadModelFile(url: url, fileName: url.lastPathComponent)
+        return try await storeDownloadedModel(
+            model,
+            projector: nil,
+            sourceRepository: nil,
+            architecture: nil,
+            modalities: [.text],
+            capability: capability
+        )
+    }
+
     func removeLocalModel(_ record: LocalModelRecord) throws {
         localModels.removeAll { $0.id == record.id }
         let fileURL = record.fileURL
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try FileManager.default.removeItem(at: fileURL)
+        }
+        if let projectorURL = record.projectorURL, FileManager.default.fileExists(atPath: projectorURL.path) {
+            try FileManager.default.removeItem(at: projectorURL)
         }
         try persistLocalModels()
     }
@@ -142,6 +239,95 @@ final class AIProviderStore: ObservableObject {
         let url = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func storeDownloadedModel(
+        _ model: DownloadedModelFile,
+        projector: DownloadedModelFile?,
+        sourceRepository: String?,
+        architecture: String?,
+        modalities: [LocalModelModality],
+        capability: DeviceCapabilityProfile
+    ) async throws -> LocalModelRecord {
+        let modelsDir = try localModelsDirectory()
+        let destination = try availableLocalModelDestination(preferredFileName: model.fileName, in: modelsDir)
+        let projectorDestination = try projector.map { try availableLocalModelDestination(preferredFileName: $0.fileName, in: modelsDir) }
+        let requiredBytes = model.sizeBytes + (projector?.sizeBytes ?? 0) + 2_000_000_000
+        guard capability.freeDiskBytes > requiredBytes else {
+            throw NSError(domain: "AIProviderStore", code: 33, userInfo: [NSLocalizedDescriptionKey: "Not enough free storage for this model and runtime cache."])
+        }
+        try await Task.detached(priority: .utility) {
+            let fileManager = FileManager.default
+            try fileManager.moveItem(at: model.temporaryURL, to: destination)
+            if let projector, let projectorDestination {
+                try fileManager.moveItem(at: projector.temporaryURL, to: projectorDestination)
+            }
+        }.value
+
+        let fileName = destination.lastPathComponent
+        let safety = capability.safety(forFileSize: model.sizeBytes, fileName: fileName)
+        let record = LocalModelRecord(
+            id: UUID(),
+            fileName: fileName,
+            storageFileName: fileName,
+            fileSizeBytes: model.sizeBytes,
+            parameterHint: DeviceCapabilityProfile.parameterHint(from: fileName.lowercased()),
+            quantizationHint: DeviceCapabilityProfile.quantizationHint(from: fileName.lowercased()),
+            importedAt: Date(),
+            safety: safety.0,
+            recommendation: safety.1,
+            sourceRepository: sourceRepository,
+            sourceURL: model.sourceURL.absoluteString,
+            architecture: architecture,
+            modalities: modalities,
+            projectorStorageFileName: projectorDestination?.lastPathComponent,
+            sha256: model.sha256,
+            downloadedAt: Date()
+        )
+        localModels.removeAll { ($0.storageFileName ?? $0.fileName) == fileName }
+        localModels.append(record)
+        try persistLocalModels()
+        ensureLocalProviderExists()
+        return record
+    }
+
+    private func downloadModelFile(url: URL, fileName: String, expectedSHA256: String? = nil) async throws -> DownloadedModelFile {
+        let (temporaryURL, response) = try await URLSession.shared.download(from: url)
+        try validate(response)
+        let attributes = try FileManager.default.attributesOfItem(atPath: temporaryURL.path)
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        let actualSHA = try sha256(of: temporaryURL)
+        if let expectedSHA256, !expectedSHA256.isEmpty, actualSHA.lowercased() != expectedSHA256.lowercased() {
+            try? FileManager.default.removeItem(at: temporaryURL)
+            throw NSError(domain: "AIProviderStore", code: 34, userInfo: [NSLocalizedDescriptionKey: "Downloaded file checksum did not match."])
+        }
+        return DownloadedModelFile(
+            temporaryURL: temporaryURL,
+            sourceURL: url,
+            fileName: fileName,
+            sizeBytes: size,
+            sha256: actualSHA
+        )
+    }
+
+    private func sha256(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
+            if data.isEmpty { break }
+            hasher.update(data: data)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func modalities(forArchitecture architecture: String?, hasProjector: Bool) -> [LocalModelModality] {
+        guard hasProjector else { return [.text] }
+        if architecture?.lowercased() == "gemma4" {
+            return [.text, .image, .audio, .video]
+        }
+        return [.text, .image]
     }
 
     private func availableLocalModelDestination(preferredFileName: String, in directory: URL) throws -> URL {
@@ -323,6 +509,14 @@ final class AIProviderStore: ObservableObject {
             userInfo: [NSLocalizedDescriptionKey: "Keychain error (\(status))"]
         )
     }
+}
+
+private struct DownloadedModelFile {
+    var temporaryURL: URL
+    var sourceURL: URL
+    var fileName: String
+    var sizeBytes: Int64
+    var sha256: String
 }
 
 private struct OpenAIModelsResponse: Decodable {

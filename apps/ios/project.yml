@@ -89,10 +89,13 @@ targets:
       - sdk: SystemConfiguration.framework
       - sdk: Network.framework
       - sdk: Metal.framework
+      - sdk: MetalKit.framework
+      - sdk: Accelerate.framework
       - package: Hairball
         product: HairballUI
       - package: WebRTC
         product: WebRTC
+      - framework: Frameworks/llama.xcframework
       - target: LitterLiveActivity
         embed: true
       - target: LitterWatch
