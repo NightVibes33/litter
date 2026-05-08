@@ -107,8 +107,9 @@ jobs:
           restore-keys: |
             ios-rust-target-${{ runner.os }}-
 
-      - name: Cache prebuilt Rust iOS device library
-        uses: actions/cache@v4
+      - name: Restore prebuilt Rust iOS device library
+        id: rust_generated_cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             apps/ios/GeneratedRust
@@ -170,6 +171,14 @@ jobs:
           else
             time ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
           fi
+
+      - name: Save prebuilt Rust iOS device library
+        if: steps.rust_prebuilt.outputs.available != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/ios/GeneratedRust
+          key: ${{ steps.rust_generated_cache.outputs.cache-primary-key }}
 
       - name: Prepare Alpine filesystem
         run: |
