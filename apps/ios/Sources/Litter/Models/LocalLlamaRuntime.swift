@@ -4,6 +4,7 @@ enum LocalLlamaRuntimeError: LocalizedError {
     case unavailable
     case missingModel
     case unsupportedAttachment(String)
+    case toolLoopUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -11,6 +12,8 @@ enum LocalLlamaRuntimeError: LocalizedError {
             return "The on-device llama.cpp runtime is not linked in this build."
         case .missingModel:
             return "The local model file is missing."
+        case .toolLoopUnavailable:
+            return "The local model tool loop is available, but llama.cpp token generation is not connected yet."
         case .unsupportedAttachment(let message):
             return message
         }
@@ -34,6 +37,8 @@ struct LocalLlamaGenerationRequest {
     var messages: [LocalLlamaMessage]
     var maxTokens: Int
     var temperature: Double
+    var tools: [LocalModelToolSpec] = LocalModelToolLoop.defaultToolSpecs
+    var toolPolicy: LocalModelToolPolicy = .readOnly
 }
 
 /// App-side contract for the native llama.cpp engine.
@@ -46,6 +51,14 @@ actor LocalLlamaRuntime {
     static let shared = LocalLlamaRuntime()
 
     private init() {}
+
+    func toolSystemMessage(for request: LocalLlamaGenerationRequest) -> LocalLlamaMessage {
+        LocalLlamaMessage(role: .system, text: LocalModelToolLoop.systemInstructions(for: request.tools))
+    }
+
+    func executeToolCall(_ call: LocalModelToolCall, policy: LocalModelToolPolicy = .readOnly) async -> LocalModelToolResult {
+        await LocalModelToolLoop.execute(call, policy: policy)
+    }
 
     func generate(_ request: LocalLlamaGenerationRequest) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in

@@ -210,7 +210,7 @@ struct AIProviderSettingsView: View {
 
     private var notesSection: some View {
         Section {
-            Text("PC-hosted Ollama or LM Studio is the best path for powerful local models. On-device models can use Litter tools when the local inference runtime is connected, but they should be chosen based on device RAM, Metal support, thermal state, and storage.")
+            Text("PC-hosted Ollama or LM Studio is the best path for powerful local models. On-device models now have a guarded local tool schema and parser for fakefs reads, but full Codex parity still requires llama.cpp token generation, approval UI, retries, and streaming tool-call state. Choose models based on device RAM, Metal support, thermal state, and storage.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
