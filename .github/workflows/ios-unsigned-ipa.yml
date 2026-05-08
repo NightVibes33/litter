@@ -40,6 +40,9 @@ jobs:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       CARGO_INCREMENTAL: "0"
       CARGO_BUILD_JOBS: "2"
+      CARGO_NET_RETRY: "10"
+      CARGO_HTTP_TIMEOUT: "120"
+      CARGO_HTTP_MULTIPLEXING: "false"
       IOS_RUST_PROFILE: mobile-release
       RUSTC_WRAPPER: ""
       SCCACHE_DISABLE: "1"
@@ -115,6 +118,21 @@ jobs:
           key: ios-generated-assets-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'patches/codex/**') }}
           restore-keys: |
             ios-generated-assets-${{ runner.os }}-
+
+      - name: Warm Rust dependency cache
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --silent --show-error --connect-timeout 15 --max-time 60 https://index.crates.io/config.json >/dev/null; then
+              break
+            fi
+            echo "crates.io DNS/network check failed, retry $attempt/5" >&2
+            sleep $((attempt * 10))
+          done
+          time cargo fetch \
+            --manifest-path shared/rust-bridge/Cargo.toml \
+            --target aarch64-apple-ios \
+            --target i686-unknown-linux-musl
 
       - name: Build Rust iOS device library
         run: |
