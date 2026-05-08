@@ -11,6 +11,18 @@ on:
         options:
           - fast-device
           - release-device
+  push:
+    branches:
+      - main
+    paths:
+      - 'Makefile'
+      - 'Package.swift'
+      - 'apps/ios/**'
+      - 'patches/codex/**'
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/codex/**'
+      - 'tools/scripts/**'
+      - '.github/workflows/ios-unsigned-ipa.yml'
 
 permissions:
   contents: read
@@ -91,7 +103,8 @@ jobs:
       - name: Prepare unsigned device build assets
         run: |
           set -euo pipefail
-          if [ "${{ inputs.build_mode }}" = "fast-device" ]; then
+          BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
+          if [ "$BUILD_MODE" = "fast-device" ]; then
             ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --skip-bindings
           else
             ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
@@ -143,7 +156,7 @@ jobs:
             "version": "$VERSION",
             "build": "$BUILD",
             "commit": "${GITHUB_SHA}",
-            "buildMode": "${{ inputs.build_mode }}",
+            "buildMode": "${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}",
             "minimumIOSFamily": "26",
             "xcode": "26.3",
             "artifact": "$IPA_NAME",
