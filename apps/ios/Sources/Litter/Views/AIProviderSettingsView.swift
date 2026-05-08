@@ -155,8 +155,19 @@ struct AIProviderSettingsView: View {
             NavigationLink {
                 LocalModelSearchView()
             } label: {
-                Label("Download or Search Models", systemImage: "magnifyingglass.circle")
-                    .foregroundColor(LitterTheme.accent)
+                HStack(spacing: 12) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Download Local Models")
+                            .litterFont(.subheadline, weight: .semibold)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Recommended GGUFs, Hugging Face search, and direct URLs")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
@@ -168,7 +179,7 @@ struct AIProviderSettingsView: View {
             }
 
             if providerStore.localModels.isEmpty {
-                Text("No on-device models imported yet. Use quantized GGUF files; if a model is too large, run it on your PC with Ollama instead.")
+                Text("No on-device models installed yet. Tap Download Local Models to get a recommended GGUF, search Hugging Face, or paste a direct model URL.")
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.textMuted)
                     .listRowBackground(LitterTheme.surface.opacity(0.6))

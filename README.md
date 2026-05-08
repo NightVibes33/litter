@@ -54,7 +54,7 @@ The Files button on the home toolbar opens a real local iSH file workspace roote
 
 ## AI Providers and Local Models
 
-Litter supports a provider foundation for hosted OpenAI, OpenAI-compatible LAN endpoints such as Ollama or LM Studio, and on-device GGUF model imports. PC-hosted endpoints should use an OpenAI-compatible `/v1` base URL such as `http://192.168.1.20:11434/v1`. On-device model imports are checked against the current device profile, including RAM, storage, thermal state, Low Power Mode, and Metal availability, so the app can recommend safe model sizes before users try to load them. Re-importing a model with the same filename creates a numbered copy instead of replacing the existing GGUF record.
+Litter supports a provider foundation for hosted OpenAI, OpenAI-compatible LAN endpoints such as Ollama or LM Studio, and on-device GGUF model imports/downloads. PC-hosted endpoints should use an OpenAI-compatible `/v1` base URL such as `http://192.168.1.20:11434/v1`. On-device model downloads support recommended GGUF catalog entries, Hugging Face GGUF search, and direct GGUF URLs, then check the current device profile including RAM, storage, thermal state, Low Power Mode, and Metal availability before install. Re-importing or re-downloading a model with the same filename creates a numbered copy instead of replacing the existing GGUF record.
 
 ## iOS Local Runtime Notes
 
@@ -62,7 +62,7 @@ On iOS, local terminal commands run inside an embedded iSH Alpine Linux fakefs. 
 
 ## Unsigned iOS IPA
 
-The workflow at `.github/workflows/ios-unsigned-ipa.yml` builds a real-device unsigned IPA artifact named `Litter-iOS26-Unsigned-SideStore-AltStore.ipa`. It uses the repo's iOS 26 build lane on GitHub-hosted `macos-26` with Xcode `26.3`, packages `Payload/Litter.app`, and removes signing leftovers. New pushes still trigger CI, but in-progress Rust prebuild runs are not cancelled so the generated device-library cache can finish saving. The artifact is intended for SideStore/AltStore-style re-signing; it will not install directly on a stock iPhone while unsigned.
+The workflow at `.github/workflows/ios-unsigned-ipa.yml` builds a real-device unsigned IPA artifact named `Litter-iOS26-Unsigned-SideStore-AltStore.ipa`. It uses the repo's iOS 26 build lane on GitHub-hosted `macos-26` with Xcode `26.3`, packages `Payload/Litter.app`, and removes signing leftovers. New pushes still trigger CI, but in-progress runs are not cancelled. The Rust cache now stores both `apps/ios/GeneratedRust` and the generated Swift UniFFI binding so restored static libraries are accepted, and llama.cpp has its own XCFramework cache. The artifact is intended for SideStore/AltStore-style re-signing; it will not install directly on a stock iPhone while unsigned.
 
 ## Contributing
 

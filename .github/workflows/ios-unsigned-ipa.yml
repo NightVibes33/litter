@@ -116,8 +116,10 @@ jobs:
         with:
           path: |
             apps/ios/GeneratedRust
-          key: ios-rust-generated-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+          key: ios-rust-generated-v2-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
           restore-keys: |
+            ios-rust-generated-v2-${{ runner.os }}-
             ios-rust-generated-${{ runner.os }}-
 
       - name: Cache generated iOS assets
@@ -125,27 +127,95 @@ jobs:
         with:
           path: |
             apps/ios/Resources/fs
-            apps/ios/Frameworks/llama.xcframework
-            apps/ios/Frameworks/llama.version
-            ~/Library/Caches/litter-build/llama.cpp
             .build-stamps
             build/DerivedData
           key: ios-generated-assets-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**') }}
           restore-keys: |
             ios-generated-assets-${{ runner.os }}-
 
+      - name: Restore prebuilt llama.cpp XCFramework
+        id: llama_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/ios/Frameworks/llama.xcframework
+            apps/ios/Frameworks/llama.version
+            .build-stamps/llama-ios-b9070
+            ~/Library/Caches/litter-build/llama.cpp
+          key: ios-llama-xcframework-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/build-llama-xcframework.sh') }}
+          restore-keys: |
+            ios-llama-xcframework-v1-${{ runner.os }}-
+
+      - name: Check prebuilt llama.cpp XCFramework
+        id: llama_prebuilt
+        run: |
+          set -euo pipefail
+          if [ -d apps/ios/Frameworks/llama.xcframework ] && [ -f apps/ios/Frameworks/llama.version ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Using cached llama.cpp XCFramework."
+            cat apps/ios/Frameworks/llama.version
+            find apps/ios/Frameworks/llama.xcframework -maxdepth 3 -type f -print | sed -n '1,20p'
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No valid cached llama.cpp XCFramework found."
+          fi
+
+      - name: Repair restored Rust binding cache
+        run: |
+          set -euo pipefail
+          BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
+          if [ "$BUILD_MODE" = "fast-device" ]             && [ -s apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a ]             && [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h ]             && [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap ]             && [ ! -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
+            echo "Rust staticlib cache restored, but the generated Swift binding is missing."
+            echo "Regenerating Swift UniFFI binding only instead of rebuilding the iOS Rust staticlib."
+            time make bindings-swift
+          else
+            echo "No Rust binding cache repair needed."
+          fi
+
       - name: Check prebuilt Rust device library
         id: rust_prebuilt
         run: |
           set -euo pipefail
           BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
-          if [ "$BUILD_MODE" = "fast-device" ]             && [ -s apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a ]             && [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h ]             && [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap ]             && [ -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
+          if [ "$BUILD_MODE" != "fast-device" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Release-device mode intentionally rebuilds Rust."
+            exit 0
+          fi
+
+          missing=0
+          require_file() {
+            local path="$1"
+            if [ ! -f "$path" ]; then
+              echo "::warning::Missing Rust cache file: $path"
+              missing=1
+            else
+              ls -lh "$path"
+            fi
+          }
+          require_nonempty() {
+            local path="$1"
+            if [ ! -s "$path" ]; then
+              echo "::warning::Missing or empty Rust cache file: $path"
+              missing=1
+            else
+              ls -lh "$path"
+            fi
+          }
+
+          require_nonempty apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a
+          require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
+          require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
+          require_file apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+
+          if [ "$missing" -eq 0 ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
             echo "Using cached prebuilt Rust iOS device library."
-            ls -lh apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "No valid cached prebuilt Rust iOS device library found."
+            echo "GeneratedRust contents:"
+            find apps/ios/GeneratedRust -maxdepth 3 -type f -print 2>/dev/null | sed -n '1,80p' || true
           fi
 
       - name: Warm Rust dependency cache
@@ -179,11 +249,12 @@ jobs:
           fi
 
       - name: Save prebuilt Rust iOS device library
-        if: steps.rust_prebuilt.outputs.available != 'true'
+        if: steps.rust_generated_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
             apps/ios/GeneratedRust
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
           key: ${{ steps.rust_generated_cache.outputs.cache-primary-key }}
 
       - name: Prepare Alpine filesystem
@@ -192,9 +263,21 @@ jobs:
           time make alpine-fs
 
       - name: Build llama.cpp XCFramework
+        if: steps.llama_prebuilt.outputs.available != 'true'
         run: |
           set -euo pipefail
           time make llama-ios
+
+      - name: Save prebuilt llama.cpp XCFramework
+        if: steps.llama_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/ios/Frameworks/llama.xcframework
+            apps/ios/Frameworks/llama.version
+            .build-stamps/llama-ios-b9070
+            ~/Library/Caches/litter-build/llama.cpp
+          key: ${{ steps.llama_cache.outputs.cache-primary-key }}
 
       - name: Generate Xcode project
         run: |

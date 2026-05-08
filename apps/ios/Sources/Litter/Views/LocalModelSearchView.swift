@@ -14,6 +14,7 @@ struct LocalModelSearchView: View {
 
     var body: some View {
         List {
+            deviceFitSection
             recommendedSection
             searchSection
             customURLSection
@@ -27,6 +28,26 @@ struct LocalModelSearchView: View {
             if results.isEmpty {
                 await search()
             }
+        }
+    }
+
+    private var deviceFitSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(capability.localInferenceTier.displayName, systemImage: capability.hasMetal ? "gpu" : "exclamationmark.triangle")
+                    .litterFont(.subheadline, weight: .semibold)
+                    .foregroundColor(capability.hasMetal ? LitterTheme.accent : LitterTheme.danger)
+                Text("Downloads are checked against this device's RAM, Metal support, thermal state, and free storage before install.")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textSecondary)
+                Text("Large models may still be better on an Ollama or LM Studio server, especially if Low Power Mode or thermal pressure is active.")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textMuted)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("Device Fit")
+                .foregroundColor(LitterTheme.textSecondary)
         }
     }
 
@@ -65,7 +86,7 @@ struct LocalModelSearchView: View {
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
         } header: {
-            Text("Recommended")
+            Text("Recommended Downloads")
                 .foregroundColor(LitterTheme.textSecondary)
         }
     }
