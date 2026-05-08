@@ -53,6 +53,7 @@ jobs:
           targets: aarch64-apple-ios-macabi,x86_64-apple-ios-macabi,i686-unknown-linux-musl
 
       - name: Setup sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
         uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Prepare Mac Catalyst release assets
@@ -60,7 +61,6 @@ jobs:
           CARGO_INCREMENTAL: "0"
           CARGO_BUILD_JOBS: "1"
           IOS_RUST_PROFILE: mobile-release
-          RUSTC_WRAPPER: sccache
         run: |
           set -euo pipefail
           ./apps/ios/scripts/build-rust.sh --preserve-current --macabi-only
@@ -180,7 +180,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           # Optional Developer ID provisioning profile. Required if the
-          # entitlements need APNs / iCloud / Push / etc. — those caps fail
+          # entitlements need APNs / iCloud / Push / etc. â those caps fail
           # to embed without a matching profile even under Developer ID.
           if [[ -n "${MAC_DEVELOPER_ID_PROFILE_B64:-}" ]]; then
             PROFILE_PATH="$RUNNER_TEMP/mac-devid.provisionprofile"
@@ -194,7 +194,7 @@ jobs:
             echo "APP_PROVISIONING_PROFILE_SPECIFIER=$profile_name" >> "$GITHUB_ENV"
             echo "EXPORT_SIGNING_STYLE=manual" >> "$GITHUB_ENV"
           else
-            # No explicit profile — let xcodebuild handle it via -allowProvisioningUpdates.
+            # No explicit profile â let xcodebuild handle it via -allowProvisioningUpdates.
             echo "EXPORT_SIGNING_STYLE=automatic" >> "$GITHUB_ENV"
           fi
 
