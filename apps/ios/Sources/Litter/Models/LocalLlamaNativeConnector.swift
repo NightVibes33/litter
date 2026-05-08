@@ -8,6 +8,9 @@ enum LocalLlamaNativeConnector {
         #if os(iOS) && !targetEnvironment(macCatalyst)
         guard LitterLlamaBridge.isAvailable() else { return }
         Task.detached(priority: .utility) {
+            await LocalLlamaRuntime.shared.configureCancellationHandler {
+                LitterLlamaBridge.unload()
+            }
             await LocalLlamaRuntime.shared.configureTokenGenerator { request, messages, onToken in
                 try await Task.detached(priority: .userInitiated) {
                     let objcMessages = messages.map { message in

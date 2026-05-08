@@ -108,15 +108,21 @@ actor LocalLlamaRuntime {
         _ messages: [LocalLlamaMessage],
         _ onToken: @escaping @Sendable (String) -> Void
     ) async throws -> String
+    typealias CancellationHandler = @Sendable () -> Void
 
     static let shared = LocalLlamaRuntime()
 
     private var tokenGenerator: TokenGenerator?
+    private var cancellationHandler: CancellationHandler?
 
     private init() {}
 
     func configureTokenGenerator(_ generator: TokenGenerator?) {
         tokenGenerator = generator
+    }
+
+    func configureCancellationHandler(_ handler: CancellationHandler?) {
+        cancellationHandler = handler
     }
 
     func toolSystemMessage(for request: LocalLlamaGenerationRequest) -> LocalLlamaMessage {
@@ -179,10 +185,43 @@ actor LocalLlamaRuntime {
         }
     }
 
-    func cancel() async {}
+    func cancel() async {
+        cancellationHandler?()
+    }
 
     func unload() async {
+        cancellationHandler?()
         tokenGenerator = nil
+        cancellationHandler = nil
+    }
+
+    func smokeTest(_ model: LocalModelRecord, maxTokens: Int = 8) async throws -> String {
+        let request = LocalLlamaGenerationRequest(
+            model: model,
+            projector: nil,
+            messages: [
+                LocalLlamaMessage(role: .system, text: "You are validating that this local model can run. Reply with one short sentence."),
+                LocalLlamaMessage(role: .user, text: "Say: model ready")
+            ],
+            maxTokens: maxTokens,
+            temperature: 0,
+            tools: [],
+            toolPolicy: .readOnly,
+            options: LocalLlamaGenerationOptions(
+                contextTokens: max(512, min(DeviceCapabilityProfile.current().recommendedContextTokens, 2_048)),
+                allowToolCalls: false,
+                maxToolRounds: 0,
+                retryPolicy: .disabled
+            ),
+            approvalHandler: nil
+        )
+        var output = ""
+        for try await token in generate(request) {
+            output += token
+        }
+        let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw LocalLlamaRuntimeError.toolLoopUnavailable }
+        return trimmed
     }
 
     private static func runToolAwareGeneration(

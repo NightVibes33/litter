@@ -149,6 +149,31 @@ enum LocalModelSafety: String, Codable, CaseIterable {
     }
 }
 
+enum LocalModelValidationStatus: Codable, Equatable {
+    case untested
+    case validating
+    case verified(Date)
+    case failed(String, Date)
+
+    var displayName: String {
+        switch self {
+        case .untested: return "Not verified"
+        case .validating: return "Verifying"
+        case .verified: return "Verified runnable"
+        case .failed: return "Failed validation"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .untested: return "Run a smoke test before relying on this model."
+        case .validating: return "Loading model and generating a short test response."
+        case .verified(let date): return "Last verified \(date.formatted(date: .abbreviated, time: .shortened))."
+        case .failed(let reason, _): return reason
+        }
+    }
+}
+
 enum LocalModelModality: String, Codable, CaseIterable, Identifiable {
     case text
     case image
@@ -184,6 +209,7 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
     var projectorStorageFileName: String?
     var sha256: String?
     var downloadedAt: Date?
+    var validationStatus: LocalModelValidationStatus
 
     init(
         id: UUID,
@@ -201,7 +227,8 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
         modalities: [LocalModelModality] = [.text],
         projectorStorageFileName: String? = nil,
         sha256: String? = nil,
-        downloadedAt: Date? = nil
+        downloadedAt: Date? = nil,
+        validationStatus: LocalModelValidationStatus = .untested
     ) {
         self.id = id
         self.fileName = fileName
@@ -219,11 +246,12 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
         self.projectorStorageFileName = projectorStorageFileName
         self.sha256 = sha256
         self.downloadedAt = downloadedAt
+        self.validationStatus = validationStatus
     }
 
     enum CodingKeys: String, CodingKey {
         case id, fileName, storageFileName, fileSizeBytes, parameterHint, quantizationHint, importedAt, safety, recommendation
-        case sourceRepository, sourceURL, architecture, modalities, projectorStorageFileName, sha256, downloadedAt
+        case sourceRepository, sourceURL, architecture, modalities, projectorStorageFileName, sha256, downloadedAt, validationStatus
     }
 
     init(from decoder: Decoder) throws {
@@ -244,6 +272,7 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
         projectorStorageFileName = try container.decodeIfPresent(String.self, forKey: .projectorStorageFileName)
         sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
         downloadedAt = try container.decodeIfPresent(Date.self, forKey: .downloadedAt)
+        validationStatus = try container.decodeIfPresent(LocalModelValidationStatus.self, forKey: .validationStatus) ?? .untested
     }
 
     var fileURL: URL {
@@ -265,6 +294,11 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
 
     var supportsMultimodalInput: Bool {
         modalities.contains(.image) || modalities.contains(.audio) || modalities.contains(.video)
+    }
+
+    var canRunLocally: Bool {
+        if case .verified = validationStatus { return true }
+        return false
     }
 }
 
