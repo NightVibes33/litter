@@ -151,7 +151,7 @@ STAMP_SYNC := $(STAMPS)/sync
 STAMP_BINDINGS_S := $(STAMPS)/bindings-swift
 STAMP_BINDINGS_K := $(STAMPS)/bindings-kotlin
 STAMP_XCGEN := $(STAMPS)/xcgen
-STAMP_LLAMA_IOS := $(STAMPS)/llama-ios-b9070
+STAMP_LLAMA_IOS := $(STAMPS)/llama-ios-turboquant-main
 
 # Pinned release tag of the prebuilt Alpine rootfs tarball (still hosted
 # on the dnakov/litter-ish releases page). The iSH kernel itself is built

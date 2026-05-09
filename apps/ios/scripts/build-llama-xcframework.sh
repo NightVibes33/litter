@@ -6,10 +6,11 @@ IOS_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 FRAMEWORKS_DIR="$IOS_DIR/Frameworks"
 DEST="$FRAMEWORKS_DIR/llama.xcframework"
 
-LLAMA_VERSION="${LLAMA_CPP_VERSION:-b9070}"
-LLAMA_REPO="${LLAMA_CPP_REPO:-https://github.com/ggml-org/llama.cpp.git}"
+LLAMA_VERSION="${LLAMA_CPP_VERSION:-main}"
+LLAMA_REPO="${LLAMA_CPP_REPO:-https://github.com/animehacker/llama-turboquant.git}"
+LLAMA_SOURCE_FLAVOR="${LLAMA_CPP_FLAVOR:-turboquant}"
 CACHE_DIR="${LITTER_LLAMA_CACHE_DIR:-${HOME}/Library/Caches/litter-build/llama.cpp}"
-SOURCE_DIR="$CACHE_DIR/source-$LLAMA_VERSION"
+SOURCE_DIR="$CACHE_DIR/source-$LLAMA_SOURCE_FLAVOR-$LLAMA_VERSION"
 BUILD_OUTPUT="$SOURCE_DIR/build-apple/llama.xcframework"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -28,12 +29,13 @@ mkdir -p "$FRAMEWORKS_DIR" "$CACHE_DIR"
 
 if [[ ! -d "$SOURCE_DIR/.git" ]]; then
   rm -rf "$SOURCE_DIR"
-  echo "==> Cloning llama.cpp $LLAMA_VERSION..."
+  echo "==> Cloning llama.cpp $LLAMA_SOURCE_FLAVOR from $LLAMA_REPO ($LLAMA_VERSION)..."
   git clone --depth 1 --branch "$LLAMA_VERSION" "$LLAMA_REPO" "$SOURCE_DIR"
 else
-  echo "==> Updating cached llama.cpp source..."
-  git -C "$SOURCE_DIR" fetch --depth 1 origin "refs/tags/$LLAMA_VERSION:refs/tags/$LLAMA_VERSION"
-  git -C "$SOURCE_DIR" checkout --detach "$LLAMA_VERSION"
+  echo "==> Updating cached llama.cpp $LLAMA_SOURCE_FLAVOR source..."
+  git -C "$SOURCE_DIR" remote set-url origin "$LLAMA_REPO"
+  git -C "$SOURCE_DIR" fetch --depth 1 origin "$LLAMA_VERSION"
+  git -C "$SOURCE_DIR" checkout --detach FETCH_HEAD
 fi
 
 echo "==> Building llama.cpp Apple XCFramework from source..."
@@ -49,5 +51,11 @@ fi
 
 rm -rf "$DEST"
 rsync -a "$BUILD_OUTPUT/" "$DEST/"
-echo "$LLAMA_VERSION" > "$FRAMEWORKS_DIR/llama.version"
-echo "==> Installed runner-built $DEST"
+RESOLVED_SHA="$(git -C "$SOURCE_DIR" rev-parse --short=12 HEAD)"
+{
+  echo "flavor=$LLAMA_SOURCE_FLAVOR"
+  echo "repo=$LLAMA_REPO"
+  echo "ref=$LLAMA_VERSION"
+  echo "commit=$RESOLVED_SHA"
+} > "$FRAMEWORKS_DIR/llama.version"
+echo "==> Installed runner-built $DEST from $LLAMA_SOURCE_FLAVOR@$RESOLVED_SHA"

@@ -135,11 +135,11 @@ jobs:
           path: |
             apps/ios/Frameworks/llama.xcframework
             apps/ios/Frameworks/llama.version
-            .build-stamps/llama-ios-b9070
+            .build-stamps/llama-ios-turboquant-main
             ~/Library/Caches/litter-build/llama.cpp
-          key: ios-llama-xcframework-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/build-llama-xcframework.sh') }}
+          key: ios-llama-turboquant-xcframework-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/build-llama-xcframework.sh') }}
           restore-keys: |
-            ios-llama-xcframework-v1-${{ runner.os }}-
+            ios-llama-turboquant-xcframework-v1-${{ runner.os }}-
 
       - name: Check prebuilt llama.cpp XCFramework
         id: llama_prebuilt
@@ -259,6 +259,9 @@ jobs:
         if: steps.llama_prebuilt.outputs.available != 'true'
         run: |
           set -euo pipefail
+          export LLAMA_CPP_FLAVOR=turboquant
+          export LLAMA_CPP_REPO=https://github.com/animehacker/llama-turboquant.git
+          export LLAMA_CPP_VERSION=main
           time make llama-ios
 
       - name: Save prebuilt llama.cpp XCFramework
@@ -268,7 +271,7 @@ jobs:
           path: |
             apps/ios/Frameworks/llama.xcframework
             apps/ios/Frameworks/llama.version
-            .build-stamps/llama-ios-b9070
+            .build-stamps/llama-ios-turboquant-main
             ~/Library/Caches/litter-build/llama.cpp
           key: ${{ steps.llama_cache.outputs.cache-primary-key }}
 
