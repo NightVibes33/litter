@@ -33,8 +33,8 @@ struct HeaderView: View {
         } label: {
             expandedHeaderLabel
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: isRegularSurface ? 320 : 240, alignment: .center)
+            .padding(.vertical, 8)
+            .frame(maxWidth: isRegularSurface ? 380 : 300, minHeight: 44, alignment: .center)
         }
         .layoutPriority(-1)
         .buttonStyle(.plain)
@@ -66,29 +66,48 @@ struct HeaderView: View {
     }
 
     private var primaryHeaderRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             statusDot
 
             if fastMode {
                 Image(systemName: "bolt.fill")
                     .font(LitterFont.styled(size: 10, weight: .semibold))
                     .foregroundColor(LitterTheme.warning)
+                    .frame(width: 12, height: 18)
             }
 
-            Text(sessionModelLabel)
+            Text(sessionRuntimeLabel)
+                .font(LitterFont.styled(size: 10, weight: .bold))
+                .foregroundColor(LitterTheme.accent)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: true)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(LitterTheme.accent.opacity(0.14), in: Capsule())
+
+            Text(sessionModelNameLabel)
+                .font(LitterFont.styled(size: 14, weight: .semibold))
                 .foregroundColor(LitterTheme.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .minimumScaleFactor(isRegularSurface ? 0.9 : 0.8)
                 .allowsTightening(true)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+
             Text(sessionReasoningLabel)
+                .font(LitterFont.styled(size: 11, weight: .semibold))
                 .foregroundColor(LitterTheme.textSecondary)
-                .allowsTightening(true)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: true)
+
             Image(systemName: "chevron.down")
                 .font(LitterFont.styled(size: 10, weight: .semibold))
                 .foregroundColor(LitterTheme.textSecondary)
                 .rotationEffect(.degrees(appState.showModelSelector ? 180 : 0))
+                .frame(width: 12, height: 18)
         }
-        .font(LitterFont.styled(size: 14, weight: .semibold))
-        .lineLimit(1)
-        .minimumScaleFactor(isRegularSurface ? 1.0 : 0.75)
+        .frame(maxWidth: .infinity, minHeight: 22, alignment: .center)
     }
 
     private var secondaryHeaderRow: some View {
@@ -173,10 +192,17 @@ struct HeaderView: View {
         }
     }
 
-    private var sessionModelLabel: String {
+    private var sessionRuntimeLabel: String {
         let pendingModel = appState.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !pendingModel.isEmpty {
-            let modelLabel: String
+            return runtimeLabel(forSelection: pendingModel)
+        }
+        return runtimeLabel(forSelection: thread.model ?? thread.info.model)
+    }
+
+    private var sessionModelNameLabel: String {
+        let pendingModel = appState.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pendingModel.isEmpty {
             if let model = availableModels.first(where: {
                 modelMatchesSelection(
                     $0,
@@ -184,16 +210,13 @@ struct HeaderView: View {
                     runtime: appState.selectedAgentRuntimeKind
                 )
             }) {
-                modelLabel = model.displayName
-            } else {
-                modelLabel = pendingModel
+                return model.displayName
             }
-            return "\(runtimeLabel(forSelection: pendingModel)) • \(modelLabel)"
+            return pendingModel
         }
 
         let threadModel = thread.displayModelLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let modelLabel = threadModel.isEmpty ? "litter" : threadModel
-        return "\(runtimeLabel(forSelection: thread.model ?? thread.info.model)) • \(modelLabel)"
+        return threadModel.isEmpty ? "litter" : threadModel
     }
 
     private func runtimeLabel(forSelection selection: String?) -> String {
@@ -616,6 +639,9 @@ struct InlineModelSelectorView: View {
                                         Text(model.displayName)
                                             .litterFont(.footnote)
                                             .foregroundColor(LitterTheme.textPrimary)
+                                            .lineLimit(1)
+                                            .truncationMode(.tail)
+                                            .layoutPriority(1)
                                         if model.isDefault {
                                             Text("default")
                                                 .litterFont(.caption2, weight: .medium)
@@ -629,6 +655,7 @@ struct InlineModelSelectorView: View {
                                     Text(model.description)
                                         .litterFont(.caption2)
                                         .foregroundColor(LitterTheme.textSecondary)
+                                        .lineLimit(2)
                                 }
                                 Spacer()
                                 if modelMatchesSelection(
