@@ -7,7 +7,7 @@ ZIP_PATH="${LITTER_BUILDKIT_ZIP:-${ROOT_DIR}/artifacts/buildkit/LitterBuildKitAs
 CORECOMPILER_FRAMEWORK="${CORECOMPILER_FRAMEWORK:-}"
 NATIVE_DRIVER_FRAMEWORK="${LITTER_BUILDKIT_NATIVE_FRAMEWORK:-}"
 NYXIAN_RUNNER="${NYXIAN_BUILDKIT_RUNNER:-}"
-NATIVE_MODE="${LITTER_BUILDKIT_NATIVE_MODE:-runner}"
+NATIVE_MODE="${LITTER_BUILDKIT_NATIVE_MODE:-inprocess}"
 SUPPORT_LIBS="${CORECOMPILER_SUPPORT_LIBS:-}"
 IPHONEOS_SDK_PATH="${IPHONEOS_SDK_PATH:-}"
 SDK_VERSION="${LITTER_BUILDKIT_SDK_VERSION:-26.4}"
@@ -39,6 +39,11 @@ if [[ -z "$NATIVE_DRIVER_FRAMEWORK" ]]; then
 fi
 require_path "LitterBuildKitNative.framework" "$NATIVE_DRIVER_FRAMEWORK"
 require_path "CoreCompilerSupportLibs" "$SUPPORT_LIBS"
+if [[ "$NATIVE_MODE" = "runner" && -z "$NYXIAN_RUNNER" ]]; then
+  echo "error: LITTER_BUILDKIT_NATIVE_MODE=runner requires NYXIAN_BUILDKIT_RUNNER=/path/to/runner" >&2
+  echo "       Use LITTER_BUILDKIT_NATIVE_MODE=inprocess for the embedded CoreCompiler bridge." >&2
+  exit 1
+fi
 if [[ -n "$NYXIAN_RUNNER" ]]; then
   require_path "Nyxian BuildKit runner" "$NYXIAN_RUNNER"
 fi
@@ -98,7 +103,7 @@ manifest = {
         "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
         "sdkPath": f"SDK/iPhoneOS{sdk_version}.sdk",
     },
-    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package"] + (["nyxian-runner"] if runner_rel else []) + (["in-process-native-driver"] if native_mode == "inprocess" else ["runner-native-driver"]),
+    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package"] + (["nyxian-runner"] if runner_rel else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
     "requiredPaths": required,
     "sha256": hashes,
 }

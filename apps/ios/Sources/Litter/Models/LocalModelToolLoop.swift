@@ -160,6 +160,13 @@ enum LocalModelToolLoop {
             """
         ),
         LocalModelToolSpec(
+            name: "nyxian_status",
+            description: "Show the Nyxian/CoreCompiler bridge readiness, Swift direct execution capability, IPA build capability, and missing requirements.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{}}
+            """
+        ),
+        LocalModelToolSpec(
             name: "fs_doctor",
             description: "Repair and validate important iSH fakefs paths such as /dev/random, /dev/urandom, /tmp, and /usr/local/bin.",
             inputSchemaJSON: """
@@ -260,7 +267,7 @@ enum LocalModelToolLoop {
 
     static func looksLikeMalformedToolRequest(_ text: String) -> Bool {
         let lowered = text.lowercased()
-        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") || lowered.contains("swift_check") || lowered.contains("ipa_build") || lowered.contains("buildkit") || lowered.contains("dev_bootstrap") || lowered.contains("env_report") else {
+        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") || lowered.contains("swift_check") || lowered.contains("ipa_build") || lowered.contains("buildkit") || lowered.contains("nyxian_status") || lowered.contains("dev_bootstrap") || lowered.contains("env_report") else {
             return false
         }
         return parseToolCalls(from: text).isEmpty
@@ -268,7 +275,7 @@ enum LocalModelToolLoop {
 
     static func risk(for call: LocalModelToolCall) -> LocalModelToolRisk {
         switch call.name {
-        case "list_dir", "read_file", "search_files", "grep_text", "repo_map", "env_report", "buildkit_status", "fs_doctor", "swift_check", "build_status":
+        case "list_dir", "read_file", "search_files", "grep_text", "repo_map", "env_report", "buildkit_status", "nyxian_status", "fs_doctor", "swift_check", "build_status":
             return .safeRead
         case "shell", "dev_bootstrap":
             return .shell
@@ -353,6 +360,10 @@ enum LocalModelToolLoop {
             return result.output
         case "buildkit_status":
             let result = await IshFS.run("litter-buildkit --timeout 30")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "nyxian_status":
+            let result = await IshFS.run("litter-nyxian-status --timeout 60")
             guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
             return result.output
         case "fs_doctor":

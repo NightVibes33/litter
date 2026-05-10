@@ -95,6 +95,19 @@ struct BuildKitSettingsView: View {
                     .foregroundStyle(LitterTheme.accent)
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                Task {
+                    await LitterBuildKit.shared.installFakefsCommandShims()
+                    let result = await IshFS.run("litter-nyxian-status --timeout 60")
+                    lastActionOutput = result.output
+                    await refresh()
+                }
+            } label: {
+                Label("Run Nyxian Status", systemImage: "hammer")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("On-device Swift BuildKit")
                 .foregroundStyle(LitterTheme.textSecondary)
@@ -230,6 +243,8 @@ struct BuildKitSettingsView: View {
             statusRow("Fakefs shims", status?.commandShimsInstalled == true ? "Installed" : "Missing")
             statusRow("Request monitor", status?.requestMonitorRunning == true ? "Running" : "Stopped")
             statusRow("Private assets", status?.privateAssetsInstalled == true ? "Installed" : "Missing")
+            statusRow("Swift direct build", status?.canRunSwiftDirectly == true ? "Ready" : "Blocked")
+            statusRow("Unsigned IPA build", status?.canBuildUnsignedIPA == true ? "Ready" : "Blocked")
             statusRow("CoreCompiler", status?.nativeCompilerAssetsInstalled == true ? "Installed" : "Missing")
             statusRow("Native driver", status?.nativeDriverInstalled == true ? "Installed" : "Missing")
             statusRow("Driver loadable", status?.nativeDriverLoadable == true ? "Ready" : "Not ready")
@@ -254,6 +269,14 @@ struct BuildKitSettingsView: View {
                 statusRow("Asset bundle", manifest.bundleIdentifier)
                 statusRow("SDK", manifest.sdkVersion)
                 statusRow("Swift", manifest.swiftVersion ?? "Unknown")
+                statusRow("Driver mode", manifest.toolchain.nativeDriverMode ?? "runner")
+                statusRow("Capabilities", manifest.capabilities.isEmpty ? "None" : manifest.capabilities.joined(separator: ", "))
+            }
+            if let missing = status?.missingRequirements, !missing.isEmpty {
+                Text("Missing: " + missing.joined(separator: ", "))
+                    .litterFont(.caption)
+                    .foregroundStyle(LitterTheme.warning)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
             Text("Direct source imports live under ThirdParty/Nyxian in the repository with AGPL-3.0 attribution. Apple SDK files must come from a private user-owned BuildKitAssets bundle and are not committed to the public repo.")
                 .litterFont(.caption)
@@ -274,7 +297,7 @@ struct BuildKitSettingsView: View {
                     .textSelection(.enabled)
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
             } else {
-                Text("Run Fakefs Doctor to validate /dev/random, /dev/urandom, temp files, and BuildKit command paths.")
+                Text("Run Fakefs Doctor or Nyxian Status to validate /dev/random, /dev/urandom, toolchain assets, and BuildKit command paths.")
                     .litterFont(.caption)
                     .foregroundStyle(LitterTheme.textSecondary)
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -328,6 +351,7 @@ struct BuildKitSettingsView: View {
         case "litter-swift-test": return "Logic tests"
         case "litter-ipa-build": return "Unsigned IPA"
         case "litter-ipa-package": return "Package app"
+        case "litter-nyxian-status": return "Nyxian"
         case "litter-buildkit-install-assets": return "Install"
         case "litter-fs-doctor": return "Doctor"
         case "litter-env-report": return "Environment"

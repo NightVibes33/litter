@@ -12,6 +12,56 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
         var nativeDriverMode: String?
         var supportLibraries: String
         var sdkPath: String
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case coreCompilerFramework
+            case nativeDriverFramework
+            case nativeRunner
+            case nativeDriverMode
+            case supportLibraries
+            case sdkPath
+        }
+
+        init(
+            name: String,
+            coreCompilerFramework: String,
+            nativeDriverFramework: String?,
+            nativeRunner: String?,
+            nativeDriverMode: String? = "runner",
+            supportLibraries: String,
+            sdkPath: String
+        ) {
+            self.name = name
+            self.coreCompilerFramework = coreCompilerFramework
+            self.nativeDriverFramework = nativeDriverFramework
+            self.nativeRunner = nativeRunner
+            self.nativeDriverMode = nativeDriverMode
+            self.supportLibraries = supportLibraries
+            self.sdkPath = sdkPath
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            name = try container.decode(String.self, forKey: .name)
+            coreCompilerFramework = try container.decode(String.self, forKey: .coreCompilerFramework)
+            nativeDriverFramework = try container.decodeIfPresent(String.self, forKey: .nativeDriverFramework)
+            nativeRunner = try container.decodeIfPresent(String.self, forKey: .nativeRunner)
+            nativeDriverMode = try container.decodeIfPresent(String.self, forKey: .nativeDriverMode) ?? "runner"
+            supportLibraries = try container.decode(String.self, forKey: .supportLibraries)
+            sdkPath = try container.decode(String.self, forKey: .sdkPath)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(name, forKey: .name)
+            try container.encode(coreCompilerFramework, forKey: .coreCompilerFramework)
+            try container.encodeIfPresent(nativeDriverFramework, forKey: .nativeDriverFramework)
+            try container.encodeIfPresent(nativeRunner, forKey: .nativeRunner)
+            try container.encodeIfPresent(nativeDriverMode, forKey: .nativeDriverMode)
+            try container.encode(supportLibraries, forKey: .supportLibraries)
+            try container.encode(sdkPath, forKey: .sdkPath)
+        }
     }
 
     var schemaVersion: Int
@@ -65,6 +115,30 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var commands: [String]
     var assetManifest: BuildKitAssetManifest?
 
+    var installedCapabilities: [String] {
+        assetManifest?.capabilities.sorted() ?? []
+    }
+
+    var canRunSwiftDirectly: Bool {
+        isReadyForNativeBuilds && installedCapabilities.contains("swift-check") && installedCapabilities.contains("swift-build")
+    }
+
+    var canBuildUnsignedIPA: Bool {
+        isReadyForNativeBuilds && (installedCapabilities.contains("unsigned-ipa-build") || installedCapabilities.contains("unsigned-ipa-package"))
+    }
+
+    var missingRequirements: [String] {
+        var lines: [String] = []
+        if !privateAssetsInstalled { lines.append("private BuildKit asset manifest") }
+        if !nativeCompilerAssetsInstalled { lines.append("CoreCompiler.framework") }
+        if !nativeDriverInstalled { lines.append("LitterBuildKitNative.framework") }
+        if nativeDriverInstalled && !nativeDriverLoadable { lines.append("loadable native driver with litter_buildkit_run_json") }
+        if !nativeRunnerInstalled { lines.append("Nyxian BuildKit runner declared by the asset manifest") }
+        if !supportLibrariesInstalled { lines.append("CoreCompilerSupportLibs") }
+        if !sdkInstalled { lines.append("iPhoneOS26.4.sdk/SDKSettings.plist") }
+        return lines
+    }
+
     var isReadyForNativeBuilds: Bool {
         nativeCompilerAssetsInstalled && nativeDriverLoadable && nativeRunnerInstalled && supportLibrariesInstalled && sdkInstalled
     }
@@ -98,6 +172,7 @@ actor LitterBuildKit {
     private static let shimInstallMarker = "/root/.litter-buildkit/shims-installed-v2"
     private static let commandNames = [
         "litter-buildkit",
+        "litter-nyxian-status",
         "litter-buildkit-install-assets",
         "litter-fs-doctor",
         "litter-env-report",
@@ -244,6 +319,9 @@ actor LitterBuildKit {
         case "litter-buildkit":
             let current = await status()
             return BuildKitCommandResult(exitCode: 0, status: "ready", log: Self.statusLog(current))
+        case "litter-nyxian-status":
+            let current = await status()
+            return BuildKitCommandResult(exitCode: 0, status: current.isReadyForNativeBuilds ? "nyxian-ready" : "nyxian-blocked", log: Self.nyxianStatusLog(current))
         case "litter-buildkit-install-assets":
             return installAssetsCommand()
         case "litter-fs-doctor":
@@ -289,7 +367,7 @@ actor LitterBuildKit {
             check "/tmp writable" "t=$(mktemp /tmp/litter.XXXXXX) && rm -f \"$t\""
             check "/usr/local/bin writable" "[ -w /usr/local/bin ]"
             check "/root/builds writable" "[ -w /root/builds ]"
-            for tool in git ssh scp curl tar gzip unzip zip python3 node npm; do
+            for tool in git ssh scp curl tar gzip unzip zip python3 pip3 node npm clang swift swiftc cc c++ make jq; do
               if command -v "$tool" >/dev/null 2>&1; then echo "ok  command:$tool $(command -v "$tool")"; else echo "miss command:$tool"; fi
             done
             if command -v git >/dev/null 2>&1; then
@@ -325,7 +403,7 @@ actor LitterBuildKit {
             if command -v apk >/dev/null 2>&1; then apk info | sort | sed -n '1,120p'; else echo "apk missing"; fi
             echo
             echo "Tool versions:"
-            for tool in git ssh scp curl tar gzip unzip zip python3 node npm; do
+            for tool in git ssh scp curl tar gzip unzip zip python3 pip3 node npm clang swift swiftc cc c++ make jq; do
               if command -v "$tool" >/dev/null 2>&1; then
                 printf '%s: ' "$tool"
                 "$tool" --version 2>&1 | head -n 1
@@ -347,7 +425,7 @@ actor LitterBuildKit {
             chmod 1777 /tmp /var/tmp 2>/dev/null || true
             if command -v apk >/dev/null 2>&1; then
               apk update || true
-              apk add --no-cache git openssh-client curl tar gzip xz unzip zip python3 nodejs npm ca-certificates coreutils findutils grep sed gawk || true
+              apk add --no-cache git openssh-client curl tar gzip xz unzip zip python3 py3-pip nodejs npm ca-certificates coreutils findutils grep sed gawk make clang llvm lld build-base jq || true
             fi
             git config --global init.defaultBranch main 2>/dev/null || true
             git config --global advice.detachedHead false 2>/dev/null || true
@@ -405,8 +483,28 @@ actor LitterBuildKit {
             fullPrelude += "Embed LitterBuildKitNative.framework in the private sideload IPA and link it to CoreCompiler.framework.\n"
             return BuildKitCommandResult(exitCode: 78, status: "adapter-missing", log: fullPrelude)
         }
-        if fullPrelude.isEmpty { return result }
-        return BuildKitCommandResult(exitCode: result.exitCode, status: result.status, log: fullPrelude + "\n" + result.log)
+        let artifactLog = await publishArtifacts(result.artifacts, buildDir: buildDir)
+        let resultLog = result.log + artifactLog
+        if fullPrelude.isEmpty {
+            return BuildKitCommandResult(exitCode: result.exitCode, status: result.status, log: resultLog, artifacts: result.artifacts)
+        }
+        return BuildKitCommandResult(exitCode: result.exitCode, status: result.status, log: fullPrelude + "\n" + resultLog, artifacts: result.artifacts)
+    }
+
+    private func publishArtifacts(_ artifacts: [NativeDriverArtifact], buildDir: String) async -> String {
+        guard !artifacts.isEmpty else { return "" }
+        var log = "\nArtifact export:\n"
+        for artifact in artifacts {
+            let hostURL = URL(fileURLWithPath: artifact.hostPath)
+            let fakefsPath = artifact.fakefsPath?.isEmpty == false ? artifact.fakefsPath! : "\(buildDir)/\(hostURL.lastPathComponent)"
+            do {
+                try await IshFS.writeFile(path: fakefsPath, sourceURL: hostURL, replaceExisting: true)
+                log += "- Published \(hostURL.lastPathComponent) -> \(fakefsPath)\n"
+            } catch {
+                log += "- Failed to publish \(hostURL.path) to fakefs: \(error.localizedDescription)\n"
+            }
+        }
+        return log
     }
 
     private func stageProjectForNativeDriver(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitHostStaging {
@@ -777,7 +875,7 @@ actor LitterBuildKit {
         guard let responseData = responseJSON.data(using: .utf8), let response = try? JSONDecoder().decode(NativeDriverResponse.self, from: responseData) else {
             return BuildKitCommandResult(exitCode: 70, status: "driver-response-invalid", log: responseJSON)
         }
-        return BuildKitCommandResult(exitCode: response.exitCode, status: response.status, log: response.log)
+        return BuildKitCommandResult(exitCode: response.exitCode, status: response.status, log: response.log, artifacts: response.artifacts ?? [])
     }
 
     private static func parseRequest(_ text: String) -> [String: String] {
@@ -837,6 +935,8 @@ actor LitterBuildKit {
         BuildKit root: \(status.buildKitRoot)
         Toolchain root: \(status.toolchainRoot)
         SDK root: \(status.sdkRoot)
+        Swift direct build: \(status.canRunSwiftDirectly ? "ready" : "blocked")
+        Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
         """
         if let manifest = status.assetManifest {
@@ -844,20 +944,32 @@ actor LitterBuildKit {
             output += "Native mode: \(manifest.toolchain.nativeDriverMode ?? "runner")\n"
             output += "Capabilities: \(manifest.capabilities.joined(separator: ", "))\n"
         }
+        if !status.missingRequirements.isEmpty {
+            output += "\nMissing requirements:\n" + status.missingRequirements.map { "- \($0)" }.joined(separator: "\n") + "\n"
+        }
+        return output
+    }
+
+    private static func nyxianStatusLog(_ status: LitterBuildKitStatus) -> String {
+        var output = statusLog(status)
+        output += "\nNyxian integration scan\n"
+        output += "- Source import bundle marker: \(status.sourceImportAvailable ? "present" : "missing")\n"
+        output += "- Private asset root: \(status.buildKitRoot)\n"
+        output += "- Swift direct execution: \(status.canRunSwiftDirectly ? "available" : "not available")\n"
+        output += "- Unsigned IPA packaging: \(status.canBuildUnsignedIPA ? "available" : "not available")\n"
+        output += "- Driver mode: \(status.assetManifest?.toolchain.nativeDriverMode ?? "unknown")\n"
+        output += "- Capabilities: \(status.installedCapabilities.isEmpty ? "none" : status.installedCapabilities.joined(separator: ", "))\n"
+        output += "\nBot path examples:\n"
+        output += "- litter-swift-check /root/projects/App/Sources/App.swift\n"
+        output += "- litter-swift-build /root/projects/App/LitterBuild.json\n"
+        output += "- litter-ipa-build /root/projects/App/LitterBuild.json\n"
         return output
     }
 
     private static func missingAssetSummary(_ status: LitterBuildKitStatus) -> String {
-        var lines: [String] = []
-        if !status.privateAssetsInstalled { lines.append("- Missing private BuildKit asset manifest at \(status.buildKitRoot)/manifest.json.") }
-        if !status.nativeCompilerAssetsInstalled { lines.append("- Missing CoreCompiler.framework in private assets or embedded app frameworks.") }
-        if !status.nativeDriverInstalled { lines.append("- Missing LitterBuildKitNative.framework private driver.") }
-        if status.nativeDriverInstalled && !status.nativeDriverLoadable { lines.append("- Native driver exists but cannot be loaded or lacks litter_buildkit_run_json.") }
-        if !status.nativeRunnerInstalled { lines.append("- Missing Nyxian BuildKit runner declared by the asset manifest.") }
-        if !status.supportLibrariesInstalled { lines.append("- Missing CoreCompilerSupportLibs.") }
-        if !status.sdkInstalled { lines.append("- Missing iPhoneOS26.4.sdk/SDKSettings.plist.") }
-        if lines.isEmpty { return "- BuildKit assets look present, but native execution failed.\n" }
-        return lines.joined(separator: "\n") + "\n"
+        let missing = status.missingRequirements
+        if missing.isEmpty { return "- BuildKit assets look present, but native execution failed.\n" }
+        return missing.map { "- Missing \($0)." }.joined(separator: "\n") + "\n"
     }
 
     private static func commandShimScript() -> String {
@@ -957,16 +1069,23 @@ private struct NativeDriverRequest: Encodable, Sendable {
     var fakefsProjectPath: String?
 }
 
+private struct NativeDriverArtifact: Decodable, Sendable {
+    var hostPath: String
+    var fakefsPath: String?
+}
+
 private struct NativeDriverResponse: Decodable, Sendable {
     var exitCode: Int
     var status: String
     var log: String
+    var artifacts: [NativeDriverArtifact]?
 }
 
 private struct BuildKitCommandResult: Sendable {
     var exitCode: Int
     var status: String
     var log: String
+    var artifacts: [NativeDriverArtifact] = []
 
     var statusText: String {
         "exitCode=\(exitCode)\nstatus=\(status)\nupdatedAt=\(ISO8601DateFormatter().string(from: Date()))\n"

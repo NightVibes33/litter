@@ -21,3 +21,8 @@
 - Added fakefs-backed iOS Files imports for files, folders, images, ZIP/RAR/TAR-style archives, and chat composer attachment path mentions.
 - Added image preview and archive extraction actions in the local file workspace.
 - Added clickable Hugging Face model detail sheets with GGUF sibling download cards and persistent download/install progress.
+
+- Added `litter-nyxian-status` and Settings -> BuildKit readiness rows for direct Swift execution and unsigned IPA capability.
+- Added `tools/scripts/vendor-nyxian.sh`, `tools/scripts/build-nyxian-buildkit-assets.sh`, and `tools/scripts/verify-nyxian-buildkit-assets.sh` plus make targets.
+- Changed private asset packaging default to in-process native mode to avoid fake-ready runner manifests with no runner executable.
+- Added a minimal in-process IPA packager to `LitterBuildKitInProcess.mm` and artifact metadata export so generated IPAs are copied back into `/root/builds/<job-id>`.

@@ -27,6 +27,9 @@ on:
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
+      - 'tools/scripts/vendor-nyxian.sh'
+      - 'tools/scripts/build-nyxian-buildkit-assets.sh'
+      - 'tools/scripts/verify-nyxian-buildkit-assets.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
 
 permissions:
