@@ -641,6 +641,13 @@ actor LitterBuildKit {
     }
 
     private static var sdkRoot: URL {
+        if let sdkPath = installedManifest?.toolchain.sdkPath, !sdkPath.isEmpty {
+            return buildKitRoot.appendingPathComponent(sdkPath, isDirectory: true)
+        }
+        return defaultSDKRoot
+    }
+
+    private static var defaultSDKRoot: URL {
         buildKitRoot.appendingPathComponent("SDK/iPhoneOS26.4.sdk", isDirectory: true)
     }
 

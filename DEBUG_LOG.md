@@ -29,3 +29,5 @@
 - Stabilized the fast BuildKit-focused Nyxian import path after iSH network timeouts, restored tracked metadata, excluded heavy/irrelevant upstream assets, and recorded `ThirdParty/Nyxian/VENDOR_LOCK.json`.
 
 - Restored the Nyxian LiveContainer/ZSign OpenSSL dependency as a trimmed iOS arm64 XCFramework slice, added a source-import verifier, and surfaced LiveContainer/OpenSSL status through `litter-nyxian-status`.
+
+- Added GitHub-runner BuildKit asset workflow for building CoreCompiler/support libs/native driver/SDK asset packs and uploading the verified ZIP to a private release. Updated runtime SDK detection to use the installed asset manifest path.

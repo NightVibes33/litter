@@ -10,7 +10,7 @@ NYXIAN_RUNNER="${NYXIAN_BUILDKIT_RUNNER:-}"
 NATIVE_MODE="${LITTER_BUILDKIT_NATIVE_MODE:-inprocess}"
 SUPPORT_LIBS="${CORECOMPILER_SUPPORT_LIBS:-}"
 IPHONEOS_SDK_PATH="${IPHONEOS_SDK_PATH:-}"
-SDK_VERSION="${LITTER_BUILDKIT_SDK_VERSION:-26.4}"
+SDK_VERSION="${LITTER_BUILDKIT_SDK_VERSION:-}"
 SWIFT_VERSION="${LITTER_BUILDKIT_SWIFT_VERSION:-6.x}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -20,6 +20,9 @@ fi
 
 if [[ -z "${IPHONEOS_SDK_PATH}" ]]; then
   IPHONEOS_SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+fi
+if [[ -z "$SDK_VERSION" ]]; then
+  SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
 fi
 
 require_path() {

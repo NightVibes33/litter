@@ -29,3 +29,8 @@ Latest local changes awaiting CI verification:
 - Focused Nyxian source import is recorded in `ThirdParty/Nyxian/VENDOR_LOCK.json`; full upstream refresh should run on macOS/CI, not iSH fakefs.
 
 - Latest source-import hardening: `tools/scripts/verify-nyxian-source-import.sh` now verifies Builder.swift, LiveContainer/ZSign, the iOS arm64 OpenSSL slice, VENDOR_LOCK, and the bundled in-app Nyxian manifest.
+
+Current runner asset workflow:
+
+- `.github/workflows/buildkit-assets.yml` can build the private BuildKit asset ZIP on GitHub-hosted `macos-26`, verify it, optionally upload a 1-day debug artifact, and upload the release ZIP/SHA to the private asset repo when `LITTER_BUILDKIT_ASSET_TOKEN` is configured.
+- Litter now reads the installed BuildKit manifest SDK path at runtime instead of assuming `SDK/iPhoneOS26.4.sdk`, so runner-produced SDK folders are accepted when the manifest verifies.
