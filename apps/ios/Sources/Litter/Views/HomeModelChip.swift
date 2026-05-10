@@ -40,6 +40,11 @@ struct HomeModelChip: View {
         return appModel.availableModels(for: serverId)
     }
 
+    private var selectedRuntimeLabel: String {
+        if isLocalGGUFModelSelection(appState.preferredModel) { return ChatRuntimeMode.localModel.shortTitle }
+        return appState.preferredChatRuntimeMode.shortTitle
+    }
+
     private var selectedModelLabel: String {
         let trimmed = appState.preferredModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
@@ -101,7 +106,7 @@ struct HomeModelChip: View {
                 Image(systemName: "cpu")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(disabled ? LitterTheme.textMuted : LitterTheme.accent)
-                Text(selectedModelLabel)
+                Text("\(selectedRuntimeLabel) • \(selectedModelLabel)")
                     .litterMonoFont(size: 12, weight: .semibold)
                     .foregroundStyle(disabled ? LitterTheme.textSecondary : LitterTheme.textPrimary)
                     .lineLimit(1)
@@ -147,6 +152,7 @@ struct HomeModelChip: View {
                 selectedModel: selectedModelBinding,
                 selectedAgentRuntimeKind: selectedAgentRuntimeKindBinding,
                 reasoningEffort: reasoningEffortBinding,
+                serverId: serverId,
                 threadKey: nil
             )
             .environment(appModel)

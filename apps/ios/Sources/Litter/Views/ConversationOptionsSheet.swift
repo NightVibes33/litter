@@ -8,6 +8,7 @@ struct ConversationOptionsSheet: View {
     @Binding var selectedModel: String
     @Binding var selectedAgentRuntimeKind: AgentRuntimeKind?
     @Binding var reasoningEffort: String
+    var serverId: String? = nil
     var threadKey: ThreadKey?
     var collaborationMode: AppModeKind = .default
     var effectiveApprovalPolicy: AppAskForApproval?
@@ -25,6 +26,7 @@ struct ConversationOptionsSheet: View {
             selectedModel: $selectedModel,
             selectedAgentRuntimeKind: $selectedAgentRuntimeKind,
             reasoningEffort: $reasoningEffort,
+            serverId: serverId,
             threadKey: threadKey,
             collaborationMode: collaborationMode,
             effectiveApprovalPolicy: effectiveApprovalPolicy,
