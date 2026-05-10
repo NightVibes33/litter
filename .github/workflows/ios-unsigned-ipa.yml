@@ -26,6 +26,7 @@ on:
       - 'tools/scripts/load-sccache-aws-creds.sh'
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
+      - 'tools/scripts/upload-buildkit-assets-release.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
 
 permissions:
@@ -55,6 +56,7 @@ jobs:
       DERIVED_DATA_PATH: ${{ github.workspace }}/build/DerivedData
       LITTER_BUILDKIT_ASSET_URL: ${{ secrets.LITTER_BUILDKIT_ASSET_URL }}
       LITTER_BUILDKIT_ASSET_SHA256: ${{ secrets.LITTER_BUILDKIT_ASSET_SHA256 }}
+      LITTER_BUILDKIT_ASSET_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
 
     steps:
       - name: Checkout

@@ -9,6 +9,7 @@
 - Add private asset packaging and CI preparation scripts.
 - Add build script and source for the private `LitterBuildKitNative.framework` ABI wrapper.
 - Add Settings -> BuildKit import flow for expanded private asset folders.
+- Add private GitHub Release download/install flow for BuildKit asset ZIPs with Keychain token storage.
 - Add fakefs core device repair for `/dev/random` and `/dev/urandom`.
 - Add local-model tools for BuildKit status, fakefs doctor, Swift checks, build/test, IPA build/package, and build cancellation.
 - Add real iOS Files file/folder imports into fakefs, image preview support, archive detection/extract actions, and chat attachment path mentions.
@@ -25,7 +26,8 @@
 
 - Run `tools/scripts/build-litter-buildkit-native.sh` on macOS or provide a monolithic private driver.
 - Run `tools/scripts/package-buildkit-assets.sh` on macOS with Xcode, private asset paths, and `NYXIAN_BUILDKIT_RUNNER` when using the default wrapper.
-- Set `LITTER_BUILDKIT_ASSET_URL` and `LITTER_BUILDKIT_ASSET_SHA256` GitHub secrets for private BuildKit-enabled sideload builds.
+- Upload the private ZIP with `tools/scripts/upload-buildkit-assets-release.sh`, then set `LITTER_BUILDKIT_ASSET_URL`, `LITTER_BUILDKIT_ASSET_SHA256`, and `LITTER_BUILDKIT_ASSET_TOKEN` GitHub secrets for private BuildKit-enabled sideload builds.
+- Validate Settings -> BuildKit private release download on device with a private token.
 - Validate `litter-swift-check` and `litter-ipa-build` on a paired iPhone after installing the private asset bundle.
 - Add a native preview or quick-look path for unsupported image formats and large files.
 - Consider bundling or bootstrapping archive extractors (`unzip`, `unar`/`unrar`, `bsdtar`) so archive extraction works on fresh fakefs installs.

@@ -4,12 +4,15 @@ import UniformTypeIdentifiers
 struct BuildKitSettingsView: View {
     @State private var status: LitterBuildKitStatus?
     @State private var isRefreshing = false
+    @StateObject private var downloader = BuildKitAssetDownloadStore()
     @State private var showingAssetImporter = false
     @State private var lastActionOutput: String?
+    @State private var tokenInput = ""
 
     var body: some View {
         List {
             readinessSection
+            privateAssetDownloadSection
             commandsSection
             pathsSection
             sourceSection
@@ -23,8 +26,11 @@ struct BuildKitSettingsView: View {
                     .disabled(isRefreshing)
             }
         }
-        .fileImporter(isPresented: $showingAssetImporter, allowedContentTypes: [.folder, .json], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $showingAssetImporter, allowedContentTypes: [.folder, .json, .zip], allowsMultipleSelection: false) { result in
             handleAssetImport(result)
+        }
+        .onChange(of: downloader.installRevision) { _ in
+            Task { await refresh() }
         }
         .task { await refresh() }
     }
@@ -72,7 +78,7 @@ struct BuildKitSettingsView: View {
             Button {
                 showingAssetImporter = true
             } label: {
-                Label("Import Asset Folder", systemImage: "folder.badge.plus")
+                Label("Import Asset Folder or ZIP", systemImage: "folder.badge.plus")
                     .foregroundStyle(LitterTheme.accent)
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -92,6 +98,108 @@ struct BuildKitSettingsView: View {
         } header: {
             Text("On-device Swift BuildKit")
                 .foregroundStyle(LitterTheme.textSecondary)
+        }
+    }
+
+    private var privateAssetDownloadSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Private GitHub Release")
+                    .litterFont(.caption, weight: .semibold)
+                    .foregroundStyle(LitterTheme.textPrimary)
+                Text("Default: NightVibes33/litter-buildkit-assets @ buildkit-ios26.4-v1. The app downloads LitterBuildKitAssets.zip, verifies SHA256, extracts it, and installs it into Documents/BuildKit.")
+                    .litterFont(.caption)
+                    .foregroundStyle(LitterTheme.textSecondary)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            TextField("Owner", text: $downloader.config.owner)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            TextField("Repo", text: $downloader.config.repo)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            TextField("Release tag", text: $downloader.config.tag)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            TextField("Asset name", text: $downloader.config.assetName)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            TextField("SHA256 or sidecar", text: $downloader.config.sha256)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            SecureField(downloader.hasStoredToken ? "Token saved in Keychain" : "GitHub token for private repo", text: $tokenInput)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            HStack(spacing: 12) {
+                Button("Save Token") {
+                    downloader.saveToken(tokenInput)
+                    tokenInput = ""
+                }
+                .disabled(tokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button("Clear Token", role: .destructive) {
+                    downloader.clearToken()
+                    tokenInput = ""
+                }
+                .disabled(!downloader.hasStoredToken)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(downloader.phase.title)
+                        .litterFont(.caption, weight: .semibold)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                    Spacer()
+                    Text(downloader.speedText)
+                        .litterMonoFont(size: 11, weight: .regular)
+                        .foregroundStyle(LitterTheme.textSecondary)
+                }
+                ProgressView(value: downloader.progress)
+                Text(downloader.progressText)
+                    .litterMonoFont(size: 11, weight: .regular)
+                    .foregroundStyle(LitterTheme.textSecondary)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            HStack(spacing: 12) {
+                Button {
+                    downloader.downloadAndInstall()
+                } label: {
+                    Label("Download and Install ZIP", systemImage: "arrow.down.circle")
+                        .foregroundStyle(LitterTheme.accent)
+                }
+                .disabled(downloader.phase.isBusy)
+
+                if downloader.phase.isBusy {
+                    Button("Cancel", role: .destructive) {
+                        downloader.cancel()
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            if let output = downloader.lastOutput, !output.isEmpty {
+                Text(output)
+                    .litterMonoFont(size: 11, weight: .regular)
+                    .foregroundStyle(LitterTheme.textSecondary)
+                    .textSelection(.enabled)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+        } header: {
+            Text("Private BuildKit Assets")
+                .foregroundStyle(LitterTheme.textSecondary)
+        } footer: {
+            Text("Private release assets are user-owned. Downloaded assets enable data install; native frameworks may still need to be embedded by private CI so SideStore/AltStore signing can make the driver loadable.")
         }
     }
 

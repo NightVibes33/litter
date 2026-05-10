@@ -42,4 +42,21 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(calls.first?.arguments["project_path"], "/root/App/LitterBuild.json")
         XCTAssertEqual(calls.first.map(LocalModelToolLoop.risk(for:)), .build)
     }
+
+    func testBuildKitDownloadDefaultsTargetPrivateRelease() {
+        let config = BuildKitAssetDownloadConfig()
+
+        XCTAssertEqual(config.owner, "NightVibes33")
+        XCTAssertEqual(config.repo, "litter-buildkit-assets")
+        XCTAssertEqual(config.tag, "buildkit-ios26.4-v1")
+        XCTAssertEqual(config.assetName, "LitterBuildKitAssets.zip")
+        XCTAssertNil(config.normalizedSHA256)
+    }
+
+    func testBuildKitSHA256SidecarParser() throws {
+        let sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+        XCTAssertEqual(try BuildKitAssetDownloadStore.parseSHA256Sidecar("\(sha)  LitterBuildKitAssets.zip\n"), sha)
+        XCTAssertThrowsError(try BuildKitAssetDownloadStore.parseSHA256Sidecar("not-a-sha"))
+    }
 }

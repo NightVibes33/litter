@@ -47,6 +47,9 @@ packages:
   WebRTC:
     url: https://github.com/stasel/WebRTC.git
     exactVersion: "147.0.0"
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    exactVersion: "0.9.20"
 targets:
   Litter:
     type: application
@@ -99,6 +102,8 @@ targets:
         product: HairballUI
       - package: WebRTC
         product: WebRTC
+      - package: ZIPFoundation
+        product: ZIPFoundation
       - framework: Frameworks/llama.xcframework
       - target: LitterLiveActivity
         embed: true
@@ -214,6 +219,8 @@ targets:
       - sdk: Metal.framework
       - package: Hairball
         product: HairballUI
+      - package: ZIPFoundation
+        product: ZIPFoundation
     settings:
       base:
         PRODUCT_NAME: Litter

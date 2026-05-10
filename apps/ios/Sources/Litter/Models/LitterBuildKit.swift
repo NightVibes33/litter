@@ -1,6 +1,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import ZIPFoundation
 
 struct BuildKitAssetManifest: Codable, Equatable, Sendable {
     struct Toolchain: Codable, Equatable, Sendable {
@@ -128,6 +129,10 @@ actor LitterBuildKit {
     }
 
     func importAssetBundle(from url: URL) async -> String {
+        if url.pathExtension.lowercased() == "zip" {
+            return await importAssetZip(from: url)
+        }
+
         let shouldStop = url.startAccessingSecurityScopedResource()
         defer {
             if shouldStop { url.stopAccessingSecurityScopedResource() }
@@ -139,6 +144,20 @@ actor LitterBuildKit {
             return "Installed BuildKit assets: \(manifest.bundleIdentifier) SDK \(manifest.sdkVersion)\nRoot: \(Self.buildKitRoot.path)\n"
         } catch {
             return "BuildKit asset import failed.\n\(error.localizedDescription)\n"
+        }
+    }
+
+    func importAssetZip(from url: URL) async -> String {
+        let shouldStop = url.startAccessingSecurityScopedResource()
+        defer {
+            if shouldStop { url.stopAccessingSecurityScopedResource() }
+        }
+
+        do {
+            let manifest = try Self.installAssetZip(url)
+            return "Installed BuildKit assets: \(manifest.bundleIdentifier) SDK \(manifest.sdkVersion)\nRoot: \(Self.buildKitRoot.path)\n"
+        } catch {
+            return "BuildKit asset ZIP import failed.\n\(error.localizedDescription)\n"
         }
     }
 
@@ -558,10 +577,17 @@ actor LitterBuildKit {
         for candidate in candidates where fileExists(candidate.appendingPathComponent("manifest.json")) {
             return try installAssetDirectory(candidate)
         }
-        if fileExists(documentsRoot.appendingPathComponent("LitterBuildKitAssets.zip")) {
-            throw NSError(domain: "LitterBuildKit", code: 2, userInfo: [NSLocalizedDescriptionKey: "Found LitterBuildKitAssets.zip, but ZIP extraction must happen in the private build workflow before app launch. Import an expanded BuildKitAssets directory or rebuild the IPA with bundled assets."])
+
+        let zipCandidates = [
+            Bundle.main.url(forResource: "LitterBuildKitAssets", withExtension: "zip"),
+            documentsRoot.appendingPathComponent("LitterBuildKitAssets.zip"),
+            documentsRoot.appendingPathComponent("Inbox/LitterBuildKitAssets.zip")
+        ].compactMap { $0 }
+        for candidate in zipCandidates where fileExists(candidate) {
+            return try installAssetZip(candidate)
         }
-        throw NSError(domain: "LitterBuildKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected BuildKitAssets/manifest.json in the app bundle, Documents, or Documents/Inbox."])
+
+        throw NSError(domain: "LitterBuildKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected BuildKitAssets/manifest.json or LitterBuildKitAssets.zip in the app bundle, Documents, or Documents/Inbox."])
     }
 
     private static func resolveAssetDirectory(_ url: URL) throws -> URL {
@@ -577,7 +603,56 @@ actor LitterBuildKit {
         } else if url.lastPathComponent == "manifest.json" {
             return url.deletingLastPathComponent()
         }
-        throw NSError(domain: "LitterBuildKit", code: 7, userInfo: [NSLocalizedDescriptionKey: "Select an expanded BuildKitAssets folder or its manifest.json. ZIP files must be extracted before import."])
+        throw NSError(domain: "LitterBuildKit", code: 7, userInfo: [NSLocalizedDescriptionKey: "Select an expanded BuildKitAssets folder, its manifest.json, or LitterBuildKitAssets.zip."])
+    }
+
+    private static func installAssetZip(_ zipURL: URL) throws -> BuildKitAssetManifest {
+        let fm = FileManager.default
+        let extractionRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LitterBuildKitZip-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: extractionRoot) }
+        try fm.createDirectory(at: extractionRoot, withIntermediateDirectories: true, attributes: nil)
+        try extractAssetZip(zipURL, to: extractionRoot)
+        let source = try findExtractedAssetDirectory(in: extractionRoot)
+        return try installAssetDirectory(source)
+    }
+
+    private static func extractAssetZip(_ zipURL: URL, to destination: URL) throws {
+        guard let archive = Archive(url: zipURL, accessMode: .read) else {
+            throw NSError(domain: "LitterBuildKit", code: 8, userInfo: [NSLocalizedDescriptionKey: "Could not open BuildKit asset ZIP: \(zipURL.lastPathComponent)"])
+        }
+        let fm = FileManager.default
+        for entry in archive {
+            let sanitized = try sanitizedZipEntryPath(entry.path)
+            let output = destination.appendingPathComponent(sanitized)
+            try fm.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+            _ = try archive.extract(entry, to: output)
+        }
+    }
+
+    private static func sanitizedZipEntryPath(_ path: String) throws -> String {
+        let normalized = path.replacingOccurrences(of: "\\", with: "/")
+        let checkPath = normalized.hasSuffix("/") ? String(normalized.dropLast()) : normalized
+        let components = checkPath.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard !checkPath.isEmpty,
+              !normalized.hasPrefix("/"),
+              !components.contains(".."),
+              !components.contains("") else {
+            throw NSError(domain: "LitterBuildKit", code: 9, userInfo: [NSLocalizedDescriptionKey: "Unsafe path in BuildKit asset ZIP: \(path)"])
+        }
+        return normalized
+    }
+
+    private static func findExtractedAssetDirectory(in root: URL) throws -> URL {
+        if fileExists(root.appendingPathComponent("manifest.json")) { return root }
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: nil) else {
+            throw NSError(domain: "LitterBuildKit", code: 10, userInfo: [NSLocalizedDescriptionKey: "Could not inspect extracted BuildKit asset ZIP."])
+        }
+        for case let url as URL in enumerator where url.lastPathComponent == "manifest.json" {
+            return url.deletingLastPathComponent()
+        }
+        throw NSError(domain: "LitterBuildKit", code: 11, userInfo: [NSLocalizedDescriptionKey: "Extracted BuildKit asset ZIP did not contain manifest.json."])
     }
 
     private static func installAssetDirectory(_ source: URL) throws -> BuildKitAssetManifest {
@@ -645,8 +720,19 @@ actor LitterBuildKit {
     }
 
     private static func sha256Hex(_ url: URL) throws -> String {
-        let data = try Data(contentsOf: url)
-        let digest = SHA256.hash(data: data)
+        try fileSHA256Hex(url)
+    }
+
+    nonisolated static func fileSHA256Hex(_ url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
+            if data.isEmpty { break }
+            hasher.update(data: data)
+        }
+        let digest = hasher.finalize()
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
