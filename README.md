@@ -68,9 +68,11 @@ TurboQuant is modeled as an experimental llama.cpp runtime capability, not a fak
 
 ## On-device Swift BuildKit
 
-Litter now carries a direct Nyxian source import under `ThirdParty/Nyxian` for the on-device Swift/iOS BuildKit path. The app installs fakefs command shims such as `litter-swift-check`, `litter-swift-test`, `litter-ipa-build`, `litter-ipa-package`, `litter-build-status`, and `litter-build-cancel` into `/usr/local/bin` inside iSH. Those commands queue requests for the native Litter BuildKit bridge and wait for status/log output by default, with `--no-wait` available for async jobs; Alpine does not pretend to be macOS or Xcode.
+Litter carries a direct Nyxian source import under `ThirdParty/Nyxian` and exposes a private BuildKit asset-pack path for real on-device Swift/iOS builds. The app installs fakefs command shims such as `litter-buildkit`, `litter-buildkit-install-assets`, `litter-fs-doctor`, `litter-swift-check`, `litter-swift-build`, `litter-swift-test`, `litter-ipa-build`, `litter-ipa-package`, `litter-build-status`, and `litter-build-cancel` into `/usr/local/bin` inside iSH. Commands queue requests to the native app bridge and wait for status/log output by default, with `--no-wait` available for async jobs.
 
-Current status: Nyxian CoreCompiler/MobileDevelopmentKit/LiveProcess source is imported and AGPL-attributed, fakefs commands are surfaced, and BuildKit status is visible in Settings. Full native Swift compilation and unsigned IPA packaging still require packaging the large CoreCompiler.framework, Swift support libraries, and iPhoneOS26.4 SDK assets into Litter's BuildKit storage. Until those assets are installed, the GitHub unsigned IPA workflow remains the authoritative full-build path.
+Full native Swift compilation is enabled only when a private `LitterBuildKitAssets` bundle is installed. That bundle must contain `CoreCompiler.framework`, `CoreCompilerSupportLibs`, `LitterBuildKitNative.framework`, and a user-owned `iPhoneOS26.4.sdk`. Apple SDK files are not committed to this repository. `tools/scripts/package-buildkit-assets.sh` creates the private bundle on macOS, and `apps/ios/scripts/prepare-buildkit-assets.sh` lets private CI inject it into a sideload IPA via `LITTER_BUILDKIT_ASSET_URL` and `LITTER_BUILDKIT_ASSET_SHA256`.
+
+Bots can call the dedicated BuildKit tools directly: `buildkit_status`, `fs_doctor`, `swift_check`, `swift_build`, `swift_test`, `ipa_build`, `ipa_package`, `build_status`, and `build_cancel`. ChatGPT routing, computer bridge routing, and on-device local models all go through the same fakefs command bridge, so logs and artifacts land under `/root/builds/<job-id>`.
 
 ## iOS Local Runtime Notes
 

@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "bundleIdentifier": "com.sigkitten.litter.buildkit.private",
+  "createdAt": "2026-05-10T00:00:00Z",
+  "sdkVersion": "26.4",
+  "swiftVersion": "6.x",
+  "minimumIOS": "18.0",
+  "toolchain": {
+    "name": "Nyxian/CoreCompiler",
+    "coreCompilerFramework": "Toolchains/Nyxian/CoreCompiler.framework",
+    "nativeDriverFramework": "Toolchains/Nyxian/LitterBuildKitNative.framework",
+    "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
+    "sdkPath": "SDK/iPhoneOS26.4.sdk"
+  },
+  "capabilities": [
+    "swift-check",
+    "swift-build",
+    "swift-test",
+    "unsigned-ipa-build",
+    "unsigned-ipa-package"
+  ],
+  "requiredPaths": [
+    "Toolchains/Nyxian/CoreCompiler.framework",
+    "Toolchains/Nyxian/LitterBuildKitNative.framework",
+    "Toolchains/Nyxian/CoreCompilerSupportLibs",
+    "SDK/iPhoneOS26.4.sdk/SDKSettings.plist"
+  ],
+  "sha256": {}
+}

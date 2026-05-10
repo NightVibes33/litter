@@ -226,8 +226,8 @@ struct LocalModelApprovalSheet: View {
                         onDecision(.denied)
                         dismiss()
                     }
-                    if approval.request.risk == .shell {
-                        Button("Allow Shell Once") {
+                    if approval.request.risk == .shell || approval.request.risk == .build {
+                        Button(approval.request.risk == .build ? "Run Build Once" : "Allow Shell Once") {
                             onDecision(.approveShellReadOnly)
                             dismiss()
                         }

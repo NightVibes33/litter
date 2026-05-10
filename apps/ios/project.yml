@@ -82,6 +82,8 @@ targets:
       - path: Sources/Litter/Resources/Fonts
       - path: Sources/Litter/Resources/Themes
       - path: Sources/Litter/Resources/BuildKit
+      - path: Sources/Litter/Resources/BuildKitAssets
+        type: folder
       - path: Sources/Litter/Resources/TipJarProducts.storekit
       - path: Sources/Litter/Resources/home_cat.png
       - path: Sources/Litter/Resources/home_cat_entrance.png
@@ -102,6 +104,27 @@ targets:
         embed: true
       - target: LitterWatch
         embed: true
+    postBuildScripts:
+      - name: Embed Private BuildKit Frameworks
+        script: |
+          set -euo pipefail
+          if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
+            exit 0
+          fi
+          ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/Toolchains/Nyxian"
+          if [ ! -d "$ASSET_ROOT" ]; then
+            exit 0
+          fi
+          mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+          for framework in CoreCompiler.framework LitterBuildKitNative.framework; do
+            if [ -d "$ASSET_ROOT/$framework" ]; then
+              rm -rf "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
+              cp -R "$ASSET_ROOT/$framework" "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
+              if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+                codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
+              fi
+            fi
+          done
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter
@@ -179,6 +202,8 @@ targets:
       - path: Sources/Litter/Resources/Fonts
       - path: Sources/Litter/Resources/Themes
       - path: Sources/Litter/Resources/BuildKit
+      - path: Sources/Litter/Resources/BuildKitAssets
+        type: folder
       - path: Sources/Litter/Resources/TipJarProducts.storekit
       - path: Sources/Litter/Resources/home_cat.png
       - path: Sources/Litter/Resources/home_cat_entrance.png

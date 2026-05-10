@@ -23,6 +23,7 @@ enum LocalModelToolRisk: String, Equatable {
     case safeRead
     case shell
     case write
+    case build
     case unknown
 
     var requiresUserApproval: Bool {
@@ -150,6 +151,69 @@ enum LocalModelToolLoop {
             inputSchemaJSON: """
             {"type":"object","properties":{"path":{"type":"string"},"old_text":{"type":"string"},"new_text":{"type":"string"}},"required":["path","old_text","new_text"]}
             """
+        ),
+        LocalModelToolSpec(
+            name: "buildkit_status",
+            description: "Show whether private CoreCompiler, Swift support libraries, native driver, and iPhoneOS SDK assets are installed.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{}}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "fs_doctor",
+            description: "Repair and validate important iSH fakefs paths such as /dev/random, /dev/urandom, /tmp, and /usr/local/bin.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{}}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "swift_check",
+            description: "Run Litter BuildKit Swift diagnostics for a fakefs Swift file.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "swift_build",
+            description: "Build a fakefs Swift project through Litter BuildKit. Requires approval because it writes build outputs.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"project_path":{"type":"string"}},"required":["project_path"]}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "ipa_build",
+            description: "Build an unsigned IPA from a fakefs LitterBuild.json project. Requires approval because it writes artifacts.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"project_path":{"type":"string"}},"required":["project_path"]}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "swift_test",
+            description: "Run BuildKit tests for a fakefs Swift project. Requires approval because it writes build outputs.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"project_path":{"type":"string"}},"required":["project_path"]}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "ipa_package",
+            description: "Package a previously built fakefs app bundle as an unsigned IPA. Requires approval because it writes artifacts.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"project_path":{"type":"string"}},"required":["project_path"]}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "build_cancel",
+            description: "Cancel an active BuildKit job by id.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"]}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "build_status",
+            description: "Read status and logs for a Litter BuildKit job id.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"job_id":{"type":"string"}},"required":["job_id"]}
+            """
         )
     ]
 
@@ -160,7 +224,7 @@ enum LocalModelToolLoop {
         return """
         You can request local app tools by replying with a single JSON object and no markdown.
         Use this exact shape: {"tool":"tool_name","arguments":{"key":"value"}}
-        Read-only fakefs tools can run automatically. Shell and write tools require explicit user approval.
+        Read-only fakefs tools can run automatically. Shell, build, and write tools require explicit user approval.
         Prefer repo_map, search_files, grep_text, and read_file before editing. Prefer replace_text for small edits and write_file only when replacing the full file is safer.
         After a tool result is returned, answer normally or request another tool.
         Available local tools:
@@ -182,7 +246,7 @@ enum LocalModelToolLoop {
 
     static func looksLikeMalformedToolRequest(_ text: String) -> Bool {
         let lowered = text.lowercased()
-        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") else {
+        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") || lowered.contains("swift_check") || lowered.contains("ipa_build") || lowered.contains("buildkit") else {
             return false
         }
         return parseToolCalls(from: text).isEmpty
@@ -196,6 +260,8 @@ enum LocalModelToolLoop {
             return .shell
         case "write_file", "replace_text":
             return .write
+        case "swift_build", "swift_test", "ipa_build", "ipa_package", "build_cancel":
+            return .build
         default:
             return .unknown
         }
@@ -217,6 +283,8 @@ enum LocalModelToolLoop {
                 return "The local model wants to edit: \(call.arguments["path"] ?? "unknown path")"
             }
             return "The local model wants to write to: \(call.arguments["path"] ?? "unknown path")"
+        case .build:
+            return "The local model wants to run an on-device Swift/IPA BuildKit job."
         case .unknown:
             return "The local model requested an unknown tool: \(call.name)"
         }
@@ -267,6 +335,53 @@ enum LocalModelToolLoop {
             let maxEntries = max(10, min(intArgument("max_entries", in: call) ?? 120, 400))
             let command = "find \(IshFS.shellQuote(path)) -maxdepth 4 -print 2>/dev/null | sed 's#^#- #' | head -n \(maxEntries)"
             let result = await IshFS.run(command)
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "buildkit_status":
+            let result = await IshFS.run("litter-buildkit --timeout 30")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "fs_doctor":
+            let result = await IshFS.run("litter-fs-doctor --timeout 60")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "swift_check":
+            let path = try argument("path", in: call)
+            let result = await IshFS.run("litter-swift-check --timeout 120 \(IshFS.shellQuote(path))")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "build_status":
+            let jobId = try argument("job_id", in: call)
+            let result = await IshFS.run("litter-build-status \(IshFS.shellQuote(jobId))")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "swift_build":
+            guard policy.allowsShell else { throw LocalModelToolLoopError.blocked("BuildKit build jobs require explicit user approval.") }
+            let path = try argument("project_path", in: call)
+            let result = await IshFS.run("litter-swift-build --timeout 600 \(IshFS.shellQuote(path))")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "swift_test":
+            guard policy.allowsShell else { throw LocalModelToolLoopError.blocked("BuildKit test jobs require explicit user approval.") }
+            let path = try argument("project_path", in: call)
+            let result = await IshFS.run("litter-swift-test --timeout 600 \(IshFS.shellQuote(path))")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "ipa_build":
+            guard policy.allowsShell else { throw LocalModelToolLoopError.blocked("IPA build jobs require explicit user approval.") }
+            let path = try argument("project_path", in: call)
+            let result = await IshFS.run("litter-ipa-build --timeout 900 \(IshFS.shellQuote(path))")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "ipa_package":
+            guard policy.allowsShell else { throw LocalModelToolLoopError.blocked("IPA packaging requires explicit user approval.") }
+            let path = try argument("project_path", in: call)
+            let result = await IshFS.run("litter-ipa-package --timeout 900 \(IshFS.shellQuote(path))")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "build_cancel":
+            let jobId = try argument("job_id", in: call)
+            let result = await IshFS.run("litter-build-cancel \(IshFS.shellQuote(jobId))")
             guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
             return result.output
         case "shell":

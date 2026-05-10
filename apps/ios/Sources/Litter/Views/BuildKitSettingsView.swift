@@ -3,6 +3,7 @@ import SwiftUI
 struct BuildKitSettingsView: View {
     @State private var status: LitterBuildKitStatus?
     @State private var isRefreshing = false
+    @State private var lastActionOutput: String?
 
     var body: some View {
         List {
@@ -10,6 +11,7 @@ struct BuildKitSettingsView: View {
             commandsSection
             pathsSection
             sourceSection
+            actionOutputSection
         }
         .navigationTitle("BuildKit")
         .navigationBarTitleDisplayMode(.inline)
@@ -50,6 +52,30 @@ struct BuildKitSettingsView: View {
                     .foregroundStyle(LitterTheme.accent)
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                Task {
+                    await LitterBuildKit.shared.installBundledAssetsIfAvailable()
+                    await refresh()
+                }
+            } label: {
+                Label("Install Private Assets", systemImage: "shippingbox")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                Task {
+                    await LitterBuildKit.shared.installFakefsCommandShims()
+                    let result = await IshFS.run("litter-fs-doctor --timeout 60")
+                    lastActionOutput = result.output
+                    await refresh()
+                }
+            } label: {
+                Label("Run Fakefs Doctor", systemImage: "stethoscope")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("On-device Swift BuildKit")
                 .foregroundStyle(LitterTheme.textSecondary)
@@ -82,9 +108,14 @@ struct BuildKitSettingsView: View {
         Section {
             statusRow("Fakefs shims", status?.commandShimsInstalled == true ? "Installed" : "Missing")
             statusRow("Request monitor", status?.requestMonitorRunning == true ? "Running" : "Stopped")
-            statusRow("Compiler assets", status?.nativeCompilerAssetsInstalled == true ? "Installed" : "Missing")
+            statusRow("Private assets", status?.privateAssetsInstalled == true ? "Installed" : "Missing")
+            statusRow("CoreCompiler", status?.nativeCompilerAssetsInstalled == true ? "Installed" : "Missing")
+            statusRow("Native driver", status?.nativeDriverInstalled == true ? "Installed" : "Missing")
+            statusRow("Driver loadable", status?.nativeDriverLoadable == true ? "Ready" : "Not ready")
+            statusRow("Swift support libs", status?.supportLibrariesInstalled == true ? "Installed" : "Missing")
             statusRow("iPhoneOS SDK", status?.sdkInstalled == true ? "Installed" : "Missing")
             if let status {
+                pathRow("BuildKit", status.buildKitRoot)
                 pathRow("Toolchain", status.toolchainRoot)
                 pathRow("SDK", status.sdkRoot)
             }
@@ -97,7 +128,12 @@ struct BuildKitSettingsView: View {
     private var sourceSection: some View {
         Section {
             statusRow("Nyxian source", status?.sourceImportAvailable == true ? "Bundled manifest present" : "Missing")
-            Text("Direct source imports live under ThirdParty/Nyxian in the repository with AGPL-3.0 attribution. The raw imported files are kept out of the app target until each compiler/runtime component is adapted and verified.")
+            if let manifest = status?.assetManifest {
+                statusRow("Asset bundle", manifest.bundleIdentifier)
+                statusRow("SDK", manifest.sdkVersion)
+                statusRow("Swift", manifest.swiftVersion ?? "Unknown")
+            }
+            Text("Direct source imports live under ThirdParty/Nyxian in the repository with AGPL-3.0 attribution. Apple SDK files must come from a private user-owned BuildKitAssets bundle and are not committed to the public repo.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -107,14 +143,34 @@ struct BuildKitSettingsView: View {
         }
     }
 
+    private var actionOutputSection: some View {
+        Section {
+            if let lastActionOutput, !lastActionOutput.isEmpty {
+                Text(lastActionOutput)
+                    .litterMonoFont(size: 11, weight: .regular)
+                    .foregroundStyle(LitterTheme.textSecondary)
+                    .textSelection(.enabled)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+            } else {
+                Text("Run Fakefs Doctor to validate /dev/random, /dev/urandom, temp files, and BuildKit command paths.")
+                    .litterFont(.caption)
+                    .foregroundStyle(LitterTheme.textSecondary)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+        } header: {
+            Text("Diagnostics")
+                .foregroundStyle(LitterTheme.textSecondary)
+        }
+    }
+
     private var statusIcon: String {
-        if status?.nativeCompilerAssetsInstalled == true && status?.sdkInstalled == true { return "checkmark.seal.fill" }
+        if status?.isReadyForNativeBuilds == true { return "checkmark.seal.fill" }
         if status?.sourceImportAvailable == true { return "shippingbox.fill" }
         return "exclamationmark.triangle.fill"
     }
 
     private var statusColor: Color {
-        if status?.nativeCompilerAssetsInstalled == true && status?.sdkInstalled == true { return LitterTheme.success }
+        if status?.isReadyForNativeBuilds == true { return LitterTheme.success }
         if status?.sourceImportAvailable == true { return LitterTheme.warning }
         return LitterTheme.danger
     }
@@ -146,9 +202,12 @@ struct BuildKitSettingsView: View {
     private func commandPurpose(_ command: String) -> String {
         switch command {
         case "litter-swift-check": return "Swift diagnostics"
+        case "litter-swift-build": return "Build app"
         case "litter-swift-test": return "Logic tests"
         case "litter-ipa-build": return "Unsigned IPA"
         case "litter-ipa-package": return "Package app"
+        case "litter-buildkit-install-assets": return "Install"
+        case "litter-fs-doctor": return "Doctor"
         case "litter-build-status": return "Logs"
         case "litter-build-cancel": return "Cancel"
         default: return "Status"

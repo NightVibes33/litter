@@ -43,6 +43,8 @@ enum LitterPlatform {
                 documentsDir: docs.path
             )
             Task.detached(priority: .utility) {
+                await IshFS.repairCoreDevices()
+                await LitterBuildKit.shared.installBundledAssetsIfAvailable()
                 await LitterBuildKit.shared.installFakefsCommandShims()
                 await LitterBuildKit.shared.startFakefsRequestMonitor()
             }

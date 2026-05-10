@@ -24,6 +24,7 @@ on:
       - 'ThirdParty/Nyxian/**'
       - 'ThirdParty/LLVM-On-iOS/**'
       - 'tools/scripts/load-sccache-aws-creds.sh'
+      - 'tools/scripts/package-buildkit-assets.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
 
 permissions:
@@ -51,6 +52,8 @@ jobs:
       RUSTC_WRAPPER: ""
       SCCACHE_DISABLE: "1"
       DERIVED_DATA_PATH: ${{ github.workspace }}/build/DerivedData
+      LITTER_BUILDKIT_ASSET_URL: ${{ secrets.LITTER_BUILDKIT_ASSET_URL }}
+      LITTER_BUILDKIT_ASSET_SHA256: ${{ secrets.LITTER_BUILDKIT_ASSET_SHA256 }}
 
     steps:
       - name: Checkout
@@ -276,6 +279,11 @@ jobs:
             .build-stamps/llama-ios-turboquant-main
             ~/Library/Caches/litter-build/llama.cpp
           key: ${{ steps.llama_cache.outputs.cache-primary-key }}
+
+      - name: Prepare private BuildKit assets
+        run: |
+          set -euo pipefail
+          apps/ios/scripts/prepare-buildkit-assets.sh
 
       - name: Generate Xcode project
         run: |

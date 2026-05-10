@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "HelloLitter",
+  "bundleIdentifier": "com.example.hellolitter",
+  "deploymentTarget": "18.0",
+  "sdk": "iPhoneOS26.4.sdk",
+  "product": "app",
+  "entrypoint": "Sources/App.swift",
+  "sources": [
+    "Sources"
+  ],
+  "resources": [
+    "Resources"
+  ],
+  "entitlements": "Entitlements.plist",
+  "output": "build/HelloLitter.ipa"
+}

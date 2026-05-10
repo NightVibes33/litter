@@ -175,7 +175,7 @@ $(shell mkdir -p $(STAMPS))
 	android android-fast android-tools android-emulator-fast android-emulator-run android-device-run android-release android-debug android-install android-emulator-install \
 	rust-ios rust-ios-package rust-ios-device-release rust-mac-release rust-ios-device-fast rust-ios-sim-fast rust-ios-macabi-fast rust-android rust-check rust-test rust-host-dev \
 	bindings bindings-swift bindings-kotlin \
-	sync patch unpatch xcgen alpine-fs llama-ios ish-dev-random \
+	sync patch unpatch xcgen alpine-fs llama-ios ish-dev-random buildkit-assets-package \
 	ios-build ios-build-sim ios-build-sim-fast ios-build-device ios-build-device-fast \
 	watch watch-sim watch-sim-run watch-device watch-typecheck \
 	test test-rust test-ios test-android \
@@ -504,6 +504,9 @@ $(STAMP_LLAMA_IOS): $(IOS_SCRIPTS)/build-llama-xcframework.sh
 
 ish-dev-random:
 	@tools/scripts/ensure-ish-dev-random.sh
+
+buildkit-assets-package:
+	@tools/scripts/package-buildkit-assets.sh
 
 xcgen: $(STAMP_XCGEN)
 $(STAMP_XCGEN): $(IOS_DIR)/project.yml
