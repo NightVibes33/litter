@@ -13,6 +13,6 @@ Source repositories:
 ## Litter BuildKit Private Assets
 
 The public repository includes only the BuildKit manifest contract, command bridge,
-and Nyxian source references. Apple iPhoneOS SDK files are intentionally excluded
-and must be supplied by the user/private build environment under Apple's Xcode and
-SDK license terms.
+the native ABI wrapper source, and Nyxian source references. Apple iPhoneOS SDK
+files are intentionally excluded and must be supplied by the user/private build
+environment under Apple's Xcode and SDK license terms.

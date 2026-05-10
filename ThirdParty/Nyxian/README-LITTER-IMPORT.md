@@ -11,3 +11,8 @@ Integration intent:
 - LLVM-On-iOS: iOS-native Swift/LLVM toolchain build and packaging recipe.
 
 The Litter app-side API lives in `apps/ios/Sources/Litter/Models/LitterBuildKit.swift`. Fakefs command shims queue requests for that native bridge instead of pretending Alpine can run Xcode.
+
+Private driver status:
+- Litter now includes `LitterBuildKitNative.mm`, a buildable ABI wrapper that delegates requests to a packaged Nyxian runner.
+- The runner is private/user-supplied because it links CoreCompiler support libraries and user-owned iPhoneOS SDK assets.
+- Package the runner at `Toolchains/Nyxian/bin/litter-buildkit-runner` inside `LitterBuildKitAssets` or provide a monolithic driver framework with the same `litter_buildkit_run_json` ABI.

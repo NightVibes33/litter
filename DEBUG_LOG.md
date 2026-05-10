@@ -8,3 +8,7 @@
 - Added fakefs repair for `/dev/null`, `/dev/random`, `/dev/urandom`, `/tmp`, `/var/tmp`, `/usr/local/bin`, and `/root/builds`.
 - Added `litter-fs-doctor` so agents can validate Git temp-file readiness and core fakefs paths.
 - Added native driver ABI docs for `LitterBuildKitNative.framework`.
+
+- Added source/build script for the native BuildKit ABI wrapper and runner delegation contract.
+- Added Settings -> BuildKit folder import so users can install expanded private asset bundles without rebuilding the IPA.
+- Extended BuildKit manifests/status checks to validate an optional Nyxian runner path.

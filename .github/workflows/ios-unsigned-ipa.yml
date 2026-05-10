@@ -25,6 +25,7 @@ on:
       - 'ThirdParty/LLVM-On-iOS/**'
       - 'tools/scripts/load-sccache-aws-creds.sh'
       - 'tools/scripts/package-buildkit-assets.sh'
+      - 'tools/scripts/build-litter-buildkit-native.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
 
 permissions:

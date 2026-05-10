@@ -14,6 +14,7 @@ final class BuildKitTests: XCTestCase {
             "name": "Nyxian/CoreCompiler",
             "coreCompilerFramework": "Toolchains/Nyxian/CoreCompiler.framework",
             "nativeDriverFramework": "Toolchains/Nyxian/LitterBuildKitNative.framework",
+            "nativeRunner": "Toolchains/Nyxian/bin/litter-buildkit-runner",
             "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
             "sdkPath": "SDK/iPhoneOS26.4.sdk"
           },
@@ -28,6 +29,7 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(manifest.sdkVersion, "26.4")
         XCTAssertEqual(manifest.toolchain.coreCompilerFramework, "Toolchains/Nyxian/CoreCompiler.framework")
         XCTAssertEqual(manifest.toolchain.nativeDriverFramework, "Toolchains/Nyxian/LitterBuildKitNative.framework")
+        XCTAssertEqual(manifest.toolchain.nativeRunner, "Toolchains/Nyxian/bin/litter-buildkit-runner")
         XCTAssertTrue(manifest.capabilities.contains("unsigned-ipa-build"))
     }
 

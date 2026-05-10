@@ -7,6 +7,7 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
         var name: String
         var coreCompilerFramework: String
         var nativeDriverFramework: String?
+        var nativeRunner: String?
         var supportLibraries: String
         var sdkPath: String
     }
@@ -29,6 +30,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var nativeCompilerAssetsInstalled: Bool
     var nativeDriverInstalled: Bool
     var nativeDriverLoadable: Bool
+    var nativeRunnerInstalled: Bool
     var supportLibrariesInstalled: Bool
     var sdkInstalled: Bool
     var commandShimsInstalled: Bool
@@ -40,7 +42,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var assetManifest: BuildKitAssetManifest?
 
     var isReadyForNativeBuilds: Bool {
-        nativeCompilerAssetsInstalled && nativeDriverLoadable && supportLibrariesInstalled && sdkInstalled
+        nativeCompilerAssetsInstalled && nativeDriverLoadable && nativeRunnerInstalled && supportLibrariesInstalled && sdkInstalled
     }
 
     var readinessTitle: String {
@@ -100,6 +102,21 @@ actor LitterBuildKit {
         _ = try? Self.installFirstAvailableAssetDirectory()
     }
 
+    func importAssetBundle(from url: URL) async -> String {
+        let shouldStop = url.startAccessingSecurityScopedResource()
+        defer {
+            if shouldStop { url.stopAccessingSecurityScopedResource() }
+        }
+
+        do {
+            let source = try Self.resolveAssetDirectory(url)
+            let manifest = try Self.installAssetDirectory(source)
+            return "Installed BuildKit assets: \(manifest.bundleIdentifier) SDK \(manifest.sdkVersion)\nRoot: \(Self.buildKitRoot.path)\n"
+        } catch {
+            return "BuildKit asset import failed.\n\(error.localizedDescription)\n"
+        }
+    }
+
     func installFakefsCommandShims() async {
         await IshFS.repairCoreDevices()
         _ = await IshFS.run("mkdir -p /usr/local/bin \(Self.requestRoot) \(Self.buildRoot)")
@@ -124,6 +141,7 @@ actor LitterBuildKit {
             nativeCompilerAssetsInstalled: Self.nativeCompilerAssetsInstalled,
             nativeDriverInstalled: Self.nativeDriverInstalled,
             nativeDriverLoadable: Self.nativeDriverLoadable,
+            nativeRunnerInstalled: Self.nativeRunnerInstalled,
             supportLibrariesInstalled: Self.supportLibrariesInstalled,
             sdkInstalled: Self.sdkInstalled,
             commandShimsInstalled: shimsInstalled,
@@ -312,7 +330,7 @@ actor LitterBuildKit {
     }
 
     private static var installedAssetsAreUsable: Bool {
-        installedManifest != nil && supportLibrariesInstalled && sdkInstalled
+        installedManifest != nil && supportLibrariesInstalled && sdkInstalled && nativeRunnerInstalled
     }
 
     private static var nativeCompilerAssetsInstalled: Bool {
@@ -325,6 +343,11 @@ actor LitterBuildKit {
 
     private static var nativeDriverLoadable: Bool {
         loadNativeDriverHandle() != nil
+    }
+
+    private static var nativeRunnerInstalled: Bool {
+        guard let runner = installedManifest?.toolchain.nativeRunner else { return true }
+        return fileExists(buildKitRoot.appendingPathComponent(runner))
     }
 
     private static var supportLibrariesInstalled: Bool {
@@ -365,6 +388,22 @@ actor LitterBuildKit {
             throw NSError(domain: "LitterBuildKit", code: 2, userInfo: [NSLocalizedDescriptionKey: "Found LitterBuildKitAssets.zip, but ZIP extraction must happen in the private build workflow before app launch. Import an expanded BuildKitAssets directory or rebuild the IPA with bundled assets."])
         }
         throw NSError(domain: "LitterBuildKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected BuildKitAssets/manifest.json in the app bundle, Documents, or Documents/Inbox."])
+    }
+
+    private static func resolveAssetDirectory(_ url: URL) throws -> URL {
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+            throw NSError(domain: "LitterBuildKit", code: 6, userInfo: [NSLocalizedDescriptionKey: "Selected BuildKit asset path does not exist: \(url.path)"])
+        }
+        if isDirectory.boolValue {
+            if fileExists(url.appendingPathComponent("manifest.json")) { return url }
+            let nested = url.appendingPathComponent("BuildKitAssets", isDirectory: true)
+            if fileExists(nested.appendingPathComponent("manifest.json")) { return nested }
+        } else if url.lastPathComponent == "manifest.json" {
+            return url.deletingLastPathComponent()
+        }
+        throw NSError(domain: "LitterBuildKit", code: 7, userInfo: [NSLocalizedDescriptionKey: "Select an expanded BuildKitAssets folder or its manifest.json. ZIP files must be extracted before import."])
     }
 
     private static func installAssetDirectory(_ source: URL) throws -> BuildKitAssetManifest {
@@ -409,6 +448,7 @@ actor LitterBuildKit {
         required.append(manifest.toolchain.supportLibraries)
         required.append(manifest.toolchain.sdkPath)
         if let driver = manifest.toolchain.nativeDriverFramework { required.append(driver) }
+        if let runner = manifest.toolchain.nativeRunner { required.append(runner) }
         for relative in Set(required) {
             let path = root.appendingPathComponent(relative)
             guard FileManager.default.fileExists(atPath: path.path) else {
@@ -525,6 +565,7 @@ actor LitterBuildKit {
         CoreCompiler assets: \(status.nativeCompilerAssetsInstalled ? "installed" : "missing")
         Native driver: \(status.nativeDriverInstalled ? "installed" : "missing")
         Native driver loadable: \(status.nativeDriverLoadable ? "yes" : "no")
+        Native runner: \(status.nativeRunnerInstalled ? "installed" : "missing")
         Swift support libraries: \(status.supportLibrariesInstalled ? "installed" : "missing")
         iPhoneOS SDK: \(status.sdkInstalled ? "installed" : "missing")
         Fakefs command shims: \(status.commandShimsInstalled ? "installed" : "missing")
@@ -547,6 +588,7 @@ actor LitterBuildKit {
         if !status.nativeCompilerAssetsInstalled { lines.append("- Missing CoreCompiler.framework in private assets or embedded app frameworks.") }
         if !status.nativeDriverInstalled { lines.append("- Missing LitterBuildKitNative.framework private driver.") }
         if status.nativeDriverInstalled && !status.nativeDriverLoadable { lines.append("- Native driver exists but cannot be loaded or lacks litter_buildkit_run_json.") }
+        if !status.nativeRunnerInstalled { lines.append("- Missing Nyxian BuildKit runner declared by the asset manifest.") }
         if !status.supportLibrariesInstalled { lines.append("- Missing CoreCompilerSupportLibs.") }
         if !status.sdkInstalled { lines.append("- Missing iPhoneOS26.4.sdk/SDKSettings.plist.") }
         if lines.isEmpty { return "- BuildKit assets look present, but native execution failed.\n" }

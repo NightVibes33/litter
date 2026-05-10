@@ -1,10 +1,10 @@
 {
   "name": "Nyxian BuildKit source import",
-  "license": "AGPL-3.0",
+  "license": "AGPL-3.0 for Nyxian project; individual imported files retain their upstream headers",
   "sourceRepositories": [
     "https://github.com/ProjectNyxian/Nyxian",
     "https://github.com/ProjectNyxian/LLVM-On-iOS"
   ],
-  "importedFileCount": 46,
-  "purpose": "Source-level import for Litter on-device Swift/iOS BuildKit integration."
+  "importedFileCount": 74,
+  "purpose": "Source-level import and local ABI wrapper for Litter on-device Swift/iOS BuildKit integration."
 }

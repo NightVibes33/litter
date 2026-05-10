@@ -9,6 +9,7 @@
     "name": "Nyxian/CoreCompiler",
     "coreCompilerFramework": "Toolchains/Nyxian/CoreCompiler.framework",
     "nativeDriverFramework": "Toolchains/Nyxian/LitterBuildKitNative.framework",
+    "nativeRunner": "Toolchains/Nyxian/bin/litter-buildkit-runner",
     "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
     "sdkPath": "SDK/iPhoneOS26.4.sdk"
   },
@@ -22,6 +23,7 @@
   "requiredPaths": [
     "Toolchains/Nyxian/CoreCompiler.framework",
     "Toolchains/Nyxian/LitterBuildKitNative.framework",
+    "Toolchains/Nyxian/bin/litter-buildkit-runner",
     "Toolchains/Nyxian/CoreCompilerSupportLibs",
     "SDK/iPhoneOS26.4.sdk/SDKSettings.plist"
   ],

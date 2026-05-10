@@ -1,8 +1,10 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct BuildKitSettingsView: View {
     @State private var status: LitterBuildKitStatus?
     @State private var isRefreshing = false
+    @State private var showingAssetImporter = false
     @State private var lastActionOutput: String?
 
     var body: some View {
@@ -20,6 +22,9 @@ struct BuildKitSettingsView: View {
                 Button("Refresh") { Task { await refresh() } }
                     .disabled(isRefreshing)
             }
+        }
+        .fileImporter(isPresented: $showingAssetImporter, allowedContentTypes: [.folder, .json], allowsMultipleSelection: false) { result in
+            handleAssetImport(result)
         }
         .task { await refresh() }
     }
@@ -59,7 +64,15 @@ struct BuildKitSettingsView: View {
                     await refresh()
                 }
             } label: {
-                Label("Install Private Assets", systemImage: "shippingbox")
+                Label("Install Bundled Assets", systemImage: "shippingbox")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                showingAssetImporter = true
+            } label: {
+                Label("Import Asset Folder", systemImage: "folder.badge.plus")
                     .foregroundStyle(LitterTheme.accent)
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -112,6 +125,7 @@ struct BuildKitSettingsView: View {
             statusRow("CoreCompiler", status?.nativeCompilerAssetsInstalled == true ? "Installed" : "Missing")
             statusRow("Native driver", status?.nativeDriverInstalled == true ? "Installed" : "Missing")
             statusRow("Driver loadable", status?.nativeDriverLoadable == true ? "Ready" : "Not ready")
+            statusRow("Nyxian runner", status?.nativeRunnerInstalled == true ? "Installed" : "Missing")
             statusRow("Swift support libs", status?.supportLibrariesInstalled == true ? "Installed" : "Missing")
             statusRow("iPhoneOS SDK", status?.sdkInstalled == true ? "Installed" : "Missing")
             if let status {
@@ -211,6 +225,21 @@ struct BuildKitSettingsView: View {
         case "litter-build-status": return "Logs"
         case "litter-build-cancel": return "Cancel"
         default: return "Status"
+        }
+    }
+
+    @MainActor
+    private func handleAssetImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            Task {
+                let output = await LitterBuildKit.shared.importAssetBundle(from: url)
+                await MainActor.run { lastActionOutput = output }
+                await refresh()
+            }
+        case .failure(let error):
+            lastActionOutput = "BuildKit asset import failed.\n\(error.localizedDescription)\n"
         }
     }
 

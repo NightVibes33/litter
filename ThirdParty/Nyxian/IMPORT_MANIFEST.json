@@ -1,23 +1,8 @@
 [
   {
-    "path": "ThirdParty/Nyxian/README.md",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/README.md",
-    "bytes": 1678
-  },
-  {
-    "path": "ThirdParty/Nyxian/Makefile",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Makefile",
-    "bytes": 7686
-  },
-  {
     "path": "ThirdParty/Nyxian/Config.xcconfig",
     "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Config.xcconfig",
     "bytes": 710
-  },
-  {
-    "path": "ThirdParty/Nyxian/LICENSE",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/LICENSE",
-    "bytes": 34523
   },
   {
     "path": "ThirdParty/Nyxian/CoreCompiler/CCBase.c",
@@ -45,9 +30,69 @@
     "bytes": 1337
   },
   {
+    "path": "ThirdParty/Nyxian/CoreCompiler/CCUtilsPrivate.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/CCUtilsPrivate.h",
+    "bytes": 1594
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/CFRuntime.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/CFRuntime.h",
+    "bytes": 13974
+  },
+  {
     "path": "ThirdParty/Nyxian/CoreCompiler/CoreCompiler.h",
     "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/CoreCompiler.h",
     "bytes": 2043
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCDiagnostic.c",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCDiagnostic.c",
+    "bytes": 6280
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCDiagnostic.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCDiagnostic.h",
+    "bytes": 2001
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCFile.c",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCFile.c",
+    "bytes": 8892
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCFile.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCFile.h",
+    "bytes": 2424
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCFileSourceLocation.c",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCFileSourceLocation.c",
+    "bytes": 4979
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCFileSourceLocation.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCFileSourceLocation.h",
+    "bytes": 1772
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCJob.c",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCJob.c",
+    "bytes": 4719
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCJob.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCJob.h",
+    "bytes": 1652
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCSourceLocation.c",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCSourceLocation.c",
+    "bytes": 1816
+  },
+  {
+    "path": "ThirdParty/Nyxian/CoreCompiler/Support/CCSourceLocation.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/CoreCompiler/Support/CCSourceLocation.h",
+    "bytes": 1654
   },
   {
     "path": "ThirdParty/Nyxian/CoreCompiler/Tools/CCDriver.cpp",
@@ -100,29 +145,44 @@
     "bytes": 1384
   },
   {
+    "path": "ThirdParty/Nyxian/IMPORT_MANIFEST.json",
+    "source": "local-litter-buildkit",
+    "bytes": 9480
+  },
+  {
+    "path": "ThirdParty/Nyxian/LICENSE",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/LICENSE",
+    "bytes": 34523
+  },
+  {
+    "path": "ThirdParty/Nyxian/LitterBuildKitNative/LitterBuildKitNative.h",
+    "source": "local-litter-buildkit",
+    "bytes": 513
+  },
+  {
+    "path": "ThirdParty/Nyxian/LitterBuildKitNative/LitterBuildKitNative.mm",
+    "source": "local-litter-buildkit",
+    "bytes": 8890
+  },
+  {
+    "path": "ThirdParty/Nyxian/LitterBuildKitNative/README.md",
+    "source": "local-litter-buildkit",
+    "bytes": 1519
+  },
+  {
+    "path": "ThirdParty/Nyxian/LiveProcess/main.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/LiveProcess/main.m",
+    "bytes": 8840
+  },
+  {
+    "path": "ThirdParty/Nyxian/Makefile",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Makefile",
+    "bytes": 7686
+  },
+  {
     "path": "ThirdParty/Nyxian/MobileDevelopmentKit/MobileDevelopmentKit.h",
     "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/MobileDevelopmentKit.h",
     "bytes": 1345
-  },
-  {
-    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/MDKDriver.h",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Tools/MDKDriver.h",
-    "bytes": 2081
-  },
-  {
-    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/MDKDriver.m",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Tools/MDKDriver.m",
-    "bytes": 3793
-  },
-  {
-    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/MDKSDK.h",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Tools/MDKSDK.h",
-    "bytes": 1407
-  },
-  {
-    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/MDKSDK.m",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Tools/MDKSDK.m",
-    "bytes": 1588
   },
   {
     "path": "ThirdParty/Nyxian/MobileDevelopmentKit/PhaseEngine/MDKPhaseEngine.h",
@@ -145,6 +205,16 @@
     "bytes": 5598
   },
   {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKCFType.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKCFType.h",
+    "bytes": 1275
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKCFType.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKCFType.m",
+    "bytes": 2361
+  },
+  {
     "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKDiagnostic.h",
     "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKDiagnostic.h",
     "bytes": 1935
@@ -153,6 +223,26 @@
     "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKDiagnostic.m",
     "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKDiagnostic.m",
     "bytes": 2428
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKFile.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKFile.h",
+    "bytes": 1981
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKFile.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKFile.m",
+    "bytes": 3545
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKFileSourceLocation.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKFileSourceLocation.h",
+    "bytes": 1597
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKFileSourceLocation.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKFileSourceLocation.m",
+    "bytes": 1833
   },
   {
     "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKJob.h",
@@ -165,34 +255,59 @@
     "bytes": 2457
   },
   {
-    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXProject.h",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXProject.h",
-    "bytes": 3388
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKTarget.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKTarget.h",
+    "bytes": 71
   },
   {
-    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXProject.m",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXProject.m",
-    "bytes": 21621
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKTarget.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKTarget.m",
+    "bytes": 71
   },
   {
-    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXPlist.h",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXPlist.h",
-    "bytes": 2224
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKThreadPool.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKThreadPool.h",
+    "bytes": 1652
   },
   {
-    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXPlist.m",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXPlist.m",
-    "bytes": 8524
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKThreadPool.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKThreadPool.m",
+    "bytes": 6292
   },
   {
-    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXCodeTemplate.h",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXCodeTemplate.h",
-    "bytes": 1319
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKThreadPoolGroup.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKThreadPoolGroup.h",
+    "bytes": 1534
   },
   {
-    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXCodeTemplate.m",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXCodeTemplate.m",
-    "bytes": 5319
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKThreadPoolGroup.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKThreadPoolGroup.m",
+    "bytes": 1941
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Support/MDKThreadPoolPrivate.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Support/MDKThreadPoolPrivate.h",
+    "bytes": 1605
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/MDKDriver.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Tools/MDKDriver.h",
+    "bytes": 2081
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/MDKDriver.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Tools/MDKDriver.m",
+    "bytes": 3793
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/MDKSDK.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Tools/MDKSDK.h",
+    "bytes": 1407
+  },
+  {
+    "path": "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/MDKSDK.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/MobileDevelopmentKit/Tools/MDKSDK.m",
+    "bytes": 1588
   },
   {
     "path": "ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/LCBootstrap.h",
@@ -215,18 +330,43 @@
     "bytes": 16930
   },
   {
-    "path": "ThirdParty/Nyxian/LiveProcess/main.m",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/LiveProcess/main.m",
-    "bytes": 8840
+    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXCodeTemplate.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXCodeTemplate.h",
+    "bytes": 1319
   },
   {
-    "path": "ThirdParty/LLVM-On-iOS/README.md",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/LLVM-On-iOS/master/README.md",
-    "bytes": 1229
+    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXCodeTemplate.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXCodeTemplate.m",
+    "bytes": 5319
   },
   {
-    "path": "ThirdParty/LLVM-On-iOS/Makefile",
-    "source": "https://raw.githubusercontent.com/ProjectNyxian/LLVM-On-iOS/master/Makefile",
-    "bytes": 3870
+    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXPlist.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXPlist.h",
+    "bytes": 2224
+  },
+  {
+    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXPlist.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXPlist.m",
+    "bytes": 8524
+  },
+  {
+    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXProject.h",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXProject.h",
+    "bytes": 3388
+  },
+  {
+    "path": "ThirdParty/Nyxian/Nyxian/LindChain/Project/NXProject.m",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/Nyxian/LindChain/Project/NXProject.m",
+    "bytes": 21621
+  },
+  {
+    "path": "ThirdParty/Nyxian/README-LITTER-IMPORT.md",
+    "source": "local-litter-buildkit",
+    "bytes": 1461
+  },
+  {
+    "path": "ThirdParty/Nyxian/README.md",
+    "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/README.md",
+    "bytes": 1678
   }
 ]
