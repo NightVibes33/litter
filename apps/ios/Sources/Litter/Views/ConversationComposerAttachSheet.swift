@@ -18,7 +18,7 @@ struct ConversationComposerAttachSheet: View {
 
             if let onChooseFile {
                 Button(action: onChooseFile) {
-                    sheetButtonLabel("Choose File", systemImage: "folder")
+                    sheetButtonLabel("Files, Folder, ZIP or RAR", systemImage: "folder.badge.plus")
                 }
             }
 

@@ -1,6 +1,7 @@
 import SwiftUI
 import Observation
 import UniformTypeIdentifiers
+import UIKit
 
 struct LocalFileWorkspaceView: View {
     @State private var model = LocalFileWorkspaceModel()
@@ -12,6 +13,7 @@ struct LocalFileWorkspaceView: View {
     @State private var renameText = ""
     @State private var deleteTarget: LocalFileEntry?
     @State private var alertMessage: String?
+    @State private var imagePreview: LocalImagePreview?
 
     var body: some View {
         NavigationStack {
@@ -40,7 +42,7 @@ struct LocalFileWorkspaceView: View {
                 }
             }
             .task { await model.loadInitial() }
-            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { result in
                 Task { await handleImport(result) }
             }
             .alert("New File", isPresented: $showNewFile) {
@@ -81,6 +83,9 @@ struct LocalFileWorkspaceView: View {
                 LocalTextFileEditorView(file: file) { saved in
                     if saved { Task { await model.reload() } }
                 }
+            }
+            .sheet(item: $imagePreview) { preview in
+                LocalImageFilePreview(preview: preview)
             }
         }
     }
@@ -152,7 +157,7 @@ struct LocalFileWorkspaceView: View {
         } else {
             List(model.entries) { entry in
                 Button {
-                    Task { await model.open(entry) }
+                    Task { await open(entry) }
                 } label: {
                     LocalFileRow(entry: entry)
                 }
@@ -164,12 +169,45 @@ struct LocalFileWorkspaceView: View {
                         .tint(.blue)
                 }
                 .contextMenu {
+                    if entry.isArchive {
+                        Button("Extract Here", systemImage: "archivebox") { Task { await extractArchive(entry) } }
+                    }
                     Button("Rename", systemImage: "pencil") { renameTarget = entry; renameText = entry.name }
                     Button("Delete", systemImage: "trash", role: .destructive) { deleteTarget = entry }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+        }
+    }
+
+    private func open(_ entry: LocalFileEntry) async {
+        if entry.isImage {
+            do {
+                let data = try await IshFS.readFileData(path: entry.path, maxBytes: 24_000_000)
+                guard let image = UIImage(data: data) else {
+                    alertMessage = "This image format could not be previewed."
+                    return
+                }
+                imagePreview = LocalImagePreview(name: entry.name, path: entry.path, image: image)
+            } catch {
+                alertMessage = error.localizedDescription
+            }
+            return
+        }
+        await model.open(entry)
+    }
+
+    private func extractArchive(_ entry: LocalFileEntry) async {
+        let nsName = entry.name as NSString
+        let folderName = nsName.deletingPathExtension.isEmpty ? "\(entry.name) extracted" : "\(nsName.deletingPathExtension) extracted"
+        let destination = RemotePath.parse(path: model.currentPath).join(name: folderName).asString()
+        let result = await IshFS.extractArchive(path: entry.path, destination: destination)
+        if result.exitCode == 0 {
+            await model.reload()
+            alertMessage = "Extracted to \(destination)."
+        } else {
+            alertMessage = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
@@ -454,11 +492,11 @@ private final class LocalFileWorkspaceModel {
     }
 
     func importFile(from url: URL) async throws {
-        let didStart = url.startAccessingSecurityScopedResource()
-        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
-        let targetName = try await availableImportName(preferredName: url.lastPathComponent)
-        let target = RemotePath.parse(path: currentPath).join(name: targetName).asString()
-        try await IshFS.writeFile(path: target, sourceURL: url, replaceExisting: false)
+        _ = try await ConversationAttachmentSupport.importURLToFakeFS(
+            url: url,
+            destinationDirectory: currentPath,
+            treatImagesAsFiles: true
+        )
         await reload()
     }
 }
@@ -480,17 +518,59 @@ struct LocalFileEntry: Identifiable, Hashable {
         kind == .directory ? "folder" : ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
 
+    var isImage: Bool {
+        ["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "bmp"].contains((name as NSString).pathExtension.lowercased())
+    }
+
+    var isArchive: Bool {
+        ConversationAttachmentSupport.isArchiveName(name)
+    }
+
     var iconName: String {
         let ext = (name as NSString).pathExtension.lowercased()
         switch ext {
         case "swift", "rs", "js", "ts", "tsx", "jsx", "py", "sh", "rb", "go", "c", "h", "m", "mm", "cpp", "json", "yml", "yaml", "toml", "md":
             return "curlybraces"
-        case "png", "jpg", "jpeg", "gif", "webp", "svg":
+        case "png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "bmp", "svg":
             return "photo"
-        case "zip", "gz", "tar", "xz":
+        case "zip", "rar", "7z", "gz", "tar", "xz", "tgz", "txz":
             return "archivebox"
         default:
             return "doc.text"
+        }
+    }
+}
+
+
+private struct LocalImagePreview: Identifiable {
+    let id = UUID()
+    let name: String
+    let path: String
+    let image: UIImage
+}
+
+private struct LocalImageFilePreview: View {
+    let preview: LocalImagePreview
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                LitterTheme.backgroundGradient.ignoresSafeArea()
+                ScrollView([.horizontal, .vertical]) {
+                    Image(uiImage: preview.image)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(16)
+                }
+            }
+            .navigationTitle(preview.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") { dismiss() }
+                }
+            }
         }
     }
 }

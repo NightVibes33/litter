@@ -240,17 +240,30 @@ final class AIProviderStore: ObservableObject {
     func searchHuggingFaceModels(query: String) async throws -> [HuggingFaceModelSearchResult] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
+        let filtered = try await fetchHuggingFaceSearch(query: trimmed, useGGUFFilter: true)
+        if !filtered.isEmpty { return filtered }
+        return try await fetchHuggingFaceSearch(query: trimmed, useGGUFFilter: false)
+    }
+
+    private func fetchHuggingFaceSearch(query: String, useGGUFFilter: Bool) async throws -> [HuggingFaceModelSearchResult] {
         var components = URLComponents(string: "https://huggingface.co/api/models")!
-        components.queryItems = [
-            URLQueryItem(name: "search", value: trimmed),
-            URLQueryItem(name: "limit", value: "30"),
-            URLQueryItem(name: "filter", value: "gguf")
+        var items = [
+            URLQueryItem(name: "search", value: query),
+            URLQueryItem(name: "limit", value: "40")
         ]
+        if useGGUFFilter {
+            items.append(URLQueryItem(name: "filter", value: "gguf"))
+        }
+        components.queryItems = items
         guard let url = components.url else { return [] }
         let (data, response) = try await URLSession.shared.data(from: url)
         try validate(response)
-        return try JSONDecoder().decode([HuggingFaceModelSearchResult].self, from: data)
-            .filter { ($0.tags ?? []).contains("gguf") || $0.modelId.lowercased().contains("gguf") }
+        let decoded = try JSONDecoder().decode([HuggingFaceModelSearchResult].self, from: data)
+        guard useGGUFFilter else { return decoded }
+        return decoded.filter { result in
+            let tags = (result.tags ?? []).map { $0.lowercased() }
+            return tags.contains("gguf") || result.modelId.lowercased().contains("gguf")
+        }
     }
 
     func fetchHuggingFaceModelDetails(repository: String) async throws -> HuggingFaceModelDetails {
@@ -258,7 +271,7 @@ final class AIProviderStore: ObservableObject {
         guard !cleaned.isEmpty else {
             throw NSError(domain: "AIProviderStore", code: 20, userInfo: [NSLocalizedDescriptionKey: "Missing model repository."])
         }
-        guard let url = URL(string: "https://huggingface.co/api/models/\(cleaned)?blobs=true") else {
+        guard let url = huggingFaceAPIModelURL(repository: cleaned) else {
             throw NSError(domain: "AIProviderStore", code: 21, userInfo: [NSLocalizedDescriptionKey: "Invalid model repository."])
         }
         let (data, response) = try await URLSession.shared.data(from: url)
@@ -294,11 +307,11 @@ final class AIProviderStore: ObservableObject {
         architecture: String?,
         capability: DeviceCapabilityProfile = .current()
     ) async throws -> LocalModelRecord {
-        guard let url = URL(string: "https://huggingface.co/\(repository)/resolve/main/\(file.rfilename)") else {
+        guard let url = huggingFaceResolveURL(repository: repository, fileName: file.rfilename) else {
             throw NSError(domain: "AIProviderStore", code: 31, userInfo: [NSLocalizedDescriptionKey: "Invalid model file URL."])
         }
         let projectorDownload: DownloadedModelFile?
-        if let projector, let projectorURL = URL(string: "https://huggingface.co/\(repository)/resolve/main/\(projector.rfilename)") {
+        if let projector, let projectorURL = huggingFaceResolveURL(repository: repository, fileName: projector.rfilename) {
             projectorDownload = try await downloadModelFile(url: projectorURL, fileName: projector.rfilename, expectedSHA256: projector.lfs?.sha256)
         } else {
             projectorDownload = nil
@@ -456,6 +469,7 @@ final class AIProviderStore: ObservableObject {
         guard capability.freeDiskBytes > requiredBytes else {
             throw NSError(domain: "AIProviderStore", code: 33, userInfo: [NSLocalizedDescriptionKey: "Not enough free storage for this model and runtime cache."])
         }
+        localModelDownloadProgress = localModelDownloadProgress?.installingCopy("Installing model into local storage")
         try await Task.detached(priority: .utility) {
             let fileManager = FileManager.default
             try fileManager.moveItem(at: model.temporaryURL, to: destination)
@@ -488,6 +502,7 @@ final class AIProviderStore: ObservableObject {
         localModels.append(record)
         try persistLocalModels()
         ensureLocalProviderExists()
+        localModelDownloadProgress = localModelDownloadProgress?.finishedCopy()
         if globalModelSettings.autoValidateDownloads {
             Task { await validateLocalModel(record) }
         }
@@ -500,9 +515,6 @@ final class AIProviderStore: ObservableObject {
         localModelDownloadProgress = .starting(fileName: fileName, sourceURL: url)
         defer {
             activeModelDownload = nil
-            if let progress = localModelDownloadProgress, progress.phase == .finished || !progress.isFinished {
-                localModelDownloadProgress = nil
-            }
         }
 
         do {
@@ -520,7 +532,6 @@ final class AIProviderStore: ObservableObject {
                 try? FileManager.default.removeItem(at: temporaryURL)
                 throw NSError(domain: "AIProviderStore", code: 34, userInfo: [NSLocalizedDescriptionKey: "Downloaded file checksum did not match."])
             }
-            localModelDownloadProgress = localModelDownloadProgress?.finishedCopy()
             return DownloadedModelFile(
                 temporaryURL: temporaryURL,
                 sourceURL: url,
@@ -701,6 +712,23 @@ final class AIProviderStore: ObservableObject {
         }
     }
 
+    private func huggingFaceAPIModelURL(repository: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "huggingface.co"
+        components.path = "/api/models/\(repository)"
+        components.queryItems = [URLQueryItem(name: "blobs", value: "true")]
+        return components.url
+    }
+
+    private func huggingFaceResolveURL(repository: String, fileName: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "huggingface.co"
+        components.path = "/\(repository)/resolve/main/\(fileName)"
+        return components.url
+    }
+
     private func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { return }
         guard (200..<300).contains(http.statusCode) else {
@@ -783,6 +811,7 @@ struct LocalModelDownloadProgress: Equatable, Identifiable {
         case starting
         case downloading
         case verifying
+        case installing
         case finished
         case cancelled
         case failed
@@ -826,8 +855,12 @@ struct LocalModelDownloadProgress: Equatable, Identifiable {
         copy(phase: .verifying, message: "Verifying checksum")
     }
 
+    func installingCopy(_ message: String = "Installing model") -> LocalModelDownloadProgress {
+        copy(phase: .installing, message: message)
+    }
+
     func finishedCopy() -> LocalModelDownloadProgress {
-        copy(phase: .finished, bytesWritten: max(bytesWritten, totalBytes), message: "Download complete")
+        copy(phase: .finished, bytesWritten: max(bytesWritten, totalBytes), message: "Model installed")
     }
 
     func cancelledCopy() -> LocalModelDownloadProgress {

@@ -18,3 +18,4 @@ Latest implementation note:
 
 - BuildKit now stages fakefs project files into app-visible `Documents/BuildKit/Jobs` before invoking native code.
 - Private in-process driver mode source exists, but real local Swift/IPA execution still requires private CoreCompiler/support libs/iPhoneOS SDK validation on device.
+- Current pending changes add real iOS Files folder/archive/image import paths, fakefs archive extraction, chat attachment path mentions, Hugging Face model detail sheets, GGUF sibling download cards, and persistent model install progress. These changes require the next unsigned IPA workflow run for compile verification.

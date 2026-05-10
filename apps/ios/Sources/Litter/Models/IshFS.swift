@@ -69,6 +69,23 @@ enum IshFS {
         try await writeFile(path: path, data: Data(text.utf8), replaceExisting: true)
     }
 
+    static func readFileData(path: String, maxBytes: Int64) async throws -> Data {
+        let quoted = shellQuote(path)
+        let sizeResult = await run("wc -c < \(quoted) 2>/dev/null || exit 2")
+        guard sizeResult.exitCode == 0 else { throw error("Could not read \(path)", result: sizeResult) }
+        let size = Int64(sizeResult.output.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        guard size <= maxBytes else {
+            throw NSError(domain: "IshFS", code: 3, userInfo: [NSLocalizedDescriptionKey: "File is too large to preview in-app."])
+        }
+        let result = await run("base64 < \(quoted)")
+        guard result.exitCode == 0 else { throw error("Could not read \(path)", result: result) }
+        let encoded = result.output.replacingOccurrences(of: "\n", with: "")
+        guard let data = Data(base64Encoded: encoded) else {
+            throw NSError(domain: "IshFS", code: 4, userInfo: [NSLocalizedDescriptionKey: "Could not decode file preview."])
+        }
+        return data
+    }
+
     static func writeFile(path: String, data: Data, replaceExisting: Bool = true) async throws {
         try await writeChunks(path: path, replaceExisting: replaceExisting) { appendChunk in
             let encoded = data.base64EncodedString()
@@ -138,6 +155,29 @@ enum IshFS {
     static func createDirectory(path: String) async throws {
         let result = await run("mkdir \(shellQuote(path))")
         guard result.exitCode == 0 else { throw error("Could not create folder. An item with that name may already exist.", result: result) }
+    }
+
+    static func createDirectoryIfNeeded(path: String) async throws {
+        let result = await run("mkdir -p \(shellQuote(path))")
+        guard result.exitCode == 0 else { throw error("Could not create folder.", result: result) }
+    }
+
+    static func extractArchive(path: String, destination: String) async -> Result {
+        let archive = shellQuote(path)
+        let output = shellQuote(destination)
+        return await run("""
+        set -u
+        mkdir -p \(output) || exit 2
+        case \(archive) in
+          *.zip) command -v unzip >/dev/null 2>&1 && exec unzip -o \(archive) -d \(output) ;;
+          *.rar) command -v unar >/dev/null 2>&1 && exec unar -f -o \(output) \(archive); command -v unrar >/dev/null 2>&1 && exec unrar x -o+ \(archive) \(output)/ ;;
+          *.tar|*.tar.gz|*.tgz|*.tar.xz|*.txz) exec tar -xf \(archive) -C \(output) ;;
+          *.gz) exec gzip -dk \(archive) ;;
+        esac
+        command -v bsdtar >/dev/null 2>&1 && exec bsdtar -xf \(archive) -C \(output)
+        echo "No compatible extractor found for this archive. Install unzip, unar, unrar, tar, or bsdtar in fakefs."
+        exit 127
+        """)
     }
 
     static func rename(path: String, to destination: String) async throws {

@@ -208,7 +208,7 @@ struct ConversationView: View {
 
     private func sendMessage(
         _ text: String,
-        attachmentImage: UIImage?,
+        attachments: [ConversationAttachment],
         skillMentions: [SkillMentionSelection],
         pluginMentions: [PluginMentionSelection]
     ) {
@@ -223,7 +223,7 @@ struct ConversationView: View {
                 )
                 let payload = try makeComposerPayload(
                     text: text,
-                    attachmentImage: attachmentImage,
+                    attachments: attachments,
                     skillMentions: skillMentions,
                     pluginMentions: pluginMentions
                 )
@@ -332,11 +332,10 @@ struct ConversationView: View {
 
     private func makeComposerPayload(
         text: String,
-        attachmentImage: UIImage?,
+        attachments: [ConversationAttachment],
         skillMentions: [SkillMentionSelection],
         pluginMentions: [PluginMentionSelection]
     ) throws -> AppComposerPayload {
-        let preparedAttachment = attachmentImage.flatMap(ConversationAttachmentSupport.prepareImage)
         var additionalInputs = skillMentions.map { mention in
             AppUserInput.skill(name: mention.name, path: AbsolutePath(value: mention.path))
         }
@@ -345,9 +344,7 @@ struct ConversationView: View {
                 AppUserInput.mention(name: mention.name, path: mention.path)
             )
         }
-        if let preparedAttachment {
-            additionalInputs.append(preparedAttachment.userInput)
-        }
+        additionalInputs.append(contentsOf: ConversationAttachmentSupport.buildTurnInputs(attachments: attachments))
         return AppComposerPayload(
             text: text,
             additionalInputs: additionalInputs,
@@ -392,7 +389,7 @@ private struct ConversationBottomChrome: View {
     @Environment(AppModel.self) private var appModel
     let pinnedContextItems: [ConversationItem]
     let composer: ConversationComposerSnapshot
-    let onSend: (String, UIImage?, [SkillMentionSelection], [PluginMentionSelection]) -> Void
+    let onSend: (String, [ConversationAttachment], [SkillMentionSelection], [PluginMentionSelection]) -> Void
     let onFileSearch: (String) async throws -> [FileSearchResult]
     var bottomInset: CGFloat = 0
     let onOpenConversation: ((ThreadKey) -> Void)?
@@ -1358,7 +1355,7 @@ private struct ConversationInputBar: View {
     @AppStorage("workDir") private var workDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "/"
     @AppStorage("fastMode") private var fastMode = false
 
-    let onSend: (String, UIImage?, [SkillMentionSelection], [PluginMentionSelection]) -> Void
+    let onSend: (String, [ConversationAttachment], [SkillMentionSelection], [PluginMentionSelection]) -> Void
     let onFileSearch: (String) async throws -> [FileSearchResult]
     var bottomInset: CGFloat = 0
     let showModeChip: Bool
@@ -1372,7 +1369,8 @@ private struct ConversationInputBar: View {
     @State private var showCamera = false
     @State private var showFileImporter = false
     @State private var selectedPhoto: PhotosPickerItem?
-    @State private var attachedImage: UIImage?
+    @State private var attachments: [ConversationAttachment] = []
+    @State private var capturedImage: UIImage?
     @State private var showSlashPopup = false
     @State private var activeSlashToken: ComposerSlashQueryContext?
     @State private var slashSuggestions: [ComposerSlashCommand] = []
@@ -1466,7 +1464,7 @@ private struct ConversationInputBar: View {
             showCamera: $showCamera,
             showFileImporter: $showFileImporter,
             selectedPhoto: $selectedPhoto,
-            attachedImage: $attachedImage,
+            capturedImage: $capturedImage,
             showModelSelector: $showModelSelector,
             showPermissionsSheet: $showPermissionsSheet,
             showExperimentalSheet: $showExperimentalSheet,
@@ -1478,9 +1476,7 @@ private struct ConversationInputBar: View {
             showMicPermissionAlert: $showMicPermissionAlert,
             onOpenSettings: openAppSettings,
             onLoadSelectedPhoto: loadSelectedPhoto,
-            onLoadSelectedFile: { url in
-                attachedImage = ConversationAttachmentSupport.loadImageFile(at: url)
-            },
+            onLoadSelectedFiles: importSelectedFiles,
             onLoadExperimentalFeatures: loadExperimentalFeatures,
             onIsExperimentalFeatureEnabled: { featureId, fallback in
                 isExperimentalFeatureEnabled(featureId, fallback: fallback)
@@ -1502,9 +1498,14 @@ private struct ConversationInputBar: View {
             guard let prefill = snapshot.composerPrefillRequest else { return }
             inputText = prefill.text
             composerSelectionRange = NSRange(location: (prefill.text as NSString).length, length: 0)
-            attachedImage = nil
+            attachments.removeAll()
             hideComposerPopups()
             appModel.clearComposerPrefill(id: prefill.id)
+        }
+        .onChange(of: capturedImage) { _, image in
+            guard let image else { return }
+            appendImageAttachment(image)
+            capturedImage = nil
         }
         .onChange(of: isComposerFocused) { _, focused in
             if focused {
@@ -1535,7 +1536,7 @@ private struct ConversationInputBar: View {
     private var composerSurface: some View {
         VStack(spacing: 0) {
             ConversationComposerContentView(
-                attachedImage: attachedImage,
+                attachments: attachments,
                 collaborationMode: snapshot.collaborationMode,
                 activePlanProgress: snapshot.activePlanProgress,
                 pendingUserInputRequest: pendingUserInputRequest,
@@ -1549,14 +1550,14 @@ private struct ConversationInputBar: View {
                 showModeChip: showModeChip,
                 voiceManager: voiceManager,
                 showAttachMenu: $showAttachMenu,
-                onClearAttachment: clearAttachment,
+                onRemoveAttachment: removeAttachment,
                 onRespondToPendingUserInput: respondToPendingUserInput,
                 onImplementPlan: { Task { await implementPlan() } },
                 onDismissPlanImplementation: dismissPlanImplementationPrompt,
                 onSteerQueuedFollowUp: steerQueuedFollowUp,
                 onDeleteQueuedFollowUp: deleteQueuedFollowUp,
                 onRemovePluginMention: removePluginMention,
-                onPasteImage: { image in attachedImage = image },
+                onPasteImage: appendImageAttachment,
                 onOpenModePicker: onOpenModePicker,
                 onSendText: handleSend,
                 onStopRecording: stopVoiceRecording,
@@ -1577,17 +1578,14 @@ private struct ConversationInputBar: View {
             }
         }
         .dropDestination(for: URL.self) { urls, _ in
-            guard let image = urls.lazy.compactMap({ ConversationAttachmentSupport.loadImageFile(at: $0) }).first else {
-                return false
-            }
-            attachedImage = image
-            return true
+            Task { await importSelectedFiles(urls) }
+            return !urls.isEmpty
         }
         .dropDestination(for: Data.self) { items, _ in
             guard let image = items.lazy.compactMap({ ConversationAttachmentSupport.loadImageData($0) }).first else {
                 return false
             }
-            attachedImage = image
+            appendImageAttachment(image)
             return true
         }
     }
@@ -1604,8 +1602,26 @@ private struct ConversationInputBar: View {
         return min(max(percent, 0), 100)
     }
 
-    private func clearAttachment() {
-        attachedImage = nil
+    private func removeAttachment(_ id: ConversationAttachment.ID) {
+        attachments.removeAll { $0.id == id }
+    }
+
+    private func appendImageAttachment(_ image: UIImage) {
+        if let attachment = ConversationAttachmentSupport.imageAttachment(image) {
+            attachments.append(attachment)
+        }
+    }
+
+    private func importSelectedFiles(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        do {
+            for url in urls {
+                let attachment = try await ConversationAttachmentSupport.importURLToFakeFS(url: url, destinationDirectory: workDir)
+                attachments.append(attachment)
+            }
+        } catch {
+            slashErrorMessage = error.localizedDescription
+        }
     }
 
     private func respondToPendingUserInput(_ answers: [String: [String]]) {
@@ -1654,25 +1670,25 @@ private struct ConversationInputBar: View {
 
     private func handleSend() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let image = attachedImage
-        guard !text.isEmpty || image != nil else { return }
-        if image == nil,
+        let pendingAttachments = attachments
+        guard !text.isEmpty || !pendingAttachments.isEmpty else { return }
+        if pendingAttachments.isEmpty,
            let invocation = parseSlashCommandInvocation(text) {
             inputText = ""
-            attachedImage = nil
+            attachments.removeAll()
             hideComposerPopups()
             isComposerFocused = false
             executeSlashCommand(invocation.command, args: invocation.args)
             return
         }
         inputText = ""
-        attachedImage = nil
+        attachments.removeAll()
         hideComposerPopups()
         isComposerFocused = false
         let skillMentions = collectSkillMentionsForSubmission(text)
         let pluginMentions = collectPluginMentionsForSubmission(text)
         pluginMentionSelections = []
-        onSend(text, image, skillMentions, pluginMentions)
+        onSend(text, pendingAttachments, skillMentions, pluginMentions)
     }
 
     private func collectPluginMentionsForSubmission(_ text: String) -> [PluginMentionSelection] {
@@ -1774,7 +1790,7 @@ private struct ConversationInputBar: View {
     private func loadSelectedPhoto(_ item: PhotosPickerItem) async {
         if let data = try? await item.loadTransferable(type: Data.self),
            let image = ConversationAttachmentSupport.loadImageData(data) {
-            attachedImage = image
+            appendImageAttachment(image)
         }
         selectedPhoto = nil
     }
@@ -2007,7 +2023,7 @@ private struct ConversationInputBar: View {
         activeSlashToken = nil
         slashSuggestions = []
         inputText = ""
-        attachedImage = nil
+        attachments.removeAll()
         isComposerFocused = false
         executeSlashCommand(command, args: nil)
     }

@@ -3,7 +3,7 @@ import UIKit
 
 struct ConversationComposerContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    let attachedImage: UIImage?
+    let attachments: [ConversationAttachment]
     let collaborationMode: AppModeKind
     let activePlanProgress: AppPlanProgressSnapshot?
     let pendingUserInputRequest: PendingUserInputRequest?
@@ -18,7 +18,7 @@ struct ConversationComposerContentView: View {
     let voiceManager: VoiceTranscriptionManager
     let allowsVoiceInput: Bool
     @Binding var showAttachMenu: Bool
-    let onClearAttachment: () -> Void
+    let onRemoveAttachment: (ConversationAttachment.ID) -> Void
     let onRespondToPendingUserInput: ([String: [String]]) -> Void
     let onImplementPlan: () -> Void
     let onDismissPlanImplementation: () -> Void
@@ -36,7 +36,7 @@ struct ConversationComposerContentView: View {
     @Binding var composerSelectionRange: NSRange
 
     init(
-        attachedImage: UIImage?,
+        attachments: [ConversationAttachment],
         collaborationMode: AppModeKind,
         activePlanProgress: AppPlanProgressSnapshot?,
         pendingUserInputRequest: PendingUserInputRequest?,
@@ -51,7 +51,7 @@ struct ConversationComposerContentView: View {
         voiceManager: VoiceTranscriptionManager,
         allowsVoiceInput: Bool = true,
         showAttachMenu: Binding<Bool>,
-        onClearAttachment: @escaping () -> Void,
+        onRemoveAttachment: @escaping (ConversationAttachment.ID) -> Void,
         onRespondToPendingUserInput: @escaping ([String: [String]]) -> Void,
         onImplementPlan: @escaping () -> Void = {},
         onDismissPlanImplementation: @escaping () -> Void = {},
@@ -68,7 +68,7 @@ struct ConversationComposerContentView: View {
         isComposerFocused: Binding<Bool>,
         composerSelectionRange: Binding<NSRange> = .constant(NSRange(location: 0, length: 0))
     ) {
-        self.attachedImage = attachedImage
+        self.attachments = attachments
         self.collaborationMode = collaborationMode
         self.activePlanProgress = activePlanProgress
         self.pendingUserInputRequest = pendingUserInputRequest
@@ -83,7 +83,7 @@ struct ConversationComposerContentView: View {
         self.voiceManager = voiceManager
         self.allowsVoiceInput = allowsVoiceInput
         _showAttachMenu = showAttachMenu
-        self.onClearAttachment = onClearAttachment
+        self.onRemoveAttachment = onRemoveAttachment
         self.onRespondToPendingUserInput = onRespondToPendingUserInput
         self.onImplementPlan = onImplementPlan
         self.onDismissPlanImplementation = onDismissPlanImplementation
@@ -103,28 +103,19 @@ struct ConversationComposerContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let attachedImage {
-                HStack {
-                    ZStack(alignment: .topTrailing) {
-                        Image(uiImage: attachedImage)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 60, height: 60)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                        Button(action: onClearAttachment) {
-                            Image(systemName: "xmark.circle.fill")
-                                .litterFont(.body)
-                                .foregroundColor(.white)
-                                .background(Circle().fill(Color.black.opacity(0.6)))
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(attachments) { attachment in
+                            ConversationAttachmentPreviewChip(
+                                attachment: attachment,
+                                onRemove: { onRemoveAttachment(attachment.id) }
+                            )
                         }
-                        .offset(x: 4, y: -4)
                     }
-
-                    Spacer()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
             }
 
             VStack(alignment: .trailing, spacing: 0) {
@@ -182,7 +173,7 @@ struct ConversationComposerContentView: View {
                     composerSelectionRange: $composerSelectionRange,
                     voiceManager: voiceManager,
                     isTurnActive: isTurnActive,
-                    hasAttachment: attachedImage != nil,
+                    hasAttachment: !attachments.isEmpty,
                     allowsVoiceInput: allowsVoiceInput,
                     onPasteImage: onPasteImage,
                     onSendText: onSendText,
@@ -199,6 +190,56 @@ struct ConversationComposerContentView: View {
         }
         .frame(maxWidth: LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass) ? 760 : .infinity)
         .frame(maxWidth: .infinity, alignment: .center)
+    }
+}
+
+
+private struct ConversationAttachmentPreviewChip: View {
+    let attachment: ConversationAttachment
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Group {
+                if let image = attachment.image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: attachment.kind.iconName)
+                        .font(LitterFont.styled(size: 18, weight: .semibold))
+                        .foregroundStyle(attachment.kind == .archive ? LitterTheme.warning : LitterTheme.accent)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(width: 42, height: 42)
+            .background(LitterTheme.surface.opacity(0.7))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(attachment.displayName)
+                    .litterFont(.caption, weight: .semibold)
+                    .foregroundStyle(LitterTheme.textPrimary)
+                    .lineLimit(1)
+                Text(attachment.fakefsPath ?? attachment.detail)
+                    .litterMonoFont(size: 10, weight: .regular)
+                    .foregroundStyle(LitterTheme.textMuted)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: 190, alignment: .leading)
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(LitterFont.styled(size: 16, weight: .bold))
+                    .foregroundStyle(LitterTheme.textMuted)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove attachment")
+        }
+        .padding(.leading, 8)
+        .padding(.trailing, 6)
+        .padding(.vertical, 6)
+        .modifier(GlassRoundedRectModifier(cornerRadius: 18))
     }
 }
 

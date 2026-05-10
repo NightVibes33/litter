@@ -17,3 +17,7 @@
 - Added host staging bridge because native iOS code cannot directly read `/root` in iSH fakefs.
 - Added optional in-process Nyxian driver source and build-script mode for private BuildKit-enabled IPAs.
 - Added fakefs environment report/bootstrap commands for bot-readable diagnostics and repair.
+
+- Added fakefs-backed iOS Files imports for files, folders, images, ZIP/RAR/TAR-style archives, and chat composer attachment path mentions.
+- Added image preview and archive extraction actions in the local file workspace.
+- Added clickable Hugging Face model detail sheets with GGUF sibling download cards and persistent download/install progress.

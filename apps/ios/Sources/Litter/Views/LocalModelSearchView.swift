@@ -13,6 +13,7 @@ struct LocalModelSearchView: View {
     @State private var isLoadingDetails = false
     @State private var activeDownloadId: String?
     @State private var localAgentModel: LocalModelRecord?
+    @State private var selectedSearchResult: HuggingFaceModelSearchResult?
 
     var body: some View {
         List {
@@ -31,6 +32,14 @@ struct LocalModelSearchView: View {
         }
         .sheet(item: $localAgentModel) { model in
             LocalModelAgentView(model: model)
+        }
+        .sheet(item: $selectedSearchResult) { result in
+            LocalModelDetailSheet(
+                repository: result.modelId,
+                capability: capability,
+                activeDownloadId: $activeDownloadId,
+                statusMessage: $statusMessage
+            )
         }
     }
 
@@ -170,13 +179,14 @@ struct LocalModelSearchView: View {
 
             ForEach(results) { result in
                 Button {
+                    selectedSearchResult = result
                     Task { await loadDetails(repository: result.modelId) }
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(result.modelId)
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("\(result.downloads ?? 0) downloads · \(result.likes ?? 0) likes · tap to show GGUF files")
+                        Text("\(result.downloads ?? 0) downloads · \(result.likes ?? 0) likes · tap for model details and downloads")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
@@ -361,7 +371,8 @@ struct LocalModelSearchView: View {
         case .starting: return "Preparing secure download..."
         case .downloading: return "Downloading from \(progress.sourceURL.host ?? "remote host")"
         case .verifying: return progress.message ?? "Verifying model integrity..."
-        case .finished: return "Download finished. Installing model..."
+        case .installing: return progress.message ?? "Installing model..."
+        case .finished: return "Installed. Ready to verify or run."
         case .cancelled: return "Download cancelled."
         case .failed: return progress.message ?? "Download failed."
         }
@@ -384,9 +395,6 @@ struct LocalModelSearchView: View {
             statusMessage = results.isEmpty ? "No GGUF models found." : nil
             selectedDetails = nil
             selectedRepository = nil
-            if let first = results.first {
-                await loadDetails(repository: first.modelId)
-            }
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -458,5 +466,157 @@ struct LocalModelSearchView: View {
             return match
         }
         return details.projectorFiles.first
+    }
+}
+
+
+private struct LocalModelDetailSheet: View {
+    @StateObject private var providerStore = AIProviderStore.shared
+    let repository: String
+    let capability: DeviceCapabilityProfile
+    @Binding var activeDownloadId: String?
+    @Binding var statusMessage: String?
+    @Environment(\.dismiss) private var dismiss
+    @State private var details: HuggingFaceModelDetails?
+    @State private var isLoading = true
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(repository)
+                            .litterFont(.headline, weight: .semibold)
+                            .foregroundColor(LitterTheme.textPrimary)
+                            .textSelection(.enabled)
+                        if let details {
+                            Text("\(details.downloads ?? 0) downloads · \(details.likes ?? 0) likes · architecture \(details.gguf?.architecture ?? "unknown")")
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        } else if isLoading {
+                            ProgressView("Loading model details...")
+                                .tint(LitterTheme.accent)
+                        } else if let errorMessage {
+                            Text(errorMessage)
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.danger)
+                        }
+                    }
+                    .listRowBackground(LitterTheme.surface.opacity(0.68))
+                }
+
+                if let details {
+                    if details.ggufFiles.isEmpty {
+                        Section {
+                            Label("No GGUF files exposed by this repo", systemImage: "exclamationmark.triangle")
+                                .foregroundColor(LitterTheme.warning)
+                            Text("Try a different result or paste a direct .gguf URL. Some Hugging Face repos hide files behind subfolders or gated access.")
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
+                    } else {
+                        Section("Downloadable GGUF Files") {
+                            ForEach(details.ggufFiles) { file in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(alignment: .top) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(file.rfilename)
+                                                .litterFont(.subheadline, weight: .semibold)
+                                                .foregroundColor(LitterTheme.textPrimary)
+                                                .textSelection(.enabled)
+                                            Text(fileSubtitle(file, details: details))
+                                                .litterFont(.caption)
+                                                .foregroundColor(LitterTheme.textSecondary)
+                                        }
+                                        Spacer()
+                                        Button {
+                                            Task { await download(file, details: details) }
+                                        } label: {
+                                            if activeDownloadId == file.rfilename {
+                                                ProgressView().scaleEffect(0.8)
+                                            } else {
+                                                Label("Download", systemImage: "arrow.down.circle.fill")
+                                                    .labelStyle(.iconOnly)
+                                            }
+                                        }
+                                        .disabled(activeDownloadId != nil)
+                                        .foregroundColor(LitterTheme.accent)
+                                    }
+                                    if let warning = safetyWarning(for: file) {
+                                        Text(warning)
+                                            .litterFont(.caption)
+                                            .foregroundColor(LitterTheme.warning)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                                .listRowBackground(LitterTheme.surface.opacity(0.62))
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Model Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .task(id: repository) { await load() }
+        }
+    }
+
+    private func load() async {
+        isLoading = true
+        errorMessage = nil
+        do {
+            details = try await providerStore.fetchHuggingFaceModelDetails(repository: repository)
+        } catch {
+            details = nil
+            errorMessage = error.localizedDescription
+        }
+        isLoading = false
+    }
+
+    private func download(_ file: HuggingFaceModelDetails.Sibling, details: HuggingFaceModelDetails) async {
+        activeDownloadId = file.rfilename
+        statusMessage = "Downloading \(file.rfilename)..."
+        defer { activeDownloadId = nil }
+        do {
+            let record = try await providerStore.downloadHuggingFaceFile(
+                repository: repository,
+                file: file,
+                projector: matchingProjector(for: file, in: details),
+                architecture: details.gguf?.architecture,
+                capability: capability
+            )
+            statusMessage = "Installed \(record.fileName)."
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    private func matchingProjector(for file: HuggingFaceModelDetails.Sibling, in details: HuggingFaceModelDetails) -> HuggingFaceModelDetails.Sibling? {
+        let lower = file.rfilename.lowercased()
+        if lower.contains("gemma-4-e2b"), let match = details.projectorFiles.first(where: { $0.rfilename.lowercased().contains("gemma-4-e2b") }) {
+            return match
+        }
+        if lower.contains("gemma-4-e4b"), let match = details.projectorFiles.first(where: { $0.rfilename.lowercased().contains("gemma-4-e4b") }) {
+            return match
+        }
+        return details.projectorFiles.first
+    }
+
+    private func fileSubtitle(_ file: HuggingFaceModelDetails.Sibling, details: HuggingFaceModelDetails) -> String {
+        let size = ByteCountFormatter.string(fromByteCount: file.lfs?.size ?? file.size ?? 0, countStyle: .file)
+        let quant = DeviceCapabilityProfile.quantizationHint(from: file.rfilename.lowercased()) ?? "unknown quant"
+        return "\(size) · \(quant) · \(details.gguf?.architecture ?? "unknown architecture")"
+    }
+
+    private func safetyWarning(for file: HuggingFaceModelDetails.Sibling) -> String? {
+        let size = file.lfs?.size ?? file.size ?? 0
+        let safety = capability.safety(forFileSize: size, fileName: file.rfilename)
+        return safety.0 == .safe ? nil : safety.1
     }
 }

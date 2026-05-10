@@ -18,7 +18,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     @Binding var showCamera: Bool
     @Binding var showFileImporter: Bool
     @Binding var selectedPhoto: PhotosPickerItem?
-    @Binding var attachedImage: UIImage?
+    @Binding var capturedImage: UIImage?
     @Binding var showModelSelector: Bool
     @Binding var showPermissionsSheet: Bool
     @Binding var showExperimentalSheet: Bool
@@ -30,7 +30,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     @Binding var showMicPermissionAlert: Bool
     let onOpenSettings: () -> Void
     let onLoadSelectedPhoto: (PhotosPickerItem) async -> Void
-    let onLoadSelectedFile: (URL) -> Void
+    let onLoadSelectedFiles: ([URL]) async -> Void
     let onLoadExperimentalFeatures: () async -> Void
     let onIsExperimentalFeatureEnabled: (String, Bool) -> Bool
     let onSetExperimentalFeature: (String, Bool) async -> Void
@@ -130,7 +130,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     }
 
     private var attachSheetDetentHeight: CGFloat {
-        let showsFile = LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass)
+        let showsFile = true
         let showsCamera = !LitterPlatform.isCatalyst
         let count = 1 + (showsFile ? 1 : 0) + (showsCamera ? 1 : 0)
         return count >= 3 ? 260 : 210
@@ -144,10 +144,10 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                         showAttachMenu = false
                         showPhotoPicker = true
                     },
-                    onChooseFile: LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass) ? {
+                    onChooseFile: {
                         showAttachMenu = false
                         showFileImporter = true
-                    } : nil,
+                    },
                     onTakePhoto: LitterPlatform.isCatalyst ? nil : {
                         showAttachMenu = false
                         showCamera = true
@@ -159,19 +159,18 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
             .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
             .fileImporter(
                 isPresented: $showFileImporter,
-                allowedContentTypes: [.image],
-                allowsMultipleSelection: false
+                allowedContentTypes: [.item, .folder],
+                allowsMultipleSelection: true
             ) { result in
-                guard case let .success(urls) = result,
-                      let url = urls.first else { return }
-                onLoadSelectedFile(url)
+                guard case let .success(urls) = result else { return }
+                Task { await onLoadSelectedFiles(urls) }
             }
             .onChange(of: selectedPhoto) { _, item in
                 guard let item else { return }
                 Task { await onLoadSelectedPhoto(item) }
             }
             .fullScreenCover(isPresented: $showCamera) {
-                CameraView(image: $attachedImage)
+                CameraView(image: $capturedImage)
                     .ignoresSafeArea()
             }
             .sheet(isPresented: $showModelSelector) {

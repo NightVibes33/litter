@@ -24,7 +24,8 @@ struct HomeComposerView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var inputText = ""
-    @State private var attachedImage: UIImage?
+    @State private var attachments: [ConversationAttachment] = []
+    @State private var capturedImage: UIImage?
     @State private var showAttachMenu = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
@@ -55,7 +56,7 @@ struct HomeComposerView: View {
     }
 
     private var attachSheetDetentHeight: CGFloat {
-        let showsFile = LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass)
+        let showsFile = true
         let showsCamera = !LitterPlatform.isCatalyst
         let count = 1 + (showsFile ? 1 : 0) + (showsCamera ? 1 : 0)
         return count >= 3 ? 260 : 210
@@ -64,7 +65,7 @@ struct HomeComposerView: View {
     private var isActive: Bool {
         isComposerFocused
             || !inputText.isEmpty
-            || attachedImage != nil
+            || !attachments.isEmpty
             || voiceManager.isRecording
             || voiceManager.isTranscribing
     }
@@ -94,7 +95,7 @@ struct HomeComposerView: View {
             }
 
             ConversationComposerContentView(
-                attachedImage: attachedImage,
+                attachments: attachments,
                 collaborationMode: .default,
                 activePlanProgress: nil,
                 pendingUserInputRequest: nil,
@@ -109,12 +110,12 @@ struct HomeComposerView: View {
                 voiceManager: voiceManager,
                 allowsVoiceInput: project != nil,
                 showAttachMenu: $showAttachMenu,
-                onClearAttachment: { attachedImage = nil },
+                onRemoveAttachment: { id in attachments.removeAll { $0.id == id } },
                 onRespondToPendingUserInput: { _ in },
                 onSteerQueuedFollowUp: { _ in },
                 onDeleteQueuedFollowUp: { _ in },
                 onRemovePluginMention: removePluginMention,
-                onPasteImage: { image in attachedImage = image },
+                onPasteImage: appendImageAttachment,
                 onOpenModePicker: {},
                 onSendText: handleSend,
                 onStopRecording: stopVoiceRecording,
@@ -143,17 +144,14 @@ struct HomeComposerView: View {
             onActiveChange?(active)
         }
         .dropDestination(for: URL.self) { urls, _ in
-            guard let image = urls.lazy.compactMap({ ConversationAttachmentSupport.loadImageFile(at: $0) }).first else {
-                return false
-            }
-            attachedImage = image
-            return true
+            Task { await importSelectedFiles(urls) }
+            return !urls.isEmpty
         }
         .dropDestination(for: Data.self) { items, _ in
             guard let image = items.lazy.compactMap({ ConversationAttachmentSupport.loadImageData($0) }).first else {
                 return false
             }
-            attachedImage = image
+            appendImageAttachment(image)
             return true
         }
         .sheet(isPresented: $showAttachMenu) {
@@ -162,10 +160,10 @@ struct HomeComposerView: View {
                     showAttachMenu = false
                     showPhotoPicker = true
                 },
-                onChooseFile: LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass) ? {
+                onChooseFile: {
                     showAttachMenu = false
                     showFileImporter = true
-                } : nil,
+                },
                 onTakePhoto: LitterPlatform.isCatalyst ? nil : {
                     showAttachMenu = false
                     showCamera = true
@@ -177,19 +175,23 @@ struct HomeComposerView: View {
         .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
         .fileImporter(
             isPresented: $showFileImporter,
-            allowedContentTypes: [.image],
-            allowsMultipleSelection: false
+            allowedContentTypes: [.item, .folder],
+            allowsMultipleSelection: true
         ) { result in
-            guard case let .success(urls) = result,
-                  let url = urls.first else { return }
-            attachedImage = ConversationAttachmentSupport.loadImageFile(at: url)
+            guard case let .success(urls) = result else { return }
+            Task { await importSelectedFiles(urls) }
         }
         .onChange(of: selectedPhoto) { _, item in
             guard let item else { return }
             Task { await loadSelectedPhoto(item) }
         }
+        .onChange(of: capturedImage) { _, image in
+            guard let image else { return }
+            appendImageAttachment(image)
+            capturedImage = nil
+        }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraView(image: $attachedImage)
+            CameraView(image: $capturedImage)
                 .ignoresSafeArea()
         }
         .task {
@@ -212,8 +214,8 @@ struct HomeComposerView: View {
 
     private func handleSend() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let image = attachedImage
-        guard !text.isEmpty || image != nil else { return }
+        let pendingAttachments = attachments
+        guard !text.isEmpty || !pendingAttachments.isEmpty else { return }
         guard !isSubmitting else { return }
         guard let project else {
             errorMessage = "Pick a project before sending."
@@ -234,7 +236,7 @@ struct HomeComposerView: View {
                     }
                 }
                 inputText = ""
-                attachedImage = nil
+                attachments.removeAll()
                 composerSelectionRange = NSRange(location: 0, length: 0)
                 isComposerFocused = false
 
@@ -259,7 +261,6 @@ struct HomeComposerView: View {
                     )
                 )
                 RecentDirectoryStore.shared.record(path: project.cwd, for: project.serverId)
-                let preparedAttachment = image.flatMap(ConversationAttachmentSupport.prepareImage)
                 var additionalInputs: [AppUserInput] = []
                 let mentionsToSend = collectPluginMentionsForSubmission(text)
                 pluginMentionSelections = []
@@ -270,9 +271,7 @@ struct HomeComposerView: View {
                         AppUserInput.mention(name: mention.name, path: mention.path)
                     )
                 }
-                if let preparedAttachment {
-                    additionalInputs.append(preparedAttachment.userInput)
-                }
+                additionalInputs.append(contentsOf: ConversationAttachmentSupport.buildTurnInputs(attachments: pendingAttachments))
                 let payload = AppComposerPayload(
                     text: text,
                     additionalInputs: additionalInputs,
@@ -291,6 +290,27 @@ struct HomeComposerView: View {
         }
     }
 
+    private func appendImageAttachment(_ image: UIImage) {
+        if let attachment = ConversationAttachmentSupport.imageAttachment(image) {
+            attachments.append(attachment)
+        }
+    }
+
+    private func importSelectedFiles(_ urls: [URL]) async {
+        guard let project else {
+            errorMessage = "Pick a project before importing files."
+            return
+        }
+        do {
+            for url in urls {
+                let attachment = try await ConversationAttachmentSupport.importURLToFakeFS(url: url, destinationDirectory: project.cwd)
+                attachments.append(attachment)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     private func startVoiceRecording() {
         Task {
             let granted = await voiceManager.requestMicPermission()
@@ -302,7 +322,7 @@ struct HomeComposerView: View {
     private func loadSelectedPhoto(_ item: PhotosPickerItem) async {
         if let data = try? await item.loadTransferable(type: Data.self),
            let image = ConversationAttachmentSupport.loadImageData(data) {
-            attachedImage = image
+            appendImageAttachment(image)
         }
         selectedPhoto = nil
     }
