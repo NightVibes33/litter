@@ -345,8 +345,13 @@ actor LocalLlamaRuntime {
                 continuation.yield(.toolResult(result))
                 messages.append(LocalLlamaMessage(role: .assistant, text: finalText))
                 messages.append(LocalLlamaMessage(role: .tool, text: toolResultMessage(result)))
+                if !result.success {
+                    messages.append(LocalLlamaMessage(role: .system, text: "The previous local tool failed. Recover safely: explain the failure, request a narrower read-only tool, or produce a final answer. Do not claim the failed tool succeeded."))
+                    continuation.yield(.retry(attempt: rounds, reason: "Recovering from failed \(result.toolName) tool."))
+                }
             }
 
+            try Task.checkCancellation()
             let buffer = LocalLlamaTokenBuffer()
             let generated = try await generator(request, messages) { token in
                 buffer.append(token)

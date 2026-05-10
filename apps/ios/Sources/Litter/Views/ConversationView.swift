@@ -1740,6 +1740,10 @@ private struct ConversationInputBar: View {
             return
         }
         let threadKey = snapshot.threadKey
+        if activeTurnId.hasPrefix("local-") {
+            appModel.cancelLocalModelTurn(key: threadKey)
+            return
+        }
         LLog.info(
             "conversation",
             "interrupt turn",

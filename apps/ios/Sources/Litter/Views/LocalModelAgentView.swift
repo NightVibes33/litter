@@ -57,6 +57,12 @@ struct LocalModelAgentView: View {
             Text("Local models are Codex-style only: quality depends on the GGUF, context size, and tool-following reliability.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
+            Label(store.phase.displayName, systemImage: phaseIcon(store.phase))
+                .litterFont(.caption, weight: .semibold)
+                .foregroundColor(phaseColor(store.phase))
+            Text(store.contextBudgetSummary)
+                .litterFont(.caption2)
+                .foregroundColor(LitterTheme.textMuted)
         }
         .padding()
         .background(LitterTheme.surface.opacity(0.72))
@@ -158,6 +164,29 @@ struct LocalModelAgentView: View {
         case .tool: return LitterTheme.warning
         case .system: return LitterTheme.textMuted
         case .error: return LitterTheme.danger
+        }
+    }
+
+    private func phaseIcon(_ phase: LocalModelRunPhase) -> String {
+        switch phase {
+        case .idle: return "circle"
+        case .preparingContext: return "doc.text.magnifyingglass"
+        case .generating: return "sparkles"
+        case .waitingForApproval: return "hand.raised.fill"
+        case .runningTool: return "terminal.fill"
+        case .retrying, .recovering: return "arrow.clockwise"
+        case .completed: return "checkmark.seal.fill"
+        case .cancelled: return "stop.circle.fill"
+        case .failed: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func phaseColor(_ phase: LocalModelRunPhase) -> Color {
+        switch phase {
+        case .failed: return LitterTheme.danger
+        case .waitingForApproval, .retrying, .recovering: return LitterTheme.warning
+        case .completed: return LitterTheme.success
+        default: return LitterTheme.textSecondary
         }
     }
 

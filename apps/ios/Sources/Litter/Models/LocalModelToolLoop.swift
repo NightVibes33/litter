@@ -117,6 +117,20 @@ enum LocalModelToolLoop {
             """
         ),
         LocalModelToolSpec(
+            name: "grep_text",
+            description: "Search text content under a fakefs directory or file. Use literal search, not regex.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"path":{"type":"string"},"query":{"type":"string"},"max_results":{"type":"number"}},"required":["path","query"]}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "repo_map",
+            description: "Build a compact file tree map for a fakefs folder before planning edits.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"path":{"type":"string"},"max_entries":{"type":"number"}},"required":["path"]}
+            """
+        ),
+        LocalModelToolSpec(
             name: "shell",
             description: "Run a shell command in iSH. Disabled unless the user explicitly allows local shell tools.",
             inputSchemaJSON: """
@@ -125,9 +139,16 @@ enum LocalModelToolLoop {
         ),
         LocalModelToolSpec(
             name: "write_file",
-            description: "Write a UTF-8 file in iSH. Disabled until an approval UI is attached.",
+            description: "Write a UTF-8 file in iSH. Disabled until the approval UI shows the diff.",
             inputSchemaJSON: """
             {"type":"object","properties":{"path":{"type":"string"},"text":{"type":"string"}},"required":["path","text"]}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "replace_text",
+            description: "Replace exactly one UTF-8 text range in a fakefs file. Safer than full-file writes for edits.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{"path":{"type":"string"},"old_text":{"type":"string"},"new_text":{"type":"string"}},"required":["path","old_text","new_text"]}
             """
         )
     ]
@@ -140,6 +161,7 @@ enum LocalModelToolLoop {
         You can request local app tools by replying with a single JSON object and no markdown.
         Use this exact shape: {"tool":"tool_name","arguments":{"key":"value"}}
         Read-only fakefs tools can run automatically. Shell and write tools require explicit user approval.
+        Prefer repo_map, search_files, grep_text, and read_file before editing. Prefer replace_text for small edits and write_file only when replacing the full file is safer.
         After a tool result is returned, answer normally or request another tool.
         Available local tools:
         \(specs)
@@ -168,11 +190,11 @@ enum LocalModelToolLoop {
 
     static func risk(for call: LocalModelToolCall) -> LocalModelToolRisk {
         switch call.name {
-        case "list_dir", "read_file", "search_files":
+        case "list_dir", "read_file", "search_files", "grep_text", "repo_map":
             return .safeRead
         case "shell":
             return .shell
-        case "write_file":
+        case "write_file", "replace_text":
             return .write
         default:
             return .unknown
@@ -191,6 +213,9 @@ enum LocalModelToolLoop {
         case .shell:
             return "The local model wants to run a shell command: \(call.arguments["command"] ?? call.name)"
         case .write:
+            if call.name == "replace_text" {
+                return "The local model wants to edit: \(call.arguments["path"] ?? "unknown path")"
+            }
             return "The local model wants to write to: \(call.arguments["path"] ?? "unknown path")"
         case .unknown:
             return "The local model requested an unknown tool: \(call.name)"
@@ -228,6 +253,22 @@ enum LocalModelToolLoop {
             let result = await IshFS.run(command)
             guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
             return result.output
+        case "grep_text":
+            let path = try argument("path", in: call)
+            let query = try argument("query", in: call)
+            let maxResults = max(1, min(intArgument("max_results", in: call) ?? 50, 200))
+            let command = "grep -R -n -I -F -- \(IshFS.shellQuote(query)) \(IshFS.shellQuote(path)) 2>/dev/null | head -n \(maxResults)"
+            let result = await IshFS.run(command)
+            if result.exitCode == 1 { return "No matches." }
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "repo_map":
+            let path = try argument("path", in: call)
+            let maxEntries = max(10, min(intArgument("max_entries", in: call) ?? 120, 400))
+            let command = "find \(IshFS.shellQuote(path)) -maxdepth 4 -print 2>/dev/null | sed 's#^#- #' | head -n \(maxEntries)"
+            let result = await IshFS.run(command)
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
         case "shell":
             guard policy.allowsShell else { throw LocalModelToolLoopError.blocked("Local shell tools require explicit user approval.") }
             let command = try argument("command", in: call)
@@ -240,6 +281,18 @@ enum LocalModelToolLoop {
             let text = try argument("text", in: call)
             try await IshFS.writeTextFile(path: path, text: text)
             return "Wrote \(path)"
+        case "replace_text":
+            guard policy.allowsWrites else { throw LocalModelToolLoopError.blocked("Local edits require approval before execution.") }
+            let path = try argument("path", in: call)
+            let oldText = try argument("old_text", in: call)
+            let newText = try argument("new_text", in: call)
+            let current = try await IshFS.readTextFile(path: path, maxBytes: policy.maxReadBytes)
+            let occurrences = current.components(separatedBy: oldText).count - 1
+            guard occurrences == 1 else {
+                throw LocalModelToolLoopError.blocked("replace_text expected exactly one match in \(path), found \(occurrences). Read the file again and produce a narrower edit.")
+            }
+            try await IshFS.writeTextFile(path: path, text: current.replacingOccurrences(of: oldText, with: newText))
+            return "Edited \(path)"
         default:
             throw LocalModelToolLoopError.unknownTool(call.name)
         }
