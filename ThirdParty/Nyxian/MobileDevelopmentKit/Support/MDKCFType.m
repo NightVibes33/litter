@@ -41,10 +41,10 @@
     {
         return;
     }
-    
+
     Class self_class = [self class];
     Class self_meta = object_getClass(self_class);
-    
+
     /* instance methods */
     unsigned int count = 0;
     Method *methods = class_copyMethodList(nscfType, &count);
@@ -53,7 +53,7 @@
         class_addMethod(self_class, method_getName(methods[i]), method_getImplementation(methods[i]), method_getTypeEncoding(methods[i]));
     }
     free(methods);
-    
+
     /* class methods */
     Method *classMethods = class_copyMethodList(object_getClass(nscfType), &count);
     for(unsigned int i = 0; i < count; i++)

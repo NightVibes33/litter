@@ -59,14 +59,14 @@ static Boolean CCDiagnosticEqual(CFTypeRef cf1,
 {
     CCDiagnosticRef diagnostic1 = (CCDiagnosticRef)cf1;
     CCDiagnosticRef diagnostic2 = (CCDiagnosticRef)cf2;
-    
+
     if(diagnostic1->fileSourceLocation != nil)
     {
         if(diagnostic2->fileSourceLocation == nil)
         {
             return false;
         }
-        
+
         if(!CFEqual(diagnostic1->fileSourceLocation, diagnostic2->fileSourceLocation))
         {
             return false;
@@ -76,7 +76,7 @@ static Boolean CCDiagnosticEqual(CFTypeRef cf1,
     {
         return false;
     }
-    
+
     if(diagnostic1->type != diagnostic2->type || diagnostic1->level != diagnostic2->level)
     {
         return false;
@@ -86,7 +86,7 @@ static Boolean CCDiagnosticEqual(CFTypeRef cf1,
     {
         return false;
     }
-    
+
     return true;
 }
 
@@ -148,23 +148,23 @@ CC_EXPORT CCDiagnosticRef CCDiagnosticCreate(CFAllocatorRef allocator,
                                              CFStringRef message)
 {
     assert(message != nil && mainSource != nil);
-    
+
     CCDiagnosticRef diagnostic = (CCDiagnosticRef)_CFRuntimeCreateInstance(allocator, CCDiagnosticGetTypeID(), sizeof(struct opaque_ccdiag) - sizeof(CFRuntimeBase), NULL);
     if(diagnostic == nil)
     {
         return nil;
     }
-    
+
     diagnostic->type = type;
     diagnostic->level = level;
     diagnostic->mainSource = CFRetain(mainSource);
-    
+
     if(fileSourceLocation != nil)
     {
         diagnostic->fileSourceLocation = (CCFileSourceLocationRef)CFRetain(fileSourceLocation);
     }
     diagnostic->message = CFRetain(message);
-    
+
     return diagnostic;
 }
 

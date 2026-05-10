@@ -1,0 +1,174 @@
+/*
+ SPDX-License-Identifier: AGPL-3.0-or-later
+
+ Copyright (C) 2025 - 2026 mach-port-t
+
+ This file is part of Nyxian.
+
+ Nyxian is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ Nyxian is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Affero General Public License for more details.
+
+ You should have received a copy of the GNU Affero General Public License
+ along with Nyxian. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#import <LindChain/JBSupport/Shell.h>
+#import <Foundation/Foundation.h>
+#import <Nyxian-Swift.h>
+#include <spawn.h>
+
+extern int posix_spawnattr_set_persona_np(posix_spawnattr_t *attr, uid_t persona_id, uint32_t flags);
+extern int posix_spawnattr_set_persona_uid_np(posix_spawnattr_t *attr, uid_t uid);
+extern int posix_spawnattr_set_persona_gid_np(posix_spawnattr_t *attr, uid_t gid);
+
+void createArgv(NSArray<NSString *> *arguments,
+                int *argc,
+                char ***argv)
+{
+    if(!arguments)
+    {
+        *argc = 0;
+        return;
+    }
+
+    NSInteger count = arguments.count;
+    *argc = (int)count;
+
+    *argv = calloc(count + 1, sizeof(char *));
+    for(NSInteger i = 0; i < arguments.count; i++)
+    {
+        (*argv)[i] = strdup(arguments[i].UTF8String);
+    }
+    (*argv)[count] = NULL;
+}
+
+void createEnvp(NSArray<NSString *> *environment,
+                int *envCount,
+                char ***envp)
+{
+    if(!environment)
+    {
+        *envCount = 0;
+        *envp = NULL;
+        return;
+    }
+
+    NSInteger count = environment.count;
+    *envCount = (int)count;
+
+    *envp = malloc(sizeof(char *) * (count + 1));
+    for(NSInteger i = 0; i < count; i++)
+    {
+        (*envp)[i] = strdup([environment[i] UTF8String]);
+    }
+    (*envp)[count] = NULL;
+}
+
+
+static int runCommand(NSArray<NSString *> *args,
+                      uid_t uid,
+                      NSArray<NSString *> *extraEnv,
+                      NSString **output)
+{
+    pid_t pid = 0;
+
+    int argc = 0;
+    char **argv = NULL;
+
+    createArgv(args, &argc, &argv);
+
+    static NSString *path;
+    static dispatch_once_t onceToken;
+    static NSArray *baseEnv;
+    dispatch_once(&onceToken, ^{
+        baseEnv = @[
+            [NSString stringWithFormat:@"PATH=%@", NSBundle.mainBundle.bundlePath],
+            [NSString stringWithFormat:@"HOME=%@", NSHomeDirectory()],
+            [NSString stringWithFormat:@"TMPDIR=%@", NSTemporaryDirectory()]
+        ];
+    });
+
+    NSMutableArray *envStrings = [NSMutableArray arrayWithArray:baseEnv];
+    if(extraEnv)
+    {
+        [envStrings addObjectsFromArray:extraEnv];
+    }
+
+    int envc = 0;
+    char **envp = NULL;
+    createEnvp(envStrings, &envc, &envp);
+
+    int outPipe[2];
+    pipe(outPipe);
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_adddup2(&actions, outPipe[1], STDOUT_FILENO);
+    posix_spawn_file_actions_adddup2(&actions, outPipe[1], STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&actions, outPipe[0]);
+
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+
+    posix_spawnattr_set_persona_np(&attr, 99, 1);
+    posix_spawnattr_set_persona_uid_np(&attr, uid);
+    posix_spawnattr_set_persona_gid_np(&attr, uid);
+
+    errno_t result = posix_spawnp(&pid, [args[0] UTF8String], &actions, &attr, (char * const *)argv, (char * const *)envp);
+
+    posix_spawnattr_destroy(&attr);
+    posix_spawn_file_actions_destroy(&actions);
+
+    int status = 0;
+
+    if(result != 0)
+    {
+        dprintf(outPipe[1], "failed to execute \"%s\": %s", [args[0] UTF8String], strerror(result));
+        goto cleanup;
+    }
+
+    waitpid(pid, &status, 0);
+
+cleanup:
+    close(outPipe[1]);
+
+    NSMutableData *outputData = [NSMutableData data];
+    char buffer[1024];
+    ssize_t bytesRead;
+
+    while((bytesRead = read(outPipe[0], buffer, sizeof(buffer))) > 0)
+    {
+        [outputData appendBytes:buffer length:bytesRead];
+    }
+
+    close(outPipe[0]);
+
+    if(output != nil)
+    {
+        *output = [[NSString alloc] initWithData:outputData encoding:NSUTF8StringEncoding];
+    }
+
+    for(int i = 0; i < argc; i++)
+    {
+        free(argv[i]);
+    }
+    for(int i = 0; i < envc; i++)
+    {
+        free(envp[i]);
+    }
+
+    return result == 0 ? status : -1;
+}
+
+int shell(NSArray *command, uid_t uid, NSArray<NSString *> *env, NSString **output)
+{
+
+    return runCommand(command, uid ?: 0, env ?: @[], output);
+}

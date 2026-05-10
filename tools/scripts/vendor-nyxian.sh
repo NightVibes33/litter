@@ -5,70 +5,122 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NYXIAN_REPO="${NYXIAN_REPO:-https://github.com/ProjectNyxian/Nyxian.git}"
 LLVM_REPO="${LLVM_ON_IOS_REPO:-https://github.com/ProjectNyxian/LLVM-On-iOS.git}"
 NYXIAN_REF="${NYXIAN_REF:-main}"
-LLVM_REF="${LLVM_ON_IOS_REF:-main}"
+LLVM_REF="${LLVM_ON_IOS_REF:-master}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+
+if [[ "$(uname -s)" != "Darwin" && "${NYXIAN_VENDOR_ALLOW_NON_DARWIN:-0}" != "1" ]]; then
+  cat >&2 <<'EOF'
+Refusing to refresh Nyxian from this non-macOS shell by default.
+The iSH Alpine fakefs network path is too slow/unreliable for the full upstream tree.
+Run `make nyxian-vendor` on macOS or set NYXIAN_VENDOR_ALLOW_NON_DARWIN=1 if you accept a slow best-effort refresh.
+EOF
+  exit 64
+fi
+
+EXCLUDES=(
+  --exclude .git
+  --exclude .gitmodules
+  --exclude .github
+  --exclude build
+  --exclude DerivedData
+  --exclude Payload
+  --exclude .package
+  --exclude tmp
+  --exclude .DS_Store
+  --exclude '*.ipa'
+  --exclude '*.tipa'
+  --exclude '*.deb'
+  --exclude '*.xcuserstate'
+  --exclude '*/xcuserdata/*'
+  --exclude 'Nyxian/Assets.xcassets'
+  --exclude 'Nyxian/LindChain/OpenSSL.xcframework'
+  --exclude TrollStore
+  --exclude libroot
+)
 
 copy_tree() {
   local src="$1"
   local dst="$2"
-  rm -rf "$dst"
-  mkdir -p "$dst"
+  local stage="$TMP_DIR/stage-$(basename "$dst")"
+  rm -rf "$stage"
+  mkdir -p "$stage"
   (
     cd "$src"
-    tar \
-      --exclude .git \
-      --exclude build \
-      --exclude Payload \
-      --exclude .package \
-      --exclude '*.ipa' \
-      --exclude '*.tipa' \
-      --exclude '*.deb' \
-      -cf - .
-  ) | (cd "$dst" && tar -xf -)
+    tar "${EXCLUDES[@]}" -cf - .
+  ) | (cd "$stage" && tar -xf -)
+  rm -rf "$dst"
+  mkdir -p "$(dirname "$dst")"
+  mv "$stage" "$dst"
 }
 
-echo "==> Cloning Nyxian source: $NYXIAN_REPO@$NYXIAN_REF"
-git clone --depth 1 --branch "$NYXIAN_REF" --recurse-submodules "$NYXIAN_REPO" "$TMP_DIR/Nyxian"
-NYXIAN_COMMIT="$(git -C "$TMP_DIR/Nyxian" rev-parse HEAD)"
+clone_repo() {
+  local repo="$1"
+  local ref="$2"
+  local dst="$3"
+  git -c http.version=HTTP/1.1 clone --depth 1 --branch "$ref" "$repo" "$dst"
+}
 
 LITTER_NATIVE_BACKUP="$TMP_DIR/LitterBuildKitNative"
 if [[ -d "$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative" ]]; then
   cp -R "$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative" "$LITTER_NATIVE_BACKUP"
 fi
 
-mkdir -p "$ROOT_DIR/ThirdParty"
+clone_repo "$NYXIAN_REPO" "$NYXIAN_REF" "$TMP_DIR/Nyxian"
+NYXIAN_COMMIT="$(git -C "$TMP_DIR/Nyxian" rev-parse HEAD)"
 copy_tree "$TMP_DIR/Nyxian" "$ROOT_DIR/ThirdParty/Nyxian"
+
 if [[ -d "$LITTER_NATIVE_BACKUP" ]]; then
   rm -rf "$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative"
   cp -R "$LITTER_NATIVE_BACKUP" "$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative"
 fi
 
-LLVM_COMMIT=""
-if git ls-remote --exit-code "$LLVM_REPO" "$LLVM_REF" >/dev/null 2>&1; then
-  echo "==> Cloning LLVM-On-iOS source: $LLVM_REPO@$LLVM_REF"
-  git clone --depth 1 --branch "$LLVM_REF" "$LLVM_REPO" "$TMP_DIR/LLVM-On-iOS"
-  LLVM_COMMIT="$(git -C "$TMP_DIR/LLVM-On-iOS" rev-parse HEAD)"
-  copy_tree "$TMP_DIR/LLVM-On-iOS" "$ROOT_DIR/ThirdParty/LLVM-On-iOS"
-elif [[ -d "$ROOT_DIR/ThirdParty/Nyxian/LLVM-On-iOS" ]]; then
-  echo "==> Using Nyxian submodule copy for ThirdParty/LLVM-On-iOS"
-  copy_tree "$ROOT_DIR/ThirdParty/Nyxian/LLVM-On-iOS" "$ROOT_DIR/ThirdParty/LLVM-On-iOS"
-else
-  echo "warning: could not clone LLVM-On-iOS and Nyxian submodule copy was missing" >&2
-fi
+clone_repo "$LLVM_REPO" "$LLVM_REF" "$TMP_DIR/LLVM-On-iOS"
+LLVM_COMMIT="$(git -C "$TMP_DIR/LLVM-On-iOS" rev-parse HEAD)"
+copy_tree "$TMP_DIR/LLVM-On-iOS" "$ROOT_DIR/ThirdParty/LLVM-On-iOS"
+copy_tree "$TMP_DIR/LLVM-On-iOS" "$ROOT_DIR/ThirdParty/Nyxian/LLVM-On-iOS"
 
-python3 - "$ROOT_DIR/ThirdParty/Nyxian/VENDOR_LOCK.json" "$NYXIAN_REPO" "$NYXIAN_REF" "$NYXIAN_COMMIT" "$LLVM_REPO" "$LLVM_REF" "$LLVM_COMMIT" <<'PYVENDOR'
-import datetime, json, pathlib, sys
+required_paths=(
+  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj"
+  "$ROOT_DIR/ThirdParty/Nyxian/MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m"
+  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/Core/Builder.swift"
+  "$ROOT_DIR/ThirdParty/LLVM-On-iOS/Scripts/build-swift-toolchain.sh"
+)
+for required_path in "${required_paths[@]}"; do
+  if [[ ! -f "$required_path" ]]; then
+    echo "error: vendored tree is missing $required_path" >&2
+    exit 1
+  fi
+done
+
+NYXIAN_FILE_COUNT="$(find "$ROOT_DIR/ThirdParty/Nyxian" -type f | wc -l | tr -d ' ')"
+LLVM_FILE_COUNT="$(find "$ROOT_DIR/ThirdParty/LLVM-On-iOS" -type f | wc -l | tr -d ' ')"
+
+python3 - "$ROOT_DIR/ThirdParty/Nyxian/VENDOR_LOCK.json" \
+  "$NYXIAN_REPO" "$NYXIAN_REF" "$NYXIAN_COMMIT" "$NYXIAN_FILE_COUNT" \
+  "$LLVM_REPO" "$LLVM_REF" "$LLVM_COMMIT" "$LLVM_FILE_COUNT" <<'PYVENDOR'
+import datetime
+import json
+import pathlib
+import sys
 path = pathlib.Path(sys.argv[1])
 data = {
-    "schemaVersion": 1,
+    "schemaVersion": 3,
     "updatedAt": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-    "nyxian": {"repo": sys.argv[2], "ref": sys.argv[3], "commit": sys.argv[4]},
-    "llvmOnIOS": {"repo": sys.argv[5], "ref": sys.argv[6], "commit": sys.argv[7]},
+    "vendoringMode": "focused-buildkit-source-import",
+    "nyxian": {"repo": sys.argv[2], "ref": sys.argv[3], "commit": sys.argv[4], "vendoredFileCount": int(sys.argv[5])},
+    "llvmOnIOS": {"repo": sys.argv[6], "ref": sys.argv[7], "commit": sys.argv[8], "vendoredFileCount": int(sys.argv[9])},
     "litterPreservedPaths": ["ThirdParty/Nyxian/LitterBuildKitNative"],
+    "excludedHeavyOrIrrelevantPaths": ["Nyxian/Assets.xcassets", "Nyxian/LindChain/OpenSSL.xcframework", "TrollStore", "libroot"],
+    "requiredBuildKitPaths": [
+        "ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj",
+        "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m",
+        "ThirdParty/Nyxian/Nyxian/LindChain/Core/Builder.swift",
+        "ThirdParty/LLVM-On-iOS/Scripts/build-swift-toolchain.sh",
+    ],
 }
 path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
 PYVENDOR
 
-echo "==> Vendored Nyxian at $NYXIAN_COMMIT"
-if [[ -n "$LLVM_COMMIT" ]]; then echo "==> Vendored LLVM-On-iOS at $LLVM_COMMIT"; fi
+echo "==> Vendored focused Nyxian BuildKit source at $NYXIAN_COMMIT ($NYXIAN_FILE_COUNT files)"
+echo "==> Vendored LLVM-On-iOS at $LLVM_COMMIT ($LLVM_FILE_COUNT files)"

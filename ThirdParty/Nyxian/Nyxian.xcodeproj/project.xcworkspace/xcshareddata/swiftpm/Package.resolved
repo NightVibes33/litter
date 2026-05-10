@@ -1,0 +1,96 @@
+{
+  "originHash" : "5fcceb76746199cfc898e33b20d3c88a3b504213ab01df818158a8a22f1d783d",
+  "pins" : [
+    {
+      "identity" : "runestone",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ProjectNyxian/Runestone.git",
+      "state" : {
+        "revision" : "8b98d2559233279c404a48b544ab6c02f4ab0f5b",
+        "version" : "0.0.2"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser",
+      "state" : {
+        "revision" : "c5d11a805e765f52ba34ec7284bd4fcd6ba68615",
+        "version" : "1.7.0"
+      }
+    },
+    {
+      "identity" : "swiftterm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/migueldeicaza/SwiftTerm",
+      "state" : {
+        "revision" : "8e7a1e154f470e19c709a00a8768df348ba5fc43",
+        "version" : "1.13.0"
+      }
+    },
+    {
+      "identity" : "tree-sitter",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter/tree-sitter",
+      "state" : {
+        "revision" : "98be227227af10cc7a269cb3ffb23686c0610b17",
+        "version" : "0.20.9"
+      }
+    },
+    {
+      "identity" : "tree-sitter-c",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter/tree-sitter-c.git",
+      "state" : {
+        "revision" : "7175a6dd5fc1cee660dce6fe23f6043d75af424a",
+        "version" : "0.20.2"
+      }
+    },
+    {
+      "identity" : "tree-sitter-cpp",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter/tree-sitter-cpp.git",
+      "state" : {
+        "revision" : "f41e1a044c8a84ea9fa8577fdd2eab92ec96de02",
+        "version" : "0.23.4"
+      }
+    },
+    {
+      "identity" : "tree-sitter-objc",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter-grammars/tree-sitter-objc.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "181a81b8f23a2d593e7ab4259981f50122909fda"
+      }
+    },
+    {
+      "identity" : "tree-sitter-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ProjectNyxian/tree-sitter-swift",
+      "state" : {
+        "branch" : "main",
+        "revision" : "5e12e0b6d90d518ff27039dd01f3da7db88fd072"
+      }
+    },
+    {
+      "identity" : "tree-sitter-xml",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/tree-sitter-grammars/tree-sitter-xml.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "0d9a8099c963ed53e183425c1b47fa2622c8eaf7"
+      }
+    },
+    {
+      "identity" : "uionboarding",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/lascic/UIOnboarding.git",
+      "state" : {
+        "revision" : "52b656c820cdb26e40a261bb2e79e60f847410de",
+        "version" : "2.0.5"
+      }
+    }
+  ],
+  "version" : 3
+}

@@ -95,21 +95,21 @@ static const void *MDKDriverDelegateKey = &MDKDriverDelegateKey;
 - (void)setDelegate:(id<MDKDriverDelegate>)delegate
 {
     MDKWeakWrapper *wrapper = nil;
-    
+
     if(delegate)
     {
         wrapper = [MDKWeakWrapper new];
         wrapper.delegate = delegate;
     }
-    
+
     objc_setAssociatedObject(self, MDKDriverDelegateKey, wrapper, OBJC_ASSOCIATION_RETAIN);
-    
+
     if(!delegate)
     {
         CCDriverSetOutputPathCallback((__bridge CCDriverRef)self, nil, nil);
         return;
     }
-    
+
     CCDriverSetOutputPathCallback((__bridge CCDriverRef)self, MDKDriverOutputPathBridge, (__bridge void*)self);
 }
 

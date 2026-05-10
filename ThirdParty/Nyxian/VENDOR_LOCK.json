@@ -1,0 +1,36 @@
+{
+  "excludedHeavyOrIrrelevantPaths": [
+    "Nyxian/Assets.xcassets",
+    "Nyxian/LindChain/OpenSSL.xcframework",
+    "TrollStore",
+    "libroot",
+    ".github",
+    ".gitignore",
+    ".gitattributes"
+  ],
+  "litterPreservedPaths": [
+    "ThirdParty/Nyxian/LitterBuildKitNative"
+  ],
+  "llvmOnIOS": {
+    "commit": "ad4992544aafa94a3b90059850302118bcbd2467",
+    "ref": "master",
+    "repo": "https://github.com/ProjectNyxian/LLVM-On-iOS.git",
+    "vendoredFileCount": 6
+  },
+  "notes": "The iSH fakefs network path is too slow for full upstream vendoring. This lock records the focused source subset used by Litter BuildKit plus the private asset-pack flow.",
+  "nyxian": {
+    "commit": "4c1957c0fe9410d4d514e5ab2dc380292c236a17",
+    "ref": "main",
+    "repo": "https://github.com/ProjectNyxian/Nyxian.git",
+    "vendoredFileCount": 185
+  },
+  "requiredBuildKitPaths": [
+    "ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj",
+    "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m",
+    "ThirdParty/Nyxian/Nyxian/LindChain/Core/Builder.swift",
+    "ThirdParty/LLVM-On-iOS/Scripts/build-swift-toolchain.sh"
+  ],
+  "schemaVersion": 3,
+  "updatedAt": "2026-05-10T19:18:43Z",
+  "vendoringMode": "focused-buildkit-source-import"
+}

@@ -49,7 +49,7 @@ int hook__NSGetExecutablePath_overwriteExecPath(char*** dyldApiInstancePtr, char
     assert(dyldApiInstancePtr != 0);
     char** dyldConfig = dyldApiInstancePtr[1];
     assert(dyldConfig != 0);
-    
+
     char** mainExecutablePathPtr = 0;
     // mainExecutablePath is at 0x10 for iOS 15~18.3.2, 0x20 for iOS 18.4+
     if(dyldConfig[2] != 0 && dyldConfig[2][0] == '/') {
@@ -81,7 +81,7 @@ void LCOverwriteExecutablePath(NSString *executablePath)
     assert(urlRef != nil);
     CFBundleRef guestMainCFBundle = CFBundleCreate(kCFAllocatorSystemDefault, urlRef);
     assert(guestMainCFBundle != nil);
-    
+
     /*
      * overwrites CF object, means all our pointers become
      * unsafe, it also takes a reference of passed Bundle
@@ -93,7 +93,7 @@ void LCOverwriteExecutablePath(NSString *executablePath)
     CFOverwrite((__bridge CFBundleRef)NSBundle.mainBundle._cfBundle, guestMainCFBundle);
     CFRelease(guestMainCFBundle);
     CFRelease(urlRef);
-    
+
     /*
      * dyld4 stores executable path in a different place (iOS 15.0 +)
      * https://github.com/apple-oss-distributions/dyld/blob/ce1cc2088ef390df1c48a1648075bbd51c5bbc6a/dyld/DyldAPIs.cpp#L802
@@ -103,7 +103,7 @@ void LCOverwriteExecutablePath(NSString *executablePath)
     _NSGetExecutablePath((char*)[executablePath UTF8String], NULL);
     /* put the original function back */
     performHookDyldApi("_NSGetExecutablePath", 2, (void**)&orig__NSGetExecutablePath, orig__NSGetExecutablePath);
-    
+
     /* overwriting remaining upper systems */
     NSString *procName = [executablePath lastPathComponent];
     NSProcessInfo.processInfo.processName = procName;
@@ -144,14 +144,14 @@ void InsertLibrariesIfNeeded(void)
     {
         return;
     }
-    
+
     NSString *nsLibrariesToInsert = [NSString stringWithCString:librariesToInsert encoding:NSUTF8StringEncoding];
     NSArray<NSString*> *librariesToInsertArray = [nsLibrariesToInsert componentsSeparatedByString:@":"];
-    
+
     for(NSString *library in librariesToInsertArray)
     {
         void *handle = dlopen([library UTF8String], RTLD_GLOBAL | RTLD_NOW);
-        
+
         if(handle == NULL)
         {
             const char *error = dlerror();
@@ -169,25 +169,25 @@ int LCBootstrapMain(NSString *executablePath,
     {
         return 1;
     }
-    
+
     /* Preload executable to bypass RT_NOLOAD */
     appMainImageIndex = _dyld_image_count();
     void *appHandle = dlopenBypassingLock(executablePath.fileSystemRepresentation, RTLD_LAZY|RTLD_GLOBAL|RTLD_FIRST);
     appExecutableHandle = appHandle;
     const char *dlerr = dlerror();
-    
+
     if(!appHandle || (uint64_t)appHandle > 0xf00000000000 || dlerr)
     {
         return 1;
     }
-    
+
     /* find main */
     int (*appMain)(int, char**) = getAppEntryPoint(appHandle);
     if(!appMain)
     {
         return 1;
     }
-    
+
     /* perform other hooks */
     NUDGuestHooksInit();
     SecItemGuestHooksInit();
@@ -196,6 +196,6 @@ int LCBootstrapMain(NSString *executablePath,
     initDead10ccFix();
     DyldHooksInit();
     InsertLibrariesIfNeeded();
-    
+
     return appMain(argc, argv);
 }

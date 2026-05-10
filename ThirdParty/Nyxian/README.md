@@ -18,7 +18,7 @@ To start using Nyxian view the [Installation Guide](https://nyxian.app/docs/inst
 
 ## Todo
 - [x] Code execution using NSExtension
-- [x] Syscall Handling 
+- [x] Syscall Handling
 - [x] Sub processsing
 - [x] Compiling code
 - [x] Linking object files

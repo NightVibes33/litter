@@ -68,7 +68,7 @@ void clear_environment(void)
             char key[len + 1];
             strncpy(key, environ[0], len);
             key[len] = '\0';
-            
+
             if(unsetenv(key) != 0)
             {
                 environ++;
@@ -86,7 +86,7 @@ void overwriteEnvironmentProperties(NSDictionary *enviroDict)
     if(enviroDict)
     {
         clear_environment();
-        
+
         for (NSString *key in enviroDict)
         {
             NSString *value = enviroDict[key];
@@ -100,26 +100,26 @@ void overwriteArguments(NSArray<NSObject<NSSecureCoding,NSCopying>*> *arguments,
                         char ***argv)
 {
     assert(argc != NULL && argv != NULL);
-    
+
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wundeclared-selector"
     [NSProcessInfo.processInfo performSelector:@selector(setArguments:) withObject:arguments ? arguments : @[]];
 #pragma clang diagnostic pop
-    
+
     if(!arguments || arguments.count < 1)
     {
         *argc = 0;
         return;
     }
-    
+
     NSInteger count = arguments.count;
     *argc = (int)count;
-    
+
     *argv = malloc(sizeof(char *) * (count + 1));
     for(NSInteger i = 0; i < count; i++)
     {
         NSObject<NSSecureCoding,NSCopying> *arg = arguments[i];
-        
+
         if([arg isKindOfClass:[NSString class]])
         {
             (*argv)[i] = strdup(((NSString*)arg).UTF8String);
@@ -133,10 +133,10 @@ int LiveProcessMain(int argc, char *argv[])
     /* let NSExtensionContext initialize, once it's done it will call CFRunLoopStop */
     CFRunLoopRun();
     NSDictionary *appInfo = [lcExtensionContext.inputItems.firstObject userInfo];
-    
+
     /* destroying payload once */
     lcExtensionContext = nil;
-    
+
     NSXPCListenerEndpoint* endpoint = appInfo[@"PEEndpoint"];
     NSString* executablePath = appInfo[@"PEExecutablePath"];
     NSString *service = appInfo[@"PEIntegratedServiceClass"];
@@ -147,12 +147,12 @@ int LiveProcessMain(int argc, char *argv[])
     NSString *workingDirectory = appInfo[@"PEWorkingDirectory"];
     uid_t serviceUserIdentifier = [appInfo[@"PEUserIdentifier"] unsignedIntValue];
     gid_t serviceGroupIdentifier = [appInfo[@"PEGroupIdentifier"] unsignedIntValue];
-    
+
     /* destroy the payload once in for all */
     appInfo = nil;
-    
+
     assert(endpoint != nil && executablePath != nil && syscallPort != nil);
-    
+
     /* setting working directory correctly */
     if(workingDirectory != nil &&
        [workingDirectory isKindOfClass:[NSString class]])
@@ -165,7 +165,7 @@ int LiveProcessMain(int argc, char *argv[])
         /* wasnt passed, setting to root */
         chdir([[NSHomeDirectory() stringByAppendingPathComponent:@"/Documents"] UTF8String]);
     }
-    
+
     if(mapObject != nil &&
        [mapObject isKindOfClass:[FDMapObject class]])
     {
@@ -174,18 +174,18 @@ int LiveProcessMain(int argc, char *argv[])
         setvbuf(stdout, NULL, _IONBF, 0);
         setvbuf(stderr, NULL, _IONBF, 0);
     }
-    
+
     /*
      * connecting to the host environment which serves
      * the guest environment.
      */
     environment_client_connect_to_host(endpoint);
     environment_client_connect_to_syscall_proxy(syscallPort);
-    
+
     /* overwriting environment and arguments */
     overwriteEnvironmentProperties(environmentDictionary);
     overwriteArguments(argumentDictionary, &argc, &argv);
-    
+
     if(service != nil)
     {
         /*
@@ -206,19 +206,19 @@ int LiveProcessMain(int argc, char *argv[])
         {
             return 1;
         }
-        
+
         /*
          * we get the class of the daemon, internal Nyxian
          * daemons name their class within their launch
          * service file.
          */
         Class ServiceClass = NSClassFromString(service);
-        
+
         if(ServiceClass == nil)
         {
             return 1;
         }
-        
+
         return PEServiceMain(argc, argv, ServiceClass);
     }
     else
@@ -231,7 +231,7 @@ int LiveProcessMain(int argc, char *argv[])
          */
         return environment_init(EnvironmentExecLiveContainer, executablePath, argc, argv);
     }
-    
+
     return 1;
 }
 
@@ -263,14 +263,14 @@ int NSExtensionMain(int argc, char * argv[])
 {
     /* resecure decoder, instead of bluntly removing validation entirely */
     ResecureDecoder();
-    
+
     /*
      * hook dlopen to catch UIKit framework load and trick it
      * into thinking that our UIApplicationMain is the real
      * legitimate one
      */
     performHookDyldApi("dlopen", 2, (void**)&orig_dlopen, hook_dlopen);
-    
+
     /*
      * call the real NSExtensionMain, which calls
      * then our UIApplicationMain.

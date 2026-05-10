@@ -10,7 +10,7 @@ Last verified public build:
 
 Current BuildKit state:
 
-- Public repo contains the app-side BuildKit bridge, fakefs command shims, fakefs doctor, native ABI wrapper source, private asset manifest contract, private GitHub Release downloader, and authenticated CI asset injection.
+- Public repo contains the app-side BuildKit bridge, focused Nyxian/LLVM BuildKit source import, fakefs command shims, fakefs doctor, native ABI wrapper source, private asset manifest contract, private GitHub Release downloader, and authenticated CI asset injection.
 - Full on-device Swift/IPA building requires a private `LitterBuildKitAssets` bundle with CoreCompiler, Swift support libraries, `LitterBuildKitNative.framework`, and a user-owned `iPhoneOS26.4.sdk`. Runner mode additionally requires a packaged Nyxian runner; in-process mode now handles Swift jobs and minimal unsigned IPA packaging inside `LitterBuildKitNative.framework`.
 - Apple SDK assets must not be committed to this public repository.
 
@@ -23,6 +23,7 @@ Latest implementation note:
 Latest local changes awaiting CI verification:
 
 - Added `litter-nyxian-status` readiness diagnostics and local-model tool exposure.
-- Added Nyxian vendor/build/verify scripts and make targets for private asset packs.
+- Added focused Nyxian vendor/build/verify scripts and make targets for private asset packs.
 - Added in-process unsigned IPA packaging and fakefs artifact export for BuildKit jobs.
-- Updated README/development/audit docs with exact readiness gates and known limits.
+- Updated README/development/audit docs with exact readiness gates, focused vendor state, and known limits.
+- Focused Nyxian source import is recorded in `ThirdParty/Nyxian/VENDOR_LOCK.json`; full upstream refresh should run on macOS/CI, not iSH fakefs.

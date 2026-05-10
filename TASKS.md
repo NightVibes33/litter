@@ -2,7 +2,7 @@
 
 ## Done
 
-- Add Nyxian source import for BuildKit research.
+- Add focused Nyxian source import for BuildKit research.
 - Add fakefs BuildKit command shims.
 - Add BuildKit settings surface.
 - Add private asset manifest template.
@@ -27,13 +27,14 @@
 
 ## Next Engineering Work
 
-- Run `make nyxian-vendor` on macOS to refresh full upstream Nyxian/LLVM-On-iOS sources when network access is available.
+- Run `make nyxian-vendor` on macOS to refresh the focused upstream Nyxian/LLVM-On-iOS BuildKit source import when network access is available.
 - Run `make nyxian-buildkit-assets` on macOS with Xcode/private asset paths to create the private `LitterBuildKitAssets.zip`.
 - Upload the private ZIP with `tools/scripts/upload-buildkit-assets-release.sh`, then set `LITTER_BUILDKIT_ASSET_URL`, `LITTER_BUILDKIT_ASSET_SHA256`, and `LITTER_BUILDKIT_ASSET_TOKEN` GitHub secrets for private BuildKit-enabled sideload builds.
 - Validate Settings -> BuildKit private release download on device with a private token.
 - Validate `litter-swift-check` and `litter-ipa-build` on a paired iPhone after installing the private asset bundle.
 - Add a native preview or quick-look path for unsupported image formats and large files.
 - Consider bundling or bootstrapping archive extractors (`unzip`, `unar`/`unrar`, `bsdtar`) so archive extraction works on fresh fakefs installs.
+- Run full `make nyxian-vendor` only from macOS/CI; iSH fakefs should use the committed focused import plus private downloadable BuildKit assets.
 
 ## Current BuildKit Finish Work
 

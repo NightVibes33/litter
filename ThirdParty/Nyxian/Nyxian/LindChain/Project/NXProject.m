@@ -47,7 +47,7 @@
     {
         /* MARK: projectFormat */
         _formatKind = NXProjectFormatKindFromFormat([self objectForKey:@"NXProjectFormat" withDefaultObject:NXProjectFormatKate]);
-        
+
         if(_formatKind != NXProjectFormatKindAvisR1)
         {
             [self remapKey:@"LDEMinimumVersion" toKey:@"NXDeploymentTarget"];
@@ -70,9 +70,9 @@
             [self remapKey:@"LDECompilerFlags" toKey:@"NXClangFlags"];
             [self remapKey:@"LDELinkerFlags" toKey:@"NXLinkerFlags"];
         }
-        
+
         _schemeKind = NXProjectSchemeKindFromScheme([self objectForKey:@"NXProjectScheme" withClass:[NSString class]]);
-        
+
         /* MARK: keys */
         _executable = [self objectForKey:@"NXExecutable" withDefaultObject:@"Unknown"];
         _displayName = [self objectForKey:@"NXDisplayName" withDefaultObject:[self executable]];
@@ -84,10 +84,10 @@
         _deploymentTarget = [self objectForKey:@"NXDeploymentTarget" withDefaultObject:NXOSVersion.maximumBuildVersion.pickerVersionString];
         _outputPath = [self objectForKey:@"NXOutputPath"];
         _signMachOWithNyxianEntitlements = [self booleanForKey:@"NXSignMachOWithNyxianEntitlements" withDefaultValue:true];
-        
+
         /* MARK: compiler flags */
         NSArray *compilerFlags = [self objectForKey:@"NXClangFlags" withDefaultObject:@[]];
-        
+
         if(_formatKind == NXProjectFormatKindFalcon ||
            _formatKind == NXProjectFormatKindAvis ||
            _formatKind == NXProjectFormatKindAvisR1)
@@ -97,7 +97,7 @@
         else if(_formatKind == NXProjectFormatKindKate)
         {
             NSMutableArray *array = [compilerFlags mutableCopy];
-            
+
             [array addObjectsFromArray:@[
                 @"-target",
                 [self objectForKey:@"LDEOverwriteTriple" withDefaultObject:[NSString stringWithFormat:@"apple-arm64-ios%@", [self deploymentTarget]]],
@@ -107,17 +107,17 @@
                 @"-resource-dir",
                 [NXBootstrap.shared.rootURL URLByAppendingPathComponent:@"Include"].path
             ]];
-            
+
             _compilerFlags = array;
         }
         else
         {
             _compilerFlags = @[];
         }
-        
+
         /* MARK: linker flags */
         _linkerFlags = [self objectForKey:@"NXLinkerFlags" withDefaultObject:@[]];
-        
+
         /* MARK: swift flags */
         _swiftFlags = [self objectForKey:@"NXSwiftFlags" withDefaultObject:@[]];
     }
@@ -191,7 +191,7 @@
 {
     /* must always be valid */
     assert(NXProjectConfigurationIsValid(schemeKind, interfaceKind, languageKind));
-    
+
     NSURL *projectURL = [url URLByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
     NSFileManager *defaultFileManager = [NSFileManager defaultManager];
     NSString *organizationIdentifierValue = organizationIdentifier ?: @"";
@@ -221,7 +221,7 @@
         {
             sceneDelegateClassName = [@"$(NXExecutable)." stringByAppendingString:sceneDelegateClassName];
         }
-        
+
         appBundleInfo = @{
             @"UIApplicationSceneManifest": @{
                 @"UIApplicationSupportsMultipleScenes": @(NO),
@@ -236,7 +236,7 @@
             }
         };
     }
-    
+
     NSMutableDictionary *projConfigPlist = [NSMutableDictionary dictionaryWithDictionary:@{
         @"NXProjectFormat": NXProjectFormatAvisR1,
         @"NXProjectScheme": NXProjectSchemeFromSchemeKind(schemeKind),
@@ -250,7 +250,7 @@
         @"NXSwiftFlags": NXSwiftFlagsForCodeTemplateLanguage(schemeKind, languageKind),
         @"NXSignMachOWithNyxianEntitlements": @(YES) /* FIXME: when enabled certain signers outside of zsign may fail to sign the MachO although its usually allowed to have trailing bits after the MachO ended, ldid has a weird non standard check that even is not inside of apples code sign cuz i tried to sign a MachO in strict mode and it passed including the trailing bits. */
     }];
-    
+
     switch(schemeKind)
     {
         case NXProjectSchemeKindApp:
@@ -270,7 +270,7 @@
             [defaultFileManager removeItemAtURL:projectURL error:nil];
             return nil;
     }
-    
+
     NSDictionary *plistList = @{
         @"/Config/Project.plist": projConfigPlist,
         @"/Config/Entitlements.plist": @{
@@ -294,57 +294,57 @@
 #endif // !JAILBREAK_ENV
         }
     };
-    
+
     for(NSString *key in plistList)
     {
         NSError *error;
         NSDictionary *plistItem = plistList[key];
         NSData *plistData = [NSPropertyListSerialization dataWithPropertyList:plistItem format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
         [plistData writeToURL:[projectURL URLByAppendingPathComponent:key] atomically:YES];
-        
+
         if(error)
         {
             [defaultFileManager removeItemAtURL:projectURL error:nil];
             return nil;
         }
     }
-    
+
     NXProjectScheme scheme = NXProjectSchemeFromSchemeKind(schemeKind);
     NXProjectLanguage language = NXProjectLanguageFromLanguageKind(languageKind);
     NXProjectInterface interface = NXProjectInterfaceFromInterfaceKind(interfaceKind);
-    
+
     if(!NXCodeTemplateMakeProjectStructure(scheme, language, interface, name, projectURL))
     {
         [[NSFileManager defaultManager] removeItemAtURL:projectURL error:nil];
         return nil;
     }
-    
+
     return [NXProject projectWithURL:projectURL];
 }
 
 + (NSMutableDictionary<NSString*,NSMutableArray<NXProject*>*>*)listProjectsAtURL:(NSURL*)url
 {
     NSMutableDictionary<NSString*,NSMutableArray<NXProject*>*> *projectList = [[NSMutableDictionary alloc] init];
-    
+
     NSMutableArray<NXProject*> *applicationProjects = [[NSMutableArray alloc] init];
     NSMutableArray<NXProject*> *utilityProjects = [[NSMutableArray alloc] init];
     NSMutableArray<NXProject*> *unknownProjects = [[NSMutableArray alloc] init];
-    
+
     projectList[@"applications"] = applicationProjects;
     projectList[@"utilities"] = utilityProjects;
     projectList[@"unknown"] = unknownProjects;
-    
+
     NSError *error;
     NSArray<NSURL*> *urlEntries = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:url includingPropertiesForKeys:nil options:0 error:&error];
     if(error)
     {
         return projectList;
     }
-    
+
     for(NSURL *entry in urlEntries)
     {
         NXProject *project = [NXProject projectWithURL:entry];
-        
+
         if(project.projectConfig.schemeKind == NXProjectSchemeKindApp)
         {
             [applicationProjects addObject:project];
@@ -358,30 +358,30 @@
             [unknownProjects addObject:project];
         }
     }
-    
+
     return projectList;
 }
 
 - (BOOL)syncFolderStructureToCache
 {
     NSFileManager *defaultManager = [NSFileManager defaultManager];
-    
+
     BOOL(^directoryEnumeratorErrorHandler)(NSURL *url, NSError *error) = ^BOOL(NSURL *url, NSError *error){
         NSLog(@"skip %@: %@", url.path, error);
         return YES;
     };
-    
+
     NSDirectoryEnumerator *sourceDirectoryEnumerator = [defaultManager enumeratorAtURL:self.url includingPropertiesForKeys:nil options:0 errorHandler:directoryEnumeratorErrorHandler];
     NSDirectoryEnumerator *destinationDirectoryEnumerator = [defaultManager enumeratorAtURL:self.cacheURL includingPropertiesForKeys:nil options:0 errorHandler:directoryEnumeratorErrorHandler];
-    
+
     if(sourceDirectoryEnumerator == nil || destinationDirectoryEnumerator == nil)
     {
         return NO;
     }
-    
+
     NSMutableSet<NSString*> *relativesShallExist = [NSMutableSet set];
     NSMutableSet<NSString*> *relativeObjectShallExist = [NSMutableSet set];
-    
+
     /* capturing synchronisation */
     for(NSURL *url in sourceDirectoryEnumerator)
     {
@@ -398,7 +398,7 @@
             [relativeObjectShallExist addObject:objectFileURL.path];
         }
     }
-    
+
     /* applying synchronisation */
     for(NSURL *url in destinationDirectoryEnumerator)
     {
@@ -417,7 +417,7 @@
             }
         }
     }
-    
+
     /* completing synchronisation */
     for(NSString *relative in relativesShallExist)
     {
@@ -476,11 +476,11 @@
         {
             [[NSFileManager defaultManager] removeItemAtURL:_cacheURL error:nil];
         }
-        
+
         [[NSFileManager defaultManager] createDirectoryAtURL:_cacheURL withIntermediateDirectories:YES attributes:nil error:nil];
-        
+
     }
-    
+
     return [[self entitlementsConfig] reloadIfNeeded] | [[self projectConfig] reloadIfNeeded];
 }
 

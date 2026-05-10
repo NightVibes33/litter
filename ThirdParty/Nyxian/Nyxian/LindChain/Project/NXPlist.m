@@ -65,9 +65,9 @@
 - (BOOL)reloadIfNeeded
 {
     NSString *hash = [self currentHash];
-    
+
     [self willChangeValueForKey:@"dictionary"];
-    
+
     os_unfair_lock_lock(&_lock);
     BOOL needsReload = ![hash isEqualToString:_dataHash];
     if(needsReload)
@@ -75,13 +75,13 @@
         _originalDictionary = [NSDictionary dictionaryWithContentsOfFile:_plistPath];
         _dictionary = [_originalDictionary mutableCopy];
         _dataHash = hash;
-        
+
         NSDictionary<NSString*,NSString*> *userDef = _dictionary;
-        
+
         if(userDef && [userDef isKindOfClass:[NSDictionary class]])
         {
             NSMutableDictionary<NSString*,NSString*> *finalDef = [self.variables mutableCopy];
-            
+
             for(NSString *key in userDef)
             {
                 NSString *value = userDef[key];
@@ -90,7 +90,7 @@
                     [finalDef setObject:(NSString*)value forKey:key];
                 }
             }
-            
+
             _finalVariables = [finalDef copy];
         }
         else
@@ -99,9 +99,9 @@
         }
     }
     os_unfair_lock_unlock(&_lock);
-    
+
     [self didChangeValueForKey:@"dictionary"];
-    
+
     return needsReload;
 }
 
@@ -122,29 +122,29 @@
 - (NSString * _Nonnull)expandString:(NSString * _Nonnull)input depth:(int)depth
 {
     if(!input || depth > 10) return input;
-    
+
     NSMutableString *result = [input mutableCopy];
     NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"\\$\\(([^\\)]+)\\)" options:0 error:nil];
     NSArray<NSTextCheckingResult*> *matches = [regex matchesInString:result options:0 range:NSMakeRange(0, result.length)];
-    
+
     for(NSTextCheckingResult *match in [matches reverseObjectEnumerator])
     {
         NSRange varRange = [match rangeAtIndex:1];
         NSString *varName = [result substringWithRange:varRange];
-        
+
         NSString *value = _finalVariables[varName];
         if(!value)
         {
             value = NSProcessInfo.processInfo.environment[varName];
         }
-        
+
         if(value)
         {
             value = [self expandString:value depth:depth + 1];
             [result replaceCharactersInRange:match.range withString:value];
         }
     }
-    
+
     return result;
     return NULL;
 }
@@ -155,7 +155,7 @@
     {
         return [self expandString:obj depth:0];
     }
-    
+
     if([obj isKindOfClass:NSArray.class])
     {
         NSMutableArray *arr = [NSMutableArray array];
@@ -165,7 +165,7 @@
         }
         return arr;
     }
-    
+
     if([obj isKindOfClass:NSDictionary.class])
     {
         NSMutableDictionary *dict = [NSMutableDictionary dictionary];
@@ -175,7 +175,7 @@
         }
         return dict;
     }
-    
+
     return obj;
 }
 
@@ -209,7 +209,7 @@
     {
         return value;
     }
-    
+
     /*
      * if everything matches up, we can safely
      * return this.
@@ -231,7 +231,7 @@
         /* god damn */
         return nil;
     }
-    
+
     /*
      * if everything matches up, we can safely
      * return this.
@@ -276,16 +276,16 @@ withRemapHandler:(id (^)(id oldObj))handler
             if(handler != nil)
             {
                 oldObj = handler(oldObj);
-                
+
                 if(oldObj == nil)
                 {
                     return;
                 }
             }
-            
+
             [self.dictionary setObject:oldObj forKey:newKey];
             [self.dictionary removeObjectForKey:oldKey];
-            
+
             /*
              * create a fake variable remap so
              * that if the users defined flags

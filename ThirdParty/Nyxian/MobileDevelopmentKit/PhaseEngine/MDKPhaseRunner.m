@@ -48,7 +48,7 @@
     NSArray<MDKDiagnostic*> *diagnostic = nil;
     NSString *mainSource = nil;
     BOOL success = [job executeJobWithOutDiagnostics:&diagnostic withOutMainSource:&mainSource];
-    
+
     /*
      * when delegation is passed then we
      * gonna have to report those diagnostic's
@@ -58,7 +58,7 @@
     {
         [_delegate runner:self phase:phase finishedRunningJob:job withResultingDiagnostics:diagnostic withMainSource:mainSource wasSuccessful:success];
     }
-    
+
     return success;
 }
 
@@ -82,7 +82,7 @@
         {
             threadCount = CCGetMaximumPerformanceCores();
         }
-        
+
         /*
          * the thread pool group is nice, because it schedules
          * and handles jobs with a round robin like threading
@@ -97,9 +97,9 @@
              */
             goto fallback_no_multithreading;
         }
-        
+
         NSArray<MDKJob*> *jobs = phase.jobs;
-        
+
         /*
          * "registering" every job, thats basically every jobs
          * check-in.
@@ -109,7 +109,7 @@
         {
             [threadPoolGroup enter];
         }
-        
+
         /* finally running the jobs */
         for(MDKJob *job in jobs)
         {
@@ -120,9 +120,9 @@
                 }
             } withCompletion:nil];
         }
-        
+
         [threadPoolGroup wait];
-        
+
         if(threadPoolGroup.lockdown)
         {
             return NO;
@@ -132,7 +132,7 @@
 fallback_no_multithreading:
     {
         NSArray<MDKJob*> *jobs = phase.jobs;
-        
+
         /* finally running the jobs */
         for(MDKJob *job in jobs)
         {
@@ -142,7 +142,7 @@ fallback_no_multithreading:
             }
         }
     }
-    
+
     return YES;
 }
 
@@ -162,19 +162,19 @@ fallback_no_multithreading:
         {
             MDKPhaseEngine *phaseEngine = rawPhase;
             NSArray<MDKPhase*> *phases = [phaseEngine generatePhases];
-            
+
             if(phases == nil)
             {
                 return NO;
             }
-            
+
             if(![self runPhasesWithPhases:phases])
             {
                 return NO;
             }
         }
     }
-    
+
     return YES;
 }
 
@@ -185,12 +185,12 @@ fallback_no_multithreading:
     {
         return NO;
     }
-    
+
     if(![self runPhasesWithPhases:phases])
     {
         return NO;
     }
-    
+
     return YES;
 }
 

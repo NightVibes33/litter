@@ -2,7 +2,7 @@
 
 ## Current Import
 
-Litter vendors the BuildKit-facing Nyxian pieces under `ThirdParty/Nyxian`: CoreCompiler source, MobileDevelopmentKit source, selected LindChain project helpers, LiveProcess entrypoint code, and Litter's `LitterBuildKitNative` bridge. `ThirdParty/LLVM-On-iOS` tracks the public LLVM/Swift toolchain build entrypoint. The public repo does not commit Apple SDK payloads or private binary toolchain packs.
+Litter vendors a focused BuildKit-facing Nyxian source subset under `ThirdParty/Nyxian`: CoreCompiler source, MobileDevelopmentKit compiler/linker source, selected LindChain project/core helpers, LiveProcess entrypoint code, and Litter's `LitterBuildKitNative` bridge. `ThirdParty/LLVM-On-iOS` tracks the public LLVM/Swift toolchain build entrypoint. The public repo does not commit Apple SDK payloads or private binary toolchain packs.
 
 ## Runtime Path
 
