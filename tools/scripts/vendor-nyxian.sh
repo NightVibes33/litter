@@ -34,7 +34,6 @@ EXCLUDES=(
   --exclude '*.xcuserstate'
   --exclude '*/xcuserdata/*'
   --exclude 'Nyxian/Assets.xcassets'
-  --exclude 'Nyxian/LindChain/OpenSSL.xcframework'
   --exclude TrollStore
   --exclude libroot
 )
@@ -54,6 +53,27 @@ copy_tree() {
   mv "$stage" "$dst"
 }
 
+trim_openssl_ios_slice() {
+  local framework_root="$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework"
+  [[ -d "$framework_root" ]] || return 0
+  find "$framework_root" -mindepth 1 -maxdepth 1 -type d \
+    ! -name 'ios-arm64' \
+    ! -name '_CodeSignature' \
+    -exec rm -rf {} +
+  python3 - "$framework_root/Info.plist" <<'PYPLIST'
+import plistlib
+import pathlib
+import sys
+path = pathlib.Path(sys.argv[1])
+data = plistlib.loads(path.read_bytes())
+data["AvailableLibraries"] = [
+    lib for lib in data.get("AvailableLibraries", [])
+    if lib.get("LibraryIdentifier") == "ios-arm64"
+]
+path.write_bytes(plistlib.dumps(data, sort_keys=False))
+PYPLIST
+}
+
 clone_repo() {
   local repo="$1"
   local ref="$2"
@@ -69,6 +89,7 @@ fi
 clone_repo "$NYXIAN_REPO" "$NYXIAN_REF" "$TMP_DIR/Nyxian"
 NYXIAN_COMMIT="$(git -C "$TMP_DIR/Nyxian" rev-parse HEAD)"
 copy_tree "$TMP_DIR/Nyxian" "$ROOT_DIR/ThirdParty/Nyxian"
+trim_openssl_ios_slice
 
 if [[ -d "$LITTER_NATIVE_BACKUP" ]]; then
   rm -rf "$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative"
@@ -84,6 +105,10 @@ required_paths=(
   "$ROOT_DIR/ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj"
   "$ROOT_DIR/ThirdParty/Nyxian/MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m"
   "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/Core/Builder.swift"
+  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/LCUtils.m"
+  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/ZSign/zsigner.m"
+  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/Info.plist"
+  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/OpenSSL"
   "$ROOT_DIR/ThirdParty/LLVM-On-iOS/Scripts/build-swift-toolchain.sh"
 )
 for required_path in "${required_paths[@]}"; do
@@ -111,11 +136,15 @@ data = {
     "nyxian": {"repo": sys.argv[2], "ref": sys.argv[3], "commit": sys.argv[4], "vendoredFileCount": int(sys.argv[5])},
     "llvmOnIOS": {"repo": sys.argv[6], "ref": sys.argv[7], "commit": sys.argv[8], "vendoredFileCount": int(sys.argv[9])},
     "litterPreservedPaths": ["ThirdParty/Nyxian/LitterBuildKitNative"],
-    "excludedHeavyOrIrrelevantPaths": ["Nyxian/Assets.xcassets", "Nyxian/LindChain/OpenSSL.xcframework", "TrollStore", "libroot"],
+    "excludedHeavyOrIrrelevantPaths": ["Nyxian/Assets.xcassets", "TrollStore", "libroot", ".github", ".gitignore", ".gitattributes"],
     "requiredBuildKitPaths": [
         "ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj",
         "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m",
         "ThirdParty/Nyxian/Nyxian/LindChain/Core/Builder.swift",
+        "ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/LCUtils.m",
+        "ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/ZSign/zsigner.m",
+        "ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/Info.plist",
+        "ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/OpenSSL",
         "ThirdParty/LLVM-On-iOS/Scripts/build-swift-toolchain.sh",
     ],
 }

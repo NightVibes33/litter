@@ -1,7 +1,6 @@
 {
   "excludedHeavyOrIrrelevantPaths": [
     "Nyxian/Assets.xcassets",
-    "Nyxian/LindChain/OpenSSL.xcframework",
     "TrollStore",
     "libroot",
     ".github",
@@ -17,20 +16,29 @@
     "repo": "https://github.com/ProjectNyxian/LLVM-On-iOS.git",
     "vendoredFileCount": 6
   },
-  "notes": "The iSH fakefs network path is too slow for full upstream vendoring. This lock records the focused source subset used by Litter BuildKit plus the private asset-pack flow.",
+  "notes": "Focused Nyxian/LLVM-On-iOS source import for Litter BuildKit. Apple SDK/CoreCompiler private assets are not committed; the vendored OpenSSL.xcframework is limited to the iOS arm64 slice used by device builds.",
   "nyxian": {
     "commit": "4c1957c0fe9410d4d514e5ab2dc380292c236a17",
     "ref": "main",
     "repo": "https://github.com/ProjectNyxian/Nyxian.git",
-    "vendoredFileCount": 185
+    "vendoredFileCount": 330
   },
   "requiredBuildKitPaths": [
     "ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj",
     "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m",
     "ThirdParty/Nyxian/Nyxian/LindChain/Core/Builder.swift",
-    "ThirdParty/LLVM-On-iOS/Scripts/build-swift-toolchain.sh"
+    "ThirdParty/LLVM-On-iOS/Scripts/build-swift-toolchain.sh",
+    "ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/LCUtils.m",
+    "ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/ZSign/zsigner.m",
+    "ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/Info.plist",
+    "ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/OpenSSL"
   ],
   "schemaVersion": 3,
-  "updatedAt": "2026-05-10T19:18:43Z",
+  "updatedAt": "2026-05-10T19:47:49Z",
+  "vendoredOpenSSL": {
+    "mode": "ios-arm64-slice",
+    "path": "ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework",
+    "reason": "Needed by LiveContainer/ZSign and referenced by Nyxian.xcodeproj for iOS device builds."
+  },
   "vendoringMode": "focused-buildkit-source-import"
 }

@@ -5,6 +5,34 @@
     "https://github.com/ProjectNyxian/Nyxian",
     "https://github.com/ProjectNyxian/LLVM-On-iOS"
   ],
-  "importedFileCount": 75,
-  "purpose": "Source-level import, fakefs staging bridge, and local/native ABI wrapper for Litter on-device Swift/iOS BuildKit integration."
+  "importedFileCount": 336,
+  "purpose": "Source-level import, fakefs staging bridge, local/native ABI wrapper, and LiveContainer/ZSign iOS signing support for Litter on-device Swift/iOS BuildKit integration.",
+  "includedCapabilities": [
+    "swift-source-staging",
+    "litter-buildkit-native-abi",
+    "in-process-ipa-packager-source",
+    "livecontainer-source",
+    "zsign-source",
+    "openssl-ios-arm64-framework-slice"
+  ],
+  "requiredPrivateAssets": [
+    "CoreCompiler.framework",
+    "CoreCompilerSupportLibs",
+    "LitterBuildKitNative.framework",
+    "iPhoneOS26.4.sdk"
+  ],
+  "knownSourceGaps": [
+    "Private Apple SDK and CoreCompiler assets must be installed through LitterBuildKitAssets before Swift/IPA commands can execute natively.",
+    "Only the iOS arm64 OpenSSL.xcframework slice is vendored to keep the repo device-build focused.",
+    "Standalone TrollStore/libroot payloads remain excluded because Litter targets SideStore/AltStore/developer sideload BuildKit workflows first."
+  ],
+  "liveContainer": {
+    "sourceIncluded": true,
+    "zsignIncluded": true,
+    "openSSLFrameworkIncluded": true,
+    "notes": [
+      "Builder.swift references LCUtils and ZSigner for signing/install paths.",
+      "OpenSSL.xcframework is trimmed to ios-arm64 for iPhone sideload builds."
+    ]
+  }
 }

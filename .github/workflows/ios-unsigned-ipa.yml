@@ -28,6 +28,7 @@ on:
       - 'tools/scripts/build-litter-buildkit-native.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
+      - 'tools/scripts/verify-nyxian-source-import.sh'
       - 'tools/scripts/build-nyxian-buildkit-assets.sh'
       - 'tools/scripts/verify-nyxian-buildkit-assets.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
@@ -79,6 +80,11 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
           swift --version
+
+      - name: Verify Nyxian source import
+        run: |
+          set -euo pipefail
+          tools/scripts/verify-nyxian-source-import.sh
 
       - name: Cache Homebrew downloads
         uses: actions/cache@v4

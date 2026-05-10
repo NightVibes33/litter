@@ -76,6 +76,25 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
     var sha256: [String: String]?
 }
 
+struct BuildKitSourceImportManifest: Codable, Equatable, Sendable {
+    struct LiveContainer: Codable, Equatable, Sendable {
+        var sourceIncluded: Bool
+        var zsignIncluded: Bool
+        var openSSLFrameworkIncluded: Bool
+        var notes: [String]
+    }
+
+    var name: String
+    var license: String
+    var sourceRepositories: [String]
+    var importedFileCount: Int
+    var purpose: String
+    var includedCapabilities: [String]?
+    var requiredPrivateAssets: [String]?
+    var knownSourceGaps: [String]?
+    var liveContainer: LiveContainer?
+}
+
 struct LitterBuildProjectManifest: Codable, Equatable, Sendable {
     var schemaVersion: Int
     var name: String
@@ -100,6 +119,8 @@ private struct BuildKitHostStaging: Sendable {
 
 struct LitterBuildKitStatus: Equatable, Sendable {
     var sourceImportAvailable: Bool
+    var liveContainerSourceAvailable: Bool
+    var openSSLFrameworkVendored: Bool
     var privateAssetsInstalled: Bool
     var nativeCompilerAssetsInstalled: Bool
     var nativeDriverInstalled: Bool
@@ -114,6 +135,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var buildKitRoot: String
     var commands: [String]
     var assetManifest: BuildKitAssetManifest?
+    var sourceImportManifest: BuildKitSourceImportManifest?
 
     var installedCapabilities: [String] {
         assetManifest?.capabilities.sorted() ?? []
@@ -158,7 +180,14 @@ struct LitterBuildKitStatus: Equatable, Sendable {
             return "The private asset pack is installed, but the native driver/framework is not loadable yet. Rebuild the sideload IPA with the private BuildKit framework embedded."
         }
         if sourceImportAvailable {
-            return "The Nyxian source import is present. Install a private LitterBuildKitAssets bundle containing CoreCompiler, Swift support libraries, and iPhoneOS SDK assets to enable real local builds."
+            var detail = "The focused Nyxian source import is present. Install a private LitterBuildKitAssets bundle containing CoreCompiler, Swift support libraries, and iPhoneOS SDK assets to enable real local builds."
+            if liveContainerSourceAvailable {
+                detail += " LiveContainer/ZSign source is included for signing/install research paths."
+            }
+            if !openSSLFrameworkVendored {
+                detail += " OpenSSL.xcframework is not bundled, so upstream LiveContainer/ZSign framework builds are blocked until it is restored."
+            }
+            return detail
         }
         return "ThirdParty/Nyxian is missing from this build."
     }
@@ -254,8 +283,11 @@ actor LitterBuildKit {
     func status() async -> LitterBuildKitStatus {
         let shimsInstalled = await IshFS.exists(path: Self.shimInstallMarker)
         let manifest = Self.installedManifest
+        let sourceManifest = Self.sourceImportManifest
         return LitterBuildKitStatus(
             sourceImportAvailable: Self.sourceImportAvailable,
+            liveContainerSourceAvailable: sourceManifest?.liveContainer?.sourceIncluded ?? false,
+            openSSLFrameworkVendored: sourceManifest?.liveContainer?.openSSLFrameworkIncluded ?? false,
             privateAssetsInstalled: manifest != nil,
             nativeCompilerAssetsInstalled: Self.nativeCompilerAssetsInstalled,
             nativeDriverInstalled: Self.nativeDriverInstalled,
@@ -269,7 +301,8 @@ actor LitterBuildKit {
             sdkRoot: Self.sdkRoot.path,
             buildKitRoot: Self.buildKitRoot.path,
             commands: Self.commandNames,
-            assetManifest: manifest
+            assetManifest: manifest,
+            sourceImportManifest: sourceManifest
         )
     }
 
@@ -654,7 +687,13 @@ actor LitterBuildKit {
     }
 
     private static var sourceImportAvailable: Bool {
-        Bundle.main.url(forResource: "nyxian-import-manifest", withExtension: "json") != nil
+        sourceImportManifest != nil
+    }
+
+    private static var sourceImportManifest: BuildKitSourceImportManifest? {
+        guard let url = Bundle.main.url(forResource: "nyxian-import-manifest", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(BuildKitSourceImportManifest.self, from: data)
     }
 
     private static func embeddedFrameworkURL(named name: String) -> URL {
@@ -923,6 +962,8 @@ actor LitterBuildKit {
         var output = """
         Litter BuildKit status
         Source import: \(status.sourceImportAvailable ? "present" : "missing")
+        LiveContainer/ZSign source: \(status.liveContainerSourceAvailable ? "included" : "missing")
+        LiveContainer OpenSSL framework: \(status.openSSLFrameworkVendored ? "included" : "missing")
         Private assets: \(status.privateAssetsInstalled ? "installed" : "missing")
         CoreCompiler assets: \(status.nativeCompilerAssetsInstalled ? "installed" : "missing")
         Native driver: \(status.nativeDriverInstalled ? "installed" : "missing")
@@ -939,6 +980,15 @@ actor LitterBuildKit {
         Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
         """
+        if let sourceManifest = status.sourceImportManifest {
+            output += "\nSource manifest: \(sourceManifest.name) (\(sourceManifest.importedFileCount) files)\n"
+            if let capabilities = sourceManifest.includedCapabilities, !capabilities.isEmpty {
+                output += "Source capabilities: \(capabilities.joined(separator: ", "))\n"
+            }
+            if let gaps = sourceManifest.knownSourceGaps, !gaps.isEmpty {
+                output += "Source gaps: \(gaps.joined(separator: "; "))\n"
+            }
+        }
         if let manifest = status.assetManifest {
             output += "\nManifest: \(manifest.bundleIdentifier) SDK \(manifest.sdkVersion) Swift \(manifest.swiftVersion ?? "unknown")\n"
             output += "Native mode: \(manifest.toolchain.nativeDriverMode ?? "runner")\n"
@@ -954,6 +1004,8 @@ actor LitterBuildKit {
         var output = statusLog(status)
         output += "\nNyxian integration scan\n"
         output += "- Source import bundle marker: \(status.sourceImportAvailable ? "present" : "missing")\n"
+        output += "- LiveContainer/ZSign source: \(status.liveContainerSourceAvailable ? "included" : "missing")\n"
+        output += "- OpenSSL.xcframework: \(status.openSSLFrameworkVendored ? "included" : "missing")\n"
         output += "- Private asset root: \(status.buildKitRoot)\n"
         output += "- Swift direct execution: \(status.canRunSwiftDirectly ? "available" : "not available")\n"
         output += "- Unsigned IPA packaging: \(status.canBuildUnsignedIPA ? "available" : "not available")\n"

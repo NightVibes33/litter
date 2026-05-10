@@ -3,6 +3,7 @@
 ## Done
 
 - Add focused Nyxian source import for BuildKit research.
+- Restore LiveContainer/ZSign source readiness with a trimmed iOS arm64 OpenSSL.xcframework slice and source-import verifier.
 - Add fakefs BuildKit command shims.
 - Add BuildKit settings surface.
 - Add private asset manifest template.
@@ -27,6 +28,7 @@
 
 ## Next Engineering Work
 
+- Run `make nyxian-source-verify` before/after BuildKit source refreshes to catch missing Builder.swift, LiveContainer/ZSign, OpenSSL, or manifest files.
 - Run `make nyxian-vendor` on macOS to refresh the focused upstream Nyxian/LLVM-On-iOS BuildKit source import when network access is available.
 - Run `make nyxian-buildkit-assets` on macOS with Xcode/private asset paths to create the private `LitterBuildKitAssets.zip`.
 - Upload the private ZIP with `tools/scripts/upload-buildkit-assets-release.sh`, then set `LITTER_BUILDKIT_ASSET_URL`, `LITTER_BUILDKIT_ASSET_SHA256`, and `LITTER_BUILDKIT_ASSET_TOKEN` GitHub secrets for private BuildKit-enabled sideload builds.

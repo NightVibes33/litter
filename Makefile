@@ -175,7 +175,7 @@ $(shell mkdir -p $(STAMPS))
 	android android-fast android-tools android-emulator-fast android-emulator-run android-device-run android-release android-debug android-install android-emulator-install \
 	rust-ios rust-ios-package rust-ios-device-release rust-mac-release rust-ios-device-fast rust-ios-sim-fast rust-ios-macabi-fast rust-android rust-check rust-test rust-host-dev \
 	bindings bindings-swift bindings-kotlin \
-	sync patch unpatch xcgen alpine-fs llama-ios ish-dev-random nyxian-vendor nyxian-buildkit-assets nyxian-buildkit-assets-verify buildkit-assets-package buildkit-assets-upload \
+	sync patch unpatch xcgen alpine-fs llama-ios ish-dev-random nyxian-vendor nyxian-source-verify nyxian-buildkit-assets nyxian-buildkit-assets-verify buildkit-assets-package buildkit-assets-upload \
 	ios-build ios-build-sim ios-build-sim-fast ios-build-device ios-build-device-fast \
 	watch watch-sim watch-sim-run watch-device watch-typecheck \
 	test test-rust test-ios test-android \
@@ -507,6 +507,9 @@ ish-dev-random:
 
 nyxian-vendor:
 	@tools/scripts/vendor-nyxian.sh
+
+nyxian-source-verify:
+	@tools/scripts/verify-nyxian-source-import.sh
 
 nyxian-buildkit-assets:
 	@tools/scripts/build-nyxian-buildkit-assets.sh
