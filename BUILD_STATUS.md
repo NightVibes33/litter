@@ -2,10 +2,10 @@
 
 Last verified public build:
 
-- Commit: `f6bd4b5de88bd933e8728c4a9a0913cd67d1c02f`
+- Commit: `113d0f3`
 - Workflow: `Build Unsigned iOS IPA`
-- Run: https://github.com/NightVibes33/litter/actions/runs/25632730287
-- Result: green before the private BuildKit asset downloader work
+- Run: https://github.com/NightVibes33/litter/actions/runs/25633944189
+- Result: green after the private BuildKit asset downloader and ZIP installer work
 - Artifact mode: unsigned SideStore/AltStore IPA for re-signing
 
 Current BuildKit state:
