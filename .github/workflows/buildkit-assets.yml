@@ -38,6 +38,11 @@ on:
         required: true
         default: "buildkit-ios-runner-v1"
         type: string
+      rebuild_unsigned_ipa:
+        description: "After uploading assets, update IPA asset secrets and dispatch unsigned IPA rebuild"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -167,11 +172,31 @@ jobs:
           fi
           tools/scripts/upload-buildkit-assets-release.sh | tee artifacts/buildkit/private-release-upload.txt
 
+      - name: Link private assets to unsigned IPA workflow
+        if: inputs.upload_private_release == true && inputs.rebuild_unsigned_ipa == true
+        env:
+          GH_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
+        run: |
+          set -euo pipefail
+          ASSET_URL="$(awk -F= '/LITTER_BUILDKIT_ASSET_URL=/{print $2}' artifacts/buildkit/private-release-upload.txt | tail -n 1)"
+          ASSET_SHA256="$(awk -F= '/LITTER_BUILDKIT_ASSET_SHA256=/{print $2}' artifacts/buildkit/private-release-upload.txt | tail -n 1)"
+          if [ -z "$ASSET_URL" ] || [ -z "$ASSET_SHA256" ]; then
+            echo "error: upload step did not print asset URL/SHA values" >&2
+            cat artifacts/buildkit/private-release-upload.txt >&2
+            exit 1
+          fi
+          gh secret set LITTER_BUILDKIT_ASSET_URL --repo "$GITHUB_REPOSITORY" --body "$ASSET_URL"
+          gh secret set LITTER_BUILDKIT_ASSET_SHA256 --repo "$GITHUB_REPOSITORY" --body "$ASSET_SHA256"
+          gh workflow run ios-unsigned-ipa.yml --repo "$GITHUB_REPOSITORY" --ref main -f build_mode=fast-device
+          echo "Linked BuildKit assets and dispatched unsigned IPA rebuild."
+
       - name: Print unsigned IPA secret values
         if: inputs.upload_private_release == true
         run: |
           set -euo pipefail
-          echo "Use the values printed by upload-buildkit-assets-release.sh as these unsigned IPA workflow secrets:"
+          echo "Private BuildKit release upload output:"
+          cat artifacts/buildkit/private-release-upload.txt
+          echo "Required unsigned IPA workflow secrets:"
           echo "- LITTER_BUILDKIT_ASSET_URL"
           echo "- LITTER_BUILDKIT_ASSET_SHA256"
           echo "- LITTER_BUILDKIT_ASSET_TOKEN"
