@@ -252,7 +252,7 @@ struct ConversationView: View {
             do {
                 let payload = try makeComposerPayload(
                     text: text,
-                    attachmentImage: nil,
+                    attachments: [],
                     skillMentions: [],
                     pluginMentions: []
                 )

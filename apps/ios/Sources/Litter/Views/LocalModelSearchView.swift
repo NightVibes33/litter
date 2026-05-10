@@ -617,6 +617,6 @@ private struct LocalModelDetailSheet: View {
     private func safetyWarning(for file: HuggingFaceModelDetails.Sibling) -> String? {
         let size = file.lfs?.size ?? file.size ?? 0
         let safety = capability.safety(forFileSize: size, fileName: file.rfilename)
-        return safety.0 == .safe ? nil : safety.1
+        return safety.0 == .recommended ? nil : safety.1
     }
 }

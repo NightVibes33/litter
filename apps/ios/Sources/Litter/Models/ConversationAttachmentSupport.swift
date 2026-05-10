@@ -191,16 +191,9 @@ enum ConversationAttachmentSupport {
 
     private static func copyDirectoryToFakeFS(from sourceURL: URL, to targetPath: String) async throws {
         try await IshFS.createDirectoryIfNeeded(path: targetPath)
-        guard let enumerator = FileManager.default.enumerator(
-            at: sourceURL,
-            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
-            options: [],
-            errorHandler: nil
-        ) else {
-            throw NSError(domain: "ConversationAttachmentSupport", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not enumerate \(sourceURL.lastPathComponent)."])
-        }
+        let itemURLs = try enumeratedFileURLs(in: sourceURL)
 
-        for case let itemURL as URL in enumerator {
+        for itemURL in itemURLs {
             let relative = relativePath(for: itemURL, root: sourceURL)
             guard !relative.isEmpty else { continue }
             let destination = fakefsJoin(targetPath, relative)
@@ -212,6 +205,18 @@ enum ConversationAttachmentSupport {
                 try await IshFS.writeFile(path: destination, sourceURL: itemURL, replaceExisting: false)
             }
         }
+    }
+
+    private static func enumeratedFileURLs(in sourceURL: URL) throws -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: sourceURL,
+            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
+            options: [],
+            errorHandler: nil
+        ) else {
+            throw NSError(domain: "ConversationAttachmentSupport", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not enumerate \(sourceURL.lastPathComponent)."])
+        }
+        return enumerator.compactMap { $0 as? URL }
     }
 
     private static func relativePath(for itemURL: URL, root: URL) -> String {
