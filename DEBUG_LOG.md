@@ -13,3 +13,7 @@
 - Added Settings -> BuildKit folder import so users can install expanded private asset bundles without rebuilding the IPA.
 - Extended BuildKit manifests/status checks to validate an optional Nyxian runner path.
 - Verified unsigned IPA workflow green for commit `9c78f95df9b9e10ec54c2038bfab7e35421d1730` in run `25630987712`.
+
+- Added host staging bridge because native iOS code cannot directly read `/root` in iSH fakefs.
+- Added optional in-process Nyxian driver source and build-script mode for private BuildKit-enabled IPAs.
+- Added fakefs environment report/bootstrap commands for bot-readable diagnostics and repair.

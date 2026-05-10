@@ -167,6 +167,20 @@ enum LocalModelToolLoop {
             """
         ),
         LocalModelToolSpec(
+            name: "env_report",
+            description: "Report fakefs packages, tool versions, core devices, storage, and BuildKit-visible environment facts.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{}}
+            """
+        ),
+        LocalModelToolSpec(
+            name: "dev_bootstrap",
+            description: "Install/repair the fakefs developer distro layer. Requires approval because it can install packages.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{}}
+            """
+        ),
+        LocalModelToolSpec(
             name: "swift_check",
             description: "Run Litter BuildKit Swift diagnostics for a fakefs Swift file.",
             inputSchemaJSON: """
@@ -246,7 +260,7 @@ enum LocalModelToolLoop {
 
     static func looksLikeMalformedToolRequest(_ text: String) -> Bool {
         let lowered = text.lowercased()
-        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") || lowered.contains("swift_check") || lowered.contains("ipa_build") || lowered.contains("buildkit") else {
+        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") || lowered.contains("swift_check") || lowered.contains("ipa_build") || lowered.contains("buildkit") || lowered.contains("dev_bootstrap") || lowered.contains("env_report") else {
             return false
         }
         return parseToolCalls(from: text).isEmpty
@@ -254,9 +268,9 @@ enum LocalModelToolLoop {
 
     static func risk(for call: LocalModelToolCall) -> LocalModelToolRisk {
         switch call.name {
-        case "list_dir", "read_file", "search_files", "grep_text", "repo_map":
+        case "list_dir", "read_file", "search_files", "grep_text", "repo_map", "env_report", "buildkit_status", "fs_doctor", "swift_check", "build_status":
             return .safeRead
-        case "shell":
+        case "shell", "dev_bootstrap":
             return .shell
         case "write_file", "replace_text":
             return .write
@@ -343,6 +357,15 @@ enum LocalModelToolLoop {
             return result.output
         case "fs_doctor":
             let result = await IshFS.run("litter-fs-doctor --timeout 60")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "env_report":
+            let result = await IshFS.run("litter-env-report --timeout 60")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "dev_bootstrap":
+            guard policy.allowsShell else { throw LocalModelToolLoopError.blocked("Fakefs developer bootstrap requires explicit user approval.") }
+            let result = await IshFS.run("litter-dev-bootstrap --timeout 900")
             guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
             return result.output
         case "swift_check":

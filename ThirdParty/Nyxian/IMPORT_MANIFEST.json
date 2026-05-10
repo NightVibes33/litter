@@ -147,12 +147,17 @@
   {
     "path": "ThirdParty/Nyxian/IMPORT_MANIFEST.json",
     "source": "local-litter-buildkit",
-    "bytes": 9480
+    "bytes": 15231
   },
   {
     "path": "ThirdParty/Nyxian/LICENSE",
     "source": "https://raw.githubusercontent.com/ProjectNyxian/Nyxian/main/LICENSE",
     "bytes": 34523
+  },
+  {
+    "path": "ThirdParty/Nyxian/LitterBuildKitNative/LitterBuildKitInProcess.mm",
+    "source": "local-litter-buildkit",
+    "bytes": 8177
   },
   {
     "path": "ThirdParty/Nyxian/LitterBuildKitNative/LitterBuildKitNative.h",
@@ -162,12 +167,12 @@
   {
     "path": "ThirdParty/Nyxian/LitterBuildKitNative/LitterBuildKitNative.mm",
     "source": "local-litter-buildkit",
-    "bytes": 8890
+    "bytes": 9844
   },
   {
     "path": "ThirdParty/Nyxian/LitterBuildKitNative/README.md",
     "source": "local-litter-buildkit",
-    "bytes": 1519
+    "bytes": 1925
   },
   {
     "path": "ThirdParty/Nyxian/LiveProcess/main.m",

@@ -16,9 +16,10 @@ The public source now includes a buildable wrapper implementation:
 
 The wrapper intentionally does not embed Apple SDK files or Swift compiler
 payloads. The private asset pack must supply `CoreCompiler.framework`,
-`CoreCompilerSupportLibs`, a user-owned `iPhoneOS26.4.sdk`, and either a
-monolithic native driver or an executable runner at
-`Toolchains/Nyxian/bin/litter-buildkit-runner`.
+`CoreCompilerSupportLibs`, and a user-owned `iPhoneOS26.4.sdk`. It can run in
+`runner` mode with an executable at `Toolchains/Nyxian/bin/litter-buildkit-runner`
+or in `inprocess` mode by compiling `LitterBuildKitInProcess.mm` into the
+framework with `LITTER_BUILDKIT_NATIVE_MODE=inprocess`.
 
 Expected runner invocation:
 
@@ -36,3 +37,8 @@ litter-buildkit-runner <command> \
 The runner should exit with the compiler/build status code and write human
 readable diagnostics to stdout/stderr. Litter stores that output under
 `/root/builds/<job-id>/log.txt`.
+
+In-process mode receives host-staged files from the Swift bridge via `hostWorkDir`,
+`hostProjectPath`, and `hostInputPath`. Fakefs paths like `/root` are not visible
+to normal iOS file APIs, so Litter stages source files into `Documents/BuildKit/Jobs`
+before invoking the native driver.

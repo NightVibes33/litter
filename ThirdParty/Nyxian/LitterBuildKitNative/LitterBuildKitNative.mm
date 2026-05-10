@@ -14,6 +14,10 @@
 
 extern char **environ;
 
+#ifdef LBN_ENABLE_INPROCESS
+extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *requestPath);
+#endif
+
 static NSString *LBNString(NSDictionary *dictionary, NSString *key)
 {
     id value = dictionary[key];
@@ -211,6 +215,14 @@ const char *litter_buildkit_run_json(const char *request_json)
             return LBNResponse(73, @"request-write-failed", writeError ?: @"Could not write native BuildKit request file.\n");
         }
 
+#ifdef LBN_ENABLE_INPROCESS
+        char *inProcessResponse = LBNRunInProcessBuildKit(request, requestPath);
+        if(inProcessResponse != NULL)
+        {
+            return inProcessResponse;
+        }
+#endif
+
         NSString *runner = LBNFindRunner(buildKitRoot, toolchainRoot);
         if(runner.length == 0)
         {
@@ -229,6 +241,12 @@ const char *litter_buildkit_run_json(const char *request_json)
             @"--toolchain-root", toolchainRoot,
             @"--sdk-root", sdkRoot
         ];
+        NSString *hostWorkDir = LBNString(request, @"hostWorkDir");
+        NSString *hostProjectPath = LBNString(request, @"hostProjectPath");
+        NSString *hostInputPath = LBNString(request, @"hostInputPath");
+        if(hostWorkDir.length > 0) { runnerArgs = [runnerArgs arrayByAddingObjectsFromArray:@[@"--host-work-dir", hostWorkDir]]; }
+        if(hostProjectPath.length > 0) { runnerArgs = [runnerArgs arrayByAddingObjectsFromArray:@[@"--host-project", hostProjectPath]]; }
+        if(hostInputPath.length > 0) { runnerArgs = [runnerArgs arrayByAddingObjectsFromArray:@[@"--host-input", hostInputPath]]; }
 
         NSString *output = nil;
         int exitCode = LBNRunRunner(runner, runnerArgs, &output);

@@ -8,6 +8,7 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
         var coreCompilerFramework: String
         var nativeDriverFramework: String?
         var nativeRunner: String?
+        var nativeDriverMode: String?
         var supportLibraries: String
         var sdkPath: String
     }
@@ -22,6 +23,28 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
     var capabilities: [String]
     var requiredPaths: [String]
     var sha256: [String: String]?
+}
+
+struct LitterBuildProjectManifest: Codable, Equatable, Sendable {
+    var schemaVersion: Int
+    var name: String
+    var bundleIdentifier: String
+    var deploymentTarget: String
+    var sdk: String?
+    var product: String
+    var entrypoint: String?
+    var sources: [String]
+    var resources: [String]?
+    var entitlements: String?
+    var output: String?
+}
+
+private struct BuildKitHostStaging: Sendable {
+    var log: String
+    var hostWorkDir: String?
+    var hostProjectPath: String?
+    var hostInputPath: String?
+    var fakefsProjectPath: String?
 }
 
 struct LitterBuildKitStatus: Equatable, Sendable {
@@ -76,6 +99,8 @@ actor LitterBuildKit {
         "litter-buildkit",
         "litter-buildkit-install-assets",
         "litter-fs-doctor",
+        "litter-env-report",
+        "litter-dev-bootstrap",
         "litter-swift-check",
         "litter-swift-build",
         "litter-swift-test",
@@ -204,6 +229,10 @@ actor LitterBuildKit {
             return installAssetsCommand()
         case "litter-fs-doctor":
             return await fakefsDoctor()
+        case "litter-env-report":
+            return await envReport()
+        case "litter-dev-bootstrap":
+            return await devBootstrap()
         case "litter-swift-check":
             return await swiftCheck(args: args, cwd: cwd, buildDir: buildDir)
         case "litter-swift-build", "litter-swift-test", "litter-ipa-build", "litter-ipa-package":
@@ -241,18 +270,77 @@ actor LitterBuildKit {
             check "/tmp writable" "t=$(mktemp /tmp/litter.XXXXXX) && rm -f \"$t\""
             check "/usr/local/bin writable" "[ -w /usr/local/bin ]"
             check "/root/builds writable" "[ -w /root/builds ]"
+            for tool in git ssh scp curl tar gzip unzip zip python3 node npm; do
+              if command -v "$tool" >/dev/null 2>&1; then echo "ok  command:$tool $(command -v "$tool")"; else echo "miss command:$tool"; fi
+            done
             if command -v git >/dev/null 2>&1; then
               tmp=$(mktemp -d /tmp/litter-git.XXXXXX)
               if git -C "$tmp" init >/dev/null 2>&1; then echo "ok  git temp files"; else echo "bad git temp files"; ok=0; fi
               rm -rf "$tmp"
             else
-              echo "skip git temp files (git not installed)"
+              echo "bad git temp files (git not installed)"; ok=0
             fi
             exit $((ok == 1 ? 0 : 1))
             """
         )
         let status = checks.exitCode == 0 ? "doctor-ok" : "doctor-failed"
         return BuildKitCommandResult(exitCode: Int(checks.exitCode), status: status, log: "Repair output:\n\(repair.output)\nChecks:\n\(checks.output)")
+    }
+
+    private func envReport() async -> BuildKitCommandResult {
+        let report = await IshFS.run(
+            """
+            set +e
+            echo "Litter fakefs environment"
+            echo "kernel=$(uname -a 2>/dev/null)"
+            echo "cwd=$(pwd)"
+            echo "PATH=$PATH"
+            echo
+            echo "Core devices:"
+            ls -l /dev/null /dev/random /dev/urandom 2>/dev/null
+            echo
+            echo "Storage:"
+            df -h / /root /tmp 2>/dev/null
+            echo
+            echo "Packages:"
+            if command -v apk >/dev/null 2>&1; then apk info | sort | sed -n '1,120p'; else echo "apk missing"; fi
+            echo
+            echo "Tool versions:"
+            for tool in git ssh scp curl tar gzip unzip zip python3 node npm; do
+              if command -v "$tool" >/dev/null 2>&1; then
+                printf '%s: ' "$tool"
+                "$tool" --version 2>&1 | head -n 1
+              else
+                echo "$tool: missing"
+              fi
+            done
+            """
+        )
+        return BuildKitCommandResult(exitCode: Int(report.exitCode), status: "env-report", log: report.output)
+    }
+
+    private func devBootstrap() async -> BuildKitCommandResult {
+        await IshFS.repairCoreDevices()
+        let bootstrap = await IshFS.run(
+            """
+            set -eu
+            mkdir -p /root/bin /root/builds /root/projects /root/.cache/litter /tmp
+            chmod 1777 /tmp /var/tmp 2>/dev/null || true
+            if command -v apk >/dev/null 2>&1; then
+              apk update || true
+              apk add --no-cache git openssh-client curl tar gzip xz unzip zip python3 nodejs npm ca-certificates coreutils findutils grep sed gawk || true
+            fi
+            git config --global init.defaultBranch main 2>/dev/null || true
+            git config --global advice.detachedHead false 2>/dev/null || true
+            cat > /root/.litter-fakefs-version <<'EOF'
+            litter-fakefs-dev-bootstrap=1
+            layout=/root,/root/projects,/root/builds,/root/.cache/litter,/usr/local/bin
+            EOF
+            echo "Bootstrap complete."
+            """
+        )
+        let status = bootstrap.exitCode == 0 ? "bootstrap-ok" : "bootstrap-warning"
+        return BuildKitCommandResult(exitCode: Int(bootstrap.exitCode), status: status, log: bootstrap.output)
     }
 
     private func swiftCheck(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
@@ -267,31 +355,117 @@ actor LitterBuildKit {
         log += "Backend: Nyxian private asset pack + native driver\n\n"
         log += Self.staticSwiftPreflight(source: source, path: path)
 
+        let staging = Self.stageSwiftSourceForNativeDriver(fakefsPath: path, source: source, buildDir: buildDir)
+        log += staging.log
+
         let status = await status()
         guard status.isReadyForNativeBuilds else {
             log += "\nBlocked: BuildKit is not ready for native Swift builds.\n"
             log += Self.missingAssetSummary(status)
             return BuildKitCommandResult(exitCode: 78, status: "toolchain-missing", log: log)
         }
-        return await nativeBuildCommand(command: "litter-swift-check", args: args, cwd: cwd, buildDir: buildDir, prelude: log)
+        return await nativeBuildCommand(command: "litter-swift-check", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
     }
 
-    private func nativeBuildCommand(command: String, args: String, cwd: String, buildDir: String, prelude: String = "") async -> BuildKitCommandResult {
+    private func nativeBuildCommand(command: String, args: String, cwd: String, buildDir: String, prelude: String = "", staging providedStaging: BuildKitHostStaging? = nil) async -> BuildKitCommandResult {
+        let staging: BuildKitHostStaging
+        if let providedStaging {
+            staging = providedStaging
+        } else {
+            staging = await stageProjectForNativeDriver(command: command, args: args, cwd: cwd, buildDir: buildDir)
+        }
+        var fullPrelude = prelude + staging.log
         let current = await status()
         guard current.isReadyForNativeBuilds else {
-            var log = prelude
-            log += "\(command) is routed through Litter BuildKit.\n"
-            log += Self.missingAssetSummary(current)
-            return BuildKitCommandResult(exitCode: 78, status: "toolchain-missing", log: log)
+            fullPrelude += "\(command) is routed through Litter BuildKit.\n"
+            fullPrelude += Self.missingAssetSummary(current)
+            return BuildKitCommandResult(exitCode: 78, status: "toolchain-missing", log: fullPrelude)
         }
-        guard let result = Self.runNativeDriver(command: command, args: args, cwd: cwd, buildDir: buildDir) else {
-            var log = prelude
-            log += "Native BuildKit assets are present, but the private native driver did not expose litter_buildkit_run_json.\n"
-            log += "Embed LitterBuildKitNative.framework in the private sideload IPA and link it to CoreCompiler.framework.\n"
-            return BuildKitCommandResult(exitCode: 78, status: "adapter-missing", log: log)
+        guard let result = Self.runNativeDriver(command: command, args: args, cwd: cwd, buildDir: buildDir, staging: staging) else {
+            fullPrelude += "Native BuildKit assets are present, but the private native driver did not expose litter_buildkit_run_json.\n"
+            fullPrelude += "Embed LitterBuildKitNative.framework in the private sideload IPA and link it to CoreCompiler.framework.\n"
+            return BuildKitCommandResult(exitCode: 78, status: "adapter-missing", log: fullPrelude)
         }
-        if prelude.isEmpty { return result }
-        return BuildKitCommandResult(exitCode: result.exitCode, status: result.status, log: prelude + "\n" + result.log)
+        if fullPrelude.isEmpty { return result }
+        return BuildKitCommandResult(exitCode: result.exitCode, status: result.status, log: fullPrelude + "\n" + result.log)
+    }
+
+    private func stageProjectForNativeDriver(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitHostStaging {
+        guard ["litter-swift-build", "litter-swift-test", "litter-ipa-build", "litter-ipa-package"].contains(command) else {
+            return BuildKitHostStaging(log: "", hostWorkDir: nil, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: nil)
+        }
+        guard let first = Self.shellWords(args).first else {
+            return BuildKitHostStaging(log: "BuildKit project preflight: missing LitterBuild.json path.\n", hostWorkDir: nil, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: nil)
+        }
+        let projectPath = first.hasPrefix("/") ? first : "\(cwd)/\(first)"
+        var log = "BuildKit project preflight\nProject: \(projectPath)\n"
+        guard let manifestText = try? await IshFS.readTextFile(path: projectPath, maxBytes: 256_000), let data = manifestText.data(using: .utf8), let manifest = try? JSONDecoder().decode(LitterBuildProjectManifest.self, from: data) else {
+            log += "- Could not read or decode LitterBuild.json. Native driver will receive the original request only.\n"
+            return BuildKitHostStaging(log: log, hostWorkDir: nil, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: projectPath)
+        }
+
+        let hostRoot = Self.hostJobRoot(buildDir: buildDir)
+        let fakefsProjectDir = (projectPath as NSString).deletingLastPathComponent
+        let hostProjectPath = hostRoot.appendingPathComponent("LitterBuild.json")
+        do {
+            try FileManager.default.createDirectory(at: hostRoot, withIntermediateDirectories: true, attributes: nil)
+            try data.write(to: hostProjectPath, options: .atomic)
+        } catch {
+            log += "- Could not stage project manifest for native driver: \(error.localizedDescription)\n"
+            return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: projectPath)
+        }
+
+        var copied = 0
+        var skipped = 0
+        let roots = Set((manifest.sources + (manifest.resources ?? []) + [manifest.entitlements, manifest.entrypoint].compactMap { $0 }).map { path in
+            path.hasPrefix("/") ? path : "\(fakefsProjectDir)/\(path)"
+        })
+        for root in roots {
+            let result = await IshFS.run("if [ -d \(IshFS.shellQuote(root)) ]; then find \(IshFS.shellQuote(root)) -type f; elif [ -f \(IshFS.shellQuote(root)) ]; then printf '%s\\n' \(IshFS.shellQuote(root)); fi")
+            guard result.exitCode == 0 else { skipped += 1; continue }
+            for file in result.output.split(separator: "\n").map(String.init) {
+                let relative = Self.relativeFakefsPath(file, base: fakefsProjectDir)
+                let hostFile = hostRoot.appendingPathComponent(relative)
+                do {
+                    let text = try await IshFS.readTextFile(path: file, maxBytes: 4_000_000)
+                    try FileManager.default.createDirectory(at: hostFile.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+                    try Data(text.utf8).write(to: hostFile, options: .atomic)
+                    copied += 1
+                } catch {
+                    skipped += 1
+                }
+            }
+        }
+        log += "- Manifest: \(manifest.name) \(manifest.bundleIdentifier) deployment \(manifest.deploymentTarget)\n"
+        log += "- Staged host work dir: \(hostRoot.path)\n"
+        log += "- Staged text files: \(copied); skipped binary/large/unreadable files: \(skipped)\n"
+        if skipped > 0 { log += "- Binary resources need a native runner that can request byte-copy support; text Swift projects are staged now.\n" }
+        return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: hostProjectPath.path, hostInputPath: nil, fakefsProjectPath: projectPath)
+    }
+
+    private static func stageSwiftSourceForNativeDriver(fakefsPath: String, source: String, buildDir: String) -> BuildKitHostStaging {
+        let hostRoot = hostJobRoot(buildDir: buildDir)
+        let hostInput = hostRoot.appendingPathComponent("Input.swift")
+        var log = ""
+        do {
+            try FileManager.default.createDirectory(at: hostRoot, withIntermediateDirectories: true, attributes: nil)
+            try Data(source.utf8).write(to: hostInput, options: .atomic)
+            log += "Native staging: \(fakefsPath) -> \(hostInput.path)\n"
+        } catch {
+            log += "Native staging failed: \(error.localizedDescription)\n"
+        }
+        return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: hostInput.path, fakefsProjectPath: fakefsPath)
+    }
+
+    private static func hostJobRoot(buildDir: String) -> URL {
+        let id = URL(fileURLWithPath: buildDir).lastPathComponent.replacingOccurrences(of: "[^A-Za-z0-9._-]", with: "-", options: .regularExpression)
+        return buildKitRoot.appendingPathComponent("Jobs/\(id)", isDirectory: true)
+    }
+
+    private static func relativeFakefsPath(_ path: String, base: String) -> String {
+        let normalizedBase = base.hasSuffix("/") ? base : base + "/"
+        if path.hasPrefix(normalizedBase) { return String(path.dropFirst(normalizedBase.count)) }
+        return URL(fileURLWithPath: path).lastPathComponent
     }
 
     private func cancelCommand(args: String) -> BuildKitCommandResult {
@@ -413,7 +587,7 @@ actor LitterBuildKit {
         let previous = documentsRoot.appendingPathComponent("BuildKit.previous", isDirectory: true)
         try? fm.removeItem(at: stage)
         try? fm.removeItem(at: previous)
-        try fm.createDirectory(at: stage.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try fm.createDirectory(at: stage.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
         try copyDirectoryContents(from: source, to: stage)
         _ = try validateAssetDirectory(stage)
         if fm.fileExists(atPath: buildKitRoot.path) {
@@ -433,7 +607,7 @@ actor LitterBuildKit {
 
     private static func copyDirectoryContents(from source: URL, to destination: URL) throws {
         let fm = FileManager.default
-        try fm.createDirectory(at: destination, withIntermediateDirectories: true)
+        try fm.createDirectory(at: destination, withIntermediateDirectories: true, attributes: nil)
         for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil) {
             try fm.copyItem(at: item, to: destination.appendingPathComponent(item.lastPathComponent, isDirectory: item.hasDirectoryPath))
         }
@@ -486,7 +660,7 @@ actor LitterBuildKit {
         return nil
     }
 
-    private static func runNativeDriver(command: String, args: String, cwd: String, buildDir: String) -> BuildKitCommandResult? {
+    private static func runNativeDriver(command: String, args: String, cwd: String, buildDir: String, staging: BuildKitHostStaging) -> BuildKitCommandResult? {
         guard let handle = loadNativeDriverHandle(), let symbol = dlsym(handle, "litter_buildkit_run_json") else { return nil }
         typealias RunFn = @convention(c) (UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
         let run = unsafeBitCast(symbol, to: RunFn.self)
@@ -497,7 +671,11 @@ actor LitterBuildKit {
             buildDir: buildDir,
             buildKitRoot: buildKitRoot.path,
             toolchainRoot: toolchainRoot.path,
-            sdkRoot: sdkRoot.path
+            sdkRoot: sdkRoot.path,
+            hostWorkDir: staging.hostWorkDir,
+            hostProjectPath: staging.hostProjectPath,
+            hostInputPath: staging.hostInputPath,
+            fakefsProjectPath: staging.fakefsProjectPath
         )
         guard let data = try? JSONEncoder().encode(payload), let json = String(data: data, encoding: .utf8) else {
             return BuildKitCommandResult(exitCode: 70, status: "request-encode-failed", log: "Could not encode native BuildKit request.\n")
@@ -577,6 +755,7 @@ actor LitterBuildKit {
         """
         if let manifest = status.assetManifest {
             output += "\nManifest: \(manifest.bundleIdentifier) SDK \(manifest.sdkVersion) Swift \(manifest.swiftVersion ?? "unknown")\n"
+            output += "Native mode: \(manifest.toolchain.nativeDriverMode ?? "runner")\n"
             output += "Capabilities: \(manifest.capabilities.joined(separator: ", "))\n"
         }
         return output
@@ -686,6 +865,10 @@ private struct NativeDriverRequest: Encodable, Sendable {
     var buildKitRoot: String
     var toolchainRoot: String
     var sdkRoot: String
+    var hostWorkDir: String?
+    var hostProjectPath: String?
+    var hostInputPath: String?
+    var fakefsProjectPath: String?
 }
 
 private struct NativeDriverResponse: Decodable, Sendable {

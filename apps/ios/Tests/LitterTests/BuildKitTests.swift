@@ -30,6 +30,7 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(manifest.toolchain.coreCompilerFramework, "Toolchains/Nyxian/CoreCompiler.framework")
         XCTAssertEqual(manifest.toolchain.nativeDriverFramework, "Toolchains/Nyxian/LitterBuildKitNative.framework")
         XCTAssertEqual(manifest.toolchain.nativeRunner, "Toolchains/Nyxian/bin/litter-buildkit-runner")
+        XCTAssertEqual(manifest.toolchain.nativeDriverMode, "runner")
         XCTAssertTrue(manifest.capabilities.contains("unsigned-ipa-build"))
     }
 

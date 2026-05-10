@@ -5,6 +5,6 @@
     "https://github.com/ProjectNyxian/Nyxian",
     "https://github.com/ProjectNyxian/LLVM-On-iOS"
   ],
-  "importedFileCount": 74,
-  "purpose": "Source-level import and local ABI wrapper for Litter on-device Swift/iOS BuildKit integration."
+  "importedFileCount": 75,
+  "purpose": "Source-level import, fakefs staging bridge, and local/native ABI wrapper for Litter on-device Swift/iOS BuildKit integration."
 }

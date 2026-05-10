@@ -25,3 +25,10 @@
 - Run `tools/scripts/package-buildkit-assets.sh` on macOS with Xcode, private asset paths, and `NYXIAN_BUILDKIT_RUNNER` when using the default wrapper.
 - Set `LITTER_BUILDKIT_ASSET_URL` and `LITTER_BUILDKIT_ASSET_SHA256` GitHub secrets for private BuildKit-enabled sideload builds.
 - Validate `litter-swift-check` and `litter-ipa-build` on a paired iPhone after installing the private asset bundle.
+
+## Current BuildKit Finish Work
+
+- Added fakefs-to-host staging for Swift source/project manifests before native compilation.
+- Added optional in-process Nyxian driver source path in `LitterBuildKitInProcess.mm`.
+- Added fakefs distro commands `litter-env-report` and `litter-dev-bootstrap`.
+- Remaining private validation: compile `LITTER_BUILDKIT_NATIVE_MODE=inprocess` with real CoreCompiler/support libs/SDK and run on a sideloaded device.

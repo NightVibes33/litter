@@ -8,7 +8,7 @@ The primary product target is iOS sideloading with unsigned IPA artifacts for Si
 
 BuildKit is the Nyxian-backed on-device Swift/iOS build path. The direct source import lives under `ThirdParty/Nyxian`; app-visible status is in Settings -> BuildKit; fakefs command shims are installed into `/usr/local/bin` inside iSH. Commands wait for native status/log output by default, can run async with `--no-wait`, and store results under `/root/builds`. Full native Swift compilation requires a private `LitterBuildKitAssets` bundle with CoreCompiler.framework, CoreCompilerSupportLibs, LitterBuildKitNative.framework, a Nyxian BuildKit runner or monolithic driver, and a user-owned iPhoneOS SDK.
 
-Use `tools/scripts/build-litter-buildkit-native.sh` to build the default native wrapper, then `tools/scripts/package-buildkit-assets.sh` on macOS to create that private bundle. Set `NYXIAN_BUILDKIT_RUNNER` when packaging a runner executable. The public workflow stays SDK-clean; private CI may set `LITTER_BUILDKIT_ASSET_URL` and `LITTER_BUILDKIT_ASSET_SHA256` so `apps/ios/scripts/prepare-buildkit-assets.sh` injects assets before Xcode project generation.
+Use `tools/scripts/build-litter-buildkit-native.sh` to build the native wrapper, then `tools/scripts/package-buildkit-assets.sh` on macOS to create that private bundle. Use `LITTER_BUILDKIT_NATIVE_MODE=inprocess` with `CORECOMPILER_FRAMEWORK` for an in-process Nyxian driver, or set `NYXIAN_BUILDKIT_RUNNER` when packaging a separate runner executable. The public workflow stays SDK-clean; private CI may set `LITTER_BUILDKIT_ASSET_URL` and `LITTER_BUILDKIT_ASSET_SHA256` so `apps/ios/scripts/prepare-buildkit-assets.sh` injects assets before Xcode project generation.
 
 
 ## Prerequisites

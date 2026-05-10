@@ -222,6 +222,8 @@ struct BuildKitSettingsView: View {
         case "litter-ipa-package": return "Package app"
         case "litter-buildkit-install-assets": return "Install"
         case "litter-fs-doctor": return "Doctor"
+        case "litter-env-report": return "Environment"
+        case "litter-dev-bootstrap": return "Bootstrap"
         case "litter-build-status": return "Logs"
         case "litter-build-cancel": return "Cancel"
         default: return "Status"

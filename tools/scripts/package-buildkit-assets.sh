@@ -7,6 +7,7 @@ ZIP_PATH="${LITTER_BUILDKIT_ZIP:-${ROOT_DIR}/artifacts/buildkit/LitterBuildKitAs
 CORECOMPILER_FRAMEWORK="${CORECOMPILER_FRAMEWORK:-}"
 NATIVE_DRIVER_FRAMEWORK="${LITTER_BUILDKIT_NATIVE_FRAMEWORK:-}"
 NYXIAN_RUNNER="${NYXIAN_BUILDKIT_RUNNER:-}"
+NATIVE_MODE="${LITTER_BUILDKIT_NATIVE_MODE:-runner}"
 SUPPORT_LIBS="${CORECOMPILER_SUPPORT_LIBS:-}"
 IPHONEOS_SDK_PATH="${IPHONEOS_SDK_PATH:-}"
 SDK_VERSION="${LITTER_BUILDKIT_SDK_VERSION:-26.4}"
@@ -33,7 +34,7 @@ require_path() {
 require_path "CoreCompiler.framework" "$CORECOMPILER_FRAMEWORK"
 if [[ -z "$NATIVE_DRIVER_FRAMEWORK" ]]; then
   echo "==> LITTER_BUILDKIT_NATIVE_FRAMEWORK not set; building the default native wrapper"
-  "$ROOT_DIR/tools/scripts/build-litter-buildkit-native.sh"
+  LITTER_BUILDKIT_NATIVE_MODE="$NATIVE_MODE" CORECOMPILER_FRAMEWORK="$CORECOMPILER_FRAMEWORK" "$ROOT_DIR/tools/scripts/build-litter-buildkit-native.sh"
   NATIVE_DRIVER_FRAMEWORK="$ROOT_DIR/artifacts/buildkit/LitterBuildKitNative.framework"
 fi
 require_path "LitterBuildKitNative.framework" "$NATIVE_DRIVER_FRAMEWORK"
@@ -57,12 +58,13 @@ if [[ -n "$NYXIAN_RUNNER" ]]; then
   RUNNER_REL="Toolchains/Nyxian/bin/litter-buildkit-runner"
 fi
 
-python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$RUNNER_REL" <<'PY'
+python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" <<'PY'
 import datetime, hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 sdk_version = sys.argv[2]
 swift_version = sys.argv[3]
 runner_rel = sys.argv[4]
+native_mode = sys.argv[5]
 required = [
     "Toolchains/Nyxian/CoreCompiler.framework",
     "Toolchains/Nyxian/LitterBuildKitNative.framework",
@@ -92,10 +94,11 @@ manifest = {
         "coreCompilerFramework": "Toolchains/Nyxian/CoreCompiler.framework",
         "nativeDriverFramework": "Toolchains/Nyxian/LitterBuildKitNative.framework",
         "nativeRunner": runner_rel or None,
+        "nativeDriverMode": native_mode,
         "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
         "sdkPath": f"SDK/iPhoneOS{sdk_version}.sdk",
     },
-    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package"] + (["nyxian-runner"] if runner_rel else ["monolithic-native-driver"]),
+    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package"] + (["nyxian-runner"] if runner_rel else []) + (["in-process-native-driver"] if native_mode == "inprocess" else ["runner-native-driver"]),
     "requiredPaths": required,
     "sha256": hashes,
 }
