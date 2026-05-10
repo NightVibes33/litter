@@ -226,8 +226,12 @@ struct HomeComposerView: View {
         Task {
             defer { isSubmitting = false }
             do {
-                guard try await appModel.ensureLocalAuthForThreadStart(serverId: project.serverId) else {
-                    return
+                let pendingModelForRouting = appState.preferredModel.trimmingCharacters(in: .whitespacesAndNewlines)
+                let modelOverrideForRouting = pendingModelForRouting.isEmpty ? nil : pendingModelForRouting
+                if !appModel.shouldUseLocalModelRoute(modelSelection: modelOverrideForRouting) {
+                    guard try await appModel.ensureLocalAuthForThreadStart(serverId: project.serverId) else {
+                        return
+                    }
                 }
                 inputText = ""
                 attachedImage = nil

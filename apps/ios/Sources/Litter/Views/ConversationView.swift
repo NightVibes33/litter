@@ -172,6 +172,18 @@ struct ConversationView: View {
         } message: {
             Text(messageActionError ?? "Unknown error")
         }
+        .sheet(item: Binding<LocalModelAgentApprovalState?>(
+            get: { appModel.localConversationPendingApproval },
+            set: { nextValue in
+                if nextValue == nil, appModel.localConversationPendingApproval != nil {
+                    appModel.resolveLocalConversationApproval(.denied)
+                }
+            }
+        )) { approval in
+            LocalModelApprovalSheet(approval: approval) { decision in
+                appModel.resolveLocalConversationApproval(decision)
+            }
+        }
         .onAppear {
             guard !hasLoggedFirstRender else { return }
             hasLoggedFirstRender = true

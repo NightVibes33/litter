@@ -171,7 +171,7 @@ struct LocalModelAgentView: View {
     }
 }
 
-private struct LocalModelApprovalSheet: View {
+struct LocalModelApprovalSheet: View {
     let approval: LocalModelAgentApprovalState
     let onDecision: (LocalModelToolApprovalDecision) -> Void
     @Environment(\.dismiss) private var dismiss

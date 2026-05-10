@@ -158,6 +158,14 @@ enum LocalModelToolLoop {
         }
     }
 
+    static func looksLikeMalformedToolRequest(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") else {
+            return false
+        }
+        return parseToolCalls(from: text).isEmpty
+    }
+
     static func risk(for call: LocalModelToolCall) -> LocalModelToolRisk {
         switch call.name {
         case "list_dir", "read_file", "search_files":

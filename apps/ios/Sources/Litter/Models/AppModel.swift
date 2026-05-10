@@ -104,6 +104,7 @@ final class AppModel {
     private(set) var snapshotRevision: UInt64 = 0
     private(set) var lastError: String?
     private(set) var composerPrefillRequest: ComposerPrefillRequest?
+    private(set) var localConversationPendingApproval: LocalModelAgentApprovalState?
 
     @ObservationIgnored private var subscription: AppStoreSubscription?
     @ObservationIgnored private var updateTask: Task<Void, Never>?
@@ -121,6 +122,8 @@ final class AppModel {
     @ObservationIgnored private var pendingCommandRowMutationTask: Task<Void, Never>?
     @ObservationIgnored private var cachedThreadSnapshots: [ThreadKey: AppThreadSnapshot] = [:]
     @ObservationIgnored private var loadingTurnPageThreadKeys: Set<ThreadKey> = []
+    @ObservationIgnored private var localConversationTasks: [ThreadKey: Task<Void, Never>] = [:]
+    @ObservationIgnored private var localConversationApprovalContinuations: [String: CheckedContinuation<LocalModelToolApprovalDecision, Never>] = [:]
 
     init(
         store: AppStore? = nil,
@@ -151,6 +154,8 @@ final class AppModel {
         pendingSnapshotRefreshTask?.cancel()
         pendingThreadStateTask?.cancel()
         pendingCommandRowMutationTask?.cancel()
+        localConversationTasks.values.forEach { $0.cancel() }
+        localConversationApprovalContinuations.values.forEach { $0.resume(returning: .denied) }
     }
 
     func start() {
@@ -190,6 +195,11 @@ final class AppModel {
         pendingCommandRowMutationTask?.cancel()
         pendingCommandRowMutationTask = nil
         pendingCommandRowMutations.removeAll()
+        localConversationTasks.values.forEach { $0.cancel() }
+        localConversationTasks.removeAll()
+        localConversationApprovalContinuations.values.forEach { $0.resume(returning: .denied) }
+        localConversationApprovalContinuations.removeAll()
+        localConversationPendingApproval = nil
         subscription = nil
     }
 
@@ -1737,7 +1747,9 @@ final class AppModel {
     }
 
     func availableModels(for serverId: String) -> [ModelInfo] {
-        snapshot?.serverSnapshot(for: serverId)?.availableModels ?? []
+        var models = snapshot?.serverSnapshot(for: serverId)?.availableModels ?? []
+        models.append(contentsOf: AIProviderStore.shared.localModelInfos())
+        return models
     }
 
     func rateLimits(for serverId: String) -> RateLimitSnapshot? {
@@ -1785,6 +1797,11 @@ final class AppModel {
     }
 
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
+        if let localModel = localModelForTurn(payload) {
+            try await startLocalModelTurn(key: key, payload: payload, model: localModel)
+            return
+        }
+
         await restoreStoredLocalAuthIfNeeded(serverId: key.serverId, reason: "startTurn")
 
         do {
@@ -1796,6 +1813,236 @@ final class AppModel {
             lastError = error.localizedDescription
             throw error
         }
+    }
+
+    func resolveLocalConversationApproval(_ decision: LocalModelToolApprovalDecision) {
+        guard let approval = localConversationPendingApproval else { return }
+        localConversationPendingApproval = nil
+        localConversationApprovalContinuations.removeValue(forKey: approval.id)?.resume(returning: decision)
+    }
+
+    func shouldUseLocalModelRoute(modelSelection: String?) -> Bool {
+        if AIProviderStore.shared.localModel(forSelection: modelSelection) != nil { return true }
+        guard modelSelection?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else {
+            return false
+        }
+        return AIProviderStore.shared.preferredLocalModelForMainConversation() != nil
+    }
+
+    private func localModelForTurn(_ payload: AppComposerPayload) -> LocalModelRecord? {
+        if let selected = AIProviderStore.shared.localModel(forSelection: payload.model) {
+            return selected
+        }
+        guard payload.model?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else {
+            return nil
+        }
+        return AIProviderStore.shared.preferredLocalModelForMainConversation()
+    }
+
+    private func startLocalModelTurn(key: ThreadKey, payload: AppComposerPayload, model: LocalModelRecord) async throws {
+        let text = payload.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        guard payload.additionalInputs.isEmpty else {
+            throw LocalLlamaRuntimeError.unsupportedAttachment("On-device GGUF conversations currently support plain text only. Remove attachments or use a hosted/OpenAI-compatible provider for this turn.")
+        }
+        guard model.canRunLocally else {
+            throw NSError(
+                domain: "LocalModelConversation",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Validate \(model.fileName) before using it in the main conversation."]
+            )
+        }
+
+        localConversationTasks[key]?.cancel()
+        let turnId = "local-\(UUID().uuidString)"
+        let assistantItemId = "\(turnId)-assistant"
+        let timestamp = Date().timeIntervalSince1970
+
+        setLocalThreadStatus(key: key, status: .active, activeTurnId: turnId, modelName: model.fileName)
+        _ = applyThreadItemUpsert(key: key, item: HydratedConversationItem(
+            id: "\(turnId)-user",
+            content: .user(HydratedUserMessageData(text: text, imageDataUris: [])),
+            sourceTurnId: turnId,
+            sourceTurnIndex: nil,
+            timestamp: timestamp,
+            isFromUserTurnBoundary: true
+        ))
+        _ = applyThreadItemUpsert(key: key, item: HydratedConversationItem(
+            id: assistantItemId,
+            content: .assistant(HydratedAssistantMessageData(
+                text: "",
+                agentNickname: "Local",
+                agentRole: "On-device GGUF",
+                phase: nil
+            )),
+            sourceTurnId: turnId,
+            sourceTurnIndex: nil,
+            timestamp: timestamp,
+            isFromUserTurnBoundary: false
+        ))
+
+        localConversationTasks[key] = Task { [weak self] in
+            await self?.runLocalModelTurn(key: key, turnId: turnId, assistantItemId: assistantItemId, prompt: text, model: model)
+        }
+    }
+
+    private func runLocalModelTurn(
+        key: ThreadKey,
+        turnId: String,
+        assistantItemId: String,
+        prompt: String,
+        model: LocalModelRecord
+    ) async {
+        var assistantText = ""
+        do {
+            let settings = AIProviderStore.shared.runtimeSettings(for: model)
+            let options = LocalLlamaGenerationOptions.from(
+                settings: settings,
+                capability: .current(),
+                turboQuantAvailable: AIProviderStore.shared.turboQuantAvailability.isAvailable
+            )
+            let request = LocalLlamaGenerationRequest(
+                model: model,
+                projector: nil,
+                messages: localConversationMessages(for: key, prompt: prompt, model: model, excludingTurnId: turnId),
+                maxTokens: settings.maxOutputTokens,
+                temperature: settings.temperature,
+                tools: settings.toolUseMode == .off ? [] : LocalModelToolLoop.defaultToolSpecs,
+                toolPolicy: .readOnly,
+                options: options,
+                approvalHandler: { [weak self] approval in
+                    await self?.requestLocalConversationApproval(approval) ?? .denied
+                }
+            )
+
+            for try await event in await LocalLlamaRuntime.shared.generateEvents(request) {
+                try Task.checkCancellation()
+                switch event {
+                case .token(let token):
+                    assistantText += token
+                    updateLocalAssistantItem(key: key, itemId: assistantItemId, turnId: turnId, text: assistantText)
+                case .retry(let attempt, let reason):
+                    appendLocalToolNote(key: key, turnId: turnId, title: "retry \(attempt)", output: reason, success: false)
+                case .toolCall(let call):
+                    appendLocalToolNote(key: key, turnId: turnId, title: call.name, output: call.arguments.description, success: true)
+                case .toolResult(let result):
+                    appendLocalToolNote(key: key, turnId: turnId, title: result.toolName, output: result.output, success: result.success)
+                case .completed(let text):
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        assistantText = text
+                        updateLocalAssistantItem(key: key, itemId: assistantItemId, turnId: turnId, text: text)
+                    }
+                case .started, .approvalRequired:
+                    break
+                }
+            }
+            setLocalThreadStatus(key: key, status: .idle, activeTurnId: nil, modelName: model.fileName)
+        } catch is CancellationError {
+            setLocalThreadStatus(key: key, status: .idle, activeTurnId: nil, modelName: model.fileName)
+        } catch {
+            lastError = error.localizedDescription
+            updateLocalAssistantItem(key: key, itemId: assistantItemId, turnId: turnId, text: assistantText.isEmpty ? error.localizedDescription : assistantText)
+            appendLocalToolNote(key: key, turnId: turnId, title: "local model error", output: error.localizedDescription, success: false)
+            setLocalThreadStatus(key: key, status: .systemError, activeTurnId: nil, modelName: model.fileName)
+        }
+        localConversationTasks.removeValue(forKey: key)
+    }
+
+    private func localConversationMessages(
+        for key: ThreadKey,
+        prompt: String,
+        model: LocalModelRecord,
+        excludingTurnId: String
+    ) -> [LocalLlamaMessage] {
+        var messages: [LocalLlamaMessage] = [
+            LocalLlamaMessage(role: .system, text: LocalModelPromptTemplate.systemPrompt(for: model, context: "Main Litter conversation. Use tools only when they materially help. Ask for approval before shell/write actions."))
+        ]
+        for item in (threadSnapshot(for: key)?.hydratedConversationItems ?? []).suffix(18) {
+            if item.sourceTurnId == excludingTurnId { continue }
+            switch item.content {
+            case .user(let data):
+                messages.append(LocalLlamaMessage(role: .user, text: String(data.text.prefix(6_000))))
+            case .assistant(let data):
+                messages.append(LocalLlamaMessage(role: .assistant, text: String(data.text.prefix(6_000))))
+            default:
+                break
+            }
+        }
+        messages.append(LocalLlamaMessage(role: .user, text: prompt))
+        return messages
+    }
+
+    private func requestLocalConversationApproval(_ request: LocalModelToolApprovalRequest) async -> LocalModelToolApprovalDecision {
+        let diff = await localDiffPreview(for: request)
+        return await withCheckedContinuation { continuation in
+            localConversationApprovalContinuations[request.id] = continuation
+            localConversationPendingApproval = LocalModelAgentApprovalState(request: request, diffPreview: diff)
+        }
+    }
+
+    private func localDiffPreview(for request: LocalModelToolApprovalRequest) async -> String? {
+        guard request.risk == .write,
+              let path = request.call.arguments["path"],
+              let newText = request.call.arguments["text"] else { return nil }
+        let oldText = (try? await IshFS.readTextFile(path: path, maxBytes: 24_000)) ?? ""
+        return LocalModelDiffPreview.make(old: oldText, new: newText, path: path)
+    }
+
+    private func updateLocalAssistantItem(key: ThreadKey, itemId: String, turnId: String, text: String) {
+        let item = HydratedConversationItem(
+            id: itemId,
+            content: .assistant(HydratedAssistantMessageData(
+                text: text,
+                agentNickname: "Local",
+                agentRole: "On-device GGUF",
+                phase: nil
+            )),
+            sourceTurnId: turnId,
+            sourceTurnIndex: nil,
+            timestamp: Date().timeIntervalSince1970,
+            isFromUserTurnBoundary: false
+        )
+        _ = applyThreadItemUpsert(key: key, item: item)
+    }
+
+    private func appendLocalToolNote(key: ThreadKey, turnId: String, title: String, output: String, success: Bool) {
+        let item = HydratedConversationItem(
+            id: "\(turnId)-tool-\(UUID().uuidString)",
+            content: .commandExecution(HydratedCommandExecutionData(
+                command: title,
+                cwd: "/root",
+                status: success ? .completed : .failed,
+                output: output,
+                exitCode: success ? 0 : 1,
+                durationMs: nil,
+                processId: nil,
+                actions: []
+            )),
+            sourceTurnId: turnId,
+            sourceTurnIndex: nil,
+            timestamp: Date().timeIntervalSince1970,
+            isFromUserTurnBoundary: false
+        )
+        _ = applyThreadItemUpsert(key: key, item: item)
+    }
+
+    private func setLocalThreadStatus(
+        key: ThreadKey,
+        status: ThreadSummaryStatus,
+        activeTurnId: String?,
+        modelName: String
+    ) {
+        guard var snapshot, let index = snapshot.threads.firstIndex(where: { $0.key == key }) else { return }
+        var thread = snapshot.threads[index]
+        thread.info.status = status
+        thread.info.model = modelName
+        thread.model = modelName
+        thread.activeTurnId = activeTurnId
+        snapshot.threads[index] = thread
+        self.snapshot = snapshot
+        cacheThreadSnapshot(thread)
+        lastError = nil
     }
 
     func hydrateThreadPermissions(for key: ThreadKey, appState: AppState) async -> ThreadKey? {

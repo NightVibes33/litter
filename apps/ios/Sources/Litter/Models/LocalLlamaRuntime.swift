@@ -319,11 +319,26 @@ actor LocalLlamaRuntime {
 
         var rounds = 0
         while rounds < request.options.maxToolRounds {
+            try Task.checkCancellation()
             let calls = LocalModelToolLoop.parseToolCalls(from: finalText)
-            guard !calls.isEmpty else { break }
+            if calls.isEmpty {
+                guard LocalModelToolLoop.looksLikeMalformedToolRequest(finalText) else { break }
+                rounds += 1
+                continuation.yield(.retry(attempt: rounds, reason: "Malformed local tool JSON; asking model to resend exactly one valid tool object."))
+                messages.append(LocalLlamaMessage(role: .assistant, text: finalText))
+                messages.append(LocalLlamaMessage(role: .system, text: "Your previous response looked like a tool request but was not valid JSON. Reply with exactly one JSON object like {\"tool\":\"read_file\",\"arguments\":{\"path\":\"/root/file.txt\"}} or answer normally without tool syntax."))
+                let buffer = LocalLlamaTokenBuffer()
+                let generated = try await generator(request, messages) { token in
+                    buffer.append(token)
+                    continuation.yield(.token(token))
+                }
+                finalText = generated.isEmpty ? buffer.text : generated
+                continue
+            }
             rounds += 1
 
             for call in calls {
+                try Task.checkCancellation()
                 continuation.yield(.toolCall(call))
                 let policy = await approvedPolicy(for: call, request: request, continuation: continuation)
                 let result = await LocalModelToolLoop.execute(call, policy: policy)

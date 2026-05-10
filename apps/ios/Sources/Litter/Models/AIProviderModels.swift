@@ -393,6 +393,9 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
     var sha256: String?
     var downloadedAt: Date?
     var validationStatus: LocalModelValidationStatus
+    var codexEvalScore: Int?
+    var codexEvalSummary: String?
+    var codexEvalDate: Date?
 
     init(
         id: UUID,
@@ -411,7 +414,10 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
         projectorStorageFileName: String? = nil,
         sha256: String? = nil,
         downloadedAt: Date? = nil,
-        validationStatus: LocalModelValidationStatus = .untested
+        validationStatus: LocalModelValidationStatus = .untested,
+        codexEvalScore: Int? = nil,
+        codexEvalSummary: String? = nil,
+        codexEvalDate: Date? = nil
     ) {
         self.id = id
         self.fileName = fileName
@@ -430,11 +436,15 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
         self.sha256 = sha256
         self.downloadedAt = downloadedAt
         self.validationStatus = validationStatus
+        self.codexEvalScore = codexEvalScore
+        self.codexEvalSummary = codexEvalSummary
+        self.codexEvalDate = codexEvalDate
     }
 
     enum CodingKeys: String, CodingKey {
         case id, fileName, storageFileName, fileSizeBytes, parameterHint, quantizationHint, importedAt, safety, recommendation
         case sourceRepository, sourceURL, architecture, modalities, projectorStorageFileName, sha256, downloadedAt, validationStatus
+        case codexEvalScore, codexEvalSummary, codexEvalDate
     }
 
     init(from decoder: Decoder) throws {
@@ -456,6 +466,9 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
         sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
         downloadedAt = try container.decodeIfPresent(Date.self, forKey: .downloadedAt)
         validationStatus = try container.decodeIfPresent(LocalModelValidationStatus.self, forKey: .validationStatus) ?? .untested
+        codexEvalScore = try container.decodeIfPresent(Int.self, forKey: .codexEvalScore)
+        codexEvalSummary = try container.decodeIfPresent(String.self, forKey: .codexEvalSummary)
+        codexEvalDate = try container.decodeIfPresent(Date.self, forKey: .codexEvalDate)
     }
 
     var fileURL: URL {
@@ -482,6 +495,25 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
     var canRunLocally: Bool {
         if case .verified = validationStatus { return true }
         return false
+    }
+
+    var localSelectionId: String {
+        "local-gguf:\(id.uuidString)"
+    }
+
+    var canRunCodexStyle: Bool {
+        canRunLocally && (codexEvalScore ?? 0) >= 70
+    }
+
+    var codexReadinessSummary: String {
+        guard let codexEvalScore else {
+            return canRunLocally
+                ? "Runnable, but Codex-style tool quality has not been scored yet."
+                : "Validate the model before enabling it for Codex-style conversations."
+        }
+        let summary = codexEvalSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = summary?.isEmpty == false ? summary! : "Codex-style eval completed."
+        return "\(codexEvalScore)/100 - \(label)"
     }
 }
 

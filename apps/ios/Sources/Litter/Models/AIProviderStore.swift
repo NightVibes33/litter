@@ -58,6 +58,63 @@ final class AIProviderStore: ObservableObject {
         return stored.sanitized(for: capability, turboQuantAvailable: turboQuantAvailability.isAvailable)
     }
 
+    func localModelInfos() -> [ModelInfo] {
+        localModels.map { model in
+            ModelInfo(
+                id: model.localSelectionId,
+                model: model.localSelectionId,
+                upgrade: nil,
+                upgradeModel: nil,
+                upgradeCopy: nil,
+                modelLink: model.sourceRepository.map { "https://huggingface.co/\($0)" },
+                migrationMarkdown: nil,
+                availabilityNuxMessage: model.canRunCodexStyle ? nil : model.codexReadinessSummary,
+                displayName: "Local - \(model.fileName)",
+                description: "On-device GGUF - \(model.displaySize) - \(model.codexReadinessSummary)",
+                hidden: false,
+                supportedReasoningEfforts: [
+                    ReasoningEffortOption(reasoningEffort: .medium, description: "Local runtime default")
+                ],
+                defaultReasoningEffort: .medium,
+                inputModalities: model.supportsMultimodalInput ? [.text, .image] : [.text],
+                supportsPersonality: false,
+                isDefault: false,
+                agentRuntimeKind: .codex
+            )
+        }
+    }
+
+    func localModel(forSelection selection: String?) -> LocalModelRecord? {
+        guard let selection = selection?.trimmingCharacters(in: .whitespacesAndNewlines), !selection.isEmpty else {
+            return nil
+        }
+        if selection.hasPrefix("local-gguf:") {
+            return localModels.first { $0.localSelectionId == selection }
+        }
+        return localModels.first { $0.fileName == selection || $0.storageFileName == selection }
+    }
+
+    func preferredLocalModelForMainConversation() -> LocalModelRecord? {
+        if let preferredProviderId = globalModelSettings.preferredProviderId,
+           providers.first(where: { $0.id == preferredProviderId })?.kind == .localGGUF {
+            return localModels.first(where: { $0.canRunCodexStyle })
+                ?? localModels.first(where: { $0.canRunLocally })
+                ?? localModels.first
+        }
+        guard globalModelSettings.routingMode == .localGGUF else { return nil }
+        return localModels.first(where: { $0.canRunCodexStyle })
+            ?? localModels.first(where: { $0.canRunLocally })
+            ?? localModels.first
+    }
+
+    func updateCodexEval(for model: LocalModelRecord, score: Int, summary: String) {
+        guard let index = localModels.firstIndex(where: { $0.id == model.id }) else { return }
+        localModels[index].codexEvalScore = min(100, max(0, score))
+        localModels[index].codexEvalSummary = summary
+        localModels[index].codexEvalDate = Date()
+        try? persistLocalModels()
+    }
+
     func updateRuntimeSettings(
         for model: LocalModelRecord,
         capability: DeviceCapabilityProfile = .current(),
@@ -284,8 +341,12 @@ final class AIProviderStore: ObservableObject {
         try? persistLocalModels()
         do {
             _ = try await LocalLlamaRuntime.shared.smokeTest(localModels[index])
+            let eval = await runCodexReadinessEval(localModels[index])
             if let currentIndex = localModels.firstIndex(where: { $0.id == record.id }) {
                 localModels[currentIndex].validationStatus = .verified(Date())
+                localModels[currentIndex].codexEvalScore = eval.score
+                localModels[currentIndex].codexEvalSummary = eval.summary
+                localModels[currentIndex].codexEvalDate = Date()
                 try? persistLocalModels()
             }
         } catch {
@@ -302,6 +363,62 @@ final class AIProviderStore: ObservableObject {
     func cancelLocalModelValidation() {
         Task { await LocalLlamaRuntime.shared.cancel() }
         validatingLocalModelId = nil
+    }
+
+    private func runCodexReadinessEval(_ model: LocalModelRecord) async -> (score: Int, summary: String) {
+        var score = 40
+        var signals: [String] = ["token generation"]
+        do {
+            let options = LocalLlamaGenerationOptions(
+                contextTokens: max(512, min(DeviceCapabilityProfile.current().recommendedContextTokens, 2_048)),
+                allowToolCalls: true,
+                maxToolRounds: 2,
+                retryPolicy: .disabled,
+                topP: 0.9,
+                topK: 40,
+                repeatPenalty: 1.08,
+                preferredThreadCount: max(1, min(4, ProcessInfo.processInfo.processorCount)),
+                metalEnabled: DeviceCapabilityProfile.current().hasMetal,
+                cpuFallbackAllowed: false,
+                streamingEnabled: true,
+                kvCacheMode: .automatic
+            )
+            let request = LocalLlamaGenerationRequest(
+                model: model,
+                projector: nil,
+                messages: [
+                    LocalLlamaMessage(role: .system, text: "You are being evaluated for Codex-style local tool use. When asked to inspect files, emit exactly one valid JSON tool request."),
+                    LocalLlamaMessage(role: .user, text: "Inspect /root with list_dir, then summarize what the tool returned in one sentence.")
+                ],
+                maxTokens: 160,
+                temperature: 0.1,
+                tools: LocalModelToolLoop.defaultToolSpecs,
+                toolPolicy: .readOnly,
+                options: options,
+                approvalHandler: nil
+            )
+            var sawToolCall = false
+            var sawToolResult = false
+            var finalText = ""
+            for try await event in await LocalLlamaRuntime.shared.generateEvents(request) {
+                switch event {
+                case .toolCall:
+                    sawToolCall = true
+                case .toolResult(let result):
+                    sawToolResult = result.success
+                case .completed(let text):
+                    finalText = text
+                default:
+                    break
+                }
+            }
+            if sawToolCall { score += 25; signals.append("tool-call JSON") }
+            if sawToolResult { score += 20; signals.append("read-only tool execution") }
+            if !finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { score += 15; signals.append("final answer recovery") }
+            return (min(score, 100), signals.joined(separator: ", "))
+        } catch {
+            return (score, "token generation; tool eval failed: \(error.localizedDescription)")
+        }
     }
 
     func removeLocalModel(_ record: LocalModelRecord) throws {
