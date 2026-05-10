@@ -176,6 +176,7 @@ struct HeaderView: View {
     private var sessionModelLabel: String {
         let pendingModel = appState.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !pendingModel.isEmpty {
+            let modelLabel: String
             if let model = availableModels.first(where: {
                 modelMatchesSelection(
                     $0,
@@ -183,15 +184,22 @@ struct HeaderView: View {
                     runtime: appState.selectedAgentRuntimeKind
                 )
             }) {
-                return model.displayName
+                modelLabel = model.displayName
+            } else {
+                modelLabel = pendingModel
             }
-            return pendingModel
+            return "\(runtimeLabel(forSelection: pendingModel)) • \(modelLabel)"
         }
 
         let threadModel = thread.displayModelLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !threadModel.isEmpty { return threadModel }
+        let modelLabel = threadModel.isEmpty ? "litter" : threadModel
+        return "\(runtimeLabel(forSelection: thread.model ?? thread.info.model)) • \(modelLabel)"
+    }
 
-        return "litter"
+    private func runtimeLabel(forSelection selection: String?) -> String {
+        if isLocalGGUFModelSelection(selection) { return ChatRuntimeMode.localModel.shortTitle }
+        if server?.isLocal == true { return ChatRuntimeMode.chatGPTAccount.shortTitle }
+        return ChatRuntimeMode.computerBridge.shortTitle
     }
 
     private var sessionReasoningLabel: String {
@@ -477,6 +485,7 @@ struct InlineModelSelectorView: View {
     @Binding var selectedModel: String
     @Binding var selectedAgentRuntimeKind: AgentRuntimeKind?
     @Binding var reasoningEffort: String
+    var serverId: String? = nil
     /// `nil` indicates the view is being used before a thread exists (home
     /// composer). In that case, plan-mode selection is stored as a pending
     /// app-state preference that the caller applies after `startThread`.
@@ -500,7 +509,7 @@ struct InlineModelSelectorView: View {
     }
 
     private var currentModel: ModelInfo? {
-        if let match = models.first(where: {
+        if let match = modelsForSelectedRuntime.first(where: {
             modelMatchesSelection(
                 $0,
                 selectedModel,
@@ -510,9 +519,9 @@ struct InlineModelSelectorView: View {
             return match
         }
         // When shown from the home composer, `selectedModel` may be empty
-        // because the user hasn't picked yet. Fall back to the default
-        // model so the reasoning effort row has something to render.
-        return models.first(where: { $0.isDefault }) ?? models.first
+        // because the user hasn't picked yet. Fall back to the default model
+        // within the selected runtime so the reasoning row stays consistent.
+        return modelsForSelectedRuntime.first(where: { $0.isDefault }) ?? modelsForSelectedRuntime.first
     }
 
     /// Effective collaboration mode: live thread value when we have one,
@@ -527,10 +536,48 @@ struct InlineModelSelectorView: View {
         return threadPermissionPreset(approvalPolicy: approval, sandboxPolicy: sandbox) == .fullAccess
     }
 
+    private var currentServer: AppServerSnapshot? {
+        guard let resolvedServerId = threadKey?.serverId ?? serverId else { return nil }
+        return appModel.snapshot?.serverSnapshot(for: resolvedServerId)
+    }
+
+    private var localModels: [ModelInfo] {
+        models.filter(isLocalGGUFModelInfo)
+    }
+
+    private var serverModels: [ModelInfo] {
+        models.filter { !isLocalGGUFModelInfo($0) }
+    }
+
+    private var selectedRuntimeMode: ChatRuntimeMode {
+        if isLocalGGUFModelSelection(selectedModel) { return .localModel }
+        if threadKey == nil {
+            let preferred = appState.preferredChatRuntimeMode
+            if preferred == .localModel { return .localModel }
+            if let currentServer {
+                if preferred == .computerBridge, !currentServer.isLocal { return .computerBridge }
+                if preferred == .chatGPTAccount, currentServer.isLocal { return .chatGPTAccount }
+                return currentServer.isLocal ? .chatGPTAccount : .computerBridge
+            }
+            return preferred
+        }
+        return currentServer?.isLocal == true ? .chatGPTAccount : .computerBridge
+    }
+
+    private var modelsForSelectedRuntime: [ModelInfo] {
+        switch selectedRuntimeMode {
+        case .localModel:
+            return localModels
+        case .chatGPTAccount, .computerBridge:
+            return serverModels
+        }
+    }
+
     var body: some View {
-        let visibleModels = activeModelSearchIndex.results(matching: modelSearchQuery)
+        let visibleModels = ModelSearchIndex(models: modelsForSelectedRuntime).results(matching: modelSearchQuery)
 
         VStack(spacing: 0) {
+            runtimeSelector
             modelSearchField
 
             ScrollView {
@@ -543,7 +590,7 @@ struct InlineModelSelectorView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 24)
                     } else if visibleModels.isEmpty {
-                        Text("No matching models")
+                        Text(emptyRuntimeMessage)
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                             .frame(maxWidth: .infinity, alignment: .center)
@@ -554,9 +601,7 @@ struct InlineModelSelectorView: View {
                     let lastModelID = visibleModels.last?.id
                     ForEach(visibleModels) { model in
                         Button {
-                            selectedModel = model.id
-                            selectedAgentRuntimeKind = model.agentRuntimeKind
-                            reasoningEffort = model.defaultReasoningEffort.wireValue
+                            selectModel(model)
                             // Auto-dismiss only in the thread-scoped popover
                             // context. In the home sheet (no thread yet) we
                             // let the user pick a model AND change plan or
@@ -713,6 +758,122 @@ struct InlineModelSelectorView: View {
         }
     }
 
+    private var runtimeSelector: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Runtime")
+                .litterFont(.caption2, weight: .bold)
+                .foregroundStyle(LitterTheme.textMuted)
+                .textCase(.uppercase)
+                .padding(.horizontal, 16)
+
+            HStack(spacing: 8) {
+                ForEach(ChatRuntimeMode.allCases) { mode in
+                    runtimeButton(mode)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.top, 10)
+        .padding(.bottom, 6)
+    }
+
+    private func runtimeButton(_ mode: ChatRuntimeMode) -> some View {
+        let selected = selectedRuntimeMode == mode
+        let available = runtimeIsAvailable(mode)
+        return Button {
+            selectRuntime(mode)
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 5) {
+                    Image(systemName: mode.systemImage)
+                        .litterFont(size: 11, weight: .semibold)
+                    Text(mode.shortTitle)
+                        .litterFont(.caption2, weight: .bold)
+                        .lineLimit(1)
+                }
+                Text(runtimeSubtitle(mode))
+                    .litterFont(size: 10, weight: .medium)
+                    .lineLimit(2)
+                    .foregroundStyle(selected ? LitterTheme.textOnAccent.opacity(0.82) : LitterTheme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(selected ? LitterTheme.accent : LitterTheme.surfaceLight, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .foregroundStyle(selected ? LitterTheme.textOnAccent : (available ? LitterTheme.textPrimary : LitterTheme.textMuted))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(selected ? LitterTheme.accentStrong.opacity(0.7) : LitterTheme.separator.opacity(0.8), lineWidth: 1)
+            )
+            .opacity(available ? 1 : 0.48)
+        }
+        .buttonStyle(.plain)
+        .disabled(!available)
+    }
+
+    private var emptyRuntimeMessage: String {
+        switch selectedRuntimeMode {
+        case .chatGPTAccount:
+            return "No ChatGPT models on this route"
+        case .computerBridge:
+            return "No bridge models on this route"
+        case .localModel:
+            return "No installed local models"
+        }
+    }
+
+    private func runtimeIsAvailable(_ mode: ChatRuntimeMode) -> Bool {
+        switch mode {
+        case .chatGPTAccount:
+            return currentServer?.isLocal == true && !serverModels.isEmpty
+        case .computerBridge:
+            return currentServer.map { !$0.isLocal && !serverModels.isEmpty } ?? false
+        case .localModel:
+            return !localModels.isEmpty
+        }
+    }
+
+    private func runtimeSubtitle(_ mode: ChatRuntimeMode) -> String {
+        switch mode {
+        case .chatGPTAccount:
+            if currentServer?.isLocal == true { return "Signed-in account" }
+            return "Pick local ChatGPT server"
+        case .computerBridge:
+            if let currentServer, !currentServer.isLocal { return currentServer.displayName }
+            return "Pick Mac/Windows/Linux"
+        case .localModel:
+            return localModels.isEmpty ? "Download GGUF first" : "Runs on this iPhone"
+        }
+    }
+
+    private func selectRuntime(_ mode: ChatRuntimeMode) {
+        appState.preferredChatRuntimeMode = mode
+        switch mode {
+        case .localModel:
+            guard let model = localModels.first else { return }
+            selectModel(model)
+        case .chatGPTAccount, .computerBridge:
+            guard let model = serverModels.first else { return }
+            selectModel(model)
+        }
+    }
+
+    private func selectModel(_ model: ModelInfo) {
+        selectedModel = model.id
+        selectedAgentRuntimeKind = model.agentRuntimeKind
+        reasoningEffort = model.defaultReasoningEffort.wireValue
+        if isLocalGGUFModelInfo(model) {
+            appState.preferredChatRuntimeMode = .localModel
+        } else if currentServer?.isLocal == true {
+            appState.preferredChatRuntimeMode = .chatGPTAccount
+        } else {
+            appState.preferredChatRuntimeMode = .computerBridge
+            if let resolvedServerId = threadKey?.serverId ?? serverId {
+                appState.preferredBridgeServerId = resolvedServerId
+            }
+        }
+    }
+
     private var modelSearchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
@@ -753,172 +914,28 @@ struct ModelSelectorSheet: View {
     @Binding var selectedModel: String
     @Binding var selectedAgentRuntimeKind: AgentRuntimeKind?
     @Binding var reasoningEffort: String
-    @AppStorage("fastMode") private var fastMode = false
-    @State private var modelSearchQuery = ""
-    @State private var modelSearchIndex = ModelSearchIndex()
-
-    private var currentModel: ModelInfo? {
-        models.first {
-            modelMatchesSelection(
-                $0,
-                selectedModel,
-                runtime: selectedAgentRuntimeKind
-            )
-        }
-    }
-
-    private var activeModelSearchIndex: ModelSearchIndex {
-        if modelSearchIndex.isEmpty, !models.isEmpty {
-            return ModelSearchIndex(models: models)
-        }
-        return modelSearchIndex
-    }
+    var serverId: String? = nil
+    var threadKey: ThreadKey? = nil
+    var collaborationMode: AppModeKind = .default
+    var effectiveApprovalPolicy: AppAskForApproval?
+    var effectiveSandboxPolicy: AppSandboxPolicy?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        let visibleModels = activeModelSearchIndex.results(matching: modelSearchQuery)
-
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                modelSearchField
-
-                if models.isEmpty {
-                    Text("Loading models...")
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 24)
-                } else if visibleModels.isEmpty {
-                    Text("No matching models")
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 24)
-                }
-
-                ForEach(visibleModels) { model in
-                    Button {
-                        selectedModel = model.id
-                        selectedAgentRuntimeKind = model.agentRuntimeKind
-                        reasoningEffort = model.defaultReasoningEffort.wireValue
-                    } label: {
-                        HStack {
-                            ModelRuntimeIcon(kind: model.agentRuntimeKind)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text(model.displayName)
-                                        .litterFont(.footnote)
-                                        .foregroundColor(LitterTheme.textPrimary)
-                                    if model.isDefault {
-                                        Text("default")
-                                            .litterFont(.caption2, weight: .medium)
-                                            .foregroundColor(LitterTheme.accent)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 1)
-                                            .background(LitterTheme.accent.opacity(0.15))
-                                            .clipShape(Capsule())
-                                    }
-                                }
-                                Text(model.description)
-                                    .litterFont(.caption2)
-                                    .foregroundColor(LitterTheme.textSecondary)
-                            }
-                            Spacer()
-                            if modelMatchesSelection(
-                                model,
-                                selectedModel,
-                                runtime: selectedAgentRuntimeKind
-                            ) {
-                                Image(systemName: "checkmark")
-                                    .litterFont(size: 12, weight: .medium)
-                                    .foregroundColor(LitterTheme.accent)
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                    }
-                    Divider().background(LitterTheme.separator).padding(.leading, 20)
-                }
-
-                if let info = currentModel, !info.supportedReasoningEfforts.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(info.supportedReasoningEfforts) { effort in
-                                Button {
-                                    reasoningEffort = effort.reasoningEffort.wireValue
-                                } label: {
-                                    Text(effort.reasoningEffort.wireValue)
-                                        .litterFont(.caption2, weight: .medium)
-                                        .foregroundColor(effort.reasoningEffort.wireValue == reasoningEffort ? LitterTheme.textOnAccent : LitterTheme.textPrimary)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 5)
-                                        .background(effort.reasoningEffort.wireValue == reasoningEffort ? LitterTheme.accent : LitterTheme.surfaceLight)
-                                        .clipShape(Capsule())
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                    }
-                }
-
-                Divider().background(LitterTheme.separator).padding(.leading, 20)
-
-                HStack(spacing: 6) {
-                    Button {
-                        fastMode.toggle()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "bolt.fill")
-                                .litterFont(size: 9, weight: .semibold)
-                            Text("Fast")
-                                .litterFont(.caption2, weight: .medium)
-                        }
-                        .foregroundColor(fastMode ? LitterTheme.textOnAccent : LitterTheme.textPrimary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(fastMode ? LitterTheme.warning : LitterTheme.surfaceLight)
-                        .clipShape(Capsule())
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-
-            }
-        }
-        .padding(.top, 20)
-        .background(.ultraThinMaterial)
-        .onAppear {
-            modelSearchIndex = ModelSearchIndex(models: models)
-        }
-        .onChange(of: models) { _, newModels in
-            modelSearchIndex = ModelSearchIndex(models: newModels)
-        }
-    }
-
-    private var modelSearchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(LitterTheme.textMuted)
-            TextField("Search models", text: $modelSearchQuery)
-                .litterFont(.body)
-                .foregroundStyle(LitterTheme.textPrimary)
-                .tint(LitterTheme.accent)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-            if !modelSearchQuery.isEmpty {
-                Button { modelSearchQuery = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(LitterTheme.textMuted)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 10)
+        InlineModelSelectorView(
+            models: models,
+            selectedModel: $selectedModel,
+            selectedAgentRuntimeKind: $selectedAgentRuntimeKind,
+            reasoningEffort: $reasoningEffort,
+            serverId: serverId,
+            threadKey: threadKey,
+            collaborationMode: collaborationMode,
+            effectiveApprovalPolicy: effectiveApprovalPolicy,
+            effectiveSandboxPolicy: effectiveSandboxPolicy,
+            onDismiss: { dismiss() }
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(LitterTheme.surface.ignoresSafeArea())
     }
 }
 

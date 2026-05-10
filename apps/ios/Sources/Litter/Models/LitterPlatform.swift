@@ -42,6 +42,10 @@ enum LitterPlatform {
                 applicationSupportDir: appSupport.path,
                 documentsDir: docs.path
             )
+            Task.detached(priority: .utility) {
+                await LitterBuildKit.shared.installFakefsCommandShims()
+                await LitterBuildKit.shared.startFakefsRequestMonitor()
+            }
         } catch {
             NSLog("[ish] bootstrap failed: \(error)")
         }

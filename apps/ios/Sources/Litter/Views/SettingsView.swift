@@ -35,6 +35,7 @@ struct SettingsView: View {
                     petSection
                     experimentalSection
                     aiProvidersSection
+                    buildKitSection
                     accountSection
                     serversSection
                 }
@@ -246,6 +247,34 @@ struct SettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("AI")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
+
+
+    private var buildKitSection: some View {
+        Section {
+            NavigationLink {
+                BuildKitSettingsView()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "hammer.fill")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("BuildKit")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Nyxian-powered Swift checks and unsigned IPA commands")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("Developer")
                 .foregroundColor(LitterTheme.textSecondary)
         }
     }

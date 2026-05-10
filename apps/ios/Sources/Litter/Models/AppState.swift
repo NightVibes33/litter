@@ -1,6 +1,48 @@
 import Observation
 import SwiftUI
 
+
+enum ChatRuntimeMode: String, Codable, CaseIterable, Identifiable {
+    case chatGPTAccount
+    case computerBridge
+    case localModel
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .chatGPTAccount: return "ChatGPT Account"
+        case .computerBridge: return "Computer Bridge"
+        case .localModel: return "On-device Model"
+        }
+    }
+
+    var shortTitle: String {
+        switch self {
+        case .chatGPTAccount: return "ChatGPT"
+        case .computerBridge: return "Bridge"
+        case .localModel: return "On-device"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .chatGPTAccount: return "person.crop.circle.badge.checkmark"
+        case .computerBridge: return "desktopcomputer.and.macbook"
+        case .localModel: return "iphone.gen3.radiowaves.left.and.right"
+        }
+    }
+}
+
+func isLocalGGUFModelSelection(_ selection: String?) -> Bool {
+    let trimmed = selection?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return trimmed.hasPrefix("local-gguf:")
+}
+
+func isLocalGGUFModelInfo(_ model: ModelInfo) -> Bool {
+    isLocalGGUFModelSelection(model.id) || isLocalGGUFModelSelection(model.model)
+}
+
 @MainActor
 @Observable
 final class AppState {
@@ -17,6 +59,8 @@ final class AppState {
     private static let preferredModelKey = "litter.preferredModel"
     private static let preferredAgentRuntimeKindKey = "litter.preferredAgentRuntimeKind"
     private static let preferredReasoningEffortKey = "litter.preferredReasoningEffort"
+    private static let preferredChatRuntimeKey = "litter.preferredChatRuntime"
+    private static let preferredBridgeServerIdKey = "litter.preferredBridgeServerId"
     private static let inheritPermissionValue = "inherit"
     private static let customPermissionValue = "custom"
 
@@ -29,6 +73,20 @@ final class AppState {
     var selectedModel = ""
     var selectedAgentRuntimeKind: AgentRuntimeKind?
     var reasoningEffort = ""
+    var preferredChatRuntimeRaw: String {
+        didSet {
+            UserDefaults.standard.set(preferredChatRuntimeRaw, forKey: Self.preferredChatRuntimeKey)
+        }
+    }
+    var preferredBridgeServerId: String {
+        didSet {
+            UserDefaults.standard.set(preferredBridgeServerId, forKey: Self.preferredBridgeServerIdKey)
+        }
+    }
+    var preferredChatRuntimeMode: ChatRuntimeMode {
+        get { ChatRuntimeMode(rawValue: preferredChatRuntimeRaw) ?? .chatGPTAccount }
+        set { preferredChatRuntimeRaw = newValue.rawValue }
+    }
     var preferredModel: String {
         didSet {
             UserDefaults.standard.set(preferredModel, forKey: Self.preferredModelKey)
@@ -74,6 +132,8 @@ final class AppState {
             UserDefaults.standard.string(forKey: Self.preferredAgentRuntimeKindKey) ?? ""
         )
         preferredReasoningEffort = UserDefaults.standard.string(forKey: Self.preferredReasoningEffortKey) ?? ""
+        preferredChatRuntimeRaw = UserDefaults.standard.string(forKey: Self.preferredChatRuntimeKey) ?? ChatRuntimeMode.chatGPTAccount.rawValue
+        preferredBridgeServerId = UserDefaults.standard.string(forKey: Self.preferredBridgeServerIdKey) ?? ""
     }
 
     private static func agentRuntimeWireValue(_ kind: AgentRuntimeKind) -> String {

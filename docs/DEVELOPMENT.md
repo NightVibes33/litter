@@ -1,5 +1,14 @@
 # Development Guide
 
+## Product Target
+
+The primary product target is iOS sideloading with unsigned IPA artifacts for SideStore/AltStore-style re-signing. Android and TestFlight/App Store notes are legacy or secondary references, not the current core delivery path.
+
+## Litter BuildKit
+
+BuildKit is the Nyxian-backed on-device Swift/iOS build path. The direct source import lives under `ThirdParty/Nyxian`; app-visible status is in Settings -> BuildKit; fakefs command shims are installed into `/usr/local/bin` inside iSH. Commands wait for native status/log output by default, can run async with `--no-wait`, and store results under `/root/builds`. Full native Swift compilation requires packaging CoreCompiler.framework, Swift support libraries, and iPhoneOS SDK assets.
+
+
 ## Prerequisites
 
 - **Xcode.app** (full install, not only Command Line Tools):

@@ -21,6 +21,8 @@ on:
       - 'patches/codex/**'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
+      - 'ThirdParty/Nyxian/**'
+      - 'ThirdParty/LLVM-On-iOS/**'
       - 'tools/scripts/load-sccache-aws-creds.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
 
