@@ -1852,6 +1852,16 @@ final class AppModel {
                 userInfo: [NSLocalizedDescriptionKey: "Validate \(model.fileName) before using it in the main conversation."]
             )
         }
+        if threadSnapshot(for: key) == nil {
+            await refreshThreadSnapshot(key: key)
+        }
+        guard threadSnapshot(for: key) != nil else {
+            throw NSError(
+                domain: "LocalModelConversation",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "The conversation was not loaded yet. Reopen the thread and try the local model again."]
+            )
+        }
 
         localConversationTasks[key]?.cancel()
         let turnId = "local-\(UUID().uuidString)"
