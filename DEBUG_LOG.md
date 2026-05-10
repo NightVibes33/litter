@@ -12,3 +12,4 @@
 - Added source/build script for the native BuildKit ABI wrapper and runner delegation contract.
 - Added Settings -> BuildKit folder import so users can install expanded private asset bundles without rebuilding the IPA.
 - Extended BuildKit manifests/status checks to validate an optional Nyxian runner path.
+- Verified unsigned IPA workflow green for commit `9c78f95df9b9e10ec54c2038bfab7e35421d1730` in run `25630987712`.

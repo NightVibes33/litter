@@ -2,9 +2,10 @@
 
 Last verified public build:
 
-- Commit: `6afdf06bdb9367a962588f261496007943ca2350`
+- Commit: `9c78f95df9b9e10ec54c2038bfab7e35421d1730`
 - Workflow: `Build Unsigned iOS IPA`
-- Result: green before the private BuildKit asset-pack work began
+- Run: https://github.com/NightVibes33/litter/actions/runs/25630987712
+- Result: green after the Nyxian BuildKit native wrapper/import work
 - Artifact mode: unsigned SideStore/AltStore IPA for re-signing
 
 Current BuildKit state:
