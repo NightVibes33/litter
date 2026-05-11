@@ -50,6 +50,9 @@ fi
 if [[ -n "$NYXIAN_RUNNER" ]]; then
   require_path "Nyxian BuildKit runner" "$NYXIAN_RUNNER"
 fi
+if [[ -d "$IPHONEOS_SDK_PATH" ]]; then
+  IPHONEOS_SDK_PATH="$(cd "$IPHONEOS_SDK_PATH" && pwd -P)"
+fi
 require_path "iPhoneOS SDK" "$IPHONEOS_SDK_PATH"
 
 rm -rf "$OUT_DIR"
@@ -57,7 +60,9 @@ mkdir -p "$OUT_DIR/Toolchains/Nyxian" "$OUT_DIR/SDK" "$(dirname "$ZIP_PATH")"
 cp -R "$CORECOMPILER_FRAMEWORK" "$OUT_DIR/Toolchains/Nyxian/CoreCompiler.framework"
 cp -R "$NATIVE_DRIVER_FRAMEWORK" "$OUT_DIR/Toolchains/Nyxian/LitterBuildKitNative.framework"
 cp -R "$SUPPORT_LIBS" "$OUT_DIR/Toolchains/Nyxian/CoreCompilerSupportLibs"
-cp -R "$IPHONEOS_SDK_PATH" "$OUT_DIR/SDK/iPhoneOS${SDK_VERSION}.sdk"
+SDK_DEST="$OUT_DIR/SDK/iPhoneOS${SDK_VERSION}.sdk"
+rm -rf "$SDK_DEST"
+/usr/bin/ditto "$IPHONEOS_SDK_PATH" "$SDK_DEST"
 RUNNER_REL=""
 if [[ -n "$NYXIAN_RUNNER" ]]; then
   mkdir -p "$OUT_DIR/Toolchains/Nyxian/bin"
