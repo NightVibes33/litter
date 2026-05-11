@@ -47,10 +47,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: buildkit-assets-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   build-private-assets:
     name: Build private BuildKit asset pack
@@ -65,6 +61,7 @@ jobs:
       LITTER_BUILDKIT_ASSET_REPO: ${{ inputs.asset_repo }}
       LITTER_BUILDKIT_ASSET_TAG: ${{ inputs.asset_tag }}
       LITTER_BUILDKIT_ASSET_RELEASE_NAME: Litter BuildKit Assets ${{ inputs.asset_tag }}
+      LITTER_BUILDKIT_ASSET_NAME: LitterBuildKitAssets-${{ github.run_id }}-${{ github.run_attempt }}.zip
       LITTER_BUILDKIT_ASSET_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
 
     steps:

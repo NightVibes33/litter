@@ -93,12 +93,15 @@ struct LocalModelContextBundle: Equatable {
 }
 
 struct LocalModelPromptTemplate {
-    static func systemPrompt(for model: LocalModelRecord, context: String) -> String {
+    static func systemPrompt(for model: LocalModelRecord, context: String, skills: String) -> String {
         let family = promptFamily(for: model)
         return """
         You are Litter Local Agent, an offline Codex-style assistant running on-device.
         Model: \(model.fileName)
         Model family guidance: \(family)
+
+        Installed skill instructions:
+        \(skills.isEmpty ? "No user-installed skills are enabled." : skills)
 
         Tool contract:
         - Request tools with exactly one JSON object and no markdown.
@@ -286,12 +289,16 @@ final class LocalModelAgentStore: ObservableObject {
                 let contextBundle = await LocalModelContextBuilder.buildBundle(paths: contextPaths)
                 contextBudgetSummary = contextBundle.summary
                 let context = contextBundle.text
+                let skillContext = InstalledSkillCatalog.localModelSkillContext()
                 phase = .generating
-                let runtimeSettings = AIProviderStore.shared.runtimeSettings(for: model)
+                let runtimeSettings = AIProviderStore.shared.effectiveRuntimeSettings(for: model)
                 let system = runtimeSettings.systemPromptOverride.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    ? LocalModelPromptTemplate.systemPrompt(for: model, context: context)
+                    ? LocalModelPromptTemplate.systemPrompt(for: model, context: context, skills: skillContext)
                     : """
                     \(runtimeSettings.systemPromptOverride)
+
+                    Installed skill instructions:
+                    \(skillContext.isEmpty ? "No user-installed skills are enabled." : skillContext)
 
                     Context pack:
                     \(context.isEmpty ? "No files selected." : context)

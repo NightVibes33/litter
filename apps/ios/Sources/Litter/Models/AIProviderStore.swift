@@ -58,6 +58,10 @@ final class AIProviderStore: ObservableObject {
         return stored.sanitized(for: capability, turboQuantAvailable: turboQuantAvailability.isAvailable)
     }
 
+    func effectiveRuntimeSettings(for model: LocalModelRecord, capability: DeviceCapabilityProfile = .current()) -> LocalModelRuntimeSettings {
+        runtimeSettings(for: model, capability: capability)
+    }
+
     func localModelInfos() -> [ModelInfo] {
         localModels.map { model in
             ModelInfo(
@@ -295,6 +299,7 @@ final class AIProviderStore: ObservableObject {
             projector: projector,
             sourceRepository: item.repository,
             architecture: item.architecture,
+            nativeContextLength: nil,
             modalities: item.modalities,
             capability: capability
         )
@@ -305,6 +310,7 @@ final class AIProviderStore: ObservableObject {
         file: HuggingFaceModelDetails.Sibling,
         projector: HuggingFaceModelDetails.Sibling?,
         architecture: String?,
+        nativeContextLength: Int? = nil,
         capability: DeviceCapabilityProfile = .current()
     ) async throws -> LocalModelRecord {
         guard let url = huggingFaceResolveURL(repository: repository, fileName: file.rfilename) else {
@@ -322,6 +328,7 @@ final class AIProviderStore: ObservableObject {
             projector: projectorDownload,
             sourceRepository: repository,
             architecture: architecture,
+            nativeContextLength: nativeContextLength,
             modalities: modalities(forArchitecture: architecture, hasProjector: projectorDownload != nil),
             capability: capability
         )
@@ -330,6 +337,11 @@ final class AIProviderStore: ObservableObject {
     func cancelLocalModelDownload() {
         activeModelDownload?.cancel()
         localModelDownloadProgress = localModelDownloadProgress?.cancelledCopy()
+    }
+
+    func clearLocalModelDownloadProgress() {
+        guard localModelDownloadProgress?.isFinished == true else { return }
+        localModelDownloadProgress = nil
     }
 
     func downloadCustomModel(url: URL, capability: DeviceCapabilityProfile = .current()) async throws -> LocalModelRecord {
@@ -342,6 +354,7 @@ final class AIProviderStore: ObservableObject {
             projector: nil,
             sourceRepository: nil,
             architecture: nil,
+            nativeContextLength: nil,
             modalities: [.text],
             capability: capability
         )
@@ -389,8 +402,14 @@ final class AIProviderStore: ObservableObject {
                 retryPolicy: .disabled,
                 topP: 0.9,
                 topK: 40,
+                repeatLastN: 64,
                 repeatPenalty: 1.08,
+                frequencyPenalty: 0,
+                presencePenalty: 0,
+                seed: -1,
                 preferredThreadCount: max(1, min(4, ProcessInfo.processInfo.processorCount)),
+                batchSize: 1_024,
+                microBatchSize: 512,
                 metalEnabled: DeviceCapabilityProfile.current().hasMetal,
                 cpuFallbackAllowed: false,
                 streamingEnabled: true,
@@ -459,6 +478,7 @@ final class AIProviderStore: ObservableObject {
         projector: DownloadedModelFile?,
         sourceRepository: String?,
         architecture: String?,
+        nativeContextLength: Int?,
         modalities: [LocalModelModality],
         capability: DeviceCapabilityProfile
     ) async throws -> LocalModelRecord {
@@ -493,6 +513,7 @@ final class AIProviderStore: ObservableObject {
             sourceRepository: sourceRepository,
             sourceURL: model.sourceURL.absoluteString,
             architecture: architecture,
+            nativeContextLength: nativeContextLength,
             modalities: modalities,
             projectorStorageFileName: projectorDestination?.lastPathComponent,
             sha256: model.sha256,
@@ -510,7 +531,7 @@ final class AIProviderStore: ObservableObject {
     }
 
     private func downloadModelFile(url: URL, fileName: String, expectedSHA256: String? = nil) async throws -> DownloadedModelFile {
-        let download = TrackedModelDownload(url: url, fileName: fileName)
+        let download = TrackedModelDownload(url: url, fileName: fileName, allowsCellularAccess: globalModelSettings.allowCellularDownloads)
         activeModelDownload = download
         localModelDownloadProgress = .starting(fileName: fileName, sourceURL: url)
         defer {
@@ -833,6 +854,15 @@ struct LocalModelDownloadProgress: Equatable, Identifiable {
         return min(1, max(0, Double(bytesWritten) / Double(totalBytes)))
     }
 
+    var estimatedSecondsRemaining: TimeInterval? {
+        guard totalBytes > 0, bytesPerSecond > 0, bytesWritten < totalBytes else { return nil }
+        return Double(totalBytes - bytesWritten) / bytesPerSecond
+    }
+
+    var elapsedSeconds: TimeInterval {
+        max(0, updatedAt.timeIntervalSince(startedAt))
+    }
+
     var isFinished: Bool { [.finished, .cancelled, .failed].contains(phase) }
 
     static func starting(fileName: String, sourceURL: URL) -> LocalModelDownloadProgress {
@@ -896,6 +926,7 @@ struct LocalModelDownloadProgress: Equatable, Identifiable {
 private final class TrackedModelDownload: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let url: URL
     private let fileName: String
+    private let allowsCellularAccess: Bool
     private let startedAt = Date()
     private var session: URLSession?
     private var task: URLSessionDownloadTask?
@@ -903,12 +934,16 @@ private final class TrackedModelDownload: NSObject, URLSessionDownloadDelegate, 
     private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
     private var movedTemporaryURL: URL?
     private var completionResponse: URLResponse?
+    private var lastProgressAt: Date?
+    private var lastBytesWritten: Int64 = 0
+    private var smoothedBytesPerSecond: Double = 0
     private var didResume = false
     private let lock = NSLock()
 
-    init(url: URL, fileName: String) {
+    init(url: URL, fileName: String, allowsCellularAccess: Bool) {
         self.url = url
         self.fileName = fileName
+        self.allowsCellularAccess = allowsCellularAccess
         super.init()
     }
 
@@ -922,6 +957,7 @@ private final class TrackedModelDownload: NSObject, URLSessionDownloadDelegate, 
 
                 let configuration = URLSessionConfiguration.default
                 configuration.waitsForConnectivity = true
+                configuration.allowsCellularAccess = allowsCellularAccess
                 configuration.timeoutIntervalForRequest = 60
                 configuration.timeoutIntervalForResource = 60 * 60 * 6
                 let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
@@ -947,8 +983,16 @@ private final class TrackedModelDownload: NSObject, URLSessionDownloadDelegate, 
         totalBytesWritten: Int64,
         totalBytesExpectedToWrite: Int64
     ) {
-        let elapsed = max(0.001, Date().timeIntervalSince(startedAt))
+        let now = Date()
+        let elapsed = max(0.001, now.timeIntervalSince(startedAt))
+        let interval = max(0.001, now.timeIntervalSince(lastProgressAt ?? startedAt))
+        let delta = max(0, totalBytesWritten - lastBytesWritten)
+        let instantSpeed = Double(delta) / interval
+        smoothedBytesPerSecond = smoothedBytesPerSecond == 0 ? instantSpeed : (smoothedBytesPerSecond * 0.75) + (instantSpeed * 0.25)
+        lastProgressAt = now
+        lastBytesWritten = totalBytesWritten
         let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : 0
+        let speed = smoothedBytesPerSecond > 0 ? smoothedBytesPerSecond : Double(totalBytesWritten) / elapsed
         progressHandler?(LocalModelDownloadProgress(
             id: fileName,
             fileName: fileName,
@@ -956,9 +1000,9 @@ private final class TrackedModelDownload: NSObject, URLSessionDownloadDelegate, 
             phase: .downloading,
             bytesWritten: totalBytesWritten,
             totalBytes: total,
-            bytesPerSecond: Double(totalBytesWritten) / elapsed,
+            bytesPerSecond: speed,
             startedAt: startedAt,
-            updatedAt: Date(),
+            updatedAt: now,
             message: nil
         ))
     }

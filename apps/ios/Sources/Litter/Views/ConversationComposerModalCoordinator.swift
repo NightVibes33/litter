@@ -35,6 +35,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     let onIsExperimentalFeatureEnabled: (String, Bool) -> Bool
     let onSetExperimentalFeature: (String, Bool) async -> Void
     let onLoadSkills: (Bool, Bool) async -> Void
+    let onSetSkillEnabled: (SkillMetadata, Bool) async -> Void
     let onRenameThread: (String) async -> Void
     @ViewBuilder let content: Content
     @State private var modelSelectorDetent: PresentationDetent = .large
@@ -565,25 +566,33 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                 } else {
                     List {
                         ForEach(skills) { skill in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(skill.name)
-                                        .litterFont(.subheadline)
-                                        .foregroundColor(LitterTheme.textPrimary)
-                                    Spacer()
-                                    if skill.enabled {
-                                        Text("enabled")
-                                            .litterFont(.caption2)
-                                            .foregroundColor(LitterTheme.accent)
+                            Toggle(
+                                isOn: Binding(
+                                    get: { skill.enabled },
+                                    set: { enabled in
+                                        Task { await onSetSkillEnabled(skill, enabled) }
                                     }
+                                )
+                            ) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        Text(skill.name)
+                                            .litterFont(.subheadline)
+                                            .foregroundColor(LitterTheme.textPrimary)
+                                        Spacer()
+                                        Text(skill.enabled ? "enabled" : "disabled")
+                                            .litterFont(.caption2)
+                                            .foregroundColor(skill.enabled ? LitterTheme.accent : LitterTheme.textMuted)
+                                    }
+                                    Text(skill.description)
+                                        .litterFont(.caption)
+                                        .foregroundColor(LitterTheme.textSecondary)
+                                    Text(skill.path.value)
+                                        .litterFont(.caption2)
+                                        .foregroundColor(LitterTheme.textMuted)
                                 }
-                                Text(skill.description)
-                                    .litterFont(.caption)
-                                    .foregroundColor(LitterTheme.textSecondary)
-                                Text(skill.path.value)
-                                    .litterFont(.caption2)
-                                    .foregroundColor(LitterTheme.textMuted)
                             }
+                            .tint(LitterTheme.accent)
                             .listRowBackground(LitterTheme.surface.opacity(0.6))
                         }
                     }

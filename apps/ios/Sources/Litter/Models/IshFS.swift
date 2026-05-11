@@ -217,6 +217,59 @@ enum IshFS {
         )
     }
 
+
+
+    static func fileSize(path: String) async throws -> Int64 {
+        let result = await run("wc -c < \(shellQuote(path)) 2>/dev/null || exit 2")
+        guard result.exitCode == 0,
+              let size = Int64(result.output.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw error("Could not inspect file size for \(path)", result: result)
+        }
+        return size
+    }
+
+    static func copyFileToTemporaryURL(path: String, suggestedFileName: String? = nil, maxBytes: Int64 = 1_500_000_000) async throws -> URL {
+        let size = try await fileSize(path: path)
+        guard size <= maxBytes else {
+            throw NSError(domain: "IshFS", code: 5, userInfo: [NSLocalizedDescriptionKey: "File is too large to share from chat."])
+        }
+
+        let fm = FileManager.default
+        let shareDir = fm.temporaryDirectory.appendingPathComponent("LitterSharedArtifacts", isDirectory: true)
+        try fm.createDirectory(at: shareDir, withIntermediateDirectories: true)
+        let name = sanitizedHostFileName(suggestedFileName ?? URL(fileURLWithPath: path).lastPathComponent)
+        let destination = shareDir.appendingPathComponent(name, isDirectory: false)
+        try? fm.removeItem(at: destination)
+        fm.createFile(atPath: destination.path, contents: nil)
+
+        let handle = try FileHandle(forWritingTo: destination)
+        defer { try? handle.close() }
+
+        let chunkSize = 48_000
+        let chunkCount = Int((size + Int64(chunkSize) - 1) / Int64(chunkSize))
+        let quoted = shellQuote(path)
+        for index in 0..<chunkCount {
+            let chunk = await run("dd if=\(quoted) bs=\(chunkSize) skip=\(index) count=1 2>/dev/null | base64")
+            guard chunk.exitCode == 0 else { throw error("Could not export \(path)", result: chunk) }
+            let encoded = chunk.output.replacingOccurrences(of: "\n", with: "")
+            guard let data = Data(base64Encoded: encoded) else {
+                throw NSError(domain: "IshFS", code: 6, userInfo: [NSLocalizedDescriptionKey: "Could not decode exported file chunk."])
+            }
+            try handle.write(contentsOf: data)
+        }
+        return destination
+    }
+
+    private static func sanitizedHostFileName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = trimmed.isEmpty ? "LitterArtifact.ipa" : trimmed
+        let cleaned = fallback
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: "\\", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        return cleaned == "." || cleaned == ".." ? "LitterArtifact.ipa" : cleaned
+    }
+
     private static func error(_ fallback: String, result: Result) -> NSError {
         let message = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         return NSError(

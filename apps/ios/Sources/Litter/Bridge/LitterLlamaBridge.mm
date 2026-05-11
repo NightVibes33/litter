@@ -125,11 +125,15 @@ static llama_model *LitterLlamaLoadModel(NSString *modelPath, BOOL metalEnabled)
 static llama_context *LitterLlamaCreateContext(llama_model *model,
                                                NSInteger contextTokens,
                                                NSInteger threadCount,
+                                               NSInteger batchSize,
+                                               NSInteger microBatchSize,
                                                ggml_type kvType) {
     llama_context_params contextParams = llama_context_default_params();
     contextParams.n_ctx = (uint32_t)std::max((NSInteger)512, contextTokens);
-    contextParams.n_batch = std::min(contextParams.n_ctx, (uint32_t)1024);
-    contextParams.n_ubatch = std::min(contextParams.n_batch, (uint32_t)512);
+    uint32_t requestedBatch = (uint32_t)std::max((NSInteger)32, batchSize);
+    contextParams.n_batch = std::min(contextParams.n_ctx, requestedBatch);
+    uint32_t requestedMicroBatch = (uint32_t)std::max((NSInteger)32, microBatchSize);
+    contextParams.n_ubatch = std::min(contextParams.n_batch, requestedMicroBatch);
     int32_t threads = (int32_t)std::max((NSInteger)1, std::min((NSInteger)12, threadCount));
     contextParams.n_threads = threads;
     contextParams.n_threads_batch = threads;
@@ -166,8 +170,14 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
                             temperature:temperature
                                    topP:0.95
                                    topK:40
+                            repeatLastN:64
                           repeatPenalty:1.08
+                        frequencyPenalty:0
+                          presencePenalty:0
+                                   seed:-1
                             threadCount:defaultThreads
+                              batchSize:1024
+                         microBatchSize:512
                            metalEnabled:YES
                      cpuFallbackAllowed:YES
                             kvCacheMode:@"automatic"
@@ -182,8 +192,14 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
                                   temperature:(double)temperature
                                          topP:(double)topP
                                          topK:(NSInteger)topK
+                                  repeatLastN:(NSInteger)repeatLastN
                                 repeatPenalty:(double)repeatPenalty
+                              frequencyPenalty:(double)frequencyPenalty
+                                presencePenalty:(double)presencePenalty
+                                         seed:(NSInteger)seed
                                   threadCount:(NSInteger)threadCount
+                                    batchSize:(NSInteger)batchSize
+                               microBatchSize:(NSInteger)microBatchSize
                                  metalEnabled:(BOOL)metalEnabled
                            cpuFallbackAllowed:(BOOL)cpuFallbackAllowed
                                   kvCacheMode:(NSString *)kvCacheMode
@@ -214,12 +230,12 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
         return nil;
     }
 
-    llama_context *ctx = LitterLlamaCreateContext(model, contextTokens, threadCount, kvType);
+    llama_context *ctx = LitterLlamaCreateContext(model, contextTokens, threadCount, batchSize, microBatchSize, kvType);
     if (ctx == nullptr && metalEnabled && cpuFallbackAllowed) {
         llama_model_free(model);
         model = LitterLlamaLoadModel(modelPath, false);
         if (model != nullptr) {
-            ctx = LitterLlamaCreateContext(model, contextTokens, threadCount, kvType);
+            ctx = LitterLlamaCreateContext(model, contextTokens, threadCount, batchSize, microBatchSize, kvType);
         }
     }
     if (ctx == nullptr) {
@@ -249,14 +265,16 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
 
     llama_sampler_chain_params samplerParams = llama_sampler_chain_default_params();
     llama_sampler *sampler = llama_sampler_chain_init(samplerParams);
-    if (repeatPenalty > 0.001 && fabs(repeatPenalty - 1.0) > 0.001) {
-        llama_sampler_chain_add(sampler, llama_sampler_init_penalties(64, (float)repeatPenalty, 0.0f, 0.0f));
+    if ((repeatPenalty > 0.001 && fabs(repeatPenalty - 1.0) > 0.001) || fabs(frequencyPenalty) > 0.001 || fabs(presencePenalty) > 0.001) {
+        int32_t repeatWindow = (int32_t)std::max((NSInteger)0, std::min((NSInteger)4096, repeatLastN));
+        llama_sampler_chain_add(sampler, llama_sampler_init_penalties(repeatWindow, (float)repeatPenalty, (float)frequencyPenalty, (float)presencePenalty));
     }
     if (temperature > 0.001) {
         llama_sampler_chain_add(sampler, llama_sampler_init_top_k((int32_t)std::max((NSInteger)1, topK)));
         llama_sampler_chain_add(sampler, llama_sampler_init_top_p((float)std::max(0.05, std::min(1.0, topP)), 1));
         llama_sampler_chain_add(sampler, llama_sampler_init_temp((float)temperature));
-        llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+        uint32_t samplerSeed = seed < 0 ? LLAMA_DEFAULT_SEED : (uint32_t)seed;
+        llama_sampler_chain_add(sampler, llama_sampler_init_dist(samplerSeed));
     } else {
         llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
     }

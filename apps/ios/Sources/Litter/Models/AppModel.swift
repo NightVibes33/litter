@@ -1944,7 +1944,7 @@ final class AppModel {
         do {
             localConversationPhase = .preparingContext
             let contextBundle = await LocalModelContextBuilder.buildBundle(paths: contextPaths, maxFiles: 18, maxBytesPerFile: 10_000)
-            let settings = AIProviderStore.shared.runtimeSettings(for: model)
+            let settings = AIProviderStore.shared.effectiveRuntimeSettings(for: model)
             let options = LocalLlamaGenerationOptions.from(
                 settings: settings,
                 capability: .current(),

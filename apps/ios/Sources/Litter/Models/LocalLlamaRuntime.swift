@@ -47,8 +47,14 @@ struct LocalLlamaGenerationOptions: Equatable {
     var retryPolicy: LocalLlamaRetryPolicy
     var topP: Double
     var topK: Int
+    var repeatLastN: Int
     var repeatPenalty: Double
+    var frequencyPenalty: Double
+    var presencePenalty: Double
+    var seed: Int
     var preferredThreadCount: Int
+    var batchSize: Int
+    var microBatchSize: Int
     var metalEnabled: Bool
     var cpuFallbackAllowed: Bool
     var streamingEnabled: Bool
@@ -68,11 +74,17 @@ struct LocalLlamaGenerationOptions: Equatable {
             contextTokens: safe.contextTokens,
             allowToolCalls: safe.toolUseMode != .off,
             maxToolRounds: safe.maxToolRounds,
-            retryPolicy: .localDefault,
+            retryPolicy: LocalLlamaRetryPolicy(maxAttempts: safe.retryAttempts, retryDelayNanoseconds: 250_000_000),
             topP: safe.topP,
             topK: safe.topK,
+            repeatLastN: safe.repeatLastN,
             repeatPenalty: safe.repeatPenalty,
+            frequencyPenalty: safe.frequencyPenalty,
+            presencePenalty: safe.presencePenalty,
+            seed: safe.seed,
             preferredThreadCount: safe.preferredThreadCount,
+            batchSize: safe.batchSize,
+            microBatchSize: safe.microBatchSize,
             metalEnabled: safe.metalEnabled,
             cpuFallbackAllowed: safe.cpuFallbackAllowed,
             streamingEnabled: safe.streamingEnabled,
@@ -260,8 +272,14 @@ actor LocalLlamaRuntime {
                 retryPolicy: .disabled,
                 topP: 0.9,
                 topK: 40,
+                repeatLastN: 64,
                 repeatPenalty: 1.08,
+                frequencyPenalty: 0,
+                presencePenalty: 0,
+                seed: -1,
                 preferredThreadCount: max(1, min(4, ProcessInfo.processInfo.processorCount)),
+                batchSize: 1_024,
+                microBatchSize: 512,
                 metalEnabled: DeviceCapabilityProfile.current().hasMetal,
                 cpuFallbackAllowed: false,
                 streamingEnabled: true,

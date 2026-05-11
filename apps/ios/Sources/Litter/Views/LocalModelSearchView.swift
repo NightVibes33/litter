@@ -5,13 +5,14 @@ struct LocalModelSearchView: View {
     @State private var capability = DeviceCapabilityProfile.current()
     @State private var query = ""
     @State private var results: [HuggingFaceModelSearchResult] = []
-    @State private var selectedDetails: HuggingFaceModelDetails?
-    @State private var selectedRepository: String?
     @State private var customURL = ""
     @State private var statusMessage: String?
     @State private var isLoading = false
-    @State private var isLoadingDetails = false
     @State private var activeDownloadId: String?
+    @State private var currentDownload: LocalModelDownloadCandidate?
+    @State private var queuedDownloads: [LocalModelDownloadCandidate] = []
+    @State private var lastFailedDownload: LocalModelDownloadCandidate?
+    @State private var pendingDownload: LocalModelDownloadCandidate?
     @State private var localAgentModel: LocalModelRecord?
     @State private var selectedSearchResult: HuggingFaceModelSearchResult?
 
@@ -19,16 +20,20 @@ struct LocalModelSearchView: View {
         List {
             deviceFitSection
             downloadProgressSection
+            queuedDownloadsSection
             recommendedSection
             searchSection
-            detailsSection
             customURLSection
             installedSection
         }
         .navigationTitle("Local Models")
         .navigationBarTitleDisplayMode(.inline)
-        .task {
+        .task { capability = .current() }
+        .refreshable {
             capability = .current()
+            if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                await search()
+            }
         }
         .sheet(item: $localAgentModel) { model in
             LocalModelAgentView(model: model)
@@ -37,8 +42,28 @@ struct LocalModelSearchView: View {
             LocalModelDetailSheet(
                 repository: result.modelId,
                 capability: capability,
-                activeDownloadId: $activeDownloadId,
-                statusMessage: $statusMessage
+                activeDownloadId: activeDownloadId,
+                queuedIds: Set(queuedDownloads.map(\.id)),
+                onDownload: { candidate in
+                    selectedSearchResult = nil
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        pendingDownload = candidate
+                    }
+                }
+            )
+        }
+        .sheet(item: $pendingDownload) { candidate in
+            LocalModelDownloadConfirmationSheet(
+                candidate: candidate,
+                capability: capability,
+                willQueue: activeDownloadId != nil,
+                allowsCellularDownloads: providerStore.globalModelSettings.allowCellularDownloads,
+                onCancel: { pendingDownload = nil },
+                onConfirm: {
+                    pendingDownload = nil
+                    startOrQueue(candidate)
+                }
             )
         }
     }
@@ -52,12 +77,7 @@ struct LocalModelSearchView: View {
                 Text(capability.localGenerationSummary)
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.textSecondary)
-                if capability.recommendedContextTokens > 0 {
-                    Text("Default local generation context: \(capability.recommendedContextTokens) tokens. Bigger GGUFs can still overheat or fail if storage is tight.")
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textMuted)
-                }
-                Text("Large models may still be better on an Ollama or LM Studio server, especially if Low Power Mode or thermal pressure is active.")
+                Text("Device fit is advisory. You can still download and set your own runtime context, batch, thread, and sampling values.")
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.textMuted)
             }
@@ -78,13 +98,27 @@ struct LocalModelSearchView: View {
                             Text(progress.fileName)
                                 .litterFont(.subheadline, weight: .semibold)
                                 .foregroundColor(LitterTheme.textPrimary)
-                                .lineLimit(1)
+                                .lineLimit(2)
                             Text(downloadSubtitle(for: progress))
                                 .litterFont(.caption)
                                 .foregroundColor(LitterTheme.textSecondary)
+                            if let currentDownload {
+                                Text(currentDownload.repositoryLabel)
+                                    .litterFont(.caption)
+                                    .foregroundColor(LitterTheme.textMuted)
+                                    .lineLimit(1)
+                            }
                         }
                         Spacer()
-                        if !progress.isFinished {
+                        if progress.isFinished {
+                            Button {
+                                providerStore.clearLocalModelDownloadProgress()
+                            } label: {
+                                Label("Dismiss", systemImage: "xmark.circle")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .foregroundColor(LitterTheme.textMuted)
+                        } else {
                             Button {
                                 providerStore.cancelLocalModelDownload()
                             } label: {
@@ -98,15 +132,24 @@ struct LocalModelSearchView: View {
                     if let fraction = progress.fractionCompleted {
                         ProgressView(value: fraction)
                             .tint(LitterTheme.accent)
-                        Text("\(Int(fraction * 100))% · \(byteString(progress.bytesWritten)) of \(byteString(progress.totalBytes)) · \(speedString(progress.bytesPerSecond))")
+                        Text("\(Int(fraction * 100))% - \(byteString(progress.bytesWritten)) of \(byteString(progress.totalBytes)) - \(speedString(progress.bytesPerSecond)) - \(etaString(progress))")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textMuted)
                     } else {
                         ProgressView()
                             .tint(LitterTheme.accent)
-                        Text("\(byteString(progress.bytesWritten)) downloaded · \(speedString(progress.bytesPerSecond))")
+                        Text("\(byteString(progress.bytesWritten)) downloaded - \(speedString(progress.bytesPerSecond))")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textMuted)
+                    }
+
+                    if progress.phase == .failed, let lastFailedDownload {
+                        Button {
+                            startOrQueue(lastFailedDownload)
+                        } label: {
+                            Label("Retry Download", systemImage: "arrow.clockwise.circle.fill")
+                        }
+                        .litterFont(.caption, weight: .semibold)
                     }
                 }
                 .padding(.vertical, 6)
@@ -118,52 +161,70 @@ struct LocalModelSearchView: View {
         }
     }
 
+    @ViewBuilder
+    private var queuedDownloadsSection: some View {
+        if !queuedDownloads.isEmpty {
+            Section {
+                ForEach(queuedDownloads) { candidate in
+                    HStack(spacing: 10) {
+                        Image(systemName: "clock.badge.arrow.circlepath")
+                            .foregroundColor(LitterTheme.accent)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(candidate.fileName)
+                                .litterFont(.caption, weight: .semibold)
+                                .foregroundColor(LitterTheme.textPrimary)
+                                .lineLimit(1)
+                            Text(candidate.repositoryLabel)
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textMuted)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Button("Remove") {
+                            queuedDownloads.removeAll { $0.id == candidate.id }
+                        }
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.danger)
+                    }
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                }
+            } header: {
+                Text("Queued")
+                    .foregroundColor(LitterTheme.textSecondary)
+            }
+        }
+    }
+
     private var recommendedSection: some View {
         Section {
             ForEach(LocalModelCatalogItem.recommended) { item in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(item.title)
-                                .litterFont(.subheadline, weight: .semibold)
-                                .foregroundColor(LitterTheme.textPrimary)
-                            Text("\(item.subtitle) · \(item.displaySize)")
-                                .litterFont(.caption)
-                                .foregroundColor(LitterTheme.textSecondary)
-                        }
-                        Spacer()
-                        Button {
-                            Task { await downloadCatalog(item) }
-                        } label: {
-                            if activeDownloadId == item.id {
-                                ProgressView().scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "arrow.down.circle.fill")
-                            }
-                        }
-                        .disabled(activeDownloadId != nil)
-                    }
-                    modalityLine(item.modalities)
-                    if let warning = item.warning {
-                        Text(warning)
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.warning)
-                    }
-                }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                let candidate = LocalModelDownloadCandidate.catalog(item)
+                modelCard(
+                    title: item.title,
+                    subtitle: "\(item.subtitle) - \(item.displaySize)",
+                    detail: item.warning ?? "Recommended shortcut. Review before download.",
+                    modalities: item.modalities,
+                    safety: capability.safety(forFileSize: item.sizeBytes, fileName: item.recommendedFileName),
+                    downloadState: downloadState(for: candidate),
+                    action: { pendingDownload = candidate }
+                )
             }
         } header: {
-            Text("Recommended Downloads")
+            Text("Recommended")
                 .foregroundColor(LitterTheme.textSecondary)
+        } footer: {
+            Text("Recommended models are just shortcuts. Search and direct GGUF downloads use the same download path.")
         }
     }
 
     private var searchSection: some View {
         Section {
-            HStack {
+            HStack(spacing: 10) {
                 TextField("Search Hugging Face GGUF", text: $query)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .onSubmit { Task { await search() } }
                 Button {
                     Task { await search() }
                 } label: {
@@ -177,28 +238,44 @@ struct LocalModelSearchView: View {
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
+            if results.isEmpty, !isLoading, statusMessage == nil {
+                Text("Search for GGUF repos, tap a result, then choose the exact quant/file on the detail page.")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textMuted)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+
             ForEach(results) { result in
                 Button {
                     selectedSearchResult = result
-                    Task { await loadDetails(repository: result.modelId) }
                 } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(result.modelId)
-                            .litterFont(.subheadline)
-                            .foregroundColor(LitterTheme.textPrimary)
-                        Text("\(result.downloads ?? 0) downloads · \(result.likes ?? 0) likes · tap for model details and downloads")
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textSecondary)
-                    }
-                    Spacer()
-                    if selectedRepository == result.modelId, isLoadingDetails {
-                        ProgressView().scaleEffect(0.8)
-                    } else {
-                        Image(systemName: selectedRepository == result.modelId ? "chevron.down.circle.fill" : "chevron.right.circle")
+                    HStack(alignment: .center, spacing: 12) {
+                        Image(systemName: "shippingbox.circle.fill")
+                            .foregroundColor(LitterTheme.accent)
+                            .frame(width: 28)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(result.modelId)
+                                .litterFont(.subheadline, weight: .semibold)
+                                .foregroundColor(LitterTheme.textPrimary)
+                                .lineLimit(2)
+                            Text("\(result.downloads ?? 0) downloads - \(result.likes ?? 0) likes - tap for model files")
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right.circle.fill")
                             .foregroundColor(LitterTheme.accent)
                     }
                 }
-                .listRowBackground(selectedRepository == result.modelId ? LitterTheme.accent.opacity(0.14) : LitterTheme.surface.opacity(0.6))
+                .buttonStyle(.plain)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+
+            if let statusMessage {
+                Text(statusMessage)
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textSecondary)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
         } header: {
             Text("Search")
@@ -214,90 +291,18 @@ struct LocalModelSearchView: View {
                 .keyboardType(.URL)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
             Button {
-                Task { await downloadCustomURL() }
+                prepareCustomURLDownload()
             } label: {
                 HStack {
-                    Label("Download Direct GGUF URL", systemImage: "link.badge.plus")
+                    Label("Review Direct GGUF URL", systemImage: "link.badge.plus")
                     Spacer()
-                    if activeDownloadId == "custom" {
-                        ProgressView().scaleEffect(0.8)
-                    }
                 }
             }
-            .disabled(activeDownloadId != nil || URL(string: customURL.trimmingCharacters(in: .whitespacesAndNewlines)) == nil)
+            .disabled(URL(string: customURL.trimmingCharacters(in: .whitespacesAndNewlines)) == nil)
             .listRowBackground(LitterTheme.surface.opacity(0.6))
-            if let statusMessage {
-                Text(statusMessage)
-                    .litterFont(.caption)
-                    .foregroundColor(LitterTheme.textSecondary)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
-            }
         } header: {
             Text("Direct URL")
                 .foregroundColor(LitterTheme.textSecondary)
-        }
-    }
-
-    @ViewBuilder
-    private var detailsSection: some View {
-        if let selectedDetails, let selectedRepository {
-            Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(selectedRepository)
-                        .litterFont(.subheadline, weight: .semibold)
-                        .foregroundColor(LitterTheme.textPrimary)
-                    Text("\(selectedDetails.downloads ?? 0) downloads · architecture \(selectedDetails.gguf?.architecture ?? "unknown")")
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textSecondary)
-                }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-                if selectedDetails.ggufFiles.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Label("No downloadable GGUF files found", systemImage: "exclamationmark.triangle")
-                            .litterFont(.subheadline, weight: .semibold)
-                            .foregroundColor(LitterTheme.warning)
-                        Text("Hugging Face returned this model page, but the API did not expose a .gguf sibling file. Try another result or paste a direct .gguf URL.")
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textSecondary)
-                    }
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
-                }
-
-                ForEach(selectedDetails.ggufFiles) { file in
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(file.rfilename)
-                                    .litterFont(.subheadline)
-                                    .foregroundColor(LitterTheme.textPrimary)
-                                    .lineLimit(1)
-                                Text(ByteCountFormatter.string(fromByteCount: file.lfs?.size ?? file.size ?? 0, countStyle: .file))
-                                    .litterFont(.caption)
-                                    .foregroundColor(LitterTheme.textSecondary)
-                            }
-                            Spacer()
-                            Button {
-                                Task { await downloadSearchFile(repository: selectedRepository, details: selectedDetails, file: file) }
-                            } label: {
-                                if activeDownloadId == file.rfilename {
-                                    ProgressView().scaleEffect(0.8)
-                                } else {
-                                    Image(systemName: "arrow.down.circle")
-                                }
-                            }
-                            .disabled(activeDownloadId != nil)
-                        }
-                        if selectedDetails.gguf?.architecture?.lowercased() == "gemma4", matchingProjector(for: file, in: selectedDetails) != nil {
-                            modalityLine([.text, .image, .audio, .video])
-                        }
-                    }
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
-                }
-            } header: {
-                Text("Model Files")
-                    .foregroundColor(LitterTheme.textSecondary)
-            }
         }
     }
 
@@ -310,12 +315,12 @@ struct LocalModelSearchView: View {
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
             } else {
                 ForEach(providerStore.localModels) { model in
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(model.fileName)
-                            .litterFont(.subheadline)
+                            .litterFont(.subheadline, weight: .semibold)
                             .foregroundColor(LitterTheme.textPrimary)
-                            .lineLimit(1)
-                        Text("\(model.displaySize) · \(model.safety.displayName) · \(model.validationStatus.displayName)")
+                            .lineLimit(2)
+                        Text(installedSubtitle(for: model))
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                         Text(model.validationStatus.message)
@@ -332,12 +337,15 @@ struct LocalModelSearchView: View {
                             Button {
                                 Task { await providerStore.validateLocalModel(model) }
                             } label: {
-                                Label(providerStore.validatingLocalModelId == model.id ? "Verifying..." : "Verify Model", systemImage: "checkmark.seal")
+                                Label(providerStore.validatingLocalModelId == model.id ? "Verifying..." : "Verify", systemImage: "checkmark.seal")
                             }
                             .disabled(providerStore.validatingLocalModelId != nil)
                             if providerStore.validatingLocalModelId == model.id {
                                 Button("Cancel") { providerStore.cancelLocalModelValidation() }
                                     .foregroundColor(LitterTheme.danger)
+                            }
+                            NavigationLink("Settings") {
+                                LocalModelRuntimeSettingsView(model: model)
                             }
                         }
                         .litterFont(.caption, weight: .semibold)
@@ -351,10 +359,57 @@ struct LocalModelSearchView: View {
         }
     }
 
+    private func modelCard(
+        title: String,
+        subtitle: String,
+        detail: String,
+        modalities: [LocalModelModality],
+        safety: (LocalModelSafety, String),
+        downloadState: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .litterFont(.subheadline, weight: .semibold)
+                        .foregroundColor(LitterTheme.textPrimary)
+                    Text(subtitle)
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textSecondary)
+                    modalityLine(modalities)
+                }
+                Spacer()
+                Button(action: action) {
+                    Label(downloadState, systemImage: downloadState == "Queued" ? "clock" : "arrow.down.circle.fill")
+                        .labelStyle(.iconOnly)
+                }
+                .disabled(downloadState == "Downloading" || downloadState == "Queued")
+                .foregroundColor(LitterTheme.accent)
+            }
+            Text(detail)
+                .litterFont(.caption)
+                .foregroundColor(LitterTheme.textMuted)
+            Text(safety.1)
+                .litterFont(.caption)
+                .foregroundColor(color(for: safety.0))
+        }
+        .padding(.vertical, 4)
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
+    }
+
     private func modalityLine(_ modalities: [LocalModelModality]) -> some View {
-        Text(modalities.map(\.displayName).joined(separator: " · "))
+        Text(modalities.map(\.displayName).joined(separator: " - "))
             .litterFont(.caption)
             .foregroundColor(LitterTheme.accent)
+    }
+
+    private func installedSubtitle(for model: LocalModelRecord) -> String {
+        var parts = [model.displaySize]
+        if let nativeContextLength = model.nativeContextLength { parts.append("\(nativeContextLength) ctx") }
+        parts.append(model.safety.displayName)
+        parts.append(model.validationStatus.displayName)
+        return parts.joined(separator: " - ")
     }
 
     private func validationColor(for status: LocalModelValidationStatus) -> Color {
@@ -363,6 +418,14 @@ struct LocalModelSearchView: View {
         case .failed: return LitterTheme.danger
         case .validating: return LitterTheme.warning
         case .untested: return LitterTheme.textMuted
+        }
+    }
+
+    private func color(for safety: LocalModelSafety) -> Color {
+        switch safety {
+        case .recommended: return LitterTheme.accent
+        case .heavy: return LitterTheme.warning
+        case .notRecommended, .pcRecommended: return LitterTheme.danger
         }
     }
 
@@ -387,95 +450,315 @@ struct LocalModelSearchView: View {
         return "\(ByteCountFormatter.string(fromByteCount: Int64(bytesPerSecond), countStyle: .file))/s"
     }
 
+    private func etaString(_ progress: LocalModelDownloadProgress) -> String {
+        guard let seconds = progress.estimatedSecondsRemaining else { return "ETA calculating" }
+        if seconds < 60 { return "ETA \(max(1, Int(seconds)))s" }
+        return "ETA \(Int(seconds / 60))m \(Int(seconds.truncatingRemainder(dividingBy: 60)))s"
+    }
+
+    private func downloadState(for candidate: LocalModelDownloadCandidate) -> String {
+        if activeDownloadId == candidate.id { return "Downloading" }
+        if queuedDownloads.contains(where: { $0.id == candidate.id }) { return "Queued" }
+        return "Download"
+    }
+
     private func search() async {
         isLoading = true
+        statusMessage = nil
         defer { isLoading = false }
         do {
             results = try await providerStore.searchHuggingFaceModels(query: query)
             statusMessage = results.isEmpty ? "No GGUF models found." : nil
-            selectedDetails = nil
-            selectedRepository = nil
         } catch {
+            results = []
             statusMessage = error.localizedDescription
         }
     }
 
-    private func loadDetails(repository: String) async {
-        selectedRepository = repository
-        isLoadingDetails = true
-        defer { isLoadingDetails = false }
-        do {
-            selectedDetails = try await providerStore.fetchHuggingFaceModelDetails(repository: repository)
-            statusMessage = selectedDetails?.ggufFiles.isEmpty == true ? "No downloadable GGUF files found for \(repository)." : nil
-        } catch {
-            selectedDetails = nil
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    private func downloadCatalog(_ item: LocalModelCatalogItem) async {
-        activeDownloadId = item.id
-        statusMessage = "Downloading \(item.title)..."
-        defer { activeDownloadId = nil }
-        do {
-            let record = try await providerStore.downloadCatalogModel(item, capability: capability)
-            statusMessage = "Installed \(record.fileName)."
-        } catch {
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    private func downloadSearchFile(repository: String, details: HuggingFaceModelDetails, file: HuggingFaceModelDetails.Sibling) async {
-        activeDownloadId = file.rfilename
-        statusMessage = "Downloading \(file.rfilename)..."
-        defer { activeDownloadId = nil }
-        do {
-            let record = try await providerStore.downloadHuggingFaceFile(
-                repository: repository,
-                file: file,
-                projector: matchingProjector(for: file, in: details),
-                architecture: details.gguf?.architecture,
-                capability: capability
-            )
-            statusMessage = "Installed \(record.fileName)."
-        } catch {
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    private func downloadCustomURL() async {
+    private func prepareCustomURLDownload() {
         let trimmed = customURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: trimmed) else { return }
-        activeDownloadId = "custom"
-        statusMessage = "Downloading \(url.lastPathComponent)..."
-        defer { activeDownloadId = nil }
-        do {
-            let record = try await providerStore.downloadCustomModel(url: url, capability: capability)
-            statusMessage = "Installed \(record.fileName)."
-        } catch {
-            statusMessage = error.localizedDescription
+        guard url.pathExtension.lowercased() == "gguf" else {
+            statusMessage = "Only direct .gguf URLs can be imported as local models."
+            return
         }
+        pendingDownload = .direct(url)
     }
 
-    private func matchingProjector(for file: HuggingFaceModelDetails.Sibling, in details: HuggingFaceModelDetails) -> HuggingFaceModelDetails.Sibling? {
-        let lower = file.rfilename.lowercased()
-        if lower.contains("gemma-4-e2b"), let match = details.projectorFiles.first(where: { $0.rfilename.lowercased().contains("gemma-4-e2b") }) {
-            return match
+    private func startOrQueue(_ candidate: LocalModelDownloadCandidate) {
+        if activeDownloadId != nil {
+            if !queuedDownloads.contains(where: { $0.id == candidate.id }) {
+                queuedDownloads.append(candidate)
+                statusMessage = "Queued \(candidate.fileName)."
+            }
+            return
         }
-        if lower.contains("gemma-4-e4b"), let match = details.projectorFiles.first(where: { $0.rfilename.lowercased().contains("gemma-4-e4b") }) {
-            return match
+        Task { await runDownload(candidate) }
+    }
+
+    private func runDownload(_ candidate: LocalModelDownloadCandidate) async {
+        activeDownloadId = candidate.id
+        currentDownload = candidate
+        lastFailedDownload = nil
+        statusMessage = "Downloading \(candidate.fileName)..."
+        defer {
+            activeDownloadId = nil
+            currentDownload = nil
+            if !queuedDownloads.isEmpty {
+                let next = queuedDownloads.removeFirst()
+                Task { await runDownload(next) }
+            }
         }
-        return details.projectorFiles.first
+
+        do {
+            let record: LocalModelRecord
+            switch candidate.source {
+            case .catalog(let item):
+                record = try await providerStore.downloadCatalogModel(item, capability: capability)
+            case .huggingFace(let repository, let file, let details, let projector):
+                record = try await providerStore.downloadHuggingFaceFile(
+                    repository: repository,
+                    file: file,
+                    projector: projector,
+                    architecture: details.gguf?.architecture,
+                    nativeContextLength: details.gguf?.contextLength,
+                    capability: capability
+                )
+            case .direct(let url):
+                record = try await providerStore.downloadCustomModel(url: url, capability: capability)
+            }
+            statusMessage = "Installed \(record.fileName)."
+        } catch is CancellationError {
+            statusMessage = "Cancelled \(candidate.fileName)."
+            lastFailedDownload = candidate
+        } catch {
+            statusMessage = error.localizedDescription
+            lastFailedDownload = candidate
+        }
     }
 }
 
+private struct LocalModelDownloadCandidate: Identifiable, Equatable {
+    enum Source: Equatable {
+        case catalog(LocalModelCatalogItem)
+        case huggingFace(repository: String, file: HuggingFaceModelDetails.Sibling, details: HuggingFaceModelDetails, projector: HuggingFaceModelDetails.Sibling?)
+        case direct(URL)
+    }
+
+    var source: Source
+
+    var id: String {
+        switch source {
+        case .catalog(let item): return "catalog:\(item.id)"
+        case .huggingFace(let repository, let file, _, _): return "hf:\(repository):\(file.rfilename)"
+        case .direct(let url): return "direct:\(url.absoluteString)"
+        }
+    }
+
+    var fileName: String {
+        switch source {
+        case .catalog(let item): return item.recommendedFileName
+        case .huggingFace(_, let file, _, _): return file.rfilename
+        case .direct(let url): return url.lastPathComponent.isEmpty ? "model.gguf" : url.lastPathComponent
+        }
+    }
+
+    var title: String {
+        switch source {
+        case .catalog(let item): return item.title
+        case .huggingFace(let repository, _, _, _): return repository
+        case .direct: return "Direct GGUF URL"
+        }
+    }
+
+    var repositoryLabel: String {
+        switch source {
+        case .catalog(let item): return item.repository
+        case .huggingFace(let repository, _, _, _): return repository
+        case .direct(let url): return url.host ?? "Direct URL"
+        }
+    }
+
+    var sizeBytes: Int64 {
+        switch source {
+        case .catalog(let item): return item.sizeBytes
+        case .huggingFace(_, let file, _, _): return file.lfs?.size ?? file.size ?? 0
+        case .direct: return 0
+        }
+    }
+
+    var architecture: String? {
+        switch source {
+        case .catalog(let item): return item.architecture
+        case .huggingFace(_, _, let details, _): return details.gguf?.architecture
+        case .direct: return nil
+        }
+    }
+
+    var nativeContextLength: Int? {
+        switch source {
+        case .catalog: return nil
+        case .huggingFace(_, _, let details, _): return details.gguf?.contextLength
+        case .direct: return nil
+        }
+    }
+
+    var modalities: [LocalModelModality] {
+        switch source {
+        case .catalog(let item): return item.modalities
+        case .huggingFace(_, _, let details, let projector):
+            if details.gguf?.architecture?.lowercased() == "gemma4", projector != nil { return [.text, .image, .audio, .video] }
+            return projector == nil ? [.text] : [.text, .image]
+        case .direct: return [.text]
+        }
+    }
+
+    var sha256: String? {
+        switch source {
+        case .catalog: return nil
+        case .huggingFace(_, let file, _, _): return file.lfs?.sha256
+        case .direct: return nil
+        }
+    }
+
+    var projectorFileName: String? {
+        switch source {
+        case .catalog(let item): return item.projectorFileName
+        case .huggingFace(_, _, _, let projector): return projector?.rfilename
+        case .direct: return nil
+        }
+    }
+
+    static func catalog(_ item: LocalModelCatalogItem) -> LocalModelDownloadCandidate {
+        LocalModelDownloadCandidate(source: .catalog(item))
+    }
+
+    static func huggingFace(
+        repository: String,
+        file: HuggingFaceModelDetails.Sibling,
+        details: HuggingFaceModelDetails,
+        projector: HuggingFaceModelDetails.Sibling?
+    ) -> LocalModelDownloadCandidate {
+        LocalModelDownloadCandidate(source: .huggingFace(repository: repository, file: file, details: details, projector: projector))
+    }
+
+    static func direct(_ url: URL) -> LocalModelDownloadCandidate {
+        LocalModelDownloadCandidate(source: .direct(url))
+    }
+}
+
+private struct LocalModelDownloadConfirmationSheet: View {
+    let candidate: LocalModelDownloadCandidate
+    let capability: DeviceCapabilityProfile
+    let willQueue: Bool
+    let allowsCellularDownloads: Bool
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(candidate.title)
+                            .litterFont(.headline, weight: .semibold)
+                            .foregroundColor(LitterTheme.textPrimary)
+                            .textSelection(.enabled)
+                        Text(candidate.fileName)
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                            .textSelection(.enabled)
+                        Text(candidate.repositoryLabel)
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textMuted)
+                            .textSelection(.enabled)
+                    }
+                    .listRowBackground(LitterTheme.surface.opacity(0.68))
+                }
+
+                Section("Download Facts") {
+                    infoRow("Size", candidate.sizeBytes > 0 ? byteString(candidate.sizeBytes) : "Unknown until download starts")
+                    infoRow("Architecture", candidate.architecture ?? "Unknown")
+                    infoRow("Native Context", candidate.nativeContextLength.map { "\($0) tokens" } ?? "Unknown")
+                    infoRow("Quant", DeviceCapabilityProfile.quantizationHint(from: candidate.fileName.lowercased()) ?? "Unknown")
+                    infoRow("Modalities", candidate.modalities.map(\.displayName).joined(separator: " - "))
+                    infoRow("Projector", candidate.projectorFileName ?? "None")
+                    infoRow("Checksum", candidate.sha256 == nil ? "Unavailable" : "SHA256 available")
+                    infoRow("Cellular", allowsCellularDownloads ? "Allowed" : "Wi-Fi only")
+                }
+
+                Section("Device Fit") {
+                    let safety = capability.safety(forFileSize: candidate.sizeBytes, fileName: candidate.fileName)
+                    Label(safety.0.displayName, systemImage: icon(for: safety.0))
+                        .foregroundColor(color(for: safety.0))
+                    Text(safety.1)
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textSecondary)
+                    Text("This is a warning, not a lock. Runtime context and other settings remain user controlled.")
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textMuted)
+                }
+
+                Section {
+                    Button {
+                        onConfirm()
+                    } label: {
+                        Label(willQueue ? "Add to Queue" : "Start Download", systemImage: willQueue ? "text.badge.plus" : "arrow.down.circle.fill")
+                    }
+                    .foregroundColor(LitterTheme.accent)
+                }
+            }
+            .navigationTitle("Review Model")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { onCancel() }
+                }
+            }
+        }
+    }
+
+    private func infoRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(title)
+                .foregroundColor(LitterTheme.textMuted)
+            Spacer()
+            Text(value)
+                .foregroundColor(LitterTheme.textSecondary)
+                .multilineTextAlignment(.trailing)
+                .textSelection(.enabled)
+        }
+        .litterFont(.caption)
+    }
+
+    private func byteString(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: max(0, bytes), countStyle: .file)
+    }
+
+    private func icon(for safety: LocalModelSafety) -> String {
+        switch safety {
+        case .recommended: return "checkmark.seal.fill"
+        case .heavy: return "flame.fill"
+        case .notRecommended, .pcRecommended: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func color(for safety: LocalModelSafety) -> Color {
+        switch safety {
+        case .recommended: return LitterTheme.success
+        case .heavy: return LitterTheme.warning
+        case .notRecommended, .pcRecommended: return LitterTheme.danger
+        }
+    }
+}
 
 private struct LocalModelDetailSheet: View {
     @StateObject private var providerStore = AIProviderStore.shared
     let repository: String
     let capability: DeviceCapabilityProfile
-    @Binding var activeDownloadId: String?
-    @Binding var statusMessage: String?
+    let activeDownloadId: String?
+    let queuedIds: Set<String>
+    let onDownload: (LocalModelDownloadCandidate) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var details: HuggingFaceModelDetails?
     @State private var isLoading = true
@@ -491,7 +774,7 @@ private struct LocalModelDetailSheet: View {
                             .foregroundColor(LitterTheme.textPrimary)
                             .textSelection(.enabled)
                         if let details {
-                            Text("\(details.downloads ?? 0) downloads · \(details.likes ?? 0) likes · architecture \(details.gguf?.architecture ?? "unknown")")
+                            Text("\(details.downloads ?? 0) downloads - \(details.likes ?? 0) likes - architecture \(details.gguf?.architecture ?? "unknown")")
                                 .litterFont(.caption)
                                 .foregroundColor(LitterTheme.textSecondary)
                         } else if isLoading {
@@ -518,8 +801,14 @@ private struct LocalModelDetailSheet: View {
                     } else {
                         Section("Downloadable GGUF Files") {
                             ForEach(details.ggufFiles) { file in
+                                let candidate = LocalModelDownloadCandidate.huggingFace(
+                                    repository: repository,
+                                    file: file,
+                                    details: details,
+                                    projector: matchingProjector(for: file, in: details)
+                                )
                                 VStack(alignment: .leading, spacing: 8) {
-                                    HStack(alignment: .top) {
+                                    HStack(alignment: .top, spacing: 12) {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(file.rfilename)
                                                 .litterFont(.subheadline, weight: .semibold)
@@ -528,19 +817,21 @@ private struct LocalModelDetailSheet: View {
                                             Text(fileSubtitle(file, details: details))
                                                 .litterFont(.caption)
                                                 .foregroundColor(LitterTheme.textSecondary)
+                                            if let projector = candidate.projectorFileName {
+                                                Text("Projector: \(projector)")
+                                                    .litterFont(.caption)
+                                                    .foregroundColor(LitterTheme.accent)
+                                                    .lineLimit(1)
+                                            }
                                         }
                                         Spacer()
                                         Button {
-                                            Task { await download(file, details: details) }
+                                            onDownload(candidate)
                                         } label: {
-                                            if activeDownloadId == file.rfilename {
-                                                ProgressView().scaleEffect(0.8)
-                                            } else {
-                                                Label("Download", systemImage: "arrow.down.circle.fill")
-                                                    .labelStyle(.iconOnly)
-                                            }
+                                            Label(downloadState(for: candidate), systemImage: icon(for: candidate))
+                                                .labelStyle(.iconOnly)
                                         }
-                                        .disabled(activeDownloadId != nil)
+                                        .disabled(activeDownloadId == candidate.id || queuedIds.contains(candidate.id))
                                         .foregroundColor(LitterTheme.accent)
                                     }
                                     if let warning = safetyWarning(for: file) {
@@ -579,24 +870,6 @@ private struct LocalModelDetailSheet: View {
         isLoading = false
     }
 
-    private func download(_ file: HuggingFaceModelDetails.Sibling, details: HuggingFaceModelDetails) async {
-        activeDownloadId = file.rfilename
-        statusMessage = "Downloading \(file.rfilename)..."
-        defer { activeDownloadId = nil }
-        do {
-            let record = try await providerStore.downloadHuggingFaceFile(
-                repository: repository,
-                file: file,
-                projector: matchingProjector(for: file, in: details),
-                architecture: details.gguf?.architecture,
-                capability: capability
-            )
-            statusMessage = "Installed \(record.fileName)."
-        } catch {
-            statusMessage = error.localizedDescription
-        }
-    }
-
     private func matchingProjector(for file: HuggingFaceModelDetails.Sibling, in details: HuggingFaceModelDetails) -> HuggingFaceModelDetails.Sibling? {
         let lower = file.rfilename.lowercased()
         if lower.contains("gemma-4-e2b"), let match = details.projectorFiles.first(where: { $0.rfilename.lowercased().contains("gemma-4-e2b") }) {
@@ -611,12 +884,24 @@ private struct LocalModelDetailSheet: View {
     private func fileSubtitle(_ file: HuggingFaceModelDetails.Sibling, details: HuggingFaceModelDetails) -> String {
         let size = ByteCountFormatter.string(fromByteCount: file.lfs?.size ?? file.size ?? 0, countStyle: .file)
         let quant = DeviceCapabilityProfile.quantizationHint(from: file.rfilename.lowercased()) ?? "unknown quant"
-        return "\(size) · \(quant) · \(details.gguf?.architecture ?? "unknown architecture")"
+        return "\(size) - \(quant) - \(details.gguf?.architecture ?? "unknown architecture")"
     }
 
     private func safetyWarning(for file: HuggingFaceModelDetails.Sibling) -> String? {
         let size = file.lfs?.size ?? file.size ?? 0
         let safety = capability.safety(forFileSize: size, fileName: file.rfilename)
         return safety.0 == .recommended ? nil : safety.1
+    }
+
+    private func downloadState(for candidate: LocalModelDownloadCandidate) -> String {
+        if activeDownloadId == candidate.id { return "Downloading" }
+        if queuedIds.contains(candidate.id) { return "Queued" }
+        return "Download"
+    }
+
+    private func icon(for candidate: LocalModelDownloadCandidate) -> String {
+        if activeDownloadId == candidate.id { return "arrow.down.circle.fill" }
+        if queuedIds.contains(candidate.id) { return "clock.fill" }
+        return "arrow.down.circle.fill"
     }
 }

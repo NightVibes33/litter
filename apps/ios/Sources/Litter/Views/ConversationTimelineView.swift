@@ -1281,6 +1281,10 @@ private struct ConversationCommandExecutionRow: View {
                     status: data.status.toolCallStatus,
                     durationText: nil
                 )
+
+                ForEach(ipaArtifacts) { artifact in
+                    BuildArtifactShareCard(artifact: artifact)
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -1346,6 +1350,11 @@ private struct ConversationCommandExecutionRow: View {
             return trimmed
         }
         return data.isInProgress ? "Waiting for output…" : "No output"
+    }
+
+    private var ipaArtifacts: [BuildArtifact] {
+        guard !data.isInProgress else { return [] }
+        return BuildArtifactDetector.ipaArtifacts(in: renderedOutput)
     }
 
     private var displayedCommand: String {

@@ -97,6 +97,9 @@ struct LocalModelAgentView: View {
                             .litterFont(.body)
                             .foregroundColor(LitterTheme.textPrimary)
                             .textSelection(.enabled)
+                        ForEach(BuildArtifactDetector.ipaArtifacts(in: message.text)) { artifact in
+                            BuildArtifactShareCard(artifact: artifact)
+                        }
                     }
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
                 }

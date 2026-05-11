@@ -278,15 +278,68 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
     var temperature: Double
     var topP: Double
     var topK: Int
+    var repeatLastN: Int
     var repeatPenalty: Double
+    var frequencyPenalty: Double
+    var presencePenalty: Double
+    var seed: Int
     var preferredThreadCount: Int
+    var batchSize: Int
+    var microBatchSize: Int
     var metalEnabled: Bool
     var cpuFallbackAllowed: Bool
     var streamingEnabled: Bool
     var toolUseMode: LocalModelToolUseMode
     var maxToolRounds: Int
+    var retryAttempts: Int
     var kvCacheMode: LocalModelKVCacheMode
     var systemPromptOverride: String
+
+    init(
+        contextTokens: Int,
+        maxOutputTokens: Int,
+        temperature: Double,
+        topP: Double,
+        topK: Int,
+        repeatLastN: Int,
+        repeatPenalty: Double,
+        frequencyPenalty: Double,
+        presencePenalty: Double,
+        seed: Int,
+        preferredThreadCount: Int,
+        batchSize: Int,
+        microBatchSize: Int,
+        metalEnabled: Bool,
+        cpuFallbackAllowed: Bool,
+        streamingEnabled: Bool,
+        toolUseMode: LocalModelToolUseMode,
+        maxToolRounds: Int,
+        retryAttempts: Int,
+        kvCacheMode: LocalModelKVCacheMode,
+        systemPromptOverride: String
+    ) {
+        self.contextTokens = contextTokens
+        self.maxOutputTokens = maxOutputTokens
+        self.temperature = temperature
+        self.topP = topP
+        self.topK = topK
+        self.repeatLastN = repeatLastN
+        self.repeatPenalty = repeatPenalty
+        self.frequencyPenalty = frequencyPenalty
+        self.presencePenalty = presencePenalty
+        self.seed = seed
+        self.preferredThreadCount = preferredThreadCount
+        self.batchSize = batchSize
+        self.microBatchSize = microBatchSize
+        self.metalEnabled = metalEnabled
+        self.cpuFallbackAllowed = cpuFallbackAllowed
+        self.streamingEnabled = streamingEnabled
+        self.toolUseMode = toolUseMode
+        self.maxToolRounds = maxToolRounds
+        self.retryAttempts = retryAttempts
+        self.kvCacheMode = kvCacheMode
+        self.systemPromptOverride = systemPromptOverride
+    }
 
     static func defaults(for capability: DeviceCapabilityProfile = .current()) -> LocalModelRuntimeSettings {
         LocalModelRuntimeSettings(
@@ -295,13 +348,20 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
             temperature: 0.2,
             topP: 0.9,
             topK: 40,
+            repeatLastN: 64,
             repeatPenalty: 1.08,
+            frequencyPenalty: 0,
+            presencePenalty: 0,
+            seed: -1,
             preferredThreadCount: max(2, min(6, ProcessInfo.processInfo.processorCount)),
+            batchSize: 1_024,
+            microBatchSize: 512,
             metalEnabled: capability.hasMetal,
             cpuFallbackAllowed: false,
             streamingEnabled: true,
             toolUseMode: .approvalRequired,
             maxToolRounds: 4,
+            retryAttempts: 2,
             kvCacheMode: .automatic,
             systemPromptOverride: ""
         )
@@ -309,19 +369,21 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
 
     func sanitized(for capability: DeviceCapabilityProfile = .current(), turboQuantAvailable: Bool = false) -> LocalModelRuntimeSettings {
         var next = self
-        let recommended = capability.recommendedContextTokens == 0 ? 2_048 : capability.recommendedContextTokens
-        if capability.isThermallyConstrained || capability.isLowPowerModeEnabled {
-            next.contextTokens = min(next.contextTokens, 2_048)
-            next.maxOutputTokens = min(next.maxOutputTokens, 512)
-        } else {
-            next.contextTokens = min(max(next.contextTokens, 512), max(2_048, recommended * 2))
-            next.maxOutputTokens = min(max(next.maxOutputTokens, 64), 4_096)
-        }
+        next.contextTokens = min(max(next.contextTokens, 512), 131_072)
+        next.maxOutputTokens = min(max(next.maxOutputTokens, 64), 16_384)
         next.temperature = min(max(next.temperature, 0), 2)
         next.topP = min(max(next.topP, 0.05), 1)
         next.topK = min(max(next.topK, 1), 200)
+        next.repeatLastN = min(max(next.repeatLastN, 0), 4_096)
         next.repeatPenalty = min(max(next.repeatPenalty, 0.8), 1.5)
+        next.frequencyPenalty = min(max(next.frequencyPenalty, -2), 2)
+        next.presencePenalty = min(max(next.presencePenalty, -2), 2)
+        next.seed = min(max(next.seed, -1), 4_294_967_295)
         next.preferredThreadCount = min(max(next.preferredThreadCount, 1), max(1, ProcessInfo.processInfo.processorCount))
+        next.batchSize = min(max(next.batchSize, 32), 4_096)
+        next.microBatchSize = min(max(next.microBatchSize, 32), min(next.batchSize, 2_048))
+        next.maxToolRounds = min(max(next.maxToolRounds, 0), 20)
+        next.retryAttempts = min(max(next.retryAttempts, 1), 5)
         if !capability.hasMetal {
             next.metalEnabled = false
         }
@@ -329,6 +391,49 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
             next.kvCacheMode = .automatic
         }
         return next
+    }
+
+    var warningSummary: String? {
+        var warnings: [String] = []
+        if contextTokens > 16_384 { warnings.append("very high context") }
+        if maxOutputTokens > 4_096 { warnings.append("large output budget") }
+        if batchSize > 1_024 { warnings.append("large batch") }
+        if microBatchSize > 512 { warnings.append("large microbatch") }
+        if preferredThreadCount > max(2, ProcessInfo.processInfo.processorCount - 1) { warnings.append("aggressive thread count") }
+        return warnings.isEmpty ? nil : "Experimental: \(warnings.joined(separator: ", ")). These settings are saved as requested, but may fail or overheat on-device."
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case contextTokens, maxOutputTokens, temperature, topP, topK, repeatLastN, repeatPenalty
+        case frequencyPenalty, presencePenalty, seed, preferredThreadCount, batchSize, microBatchSize
+        case metalEnabled, cpuFallbackAllowed, streamingEnabled, toolUseMode, maxToolRounds, retryAttempts
+        case kvCacheMode, systemPromptOverride
+    }
+
+    init(from decoder: Decoder) throws {
+        let defaults = Self.defaults()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        contextTokens = try container.decodeIfPresent(Int.self, forKey: .contextTokens) ?? defaults.contextTokens
+        maxOutputTokens = try container.decodeIfPresent(Int.self, forKey: .maxOutputTokens) ?? defaults.maxOutputTokens
+        temperature = try container.decodeIfPresent(Double.self, forKey: .temperature) ?? defaults.temperature
+        topP = try container.decodeIfPresent(Double.self, forKey: .topP) ?? defaults.topP
+        topK = try container.decodeIfPresent(Int.self, forKey: .topK) ?? defaults.topK
+        repeatLastN = try container.decodeIfPresent(Int.self, forKey: .repeatLastN) ?? defaults.repeatLastN
+        repeatPenalty = try container.decodeIfPresent(Double.self, forKey: .repeatPenalty) ?? defaults.repeatPenalty
+        frequencyPenalty = try container.decodeIfPresent(Double.self, forKey: .frequencyPenalty) ?? defaults.frequencyPenalty
+        presencePenalty = try container.decodeIfPresent(Double.self, forKey: .presencePenalty) ?? defaults.presencePenalty
+        seed = try container.decodeIfPresent(Int.self, forKey: .seed) ?? defaults.seed
+        preferredThreadCount = try container.decodeIfPresent(Int.self, forKey: .preferredThreadCount) ?? defaults.preferredThreadCount
+        batchSize = try container.decodeIfPresent(Int.self, forKey: .batchSize) ?? defaults.batchSize
+        microBatchSize = try container.decodeIfPresent(Int.self, forKey: .microBatchSize) ?? defaults.microBatchSize
+        metalEnabled = try container.decodeIfPresent(Bool.self, forKey: .metalEnabled) ?? defaults.metalEnabled
+        cpuFallbackAllowed = try container.decodeIfPresent(Bool.self, forKey: .cpuFallbackAllowed) ?? defaults.cpuFallbackAllowed
+        streamingEnabled = try container.decodeIfPresent(Bool.self, forKey: .streamingEnabled) ?? defaults.streamingEnabled
+        toolUseMode = try container.decodeIfPresent(LocalModelToolUseMode.self, forKey: .toolUseMode) ?? defaults.toolUseMode
+        maxToolRounds = try container.decodeIfPresent(Int.self, forKey: .maxToolRounds) ?? defaults.maxToolRounds
+        retryAttempts = try container.decodeIfPresent(Int.self, forKey: .retryAttempts) ?? defaults.retryAttempts
+        kvCacheMode = try container.decodeIfPresent(LocalModelKVCacheMode.self, forKey: .kvCacheMode) ?? defaults.kvCacheMode
+        systemPromptOverride = try container.decodeIfPresent(String.self, forKey: .systemPromptOverride) ?? defaults.systemPromptOverride
     }
 }
 
@@ -388,6 +493,7 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
     var sourceRepository: String?
     var sourceURL: String?
     var architecture: String?
+    var nativeContextLength: Int?
     var modalities: [LocalModelModality]
     var projectorStorageFileName: String?
     var sha256: String?
@@ -410,6 +516,7 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
         sourceRepository: String? = nil,
         sourceURL: String? = nil,
         architecture: String? = nil,
+        nativeContextLength: Int? = nil,
         modalities: [LocalModelModality] = [.text],
         projectorStorageFileName: String? = nil,
         sha256: String? = nil,
@@ -431,6 +538,7 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
         self.sourceRepository = sourceRepository
         self.sourceURL = sourceURL
         self.architecture = architecture
+        self.nativeContextLength = nativeContextLength
         self.modalities = modalities.isEmpty ? [.text] : modalities
         self.projectorStorageFileName = projectorStorageFileName
         self.sha256 = sha256
@@ -443,7 +551,7 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, fileName, storageFileName, fileSizeBytes, parameterHint, quantizationHint, importedAt, safety, recommendation
-        case sourceRepository, sourceURL, architecture, modalities, projectorStorageFileName, sha256, downloadedAt, validationStatus
+        case sourceRepository, sourceURL, architecture, nativeContextLength, modalities, projectorStorageFileName, sha256, downloadedAt, validationStatus
         case codexEvalScore, codexEvalSummary, codexEvalDate
     }
 
@@ -461,6 +569,7 @@ struct LocalModelRecord: Codable, Identifiable, Equatable {
         sourceRepository = try container.decodeIfPresent(String.self, forKey: .sourceRepository)
         sourceURL = try container.decodeIfPresent(String.self, forKey: .sourceURL)
         architecture = try container.decodeIfPresent(String.self, forKey: .architecture)
+        nativeContextLength = try container.decodeIfPresent(Int.self, forKey: .nativeContextLength)
         modalities = try container.decodeIfPresent([LocalModelModality].self, forKey: .modalities) ?? [.text]
         projectorStorageFileName = try container.decodeIfPresent(String.self, forKey: .projectorStorageFileName)
         sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)

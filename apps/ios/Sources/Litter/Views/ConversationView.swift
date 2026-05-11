@@ -1487,6 +1487,9 @@ private struct ConversationInputBar: View {
             onLoadSkills: { forceReload, showErrors in
                 await loadSkills(forceReload: forceReload, showErrors: showErrors)
             },
+            onSetSkillEnabled: { skill, enabled in
+                await setSkill(skill, enabled: enabled)
+            },
             onRenameThread: renameThread
         ) {
             composerSurface
@@ -2210,9 +2213,11 @@ private struct ConversationInputBar: View {
 
     private func loadSkills(forceReload: Bool = false, showErrors: Bool) async {
         guard appModel.snapshot?.servers.first(where: { $0.serverId == snapshot.threadKey.serverId })?.canUseTransportActions == true else {
-            skills = []
-            mentionSkillPathsByName = [:]
-            if showErrors {
+            let loadedSkills = InstalledSkillCatalog.merge(serverSkills: [])
+            skills = loadedSkills
+            let validPaths = Set(loadedSkills.map { $0.path.value })
+            mentionSkillPathsByName = mentionSkillPathsByName.filter { _, path in validPaths.contains(path) }
+            if showErrors && loadedSkills.isEmpty {
                 slashErrorMessage = "Not connected to a server"
             }
             return
@@ -2227,14 +2232,31 @@ private struct ConversationInputBar: View {
                     forceReload: forceReload
                 )
             )
-            let loadedSkills = fetchedSkills.sorted { $0.name.lowercased() < $1.name.lowercased() }
+            let loadedSkills = InstalledSkillCatalog.merge(serverSkills: fetchedSkills)
             skills = loadedSkills
             let validPaths = Set(loadedSkills.map { $0.path.value })
             mentionSkillPathsByName = mentionSkillPathsByName.filter { _, path in validPaths.contains(path) }
         } catch {
-            if showErrors {
+            let loadedSkills = InstalledSkillCatalog.merge(serverSkills: [])
+            if !loadedSkills.isEmpty {
+                skills = loadedSkills
+                let validPaths = Set(loadedSkills.map { $0.path.value })
+                mentionSkillPathsByName = mentionSkillPathsByName.filter { _, path in validPaths.contains(path) }
+            } else if showErrors {
                 slashErrorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func setSkill(_ skill: SkillMetadata, enabled: Bool) async {
+        do {
+            try InstalledSkillCatalog.setEnabled(skill, enabled: enabled)
+            if let index = skills.firstIndex(where: { $0.path.value == skill.path.value }) {
+                skills[index] = InstalledSkillCatalog.withEnabled(skill, enabled: enabled)
+            }
+            await loadSkills(forceReload: true, showErrors: false)
+        } catch {
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -2333,9 +2355,10 @@ private struct ConversationInputBar: View {
     }
 
     private func filterSkillSuggestions(_ query: String) -> [SkillMetadata] {
-        guard !skills.isEmpty else { return [] }
-        guard !query.isEmpty else { return skills.sorted { lhs, rhs in lhs.name.lowercased() < rhs.name.lowercased() } }
-        return skills
+        let enabledSkills = skills.filter(\.enabled)
+        guard !enabledSkills.isEmpty else { return [] }
+        guard !query.isEmpty else { return enabledSkills.sorted { lhs, rhs in lhs.name.lowercased() < rhs.name.lowercased() } }
+        return enabledSkills
             .compactMap { skill -> (SkillMetadata, Int)? in
                 let scoreFromName = fuzzyScore(candidate: skill.name, query: query)
                 let scoreFromDescription = fuzzyScore(candidate: skill.description, query: query)
@@ -2367,12 +2390,13 @@ private struct ConversationInputBar: View {
     }
 
     private func collectSkillMentionsForSubmission(_ text: String) -> [SkillMentionSelection] {
-        guard !skills.isEmpty else { return [] }
+        let enabledSkills = skills.filter(\.enabled)
+        guard !enabledSkills.isEmpty else { return [] }
         let mentionNames = extractMentionNames(text)
         guard !mentionNames.isEmpty else { return [] }
 
-        let skillsByName = Dictionary(grouping: skills, by: { $0.name.lowercased() })
-        let skillsByPath = Dictionary(grouping: skills, by: \.path.value)
+        let skillsByName = Dictionary(grouping: enabledSkills, by: { $0.name.lowercased() })
+        let skillsByPath = Dictionary(grouping: enabledSkills, by: \.path.value)
         var seenPaths = Set<String>()
         var resolved: [SkillMentionSelection] = []
 

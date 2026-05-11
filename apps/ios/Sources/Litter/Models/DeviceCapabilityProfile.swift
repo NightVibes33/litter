@@ -153,11 +153,12 @@ struct DeviceCapabilityProfile: Codable, Equatable {
     }
 
     static func parameterHint(from fileName: String) -> Double? {
-        let patterns = ["1b", "2b", "3b", "4b", "7b", "8b", "9b", "12b", "14b", "27b", "70b"]
-        for pattern in patterns where fileName.contains(pattern) {
-            return Double(pattern.dropLast())
-        }
-        return nil
+        let pattern = "(^|[^a-z0-9])([0-9]+(?:\\.[0-9]+)?)b([^a-z0-9]|$)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
+        let nsString = fileName as NSString
+        let range = NSRange(location: 0, length: nsString.length)
+        guard let match = regex.firstMatch(in: fileName, range: range), match.numberOfRanges > 2 else { return nil }
+        return Double(nsString.substring(with: match.range(at: 2)))
     }
 
     static func quantizationHint(from fileName: String) -> String? {

@@ -137,7 +137,7 @@ struct AIProviderSettingsView: View {
             Text("Model Settings")
                 .foregroundColor(LitterTheme.textSecondary)
         } footer: {
-            Text("TurboQuant is only enabled when the linked llama.cpp runtime reports support. Standard builds keep it unavailable instead of showing a fake switch.")
+            Text("TurboQuant is only enabled when the linked llama.cpp runtime reports support. Standard builds keep it unavailable instead of showing a nonfunctional switch.")
         }
     }
 
@@ -237,7 +237,7 @@ struct AIProviderSettingsView: View {
                                 .litterFont(.caption)
                                 .foregroundColor(color(for: model.safety))
                         }
-                        Text("\(model.displaySize)\(model.quantizationHint.map { " · \($0)" } ?? "") · \(model.validationStatus.displayName)")
+                        Text(localModelSubtitle(model))
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                         Text(model.recommendation)
@@ -266,7 +266,7 @@ struct AIProviderSettingsView: View {
 
     private var notesSection: some View {
         Section {
-            Text("PC-hosted Ollama or LM Studio is the best path for powerful models. On-device models now have guarded fakefs tools, approval requests for shell/write actions, retry events, streaming tool-call state, and device-derived context defaults. Full Codex parity still requires the native llama.cpp token generator bridge to be connected.")
+            Text("PC-hosted Ollama or LM Studio is still best for the largest models. On-device models use the native llama.cpp bridge when linked, guarded fakefs tools, approval requests for shell/write actions, retry events, streaming tool-call state, and user-controlled runtime settings.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -333,6 +333,14 @@ struct AIProviderSettingsView: View {
         case .openAICompatible: return "desktopcomputer"
         case .localGGUF: return "iphone.gen3"
         }
+    }
+
+    private func localModelSubtitle(_ model: LocalModelRecord) -> String {
+        var parts = [model.displaySize]
+        if let quantizationHint = model.quantizationHint { parts.append(quantizationHint) }
+        if let nativeContextLength = model.nativeContextLength { parts.append("\(nativeContextLength) ctx") }
+        parts.append(model.validationStatus.displayName)
+        return parts.joined(separator: " · ")
     }
 
     private func color(for safety: LocalModelSafety) -> Color {
@@ -512,69 +520,20 @@ private struct AIProviderDetailView: View {
 }
 
 
-private struct LocalModelRuntimeSettingsView: View {
+struct LocalModelRuntimeSettingsView: View {
     @StateObject private var providerStore = AIProviderStore.shared
     let model: LocalModelRecord
     @State private var capability = DeviceCapabilityProfile.current()
 
     var body: some View {
         Form {
-            Section {
-                Stepper("Context: \(settings.contextTokens) tokens", value: intBinding(\.contextTokens), in: 512...16_384, step: 512)
-                Stepper("Max output: \(settings.maxOutputTokens) tokens", value: intBinding(\.maxOutputTokens), in: 64...4_096, step: 64)
-                Stepper("Tool rounds: \(settings.maxToolRounds)", value: intBinding(\.maxToolRounds), in: 0...12)
-                Picker("Tool Use", selection: toolModeBinding) {
-                    ForEach(LocalModelToolUseMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-            } header: {
-                Text("Agent Behavior")
-            }
-
-            Section {
-                SliderRow(title: "Temperature", value: doubleBinding(\.temperature), range: 0...2)
-                SliderRow(title: "Top P", value: doubleBinding(\.topP), range: 0.05...1)
-                Stepper("Top K: \(settings.topK)", value: intBinding(\.topK), in: 1...200)
-                SliderRow(title: "Repeat penalty", value: doubleBinding(\.repeatPenalty), range: 0.8...1.5)
-            } header: {
-                Text("Sampling")
-            }
-
-            Section {
-                Toggle("Use Metal GPU", isOn: boolBinding(\.metalEnabled))
-                    .disabled(!capability.hasMetal)
-                Toggle("Allow CPU fallback", isOn: boolBinding(\.cpuFallbackAllowed))
-                Toggle("Stream tokens", isOn: boolBinding(\.streamingEnabled))
-                Stepper("Threads: \(settings.preferredThreadCount)", value: intBinding(\.preferredThreadCount), in: 1...max(1, ProcessInfo.processInfo.processorCount))
-                Picker("KV Cache", selection: kvCacheBinding) {
-                    ForEach(LocalModelKVCacheMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .disabled(!providerStore.turboQuantAvailability.isAvailable && settings.kvCacheMode.requiresTurboQuant)
-                Text(providerStore.turboQuantAvailability.summary)
-                    .litterFont(.caption)
-                    .foregroundColor(providerStore.turboQuantAvailability.isAvailable ? LitterTheme.success : LitterTheme.warning)
-            } header: {
-                Text("Runtime")
-            }
-
-            Section {
-                TextEditor(text: stringBinding(\.systemPromptOverride))
-                    .frame(minHeight: 90)
-                    .font(.system(.caption, design: .monospaced))
-                Text("Optional. Leave empty to use the Gemma/Qwen/Llama-aware prompt template.")
-                    .litterFont(.caption)
-                    .foregroundColor(LitterTheme.textMuted)
-            } header: {
-                Text("System Prompt Override")
-            }
-
-            Section {
-                Button("Reset This Model") { providerStore.resetRuntimeSettings(for: model) }
-                    .foregroundColor(LitterTheme.warning)
-            }
+            summarySection
+            presetsSection
+            agentSection
+            samplingSection
+            runtimeSection
+            promptSection
+            resetSection
         }
         .navigationTitle("Model Runtime")
         .navigationBarTitleDisplayMode(.inline)
@@ -584,8 +543,206 @@ private struct LocalModelRuntimeSettingsView: View {
         }
     }
 
+    private var summarySection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(model.fileName)
+                    .litterFont(.subheadline, weight: .semibold)
+                    .foregroundColor(LitterTheme.textPrimary)
+                    .lineLimit(2)
+                Text("Saved exactly as user preferences. Device detection only warns; it does not downgrade your context length.")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textSecondary)
+                Text("Recommended context for this device: \(recommendedContextLabel)")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textMuted)
+                if let warning = settings.warningSummary {
+                    Label(warning, systemImage: "exclamationmark.triangle.fill")
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.warning)
+                }
+            }
+        } header: {
+            Text("Preference Model")
+        }
+    }
+
+    private var presetsSection: some View {
+        Section {
+            Button("Safe") { applyPreset(.safe) }
+            Button("Balanced") { applyPreset(.balanced) }
+            Button("Coding Agent") { applyPreset(.codingAgent) }
+            Button("Experimental Max Context") { applyPreset(.experimentalMaxContext) }
+                .foregroundColor(LitterTheme.warning)
+        } header: {
+            Text("Presets")
+        } footer: {
+            Text("Presets are shortcuts only. You can override every value afterward.")
+        }
+    }
+
+    private var agentSection: some View {
+        Section {
+            Stepper("Context: \(settings.contextTokens) tokens", value: intBinding(\.contextTokens), in: 512...131_072, step: 512)
+            Stepper("Max output: \(settings.maxOutputTokens) tokens", value: intBinding(\.maxOutputTokens), in: 64...16_384, step: 64)
+            Stepper("Tool rounds: \(settings.maxToolRounds)", value: intBinding(\.maxToolRounds), in: 0...20)
+            Stepper("Retry attempts: \(settings.retryAttempts)", value: intBinding(\.retryAttempts), in: 1...5)
+            Picker("Tool Use", selection: toolModeBinding) {
+                ForEach(LocalModelToolUseMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+        } header: {
+            Text("Agent Behavior")
+        }
+    }
+
+    private var samplingSection: some View {
+        Section {
+            SliderRow(title: "Temperature", value: doubleBinding(\.temperature), range: 0...2)
+            SliderRow(title: "Top P", value: doubleBinding(\.topP), range: 0.05...1)
+            Stepper("Top K: \(settings.topK)", value: intBinding(\.topK), in: 1...200)
+            Stepper("Repeat window: \(settings.repeatLastN)", value: intBinding(\.repeatLastN), in: 0...4_096, step: 32)
+            SliderRow(title: "Repeat penalty", value: doubleBinding(\.repeatPenalty), range: 0.8...1.5)
+            SliderRow(title: "Frequency penalty", value: doubleBinding(\.frequencyPenalty), range: -2...2)
+            SliderRow(title: "Presence penalty", value: doubleBinding(\.presencePenalty), range: -2...2)
+            Stepper(seedLabel, value: intBinding(\.seed), in: -1...999_999)
+        } header: {
+            Text("Sampling")
+        } footer: {
+            Text("Seed -1 uses the runtime default random seed. Frequency and presence penalties are wired into llama.cpp generation.")
+        }
+    }
+
+    private var runtimeSection: some View {
+        Section {
+            Toggle("Use Metal GPU", isOn: boolBinding(\.metalEnabled))
+                .disabled(!capability.hasMetal)
+            Toggle("Allow CPU fallback", isOn: boolBinding(\.cpuFallbackAllowed))
+            Toggle("Stream tokens", isOn: boolBinding(\.streamingEnabled))
+            Stepper("Threads: \(settings.preferredThreadCount)", value: intBinding(\.preferredThreadCount), in: 1...max(1, ProcessInfo.processInfo.processorCount))
+            Stepper("Batch: \(settings.batchSize)", value: intBinding(\.batchSize), in: 32...4_096, step: 32)
+            Stepper("Microbatch: \(settings.microBatchSize)", value: intBinding(\.microBatchSize), in: 32...min(settings.batchSize, 2_048), step: 32)
+            Picker("KV Cache", selection: kvCacheBinding) {
+                ForEach(LocalModelKVCacheMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .disabled(!providerStore.turboQuantAvailability.isAvailable && settings.kvCacheMode.requiresTurboQuant)
+            Text(providerStore.turboQuantAvailability.summary)
+                .litterFont(.caption)
+                .foregroundColor(providerStore.turboQuantAvailability.isAvailable ? LitterTheme.success : LitterTheme.warning)
+        } header: {
+            Text("Runtime")
+        } footer: {
+            Text("Batch, microbatch, seed, penalties, thread count, Metal, CPU fallback, and KV cache are passed into the native llama.cpp bridge.")
+        }
+    }
+
+    private var promptSection: some View {
+        Section {
+            TextEditor(text: stringBinding(\.systemPromptOverride))
+                .frame(minHeight: 110)
+                .font(.system(.caption, design: .monospaced))
+            Text("Optional. Leave empty to use the model-aware local-agent prompt template.")
+                .litterFont(.caption)
+                .foregroundColor(LitterTheme.textMuted)
+        } header: {
+            Text("System Prompt Override")
+        }
+    }
+
+    private var resetSection: some View {
+        Section {
+            Button("Reset This Model") { providerStore.resetRuntimeSettings(for: model) }
+                .foregroundColor(LitterTheme.warning)
+        }
+    }
+
     private var settings: LocalModelRuntimeSettings {
         providerStore.runtimeSettings(for: model, capability: capability)
+    }
+
+    private var recommendedContextLabel: String {
+        capability.recommendedContextTokens == 0 ? "PC-hosted" : "\(capability.recommendedContextTokens) tokens"
+    }
+
+    private var seedLabel: String {
+        settings.seed < 0 ? "Seed: Random" : "Seed: \(settings.seed)"
+    }
+
+    private func applyPreset(_ preset: RuntimePreset) {
+        providerStore.updateRuntimeSettings(for: model, capability: capability) { next in
+            switch preset {
+            case .safe:
+                next.contextTokens = 2_048
+                next.maxOutputTokens = 512
+                next.temperature = 0.2
+                next.topP = 0.9
+                next.topK = 40
+                next.repeatLastN = 64
+                next.repeatPenalty = 1.08
+                next.frequencyPenalty = 0
+                next.presencePenalty = 0
+                next.preferredThreadCount = max(1, min(4, ProcessInfo.processInfo.processorCount))
+                next.batchSize = 512
+                next.microBatchSize = 256
+                next.maxToolRounds = 3
+                next.retryAttempts = 2
+                next.toolUseMode = .approvalRequired
+            case .balanced:
+                next.contextTokens = max(4_096, capability.recommendedContextTokens)
+                next.maxOutputTokens = 1_024
+                next.temperature = 0.2
+                next.topP = 0.9
+                next.topK = 40
+                next.repeatLastN = 64
+                next.repeatPenalty = 1.08
+                next.frequencyPenalty = 0
+                next.presencePenalty = 0
+                next.preferredThreadCount = max(2, min(6, ProcessInfo.processInfo.processorCount))
+                next.batchSize = 1_024
+                next.microBatchSize = 512
+                next.maxToolRounds = 5
+                next.retryAttempts = 2
+                next.toolUseMode = .approvalRequired
+            case .codingAgent:
+                next.contextTokens = max(8_192, capability.recommendedContextTokens)
+                next.maxOutputTokens = 2_048
+                next.temperature = 0.15
+                next.topP = 0.92
+                next.topK = 50
+                next.repeatLastN = 128
+                next.repeatPenalty = 1.1
+                next.frequencyPenalty = 0
+                next.presencePenalty = 0
+                next.preferredThreadCount = max(2, min(6, ProcessInfo.processInfo.processorCount))
+                next.batchSize = 1_024
+                next.microBatchSize = 512
+                next.maxToolRounds = 8
+                next.retryAttempts = 3
+                next.toolUseMode = .approvalRequired
+            case .experimentalMaxContext:
+                next.contextTokens = 32_768
+                next.maxOutputTokens = 4_096
+                next.temperature = 0.15
+                next.topP = 0.95
+                next.topK = 64
+                next.repeatLastN = 256
+                next.repeatPenalty = 1.08
+                next.frequencyPenalty = 0
+                next.presencePenalty = 0
+                next.preferredThreadCount = max(1, ProcessInfo.processInfo.processorCount)
+                next.batchSize = 2_048
+                next.microBatchSize = 1_024
+                next.maxToolRounds = 12
+                next.retryAttempts = 3
+                next.toolUseMode = .approvalRequired
+            }
+            next.metalEnabled = capability.hasMetal
+            next.cpuFallbackAllowed = false
+            next.streamingEnabled = true
+        }
     }
 
     private func intBinding(_ keyPath: WritableKeyPath<LocalModelRuntimeSettings, Int>) -> Binding<Int> {
@@ -628,6 +785,13 @@ private struct LocalModelRuntimeSettingsView: View {
             get: { settings.kvCacheMode },
             set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0.kvCacheMode = value } }
         )
+    }
+
+    private enum RuntimePreset {
+        case safe
+        case balanced
+        case codingAgent
+        case experimentalMaxContext
     }
 }
 
