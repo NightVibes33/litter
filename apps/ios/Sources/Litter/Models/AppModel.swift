@@ -2015,7 +2015,14 @@ final class AppModel {
         context: String
     ) -> [LocalLlamaMessage] {
         var messages: [LocalLlamaMessage] = [
-            LocalLlamaMessage(role: .system, text: LocalModelPromptTemplate.systemPrompt(for: model, context: context))
+            LocalLlamaMessage(
+                role: .system,
+                text: LocalModelPromptTemplate.systemPrompt(
+                    for: model,
+                    context: context,
+                    skills: InstalledSkillCatalog.localModelSkillContext()
+                )
+            )
         ]
         for item in (threadSnapshot(for: key)?.hydratedConversationItems ?? []).suffix(18) {
             if item.sourceTurnId == excludingTurnId { continue }

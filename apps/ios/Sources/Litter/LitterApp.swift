@@ -1303,6 +1303,29 @@ private struct HomeNavigationView: View {
         navigationPath.append(.newThread)
     }
 
+    /// Opens the real local iSH file workspace from the dashboard toolbar.
+    /// Keep this route single-instance; duplicate pushes can render as a
+    /// blank nested navigation surface on compact devices.
+    private func openFilesWorkspace() {
+        appState.showModelSelector = false
+        appState.showSettings = false
+        showProjectPicker = false
+        directoryPickerSheet = nil
+
+        if navigationPath.contains(where: { route in
+            if case .filesWorkspace = route { return true }
+            return false
+        }) {
+            while let last = navigationPath.last {
+                if case .filesWorkspace = last { break }
+                navigationPath.removeLast()
+            }
+            return
+        }
+
+        navigationPath.append(.filesWorkspace)
+    }
+
     /// Swap the hero composer out for the freshly-created conversation in
     /// a single animation frame so the composer's apparent position is
     /// preserved by the glass morph.
@@ -1342,7 +1365,7 @@ private struct HomeNavigationView: View {
             onThreadCreated: { key in homeDashboardModel.pinThread(key) },
             onShowSettings: { appState.showSettings = true },
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
-            onShowFiles: { navigationPath.append(.filesWorkspace) },
+            onShowFiles: openFilesWorkspace,
             onPinThread: pinThread,
             onUnpinThread: unpinThread,
             onHideThread: hideThread,
@@ -1384,7 +1407,7 @@ private struct HomeNavigationView: View {
             onThreadCreated: { key in homeDashboardModel.pinThread(key) },
             onShowSettings: { appState.showSettings = true },
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
-            onShowFiles: { navigationPath.append(.filesWorkspace) },
+            onShowFiles: openFilesWorkspace,
             onPinThread: pinThread,
             onUnpinThread: unpinThread,
             onHideThread: hideThread,

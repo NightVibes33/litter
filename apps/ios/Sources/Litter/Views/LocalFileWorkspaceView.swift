@@ -16,77 +16,75 @@ struct LocalFileWorkspaceView: View {
     @State private var imagePreview: LocalImagePreview?
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
-                VStack(spacing: 0) {
-                    pathBar
-                    Divider().overlay(LitterTheme.surfaceLight.opacity(0.4))
-                    content
+        ZStack {
+            LitterTheme.backgroundGradient.ignoresSafeArea()
+            VStack(spacing: 0) {
+                pathBar
+                Divider().overlay(LitterTheme.surfaceLight.opacity(0.4))
+                content
+            }
+        }
+        .navigationTitle("Files")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showImporter = true } label: { Image(systemName: "square.and.arrow.down") }
+                    .accessibilityLabel("Import file")
+                Menu {
+                    Button("New File", systemImage: "doc.badge.plus") { draftName = ""; showNewFile = true }
+                    Button("New Folder", systemImage: "folder.badge.plus") { draftName = ""; showNewFolder = true }
+                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.reload() } }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(LitterTheme.accent)
                 }
             }
-            .navigationTitle("Files")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showImporter = true } label: { Image(systemName: "square.and.arrow.down") }
-                        .accessibilityLabel("Import file")
-                    Menu {
-                        Button("New File", systemImage: "doc.badge.plus") { draftName = ""; showNewFile = true }
-                        Button("New Folder", systemImage: "folder.badge.plus") { draftName = ""; showNewFolder = true }
-                        Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.reload() } }
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .foregroundStyle(LitterTheme.accent)
-                    }
-                }
+        }
+        .task { await model.loadInitial() }
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { result in
+            Task { await handleImport(result) }
+        }
+        .alert("New File", isPresented: $showNewFile) {
+            TextField("filename.swift", text: $draftName)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) { draftName = "" }
+            Button("Create") { Task { await create(kind: .file) } }
+        } message: {
+            Text("Create a text file in the current iSH directory.")
+        }
+        .alert("New Folder", isPresented: $showNewFolder) {
+            TextField("folder-name", text: $draftName)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) { draftName = "" }
+            Button("Create") { Task { await create(kind: .directory) } }
+        }
+        .alert("Rename", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
+            TextField("Name", text: $renameText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+            Button("Save") { Task { await renameSelected() } }
+        }
+        .alert("Delete Item", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+            Button("Delete", role: .destructive) { Task { await deleteSelected() } }
+        } message: {
+            Text("This removes \(deleteTarget?.name ?? "this item") from the iSH filesystem.")
+        }
+        .alert("Files", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
+            Button("OK", role: .cancel) { alertMessage = nil }
+        } message: {
+            Text(alertMessage ?? "")
+        }
+        .sheet(item: $model.openFile) { file in
+            LocalTextFileEditorView(file: file) { saved in
+                if saved { Task { await model.reload() } }
             }
-            .task { await model.loadInitial() }
-            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { result in
-                Task { await handleImport(result) }
-            }
-            .alert("New File", isPresented: $showNewFile) {
-                TextField("filename.swift", text: $draftName)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Cancel", role: .cancel) { draftName = "" }
-                Button("Create") { Task { await create(kind: .file) } }
-            } message: {
-                Text("Create a text file in the current iSH directory.")
-            }
-            .alert("New Folder", isPresented: $showNewFolder) {
-                TextField("folder-name", text: $draftName)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Cancel", role: .cancel) { draftName = "" }
-                Button("Create") { Task { await create(kind: .directory) } }
-            }
-            .alert("Rename", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
-                TextField("Name", text: $renameText)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Cancel", role: .cancel) { renameTarget = nil }
-                Button("Save") { Task { await renameSelected() } }
-            }
-            .alert("Delete Item", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
-                Button("Cancel", role: .cancel) { deleteTarget = nil }
-                Button("Delete", role: .destructive) { Task { await deleteSelected() } }
-            } message: {
-                Text("This removes \(deleteTarget?.name ?? "this item") from the iSH filesystem.")
-            }
-            .alert("Files", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
-                Button("OK", role: .cancel) { alertMessage = nil }
-            } message: {
-                Text(alertMessage ?? "")
-            }
-            .sheet(item: $model.openFile) { file in
-                LocalTextFileEditorView(file: file) { saved in
-                    if saved { Task { await model.reload() } }
-                }
-            }
-            .sheet(item: $imagePreview) { preview in
-                LocalImageFilePreview(preview: preview)
-            }
+        }
+        .sheet(item: $imagePreview) { preview in
+            LocalImageFilePreview(preview: preview)
         }
     }
 
