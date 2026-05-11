@@ -49,7 +49,7 @@ on:
         default: true
         type: boolean
       force_rebuild:
-        description: "Ignore reusable release/cache assets and rebuild the compiler pack"
+        description: "Force the multi-hour Swift/LLVM compiler rebuild when no reusable asset/cache is available"
         required: true
         default: false
         type: boolean
@@ -165,9 +165,18 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Stop before multi-hour source rebuild
+        if: steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true' && inputs.force_rebuild != true
+        run: |
+          set -euo pipefail
+          echo "error: no verified private BuildKit release asset or cache is available." >&2
+          echo "Refusing to start the multi-hour Swift/LLVM source rebuild by default." >&2
+          echo "Run this workflow with force_rebuild=true only when you intentionally want to rebuild compiler assets." >&2
+          exit 1
+
       - name: Build private BuildKit assets
         id: build_assets
-        if: steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true'
+        if: steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true' && inputs.force_rebuild == true
         run: |
           set -euo pipefail
           time tools/scripts/build-nyxian-buildkit-assets.sh

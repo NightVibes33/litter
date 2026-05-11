@@ -25,6 +25,7 @@ BINARY_NAME="LitterBuildKitNative"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 MDK_HEADER_ROOT="$TMP_DIR/MobileDevelopmentKit"
+CORECOMPILER_HEADER_ROOT="$TMP_DIR/CoreCompiler"
 
 SOURCES=("$SRC_DIR/LitterBuildKitNative.mm")
 CFLAGS=(
@@ -45,8 +46,9 @@ if [[ "$MODE" = "inprocess" ]]; then
     echo "error: LITTER_BUILDKIT_NATIVE_MODE=inprocess requires CORECOMPILER_FRAMEWORK=/path/CoreCompiler.framework" >&2
     exit 1
   fi
-  mkdir -p "$MDK_HEADER_ROOT"
+  mkdir -p "$MDK_HEADER_ROOT" "$CORECOMPILER_HEADER_ROOT"
   find "$NYXIAN_ROOT/MobileDevelopmentKit" -type f -name '*.h' -exec cp {} "$MDK_HEADER_ROOT/" \;
+  find "$NYXIAN_ROOT/CoreCompiler" -type f -name '*.h' -exec cp {} "$CORECOMPILER_HEADER_ROOT/" \;
   CFLAGS+=(
     -DLBN_ENABLE_INPROCESS=1
     -F"$(dirname "$CORECOMPILER_FRAMEWORK")"

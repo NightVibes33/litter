@@ -36,4 +36,6 @@ Current runner asset workflow:
 - Litter now reads the installed BuildKit manifest SDK path at runtime instead of assuming `SDK/iPhoneOS26.4.sdk`, so runner-produced SDK folders are accepted when the manifest verifies.
 - BuildKit native wrapper packaging now stages flattened `MobileDevelopmentKit` public headers before compiling the in-process bridge, matching Xcode framework import layout for `<MobileDevelopmentKit/*.h>`.
 - BuildKit asset CI now checks for a verified private release before rebuilding Swift/LLVM, restores both finished and partial compiler caches, and saves partial outputs after failed long builds so retries do not restart from zero.
+- BuildKit source rebuilds are now opt-in with `force_rebuild=true`; normal runs fail fast if no reusable private release/cache exists instead of spending hours compiling Swift/LLVM by default.
+- The native wrapper now also stages flattened `CoreCompiler` headers, fixing the final packaging failure from run `25644535373` after CoreCompiler itself succeeded.
 - Unsigned IPA CI now installs only Xcodegen up front; CMake/Ninja install only when the llama.cpp XCFramework cache is missing.
