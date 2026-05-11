@@ -88,6 +88,8 @@ If the runner's installed Xcode exposes an iPhoneOS SDK other than 26.4, the ass
 
 The BuildKit native-wrapper script also stages Nyxian `MobileDevelopmentKit` public headers into a temporary framework-style include map before compiling the in-process bridge, which keeps runner builds aligned with Xcode's `<MobileDevelopmentKit/*.h>` imports.
 
+To keep CI practical, BuildKit asset runs first try to reuse a verified private release asset, then restore a finished or partial compiler cache, and only then rebuild Swift/LLVM. Failed long compiler builds save partial outputs for the next retry. Normal unsigned IPA builds install heavyweight llama.cpp build dependencies only when the prebuilt llama XCFramework cache is missing.
+
 ## iOS Local Runtime Notes
 
 On iOS, local terminal commands run inside an embedded iSH Alpine Linux fakefs. The default local home is `/root`, app-created files can be bridged through `/mnt/apps`, and Codex settings live at `/root/.codex`. Litter bridges `/root/.codex` to the app's native Codex home, so custom skills installed from the local terminal under `$CODEX_HOME/skills` are stored where the app runtime can read them. Restart or reload Codex after adding a new skill if it does not appear immediately.

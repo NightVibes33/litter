@@ -91,17 +91,12 @@ jobs:
         with:
           path: |
             ~/Library/Caches/Homebrew
-          key: homebrew-ios-${{ runner.os }}-xcodegen-meson-ninja-llvm-lld-cmake-v1
+          key: homebrew-ios-${{ runner.os }}-xcodegen-cmake-ninja-v2
 
-      - name: Install build dependencies
+      - name: Install Xcode project dependency
         run: |
           set -euo pipefail
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
-          brew list meson >/dev/null 2>&1 || brew install meson
-          brew list ninja >/dev/null 2>&1 || brew install ninja
-          brew list llvm >/dev/null 2>&1 || brew install llvm
-          brew list lld >/dev/null 2>&1 || brew install lld
-          brew list cmake >/dev/null 2>&1 || brew install cmake
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -171,6 +166,13 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "No valid cached llama.cpp XCFramework found."
           fi
+
+      - name: Install llama.cpp build dependencies
+        if: steps.llama_prebuilt.outputs.available != 'true'
+        run: |
+          set -euo pipefail
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list ninja >/dev/null 2>&1 || brew install ninja
 
       - name: Ensure Swift UniFFI binding
         run: |

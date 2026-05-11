@@ -35,3 +35,5 @@ Current runner asset workflow:
 - `.github/workflows/buildkit-assets.yml` can build the private BuildKit asset ZIP on GitHub-hosted `macos-26`, verify it, optionally upload a 1-day debug artifact, and upload the release ZIP/SHA to the private asset repo when `LITTER_BUILDKIT_ASSET_TOKEN` is configured.
 - Litter now reads the installed BuildKit manifest SDK path at runtime instead of assuming `SDK/iPhoneOS26.4.sdk`, so runner-produced SDK folders are accepted when the manifest verifies.
 - BuildKit native wrapper packaging now stages flattened `MobileDevelopmentKit` public headers before compiling the in-process bridge, matching Xcode framework import layout for `<MobileDevelopmentKit/*.h>`.
+- BuildKit asset CI now checks for a verified private release before rebuilding Swift/LLVM, restores both finished and partial compiler caches, and saves partial outputs after failed long builds so retries do not restart from zero.
+- Unsigned IPA CI now installs only Xcodegen up front; CMake/Ninja install only when the llama.cpp XCFramework cache is missing.

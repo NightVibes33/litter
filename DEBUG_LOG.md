@@ -32,3 +32,4 @@
 
 - Added GitHub-runner BuildKit asset workflow for building CoreCompiler/support libs/native driver/SDK asset packs and uploading the verified ZIP to a private release. Updated runtime SDK detection to use the installed asset manifest path.
 - Fixed the BuildKit asset runner failure from run `25640088438`: `LitterBuildKitNative.framework` now stages flattened `MobileDevelopmentKit` headers before compiling the in-process Nyxian bridge.
+- Optimized BuildKit/IPA CI dependency flow: private release reuse, partial BuildKit compiler cache saving, and deferred llama.cpp build dependencies.

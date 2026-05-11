@@ -43,6 +43,16 @@ on:
         required: true
         default: true
         type: boolean
+      use_existing_private_release:
+        description: "Reuse an existing verified private release asset before rebuilding Swift/LLVM"
+        required: true
+        default: true
+        type: boolean
+      force_rebuild:
+        description: "Ignore reusable release/cache assets and rebuild the compiler pack"
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -62,6 +72,7 @@ jobs:
       LITTER_BUILDKIT_ASSET_TAG: ${{ inputs.asset_tag }}
       LITTER_BUILDKIT_ASSET_RELEASE_NAME: Litter BuildKit Assets ${{ inputs.asset_tag }}
       LITTER_BUILDKIT_ASSET_NAME: LitterBuildKitAssets-${{ github.run_id }}-${{ github.run_attempt }}.zip
+      LITTER_BUILDKIT_ASSET_PREFIX: LitterBuildKitAssets
       LITTER_BUILDKIT_ASSET_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
 
     steps:
@@ -95,15 +106,31 @@ jobs:
           set -euo pipefail
           tools/scripts/verify-nyxian-source-import.sh
 
+      - name: Reuse existing private BuildKit release
+        id: existing_assets
+        if: inputs.use_existing_private_release == true && inputs.force_rebuild != true && inputs.upload_private_release == true
+        run: |
+          set -euo pipefail
+          if tools/scripts/download-buildkit-assets-release.sh; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if [ "$status" -eq 1 ]; then
+              exit "$status"
+            fi
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No verified reusable private BuildKit release asset is available."
+          fi
+
       - name: Install build dependencies
+        if: steps.existing_assets.outputs.available != 'true'
         run: |
           set -euo pipefail
           brew list cmake >/dev/null 2>&1 || brew install cmake
           brew list ninja >/dev/null 2>&1 || brew install ninja
-          brew list llvm >/dev/null 2>&1 || brew install llvm
-          brew list lld >/dev/null 2>&1 || brew install lld
 
       - name: Restore finished BuildKit asset cache
+        if: steps.existing_assets.outputs.available != 'true' && inputs.force_rebuild != true
         id: buildkit_cache
         uses: actions/cache@v4
         with:
@@ -124,9 +151,11 @@ jobs:
           key: buildkit-assets-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh') }}
           restore-keys: |
             buildkit-assets-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
+            buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
 
       - name: Check cached asset pack
         id: cached_assets
+        if: steps.existing_assets.outputs.available != 'true' && inputs.force_rebuild != true
         run: |
           set -euo pipefail
           if [ -f artifacts/buildkit/LitterBuildKitAssets.zip ]; then
@@ -137,10 +166,31 @@ jobs:
           fi
 
       - name: Build private BuildKit assets
-        if: steps.cached_assets.outputs.available != 'true'
+        id: build_assets
+        if: steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true'
         run: |
           set -euo pipefail
           time tools/scripts/build-nyxian-buildkit-assets.sh
+
+      - name: Save partial BuildKit compiler cache
+        if: always() && steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ThirdParty/LLVM-On-iOS/SwiftToolchain-iphoneos
+            ThirdParty/LLVM-On-iOS/SwiftToolchain.zip
+            ThirdParty/LLVM-On-iOS/CoreCompilerSupportLibs
+            ThirdParty/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain-iphoneos
+            ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain.zip
+            ThirdParty/Nyxian/LLVM-On-iOS/CoreCompilerSupportLibs
+            ThirdParty/Nyxian/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/Nyxian/CoreCompiler/CoreCompilerSupportLibs
+            artifacts/buildkit/DerivedData-Nyxian
+            artifacts/buildkit/LitterBuildKitNative.framework
+            artifacts/buildkit/LitterBuildKitAssets
+            artifacts/buildkit/LitterBuildKitAssets.zip
+          key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Verify private BuildKit assets
         run: |
@@ -160,7 +210,7 @@ jobs:
           retention-days: 1
 
       - name: Upload private release assets
-        if: inputs.upload_private_release == true
+        if: inputs.upload_private_release == true && steps.existing_assets.outputs.available != 'true'
         run: |
           set -euo pipefail
           if [ -z "${LITTER_BUILDKIT_ASSET_TOKEN:-}" ]; then
