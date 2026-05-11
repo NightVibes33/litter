@@ -86,6 +86,8 @@ Bots can call the dedicated BuildKit tools directly: `buildkit_status`, `nyxian_
 
 If the runner's installed Xcode exposes an iPhoneOS SDK other than 26.4, the asset manifest records that actual SDK path and Litter uses the manifest path at runtime instead of assuming a hardcoded SDK folder.
 
+The BuildKit native-wrapper script also stages Nyxian `MobileDevelopmentKit` public headers into a temporary framework-style include map before compiling the in-process bridge, which keeps runner builds aligned with Xcode's `<MobileDevelopmentKit/*.h>` imports.
+
 ## iOS Local Runtime Notes
 
 On iOS, local terminal commands run inside an embedded iSH Alpine Linux fakefs. The default local home is `/root`, app-created files can be bridged through `/mnt/apps`, and Codex settings live at `/root/.codex`. Litter bridges `/root/.codex` to the app's native Codex home, so custom skills installed from the local terminal under `$CODEX_HOME/skills` are stored where the app runtime can read them. Restart or reload Codex after adding a new skill if it does not appear immediately.

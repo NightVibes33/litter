@@ -2,10 +2,10 @@
 
 Last verified public build:
 
-- Commit: `113d0f3`
+- Commit: `ae9c4ad`
 - Workflow: `Build Unsigned iOS IPA`
-- Run: https://github.com/NightVibes33/litter/actions/runs/25633944189
-- Result: green after the private BuildKit asset downloader and ZIP installer work
+- Run: https://github.com/NightVibes33/litter/actions/runs/25643963735
+- Result: green after restoring Files workspace navigation and local-model skill prompt routing
 - Artifact mode: unsigned SideStore/AltStore IPA for re-signing
 
 Current BuildKit state:
@@ -34,3 +34,4 @@ Current runner asset workflow:
 
 - `.github/workflows/buildkit-assets.yml` can build the private BuildKit asset ZIP on GitHub-hosted `macos-26`, verify it, optionally upload a 1-day debug artifact, and upload the release ZIP/SHA to the private asset repo when `LITTER_BUILDKIT_ASSET_TOKEN` is configured.
 - Litter now reads the installed BuildKit manifest SDK path at runtime instead of assuming `SDK/iPhoneOS26.4.sdk`, so runner-produced SDK folders are accepted when the manifest verifies.
+- BuildKit native wrapper packaging now stages flattened `MobileDevelopmentKit` public headers before compiling the in-process bridge, matching Xcode framework import layout for `<MobileDevelopmentKit/*.h>`.
