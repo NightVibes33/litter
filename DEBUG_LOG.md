@@ -34,3 +34,4 @@
 - Fixed the BuildKit asset runner failure from run `25640088438`: `LitterBuildKitNative.framework` now stages flattened `MobileDevelopmentKit` headers before compiling the in-process Nyxian bridge.
 - Optimized BuildKit/IPA CI dependency flow: private release reuse, partial BuildKit compiler cache saving, and deferred llama.cpp build dependencies.
 - Fixed BuildKit run `25644535373`: after CoreCompiler built, the native wrapper failed on missing `<CoreCompiler/*.h>` headers; the wrapper now stages flattened CoreCompiler headers and BuildKit source rebuilds are opt-in to avoid 4-hour default runs.
+- Changed default BuildKit asset workflow behavior from fast failure to fast warning/no-op when no reusable asset/cache exists; forced source rebuilds still require `force_rebuild=true`.

@@ -88,7 +88,7 @@ If the runner's installed Xcode exposes an iPhoneOS SDK other than 26.4, the ass
 
 The BuildKit native-wrapper script also stages Nyxian `MobileDevelopmentKit` public headers into a temporary framework-style include map before compiling the in-process bridge, which keeps runner builds aligned with Xcode's `<MobileDevelopmentKit/*.h>` imports.
 
-To keep CI practical, BuildKit asset runs first try to reuse a verified private release asset, then restore a finished or partial compiler cache. A multi-hour Swift/LLVM source rebuild is opt-in with `force_rebuild=true`; otherwise the workflow fails fast with instructions instead of burning runner time. Failed forced compiler builds save partial outputs for the next retry. Normal unsigned IPA builds install heavyweight llama.cpp build dependencies only when the prebuilt llama XCFramework cache is missing.
+To keep CI practical, BuildKit asset runs first try to reuse a verified private release asset, then restore a finished or partial compiler cache. A multi-hour Swift/LLVM source rebuild is opt-in with `force_rebuild=true`; otherwise the workflow exits successfully with a warning instead of burning runner time. Failed forced compiler builds save partial outputs for the next retry. Normal unsigned IPA builds install heavyweight llama.cpp build dependencies only when the prebuilt llama XCFramework cache is missing.
 
 ## iOS Local Runtime Notes
 

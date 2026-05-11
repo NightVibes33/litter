@@ -165,14 +165,19 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Stop before multi-hour source rebuild
+      - name: Skip multi-hour source rebuild by default
         if: steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true' && inputs.force_rebuild != true
         run: |
           set -euo pipefail
-          echo "error: no verified private BuildKit release asset or cache is available." >&2
-          echo "Refusing to start the multi-hour Swift/LLVM source rebuild by default." >&2
-          echo "Run this workflow with force_rebuild=true only when you intentionally want to rebuild compiler assets." >&2
-          exit 1
+          echo "::warning::No verified private BuildKit release asset or cache is available."
+          echo "Skipping the multi-hour Swift/LLVM source rebuild by default."
+          echo "Run this workflow with force_rebuild=true only when you intentionally want to rebuild compiler assets."
+          {
+            echo "### BuildKit assets not rebuilt"
+            echo
+            echo "No verified private release asset or cache was available, so this default run skipped the multi-hour Swift/LLVM source rebuild."
+            echo "Run with \`force_rebuild=true\` when you intentionally want to rebuild compiler assets."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build private BuildKit assets
         id: build_assets
@@ -182,7 +187,7 @@ jobs:
           time tools/scripts/build-nyxian-buildkit-assets.sh
 
       - name: Save partial BuildKit compiler cache
-        if: always() && steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true'
+        if: always() && inputs.force_rebuild == true && steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -202,6 +207,7 @@ jobs:
           key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Verify private BuildKit assets
+        if: steps.existing_assets.outputs.available == 'true' || steps.cached_assets.outputs.available == 'true' || steps.build_assets.outcome == 'success'
         run: |
           set -euo pipefail
           tools/scripts/verify-nyxian-buildkit-assets.sh artifacts/buildkit/LitterBuildKitAssets.zip
@@ -209,7 +215,7 @@ jobs:
           du -sh artifacts/buildkit/LitterBuildKitAssets artifacts/buildkit/LitterBuildKitAssets.zip
 
       - name: Upload short-retention workflow artifact
-        if: inputs.upload_workflow_artifact == true
+        if: inputs.upload_workflow_artifact == true && (steps.existing_assets.outputs.available == 'true' || steps.cached_assets.outputs.available == 'true' || steps.build_assets.outcome == 'success')
         uses: actions/upload-artifact@v4
         with:
           name: LitterBuildKitAssets-${{ steps.toolchain.outputs.sdk_version }}
@@ -219,7 +225,7 @@ jobs:
           retention-days: 1
 
       - name: Upload private release assets
-        if: inputs.upload_private_release == true && steps.existing_assets.outputs.available != 'true'
+        if: inputs.upload_private_release == true && steps.existing_assets.outputs.available != 'true' && (steps.cached_assets.outputs.available == 'true' || steps.build_assets.outcome == 'success')
         run: |
           set -euo pipefail
           if [ -z "${LITTER_BUILDKIT_ASSET_TOKEN:-}" ]; then
@@ -229,7 +235,7 @@ jobs:
           tools/scripts/upload-buildkit-assets-release.sh | tee artifacts/buildkit/private-release-upload.txt
 
       - name: Link private assets to unsigned IPA workflow
-        if: inputs.upload_private_release == true && inputs.rebuild_unsigned_ipa == true
+        if: inputs.upload_private_release == true && inputs.rebuild_unsigned_ipa == true && (steps.existing_assets.outputs.available == 'true' || steps.cached_assets.outputs.available == 'true' || steps.build_assets.outcome == 'success')
         env:
           GH_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
         run: |
@@ -247,7 +253,7 @@ jobs:
           echo "Linked BuildKit assets and dispatched unsigned IPA rebuild."
 
       - name: Print unsigned IPA secret values
-        if: inputs.upload_private_release == true
+        if: inputs.upload_private_release == true && (steps.existing_assets.outputs.available == 'true' || steps.cached_assets.outputs.available == 'true' || steps.build_assets.outcome == 'success')
         run: |
           set -euo pipefail
           echo "Private BuildKit release upload output:"
