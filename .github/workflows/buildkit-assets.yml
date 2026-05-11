@@ -51,7 +51,7 @@ on:
       force_rebuild:
         description: "Force the multi-hour Swift/LLVM compiler rebuild when no reusable asset/cache is available"
         required: true
-        default: false
+        default: true
         type: boolean
 
 permissions:
@@ -165,20 +165,19 @@ jobs:
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Skip multi-hour source rebuild by default
+      - name: Fail when BuildKit assets are unavailable and rebuild is disabled
         if: steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true' && inputs.force_rebuild != true
         run: |
           set -euo pipefail
-          echo "::warning::No verified private BuildKit release asset or cache is available."
-          echo "Skipping the multi-hour Swift/LLVM source rebuild by default."
-          echo "Run this workflow with force_rebuild=true only when you intentionally want to rebuild compiler assets."
+          echo "::error::No verified private BuildKit release asset or cache is available, and force_rebuild=false."
+          echo "Re-run this workflow with force_rebuild=true to build the private Swift/LLVM assets."
           {
-            echo "### BuildKit assets not rebuilt"
+            echo "### BuildKit assets unavailable"
             echo
-            echo "No verified private release asset or cache was available, so this default run skipped the multi-hour Swift/LLVM source rebuild."
-            echo "Run with \`force_rebuild=true\` when you intentionally want to rebuild compiler assets."
+            echo "No verified private release asset or cache was available, and `force_rebuild=false` prevented rebuilding."
+            echo "Re-run with `force_rebuild=true` to build the private Swift/LLVM assets."
           } >> "$GITHUB_STEP_SUMMARY"
-
+          exit 1
       - name: Build private BuildKit assets
         id: build_assets
         if: steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true' && inputs.force_rebuild == true
