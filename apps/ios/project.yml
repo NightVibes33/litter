@@ -132,7 +132,7 @@ targets:
             exit 0
           fi
           mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
-          for framework in CoreCompiler.framework LitterBuildKitNative.framework; do
+          for framework in LitterBuildKitNative.framework; do
             if [ -d "$ASSET_ROOT/$framework" ]; then
               destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
               executable="${framework%.framework}"
