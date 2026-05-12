@@ -4,6 +4,9 @@ import OSLog
 enum LLog {
     private static let subsystemRoot = Bundle.main.bundleIdentifier ?? "com.sigkitten.litter"
     private nonisolated(unsafe) static var bootstrapped = false
+    private nonisolated(unsafe) static let ringLock = NSLock()
+    private nonisolated(unsafe) static var ringLines: [String] = []
+    private static let ringLimit = 200
 
     static func bootstrap() {
         guard !bootstrapped else { return }
@@ -37,16 +40,28 @@ enum LLog {
         emit(level: .error, subsystem: subsystem, message: message, fields: allFields, payloadJson: payloadJson)
     }
 
+    static func recentRedactedLines(limit: Int = ringLimit) -> [String] {
+        ringLock.lock()
+        defer { ringLock.unlock() }
+        return Array(ringLines.suffix(max(0, limit)))
+    }
+
     private static func emit(level: OSLogType, subsystem: String, message: String, fields: [String: Any], payloadJson: String?) {
         let logger = Logger(subsystem: subsystemRoot, category: subsystem)
         #if DEBUG
         let rendered = render(message: message, fields: fields, payloadJson: payloadJson)
         mirrorToStderr(level: level, subsystem: subsystem, rendered: rendered)
         #else
-        let rendered: String = level == .debug
-            ? message
-            : render(message: message, fields: fields, payloadJson: payloadJson)
+        let rendered: String
+        switch level {
+        case .debug:
+            rendered = message
+        default:
+            rendered = render(message: message, fields: fields, payloadJson: payloadJson)
+        }
         #endif
+
+        record(level: level, subsystem: subsystem, rendered: rendered)
 
         switch level {
         case .debug:
@@ -58,6 +73,16 @@ enum LLog {
         default:
             logger.log(level: level, "\(rendered, privacy: .public)")
         }
+    }
+
+    private static func record(level: OSLogType, subsystem: String, rendered: String) {
+        let line = "\(timestamp()) [\(levelName(level))] [\(subsystem)] \(redact(rendered))"
+        ringLock.lock()
+        ringLines.append(line)
+        if ringLines.count > ringLimit {
+            ringLines.removeFirst(ringLines.count - ringLimit)
+        }
+        ringLock.unlock()
     }
 
     #if DEBUG
@@ -87,6 +112,46 @@ enum LLog {
             parts.append("payload=\(payloadJson)")
         }
         return parts.joined(separator: " ")
+    }
+
+    private static func timestamp() -> String {
+        ISO8601DateFormatter().string(from: Date())
+    }
+
+    private static func levelName(_ level: OSLogType) -> String {
+        switch level {
+        case .debug:
+            return "DEBUG"
+        case .info:
+            return "INFO"
+        case .error:
+            return "ERROR"
+        case .fault:
+            return "FAULT"
+        default:
+            return "LOG"
+        }
+    }
+
+    static func redact(_ input: String) -> String {
+        var output = input
+        let replacements: [(String, String)] = [
+            (#"(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}"#, "$1_[REDACTED]"),
+            (#"github_pat_[A-Za-z0-9_]{20,}"#, "github_pat_[REDACTED]"),
+            (#"sk-[A-Za-z0-9_-]{20,}"#, "sk-[REDACTED]"),
+            (#"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}"#, "$1[REDACTED]"),
+            (#"(?i)((?:api[_-]?key|token|password|secret|authorization)[\"']?\s*[:=]\s*[\"']?)[^\"'\s,}]{8,}"#, "$1[REDACTED]")
+        ]
+        for (pattern, template) in replacements {
+            output = regexReplace(pattern: pattern, template: template, input: output)
+        }
+        return output
+    }
+
+    private static func regexReplace(pattern: String, template: String, input: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return input }
+        let range = NSRange(input.startIndex..<input.endIndex, in: input)
+        return regex.stringByReplacingMatches(in: input, options: [], range: range, withTemplate: template)
     }
 
     private static func resolveCodexHome() -> URL {

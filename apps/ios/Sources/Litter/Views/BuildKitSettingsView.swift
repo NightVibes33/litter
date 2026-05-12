@@ -5,6 +5,7 @@ struct BuildKitSettingsView: View {
     @State private var status: LitterBuildKitStatus?
     @State private var isRefreshing = false
     @StateObject private var downloader = BuildKitAssetDownloadStore()
+    @StateObject private var taskBag = ViewTaskBag()
     @State private var showingAssetImporter = false
     @State private var lastActionOutput: String?
     @State private var tokenInput = ""
@@ -22,17 +23,21 @@ struct BuildKitSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Refresh") { Task { await refresh() } }
+                Button("Refresh") { taskBag.run { await refresh() } }
                     .disabled(isRefreshing)
             }
         }
         .fileImporter(isPresented: $showingAssetImporter, allowedContentTypes: [.folder, .json, .zip], allowsMultipleSelection: false) { result in
             handleAssetImport(result)
         }
-        .onChange(of: downloader.installRevision) { _ in
-            Task { await refresh() }
+        .onChange(of: downloader.installRevision) { _, _ in
+            taskBag.run { await refresh() }
         }
         .task { await refresh() }
+        .onDisappear {
+            taskBag.cancelAll()
+            if downloader.phase.isBusy { downloader.cancel() }
+        }
     }
 
     private var readinessSection: some View {
@@ -105,6 +110,30 @@ struct BuildKitSettingsView: View {
                 }
             } label: {
                 Label("Run Nyxian Status", systemImage: "hammer")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                taskBag.run { await repairBuildKit() }
+            } label: {
+                Label("Repair BuildKit", systemImage: "wrench.and.screwdriver")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                taskBag.run { await runBuildKitCommand("litter-build-status --timeout 60", title: "Build Status") }
+            } label: {
+                Label("Run Build Status", systemImage: "list.clipboard")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                taskBag.run { await runSwiftSmokeTest() }
+            } label: {
+                Label("Run Swift Smoke Test", systemImage: "swift")
                     .foregroundStyle(LitterTheme.accent)
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -195,7 +224,7 @@ struct BuildKitSettingsView: View {
 
                 if downloader.phase.isBusy {
                     Button("Cancel", role: .destructive) {
-                        downloader.cancel()
+                        if downloader.phase.isBusy { downloader.cancel() }
                     }
                 }
             }
@@ -359,6 +388,36 @@ struct BuildKitSettingsView: View {
         case "litter-build-status": return "Logs"
         case "litter-build-cancel": return "Cancel"
         default: return "Status"
+        }
+    }
+
+    @MainActor
+    private func runBuildKitCommand(_ command: String, title: String) async {
+        await LitterBuildKit.shared.installFakefsCommandShims()
+        let result = await IshFS.run(command)
+        let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        lastActionOutput = "\(title)\nCommand: \(command)\nExit code: \(result.exitCode)\n\n" + (output.isEmpty ? "No output." : output)
+        await refresh()
+    }
+
+    @MainActor
+    private func repairBuildKit() async {
+        await LitterBuildKit.shared.installBundledAssetsIfAvailable()
+        await LitterBuildKit.shared.installFakefsCommandShims()
+        await LitterBuildKit.shared.startFakefsRequestMonitor()
+        let doctor = await IshFS.run("litter-fs-doctor --timeout 60")
+        lastActionOutput = "Repair BuildKit\nExit code: \(doctor.exitCode)\n\n" + doctor.output
+        await refresh()
+    }
+
+    @MainActor
+    private func runSwiftSmokeTest() async {
+        let path = "/tmp/litter-swift-smoke.swift"
+        do {
+            try await IshFS.writeTextFile(path: path, text: "print(\"Swift is running on device\")\n")
+            await runBuildKitCommand("litter-swift-check \(IshFS.shellQuote(path))", title: "Swift Smoke Test")
+        } catch {
+            lastActionOutput = "Swift smoke test setup failed.\n\(error.localizedDescription)"
         }
     }
 

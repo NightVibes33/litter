@@ -141,6 +141,14 @@ struct WidgetWebView: UIViewRepresentable {
         }
     }
 
+    private static func safeWidgetURL(_ raw: String) -> URL? {
+        guard let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host?.isEmpty == false else { return nil }
+        return url
+    }
+
     // MARK: - Coordinator
 
     class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate, UIGestureRecognizerDelegate {
@@ -209,7 +217,7 @@ struct WidgetWebView: UIViewRepresentable {
                 ? "window._setContent('\(escaped)'); window._runScripts();"
                 : "window._setContent('\(escaped)');"
             if shellReady {
-                webView?.evaluateJavaScript(js, completionHandler: nil)
+                evaluate(js, label: runScripts ? "final widget content" : "streaming widget content")
             } else {
                 queuedJS = js
             }
@@ -230,16 +238,25 @@ struct WidgetWebView: UIViewRepresentable {
             shellReady = true
             if let js = queuedJS {
                 queuedJS = nil
-                webView.evaluateJavaScript(js, completionHandler: nil)
+                evaluate(js, label: "queued widget content")
+            }
+        }
+
+        private func evaluate(_ js: String, label: String) {
+            webView?.evaluateJavaScript(js) { _, error in
+                if let error {
+                    LLog.warn("widget", "javascript evaluation failed", fields: ["label": label, "error": error.localizedDescription])
+                }
             }
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == "widget" else { return }
-            if let dict = message.body as? [String: Any],
-               dict["_type"] as? String == "height",
-               let h = dict["value"] as? CGFloat, h > 0 {
-                pendingHeight = h
+            guard let dict = validatedBridgeMessage(message.body),
+                  let type = dict["_type"] as? String else { return }
+
+            if type == "height", let h = bridgeHeight(from: dict["value"]), h > 0 {
+                pendingHeight = min(h, 20_000)
                 heightTimer?.invalidate()
                 heightTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
                     guard let self else { return }
@@ -252,9 +269,8 @@ struct WidgetWebView: UIViewRepresentable {
                 }
                 return
             }
-            // Structured-response calls have a typed handler + reply path.
-            if let dict = message.body as? [String: Any],
-               dict["_type"] as? String == "structuredResponse",
+
+            if type == "structuredResponse",
                let requestId = dict["requestId"] as? String,
                let prompt = dict["prompt"] as? String {
                 let schemaJson: String
@@ -271,7 +287,6 @@ struct WidgetWebView: UIViewRepresentable {
                     schemaJson = "null"
                 }
                 let respond: (String, String?, String?) -> Void = { [weak self] reqId, resolveJSON, rejectMessage in
-                    guard let webView = self?.webView else { return }
                     let script: String
                     if let resolveJSON {
                         script = "window.__resolveStructuredResponse(\(Self.jsStringLiteral(reqId)), \(Self.jsStringLiteral(resolveJSON)));"
@@ -279,7 +294,7 @@ struct WidgetWebView: UIViewRepresentable {
                         script = "window.__rejectStructuredResponse(\(Self.jsStringLiteral(reqId)), \(Self.jsStringLiteral(rejectMessage ?? "structuredResponse failed")));"
                     }
                     DispatchQueue.main.async {
-                        webView.evaluateJavaScript(script, completionHandler: nil)
+                        self?.evaluate(script, label: "structured response reply")
                     }
                 }
                 if let handler = onStructuredRequest {
@@ -289,17 +304,10 @@ struct WidgetWebView: UIViewRepresentable {
                 }
                 return
             }
-            // `saveAppState` / `sendPrompt` / `openLink` all flow through the
-            // same `onMessage` hook — callers that don't care about app-mode
-            // simply never see `saveAppState` messages (timeline widgets use
-            // the cached shell that doesn't expose `window.saveAppState`).
-            onMessage?(message.body)
+
+            onMessage?(dict)
         }
 
-        /// Emit a JS single-quoted string literal for safe splicing into
-        /// `evaluateJavaScript` replies. Mirrors `WidgetWebView.escapeJS`
-        /// — kept local to the Coordinator so reply plumbing stays
-        /// independent of the static shell helpers.
         private static func jsStringLiteral(_ s: String) -> String {
             var out = "'"
             for c in s {
@@ -317,6 +325,44 @@ struct WidgetWebView: UIViewRepresentable {
             return out
         }
 
+        private func bridgeHeight(from raw: Any?) -> CGFloat? {
+            if let value = raw as? CGFloat { return value }
+            if let value = raw as? Double { return CGFloat(value) }
+            if let value = raw as? Int { return CGFloat(value) }
+            return nil
+        }
+
+        private func validatedBridgeMessage(_ body: Any) -> [String: Any]? {
+            guard let dict = body as? [String: Any],
+                  let type = dict["_type"] as? String,
+                  ["height", "sendPrompt", "openLink", "saveAppState", "structuredResponse"].contains(type) else {
+                LLog.warn("widget", "blocked widget bridge message", fields: ["type": ((body as? [String: Any])?["_type"] as? String) ?? "unknown"])
+                return nil
+            }
+            if let data = try? JSONSerialization.data(withJSONObject: dict, options: []), data.count > 1_000_000 {
+                LLog.warn("widget", "blocked oversized widget bridge message", fields: ["bytes": data.count])
+                return nil
+            }
+            switch type {
+            case "height":
+                guard bridgeHeight(from: dict["value"]) != nil else { return nil }
+            case "sendPrompt":
+                guard let text = dict["text"] as? String, !text.isEmpty, text.count <= 8_000 else { return nil }
+            case "openLink":
+                guard let raw = dict["url"] as? String, WidgetWebView.safeWidgetURL(raw) != nil else { return nil }
+            case "saveAppState":
+                guard let value = dict["value"] as? String, value.utf8.count <= 1_000_000 else { return nil }
+            case "structuredResponse":
+                guard let requestId = dict["requestId"] as? String,
+                      !requestId.isEmpty,
+                      requestId.count <= 128,
+                      let prompt = dict["prompt"] as? String,
+                      prompt.count <= 80_000 else { return nil }
+            default:
+                return nil
+            }
+            return dict
+        }
         // Block navigation to external URLs
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             if navigationAction.navigationType == .other || navigationAction.request.url?.scheme == "about" {
@@ -333,7 +379,11 @@ struct WidgetWebView: UIViewRepresentable {
             }
             // Open external links in Safari
             if let url = navigationAction.request.url, navigationAction.navigationType == .linkActivated {
-                UIApplication.shared.open(url)
+                if WidgetWebView.safeWidgetURL(url.absoluteString) != nil {
+                    UIApplication.shared.open(url)
+                } else {
+                    LLog.warn("widget", "blocked unsafe widget navigation", fields: ["url": url.absoluteString])
+                }
             }
             decisionHandler(.cancel)
         }
@@ -725,4 +775,3 @@ struct WidgetContainerView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
     }
-}

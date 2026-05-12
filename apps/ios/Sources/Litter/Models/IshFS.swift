@@ -225,6 +225,11 @@ enum IshFS {
         guard result.exitCode == 0 else { throw error("Could not rename item. An item with that name may already exist.", result: result) }
     }
 
+    static func makeExecutable(path: String) async throws {
+        let result = await run("chmod +x \(shellQuote(path))")
+        guard result.exitCode == 0 else { throw error("Could not make item executable", result: result) }
+    }
+
     static func delete(path: String) async throws {
         let result = await run("rm -rf \(shellQuote(path))")
         guard result.exitCode == 0 else { throw error("Could not delete item", result: result) }

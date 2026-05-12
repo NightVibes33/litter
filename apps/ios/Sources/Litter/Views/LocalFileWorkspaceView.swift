@@ -21,6 +21,114 @@ struct LocalFileWorkspaceView: View {
     @State private var commandOutput: LocalCommandOutput?
 
     var body: some View {
+        sheetLayer
+    }
+
+    private var sheetLayer: some View {
+        alertLayer
+            .sheet(item: $previewTarget) { file in
+                previewSheet(for: file)
+            }
+            .sheet(item: $model.openFile) { file in
+                LocalTextFileEditorView(file: file) { saved in
+                    if saved { Task { await model.reload() } }
+                }
+            }
+            .sheet(item: $sharePayload) { payload in
+                LocalFileActivitySheet(urls: payload.urls)
+            }
+            .sheet(item: $commandOutput) { output in
+                LocalCommandOutputSheet(output: output)
+            }
+    }
+
+    private var alertLayer: some View {
+        messageAlertLayer
+    }
+
+    private var messageAlertLayer: some View {
+        deleteAlertLayer
+            .alert("Files", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
+                Button("OK", role: .cancel) { alertMessage = nil }
+            } message: {
+                Text(alertMessage ?? "")
+            }
+    }
+
+    private var deleteAlertLayer: some View {
+        renameMoveAlertLayer
+            .alert("Delete Item", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
+                Button("Cancel", role: .cancel) { deleteTarget = nil }
+                Button("Delete", role: .destructive) { Task { await deleteSelected() } }
+            } message: {
+                Text("This removes \(deleteTarget?.name ?? "this item") from the iSH filesystem.")
+            }
+            .alert("Delete Selected Items", isPresented: $showDeleteSelection) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) { Task { await deleteSelection() } }
+            } message: {
+                Text("This removes \(model.selectedPaths.count) selected item(s) from the iSH filesystem.")
+            }
+    }
+
+    private var renameMoveAlertLayer: some View {
+        creationAlertLayer
+            .alert("Rename", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
+                TextField("Name", text: $renameText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) { renameTarget = nil }
+                Button("Save") { Task { await renameSelected() } }
+            }
+            .alert("Move Item", isPresented: Binding(get: { moveTarget != nil }, set: { if !$0 { moveTarget = nil } })) {
+                TextField("Destination folder", text: $moveDestination)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) { moveTarget = nil }
+                Button("Move") { Task { await moveSelected() } }
+            } message: {
+                Text("Move \(moveTarget?.name ?? "this item") to another iSH folder. You can use ~ for /root.")
+            }
+    }
+
+    private var creationAlertLayer: some View {
+        importerLayer
+            .alert("New File", isPresented: $showNewFile) {
+                TextField("filename.swift", text: $draftName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) { draftName = "" }
+                Button("Create") { Task { await create(kind: .file) } }
+            } message: {
+                Text("Create a text file in the current iSH directory.")
+            }
+            .alert("New Folder", isPresented: $showNewFolder) {
+                TextField("folder-name", text: $draftName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) { draftName = "" }
+                Button("Create") { Task { await create(kind: .directory) } }
+            }
+    }
+
+    private var importerLayer: some View {
+        chromeLayer
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { result in
+                Task { await handleImport(result) }
+            }
+    }
+
+    private var chromeLayer: some View {
+        rootLayer
+            .navigationTitle(model.isSelecting ? "\(model.selectedPaths.count) Selected" : "Files")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search Files")
+            .toolbar { toolbarContent }
+            .task { await model.loadInitial() }
+            .onChange(of: model.showHidden) { _, _ in Task { await model.reload() } }
+    }
+
+    private var rootLayer: some View {
         ZStack {
             LitterTheme.backgroundGradient.ignoresSafeArea()
             VStack(spacing: 0) {
@@ -29,87 +137,22 @@ struct LocalFileWorkspaceView: View {
                 content
             }
         }
-        .navigationTitle(model.isSelecting ? "\(model.selectedPaths.count) Selected" : "Files")
-        .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search Files")
-        .toolbar { toolbarContent }
-        .task { await model.loadInitial() }
-        .onChange(of: model.showHidden) { _, _ in Task { await model.reload() } }
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { result in
-            Task { await handleImport(result) }
-        }
-        .alert("New File", isPresented: $showNewFile) {
-            TextField("filename.swift", text: $draftName)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Cancel", role: .cancel) { draftName = "" }
-            Button("Create") { Task { await create(kind: .file) } }
-        } message: {
-            Text("Create a text file in the current iSH directory.")
-        }
-        .alert("New Folder", isPresented: $showNewFolder) {
-            TextField("folder-name", text: $draftName)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Cancel", role: .cancel) { draftName = "" }
-            Button("Create") { Task { await create(kind: .directory) } }
-        }
-        .alert("Rename", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
-            TextField("Name", text: $renameText)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Cancel", role: .cancel) { renameTarget = nil }
-            Button("Save") { Task { await renameSelected() } }
-        }
-        .alert("Move Item", isPresented: Binding(get: { moveTarget != nil }, set: { if !$0 { moveTarget = nil } })) {
-            TextField("Destination folder", text: $moveDestination)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Cancel", role: .cancel) { moveTarget = nil }
-            Button("Move") { Task { await moveSelected() } }
-        } message: {
-            Text("Move \(moveTarget?.name ?? "this item") to another iSH folder. You can use ~ for /root.")
-        }
-        .alert("Delete Item", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
-            Button("Cancel", role: .cancel) { deleteTarget = nil }
-            Button("Delete", role: .destructive) { Task { await deleteSelected() } }
-        } message: {
-            Text("This removes \(deleteTarget?.name ?? "this item") from the iSH filesystem.")
-        }
-        .alert("Delete Selected Items", isPresented: $showDeleteSelection) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) { Task { await deleteSelection() } }
-        } message: {
-            Text("This removes \(model.selectedPaths.count) selected item(s) from the iSH filesystem.")
-        }
-        .alert("Files", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
-            Button("OK", role: .cancel) { alertMessage = nil }
-        } message: {
-            Text(alertMessage ?? "")
-        }
-        .sheet(item: $previewTarget) { file in
-            LocalFilePreviewSheet(
-                file: file,
-                onEdit: {
-                    previewTarget = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        model.openFile = file
-                    }
-                },
-                onShare: { Task { await share([file]) } },
-                onCopyPath: { copyPath(file.path) }
-            )
-        }
-        .sheet(item: $model.openFile) { file in
-            LocalTextFileEditorView(file: file) { saved in
-                if saved { Task { await model.reload() } }
-            }
-        }
-        .sheet(item: $sharePayload) { payload in
-            LocalFileActivitySheet(urls: payload.urls)
-        }
-        .sheet(item: $commandOutput) { output in
-            LocalCommandOutputSheet(output: output)
+    }
+
+    private func previewSheet(for file: LocalFileEntry) -> some View {
+        LocalFilePreviewSheet(
+            file: file,
+            onEdit: { openEditorAfterPreview(file) },
+            onShare: { Task { await share([file]) } },
+            onCopyPath: { copyPath(file.path) }
+        )
+    }
+
+    private func openEditorAfterPreview(_ file: LocalFileEntry) {
+        previewTarget = nil
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            model.openFile = file
         }
     }
 
@@ -378,6 +421,9 @@ struct LocalFileWorkspaceView: View {
             model.toggleFavorite(entry)
         }
         Button("Share", systemImage: "square.and.arrow.up") { Task { await share([entry]) } }
+        if entry.kind == .file {
+            Button("Make Executable", systemImage: "checkmark.shield") { Task { await makeExecutable(entry) } }
+        }
         Divider()
         if entry.isArchive {
             Button("Extract Here", systemImage: "archivebox") { Task { await extractArchive(entry) } }
@@ -466,6 +512,16 @@ struct LocalFileWorkspaceView: View {
     private func duplicate(_ entry: LocalFileEntry) async {
         do {
             try await model.duplicate(entry)
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    private func makeExecutable(_ entry: LocalFileEntry) async {
+        do {
+            try await IshFS.makeExecutable(path: entry.path)
+            alertMessage = "Made \(entry.name) executable."
+            await model.reload()
         } catch {
             alertMessage = error.localizedDescription
         }

@@ -36,6 +36,7 @@ struct SettingsView: View {
                     petSection
                     experimentalSection
                     aiProvidersSection
+                    diagnosticsSection
                     if developerToolsEnabled {
                         buildKitSection
                     }
@@ -273,6 +274,32 @@ struct SettingsView: View {
     }
 
 
+
+    private var diagnosticsSection: some View {
+        Section {
+            NavigationLink {
+                DiagnosticsBundleView()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "cross.case.fill")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Diagnostics")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Copy or share a redacted recovery bundle")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("Recovery")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
 
     private var buildKitSection: some View {
         Section {
