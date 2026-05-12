@@ -129,6 +129,21 @@ jobs:
             ios-rust-generated-v2-${{ runner.os }}-
             ios-rust-generated-${{ runner.os }}-
 
+      - name: Restore Swift UniFFI binding cache
+        id: swift_bindings_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .build-stamps/bindings-swift
+            shared/rust-bridge/generated/swift
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
+            apps/ios/GeneratedRust/Headers/module.modulemap
+          key: ios-swift-uniffi-bindings-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/uniffi-bindgen/**', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          restore-keys: |
+            ios-swift-uniffi-bindings-v1-${{ runner.os }}-
+
       - name: Cache generated iOS assets
         uses: actions/cache@v4
         with:
@@ -177,14 +192,42 @@ jobs:
       - name: Ensure Swift UniFFI binding
         run: |
           set -euo pipefail
-          if [ ! -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
-            echo "Generated Swift UniFFI binding is missing."
+          missing=0
+          require_file() {
+            local path="$1"
+            if [ ! -s "$path" ]; then
+              echo "::warning::Missing Swift UniFFI cache file: $path"
+              missing=1
+            else
+              ls -lh "$path"
+            fi
+          }
+
+          require_file apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+          require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
+          require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
+          require_file apps/ios/GeneratedRust/Headers/module.modulemap
+
+          if [ "$missing" -eq 0 ]; then
+            echo "Generated Swift UniFFI binding and headers already exist."
+          else
+            echo "Generated Swift UniFFI binding/header files are missing."
             echo "Regenerating Swift binding only; this does not rebuild the iOS Rust staticlib."
             time make bindings-swift
-          else
-            echo "Generated Swift UniFFI binding already exists."
-            ls -lh apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
           fi
+
+      - name: Save Swift UniFFI binding cache
+        if: steps.swift_bindings_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .build-stamps/bindings-swift
+            shared/rust-bridge/generated/swift
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
+            apps/ios/GeneratedRust/Headers/module.modulemap
+          key: ${{ steps.swift_bindings_cache.outputs.cache-primary-key }}
 
       - name: Check prebuilt Rust device library
         id: rust_prebuilt
@@ -294,10 +337,26 @@ jobs:
             ~/Library/Caches/litter-build/llama.cpp
           key: ${{ steps.llama_cache.outputs.cache-primary-key }}
 
+      - name: Restore prepared private BuildKit assets
+        id: buildkit_assets_cache
+        if: env.LITTER_BUILDKIT_ASSET_SHA256 != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/ios/Sources/Litter/Resources/BuildKitAssets
+          key: ios-buildkit-assets-v1-${{ runner.os }}-${{ env.LITTER_BUILDKIT_ASSET_SHA256 }}
+
       - name: Prepare private BuildKit assets
+        if: steps.buildkit_assets_cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           apps/ios/scripts/prepare-buildkit-assets.sh
+
+      - name: Save prepared private BuildKit assets
+        if: env.LITTER_BUILDKIT_ASSET_SHA256 != '' && steps.buildkit_assets_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/ios/Sources/Litter/Resources/BuildKitAssets
+          key: ${{ steps.buildkit_assets_cache.outputs.cache-primary-key }}
 
       - name: Generate Xcode project
         run: |
