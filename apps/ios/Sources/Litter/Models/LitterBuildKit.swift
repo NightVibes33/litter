@@ -228,8 +228,34 @@ actor LitterBuildKit {
     }
 
     func installBundledAssetsIfAvailable() async {
-        guard !Self.installedAssetsAreUsable else { return }
-        _ = try? Self.installFirstAvailableAssetDirectory()
+        guard !Self.installedAssetsAreUsable else {
+            LLog.info("buildkit", "private BuildKit assets already installed")
+            return
+        }
+
+        let source = Self.firstAvailableAssetCandidateDescription()
+        do {
+            let manifest = try Self.installFirstAvailableAssetDirectory()
+            LLog.info(
+                "buildkit",
+                "installed private BuildKit assets",
+                fields: [
+                    "bundle": manifest.bundleIdentifier,
+                    "sdk": manifest.sdkVersion,
+                    "source": source,
+                    "root": Self.buildKitRoot.path
+                ]
+            )
+        } catch {
+            LLog.warn(
+                "buildkit",
+                "private BuildKit assets were not installed",
+                fields: [
+                    "error": error.localizedDescription,
+                    "search": Self.assetAvailabilityReport()
+                ]
+            )
+        }
     }
 
     func importAssetBundle(from url: URL) async -> String {
@@ -383,7 +409,7 @@ actor LitterBuildKit {
                 log: "Installed BuildKit assets: \(manifest.bundleIdentifier) SDK \(manifest.sdkVersion)\nRoot: \(Self.buildKitRoot.path)\n"
             )
         } catch {
-            return BuildKitCommandResult(exitCode: 78, status: "assets-missing", log: "No installable private BuildKit asset directory was found.\n\(error.localizedDescription)\n")
+            return BuildKitCommandResult(exitCode: 78, status: "assets-missing", log: "No installable private BuildKit asset directory was found.\n\(error.localizedDescription)\n\nAsset search:\n\(Self.assetAvailabilityReport())\n")
         }
     }
 
@@ -397,7 +423,7 @@ actor LitterBuildKit {
             check "/dev/null char device" "[ -c /dev/null ]"
             check "/dev/random char device" "[ -c /dev/random ]"
             check "/dev/urandom char device" "[ -c /dev/urandom ]"
-            check "/tmp writable" "t=$(mktemp /tmp/litter.XXXXXX) && rm -f \"$t\""
+            check "/tmp writable" 't=$(mktemp /tmp/litter.XXXXXX) && rm -f "$t"'
             check "/usr/local/bin writable" "[ -w /usr/local/bin ]"
             check "/root/builds writable" "[ -w /root/builds ]"
             for tool in git ssh scp curl tar gzip unzip zip python3 pip3 node npm clang swift swiftc cc c++ make jq; do
@@ -711,27 +737,76 @@ actor LitterBuildKit {
         FileManager.default.fileExists(atPath: url.path)
     }
 
+    private enum AssetCandidateKind {
+        case directory
+        case zip
+    }
+
+    private struct AssetCandidate {
+        var label: String
+        var url: URL?
+        var kind: AssetCandidateKind
+    }
+
+    private static func assetCandidates() -> [AssetCandidate] {
+        [
+            AssetCandidate(label: "bundled BuildKitAssets directory", url: Bundle.main.url(forResource: "BuildKitAssets", withExtension: nil), kind: .directory),
+            AssetCandidate(label: "Documents/BuildKitAssets directory", url: documentsRoot.appendingPathComponent("BuildKitAssets", isDirectory: true), kind: .directory),
+            AssetCandidate(label: "Documents/Inbox/BuildKitAssets directory", url: documentsRoot.appendingPathComponent("Inbox/BuildKitAssets", isDirectory: true), kind: .directory),
+            AssetCandidate(label: "bundled LitterBuildKitAssets.zip", url: Bundle.main.url(forResource: "LitterBuildKitAssets", withExtension: "zip"), kind: .zip),
+            AssetCandidate(label: "Documents/LitterBuildKitAssets.zip", url: documentsRoot.appendingPathComponent("LitterBuildKitAssets.zip"), kind: .zip),
+            AssetCandidate(label: "Documents/Inbox/LitterBuildKitAssets.zip", url: documentsRoot.appendingPathComponent("Inbox/LitterBuildKitAssets.zip"), kind: .zip)
+        ]
+    }
+
+    private static func firstAvailableAssetCandidateDescription() -> String {
+        for candidate in assetCandidates() {
+            guard let url = candidate.url else { continue }
+            switch candidate.kind {
+            case .directory:
+                if fileExists(url.appendingPathComponent("manifest.json")) {
+                    return "\(candidate.label): \(url.path)"
+                }
+            case .zip:
+                if fileExists(url) {
+                    return "\(candidate.label): \(url.path)"
+                }
+            }
+        }
+        return "none"
+    }
+
+    private static func assetAvailabilityReport() -> String {
+        assetCandidates().map { candidate in
+            guard let url = candidate.url else {
+                return "- \(candidate.label): not found"
+            }
+            switch candidate.kind {
+            case .directory:
+                let manifest = url.appendingPathComponent("manifest.json")
+                return "- \(candidate.label): \(manifest.path) \(fileExists(manifest) ? "present" : "missing")"
+            case .zip:
+                return "- \(candidate.label): \(url.path) \(fileExists(url) ? "present" : "missing")"
+            }
+        }.joined(separator: "\n")
+    }
+
     private static func installFirstAvailableAssetDirectory() throws -> BuildKitAssetManifest {
-        let candidates = [
-            Bundle.main.url(forResource: "BuildKitAssets", withExtension: nil),
-            documentsRoot.appendingPathComponent("BuildKitAssets", isDirectory: true),
-            documentsRoot.appendingPathComponent("Inbox/BuildKitAssets", isDirectory: true)
-        ].compactMap { $0 }
-
-        for candidate in candidates where fileExists(candidate.appendingPathComponent("manifest.json")) {
-            return try installAssetDirectory(candidate)
+        for candidate in assetCandidates() {
+            guard let url = candidate.url else { continue }
+            switch candidate.kind {
+            case .directory:
+                if fileExists(url.appendingPathComponent("manifest.json")) {
+                    return try installAssetDirectory(url)
+                }
+            case .zip:
+                if fileExists(url) {
+                    return try installAssetZip(url)
+                }
+            }
         }
 
-        let zipCandidates = [
-            Bundle.main.url(forResource: "LitterBuildKitAssets", withExtension: "zip"),
-            documentsRoot.appendingPathComponent("LitterBuildKitAssets.zip"),
-            documentsRoot.appendingPathComponent("Inbox/LitterBuildKitAssets.zip")
-        ].compactMap { $0 }
-        for candidate in zipCandidates where fileExists(candidate) {
-            return try installAssetZip(candidate)
-        }
-
-        throw NSError(domain: "LitterBuildKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected BuildKitAssets/manifest.json or LitterBuildKitAssets.zip in the app bundle, Documents, or Documents/Inbox."])
+        throw NSError(domain: "LitterBuildKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected BuildKitAssets/manifest.json or LitterBuildKitAssets.zip in the app bundle, Documents, or Documents/Inbox.\n\(assetAvailabilityReport())"])
     }
 
     private static func resolveAssetDirectory(_ url: URL) throws -> URL {
@@ -1003,6 +1078,7 @@ actor LitterBuildKit {
         }
         if !status.missingRequirements.isEmpty {
             output += "\nMissing requirements:\n" + status.missingRequirements.map { "- \($0)" }.joined(separator: "\n") + "\n"
+            output += "\nAsset search:\n\(assetAvailabilityReport())\n"
         }
         return output
     }
@@ -1028,7 +1104,11 @@ actor LitterBuildKit {
     private static func missingAssetSummary(_ status: LitterBuildKitStatus) -> String {
         let missing = status.missingRequirements
         if missing.isEmpty { return "- BuildKit assets look present, but native execution failed.\n" }
-        return missing.map { "- Missing \($0)." }.joined(separator: "\n") + "\n"
+        var output = missing.map { "- Missing \($0)." }.joined(separator: "\n") + "\n"
+        if !status.privateAssetsInstalled {
+            output += "\nAsset search:\n\(assetAvailabilityReport())\n"
+        }
+        return output
     }
 
     private static func commandShimScript() -> String {

@@ -371,6 +371,47 @@ jobs:
           set -euo pipefail
           apps/ios/scripts/prepare-buildkit-assets.sh
 
+      - name: Verify private BuildKit assets are prepared
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          root = pathlib.Path("apps/ios/Sources/Litter/Resources/BuildKitAssets")
+          manifest_path = root / "manifest.json"
+          if not manifest_path.is_file():
+              print("::error::Missing private BuildKitAssets/manifest.json. Configure LITTER_BUILDKIT_ASSET_URL and LITTER_BUILDKIT_ASSET_SHA256 for the Swift-capable IPA workflow.")
+              sys.exit(1)
+
+          manifest = json.loads(manifest_path.read_text())
+          toolchain = manifest.get("toolchain", {})
+          required = list(manifest.get("requiredPaths", []))
+          for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner"):
+              value = toolchain.get(key)
+              if value:
+                  required.append(value)
+
+          missing = []
+          for relative in sorted(set(required)):
+              if not (root / relative).exists():
+                  missing.append(relative)
+
+          sdk_path = toolchain.get("sdkPath") or "SDK/iPhoneOS26.4.sdk"
+          sdk_settings = pathlib.Path(sdk_path) / "SDKSettings.plist"
+          if not (root / sdk_settings).is_file():
+              missing.append(str(sdk_settings))
+
+          if missing:
+              print("::error::Private BuildKit asset bundle is incomplete:")
+              for item in missing:
+                  print(f"- {item}")
+              sys.exit(1)
+
+          print(f"Private BuildKit assets verified: {manifest.get('bundleIdentifier', 'unknown')} SDK {manifest.get('sdkVersion', 'unknown')}")
+          PY
+
       - name: Save prepared private BuildKit assets
         if: env.LITTER_BUILDKIT_ASSET_SHA256 != '' && steps.buildkit_assets_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -399,6 +440,83 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM=""
+
+      - name: Verify archived BuildKit asset payload
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No .app found in archive" >&2
+            exit 1
+          fi
+
+          ASSET_ZIP="$APP_PATH/LitterBuildKitAssets.zip"
+          if [ ! -s "$ASSET_ZIP" ]; then
+            echo "::error::Archived app is missing LitterBuildKitAssets.zip" >&2
+            find "$APP_PATH" -maxdepth 2 -name '*BuildKit*' -print >&2 || true
+            exit 1
+          fi
+
+          if [ -d "$APP_PATH/Frameworks/CoreCompiler.framework" ]; then
+            echo "::error::CoreCompiler.framework must stay inside LitterBuildKitAssets.zip, not Payload/*.app/Frameworks" >&2
+            exit 1
+          fi
+
+          if [ ! -d "$APP_PATH/Frameworks/LitterBuildKitNative.framework" ]; then
+            echo "::error::Archived app is missing embedded LitterBuildKitNative.framework" >&2
+            exit 1
+          fi
+
+          python3 - "$ASSET_ZIP" <<'PY'
+          import json
+          import pathlib
+          import sys
+          import zipfile
+
+          zip_path = pathlib.Path(sys.argv[1])
+          with zipfile.ZipFile(zip_path) as archive:
+              names = set(archive.namelist())
+              manifest_names = [name for name in names if name.endswith("manifest.json")]
+              manifest_name = next((name for name in manifest_names if name.endswith("BuildKitAssets/manifest.json")), None)
+              if manifest_name is None and manifest_names:
+                  manifest_name = sorted(manifest_names)[0]
+              if manifest_name is None:
+                  print("::error::LitterBuildKitAssets.zip does not contain manifest.json")
+                  sys.exit(1)
+
+              prefix = manifest_name[:-len("manifest.json")]
+              manifest = json.loads(archive.read(manifest_name).decode("utf-8"))
+              toolchain = manifest.get("toolchain", {})
+              required = list(manifest.get("requiredPaths", []))
+              for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner"):
+                  value = toolchain.get(key)
+                  if value:
+                      required.append(value)
+
+              def has_entry(relative):
+                  relative = relative.strip("/")
+                  exact = prefix + relative
+                  directory = exact.rstrip("/") + "/"
+                  return exact in names or directory in names or any(name.startswith(directory) for name in names)
+
+              missing = []
+              for relative in sorted(set(required)):
+                  if not has_entry(relative):
+                      missing.append(relative)
+
+              sdk_path = toolchain.get("sdkPath") or "SDK/iPhoneOS26.4.sdk"
+              sdk_settings = pathlib.PurePosixPath(sdk_path) / "SDKSettings.plist"
+              if prefix + str(sdk_settings) not in names:
+                  missing.append(str(sdk_settings))
+
+              if missing:
+                  print("::error::LitterBuildKitAssets.zip is incomplete:")
+                  for item in missing:
+                      print(f"- {item}")
+                  sys.exit(1)
+
+              print(f"Archived BuildKit assets verified: {manifest.get('bundleIdentifier', 'unknown')} SDK {manifest.get('sdkVersion', 'unknown')}")
+          PY
 
       - name: Package SideStore/AltStore IPA artifact
         run: |
