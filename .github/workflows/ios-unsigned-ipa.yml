@@ -126,10 +126,9 @@ jobs:
           path: |
             apps/ios/GeneratedRust
             apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
-          key: ios-rust-generated-v2-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          key: ios-rust-generated-v3-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
           restore-keys: |
-            ios-rust-generated-v2-${{ runner.os }}-
-            ios-rust-generated-${{ runner.os }}-
+            ios-rust-generated-v3-${{ runner.os }}-
 
       - name: Restore Swift UniFFI binding cache
         id: swift_bindings_cache
@@ -142,9 +141,9 @@ jobs:
             apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
             apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
             apps/ios/GeneratedRust/Headers/module.modulemap
-          key: ios-swift-uniffi-bindings-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/uniffi-bindgen/**', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          key: ios-swift-uniffi-bindings-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/uniffi-bindgen/**', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
           restore-keys: |
-            ios-swift-uniffi-bindings-v1-${{ runner.os }}-
+            ios-swift-uniffi-bindings-v2-${{ runner.os }}-
 
       - name: Cache generated iOS assets
         uses: actions/cache@v4
@@ -210,11 +209,24 @@ jobs:
           require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
           require_file apps/ios/GeneratedRust/Headers/module.modulemap
 
+          stale=0
           if [ "$missing" -eq 0 ]; then
+            if ! grep -q "func ishRuntimePreflight" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing ishRuntimePreflight()."
+              stale=1
+            fi
+            if ! grep -q "ish_runtime_preflight" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
+              echo "::warning::Swift UniFFI C header is stale: missing ish_runtime_preflight."
+              stale=1
+            fi
+          fi
+
+          if [ "$missing" -eq 0 ] && [ "$stale" -eq 0 ]; then
             echo "Generated Swift UniFFI binding and headers already exist."
           else
-            echo "Generated Swift UniFFI binding/header files are missing."
+            echo "Generated Swift UniFFI binding/header files are missing or stale."
             echo "Regenerating Swift binding only; this does not rebuild the iOS Rust staticlib."
+            rm -f .build-stamps/bindings-swift
             time make bindings-swift
           fi
 
@@ -239,6 +251,12 @@ jobs:
           if [ "$BUILD_MODE" != "fast-device" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "Release-device mode intentionally rebuilds Rust."
+            exit 0
+          fi
+
+          if [ "${{ steps.rust_generated_cache.outputs.cache-hit }}" != "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No exact Rust generated cache hit; rebuilding the Rust device library instead of trusting a restore-key fallback."
             exit 0
           fi
 
@@ -306,7 +324,7 @@ jobs:
           fi
 
       - name: Save prebuilt Rust iOS device library
-        if: steps.rust_generated_cache.outputs.cache-hit != 'true'
+        if: steps.rust_generated_cache.outputs.cache-hit != 'true' && steps.rust_prebuilt.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
           path: |

@@ -40,18 +40,38 @@ enum IshFS {
         let quoted = shellQuote(path)
         let hiddenGuard = includeHidden ? "" : "case \"$name\" in .*) continue ;; esac;"
         let command = """
-        dir=\(quoted); [ -d "$dir" ] || exit 2; for p in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do [ -e "$p" ] || continue; name=${p##*/}; \(hiddenGuard) if [ -d "$p" ]; then printf 'd\t0\t%s\t%s\n' "$name" "$p"; else size=$(wc -c < "$p" 2>/dev/null || echo 0); printf 'f\t%s\t%s\t%s\n' "$size" "$name" "$p"; fi; done | sort -f -k3
+        dir=\(quoted)
+        [ -d "$dir" ] || exit 2
+        for p in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+          [ -e "$p" ] || continue
+          name=${p##*/}
+          \(hiddenGuard)
+          if [ -d "$p" ]; then
+            kind=d
+            size=0
+          else
+            kind=f
+            size=$(wc -c < "$p" 2>/dev/null || echo 0)
+          fi
+          modified=$(stat -c '%Y' "$p" 2>/dev/null || echo 0)
+          permissions=$(stat -c '%A' "$p" 2>/dev/null || echo '')
+          printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$size" "$modified" "$permissions" "$name" "$p"
+        done | sort -f -k5
         """
         let result = await run(command)
         guard result.exitCode == 0 else { throw error("Could not list \(path)", result: result) }
         return result.output.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
-            let parts = line.split(separator: "\t", maxSplits: 3, omittingEmptySubsequences: false).map(String.init)
-            guard parts.count == 4 else { return nil }
+            let parts = line.split(separator: "\t", maxSplits: 5, omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 6 else { return nil }
+            let modifiedSeconds = TimeInterval(parts[2].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+            let modifiedAt = modifiedSeconds > 0 ? Date(timeIntervalSince1970: modifiedSeconds) : nil
             return LocalFileEntry(
                 kind: parts[0] == "d" ? .directory : .file,
-                name: parts[2],
-                path: parts[3],
-                size: Int64(parts[1].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+                name: parts[4],
+                path: parts[5],
+                size: Int64(parts[1].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0,
+                modifiedAt: modifiedAt,
+                permissions: parts[3]
             )
         }
     }
@@ -143,6 +163,23 @@ enum IshFS {
             _ = await run("rm -f \(temp)")
             throw error
         }
+    }
+
+    static func duplicate(path: String, destination: String) async throws {
+        let result = await run("dest=\(shellQuote(destination)); [ ! -e \"$dest\" ] || exit 17; cp -R \(shellQuote(path)) \"$dest\"")
+        guard result.exitCode == 0 else { throw error("Could not duplicate item. An item with that name may already exist.", result: result) }
+    }
+
+    static func compress(path: String, destination: String) async -> Result {
+        await run("""
+        src=\(shellQuote(path))
+        dest=\(shellQuote(destination))
+        [ ! -e "$dest" ] || exit 17
+        parent=${src%/*}
+        base=${src##*/}
+        if [ -z "$parent" ] || [ "$parent" = "$src" ]; then parent=/; fi
+        tar -czf "$dest" -C "$parent" "$base"
+        """)
     }
 
     static func createEmptyFile(path: String) async throws {
