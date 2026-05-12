@@ -157,14 +157,14 @@ static ggml_type LitterLlamaKVType(NSString *mode, NSError **error) {
 }
 
 static enum llama_flash_attn_type LitterLlamaFlashAttentionType(NSString *mode) {
-    NSString *lower = [[mode ?: @"automatic"] lowercaseString];
+    NSString *lower = [(mode.length > 0 ? mode : @"automatic") lowercaseString];
     if ([lower isEqualToString:@"enabled"]) { return LLAMA_FLASH_ATTN_TYPE_ENABLED; }
     if ([lower isEqualToString:@"disabled"]) { return LLAMA_FLASH_ATTN_TYPE_DISABLED; }
     return LLAMA_FLASH_ATTN_TYPE_AUTO;
 }
 
 static enum llama_rope_scaling_type LitterLlamaRopeScalingType(NSString *mode) {
-    NSString *lower = [[mode ?: @"modeldefault"] lowercaseString];
+    NSString *lower = [(mode.length > 0 ? mode : @"modeldefault") lowercaseString];
     if ([lower isEqualToString:@"none"]) { return LLAMA_ROPE_SCALING_TYPE_NONE; }
     if ([lower isEqualToString:@"linear"]) { return LLAMA_ROPE_SCALING_TYPE_LINEAR; }
     if ([lower isEqualToString:@"yarn"]) { return LLAMA_ROPE_SCALING_TYPE_YARN; }
@@ -479,7 +479,7 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
         } else {
             llama_sampler_chain_add(sampler, llama_sampler_init_temp((float)temperature));
         }
-        NSString *mirostat = [[mirostatMode ?: @"off"] lowercaseString];
+        NSString *mirostat = [(mirostatMode.length > 0 ? mirostatMode : @"off") lowercaseString];
         if ([mirostat isEqualToString:@"v1"]) {
             llama_sampler_chain_add(sampler, llama_sampler_init_mirostat(llama_vocab_n_tokens(vocab), samplerSeed, (float)mirostatTau, (float)mirostatEta, 100));
         } else if ([mirostat isEqualToString:@"v2"]) {
