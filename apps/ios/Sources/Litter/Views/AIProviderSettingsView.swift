@@ -531,8 +531,10 @@ struct LocalModelRuntimeSettingsView: View {
             presetsSection
             agentSection
             samplingSection
+            advancedSamplingSection
             runtimeSection
             promptSection
+            expertRopeSection
             resetSection
         }
         .navigationTitle("Model Runtime")
@@ -614,15 +616,52 @@ struct LocalModelRuntimeSettingsView: View {
         }
     }
 
+    private var advancedSamplingSection: some View {
+        Section {
+            SliderRow(title: "Min P", value: doubleBinding(\.minP), range: 0...1)
+            SliderRow(title: "Typical P", value: doubleBinding(\.typicalP), range: 0...1)
+            SliderRow(title: "Dynamic temp range", value: doubleBinding(\.dynamicTemperatureRange), range: 0...2)
+            SliderRow(title: "Dynamic temp exponent", value: doubleBinding(\.dynamicTemperatureExponent), range: 0.1...8)
+            Picker("Mirostat", selection: mirostatBinding) {
+                ForEach(LocalModelMirostatMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            SliderRow(title: "Mirostat tau", value: doubleBinding(\.mirostatTau), range: 0.1...20)
+            SliderRow(title: "Mirostat eta", value: doubleBinding(\.mirostatEta), range: 0.001...1)
+        } header: {
+            Text("Advanced Sampling")
+        } footer: {
+            Text("Min-P, typical sampling, dynamic temperature, and Mirostat are passed into the llama.cpp sampler chain when enabled.")
+        }
+    }
+
     private var runtimeSection: some View {
         Section {
             Toggle("Use Metal GPU", isOn: boolBinding(\.metalEnabled))
                 .disabled(!capability.hasMetal)
+            Stepper(gpuLayerLabel, value: intBinding(\.gpuLayerCount), in: -1...512)
+                .disabled(!settings.metalEnabled)
             Toggle("Allow CPU fallback", isOn: boolBinding(\.cpuFallbackAllowed))
             Toggle("Stream tokens", isOn: boolBinding(\.streamingEnabled))
+            Toggle("Memory map model", isOn: boolBinding(\.mmapEnabled))
+            Toggle("Lock model in RAM", isOn: boolBinding(\.mlockEnabled))
+            Toggle("Validate tensors on load", isOn: boolBinding(\.checkTensors))
             Stepper("Threads: \(settings.preferredThreadCount)", value: intBinding(\.preferredThreadCount), in: 1...max(1, ProcessInfo.processInfo.processorCount))
+            Stepper(batchThreadLabel, value: intBinding(\.batchThreadCount), in: 0...max(1, ProcessInfo.processInfo.processorCount))
             Stepper("Batch: \(settings.batchSize)", value: intBinding(\.batchSize), in: 32...4_096, step: 32)
             Stepper("Microbatch: \(settings.microBatchSize)", value: intBinding(\.microBatchSize), in: 32...min(settings.batchSize, 2_048), step: 32)
+            Picker("Flash Attention", selection: flashAttentionBinding) {
+                ForEach(LocalModelFlashAttentionMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            Toggle("Offload KQV", isOn: boolBinding(\.offloadKQV))
+                .disabled(!settings.metalEnabled)
+            Toggle("Offload ops", isOn: boolBinding(\.opOffload))
+                .disabled(!settings.metalEnabled)
+            Toggle("Full SWA cache", isOn: boolBinding(\.swaFull))
+            Toggle("Unified KV cache", isOn: boolBinding(\.kvUnified))
             Picker("KV Cache", selection: kvCacheBinding) {
                 ForEach(LocalModelKVCacheMode.allCases) { mode in
                     Text(mode.displayName).tag(mode)
@@ -633,22 +672,52 @@ struct LocalModelRuntimeSettingsView: View {
                 .litterFont(.caption)
                 .foregroundColor(providerStore.turboQuantAvailability.isAvailable ? LitterTheme.success : LitterTheme.warning)
         } header: {
-            Text("Runtime")
+            Text("Memory / Offload")
         } footer: {
-            Text("Batch, microbatch, seed, penalties, thread count, Metal, CPU fallback, and KV cache are passed into the native llama.cpp bridge.")
+            Text("GPU layers, mmap, mlock, tensor validation, threads, batch sizes, Flash Attention, KQV/op offload, and KV cache options are passed to llama.cpp.")
         }
     }
 
     private var promptSection: some View {
         Section {
+            Picker("Prompt Template", selection: promptTemplateBinding) {
+                ForEach(LocalModelPromptTemplateMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            Toggle("Parse special tokens", isOn: boolBinding(\.parseSpecialTokens))
+            TextEditor(text: stopSequencesTextBinding)
+                .frame(minHeight: 70)
+                .font(.system(.caption, design: .monospaced))
             TextEditor(text: stringBinding(\.systemPromptOverride))
                 .frame(minHeight: 110)
                 .font(.system(.caption, design: .monospaced))
-            Text("Optional. Leave empty to use the model-aware local-agent prompt template.")
+            Text("Stop sequences are one per line. The system prompt override is optional; leave it empty to use the model-aware local-agent prompt template.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
         } header: {
-            Text("System Prompt Override")
+            Text("Prompt / Template")
+        }
+    }
+
+    private var expertRopeSection: some View {
+        Section {
+            Picker("RoPE Scaling", selection: ropeScalingBinding) {
+                ForEach(LocalModelRopeScalingMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            SliderRow(title: "RoPE base", value: doubleBinding(\.ropeFrequencyBase), range: 0...1_000_000)
+            SliderRow(title: "RoPE scale", value: doubleBinding(\.ropeFrequencyScale), range: 0...100)
+            SliderRow(title: "YaRN extension", value: doubleBinding(\.yarnExtensionFactor), range: -1...100)
+            SliderRow(title: "YaRN attention", value: doubleBinding(\.yarnAttentionFactor), range: -1...100)
+            SliderRow(title: "YaRN beta fast", value: doubleBinding(\.yarnBetaFast), range: -1...256)
+            SliderRow(title: "YaRN beta slow", value: doubleBinding(\.yarnBetaSlow), range: -1...256)
+            Stepper("YaRN original ctx: \(settings.yarnOriginalContext)", value: intBinding(\.yarnOriginalContext), in: 0...131_072, step: 512)
+        } header: {
+            Text("Expert RoPE")
+        } footer: {
+            Text("Default sentinel values use llama.cpp or model metadata. Change these only for models that require explicit context scaling.")
         }
     }
 
@@ -669,6 +738,15 @@ struct LocalModelRuntimeSettingsView: View {
 
     private var seedLabel: String {
         settings.seed < 0 ? "Seed: Random" : "Seed: \(settings.seed)"
+    }
+
+
+    private var gpuLayerLabel: String {
+        settings.gpuLayerCount < 0 ? "GPU layers: All" : "GPU layers: \(settings.gpuLayerCount)"
+    }
+
+    private var batchThreadLabel: String {
+        settings.batchThreadCount == 0 ? "Batch threads: Match generation" : "Batch threads: \(settings.batchThreadCount)"
     }
 
     private func applyPreset(_ preset: RuntimePreset) {
@@ -739,10 +817,42 @@ struct LocalModelRuntimeSettingsView: View {
                 next.retryAttempts = 3
                 next.toolUseMode = .approvalRequired
             }
+            applyAdvancedDefaults(to: &next)
             next.metalEnabled = capability.hasMetal
             next.cpuFallbackAllowed = false
             next.streamingEnabled = true
         }
+    }
+
+    private func applyAdvancedDefaults(to settings: inout LocalModelRuntimeSettings) {
+        settings.minP = 0
+        settings.typicalP = 1
+        settings.dynamicTemperatureRange = 0
+        settings.dynamicTemperatureExponent = 1
+        settings.mirostatMode = .off
+        settings.mirostatTau = 5
+        settings.mirostatEta = 0.1
+        settings.batchThreadCount = 0
+        settings.gpuLayerCount = -1
+        settings.mmapEnabled = true
+        settings.mlockEnabled = false
+        settings.checkTensors = false
+        settings.flashAttentionMode = .automatic
+        settings.offloadKQV = true
+        settings.opOffload = true
+        settings.swaFull = true
+        settings.kvUnified = false
+        settings.promptTemplateMode = .litter
+        settings.parseSpecialTokens = true
+        settings.stopSequences = []
+        settings.ropeScalingMode = .modelDefault
+        settings.ropeFrequencyBase = 0
+        settings.ropeFrequencyScale = 0
+        settings.yarnExtensionFactor = -1
+        settings.yarnAttentionFactor = -1
+        settings.yarnBetaFast = -1
+        settings.yarnBetaSlow = -1
+        settings.yarnOriginalContext = 0
     }
 
     private func intBinding(_ keyPath: WritableKeyPath<LocalModelRuntimeSettings, Int>) -> Binding<Int> {
@@ -784,6 +894,45 @@ struct LocalModelRuntimeSettingsView: View {
         Binding(
             get: { settings.kvCacheMode },
             set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0.kvCacheMode = value } }
+        )
+    }
+
+    private var mirostatBinding: Binding<LocalModelMirostatMode> {
+        Binding(
+            get: { settings.mirostatMode },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0.mirostatMode = value } }
+        )
+    }
+
+    private var flashAttentionBinding: Binding<LocalModelFlashAttentionMode> {
+        Binding(
+            get: { settings.flashAttentionMode },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0.flashAttentionMode = value } }
+        )
+    }
+
+    private var promptTemplateBinding: Binding<LocalModelPromptTemplateMode> {
+        Binding(
+            get: { settings.promptTemplateMode },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0.promptTemplateMode = value } }
+        )
+    }
+
+    private var ropeScalingBinding: Binding<LocalModelRopeScalingMode> {
+        Binding(
+            get: { settings.ropeScalingMode },
+            set: { value in providerStore.updateRuntimeSettings(for: model, capability: capability) { $0.ropeScalingMode = value } }
+        )
+    }
+
+    private var stopSequencesTextBinding: Binding<String> {
+        Binding(
+            get: { settings.stopSequences.joined(separator: "\n") },
+            set: { value in
+                providerStore.updateRuntimeSettings(for: model, capability: capability) {
+                    $0.stopSequences = value.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+                }
+            }
         )
     }
 

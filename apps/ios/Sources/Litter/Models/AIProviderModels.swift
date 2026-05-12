@@ -214,6 +214,72 @@ enum LocalModelKVCacheMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum LocalModelPromptTemplateMode: String, Codable, CaseIterable, Identifiable {
+    case litter
+    case modelDefault
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .litter: return "Litter template"
+        case .modelDefault: return "Model chat template"
+        }
+    }
+}
+
+enum LocalModelFlashAttentionMode: String, Codable, CaseIterable, Identifiable {
+    case automatic
+    case disabled
+    case enabled
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .automatic: return "Automatic"
+        case .disabled: return "Disabled"
+        case .enabled: return "Enabled"
+        }
+    }
+}
+
+enum LocalModelRopeScalingMode: String, Codable, CaseIterable, Identifiable {
+    case modelDefault
+    case none
+    case linear
+    case yarn
+    case longrope
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .modelDefault: return "Model default"
+        case .none: return "None"
+        case .linear: return "Linear"
+        case .yarn: return "YaRN"
+        case .longrope: return "LongRoPE"
+        }
+    }
+}
+
+enum LocalModelMirostatMode: String, Codable, CaseIterable, Identifiable {
+    case off
+    case v1
+    case v2
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .v1: return "Mirostat 1"
+        case .v2: return "Mirostat 2"
+        }
+    }
+}
+
 enum TurboQuantPreference: String, Codable, CaseIterable, Identifiable {
     case disabled
     case autoWhenAvailable
@@ -278,21 +344,49 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
     var temperature: Double
     var topP: Double
     var topK: Int
+    var minP: Double
+    var typicalP: Double
+    var dynamicTemperatureRange: Double
+    var dynamicTemperatureExponent: Double
+    var mirostatMode: LocalModelMirostatMode
+    var mirostatTau: Double
+    var mirostatEta: Double
     var repeatLastN: Int
     var repeatPenalty: Double
     var frequencyPenalty: Double
     var presencePenalty: Double
     var seed: Int
     var preferredThreadCount: Int
+    var batchThreadCount: Int
     var batchSize: Int
     var microBatchSize: Int
     var metalEnabled: Bool
+    var gpuLayerCount: Int
     var cpuFallbackAllowed: Bool
     var streamingEnabled: Bool
+    var mmapEnabled: Bool
+    var mlockEnabled: Bool
+    var checkTensors: Bool
+    var flashAttentionMode: LocalModelFlashAttentionMode
+    var offloadKQV: Bool
+    var opOffload: Bool
+    var swaFull: Bool
+    var kvUnified: Bool
     var toolUseMode: LocalModelToolUseMode
     var maxToolRounds: Int
     var retryAttempts: Int
     var kvCacheMode: LocalModelKVCacheMode
+    var promptTemplateMode: LocalModelPromptTemplateMode
+    var parseSpecialTokens: Bool
+    var stopSequences: [String]
+    var ropeScalingMode: LocalModelRopeScalingMode
+    var ropeFrequencyBase: Double
+    var ropeFrequencyScale: Double
+    var yarnExtensionFactor: Double
+    var yarnAttentionFactor: Double
+    var yarnBetaFast: Double
+    var yarnBetaSlow: Double
+    var yarnOriginalContext: Int
     var systemPromptOverride: String
 
     init(
@@ -301,21 +395,49 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
         temperature: Double,
         topP: Double,
         topK: Int,
+        minP: Double = 0,
+        typicalP: Double = 1,
+        dynamicTemperatureRange: Double = 0,
+        dynamicTemperatureExponent: Double = 1,
+        mirostatMode: LocalModelMirostatMode = .off,
+        mirostatTau: Double = 5,
+        mirostatEta: Double = 0.1,
         repeatLastN: Int,
         repeatPenalty: Double,
         frequencyPenalty: Double,
         presencePenalty: Double,
         seed: Int,
         preferredThreadCount: Int,
+        batchThreadCount: Int = 0,
         batchSize: Int,
         microBatchSize: Int,
         metalEnabled: Bool,
+        gpuLayerCount: Int = -1,
         cpuFallbackAllowed: Bool,
         streamingEnabled: Bool,
+        mmapEnabled: Bool = true,
+        mlockEnabled: Bool = false,
+        checkTensors: Bool = false,
+        flashAttentionMode: LocalModelFlashAttentionMode = .automatic,
+        offloadKQV: Bool = true,
+        opOffload: Bool = true,
+        swaFull: Bool = true,
+        kvUnified: Bool = false,
         toolUseMode: LocalModelToolUseMode,
         maxToolRounds: Int,
         retryAttempts: Int,
         kvCacheMode: LocalModelKVCacheMode,
+        promptTemplateMode: LocalModelPromptTemplateMode = .litter,
+        parseSpecialTokens: Bool = true,
+        stopSequences: [String] = [],
+        ropeScalingMode: LocalModelRopeScalingMode = .modelDefault,
+        ropeFrequencyBase: Double = 0,
+        ropeFrequencyScale: Double = 0,
+        yarnExtensionFactor: Double = -1,
+        yarnAttentionFactor: Double = -1,
+        yarnBetaFast: Double = -1,
+        yarnBetaSlow: Double = -1,
+        yarnOriginalContext: Int = 0,
         systemPromptOverride: String
     ) {
         self.contextTokens = contextTokens
@@ -323,21 +445,49 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
         self.temperature = temperature
         self.topP = topP
         self.topK = topK
+        self.minP = minP
+        self.typicalP = typicalP
+        self.dynamicTemperatureRange = dynamicTemperatureRange
+        self.dynamicTemperatureExponent = dynamicTemperatureExponent
+        self.mirostatMode = mirostatMode
+        self.mirostatTau = mirostatTau
+        self.mirostatEta = mirostatEta
         self.repeatLastN = repeatLastN
         self.repeatPenalty = repeatPenalty
         self.frequencyPenalty = frequencyPenalty
         self.presencePenalty = presencePenalty
         self.seed = seed
         self.preferredThreadCount = preferredThreadCount
+        self.batchThreadCount = batchThreadCount
         self.batchSize = batchSize
         self.microBatchSize = microBatchSize
         self.metalEnabled = metalEnabled
+        self.gpuLayerCount = gpuLayerCount
         self.cpuFallbackAllowed = cpuFallbackAllowed
         self.streamingEnabled = streamingEnabled
+        self.mmapEnabled = mmapEnabled
+        self.mlockEnabled = mlockEnabled
+        self.checkTensors = checkTensors
+        self.flashAttentionMode = flashAttentionMode
+        self.offloadKQV = offloadKQV
+        self.opOffload = opOffload
+        self.swaFull = swaFull
+        self.kvUnified = kvUnified
         self.toolUseMode = toolUseMode
         self.maxToolRounds = maxToolRounds
         self.retryAttempts = retryAttempts
         self.kvCacheMode = kvCacheMode
+        self.promptTemplateMode = promptTemplateMode
+        self.parseSpecialTokens = parseSpecialTokens
+        self.stopSequences = stopSequences
+        self.ropeScalingMode = ropeScalingMode
+        self.ropeFrequencyBase = ropeFrequencyBase
+        self.ropeFrequencyScale = ropeFrequencyScale
+        self.yarnExtensionFactor = yarnExtensionFactor
+        self.yarnAttentionFactor = yarnAttentionFactor
+        self.yarnBetaFast = yarnBetaFast
+        self.yarnBetaSlow = yarnBetaSlow
+        self.yarnOriginalContext = yarnOriginalContext
         self.systemPromptOverride = systemPromptOverride
     }
 
@@ -374,18 +524,41 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
         next.temperature = min(max(next.temperature, 0), 2)
         next.topP = min(max(next.topP, 0.05), 1)
         next.topK = min(max(next.topK, 1), 200)
+        next.minP = min(max(next.minP, 0), 1)
+        next.typicalP = min(max(next.typicalP, 0), 1)
+        next.dynamicTemperatureRange = min(max(next.dynamicTemperatureRange, 0), 2)
+        next.dynamicTemperatureExponent = min(max(next.dynamicTemperatureExponent, 0.1), 8)
+        next.mirostatTau = min(max(next.mirostatTau, 0.1), 20)
+        next.mirostatEta = min(max(next.mirostatEta, 0.001), 1)
         next.repeatLastN = min(max(next.repeatLastN, 0), 4_096)
         next.repeatPenalty = min(max(next.repeatPenalty, 0.8), 1.5)
         next.frequencyPenalty = min(max(next.frequencyPenalty, -2), 2)
         next.presencePenalty = min(max(next.presencePenalty, -2), 2)
         next.seed = min(max(next.seed, -1), 4_294_967_295)
         next.preferredThreadCount = min(max(next.preferredThreadCount, 1), max(1, ProcessInfo.processInfo.processorCount))
+        next.batchThreadCount = min(max(next.batchThreadCount, 0), max(1, ProcessInfo.processInfo.processorCount))
         next.batchSize = min(max(next.batchSize, 32), 4_096)
         next.microBatchSize = min(max(next.microBatchSize, 32), min(next.batchSize, 2_048))
+        next.gpuLayerCount = min(max(next.gpuLayerCount, -1), 512)
         next.maxToolRounds = min(max(next.maxToolRounds, 0), 20)
         next.retryAttempts = min(max(next.retryAttempts, 1), 5)
+        next.stopSequences = next.stopSequences
+            .map { $0.trimmingCharacters(in: .newlines) }
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .prefix(12)
+            .map(String.init)
+        next.ropeFrequencyBase = min(max(next.ropeFrequencyBase, 0), 1_000_000)
+        next.ropeFrequencyScale = min(max(next.ropeFrequencyScale, 0), 100)
+        next.yarnExtensionFactor = min(max(next.yarnExtensionFactor, -1), 100)
+        next.yarnAttentionFactor = min(max(next.yarnAttentionFactor, -1), 100)
+        next.yarnBetaFast = min(max(next.yarnBetaFast, -1), 256)
+        next.yarnBetaSlow = min(max(next.yarnBetaSlow, -1), 256)
+        next.yarnOriginalContext = min(max(next.yarnOriginalContext, 0), 131_072)
         if !capability.hasMetal {
             next.metalEnabled = false
+            next.gpuLayerCount = 0
+            next.offloadKQV = false
+            next.opOffload = false
         }
         if next.kvCacheMode.requiresTurboQuant, !turboQuantAvailable {
             next.kvCacheMode = .automatic
@@ -400,14 +573,22 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
         if batchSize > 1_024 { warnings.append("large batch") }
         if microBatchSize > 512 { warnings.append("large microbatch") }
         if preferredThreadCount > max(2, ProcessInfo.processInfo.processorCount - 1) { warnings.append("aggressive thread count") }
+        if mlockEnabled { warnings.append("memory lock") }
+        if ropeScalingMode != .modelDefault { warnings.append("custom RoPE") }
         return warnings.isEmpty ? nil : "Experimental: \(warnings.joined(separator: ", ")). These settings are saved as requested, but may fail or overheat on-device."
     }
 
     enum CodingKeys: String, CodingKey {
-        case contextTokens, maxOutputTokens, temperature, topP, topK, repeatLastN, repeatPenalty
-        case frequencyPenalty, presencePenalty, seed, preferredThreadCount, batchSize, microBatchSize
-        case metalEnabled, cpuFallbackAllowed, streamingEnabled, toolUseMode, maxToolRounds, retryAttempts
-        case kvCacheMode, systemPromptOverride
+        case contextTokens, maxOutputTokens, temperature, topP, topK, minP, typicalP
+        case dynamicTemperatureRange, dynamicTemperatureExponent, mirostatMode, mirostatTau, mirostatEta
+        case repeatLastN, repeatPenalty, frequencyPenalty, presencePenalty, seed
+        case preferredThreadCount, batchThreadCount, batchSize, microBatchSize
+        case metalEnabled, gpuLayerCount, cpuFallbackAllowed, streamingEnabled, mmapEnabled, mlockEnabled, checkTensors
+        case flashAttentionMode, offloadKQV, opOffload, swaFull, kvUnified
+        case toolUseMode, maxToolRounds, retryAttempts, kvCacheMode
+        case promptTemplateMode, parseSpecialTokens, stopSequences
+        case ropeScalingMode, ropeFrequencyBase, ropeFrequencyScale, yarnExtensionFactor, yarnAttentionFactor, yarnBetaFast, yarnBetaSlow, yarnOriginalContext
+        case systemPromptOverride
     }
 
     init(from decoder: Decoder) throws {
@@ -418,21 +599,49 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
         temperature = try container.decodeIfPresent(Double.self, forKey: .temperature) ?? defaults.temperature
         topP = try container.decodeIfPresent(Double.self, forKey: .topP) ?? defaults.topP
         topK = try container.decodeIfPresent(Int.self, forKey: .topK) ?? defaults.topK
+        minP = try container.decodeIfPresent(Double.self, forKey: .minP) ?? defaults.minP
+        typicalP = try container.decodeIfPresent(Double.self, forKey: .typicalP) ?? defaults.typicalP
+        dynamicTemperatureRange = try container.decodeIfPresent(Double.self, forKey: .dynamicTemperatureRange) ?? defaults.dynamicTemperatureRange
+        dynamicTemperatureExponent = try container.decodeIfPresent(Double.self, forKey: .dynamicTemperatureExponent) ?? defaults.dynamicTemperatureExponent
+        mirostatMode = try container.decodeIfPresent(LocalModelMirostatMode.self, forKey: .mirostatMode) ?? defaults.mirostatMode
+        mirostatTau = try container.decodeIfPresent(Double.self, forKey: .mirostatTau) ?? defaults.mirostatTau
+        mirostatEta = try container.decodeIfPresent(Double.self, forKey: .mirostatEta) ?? defaults.mirostatEta
         repeatLastN = try container.decodeIfPresent(Int.self, forKey: .repeatLastN) ?? defaults.repeatLastN
         repeatPenalty = try container.decodeIfPresent(Double.self, forKey: .repeatPenalty) ?? defaults.repeatPenalty
         frequencyPenalty = try container.decodeIfPresent(Double.self, forKey: .frequencyPenalty) ?? defaults.frequencyPenalty
         presencePenalty = try container.decodeIfPresent(Double.self, forKey: .presencePenalty) ?? defaults.presencePenalty
         seed = try container.decodeIfPresent(Int.self, forKey: .seed) ?? defaults.seed
         preferredThreadCount = try container.decodeIfPresent(Int.self, forKey: .preferredThreadCount) ?? defaults.preferredThreadCount
+        batchThreadCount = try container.decodeIfPresent(Int.self, forKey: .batchThreadCount) ?? defaults.batchThreadCount
         batchSize = try container.decodeIfPresent(Int.self, forKey: .batchSize) ?? defaults.batchSize
         microBatchSize = try container.decodeIfPresent(Int.self, forKey: .microBatchSize) ?? defaults.microBatchSize
         metalEnabled = try container.decodeIfPresent(Bool.self, forKey: .metalEnabled) ?? defaults.metalEnabled
+        gpuLayerCount = try container.decodeIfPresent(Int.self, forKey: .gpuLayerCount) ?? defaults.gpuLayerCount
         cpuFallbackAllowed = try container.decodeIfPresent(Bool.self, forKey: .cpuFallbackAllowed) ?? defaults.cpuFallbackAllowed
         streamingEnabled = try container.decodeIfPresent(Bool.self, forKey: .streamingEnabled) ?? defaults.streamingEnabled
+        mmapEnabled = try container.decodeIfPresent(Bool.self, forKey: .mmapEnabled) ?? defaults.mmapEnabled
+        mlockEnabled = try container.decodeIfPresent(Bool.self, forKey: .mlockEnabled) ?? defaults.mlockEnabled
+        checkTensors = try container.decodeIfPresent(Bool.self, forKey: .checkTensors) ?? defaults.checkTensors
+        flashAttentionMode = try container.decodeIfPresent(LocalModelFlashAttentionMode.self, forKey: .flashAttentionMode) ?? defaults.flashAttentionMode
+        offloadKQV = try container.decodeIfPresent(Bool.self, forKey: .offloadKQV) ?? defaults.offloadKQV
+        opOffload = try container.decodeIfPresent(Bool.self, forKey: .opOffload) ?? defaults.opOffload
+        swaFull = try container.decodeIfPresent(Bool.self, forKey: .swaFull) ?? defaults.swaFull
+        kvUnified = try container.decodeIfPresent(Bool.self, forKey: .kvUnified) ?? defaults.kvUnified
         toolUseMode = try container.decodeIfPresent(LocalModelToolUseMode.self, forKey: .toolUseMode) ?? defaults.toolUseMode
         maxToolRounds = try container.decodeIfPresent(Int.self, forKey: .maxToolRounds) ?? defaults.maxToolRounds
         retryAttempts = try container.decodeIfPresent(Int.self, forKey: .retryAttempts) ?? defaults.retryAttempts
         kvCacheMode = try container.decodeIfPresent(LocalModelKVCacheMode.self, forKey: .kvCacheMode) ?? defaults.kvCacheMode
+        promptTemplateMode = try container.decodeIfPresent(LocalModelPromptTemplateMode.self, forKey: .promptTemplateMode) ?? defaults.promptTemplateMode
+        parseSpecialTokens = try container.decodeIfPresent(Bool.self, forKey: .parseSpecialTokens) ?? defaults.parseSpecialTokens
+        stopSequences = try container.decodeIfPresent([String].self, forKey: .stopSequences) ?? defaults.stopSequences
+        ropeScalingMode = try container.decodeIfPresent(LocalModelRopeScalingMode.self, forKey: .ropeScalingMode) ?? defaults.ropeScalingMode
+        ropeFrequencyBase = try container.decodeIfPresent(Double.self, forKey: .ropeFrequencyBase) ?? defaults.ropeFrequencyBase
+        ropeFrequencyScale = try container.decodeIfPresent(Double.self, forKey: .ropeFrequencyScale) ?? defaults.ropeFrequencyScale
+        yarnExtensionFactor = try container.decodeIfPresent(Double.self, forKey: .yarnExtensionFactor) ?? defaults.yarnExtensionFactor
+        yarnAttentionFactor = try container.decodeIfPresent(Double.self, forKey: .yarnAttentionFactor) ?? defaults.yarnAttentionFactor
+        yarnBetaFast = try container.decodeIfPresent(Double.self, forKey: .yarnBetaFast) ?? defaults.yarnBetaFast
+        yarnBetaSlow = try container.decodeIfPresent(Double.self, forKey: .yarnBetaSlow) ?? defaults.yarnBetaSlow
+        yarnOriginalContext = try container.decodeIfPresent(Int.self, forKey: .yarnOriginalContext) ?? defaults.yarnOriginalContext
         systemPromptOverride = try container.decodeIfPresent(String.self, forKey: .systemPromptOverride) ?? defaults.systemPromptOverride
     }
 }

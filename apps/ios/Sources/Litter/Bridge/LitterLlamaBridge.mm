@@ -51,12 +51,52 @@ static std::string LitterLlamaPrompt(NSArray<NSDictionary<NSString *, NSString *
     return prompt;
 }
 
-static std::vector<llama_token> LitterLlamaTokenize(const llama_vocab *vocab, const std::string &prompt, int32_t maxContextTokens) {
-    int32_t count = llama_tokenize(vocab, prompt.c_str(), (int32_t)prompt.size(), nullptr, 0, true, true);
+static std::string LitterLlamaModelPrompt(const llama_model *model, NSArray<NSDictionary<NSString *, NSString *> *> *messages) {
+    const char *tmpl = llama_model_chat_template(model, nullptr);
+    if (tmpl == nullptr) { return LitterLlamaPrompt(messages); }
+
+    std::vector<std::string> roles;
+    std::vector<std::string> contents;
+    std::vector<llama_chat_message> chat;
+    roles.reserve(messages.count);
+    contents.reserve(messages.count);
+    chat.reserve(messages.count);
+    for (NSDictionary *message in messages) {
+        roles.push_back(LitterLlamaUTF8(message[@"role"] ?: @"user"));
+        contents.push_back(LitterLlamaUTF8(message[@"text"] ?: @""));
+    }
+    for (size_t index = 0; index < roles.size(); index++) {
+        chat.push_back({ roles[index].c_str(), contents[index].c_str() });
+    }
+
+    int32_t needed = llama_chat_apply_template(tmpl, chat.data(), chat.size(), true, nullptr, 0);
+    if (needed <= 0) { return LitterLlamaPrompt(messages); }
+    std::vector<char> rendered((size_t)needed + 1);
+    int32_t written = llama_chat_apply_template(tmpl, chat.data(), chat.size(), true, rendered.data(), needed + 1);
+    if (written <= 0) { return LitterLlamaPrompt(messages); }
+    return std::string(rendered.data(), (size_t)written);
+}
+
+static std::string LitterLlamaPromptForMode(const llama_model *model,
+                                            NSArray<NSDictionary<NSString *, NSString *> *> *messages,
+                                            NSString *promptTemplateMode) {
+    NSString *mode = [promptTemplateMode lowercaseString];
+    if ([mode isEqualToString:@"modeldefault"]) {
+        return LitterLlamaModelPrompt(model, messages);
+    }
+    return LitterLlamaPrompt(messages);
+}
+
+static std::vector<llama_token> LitterLlamaTokenize(const llama_vocab *vocab,
+                                                    const std::string &prompt,
+                                                    int32_t maxContextTokens,
+                                                    BOOL parseSpecialTokens) {
+    bool parseSpecial = parseSpecialTokens ? true : false;
+    int32_t count = llama_tokenize(vocab, prompt.c_str(), (int32_t)prompt.size(), nullptr, 0, true, parseSpecial);
     if (count < 0) { count = -count; }
     if (count <= 0) { return {}; }
     std::vector<llama_token> tokens((size_t)count);
-    int32_t written = llama_tokenize(vocab, prompt.c_str(), (int32_t)prompt.size(), tokens.data(), count, true, true);
+    int32_t written = llama_tokenize(vocab, prompt.c_str(), (int32_t)prompt.size(), tokens.data(), count, true, parseSpecial);
     if (written < 0) { written = -written; }
     tokens.resize((size_t)std::max(0, written));
     if (maxContextTokens > 0 && (int32_t)tokens.size() > maxContextTokens) {
@@ -116,18 +156,60 @@ static ggml_type LitterLlamaKVType(NSString *mode, NSError **error) {
     return GGML_TYPE_F16;
 }
 
-static llama_model *LitterLlamaLoadModel(NSString *modelPath, BOOL metalEnabled) {
+static enum llama_flash_attn_type LitterLlamaFlashAttentionType(NSString *mode) {
+    NSString *lower = [[mode ?: @"automatic"] lowercaseString];
+    if ([lower isEqualToString:@"enabled"]) { return LLAMA_FLASH_ATTN_TYPE_ENABLED; }
+    if ([lower isEqualToString:@"disabled"]) { return LLAMA_FLASH_ATTN_TYPE_DISABLED; }
+    return LLAMA_FLASH_ATTN_TYPE_AUTO;
+}
+
+static enum llama_rope_scaling_type LitterLlamaRopeScalingType(NSString *mode) {
+    NSString *lower = [[mode ?: @"modeldefault"] lowercaseString];
+    if ([lower isEqualToString:@"none"]) { return LLAMA_ROPE_SCALING_TYPE_NONE; }
+    if ([lower isEqualToString:@"linear"]) { return LLAMA_ROPE_SCALING_TYPE_LINEAR; }
+    if ([lower isEqualToString:@"yarn"]) { return LLAMA_ROPE_SCALING_TYPE_YARN; }
+    if ([lower isEqualToString:@"longrope"]) { return LLAMA_ROPE_SCALING_TYPE_LONGROPE; }
+    return LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED;
+}
+
+static uint32_t LitterLlamaSamplerSeed(NSInteger seed) {
+    return seed < 0 ? LLAMA_DEFAULT_SEED : (uint32_t)seed;
+}
+
+static llama_model *LitterLlamaLoadModel(NSString *modelPath,
+                                         BOOL metalEnabled,
+                                         NSInteger gpuLayerCount,
+                                         BOOL mmapEnabled,
+                                         BOOL mlockEnabled,
+                                         BOOL checkTensors) {
     llama_model_params modelParams = llama_model_default_params();
-    modelParams.n_gpu_layers = metalEnabled ? -1 : 0;
+    modelParams.n_gpu_layers = metalEnabled ? (int32_t)gpuLayerCount : 0;
+    modelParams.use_mmap = mmapEnabled;
+    modelParams.use_mlock = mlockEnabled;
+    modelParams.check_tensors = checkTensors;
     return llama_model_load_from_file([modelPath fileSystemRepresentation], modelParams);
 }
 
 static llama_context *LitterLlamaCreateContext(llama_model *model,
                                                NSInteger contextTokens,
                                                NSInteger threadCount,
+                                               NSInteger batchThreadCount,
                                                NSInteger batchSize,
                                                NSInteger microBatchSize,
-                                               ggml_type kvType) {
+                                               ggml_type kvType,
+                                               NSString *flashAttentionMode,
+                                               BOOL offloadKQV,
+                                               BOOL opOffload,
+                                               BOOL swaFull,
+                                               BOOL kvUnified,
+                                               NSString *ropeScalingMode,
+                                               double ropeFrequencyBase,
+                                               double ropeFrequencyScale,
+                                               double yarnExtensionFactor,
+                                               double yarnAttentionFactor,
+                                               double yarnBetaFast,
+                                               double yarnBetaSlow,
+                                               NSInteger yarnOriginalContext) {
     llama_context_params contextParams = llama_context_default_params();
     contextParams.n_ctx = (uint32_t)std::max((NSInteger)512, contextTokens);
     uint32_t requestedBatch = (uint32_t)std::max((NSInteger)32, batchSize);
@@ -135,10 +217,24 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
     uint32_t requestedMicroBatch = (uint32_t)std::max((NSInteger)32, microBatchSize);
     contextParams.n_ubatch = std::min(contextParams.n_batch, requestedMicroBatch);
     int32_t threads = (int32_t)std::max((NSInteger)1, std::min((NSInteger)12, threadCount));
+    int32_t batchThreads = batchThreadCount <= 0 ? threads : (int32_t)std::max((NSInteger)1, std::min((NSInteger)12, batchThreadCount));
     contextParams.n_threads = threads;
-    contextParams.n_threads_batch = threads;
+    contextParams.n_threads_batch = batchThreads;
     contextParams.type_k = kvType;
     contextParams.type_v = kvType;
+    contextParams.flash_attn_type = LitterLlamaFlashAttentionType(flashAttentionMode);
+    contextParams.offload_kqv = offloadKQV;
+    contextParams.op_offload = opOffload;
+    contextParams.swa_full = swaFull;
+    contextParams.kv_unified = kvUnified;
+    contextParams.rope_scaling_type = LitterLlamaRopeScalingType(ropeScalingMode);
+    contextParams.rope_freq_base = (float)std::max(0.0, ropeFrequencyBase);
+    contextParams.rope_freq_scale = (float)std::max(0.0, ropeFrequencyScale);
+    contextParams.yarn_ext_factor = (float)yarnExtensionFactor;
+    contextParams.yarn_attn_factor = (float)yarnAttentionFactor;
+    contextParams.yarn_beta_fast = (float)yarnBetaFast;
+    contextParams.yarn_beta_slow = (float)yarnBetaSlow;
+    contextParams.yarn_orig_ctx = (uint32_t)std::max((NSInteger)0, yarnOriginalContext);
     return llama_init_from_model(model, contextParams);
 }
 
@@ -170,17 +266,45 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
                             temperature:temperature
                                    topP:0.95
                                    topK:40
+                                   minP:0
+                               typicalP:1
+                dynamicTemperatureRange:0
+             dynamicTemperatureExponent:1
+                           mirostatMode:@"off"
+                            mirostatTau:5
+                            mirostatEta:0.1
                             repeatLastN:64
                           repeatPenalty:1.08
-                        frequencyPenalty:0
-                          presencePenalty:0
+                       frequencyPenalty:0
+                        presencePenalty:0
                                    seed:-1
                             threadCount:defaultThreads
+                       batchThreadCount:0
                               batchSize:1024
                          microBatchSize:512
                            metalEnabled:YES
+                          gpuLayerCount:-1
                      cpuFallbackAllowed:YES
+                            mmapEnabled:YES
+                           mlockEnabled:NO
+                           checkTensors:NO
+                     flashAttentionMode:@"automatic"
+                             offloadKQV:YES
+                              opOffload:YES
+                                swaFull:YES
+                              kvUnified:NO
                             kvCacheMode:@"automatic"
+                     promptTemplateMode:@"litter"
+                     parseSpecialTokens:YES
+                          stopSequences:@[]
+                        ropeScalingMode:@"modelDefault"
+                      ropeFrequencyBase:0
+                     ropeFrequencyScale:0
+                    yarnExtensionFactor:-1
+                    yarnAttentionFactor:-1
+                           yarnBetaFast:-1
+                           yarnBetaSlow:-1
+                    yarnOriginalContext:0
                                messages:messages
                                 onToken:onToken
                                   error:error];
@@ -192,17 +316,45 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
                                   temperature:(double)temperature
                                          topP:(double)topP
                                          topK:(NSInteger)topK
+                                         minP:(double)minP
+                                     typicalP:(double)typicalP
+                      dynamicTemperatureRange:(double)dynamicTemperatureRange
+                   dynamicTemperatureExponent:(double)dynamicTemperatureExponent
+                                 mirostatMode:(NSString *)mirostatMode
+                                  mirostatTau:(double)mirostatTau
+                                  mirostatEta:(double)mirostatEta
                                   repeatLastN:(NSInteger)repeatLastN
                                 repeatPenalty:(double)repeatPenalty
-                              frequencyPenalty:(double)frequencyPenalty
-                                presencePenalty:(double)presencePenalty
+                             frequencyPenalty:(double)frequencyPenalty
+                              presencePenalty:(double)presencePenalty
                                          seed:(NSInteger)seed
                                   threadCount:(NSInteger)threadCount
+                             batchThreadCount:(NSInteger)batchThreadCount
                                     batchSize:(NSInteger)batchSize
                                microBatchSize:(NSInteger)microBatchSize
                                  metalEnabled:(BOOL)metalEnabled
+                                gpuLayerCount:(NSInteger)gpuLayerCount
                            cpuFallbackAllowed:(BOOL)cpuFallbackAllowed
+                                  mmapEnabled:(BOOL)mmapEnabled
+                                 mlockEnabled:(BOOL)mlockEnabled
+                                 checkTensors:(BOOL)checkTensors
+                           flashAttentionMode:(NSString *)flashAttentionMode
+                                   offloadKQV:(BOOL)offloadKQV
+                                    opOffload:(BOOL)opOffload
+                                      swaFull:(BOOL)swaFull
+                                    kvUnified:(BOOL)kvUnified
                                   kvCacheMode:(NSString *)kvCacheMode
+                           promptTemplateMode:(NSString *)promptTemplateMode
+                           parseSpecialTokens:(BOOL)parseSpecialTokens
+                                stopSequences:(NSArray<NSString *> *)stopSequences
+                              ropeScalingMode:(NSString *)ropeScalingMode
+                            ropeFrequencyBase:(double)ropeFrequencyBase
+                           ropeFrequencyScale:(double)ropeFrequencyScale
+                          yarnExtensionFactor:(double)yarnExtensionFactor
+                          yarnAttentionFactor:(double)yarnAttentionFactor
+                                 yarnBetaFast:(double)yarnBetaFast
+                                 yarnBetaSlow:(double)yarnBetaSlow
+                          yarnOriginalContext:(NSInteger)yarnOriginalContext
                                      messages:(NSArray<NSDictionary<NSString *, NSString *> *> *)messages
                                       onToken:(void (^)(NSString *token))onToken
                                         error:(NSError **)error {
@@ -221,21 +373,63 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
     std::call_once(LitterLlamaBackendOnce, [] { llama_backend_init(); });
     LitterLlamaCancelRequested.store(false);
 
-    llama_model *model = LitterLlamaLoadModel(modelPath, metalEnabled);
+    llama_model *model = LitterLlamaLoadModel(modelPath, metalEnabled, gpuLayerCount, mmapEnabled, mlockEnabled, checkTensors);
     if (model == nullptr && metalEnabled && cpuFallbackAllowed) {
-        model = LitterLlamaLoadModel(modelPath, false);
+        model = LitterLlamaLoadModel(modelPath, false, 0, mmapEnabled, mlockEnabled, checkTensors);
     }
     if (model == nullptr) {
         LitterLlamaSetError(error, 2, @"llama.cpp could not load the GGUF model.");
         return nil;
     }
 
-    llama_context *ctx = LitterLlamaCreateContext(model, contextTokens, threadCount, batchSize, microBatchSize, kvType);
+    llama_context *ctx = LitterLlamaCreateContext(
+        model,
+        contextTokens,
+        threadCount,
+        batchThreadCount,
+        batchSize,
+        microBatchSize,
+        kvType,
+        flashAttentionMode,
+        offloadKQV,
+        opOffload,
+        swaFull,
+        kvUnified,
+        ropeScalingMode,
+        ropeFrequencyBase,
+        ropeFrequencyScale,
+        yarnExtensionFactor,
+        yarnAttentionFactor,
+        yarnBetaFast,
+        yarnBetaSlow,
+        yarnOriginalContext
+    );
     if (ctx == nullptr && metalEnabled && cpuFallbackAllowed) {
         llama_model_free(model);
-        model = LitterLlamaLoadModel(modelPath, false);
+        model = LitterLlamaLoadModel(modelPath, false, 0, mmapEnabled, mlockEnabled, checkTensors);
         if (model != nullptr) {
-            ctx = LitterLlamaCreateContext(model, contextTokens, threadCount, batchSize, microBatchSize, kvType);
+            ctx = LitterLlamaCreateContext(
+                model,
+                contextTokens,
+                threadCount,
+                batchThreadCount,
+                batchSize,
+                microBatchSize,
+                kvType,
+                flashAttentionMode,
+                false,
+                false,
+                swaFull,
+                kvUnified,
+                ropeScalingMode,
+                ropeFrequencyBase,
+                ropeFrequencyScale,
+                yarnExtensionFactor,
+                yarnAttentionFactor,
+                yarnBetaFast,
+                yarnBetaSlow,
+                yarnOriginalContext
+            );
         }
     }
     if (ctx == nullptr) {
@@ -247,7 +441,8 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
     const llama_vocab *vocab = llama_model_get_vocab(model);
     int32_t generationBudget = (int32_t)std::max((NSInteger)1, maxTokens);
     int32_t promptBudget = std::max(32, (int32_t)std::max((NSInteger)512, contextTokens) - generationBudget - 8);
-    std::vector<llama_token> promptTokens = LitterLlamaTokenize(vocab, LitterLlamaPrompt(messages), promptBudget);
+    std::string prompt = LitterLlamaPromptForMode(model, messages, promptTemplateMode);
+    std::vector<llama_token> promptTokens = LitterLlamaTokenize(vocab, prompt, promptBudget, parseSpecialTokens);
     if (promptTokens.empty()) {
         llama_free(ctx);
         llama_model_free(model);
@@ -269,12 +464,29 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
         int32_t repeatWindow = (int32_t)std::max((NSInteger)0, std::min((NSInteger)4096, repeatLastN));
         llama_sampler_chain_add(sampler, llama_sampler_init_penalties(repeatWindow, (float)repeatPenalty, (float)frequencyPenalty, (float)presencePenalty));
     }
+    uint32_t samplerSeed = LitterLlamaSamplerSeed(seed);
     if (temperature > 0.001) {
         llama_sampler_chain_add(sampler, llama_sampler_init_top_k((int32_t)std::max((NSInteger)1, topK)));
         llama_sampler_chain_add(sampler, llama_sampler_init_top_p((float)std::max(0.05, std::min(1.0, topP)), 1));
-        llama_sampler_chain_add(sampler, llama_sampler_init_temp((float)temperature));
-        uint32_t samplerSeed = seed < 0 ? LLAMA_DEFAULT_SEED : (uint32_t)seed;
-        llama_sampler_chain_add(sampler, llama_sampler_init_dist(samplerSeed));
+        if (minP > 0.001) {
+            llama_sampler_chain_add(sampler, llama_sampler_init_min_p((float)std::min(1.0, std::max(0.0, minP)), 1));
+        }
+        if (typicalP < 0.999) {
+            llama_sampler_chain_add(sampler, llama_sampler_init_typical((float)std::min(1.0, std::max(0.0, typicalP)), 1));
+        }
+        if (dynamicTemperatureRange > 0.001) {
+            llama_sampler_chain_add(sampler, llama_sampler_init_temp_ext((float)temperature, (float)dynamicTemperatureRange, (float)dynamicTemperatureExponent));
+        } else {
+            llama_sampler_chain_add(sampler, llama_sampler_init_temp((float)temperature));
+        }
+        NSString *mirostat = [[mirostatMode ?: @"off"] lowercaseString];
+        if ([mirostat isEqualToString:@"v1"]) {
+            llama_sampler_chain_add(sampler, llama_sampler_init_mirostat(llama_vocab_n_tokens(vocab), samplerSeed, (float)mirostatTau, (float)mirostatEta, 100));
+        } else if ([mirostat isEqualToString:@"v2"]) {
+            llama_sampler_chain_add(sampler, llama_sampler_init_mirostat_v2(samplerSeed, (float)mirostatTau, (float)mirostatEta));
+        } else {
+            llama_sampler_chain_add(sampler, llama_sampler_init_dist(samplerSeed));
+        }
     } else {
         llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
     }
@@ -286,10 +498,35 @@ static llama_context *LitterLlamaCreateContext(llama_model *model,
         if (llama_vocab_is_eog(vocab, token)) { break; }
         llama_sampler_accept(sampler, token);
         NSString *piece = LitterLlamaPiece(vocab, token);
-        if (piece.length > 0) {
-            [output appendString:piece];
-            if (onToken != nil) { onToken(piece); }
+        BOOL hitStop = NO;
+        NSString *pieceToEmit = piece;
+        if (piece.length > 0 && stopSequences.count > 0) {
+            NSString *candidate = [output stringByAppendingString:piece];
+            NSUInteger earliest = NSNotFound;
+            NSUInteger longestStop = 0;
+            for (NSString *stop in stopSequences) {
+                longestStop = std::max(longestStop, stop.length);
+            }
+            NSUInteger searchStart = output.length > longestStop ? output.length - longestStop : 0;
+            NSRange searchRange = NSMakeRange(searchStart, candidate.length - searchStart);
+            for (NSString *stop in stopSequences) {
+                if (stop.length == 0) { continue; }
+                NSRange range = [candidate rangeOfString:stop options:0 range:searchRange];
+                if (range.location != NSNotFound && range.location < earliest) {
+                    earliest = range.location;
+                }
+            }
+            if (earliest != NSNotFound) {
+                NSString *trimmed = [candidate substringToIndex:earliest];
+                pieceToEmit = trimmed.length > output.length ? [trimmed substringFromIndex:output.length] : @"";
+                hitStop = YES;
+            }
         }
+        if (pieceToEmit.length > 0) {
+            [output appendString:pieceToEmit];
+            if (onToken != nil) { onToken(pieceToEmit); }
+        }
+        if (hitStop) { break; }
         llama_batch tokenBatch = llama_batch_get_one(&token, 1);
         if (llama_decode(ctx, tokenBatch) != 0) {
             llama_sampler_free(sampler);

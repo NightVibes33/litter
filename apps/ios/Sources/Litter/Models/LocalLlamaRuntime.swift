@@ -47,18 +47,142 @@ struct LocalLlamaGenerationOptions: Equatable {
     var retryPolicy: LocalLlamaRetryPolicy
     var topP: Double
     var topK: Int
+    var minP: Double
+    var typicalP: Double
+    var dynamicTemperatureRange: Double
+    var dynamicTemperatureExponent: Double
+    var mirostatMode: LocalModelMirostatMode
+    var mirostatTau: Double
+    var mirostatEta: Double
     var repeatLastN: Int
     var repeatPenalty: Double
     var frequencyPenalty: Double
     var presencePenalty: Double
     var seed: Int
     var preferredThreadCount: Int
+    var batchThreadCount: Int
     var batchSize: Int
     var microBatchSize: Int
     var metalEnabled: Bool
+    var gpuLayerCount: Int
     var cpuFallbackAllowed: Bool
     var streamingEnabled: Bool
+    var mmapEnabled: Bool
+    var mlockEnabled: Bool
+    var checkTensors: Bool
+    var flashAttentionMode: LocalModelFlashAttentionMode
+    var offloadKQV: Bool
+    var opOffload: Bool
+    var swaFull: Bool
+    var kvUnified: Bool
     var kvCacheMode: LocalModelKVCacheMode
+    var promptTemplateMode: LocalModelPromptTemplateMode
+    var parseSpecialTokens: Bool
+    var stopSequences: [String]
+    var ropeScalingMode: LocalModelRopeScalingMode
+    var ropeFrequencyBase: Double
+    var ropeFrequencyScale: Double
+    var yarnExtensionFactor: Double
+    var yarnAttentionFactor: Double
+    var yarnBetaFast: Double
+    var yarnBetaSlow: Double
+    var yarnOriginalContext: Int
+
+    init(
+        contextTokens: Int,
+        allowToolCalls: Bool,
+        maxToolRounds: Int,
+        retryPolicy: LocalLlamaRetryPolicy,
+        topP: Double,
+        topK: Int,
+        minP: Double = 0,
+        typicalP: Double = 1,
+        dynamicTemperatureRange: Double = 0,
+        dynamicTemperatureExponent: Double = 1,
+        mirostatMode: LocalModelMirostatMode = .off,
+        mirostatTau: Double = 5,
+        mirostatEta: Double = 0.1,
+        repeatLastN: Int,
+        repeatPenalty: Double,
+        frequencyPenalty: Double,
+        presencePenalty: Double,
+        seed: Int,
+        preferredThreadCount: Int,
+        batchThreadCount: Int = 0,
+        batchSize: Int,
+        microBatchSize: Int,
+        metalEnabled: Bool,
+        gpuLayerCount: Int = -1,
+        cpuFallbackAllowed: Bool,
+        streamingEnabled: Bool,
+        mmapEnabled: Bool = true,
+        mlockEnabled: Bool = false,
+        checkTensors: Bool = false,
+        flashAttentionMode: LocalModelFlashAttentionMode = .automatic,
+        offloadKQV: Bool = true,
+        opOffload: Bool = true,
+        swaFull: Bool = true,
+        kvUnified: Bool = false,
+        kvCacheMode: LocalModelKVCacheMode,
+        promptTemplateMode: LocalModelPromptTemplateMode = .litter,
+        parseSpecialTokens: Bool = true,
+        stopSequences: [String] = [],
+        ropeScalingMode: LocalModelRopeScalingMode = .modelDefault,
+        ropeFrequencyBase: Double = 0,
+        ropeFrequencyScale: Double = 0,
+        yarnExtensionFactor: Double = -1,
+        yarnAttentionFactor: Double = -1,
+        yarnBetaFast: Double = -1,
+        yarnBetaSlow: Double = -1,
+        yarnOriginalContext: Int = 0
+    ) {
+        self.contextTokens = contextTokens
+        self.allowToolCalls = allowToolCalls
+        self.maxToolRounds = maxToolRounds
+        self.retryPolicy = retryPolicy
+        self.topP = topP
+        self.topK = topK
+        self.minP = minP
+        self.typicalP = typicalP
+        self.dynamicTemperatureRange = dynamicTemperatureRange
+        self.dynamicTemperatureExponent = dynamicTemperatureExponent
+        self.mirostatMode = mirostatMode
+        self.mirostatTau = mirostatTau
+        self.mirostatEta = mirostatEta
+        self.repeatLastN = repeatLastN
+        self.repeatPenalty = repeatPenalty
+        self.frequencyPenalty = frequencyPenalty
+        self.presencePenalty = presencePenalty
+        self.seed = seed
+        self.preferredThreadCount = preferredThreadCount
+        self.batchThreadCount = batchThreadCount
+        self.batchSize = batchSize
+        self.microBatchSize = microBatchSize
+        self.metalEnabled = metalEnabled
+        self.gpuLayerCount = gpuLayerCount
+        self.cpuFallbackAllowed = cpuFallbackAllowed
+        self.streamingEnabled = streamingEnabled
+        self.mmapEnabled = mmapEnabled
+        self.mlockEnabled = mlockEnabled
+        self.checkTensors = checkTensors
+        self.flashAttentionMode = flashAttentionMode
+        self.offloadKQV = offloadKQV
+        self.opOffload = opOffload
+        self.swaFull = swaFull
+        self.kvUnified = kvUnified
+        self.kvCacheMode = kvCacheMode
+        self.promptTemplateMode = promptTemplateMode
+        self.parseSpecialTokens = parseSpecialTokens
+        self.stopSequences = stopSequences
+        self.ropeScalingMode = ropeScalingMode
+        self.ropeFrequencyBase = ropeFrequencyBase
+        self.ropeFrequencyScale = ropeFrequencyScale
+        self.yarnExtensionFactor = yarnExtensionFactor
+        self.yarnAttentionFactor = yarnAttentionFactor
+        self.yarnBetaFast = yarnBetaFast
+        self.yarnBetaSlow = yarnBetaSlow
+        self.yarnOriginalContext = yarnOriginalContext
+    }
 
     static func defaults(for capability: DeviceCapabilityProfile = .current()) -> LocalLlamaGenerationOptions {
         from(settings: .defaults(for: capability), capability: capability, turboQuantAvailable: false)
@@ -77,18 +201,46 @@ struct LocalLlamaGenerationOptions: Equatable {
             retryPolicy: LocalLlamaRetryPolicy(maxAttempts: safe.retryAttempts, retryDelayNanoseconds: 250_000_000),
             topP: safe.topP,
             topK: safe.topK,
+            minP: safe.minP,
+            typicalP: safe.typicalP,
+            dynamicTemperatureRange: safe.dynamicTemperatureRange,
+            dynamicTemperatureExponent: safe.dynamicTemperatureExponent,
+            mirostatMode: safe.mirostatMode,
+            mirostatTau: safe.mirostatTau,
+            mirostatEta: safe.mirostatEta,
             repeatLastN: safe.repeatLastN,
             repeatPenalty: safe.repeatPenalty,
             frequencyPenalty: safe.frequencyPenalty,
             presencePenalty: safe.presencePenalty,
             seed: safe.seed,
             preferredThreadCount: safe.preferredThreadCount,
+            batchThreadCount: safe.batchThreadCount,
             batchSize: safe.batchSize,
             microBatchSize: safe.microBatchSize,
             metalEnabled: safe.metalEnabled,
+            gpuLayerCount: safe.gpuLayerCount,
             cpuFallbackAllowed: safe.cpuFallbackAllowed,
             streamingEnabled: safe.streamingEnabled,
-            kvCacheMode: safe.kvCacheMode
+            mmapEnabled: safe.mmapEnabled,
+            mlockEnabled: safe.mlockEnabled,
+            checkTensors: safe.checkTensors,
+            flashAttentionMode: safe.flashAttentionMode,
+            offloadKQV: safe.offloadKQV,
+            opOffload: safe.opOffload,
+            swaFull: safe.swaFull,
+            kvUnified: safe.kvUnified,
+            kvCacheMode: safe.kvCacheMode,
+            promptTemplateMode: safe.promptTemplateMode,
+            parseSpecialTokens: safe.parseSpecialTokens,
+            stopSequences: safe.stopSequences,
+            ropeScalingMode: safe.ropeScalingMode,
+            ropeFrequencyBase: safe.ropeFrequencyBase,
+            ropeFrequencyScale: safe.ropeFrequencyScale,
+            yarnExtensionFactor: safe.yarnExtensionFactor,
+            yarnAttentionFactor: safe.yarnAttentionFactor,
+            yarnBetaFast: safe.yarnBetaFast,
+            yarnBetaSlow: safe.yarnBetaSlow,
+            yarnOriginalContext: safe.yarnOriginalContext
         )
     }
 }
@@ -200,8 +352,13 @@ actor LocalLlamaRuntime {
             let task = Task {
                 do {
                     for try await event in self.generateEvents(request) {
-                        if case .token(let token) = event {
+                        switch event {
+                        case .token(let token):
                             continuation.yield(token)
+                        case .completed(let text) where !request.options.streamingEnabled:
+                            continuation.yield(text)
+                        default:
+                            break
                         }
                     }
                     continuation.finish()
@@ -315,7 +472,7 @@ actor LocalLlamaRuntime {
                 let buffer = LocalLlamaTokenBuffer()
                 let generated = try await generator(request, messages) { token in
                     buffer.append(token)
-                    continuation.yield(.token(token))
+                    if request.options.streamingEnabled { continuation.yield(.token(token)) }
                 }
                 finalText = generated.isEmpty ? buffer.text : generated
                 break
@@ -348,7 +505,7 @@ actor LocalLlamaRuntime {
                 let buffer = LocalLlamaTokenBuffer()
                 let generated = try await generator(request, messages) { token in
                     buffer.append(token)
-                    continuation.yield(.token(token))
+                    if request.options.streamingEnabled { continuation.yield(.token(token)) }
                 }
                 finalText = generated.isEmpty ? buffer.text : generated
                 continue
@@ -373,7 +530,7 @@ actor LocalLlamaRuntime {
             let buffer = LocalLlamaTokenBuffer()
             let generated = try await generator(request, messages) { token in
                 buffer.append(token)
-                continuation.yield(.token(token))
+                if request.options.streamingEnabled { continuation.yield(.token(token)) }
             }
             finalText = generated.isEmpty ? buffer.text : generated
         }
