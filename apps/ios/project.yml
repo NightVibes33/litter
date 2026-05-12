@@ -75,6 +75,7 @@ targets:
     sources:
       - path: Sources/Litter
         excludes:
+          - Resources/BuildKitAssets/**
           - "**/*.h"
       - path: Resources/fs
         type: folder
@@ -85,8 +86,6 @@ targets:
       - path: Sources/Litter/Resources/Fonts
       - path: Sources/Litter/Resources/Themes
       - path: Sources/Litter/Resources/BuildKit
-      - path: Sources/Litter/Resources/BuildKitAssets
-        type: folder
       - path: Sources/Litter/Resources/TipJarProducts.storekit
       - path: Sources/Litter/Resources/home_cat.png
       - path: Sources/Litter/Resources/home_cat_entrance.png
@@ -110,6 +109,17 @@ targets:
       - target: LitterWatch
         embed: true
     postBuildScripts:
+      - name: Copy Private BuildKit Assets
+        script: |
+          set -euo pipefail
+          ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
+          if [ ! -d "$ASSET_ROOT" ]; then
+            exit 0
+          fi
+          DEST="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/BuildKitAssets"
+          rm -rf "$DEST"
+          mkdir -p "$(dirname "$DEST")"
+          ditto "$ASSET_ROOT" "$DEST"
       - name: Embed Private BuildKit Frameworks
         script: |
           set -euo pipefail
@@ -194,6 +204,7 @@ targets:
           - Models/VoiceSessionModels.swift
           - Models/WatchCompanionBridge.swift
           - Models/WatchProjection.swift
+          - Resources/BuildKitAssets/**
           - Views/HomeVoiceOrbButton.swift
           - Views/InlineVoiceButton.swift
           - Views/InlineVoiceStatusStrip.swift
@@ -207,8 +218,6 @@ targets:
       - path: Sources/Litter/Resources/Fonts
       - path: Sources/Litter/Resources/Themes
       - path: Sources/Litter/Resources/BuildKit
-      - path: Sources/Litter/Resources/BuildKitAssets
-        type: folder
       - path: Sources/Litter/Resources/TipJarProducts.storekit
       - path: Sources/Litter/Resources/home_cat.png
       - path: Sources/Litter/Resources/home_cat_entrance.png
