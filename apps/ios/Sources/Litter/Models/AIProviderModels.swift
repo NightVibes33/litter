@@ -542,11 +542,10 @@ struct LocalModelRuntimeSettings: Codable, Equatable {
         next.gpuLayerCount = min(max(next.gpuLayerCount, -1), 512)
         next.maxToolRounds = min(max(next.maxToolRounds, 0), 20)
         next.retryAttempts = min(max(next.retryAttempts, 1), 5)
-        next.stopSequences = next.stopSequences
+        let sanitizedStopSequences: [String] = next.stopSequences
             .map { $0.trimmingCharacters(in: .newlines) }
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .prefix(12)
-            .map(String.init)
+        next.stopSequences = Array(sanitizedStopSequences[..<min(sanitizedStopSequences.count, 12)])
         next.ropeFrequencyBase = min(max(next.ropeFrequencyBase, 0), 1_000_000)
         next.ropeFrequencyScale = min(max(next.ropeFrequencyScale, 0), 100)
         next.yarnExtensionFactor = min(max(next.yarnExtensionFactor, -1), 100)
