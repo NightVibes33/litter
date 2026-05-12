@@ -233,6 +233,7 @@ final class VoiceRuntimeController: VoiceActions {
         if let server = appModel?.snapshot?.serverSnapshot(for: Self.localServerID), server.isConnected {
             return server.serverId
         }
+        try await LitterPlatform.ensureLocalRuntimeReady()
         let serverId = try await requireAppModel().serverBridge.connectLocalServer(
             serverId: Self.localServerID,
             displayName: requireAppModel().resolvedLocalServerDisplayName(),

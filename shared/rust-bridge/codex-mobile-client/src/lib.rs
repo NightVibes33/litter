@@ -85,6 +85,25 @@ pub fn ish_run(cmd: String, cwd: String) -> IshRunResult {
     }
 }
 
+/// Verify that the iSH runtime has booted and can execute a trivial command.
+/// Swift calls this before connecting the local in-process Codex server so the
+/// shell tools are never exposed while the kernel INSTANCE is still missing.
+#[uniffi::export]
+pub fn ish_runtime_preflight() -> IshRunResult {
+    #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]
+    {
+        let (exit_code, output) = ish_runtime::preflight();
+        return IshRunResult { exit_code, output };
+    }
+    #[cfg(not(all(target_os = "ios", not(target_abi = "macabi"))))]
+    {
+        IshRunResult {
+            exit_code: -1,
+            output: b"unsupported on this platform\n".to_vec(),
+        }
+    }
+}
+
 #[cfg(any(all(target_os = "ios", not(target_abi = "macabi")), test))]
 mod mobile_exec_command;
 mod shell_quoting;

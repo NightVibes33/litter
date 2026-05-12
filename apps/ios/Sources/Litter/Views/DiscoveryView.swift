@@ -850,6 +850,7 @@ struct DiscoveryView: View {
             switch target {
             case .local:
                 startedAsyncBootstrap = false
+                try await LitterPlatform.ensureLocalRuntimeReady()
                 connectedServerId = try await appModel.serverBridge.connectLocalServer(
                     serverId: server.id,
                     displayName: server.name,

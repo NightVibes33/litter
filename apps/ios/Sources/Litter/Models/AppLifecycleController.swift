@@ -39,8 +39,8 @@ final class AppLifecycleController {
     }
 
     func reconnectSavedServers(appModel: AppModel) async {
-        let servers = SavedServerStore.reconnectRecords(
-            localDisplayName: appModel.resolvedLocalServerDisplayName(),
+        let servers = await reconnectRecords(
+            appModel: appModel,
             rememberedOnly: true
         )
         appModel.reconnectController.setMultiClankerAndQuicEnabled(enabled: true)
@@ -63,6 +63,15 @@ final class AppLifecycleController {
         let servers = SavedServerStore.reconnectRecords(
             localDisplayName: appModel.resolvedLocalServerDisplayName()
         )
+        if let record = servers.first(where: { $0.id == serverId }), isLocalReconnectRecord(record) {
+            do {
+                try await LitterPlatform.ensureLocalRuntimeReady()
+            } catch {
+                logLocalRuntimeUnavailable(error, fields: ["serverId": serverId])
+                await appModel.refreshSnapshot()
+                return
+            }
+        }
         appModel.reconnectController.setMultiClankerAndQuicEnabled(enabled: true)
         appModel.reconnectController.syncSavedServers(servers: servers)
         let result = await appModel.reconnectController.reconnectServer(serverId: serverId)
@@ -352,8 +361,8 @@ final class AppLifecycleController {
         // Always attempt to reconnect saved servers on foreground return.
         // The ReconnectController skips servers whose health != .disconnected,
         // so this is cheap when everything is still connected.
-        let servers = SavedServerStore.reconnectRecords(
-            localDisplayName: appModel.resolvedLocalServerDisplayName(),
+        let servers = await reconnectRecords(
+            appModel: appModel,
             rememberedOnly: true
         )
         appModel.reconnectController.setMultiClankerAndQuicEnabled(enabled: true)
@@ -527,6 +536,41 @@ final class AppLifecycleController {
                 }
             }
         }
+    }
+
+    private func reconnectRecords(
+        appModel: AppModel,
+        rememberedOnly: Bool = false
+    ) async -> [SavedServerRecord] {
+        let records = SavedServerStore.reconnectRecords(
+            localDisplayName: appModel.resolvedLocalServerDisplayName(),
+            rememberedOnly: rememberedOnly
+        )
+#if targetEnvironment(macCatalyst)
+        return records
+#else
+        guard records.contains(where: isLocalReconnectRecord) else { return records }
+        do {
+            try await LitterPlatform.ensureLocalRuntimeReady()
+            return records
+        } catch {
+            logLocalRuntimeUnavailable(error)
+            return records.filter { !isLocalReconnectRecord($0) }
+        }
+#endif
+    }
+
+    private func isLocalReconnectRecord(_ record: SavedServerRecord) -> Bool {
+        record.id == "local" || record.source == "local"
+    }
+
+    private func logLocalRuntimeUnavailable(_ error: Error, fields: [String: Any] = [:]) {
+        LLog.error(
+            "ish",
+            "Local shell unavailable: iSH runtime is not bootstrapped",
+            error: error,
+            fields: fields
+        )
     }
 
     private func endBackgroundTaskIfNeeded() {

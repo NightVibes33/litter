@@ -503,6 +503,7 @@ final class AppModel {
         let currentLocal = snapshot?.servers.first(where: \.isLocal)
         let serverId = currentLocal?.serverId ?? "local"
         let displayName = resolvedLocalServerDisplayName()
+        try await LitterPlatform.ensureLocalRuntimeReady()
         serverBridge.disconnectServer(serverId: serverId)
         _ = try await serverBridge.connectLocalServer(
             serverId: serverId,
@@ -684,6 +685,17 @@ final class AppModel {
             "reconnecting local server to re-inherit stored API key environment",
             fields: ["serverId": serverId]
         )
+        do {
+            try await LitterPlatform.ensureLocalRuntimeReady()
+        } catch {
+            LLog.error(
+                "ish",
+                "Local shell unavailable: iSH runtime is not bootstrapped",
+                error: error,
+                fields: ["serverId": localServer.serverId]
+            )
+            return false
+        }
 
         serverBridge.disconnectServer(serverId: localServer.serverId)
 

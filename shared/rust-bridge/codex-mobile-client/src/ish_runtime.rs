@@ -111,6 +111,21 @@ pub fn default_cwd() -> &'static str {
     "/root"
 }
 
+/// Cheap readiness check used by Swift before exposing the local in-process
+/// Codex server. A missing INSTANCE is reported with a readable diagnostic
+/// instead of the empty-output `run()` compatibility path.
+pub fn preflight() -> (i32, Vec<u8>) {
+    if INSTANCE.get().is_none() {
+        eprintln!("[ish] preflight called before bootstrap succeeded");
+        return (
+            ISH_E_NOT_RUNNING,
+            b"iSH runtime is not bootstrapped\n".to_vec(),
+        );
+    }
+
+    run("true", None, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS))
+}
+
 /// Run `cmd` through the persistent `/bin/sh`. When `cwd` is non-empty the
 /// command is wrapped as `cd '<cwd>' && <cmd>` (same shell-quote pass as the
 /// Obj-C port). Returns (exit_code, merged stdout+stderr bytes). If the kernel

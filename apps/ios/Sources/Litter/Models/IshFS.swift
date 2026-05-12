@@ -28,7 +28,10 @@ enum IshFS {
     static func run(_ cmd: String, cwd: String? = nil) async -> Result {
         await Task.detached(priority: .userInitiated) {
             let res = ishRun(cmd: cmd, cwd: cwd ?? "")
-            let output = String(data: res.output, encoding: .utf8) ?? ""
+            var output = String(data: res.output, encoding: .utf8) ?? ""
+            if res.exitCode < 0 && output.isEmpty {
+                output = diagnostic(for: res.exitCode)
+            }
             return Result(exitCode: res.exitCode, output: output)
         }.value
     }
@@ -279,4 +282,10 @@ enum IshFS {
         )
     }
 
+    private static func diagnostic(for exitCode: Int32) -> String {
+        if exitCode == -6 {
+            return "iSH runtime is not bootstrapped; local shell is unavailable"
+        }
+        return "local shell failed before producing output (exit code \(exitCode))"
+    }
 }
