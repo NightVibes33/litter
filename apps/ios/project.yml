@@ -133,10 +133,40 @@ targets:
           mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
           for framework in CoreCompiler.framework LitterBuildKitNative.framework; do
             if [ -d "$ASSET_ROOT/$framework" ]; then
-              rm -rf "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
-              cp -R "$ASSET_ROOT/$framework" "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
+              destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
+              executable="${framework%.framework}"
+              rm -rf "$destination"
+              cp -R "$ASSET_ROOT/$framework" "$destination"
+              if [ ! -f "$destination/Info.plist" ]; then
+                cat > "$destination/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleExecutable</key>
+  <string>$executable</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.sigkitten.litter.$executable</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>$executable</string>
+  <key>CFBundlePackageType</key>
+  <string>FMWK</string>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>MinimumOSVersion</key>
+  <string>18.0</string>
+</dict>
+</plist>
+PLIST
+              fi
               if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
-                codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
+                codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$destination"
               fi
             fi
           done
