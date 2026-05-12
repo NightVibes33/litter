@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(\.textScale) private var textScale
     @AppStorage("fontFamily") private var fontFamily = FontFamilyOption.mono.rawValue
     @AppStorage("collapseTurns") private var collapseTurns = false
+    @AppStorage("developerToolsEnabled") private var developerToolsEnabled = false
     @State private var showAddServer = false
 
     private var localServer: AppServerSnapshot? {
@@ -35,7 +36,9 @@ struct SettingsView: View {
                     petSection
                     experimentalSection
                     aiProvidersSection
-                    buildKitSection
+                    if developerToolsEnabled {
+                        buildKitSection
+                    }
                     accountSection
                     serversSection
                 }
@@ -192,6 +195,24 @@ struct SettingsView: View {
                         .foregroundColor(LitterTheme.textPrimary)
                 }
             }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Toggle(isOn: $developerToolsEnabled) {
+                HStack(spacing: 10) {
+                    Image(systemName: "wrench.and.screwdriver")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Developer Tools")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Show BuildKit, Nyxian, and local build controls")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .tint(LitterTheme.accent)
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Experimental")
