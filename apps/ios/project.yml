@@ -109,17 +109,18 @@ targets:
       - target: LitterWatch
         embed: true
     postBuildScripts:
-      - name: Copy Private BuildKit Assets
+      - name: Package Private BuildKit Assets
         script: |
           set -euo pipefail
           ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
           if [ ! -d "$ASSET_ROOT" ]; then
             exit 0
           fi
-          DEST="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/BuildKitAssets"
-          rm -rf "$DEST"
-          mkdir -p "$(dirname "$DEST")"
-          ditto "$ASSET_ROOT" "$DEST"
+          RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          DEST="$RESOURCES_DIR/LitterBuildKitAssets.zip"
+          rm -rf "$RESOURCES_DIR/BuildKitAssets" "$DEST"
+          mkdir -p "$RESOURCES_DIR"
+          (cd "$(dirname "$ASSET_ROOT")" && ditto -c -k --sequesterRsrc --keepParent "$(basename "$ASSET_ROOT")" "$DEST")
       - name: Embed Private BuildKit Frameworks
         script: |
           set -euo pipefail
