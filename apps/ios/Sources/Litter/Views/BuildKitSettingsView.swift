@@ -58,7 +58,7 @@ struct BuildKitSettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             Button {
-                Task {
+                taskBag.run {
                     await LitterBuildKit.shared.installFakefsCommandShims()
                     await LitterBuildKit.shared.startFakefsRequestMonitor()
                     await refresh()
@@ -70,7 +70,7 @@ struct BuildKitSettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             Button {
-                Task {
+                taskBag.run {
                     await LitterBuildKit.shared.installBundledAssetsIfAvailable()
                     await refresh()
                 }
@@ -89,11 +89,8 @@ struct BuildKitSettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             Button {
-                Task {
-                    await LitterBuildKit.shared.installFakefsCommandShims()
-                    let result = await IshFS.run("litter-fs-doctor --timeout 60")
-                    lastActionOutput = result.output
-                    await refresh()
+                taskBag.run {
+                    await runBuildKitCommand("litter-fs-doctor --timeout 60", title: "Fakefs Doctor")
                 }
             } label: {
                 Label("Run Fakefs Doctor", systemImage: "stethoscope")
@@ -102,11 +99,8 @@ struct BuildKitSettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             Button {
-                Task {
-                    await LitterBuildKit.shared.installFakefsCommandShims()
-                    let result = await IshFS.run("litter-nyxian-status --timeout 60")
-                    lastActionOutput = result.output
-                    await refresh()
+                taskBag.run {
+                    await runBuildKitCommand("litter-nyxian-status --timeout 60", title: "Nyxian Status")
                 }
             } label: {
                 Label("Run Nyxian Status", systemImage: "hammer")
@@ -426,9 +420,9 @@ struct BuildKitSettingsView: View {
         switch result {
         case .success(let urls):
             guard let url = urls.first else { return }
-            Task {
+            taskBag.run {
                 let output = await LitterBuildKit.shared.importAssetBundle(from: url)
-                await MainActor.run { lastActionOutput = output }
+                lastActionOutput = output
                 await refresh()
             }
         case .failure(let error):

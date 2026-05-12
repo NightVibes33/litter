@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage("developerToolsEnabled") private var developerToolsEnabled = false
     @State private var showAddServer = false
 
+    @StateObject private var taskBag = ViewTaskBag()
     private var localServer: AppServerSnapshot? {
         // Account management (ChatGPT login / API key) is local-only, always.
         // If the local Codex bridge hasn't spun up there's no login target, and
@@ -63,6 +64,7 @@ struct SettingsView: View {
             .environment(appState)
             .environment(\.textScale, textScale)
         }
+        .onDisappear { taskBag.cancelAll() }
         }
     }
 
@@ -365,7 +367,7 @@ struct SettingsView: View {
                         Spacer()
                         Button("Remove") {
                             SavedServerStore.remove(serverId: conn.id)
-                            Task { await SshSessionStore.shared.close(serverId: conn.id, ssh: appModel.ssh) }
+                            taskBag.run { await SshSessionStore.shared.close(serverId: conn.id, ssh: appModel.ssh) }
                             appModel.serverBridge.disconnectServer(serverId: conn.id)
                         }
                         .litterFont(.caption)
@@ -406,6 +408,7 @@ private struct SettingsConnectionAccountSection: View {
     @State private var hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
     @State private var hasStoredChatGPTTokens = false
 
+    @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
         Section {
             HStack(spacing: 12) {
@@ -425,7 +428,7 @@ private struct SettingsConnectionAccountSection: View {
                 Spacer()
                 if server.isLocal, server.account != nil {
                     Button("Logout") {
-                        Task { await logout() }
+                        taskBag.run { await logout() }
                     }
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.danger)
@@ -442,10 +445,10 @@ private struct SettingsConnectionAccountSection: View {
 
             if server.isLocal, !isChatGPTAccount {
                 Button {
-                    Task {
+                    taskBag.run {
                         isAuthWorking = true
+                        defer { isAuthWorking = false }
                         await loginWithChatGPT()
-                        isAuthWorking = false
                     }
                 } label: {
                     HStack {
@@ -483,10 +486,10 @@ private struct SettingsConnectionAccountSection: View {
                     Button {
                         let key = apiKey.trimmingCharacters(in: .whitespaces)
                         guard !key.isEmpty else { return }
-                        Task {
+                        taskBag.run {
                             isAuthWorking = true
+                            defer { isAuthWorking = false }
                             await saveApiKey(key)
-                            isAuthWorking = false
                         }
                     } label: {
                         Text(hasStoredApiKey ? "Update API Key" : "Save API Key")
@@ -512,6 +515,7 @@ private struct SettingsConnectionAccountSection: View {
             refreshStoredCredentialFlags()
             await refreshAuthStatusIfNeeded()
         }
+        .onDisappear { taskBag.cancelAll() }
     }
 
     private var allowsLocalEnvApiKey: Bool {

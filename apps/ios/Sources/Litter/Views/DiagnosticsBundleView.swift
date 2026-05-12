@@ -6,11 +6,12 @@ struct DiagnosticsBundleView: View {
     @State private var isCollecting = false
     @State private var sharePayload: DiagnosticsSharePayload?
 
+    @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
         List {
             Section {
                 Button {
-                    Task { await collect() }
+                    taskBag.run { await collect() }
                 } label: {
                     Label(isCollecting ? "Collecting..." : "Collect Recovery Bundle", systemImage: "cross.case.fill")
                         .foregroundStyle(LitterTheme.accent)
@@ -71,10 +72,12 @@ struct DiagnosticsBundleView: View {
                 await collect()
             }
         }
+        .onDisappear { taskBag.cancelAll() }
     }
 
     @MainActor
     private func collect() async {
+        guard !isCollecting else { return }
         isCollecting = true
         defer { isCollecting = false }
         bundleText = await DiagnosticsBundleBuilder.build()

@@ -27,6 +27,11 @@ final class VoiceRuntimeController: VoiceActions {
     @ObservationIgnored private var updateSubscription: AppStoreSubscription?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var handoffActionPollTask: Task<Void, Never>?
+    @ObservationIgnored private var voiceLaunchTask: Task<Void, Never>?
+    @ObservationIgnored private var realtimeAnswerTask: Task<Void, Never>?
+    @ObservationIgnored private var voiceCallActivityTask: Task<Void, Never>?
+    @ObservationIgnored private var voiceSessionStopTask: Task<Void, Never>?
+    @ObservationIgnored private var sharedVoiceSessionSyncTask: Task<Void, Never>?
     @ObservationIgnored private var voiceCallActivity: Activity<CodexVoiceCallAttributes>?
     @ObservationIgnored private var voiceInputDecayToken: UUID?
     @ObservationIgnored private var voiceOutputDecayToken: UUID?
@@ -40,6 +45,11 @@ final class VoiceRuntimeController: VoiceActions {
     deinit {
         eventTask?.cancel()
         handoffActionPollTask?.cancel()
+        voiceLaunchTask?.cancel()
+        realtimeAnswerTask?.cancel()
+        voiceCallActivityTask?.cancel()
+        voiceSessionStopTask?.cancel()
+        sharedVoiceSessionSyncTask?.cancel()
         let center = CFNotificationCenterGetDarwinNotifyCenter()
         let observer = Unmanaged.passUnretained(self).toOpaque()
         let name = CFNotificationName(VoiceSessionControl.endRequestDarwinNotification as CFString)
@@ -325,7 +335,8 @@ final class VoiceRuntimeController: VoiceActions {
 
         // Detached background launch so the caller can push UI immediately
         // and the user sees the .connecting state while WebRTC handshakes.
-        Task { @MainActor [weak self] in
+        voiceLaunchTask?.cancel()
+        voiceLaunchTask = Task { @MainActor [weak self] in
             await self?.runRealtimeVoiceLaunch(
                 resolvedKey: resolvedKey,
                 runtimeSessionId: runtimeSessionId,
@@ -469,7 +480,8 @@ final class VoiceRuntimeController: VoiceActions {
             LLog.warn("voice", "received RealtimeSdp without an active WebRTC session")
             return
         }
-        Task { @MainActor [weak self] in
+        realtimeAnswerTask?.cancel()
+        realtimeAnswerTask = Task { @MainActor [weak self] in
             do {
                 try await session.applyAnswer(notification.sdp)
                 LLog.info("voice", "applyAnswer completed")
@@ -799,7 +811,8 @@ final class VoiceRuntimeController: VoiceActions {
             return
         }
         guard let activity = voiceCallActivity else { return }
-        Task {
+        voiceCallActivityTask?.cancel()
+        voiceCallActivityTask = Task {
             await activity.update(
                 .init(state: session.activityContentState, staleDate: Date(timeIntervalSinceNow: 120))
             )
@@ -808,7 +821,8 @@ final class VoiceRuntimeController: VoiceActions {
 
     private func endVoiceCallActivity() {
         guard let activity = voiceCallActivity else { return }
-        Task {
+        voiceCallActivityTask?.cancel()
+        voiceCallActivityTask = Task {
             await activity.end(nil, dismissalPolicy: .after(.now + 2))
         }
         voiceCallActivity = nil
@@ -909,11 +923,13 @@ final class VoiceRuntimeController: VoiceActions {
             return
         }
         lastHandledVoiceEndRequestToken = token
-        Task { await stopActiveVoiceSession() }
+        voiceSessionStopTask?.cancel()
+        voiceSessionStopTask = Task { await stopActiveVoiceSession() }
     }
 
     private func scheduleSharedVoiceSessionSync(for key: ThreadKey?) {
-        Task { @MainActor [weak self] in
+        sharedVoiceSessionSyncTask?.cancel()
+        sharedVoiceSessionSyncTask = Task { @MainActor [weak self] in
             await self?.syncSharedVoiceSessionFromStore(for: key)
         }
     }

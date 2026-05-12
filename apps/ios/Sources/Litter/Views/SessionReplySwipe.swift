@@ -13,6 +13,7 @@ struct SessionReplySwipeWrapper<Content: View>: View {
     @State private var isActivated = false
     @State private var isCommitting = false
 
+    @State private var commitResetTask: Task<Void, Never>?
     private let activationDistance: CGFloat = 12
     private let commitDistance: CGFloat = 80
     private let maxReveal: CGFloat = 110
@@ -65,6 +66,7 @@ struct SessionReplySwipeWrapper<Content: View>: View {
                 )
         }
         .clipped()
+        .onDisappear { commitResetTask?.cancel() }
     }
 
     private var revealOpacity: Double {
@@ -79,7 +81,10 @@ struct SessionReplySwipeWrapper<Content: View>: View {
         withAnimation(.spring(response: 0.34, dampingFraction: 0.78)) {
             offsetX = 0
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+        commitResetTask?.cancel()
+        commitResetTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
             isCommitting = false
         }
     }

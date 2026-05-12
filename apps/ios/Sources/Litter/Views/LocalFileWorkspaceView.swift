@@ -20,6 +20,7 @@ struct LocalFileWorkspaceView: View {
     @State private var sharePayload: LocalFileSharePayload?
     @State private var commandOutput: LocalCommandOutput?
 
+    @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
         sheetLayer
     }
@@ -31,7 +32,7 @@ struct LocalFileWorkspaceView: View {
             }
             .sheet(item: $model.openFile) { file in
                 LocalTextFileEditorView(file: file) { saved in
-                    if saved { Task { await model.reload() } }
+                    if saved { taskBag.run { await model.reload() } }
                 }
             }
             .sheet(item: $sharePayload) { payload in
@@ -59,13 +60,13 @@ struct LocalFileWorkspaceView: View {
         renameMoveAlertLayer
             .alert("Delete Item", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
-                Button("Delete", role: .destructive) { Task { await deleteSelected() } }
+                Button("Delete", role: .destructive) { taskBag.run { await deleteSelected() } }
             } message: {
                 Text("This removes \(deleteTarget?.name ?? "this item") from the iSH filesystem.")
             }
             .alert("Delete Selected Items", isPresented: $showDeleteSelection) {
                 Button("Cancel", role: .cancel) {}
-                Button("Delete", role: .destructive) { Task { await deleteSelection() } }
+                Button("Delete", role: .destructive) { taskBag.run { await deleteSelection() } }
             } message: {
                 Text("This removes \(model.selectedPaths.count) selected item(s) from the iSH filesystem.")
             }
@@ -78,14 +79,14 @@ struct LocalFileWorkspaceView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { renameTarget = nil }
-                Button("Save") { Task { await renameSelected() } }
+                Button("Save") { taskBag.run { await renameSelected() } }
             }
             .alert("Move Item", isPresented: Binding(get: { moveTarget != nil }, set: { if !$0 { moveTarget = nil } })) {
                 TextField("Destination folder", text: $moveDestination)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { moveTarget = nil }
-                Button("Move") { Task { await moveSelected() } }
+                Button("Move") { taskBag.run { await moveSelected() } }
             } message: {
                 Text("Move \(moveTarget?.name ?? "this item") to another iSH folder. You can use ~ for /root.")
             }
@@ -98,7 +99,7 @@ struct LocalFileWorkspaceView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { draftName = "" }
-                Button("Create") { Task { await create(kind: .file) } }
+                Button("Create") { taskBag.run { await create(kind: .file) } }
             } message: {
                 Text("Create a text file in the current iSH directory.")
             }
@@ -107,14 +108,14 @@ struct LocalFileWorkspaceView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { draftName = "" }
-                Button("Create") { Task { await create(kind: .directory) } }
+                Button("Create") { taskBag.run { await create(kind: .directory) } }
             }
     }
 
     private var importerLayer: some View {
         chromeLayer
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.item, .folder], allowsMultipleSelection: true) { result in
-                Task { await handleImport(result) }
+                taskBag.run { await handleImport(result) }
             }
     }
 
@@ -125,7 +126,8 @@ struct LocalFileWorkspaceView: View {
             .searchable(text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search Files")
             .toolbar { toolbarContent }
             .task { await model.loadInitial() }
-            .onChange(of: model.showHidden) { _, _ in Task { await model.reload() } }
+            .onChange(of: model.showHidden) { _, _ in taskBag.run { await model.reload() } }
+            .onDisappear { taskBag.cancelAll() }
     }
 
     private var rootLayer: some View {
@@ -143,15 +145,16 @@ struct LocalFileWorkspaceView: View {
         LocalFilePreviewSheet(
             file: file,
             onEdit: { openEditorAfterPreview(file) },
-            onShare: { Task { await share([file]) } },
+            onShare: { taskBag.run { await share([file]) } },
             onCopyPath: { copyPath(file.path) }
         )
     }
 
     private func openEditorAfterPreview(_ file: LocalFileEntry) {
         previewTarget = nil
-        Task { @MainActor in
+        taskBag.run {
             try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
             model.openFile = file
         }
     }
@@ -166,7 +169,7 @@ struct LocalFileWorkspaceView: View {
                 Button { copySelectedPaths() } label: { Image(systemName: "doc.on.doc") }
                     .disabled(model.selectedPaths.isEmpty)
                     .accessibilityLabel("Copy selected paths")
-                Button { Task { await share(model.selectedEntries) } } label: { Image(systemName: "square.and.arrow.up") }
+                Button { taskBag.run { await share(model.selectedEntries) } } label: { Image(systemName: "square.and.arrow.up") }
                     .disabled(model.selectedPaths.isEmpty)
                     .accessibilityLabel("Share selected")
                 Button(role: .destructive) { showDeleteSelection = true } label: { Image(systemName: "trash") }
@@ -181,7 +184,7 @@ struct LocalFileWorkspaceView: View {
                     Button("New File", systemImage: "doc.badge.plus") { draftName = ""; showNewFile = true }
                     Button("New Folder", systemImage: "folder.badge.plus") { draftName = ""; showNewFolder = true }
                     Divider()
-                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.reload() } }
+                    Button("Refresh", systemImage: "arrow.clockwise") { taskBag.run { await model.reload() } }
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .foregroundStyle(LitterTheme.accent)
@@ -201,7 +204,7 @@ struct LocalFileWorkspaceView: View {
                     Divider()
                     Button("Select", systemImage: "checkmark.circle") { model.isSelecting = true }
                     Button("Copy Folder Path", systemImage: "doc.on.doc") { copyPath(model.currentPath) }
-                    Button("Home", systemImage: "house") { Task { await model.navigate(to: HomeAnchor.path) } }
+                    Button("Home", systemImage: "house") { taskBag.run { await model.navigate(to: HomeAnchor.path) } }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -211,7 +214,7 @@ struct LocalFileWorkspaceView: View {
 
     private var pathBar: some View {
         HStack(spacing: 10) {
-            Button { Task { await model.navigateUp() } } label: {
+            Button { taskBag.run { await model.navigateUp() } } label: {
                 Image(systemName: "chevron.up")
                     .frame(width: 34, height: 34)
             }
@@ -223,7 +226,7 @@ struct LocalFileWorkspaceView: View {
                 HStack(spacing: 6) {
                     ForEach(model.breadcrumbs) { crumb in
                         Button {
-                            Task { await model.navigate(to: crumb.path) }
+                            taskBag.run { await model.navigate(to: crumb.path) }
                         } label: {
                             Text(crumb.title)
                                 .litterMonoFont(size: 13, weight: crumb.isCurrent ? .semibold : .regular)
@@ -261,7 +264,7 @@ struct LocalFileWorkspaceView: View {
                 title: "Couldn't Load Folder",
                 message: error,
                 actionTitle: "Retry",
-                action: { Task { await model.reload() } }
+                action: { taskBag.run { await model.reload() } }
             )
         } else if model.entries.isEmpty {
             LocalFileEmptyState(
@@ -372,7 +375,7 @@ struct LocalFileWorkspaceView: View {
                 HStack(spacing: 10) {
                     ForEach(shortcuts) { shortcut in
                         Button {
-                            Task { await model.navigate(to: shortcut.path) }
+                            taskBag.run { await model.navigate(to: shortcut.path) }
                         } label: {
                             LocalFileShortcutCard(shortcut: shortcut)
                         }
@@ -394,7 +397,7 @@ struct LocalFileWorkspaceView: View {
 
     private func entryButton<Content: View>(_ entry: LocalFileEntry, @ViewBuilder label: () -> Content) -> some View {
         Button {
-            Task { await open(entry) }
+            taskBag.run { await open(entry) }
         } label: {
             label()
         }
@@ -420,24 +423,24 @@ struct LocalFileWorkspaceView: View {
         Button(model.isFavorite(entry.path) ? "Remove Favorite" : "Add Favorite", systemImage: model.isFavorite(entry.path) ? "star.slash" : "star") {
             model.toggleFavorite(entry)
         }
-        Button("Share", systemImage: "square.and.arrow.up") { Task { await share([entry]) } }
+        Button("Share", systemImage: "square.and.arrow.up") { taskBag.run { await share([entry]) } }
         if entry.kind == .file {
-            Button("Make Executable", systemImage: "checkmark.shield") { Task { await makeExecutable(entry) } }
+            Button("Make Executable", systemImage: "checkmark.shield") { taskBag.run { await makeExecutable(entry) } }
         }
         Divider()
         if entry.isArchive {
-            Button("Extract Here", systemImage: "archivebox") { Task { await extractArchive(entry) } }
+            Button("Extract Here", systemImage: "archivebox") { taskBag.run { await extractArchive(entry) } }
         }
-        Button("Compress", systemImage: "doc.zipper") { Task { await compress(entry) } }
-        Button("Duplicate", systemImage: "plus.square.on.square") { Task { await duplicate(entry) } }
+        Button("Compress", systemImage: "doc.zipper") { taskBag.run { await compress(entry) } }
+        Button("Duplicate", systemImage: "plus.square.on.square") { taskBag.run { await duplicate(entry) } }
         Button("Move", systemImage: "folder") { beginMove(entry) }
         Button("Rename", systemImage: "pencil") { beginRename(entry) }
         Divider()
         if entry.isSwiftSource {
-            Button("Swift Check", systemImage: "checkmark.seal") { Task { await runSwiftCheck(entry) } }
+            Button("Swift Check", systemImage: "checkmark.seal") { taskBag.run { await runSwiftCheck(entry) } }
         }
         if entry.isShellScript {
-            Button("Run Script", systemImage: "terminal") { Task { await runShellScript(entry) } }
+            Button("Run Script", systemImage: "terminal") { taskBag.run { await runShellScript(entry) } }
         }
         Button("Delete", systemImage: "trash", role: .destructive) { deleteTarget = entry }
     }
@@ -1346,6 +1349,7 @@ private struct LocalTextFileEditorView: View {
     @State private var errorMessage: String?
     @State private var hasUnsavedChanges = false
 
+    @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
         NavigationStack {
             ZStack {
@@ -1373,7 +1377,7 @@ private struct LocalTextFileEditorView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        Task { await save() }
+                        taskBag.run { await save() }
                     } label: {
                         if isSaving { ProgressView().scaleEffect(0.8) } else { Text("Save") }
                     }
@@ -1382,6 +1386,7 @@ private struct LocalTextFileEditorView: View {
                 }
             }
             .task { await load() }
+            .onDisappear { taskBag.cancelAll() }
             .alert("Editor", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
                 Button("OK", role: .cancel) { errorMessage = nil }
             } message: {

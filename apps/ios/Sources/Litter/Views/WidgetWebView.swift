@@ -775,3 +775,4 @@ struct WidgetContainerView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
     }
+}

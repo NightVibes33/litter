@@ -55,6 +55,7 @@ struct ConversationView: View {
     @State private var hasLoggedFirstRender = false
     @State private var localSendScrollToken = 0
 
+    @StateObject private var taskBag = ViewTaskBag()
     private var items: [ConversationItem] {
         transcript.items
     }
@@ -108,7 +109,7 @@ struct ConversationView: View {
             onForkFromUserItem: forkFromMessage,
             onOpenConversation: onOpenConversation,
             onLoadOlderTurns: { key in
-                Task { await appModel.loadOlderTurns(threadId: key) }
+                taskBag.run { await appModel.loadOlderTurns(threadId: key) }
             }
         )
         .overlay(alignment: .bottomLeading) {
@@ -197,8 +198,9 @@ struct ConversationView: View {
             await loadInitialTurnsIfNeeded()
         }
         .onChange(of: thread.initialTurnsLoaded) { _, _ in
-            Task { await loadInitialTurnsIfNeeded() }
+            taskBag.run { await loadInitialTurnsIfNeeded() }
         }
+        .onDisappear { taskBag.cancelAll() }
     }
 
     private func loadInitialTurnsIfNeeded() async {
@@ -213,7 +215,7 @@ struct ConversationView: View {
         pluginMentions: [PluginMentionSelection]
     ) {
         localSendScrollToken &+= 1
-        Task {
+        taskBag.run {
             do {
                 NSLog(
                     "[ConversationView] sendMessage start server=%@ thread=%@ textLength=%ld",
@@ -248,7 +250,7 @@ struct ConversationView: View {
     private func sendWidgetPrompt(_ text: String) {
         guard !text.isEmpty else { return }
         localSendScrollToken &+= 1
-        Task {
+        taskBag.run {
             do {
                 let payload = try makeComposerPayload(
                     text: text,
@@ -268,7 +270,7 @@ struct ConversationView: View {
     }
 
     private func editMessage(_ item: ConversationItem) {
-        Task {
+        taskBag.run {
             do {
                 guard let selectedTurnIndex = item.sourceTurnIndex, item.isUserItem, item.isFromUserTurnBoundary else {
                     throw NSError(
@@ -289,7 +291,7 @@ struct ConversationView: View {
     }
 
     private func forkFromMessage(_ item: ConversationItem) {
-        Task {
+        taskBag.run {
             do {
                 guard let selectedTurnIndex = item.sourceTurnIndex, item.isUserItem, item.isFromUserTurnBoundary else {
                     throw NSError(
@@ -398,6 +400,7 @@ private struct ConversationBottomChrome: View {
     @State private var collaborationModePresets: [AppCollaborationModePreset] = []
     @State private var collaborationModesLoading = false
     @State private var collaborationModeError: String?
+    @StateObject private var taskBag = ViewTaskBag()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -434,7 +437,7 @@ private struct ConversationBottomChrome: View {
                 isLoading: collaborationModesLoading,
                 onSelect: { mode in
                     showCollaborationModeSelector = false
-                    Task { await setCollaborationMode(mode) }
+                    taskBag.run { await setCollaborationMode(mode) }
                 }
             )
             .presentationDetents([.height(220)])
@@ -451,6 +454,7 @@ private struct ConversationBottomChrome: View {
         } message: {
             Text(collaborationModeError ?? "Unable to update collaboration mode.")
         }
+        .onDisappear { taskBag.cancelAll() }
     }
 
     private var hasPinnedDiff: Bool {
@@ -572,6 +576,9 @@ private struct ConversationMessageList: View {
     @State private var initialBottomScrollThreadScopeID: String?
     @State private var programmaticBottomScrollSettling = false
     @State private var programmaticBottomScrollGeneration = 0
+    @State private var followLayoutScrollTask: Task<Void, Never>?
+    @State private var delayedBottomScrollTask: Task<Void, Never>?
+    @State private var bottomSettleTask: Task<Void, Never>?
     @AppStorage("collapseTurns") private var collapseTurns = false
     private static let latestButtonShowDistance: CGFloat = 48
     private static let nearBottomRestoreDistance: CGFloat = 12
@@ -752,6 +759,7 @@ private struct ConversationMessageList: View {
                     syncTranscriptTurns()
                     requestInitialBottomScrollIfNeeded(proxy)
                 }
+                .onDisappear { cancelScrollTasks() }
                 .onChange(of: activeThreadKey) {
                     autoFollowStreaming = true
                     isNearBottom = true
@@ -782,11 +790,7 @@ private struct ConversationMessageList: View {
                     isNearBottom = true
                     distanceFromBottom = 0
                     scrollToBottom(proxy)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.9)) {
-                            scrollToBottom(proxy)
-                        }
-                    }
+                    scheduleBottomScrollCorrection(proxy, animated: true)
                 }
                 .onChange(of: threadStatus) { oldStatus, _ in
                     syncTranscriptTurns()
@@ -798,9 +802,7 @@ private struct ConversationMessageList: View {
                     }
                     if wasStreaming && !isStreaming && autoFollowStreaming {
                         scrollToBottom(proxy)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            scrollToBottom(proxy)
-                        }
+                        scheduleBottomScrollCorrection(proxy)
                     }
                 }
 
@@ -814,11 +816,7 @@ private struct ConversationMessageList: View {
                         // scroll once layout has settled.  This avoids the
                         // overshoot caused by stale estimated heights.
                         scrollToBottom(proxy)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                            withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.9)) {
-                                scrollToBottom(proxy)
-                            }
-                        }
+                        scheduleBottomScrollCorrection(proxy, animated: true)
                     }
                     .padding(.trailing, 14)
                     .padding(.bottom, 10)
@@ -847,7 +845,10 @@ private struct ConversationMessageList: View {
     private func requestFollowScrollAfterLayout(_ proxy: ScrollViewProxy) {
         guard !followLayoutScrollScheduled else { return }
         followLayoutScrollScheduled = true
-        DispatchQueue.main.async {
+        followLayoutScrollTask?.cancel()
+        followLayoutScrollTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             followLayoutScrollScheduled = false
             guard isStreaming, autoFollowStreaming, !userIsDraggingScroll else { return }
             scrollToBottom(proxy)
@@ -859,14 +860,42 @@ private struct ConversationMessageList: View {
         let threadScopeID = activeThreadScopeID
         guard initialBottomScrollThreadScopeID != threadScopeID else { return }
         initialBottomScrollThreadScopeID = threadScopeID
-        DispatchQueue.main.async {
-            guard activeThreadScopeID == threadScopeID else { return }
+        delayedBottomScrollTask?.cancel()
+        delayedBottomScrollTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, activeThreadScopeID == threadScopeID else { return }
             scrollToBottom(proxy)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            scheduleBottomScrollCorrection(proxy, threadScopeID: threadScopeID)
+        }
+    }
+
+    private func scheduleBottomScrollCorrection(_ proxy: ScrollViewProxy, animated: Bool = false, threadScopeID: String? = nil) {
+        delayedBottomScrollTask?.cancel()
+        delayedBottomScrollTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            if let threadScopeID {
                 guard activeThreadScopeID == threadScopeID else { return }
+            }
+            if animated {
+                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.9)) {
+                    scrollToBottom(proxy)
+                }
+            } else {
                 scrollToBottom(proxy)
             }
         }
+    }
+
+    private func cancelScrollTasks() {
+        followLayoutScrollTask?.cancel()
+        delayedBottomScrollTask?.cancel()
+        bottomSettleTask?.cancel()
+        followLayoutScrollTask = nil
+        delayedBottomScrollTask = nil
+        bottomSettleTask = nil
+        followLayoutScrollScheduled = false
+        programmaticBottomScrollSettling = false
     }
 
     private func updateDistanceFromBottom(_ distance: CGFloat) {
@@ -896,7 +925,10 @@ private struct ConversationMessageList: View {
         let generation = programmaticBottomScrollGeneration
         programmaticBottomScrollSettling = true
         proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.bottomScrollSettleDuration) {
+        bottomSettleTask?.cancel()
+        bottomSettleTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.bottomScrollSettleDuration * 1_000_000_000))
+            guard !Task.isCancelled else { return }
             guard programmaticBottomScrollGeneration == generation else { return }
             programmaticBottomScrollSettling = false
         }
@@ -1408,6 +1440,7 @@ private struct ConversationInputBar: View {
     @State private var hasLoggedKeyboardShown = false
     @State private var isComposerFocused = false
     @State private var composerSelectionRange = NSRange(location: 0, length: 0)
+    @StateObject private var taskBag = ViewTaskBag()
 
     private var pendingUserInputRequest: PendingUserInputRequest? {
         snapshot.pendingUserInputRequest
@@ -1533,6 +1566,7 @@ private struct ConversationInputBar: View {
             popupRefreshTask = nil
             fileSearchTask?.cancel()
             fileSearchTask = nil
+            taskBag.cancelAll()
         }
     }
 
@@ -1555,7 +1589,7 @@ private struct ConversationInputBar: View {
                 showAttachMenu: $showAttachMenu,
                 onRemoveAttachment: removeAttachment,
                 onRespondToPendingUserInput: respondToPendingUserInput,
-                onImplementPlan: { Task { await implementPlan() } },
+                onImplementPlan: { taskBag.run { await implementPlan() } },
                 onDismissPlanImplementation: dismissPlanImplementationPrompt,
                 onSteerQueuedFollowUp: steerQueuedFollowUp,
                 onDeleteQueuedFollowUp: deleteQueuedFollowUp,
@@ -1581,7 +1615,7 @@ private struct ConversationInputBar: View {
             }
         }
         .dropDestination(for: URL.self) { urls, _ in
-            Task { await importSelectedFiles(urls) }
+            taskBag.run { await importSelectedFiles(urls) }
             return !urls.isEmpty
         }
         .dropDestination(for: Data.self) { items, _ in
@@ -1633,7 +1667,7 @@ private struct ConversationInputBar: View {
             guard let selectedAnswers = answers[question.id], !selectedAnswers.isEmpty else { return nil }
             return PendingUserInputAnswer(questionId: question.id, answers: selectedAnswers)
         }
-        Task {
+        taskBag.run {
             do {
                 try await appModel.store.respondToUserInput(
                     requestId: pendingUserInputRequest.id,
@@ -1646,7 +1680,7 @@ private struct ConversationInputBar: View {
     }
 
     private func steerQueuedFollowUp(_ preview: AppQueuedFollowUpPreview) {
-        Task {
+        taskBag.run {
             do {
                 try await appModel.store.steerQueuedFollowUp(
                     key: snapshot.threadKey,
@@ -1659,7 +1693,7 @@ private struct ConversationInputBar: View {
     }
 
     private func deleteQueuedFollowUp(_ preview: AppQueuedFollowUpPreview) {
-        Task {
+        taskBag.run {
             do {
                 try await appModel.store.deleteQueuedFollowUp(
                     key: snapshot.threadKey,
@@ -1709,7 +1743,7 @@ private struct ConversationInputBar: View {
     }
 
     private func startVoiceRecording() {
-        Task {
+        taskBag.run {
             let granted = await voiceManager.requestMicPermission()
             guard granted else {
                 showMicPermissionAlert = true
@@ -1720,7 +1754,7 @@ private struct ConversationInputBar: View {
     }
 
     private func stopVoiceRecording() {
-        Task {
+        taskBag.run {
             let auth = try? await appModel.client.authStatus(
                 serverId: snapshot.threadKey.serverId,
                 params: AuthStatusRequest(includeToken: true, refreshToken: false)
@@ -1768,7 +1802,7 @@ private struct ConversationInputBar: View {
             "interrupt turn",
             fields: ["serverId": threadKey.serverId, "threadId": threadKey.threadId, "turnId": activeTurnId]
         )
-        Task {
+        taskBag.run {
             do {
                 _ = try await appModel.client.interruptTurn(
                     serverId: threadKey.serverId,
@@ -1983,7 +2017,7 @@ private struct ConversationInputBar: View {
             }
             if !hasAttemptedSkillMentionLoad && !skillsLoading {
                 hasAttemptedSkillMentionLoad = true
-                Task { await loadSkills(showErrors: false) }
+                taskBag.run { await loadSkills(showErrors: false) }
             }
             return
         }
@@ -2041,12 +2075,12 @@ private struct ConversationInputBar: View {
             showPermissionsSheet = true
         case .experimental:
             showExperimentalSheet = true
-            Task { await loadExperimentalFeatures() }
+            taskBag.run { await loadExperimentalFeatures() }
         case .skills:
             showSkillsSheet = true
-            Task { await loadSkills() }
+            taskBag.run { await loadSkills() }
         case .review:
-            Task { await startReview() }
+            taskBag.run { await startReview() }
         case .rename:
             let initialName = args?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if initialName.isEmpty {
@@ -2055,12 +2089,12 @@ private struct ConversationInputBar: View {
                 renameDraft = ""
                 showRenamePrompt = true
             } else {
-                Task { await renameThread(initialName) }
+                taskBag.run { await renameThread(initialName) }
             }
         case .new:
             appState.showServerPicker = true
         case .fork:
-            Task { await forkConversation() }
+            taskBag.run { await forkConversation() }
         case .resume:
             onResumeSessions?(snapshot.threadKey.serverId)
         }
@@ -2301,7 +2335,7 @@ private struct ConversationInputBar: View {
             return
         }
         pluginLoadingCwds.insert(cwd)
-        Task {
+        taskBag.run {
             defer { pluginLoadingCwds.remove(cwd) }
             do {
                 let plugins = try await appModel.client.listPlugins(
