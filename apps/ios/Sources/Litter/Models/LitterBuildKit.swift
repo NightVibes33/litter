@@ -914,7 +914,7 @@ actor LitterBuildKit {
             guard let contents = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
                 return false
             }
-            return contents.contains(where: isCompilerSupportLibrary)
+            return contents.contains { Self.isCompilerSupportLibrary($0) }
         }
     }
 
