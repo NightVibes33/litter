@@ -910,7 +910,12 @@ actor LitterBuildKit {
     }
 
     private static var supportLibrariesInstalled: Bool {
-        fileExists(toolchainRoot.appendingPathComponent("CoreCompilerSupportLibs"))
+        supportLibraryRoots().contains { root in
+            guard let contents = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
+                return false
+            }
+            return contents.contains(where: isCompilerSupportLibrary)
+        }
     }
 
     private static var sdkInstalled: Bool {
