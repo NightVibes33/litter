@@ -1240,8 +1240,47 @@ actor LitterBuildKit {
         return output
     }
 
-    private static func shellWords(_ raw: String) -> [String] {
-        raw.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).map(String.init)
+    static func shellWords(_ raw: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+        var quote: Character?
+        var escaping = false
+
+        for character in raw {
+            if escaping {
+                current.append(character)
+                escaping = false
+                continue
+            }
+            if character == "\\" && quote != "'" {
+                escaping = true
+                continue
+            }
+            if let activeQuote = quote {
+                if character == activeQuote {
+                    quote = nil
+                } else {
+                    current.append(character)
+                }
+                continue
+            }
+            if character == "'" || character == "\"" {
+                quote = character
+                continue
+            }
+            if character == " " || character == "\t" || character == "\n" {
+                if !current.isEmpty {
+                    words.append(current)
+                    current = ""
+                }
+                continue
+            }
+            current.append(character)
+        }
+
+        if escaping { current.append("\\") }
+        if !current.isEmpty { words.append(current) }
+        return words
     }
 
     private static func staticSwiftPreflight(source: String, path: String) -> String {
@@ -1424,6 +1463,21 @@ actor LitterBuildKit {
         builds=/root/builds
         mkdir -p "$requests" "$builds"
         cmd="${0##*/}"
+        quote_arg() {
+          printf "'"
+          printf '%s' "$1" | sed "s/'/'\\''/g"
+          printf "'"
+        }
+        write_args() {
+          first=1
+          printf 'args='
+          for arg in "$@"; do
+            if [ "$first" -eq 0 ]; then printf ' '; fi
+            quote_arg "$arg"
+            first=0
+          done
+          printf '\\n'
+        }
         if [ "$cmd" = "litter-build-status" ]; then
           if [ "${1:-}" = "" ]; then
             find "$builds" -maxdepth 2 -name status.txt -print 2>/dev/null | sort | tail -n 20
@@ -1461,7 +1515,7 @@ actor LitterBuildKit {
           printf 'id=%s\n' "$id"
           printf 'command=%s\n' "$cmd"
           printf 'cwd=%s\n' "$(pwd)"
-          printf 'args=%s\n' "$*"
+          write_args "$@"
         } > "$req"
         if [ "$wait_for_result" -eq 0 ]; then
           echo "Queued Litter BuildKit request: $id"

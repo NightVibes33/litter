@@ -59,6 +59,12 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(calls.first.map(LocalModelToolLoop.risk(for:)), .safeRead)
     }
 
+    func testBuildKitShellWordsPreserveQuotedBotArguments() {
+        let words = LitterBuildKit.shellWords(#"'hello world' 'a'\''b' '-D' 'DEBUG' '/root/My App/main.swift'"#)
+
+        XCTAssertEqual(words, ["hello world", "a'b", "-D", "DEBUG", "/root/My App/main.swift"])
+    }
+
     func testBuildKitDownloadDefaultsTargetPrivateRelease() {
         let config = BuildKitAssetDownloadConfig()
 
