@@ -831,7 +831,7 @@ actor LitterBuildKit {
               nativeRunnerInstalled else {
             return false
         }
-        if let availableManifest = firstAvailableAssetCandidateManifest(), availableManifest != manifest {
+        if let availableManifest = firstAvailableAssetCandidateManifest(), assetManifest(availableManifest, isNewerThan: manifest) {
             return false
         }
         return true
@@ -928,6 +928,18 @@ actor LitterBuildKit {
             if let manifest = assetManifest(for: candidate) { return manifest }
         }
         return nil
+    }
+
+    private static func assetManifest(_ available: BuildKitAssetManifest, isNewerThan installed: BuildKitAssetManifest) -> Bool {
+        guard available.bundleIdentifier == installed.bundleIdentifier else { return false }
+        guard let availableDate = assetManifestCreatedAtDate(available) else { return false }
+        guard let installedDate = assetManifestCreatedAtDate(installed) else { return true }
+        return availableDate > installedDate
+    }
+
+    private static func assetManifestCreatedAtDate(_ manifest: BuildKitAssetManifest) -> Date? {
+        guard let createdAt = manifest.createdAt else { return nil }
+        return ISO8601DateFormatter().date(from: createdAt)
     }
 
     private static func assetManifest(for candidate: AssetCandidate) -> BuildKitAssetManifest? {
