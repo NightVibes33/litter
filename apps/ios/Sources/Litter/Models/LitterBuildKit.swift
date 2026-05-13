@@ -447,7 +447,7 @@ actor LitterBuildKit {
             check "/tmp writable" 't=$(mktemp /tmp/litter.XXXXXX) && rm -f "$t"'
             check "/usr/local/bin writable" "[ -w /usr/local/bin ]"
             check "/root/builds writable" "[ -w /root/builds ]"
-            for tool in git ssh scp curl tar gzip unzip zip python3 pip3 node npm clang swift swiftc cc c++ make jq; do
+            for tool in git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm clang swift swiftc cc c++ make jq; do
               if command -v "$tool" >/dev/null 2>&1; then echo "ok  command:$tool $(command -v "$tool")"; else echo "miss command:$tool"; fi
             done
             if command -v git >/dev/null 2>&1; then
@@ -483,7 +483,7 @@ actor LitterBuildKit {
             if command -v apk >/dev/null 2>&1; then apk info | sort | sed -n '1,120p'; else echo "apk missing"; fi
             echo
             echo "Tool versions:"
-            for tool in git ssh scp curl tar gzip unzip zip python3 pip3 node npm clang swift swiftc cc c++ make jq; do
+            for tool in git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm clang swift swiftc cc c++ make jq; do
               if command -v "$tool" >/dev/null 2>&1; then
                 printf '%s: ' "$tool"
                 "$tool" --version 2>&1 | head -n 1
