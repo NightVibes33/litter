@@ -515,41 +515,29 @@ jobs:
               *) return 1 ;;
             esac
           }
-          set_buildkit_dylib_id() {
-            binary="$1"
-            base="$(basename "$binary")"
-            if is_buildkit_support_dylib_name "$base"; then
-              /usr/bin/install_name_tool -id "@rpath/$base" "$binary"
-            fi
-          }
-          rewrite_buildkit_dylib_references() {
-            binary="$1"
-            if [ ! -f "$binary" ]; then
-              return 0
-            fi
-            set_buildkit_dylib_id "$binary"
-            /usr/bin/otool -L "$binary" | awk 'NR > 1 { print $1 }' | while IFS= read -r dependency; do
-              base="$(basename "$dependency")"
-              if is_buildkit_support_dylib_name "$base" && [ "$dependency" != "@rpath/$base" ]; then
-                /usr/bin/install_name_tool -change "$dependency" "@rpath/$base" "$binary" 2>/dev/null || true
-              fi
-            done
-          }
           has_usable_frameworks_rpath() {
             binary="$1"
             rpath="$2"
             /usr/bin/otool -l "$binary" | grep -F -q "$rpath" || \
               /usr/bin/otool -l "$binary" | grep -F -q '@executable_path/Frameworks'
           }
-          ensure_rpath() {
+          verify_rpath() {
             binary="$1"
             rpath="$2"
-            if has_usable_frameworks_rpath "$binary" "$rpath"; then
-              return 0
-            fi
-            /usr/bin/install_name_tool -add_rpath "$rpath" "$binary"
             if ! has_usable_frameworks_rpath "$binary" "$rpath"; then
               echo "::error::$binary lacks a usable Frameworks rpath" >&2
+              exit 1
+            fi
+          }
+          verify_buildkit_dylib_id() {
+            binary="$1"
+            base="$(basename "$binary")"
+            if ! is_buildkit_support_dylib_name "$base"; then
+              return 0
+            fi
+            id="$(/usr/bin/otool -D "$binary" | awk 'NR == 2 { print $1 }')"
+            if [ "$id" != "@rpath/$base" ]; then
+              echo "::error::$binary has unexpected install name: $id" >&2
               exit 1
             fi
           }
@@ -574,9 +562,9 @@ jobs:
           check_buildkit_rpath() {
             binary="$1"
             rpath="$2"
-            rewrite_buildkit_dylib_references "$binary"
+            verify_buildkit_dylib_id "$binary"
             if /usr/bin/otool -L "$binary" | grep -Eq 'CoreCompiler\.framework/CoreCompiler|lib_Compiler|libLLVM|libllvm'; then
-              ensure_rpath "$binary" "$rpath"
+              verify_rpath "$binary" "$rpath"
             fi
             if /usr/bin/otool -L "$binary" | grep -Eq 'BuildKitAssets/SDK|SDK/iPhoneOS.*\.sdk/usr/lib'; then
               echo "::error::$binary still links SDK/BuildKit asset dylib paths" >&2
