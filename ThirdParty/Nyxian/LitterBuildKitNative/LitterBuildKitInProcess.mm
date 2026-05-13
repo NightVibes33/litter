@@ -206,6 +206,14 @@ static NSDictionary *LBIProjectManifest(NSString *hostProjectPath, NSMutableStri
     return manifest;
 }
 
+static void LBIAppendSwiftSource(NSMutableArray<NSString *> *sources, NSString *path)
+{
+    if(path.length == 0 || ![path.pathExtension.lowercaseString isEqualToString:@"swift"]) { return; }
+    BOOL isDirectory = NO;
+    if(![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&isDirectory] || isDirectory) { return; }
+    if(![sources containsObject:path]) { [sources addObject:path]; }
+}
+
 static NSArray<NSString *> *LBISwiftSources(NSDictionary *manifest, NSString *hostWorkDir)
 {
     NSMutableArray<NSString *> *sources = [NSMutableArray array];
@@ -219,14 +227,17 @@ static NSArray<NSString *> *LBISwiftSources(NSDictionary *manifest, NSString *ho
         {
             if([relative.pathExtension.lowercaseString isEqualToString:@"swift"])
             {
-                [sources addObject:[hostRoot stringByAppendingPathComponent:relative]];
+                LBIAppendSwiftSource(sources, [hostRoot stringByAppendingPathComponent:relative]);
             }
         }
-        BOOL isDirectory = NO;
-        if([fm fileExistsAtPath:hostRoot isDirectory:&isDirectory] && !isDirectory && [hostRoot.pathExtension.lowercaseString isEqualToString:@"swift"])
-        {
-            [sources addObject:hostRoot];
-        }
+        LBIAppendSwiftSource(sources, hostRoot);
+    }
+
+    NSString *entrypoint = [manifest[@"entrypoint"] isKindOfClass:NSString.class] ? manifest[@"entrypoint"] : @"";
+    if(entrypoint.length > 0)
+    {
+        NSString *hostEntrypoint = [entrypoint hasPrefix:@"/"] ? entrypoint : [hostWorkDir stringByAppendingPathComponent:entrypoint];
+        LBIAppendSwiftSource(sources, hostEntrypoint);
     }
     return sources;
 }
