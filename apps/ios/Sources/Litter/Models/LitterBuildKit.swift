@@ -162,6 +162,21 @@ struct LitterBuildProjectManifest: Codable, Equatable, Sendable {
         entitlements = try container.decodeIfPresent(String.self, forKey: .entitlements)
         output = try container.decodeIfPresent(String.self, forKey: .output)
     }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(name, forKey: .name)
+        try container.encode(bundleIdentifier, forKey: .bundleIdentifier)
+        try container.encode(deploymentTarget, forKey: .deploymentTarget)
+        try container.encodeIfPresent(sdk, forKey: .sdk)
+        try container.encode(product, forKey: .product)
+        try container.encodeIfPresent(entrypoint, forKey: .entrypoint)
+        try container.encode(sources, forKey: .sources)
+        try container.encodeIfPresent(resources, forKey: .resources)
+        try container.encodeIfPresent(entitlements, forKey: .entitlements)
+        try container.encodeIfPresent(output, forKey: .output)
+    }
 }
 
 private struct BuildKitHostStaging: Sendable {
