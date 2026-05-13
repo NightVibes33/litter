@@ -577,7 +577,11 @@ actor LitterBuildKit {
         log += "\nCompile result: \(compile.status) exitCode=\(compile.exitCode)\n\n"
         log += compile.log
         if compile.exitCode == 0 {
-            log += "\nSelf-test passed: native Swift typecheck and iOS compile completed. The produced binary is an iOS artifact and is not meant to execute inside iSH.\n"
+            guard await IshFS.exists(path: outputPath) else {
+                log += "\nSelf-test failed after native Swift compile: compiled artifact was not exported back into fakefs at \(outputPath).\n"
+                return BuildKitCommandResult(exitCode: 74, status: "swift-selftest-export-failed", log: log, artifacts: compile.artifacts)
+            }
+            log += "\nSelf-test passed: native Swift typecheck, iOS compile, and fakefs artifact export completed. The produced binary is an iOS artifact and is not meant to execute inside iSH.\n"
             return BuildKitCommandResult(exitCode: 0, status: "swift-selftest-ok", log: log, artifacts: compile.artifacts)
         }
         log += "\nSelf-test failed during native Swift compile.\n"
