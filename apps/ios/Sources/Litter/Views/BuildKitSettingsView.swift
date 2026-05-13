@@ -127,7 +127,7 @@ struct BuildKitSettingsView: View {
             Button {
                 taskBag.run { await runSwiftSmokeTest() }
             } label: {
-                Label("Run Swift Smoke Test", systemImage: "swift")
+                Label("Run Swift Self-Test", systemImage: "swift")
                     .foregroundStyle(LitterTheme.accent)
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -369,6 +369,7 @@ struct BuildKitSettingsView: View {
 
     private func commandPurpose(_ command: String) -> String {
         switch command {
+        case "litter-swift-selftest": return "Self-test"
         case "litter-swift-check": return "Swift diagnostics"
         case "litter-swift-build": return "Build app"
         case "litter-swift-test": return "Logic tests"
@@ -406,13 +407,7 @@ struct BuildKitSettingsView: View {
 
     @MainActor
     private func runSwiftSmokeTest() async {
-        let path = "/tmp/litter-swift-smoke.swift"
-        do {
-            try await IshFS.writeTextFile(path: path, text: "print(\"Swift is running on device\")\n")
-            await runBuildKitCommand("litter-swift-check \(IshFS.shellQuote(path))", title: "Swift Smoke Test")
-        } catch {
-            lastActionOutput = "Swift smoke test setup failed.\n\(error.localizedDescription)"
-        }
+        await runBuildKitCommand("litter-swift-selftest --timeout 240", title: "Swift Self-Test")
     }
 
     @MainActor
