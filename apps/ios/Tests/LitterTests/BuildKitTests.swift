@@ -43,6 +43,14 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(calls.first.map(LocalModelToolLoop.risk(for:)), .build)
     }
 
+    func testLocalModelSwiftSelftestToolParsingAndRisk() {
+        let calls = LocalModelToolLoop.parseToolCalls(from: "{\"tool\":\"swift_selftest\",\"arguments\":{}}")
+
+        XCTAssertEqual(calls.count, 1)
+        XCTAssertEqual(calls.first?.name, "swift_selftest")
+        XCTAssertEqual(calls.first.map(LocalModelToolLoop.risk(for:)), .build)
+    }
+
     func testLocalModelNyxianStatusToolIsSafeRead() {
         let calls = LocalModelToolLoop.parseToolCalls(from: "{\"tool\":\"nyxian_status\",\"arguments\":{}}")
 

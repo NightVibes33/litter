@@ -548,7 +548,6 @@ actor LitterBuildKit {
         let sourcePath = "\(buildDir)/litter-swift-selftest.swift"
         let outputPath = "\(buildDir)/litter-swift-selftest"
         let source = """
-        import Foundation
         print("Swift is running on device")
         """
         var log = """
