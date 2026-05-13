@@ -587,7 +587,7 @@ jobs:
           }
           check_buildkit_rpath "$DRIVER" '@loader_path/..'
           check_buildkit_rpath "$CORE" '@loader_path/..'
-          find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print0 | while IFS= read -r -d '' library; do
+          find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print | while IFS= read -r library; do
             check_buildkit_rpath "$library" '@loader_path'
           done
 
