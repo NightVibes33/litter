@@ -36,7 +36,7 @@ on:
       asset_tag:
         description: "Release tag to create/update"
         required: true
-        default: "buildkit-ios-runner-v1"
+        default: "buildkit-ios26.4-v1"
         type: string
       rebuild_unsigned_ipa:
         description: "After uploading assets, update IPA asset secrets and dispatch unsigned IPA rebuild"

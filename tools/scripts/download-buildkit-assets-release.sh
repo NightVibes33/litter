@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OWNER="${LITTER_BUILDKIT_ASSET_OWNER:-NightVibes33}"
 REPO="${LITTER_BUILDKIT_ASSET_REPO:-litter-buildkit-assets}"
-TAG="${LITTER_BUILDKIT_ASSET_TAG:-buildkit-ios-runner-v1}"
+TAG="${LITTER_BUILDKIT_ASSET_TAG:-buildkit-ios26.4-v1}"
 ASSET_PREFIX="${LITTER_BUILDKIT_ASSET_PREFIX:-LitterBuildKitAssets}"
 PREFERRED_ASSET="${LITTER_BUILDKIT_EXISTING_ASSET_NAME:-LitterBuildKitAssets.zip}"
 ZIP_PATH="${LITTER_BUILDKIT_ZIP:-${ROOT_DIR}/artifacts/buildkit/LitterBuildKitAssets.zip}"
