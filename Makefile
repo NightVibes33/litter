@@ -523,11 +523,11 @@ buildkit-assets-package:
 buildkit-assets-upload:
 	@tools/scripts/upload-buildkit-assets-release.sh
 
-xcgen: $(STAMP_XCGEN)
-$(STAMP_XCGEN): $(IOS_DIR)/project.yml
+xcgen:
 	@echo "==> Regenerating Xcode project..."
 	@$(IOS_SCRIPTS)/regenerate-project.sh
-	@touch $@
+	@mkdir -p $(STAMPS)
+	@touch $(STAMP_XCGEN)
 
 # Download the pinned Alpine rootfs tarball and extract into
 # apps/ios/Resources/fs. The stamp is version-keyed so bumping
