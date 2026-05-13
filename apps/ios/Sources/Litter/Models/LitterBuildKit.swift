@@ -819,7 +819,12 @@ actor LitterBuildKit {
     }
 
     private static var installedAssetsAreUsable: Bool {
-        installedManifest != nil && supportLibrariesInstalled && sdkInstalled && nativeRunnerInstalled
+        installedManifest != nil
+            && nativeCompilerAssetsInstalled
+            && nativeDriverInstalled
+            && supportLibrariesInstalled
+            && sdkInstalled
+            && nativeRunnerInstalled
     }
 
     private static var nativeCompilerAssetsInstalled: Bool {
