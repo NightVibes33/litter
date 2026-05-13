@@ -117,7 +117,7 @@ struct BuildKitSettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             Button {
-                taskBag.run { await runBuildKitCommand("litter-build-status --timeout 60", title: "Build Status") }
+                taskBag.run { await runBuildKitCommand("litter-build-status", title: "Build Status") }
             } label: {
                 Label("Run Build Status", systemImage: "list.clipboard")
                     .foregroundStyle(LitterTheme.accent)
