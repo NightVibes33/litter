@@ -201,6 +201,14 @@ struct LocalFileWorkspaceView: View {
                         }
                     }
                     Toggle("Show Hidden Files", isOn: $model.showHidden)
+                    if !model.trimmedSearchQuery.isEmpty {
+                        Button("Search Recursively", systemImage: "magnifyingglass.circle") { taskBag.run { await runRecursiveSearch() } }
+                    }
+                    if model.hasLitterBuildManifest {
+                        Divider()
+                        Button("Swift Build", systemImage: "hammer") { taskBag.run { await runSwiftBuild() } }
+                        Button("Build IPA", systemImage: "shippingbox") { taskBag.run { await runIPABuild() } }
+                    }
                     Divider()
                     Button("Select", systemImage: "checkmark.circle") { model.isSelecting = true }
                     Button("Copy Folder Path", systemImage: "doc.on.doc") { copyPath(model.currentPath) }
@@ -243,9 +251,19 @@ struct LocalFileWorkspaceView: View {
                 .padding(.vertical, 8)
             }
 
+            Button {
+                model.showHidden.toggle()
+            } label: {
+                Image(systemName: model.showHidden ? "eye" : "eye.slash")
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .modifier(GlassCapsuleModifier(interactive: true))
+            .accessibilityLabel(model.showHidden ? "Hide hidden files" : "Show hidden files")
+
             Text(model.folderSummary)
                 .litterMonoFont(size: 11, weight: .medium)
-                .foregroundStyle(LitterTheme.textMuted)
+                .foregroundStyle(model.showHidden ? LitterTheme.accent : LitterTheme.textMuted)
                 .lineLimit(1)
         }
         .padding(.horizontal, 14)
@@ -420,11 +438,14 @@ struct LocalFileWorkspaceView: View {
     private func contextMenu(for entry: LocalFileEntry) -> some View {
         Button("Preview", systemImage: "doc.text.magnifyingglass") { previewTarget = entry }
         Button("Copy Path", systemImage: "doc.on.doc") { copyPath(entry.path) }
+        if let linkTarget = entry.linkTarget {
+            Button("Copy Link Target", systemImage: "link") { copyPath(linkTarget) }
+        }
         Button(model.isFavorite(entry.path) ? "Remove Favorite" : "Add Favorite", systemImage: model.isFavorite(entry.path) ? "star.slash" : "star") {
             model.toggleFavorite(entry)
         }
         Button("Share", systemImage: "square.and.arrow.up") { taskBag.run { await share([entry]) } }
-        if entry.kind == .file {
+        if entry.kind == .file || entry.kind == .symlink {
             Button("Make Executable", systemImage: "checkmark.shield") { taskBag.run { await makeExecutable(entry) } }
         }
         Divider()
@@ -439,6 +460,10 @@ struct LocalFileWorkspaceView: View {
         if entry.isSwiftSource {
             Button("Swift Check", systemImage: "checkmark.seal") { taskBag.run { await runSwiftCheck(entry) } }
         }
+        if entry.name == "LitterBuild.json" {
+            Button("Swift Build", systemImage: "hammer") { taskBag.run { await runSwiftBuild(projectPath: entry.path) } }
+            Button("Build IPA", systemImage: "shippingbox") { taskBag.run { await runIPABuild(projectPath: entry.path) } }
+        }
         if entry.isShellScript {
             Button("Run Script", systemImage: "terminal") { taskBag.run { await runShellScript(entry) } }
         }
@@ -451,6 +476,10 @@ struct LocalFileWorkspaceView: View {
             return
         }
         model.recordRecent(entry)
+        if entry.isBrokenLink {
+            alertMessage = "This symlink target is missing."
+            return
+        }
         if entry.kind == .directory {
             await model.open(entry)
             return
@@ -533,6 +562,55 @@ struct LocalFileWorkspaceView: View {
     private func runSwiftCheck(_ entry: LocalFileEntry) async {
         let result = await IshFS.run("litter-swift-check \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Swift Check", command: "litter-swift-check \(entry.name)", result: result)
+    }
+
+    private func runSwiftBuild(projectPath: String? = nil) async {
+        let path = projectPath ?? model.litterBuildManifestPath
+        guard let path else {
+            alertMessage = "No LitterBuild.json found in this folder."
+            return
+        }
+        let result = await IshFS.run("litter-swift-build --timeout 600 \(IshFS.shellQuote(path))", cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Swift Build", command: "litter-swift-build \((path as NSString).lastPathComponent)", result: result)
+    }
+
+    private func runIPABuild(projectPath: String? = nil) async {
+        let path = projectPath ?? model.litterBuildManifestPath
+        guard let path else {
+            alertMessage = "No LitterBuild.json found in this folder."
+            return
+        }
+        let result = await IshFS.run("litter-ipa-build --timeout 900 \(IshFS.shellQuote(path))", cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "IPA Build", command: "litter-ipa-build \((path as NSString).lastPathComponent)", result: result)
+        await model.reload()
+    }
+
+    private func runRecursiveSearch() async {
+        let query = model.trimmedSearchQuery
+        guard !query.isEmpty else { return }
+        let includeHidden = model.showHidden ? "1" : "0"
+        let command = """
+        q=\(IshFS.shellQuote(query))
+        dir=\(IshFS.shellQuote(model.currentPath))
+        include_hidden=\(includeHidden)
+        if command -v rg >/dev/null 2>&1; then
+          if [ "$include_hidden" -eq 1 ]; then
+            rg -n --hidden --glob '!/.git/*' -- "$q" "$dir"
+          else
+            rg -n --glob '!.*' -- "$q" "$dir"
+          fi
+        else
+          if [ "$include_hidden" -eq 1 ]; then
+            find "$dir" -type f -print 2>/dev/null
+          else
+            find "$dir" -path '*/.*' -prune -o -type f -print 2>/dev/null
+          fi | head -n 500 | while IFS= read -r f; do
+            grep -n -I -- "$q" "$f" 2>/dev/null | sed "s#^#$f:#"
+          done
+        fi
+        """
+        let result = await IshFS.run(command, cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Recursive Search", command: "search \(query)", result: result)
     }
 
     private func runShellScript(_ entry: LocalFileEntry) async {
@@ -714,7 +792,9 @@ private final class LocalFileWorkspaceModel {
     var entries: [LocalFileEntry] = []
     var isLoading = false
     var errorMessage: String?
-    var showHidden = false
+    var showHidden = UserDefaults.standard.object(forKey: LocalFileWorkspaceModel.showHiddenKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showHidden, forKey: Self.showHiddenKey) }
+    }
     var openFile: LocalFileEntry?
     var searchQuery = ""
     var sort: LocalFileSort = .name
@@ -725,6 +805,7 @@ private final class LocalFileWorkspaceModel {
     private var favoriteItems: [LocalFileStoredShortcut] = []
     private var recentItems: [LocalFileStoredShortcut] = []
 
+    private static let showHiddenKey = "local_file_workspace_show_hidden_v1"
     private let favoritesKey = "local_file_workspace_favorites_v1"
     private let recentsKey = "local_file_workspace_recents_v1"
     private let maxStoredShortcuts = 20
@@ -759,6 +840,14 @@ private final class LocalFileWorkspaceModel {
         entries.filter { selectedPaths.contains($0.path) }
     }
 
+    var litterBuildManifestPath: String? {
+        entries.first { $0.name == "LitterBuild.json" && $0.kind != .directory }?.path
+    }
+
+    var hasLitterBuildManifest: Bool {
+        litterBuildManifestPath != nil
+    }
+
     var showsShortcuts: Bool {
         trimmedSearchQuery.isEmpty && !isSelecting
     }
@@ -770,7 +859,8 @@ private final class LocalFileWorkspaceModel {
     var folderSummary: String {
         let folderCount = entries.filter { $0.kind == .directory }.count
         let fileCount = entries.count - folderCount
-        return "\(folderCount) folders, \(fileCount) files"
+        let hiddenNote = showHidden ? " incl. hidden" : ""
+        return "\(folderCount) folders, \(fileCount) files\(hiddenNote)"
     }
 
     var quickLocations: [LocalFileShortcut] {
@@ -842,7 +932,7 @@ private final class LocalFileWorkspaceModel {
         case .directory:
             recordRecent(entry)
             await reload(path: entry.path)
-        case .file:
+        case .file, .symlink, .special:
             recordRecent(entry)
             openFile = entry
         }
@@ -864,7 +954,7 @@ private final class LocalFileWorkspaceModel {
         switch kind {
         case .directory:
             try await IshFS.createDirectory(path: target)
-        case .file:
+        case .file, .symlink, .special:
             try await IshFS.createEmptyFile(path: target)
         }
         await reload()
@@ -1021,7 +1111,7 @@ private final class LocalFileWorkspaceModel {
             path: stored.path,
             title: stored.name,
             subtitle: display,
-            systemImage: stored.kind == .directory ? "folder.fill" : LocalFileEntry.iconName(for: stored.name),
+            systemImage: LocalFileEntry.iconName(for: stored.name, kind: stored.kind),
             kind: stored.kind
         )
     }
@@ -1091,6 +1181,8 @@ struct LocalFileEntry: Identifiable, Hashable {
     enum Kind: String, Hashable, Codable {
         case file
         case directory
+        case symlink
+        case special
     }
 
     let kind: Kind
@@ -1099,13 +1191,18 @@ struct LocalFileEntry: Identifiable, Hashable {
     let size: Int64
     let modifiedAt: Date?
     let permissions: String
+    let linkTarget: String?
+    let isBrokenLink: Bool
 
     var id: String { path }
 
     var detailText: String {
         var parts: [String] = [kindLabel]
-        if kind == .file {
+        if kind == .file || kind == .symlink {
             parts.append(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+        }
+        if let linkTarget {
+            parts.append("-> \(linkTarget)")
         }
         if let modifiedAt = modifiedAt {
             parts.append(DateFormatter.localizedString(from: modifiedAt, dateStyle: .medium, timeStyle: .short))
@@ -1117,9 +1214,17 @@ struct LocalFileEntry: Identifiable, Hashable {
     }
 
     var kindLabel: String {
-        if kind == .directory { return "Folder" }
-        let ext = (name as NSString).pathExtension.uppercased()
-        return ext.isEmpty ? "Document" : "\(ext) File"
+        switch kind {
+        case .directory:
+            return "Folder"
+        case .symlink:
+            return isBrokenLink ? "Broken Link" : "Symlink"
+        case .special:
+            return "Special File"
+        case .file:
+            let ext = (name as NSString).pathExtension.uppercased()
+            return ext.isEmpty ? "Document" : "\(ext) File"
+        }
     }
 
     var isImage: Bool {
@@ -1135,7 +1240,7 @@ struct LocalFileEntry: Identifiable, Hashable {
     var isShellScript: Bool { fileExtension == "sh" }
 
     var isTextPreviewable: Bool {
-        if kind == .directory || isImage || isArchive { return false }
+        if kind == .directory || kind == .special || isImage || isArchive { return false }
         return [
             "", "txt", "md", "swift", "rs", "js", "ts", "tsx", "jsx", "py", "sh", "rb", "go", "c", "h", "m", "mm", "cpp", "json", "yml", "yaml", "toml", "xml", "html", "css", "log", "env"
         ].contains(fileExtension)
@@ -1150,7 +1255,12 @@ struct LocalFileEntry: Identifiable, Hashable {
     }
 
     static func iconName(for name: String, kind: Kind = .file) -> String {
-        if kind == .directory { return "folder.fill" }
+        switch kind {
+        case .directory: return "folder.fill"
+        case .symlink: return "link"
+        case .special: return "gearshape"
+        case .file: break
+        }
         let ext = (name as NSString).pathExtension.lowercased()
         switch ext {
         case "swift", "rs", "js", "ts", "tsx", "jsx", "py", "sh", "rb", "go", "c", "h", "m", "mm", "cpp", "json", "yml", "yaml", "toml", "md":
@@ -1200,7 +1310,7 @@ private struct LocalFileRow: View {
             }
             Image(systemName: entry.iconName)
                 .font(.system(size: 21, weight: .semibold))
-                .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : LitterTheme.textSecondary)
+                .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : (entry.isBrokenLink ? LitterTheme.warning : LitterTheme.textSecondary))
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 5) {
@@ -1220,7 +1330,7 @@ private struct LocalFileRow: View {
                     .lineLimit(1)
             }
             Spacer()
-            Image(systemName: entry.kind == .directory ? "chevron.right" : "doc.text")
+            Image(systemName: entry.kind == .directory ? "chevron.right" : entry.iconName)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(LitterTheme.textMuted)
         }
@@ -1247,7 +1357,7 @@ private struct LocalFileGridItem: View {
                     )
                 Image(systemName: entry.iconName)
                     .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : LitterTheme.textSecondary)
+                    .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : (entry.isBrokenLink ? LitterTheme.warning : LitterTheme.textSecondary))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 HStack(spacing: 4) {
                     if isFavorite {
@@ -1269,7 +1379,7 @@ private struct LocalFileGridItem: View {
                     .foregroundStyle(LitterTheme.textPrimary)
                     .lineLimit(2)
                     .frame(minHeight: 32, alignment: .topLeading)
-                Text(entry.kind == .directory ? "Folder" : ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file))
+                Text(entry.kind == .directory ? "Folder" : entry.kindLabel)
                     .litterMonoFont(size: 10, weight: .regular)
                     .foregroundStyle(LitterTheme.textMuted)
                     .lineLimit(1)
@@ -1522,11 +1632,14 @@ private struct LocalFileInfoPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             infoRow("Kind", file.kindLabel)
             infoRow("Path", file.path)
-            if file.kind == .file {
+            if file.kind == .file || file.kind == .symlink {
                 infoRow("Size", ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file))
             }
             if let modifiedAt = file.modifiedAt {
                 infoRow("Modified", DateFormatter.localizedString(from: modifiedAt, dateStyle: .medium, timeStyle: .short))
+            }
+            if let linkTarget = file.linkTarget {
+                infoRow(file.isBrokenLink ? "Broken Link Target" : "Link Target", linkTarget)
             }
             if !file.permissions.isEmpty {
                 infoRow("Permissions", file.permissions)

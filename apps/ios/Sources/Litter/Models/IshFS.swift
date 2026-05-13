@@ -42,36 +42,58 @@ enum IshFS {
         let command = """
         dir=\(quoted)
         [ -d "$dir" ] || exit 2
-        for p in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
-          [ -e "$p" ] || continue
+        find "$dir" -mindepth 1 -maxdepth 1 2>/dev/null | while IFS= read -r p; do
           name=${p##*/}
           \(hiddenGuard)
-          if [ -d "$p" ]; then
+          link_target=
+          broken=0
+          if [ -L "$p" ]; then
+            kind=l
+            link_target=$(readlink "$p" 2>/dev/null || echo '')
+            [ -e "$p" ] || broken=1
+            if [ "$broken" -eq 0 ] && [ ! -d "$p" ]; then
+              size=$(wc -c < "$p" 2>/dev/null || echo 0)
+            else
+              size=0
+            fi
+          elif [ -d "$p" ]; then
             kind=d
             size=0
-          else
+          elif [ -f "$p" ]; then
             kind=f
             size=$(wc -c < "$p" 2>/dev/null || echo 0)
+          else
+            kind=s
+            size=0
           fi
-          modified=$(stat -c '%Y' "$p" 2>/dev/null || echo 0)
+          modified=$(stat -c '%Y' "$p" 2>/dev/null || stat -c '%Y' -L "$p" 2>/dev/null || echo 0)
           permissions=$(stat -c '%A' "$p" 2>/dev/null || echo '')
-          printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$size" "$modified" "$permissions" "$name" "$p"
+          printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$size" "$modified" "$permissions" "$name" "$p" "$link_target" "$broken"
         done | sort -f -k5
         """
         let result = await run(command)
         guard result.exitCode == 0 else { throw error("Could not list \(path)", result: result) }
         return result.output.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
-            let parts = line.split(separator: "\t", maxSplits: 5, omittingEmptySubsequences: false).map(String.init)
-            guard parts.count == 6 else { return nil }
+            let parts = line.split(separator: "\t", maxSplits: 7, omittingEmptySubsequences: false).map(String.init)
+            guard parts.count == 8 else { return nil }
             let modifiedSeconds = TimeInterval(parts[2].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
             let modifiedAt = modifiedSeconds > 0 ? Date(timeIntervalSince1970: modifiedSeconds) : nil
+            let kind: LocalFileEntry.Kind
+            switch parts[0] {
+            case "d": kind = .directory
+            case "l": kind = .symlink
+            case "s": kind = .special
+            default: kind = .file
+            }
             return LocalFileEntry(
-                kind: parts[0] == "d" ? .directory : .file,
+                kind: kind,
                 name: parts[4],
                 path: parts[5],
                 size: Int64(parts[1].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0,
                 modifiedAt: modifiedAt,
-                permissions: parts[3]
+                permissions: parts[3],
+                linkTarget: parts[6].isEmpty ? nil : parts[6],
+                isBrokenLink: parts[7] == "1"
             )
         }
     }
