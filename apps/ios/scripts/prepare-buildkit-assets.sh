@@ -39,7 +39,12 @@ if [[ -n "$ASSET_ZIP" ]]; then
     fi
   fi
   unzip -q "$ASSET_ZIP" -d "$TMP_DIR/unzipped"
-  ASSET_DIR="$(find "$TMP_DIR/unzipped" -maxdepth 2 -name manifest.json -print | head -n 1 | xargs dirname)"
+  manifest_path="$(find "$TMP_DIR/unzipped" -maxdepth 2 -name manifest.json -print -quit)"
+  if [[ -z "$manifest_path" ]]; then
+    echo "error: BuildKit asset zip does not contain manifest.json" >&2
+    exit 1
+  fi
+  ASSET_DIR="$(dirname "$manifest_path")"
 fi
 
 if [[ -z "$ASSET_DIR" ]]; then
