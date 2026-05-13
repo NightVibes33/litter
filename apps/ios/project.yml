@@ -111,7 +111,7 @@ targets:
     postBuildScripts:
       - name: Package Private BuildKit Assets
         script: |
-          set -euo pipefail
+          set -eu
           ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
           if [ ! -d "$ASSET_ROOT" ]; then
             exit 0
@@ -126,7 +126,7 @@ targets:
           (cd "$TMP_DIR" && ditto -c -k --norsrc --keepParent BuildKitAssets "$DEST")
       - name: Embed Private BuildKit Frameworks
         script: |
-          set -euo pipefail
+          set -eu
           if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
             exit 0
           fi
