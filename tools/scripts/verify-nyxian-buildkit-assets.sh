@@ -81,7 +81,19 @@ PYVERIFY
 DRIVER="$ASSET_ROOT/Toolchains/Nyxian/LitterBuildKitNative.framework/LitterBuildKitNative"
 CORE="$ASSET_ROOT/Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler"
 if [[ "$(uname -s)" = "Darwin" ]]; then
-  [[ -f "$DRIVER" ]] && /usr/bin/lipo -info "$DRIVER" || true
+  if [[ -f "$DRIVER" ]]; then
+    /usr/bin/lipo -info "$DRIVER"
+    if ! /usr/bin/nm -gU "$DRIVER" | grep -q ' _litter_buildkit_run_json$'; then
+      echo "error: LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
+      exit 1
+    fi
+    /usr/bin/otool -L "$DRIVER" | sed -n '1,30p'
+    if /usr/bin/otool -L "$DRIVER" | grep -q 'CoreCompiler.framework/CoreCompiler'; then
+      if ! /usr/bin/otool -l "$DRIVER" | grep -q '@loader_path/..'; then
+        echo "error: in-process native driver links CoreCompiler but lacks @loader_path/.. rpath" >&2
+        exit 1
+      fi
+    fi
+  fi
   [[ -f "$CORE" ]] && /usr/bin/lipo -info "$CORE" || true
-  [[ -f "$DRIVER" ]] && /usr/bin/otool -L "$DRIVER" | sed -n '1,30p' || true
 fi

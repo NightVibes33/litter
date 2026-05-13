@@ -125,6 +125,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var nativeCompilerAssetsInstalled: Bool
     var nativeDriverInstalled: Bool
     var nativeDriverLoadable: Bool
+    var nativeDriverDiagnostics: [String]
     var nativeRunnerInstalled: Bool
     var supportLibrariesInstalled: Bool
     var sdkInstalled: Bool
@@ -315,6 +316,7 @@ actor LitterBuildKit {
         let shimsInstalled = await IshFS.exists(path: Self.shimInstallMarker)
         let manifest = Self.installedManifest
         let sourceManifest = Self.sourceImportManifest
+        let nativeDriverLoad = Self.loadNativeDriver()
         return LitterBuildKitStatus(
             sourceImportAvailable: Self.sourceImportAvailable,
             liveContainerSourceAvailable: sourceManifest?.liveContainer?.sourceIncluded ?? false,
@@ -322,7 +324,8 @@ actor LitterBuildKit {
             privateAssetsInstalled: manifest != nil,
             nativeCompilerAssetsInstalled: Self.nativeCompilerAssetsInstalled,
             nativeDriverInstalled: Self.nativeDriverInstalled,
-            nativeDriverLoadable: Self.nativeDriverLoadable,
+            nativeDriverLoadable: nativeDriverLoad.handle != nil,
+            nativeDriverDiagnostics: nativeDriverLoad.diagnostics,
             nativeRunnerInstalled: Self.nativeRunnerInstalled,
             supportLibrariesInstalled: Self.supportLibrariesInstalled,
             sdkInstalled: Self.sdkInstalled,
@@ -785,7 +788,7 @@ actor LitterBuildKit {
     }
 
     private static var nativeDriverLoadable: Bool {
-        loadNativeDriverHandle() != nil
+        loadNativeDriver().handle != nil
     }
 
     private static var nativeRunnerInstalled: Bool {
@@ -1052,18 +1055,97 @@ actor LitterBuildKit {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func loadNativeDriverHandle() -> UnsafeMutableRawPointer? {
-        let candidates = [embeddedFrameworkURL(named: "LitterBuildKitNative"), nativeDriverURL]
-        for candidate in candidates where fileExists(candidate) {
-            if let handle = dlopen(candidate.path, RTLD_NOW | RTLD_LOCAL), dlsym(handle, "litter_buildkit_run_json") != nil {
-                return handle
-            }
+    private struct NativeDriverLoadResult {
+        var handle: UnsafeMutableRawPointer?
+        var diagnostics: [String]
+    }
+
+    private static var processSymbolHandle: UnsafeMutableRawPointer? {
+        dlopen(nil, RTLD_NOW)
+    }
+
+    private static func consumeDLError() -> String? {
+        guard let raw = dlerror() else { return nil }
+        return String(cString: raw)
+    }
+
+    private static func openDynamicLibrary(_ url: URL, flags: Int32, diagnostics: inout [String]) -> UnsafeMutableRawPointer? {
+        guard fileExists(url) else {
+            diagnostics.append("missing \(url.path)")
+            return nil
         }
+        _ = consumeDLError()
+        if let handle = dlopen(url.path, flags) {
+            diagnostics.append("loaded \(url.path)")
+            return handle
+        }
+        diagnostics.append("dlopen failed \(url.path): \(consumeDLError() ?? "unknown dyld error")")
         return nil
     }
 
+    private static func preloadNativeDriverDependencies(diagnostics: inout [String]) {
+        let supportRoot = toolchainRoot.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true)
+        if let supportLibraries = try? FileManager.default.contentsOfDirectory(at: supportRoot, includingPropertiesForKeys: nil) {
+            for library in supportLibraries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where library.pathExtension == "dylib" {
+                _ = openDynamicLibrary(library, flags: RTLD_NOW | RTLD_GLOBAL, diagnostics: &diagnostics)
+            }
+        } else {
+            diagnostics.append("support library directory missing or unreadable \(supportRoot.path)")
+        }
+
+        let coreCandidates = [
+            toolchainRoot.appendingPathComponent("CoreCompiler.framework/CoreCompiler"),
+            embeddedFrameworkURL(named: "CoreCompiler")
+        ]
+        for candidate in coreCandidates where fileExists(candidate) {
+            if openDynamicLibrary(candidate, flags: RTLD_NOW | RTLD_GLOBAL, diagnostics: &diagnostics) != nil {
+                return
+            }
+        }
+        diagnostics.append("CoreCompiler.framework/CoreCompiler was not loadable from installed assets or app Frameworks")
+    }
+
+    private static func nativeDriverCandidates() -> [URL] {
+        let embedded = embeddedFrameworkURL(named: "LitterBuildKitNative")
+        let installed = nativeDriverURL
+        if installedManifest?.toolchain.nativeDriverMode == "inprocess" {
+            return [installed, embedded]
+        }
+        return [embedded, installed]
+    }
+
+    private static func loadNativeDriver() -> NativeDriverLoadResult {
+        var diagnostics: [String] = []
+        let symbolName = "litter_buildkit_run_json"
+        if let processHandle = processSymbolHandle, dlsym(processHandle, symbolName) != nil {
+            diagnostics.append("found \(symbolName) in process symbol table")
+            return NativeDriverLoadResult(handle: processHandle, diagnostics: diagnostics)
+        }
+
+        if installedManifest?.toolchain.nativeDriverMode == "inprocess" {
+            preloadNativeDriverDependencies(diagnostics: &diagnostics)
+        }
+
+        for candidate in nativeDriverCandidates() {
+            guard fileExists(candidate) else {
+                diagnostics.append("missing native driver candidate \(candidate.path)")
+                continue
+            }
+            guard let handle = openDynamicLibrary(candidate, flags: RTLD_NOW | RTLD_GLOBAL, diagnostics: &diagnostics) else {
+                continue
+            }
+            if dlsym(handle, symbolName) != nil {
+                diagnostics.append("found \(symbolName) in \(candidate.path)")
+                return NativeDriverLoadResult(handle: handle, diagnostics: diagnostics)
+            }
+            diagnostics.append("missing \(symbolName) in \(candidate.path)")
+        }
+        return NativeDriverLoadResult(handle: nil, diagnostics: diagnostics)
+    }
+
     private static func runNativeDriver(command: String, args: String, cwd: String, buildDir: String, staging: BuildKitHostStaging) -> BuildKitCommandResult? {
-        guard let handle = loadNativeDriverHandle(), let symbol = dlsym(handle, "litter_buildkit_run_json") else { return nil }
+        let driver = loadNativeDriver()
+        guard let handle = driver.handle, let symbol = dlsym(handle, "litter_buildkit_run_json") else { return nil }
         typealias RunFn = @convention(c) (UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
         let run = unsafeBitCast(symbol, to: RunFn.self)
         let payload = NativeDriverRequest(
@@ -1150,6 +1232,10 @@ actor LitterBuildKit {
         output += "SDK: \(status.assetManifest?.sdkVersion ?? "missing")\n"
         output += "iPhoneOS SDK installed: \(status.sdkInstalled ? "yes" : "no")\n"
         output += "Native driver loadable: \(status.nativeDriverLoadable ? "yes" : "no")\n"
+        if !status.nativeDriverLoadable && !status.nativeDriverDiagnostics.isEmpty {
+            output += "Native driver diagnostics:\n"
+            output += status.nativeDriverDiagnostics.prefix(8).map { "- \($0)" }.joined(separator: "\n") + "\n"
+        }
         output += "Canonical commands: litter-swift-check, litter-swift-build, litter-swift-test, litter-ipa-build\n"
         return output
     }
@@ -1232,6 +1318,10 @@ actor LitterBuildKit {
             output += "Native mode: \(manifest.toolchain.nativeDriverMode ?? "runner")\n"
             output += "Capabilities: \(manifest.capabilities.joined(separator: ", "))\n"
         }
+        if !status.nativeDriverLoadable && !status.nativeDriverDiagnostics.isEmpty {
+            output += "\nNative driver diagnostics:\n"
+            output += status.nativeDriverDiagnostics.map { "- \($0)" }.joined(separator: "\n") + "\n"
+        }
         if !status.missingRequirements.isEmpty {
             output += "\nMissing requirements:\n" + status.missingRequirements.map { "- \($0)" }.joined(separator: "\n") + "\n"
             output += "\nAsset search:\n\(assetAvailabilityReport())\n"
@@ -1261,6 +1351,10 @@ actor LitterBuildKit {
         let missing = status.missingRequirements
         if missing.isEmpty { return "- BuildKit assets look present, but native execution failed.\n" }
         var output = missing.map { "- Missing \($0)." }.joined(separator: "\n") + "\n"
+        if !status.nativeDriverDiagnostics.isEmpty {
+            output += "\nNative driver diagnostics:\n"
+            output += status.nativeDriverDiagnostics.map { "- \($0)" }.joined(separator: "\n") + "\n"
+        }
         if !status.privateAssetsInstalled {
             output += "\nAsset search:\n\(assetAvailabilityReport())\n"
         }

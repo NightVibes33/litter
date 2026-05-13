@@ -471,6 +471,18 @@ jobs:
             exit 1
           fi
 
+          DRIVER="$APP_PATH/Frameworks/LitterBuildKitNative.framework/LitterBuildKitNative"
+          if ! /usr/bin/nm -gU "$DRIVER" | grep -q ' _litter_buildkit_run_json$'; then
+            echo "::error::Embedded LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
+            exit 1
+          fi
+          if /usr/bin/otool -L "$DRIVER" | grep -q 'CoreCompiler.framework/CoreCompiler'; then
+            if ! /usr/bin/otool -l "$DRIVER" | grep -q '@loader_path/..'; then
+              echo "::error::Embedded native driver links CoreCompiler but lacks @loader_path/.. rpath" >&2
+              exit 1
+            fi
+          fi
+
           python3 - "$ASSET_ZIP" <<'PY'
           import json
           import pathlib
