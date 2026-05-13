@@ -59,6 +59,29 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(calls.first.map(LocalModelToolLoop.risk(for:)), .safeRead)
     }
 
+    func testLocalModelBuildKitToolRiskCoverage() {
+        let expected: [(String, LocalModelToolRisk)] = [
+            ("buildkit_status", .safeRead),
+            ("nyxian_status", .safeRead),
+            ("fs_doctor", .safeRead),
+            ("env_report", .safeRead),
+            ("swift_check", .safeRead),
+            ("build_status", .safeRead),
+            ("swift_selftest", .build),
+            ("swift_build", .build),
+            ("swift_test", .build),
+            ("ipa_build", .build),
+            ("ipa_package", .build),
+            ("build_cancel", .build),
+            ("dev_bootstrap", .shell)
+        ]
+
+        for (tool, risk) in expected {
+            let call = LocalModelToolCall(id: tool, name: tool, arguments: [:])
+            XCTAssertEqual(LocalModelToolLoop.risk(for: call), risk, tool)
+        }
+    }
+
     func testBuildKitShellWordsPreserveQuotedBotArguments() {
         let words = LitterBuildKit.shellWords(#"'hello world' 'a'\''b' '-D' 'DEBUG' '/root/My App/main.swift'"#)
 
