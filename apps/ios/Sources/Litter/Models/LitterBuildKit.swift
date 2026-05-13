@@ -698,6 +698,10 @@ actor LitterBuildKit {
         for artifact in artifacts {
             let hostURL = URL(fileURLWithPath: artifact.hostPath)
             let fakefsPath = artifact.fakefsPath?.isEmpty == false ? artifact.fakefsPath! : "\(buildDir)/\(hostURL.lastPathComponent)"
+            let fakefsParent = (fakefsPath as NSString).deletingLastPathComponent
+            if !fakefsParent.isEmpty && fakefsParent != fakefsPath {
+                _ = await IshFS.run("mkdir -p \(IshFS.shellQuote(fakefsParent))")
+            }
             do {
                 try await IshFS.writeFile(path: fakefsPath, sourceURL: hostURL, replaceExisting: true)
                 log += "- Published \(hostURL.lastPathComponent) -> \(fakefsPath)\n"

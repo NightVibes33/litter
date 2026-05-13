@@ -249,6 +249,30 @@ static NSString *LBIManifestString(NSDictionary *manifest, NSString *key, NSStri
     return [value isKindOfClass:NSString.class] && [value length] > 0 ? value : fallback;
 }
 
+static NSString *LBIIpaArtifactName(NSDictionary *manifest, NSString *productName)
+{
+    NSString *output = LBIManifestString(manifest, @"output", @"");
+    NSString *name = output.length > 0 ? output.lastPathComponent : @"";
+    if(name.length == 0) { name = [productName stringByAppendingPathExtension:@"ipa"]; }
+    if(name.pathExtension.length == 0) { name = [name stringByAppendingPathExtension:@"ipa"]; }
+    return name;
+}
+
+static NSString *LBIFakefsProjectDirectory(NSDictionary *request, NSString *cwd)
+{
+    NSString *fakefsProjectPath = LBIString(request, @"fakefsProjectPath");
+    if(fakefsProjectPath.length > 0) { return fakefsProjectPath.stringByDeletingLastPathComponent; }
+    return cwd.length > 0 ? cwd : @"/root";
+}
+
+static NSString *LBIFakefsIPAOutputPath(NSDictionary *manifest, NSDictionary *request, NSString *cwd, NSString *buildDir, NSString *artifactName)
+{
+    NSString *output = LBIManifestString(manifest, @"output", @"");
+    if(output.length == 0) { return [buildDir stringByAppendingPathComponent:artifactName]; }
+    if([output hasPrefix:@"/"]) { return output; }
+    return [LBIFakefsProjectDirectory(request, cwd) stringByAppendingPathComponent:output];
+}
+
 static void LBIAppendLE16(NSMutableData *data, uint16_t value)
 {
     uint8_t bytes[2] = { (uint8_t)(value & 0xff), (uint8_t)((value >> 8) & 0xff) };
@@ -514,12 +538,13 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             if([command isEqualToString:@"litter-ipa-build"] || [command isEqualToString:@"litter-ipa-package"])
             {
                 NSString *artifactDir = [hostWorkDir stringByAppendingPathComponent:@"Artifacts"];
-                NSString *ipaPath = [artifactDir stringByAppendingPathComponent:[productName stringByAppendingPathExtension:@"ipa"]];
+                NSString *artifactName = LBIIpaArtifactName(manifest, productName);
+                NSString *ipaPath = [artifactDir stringByAppendingPathComponent:artifactName];
                 if(!LBIWriteStoredZip(appDir, productName, ipaPath, log))
                 {
                     return LBICopyResponse(73, @"ipa-package-failed", log);
                 }
-                NSString *fakefsArtifactPath = [buildDir stringByAppendingPathComponent:ipaPath.lastPathComponent];
+                NSString *fakefsArtifactPath = LBIFakefsIPAOutputPath(manifest, request, cwd, buildDir, ipaPath.lastPathComponent);
                 [log appendFormat:@"Unsigned IPA artifact: %@\n", ipaPath];
                 [log appendFormat:@"Fakefs artifact path: %@\n", fakefsArtifactPath];
                 NSArray *artifacts = @[@{@"hostPath": ipaPath, @"fakefsPath": fakefsArtifactPath}];
