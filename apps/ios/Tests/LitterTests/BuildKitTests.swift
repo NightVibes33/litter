@@ -104,6 +104,10 @@ final class BuildKitTests: XCTestCase {
 
         XCTAssertEqual(manifest.entrypoint, "Sources/App.swift")
         XCTAssertEqual(manifest.sources, [])
+
+        let roundTrip = try JSONDecoder().decode(LitterBuildProjectManifest.self, from: JSONEncoder().encode(manifest))
+        XCTAssertEqual(roundTrip.entrypoint, "Sources/App.swift")
+        XCTAssertEqual(roundTrip.sources, [])
     }
 
     func testStagedProjectManifestRewritesFakefsPathsForNativeDriver() {
