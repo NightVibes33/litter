@@ -78,6 +78,12 @@ print(f"bundle={manifest.get('bundleIdentifier')} sdk={manifest.get('sdkVersion'
 print("capabilities=" + ", ".join(manifest.get("capabilities", [])))
 PYVERIFY
 
+SUPPORT_DIR="$ASSET_ROOT/Toolchains/Nyxian/CoreCompilerSupportLibs"
+if ! find "$SUPPORT_DIR" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print -quit | grep -q .; then
+  echo "error: CoreCompilerSupportLibs does not contain compiler support dylibs" >&2
+  exit 1
+fi
+
 DRIVER="$ASSET_ROOT/Toolchains/Nyxian/LitterBuildKitNative.framework/LitterBuildKitNative"
 CORE="$ASSET_ROOT/Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler"
 if [[ "$(uname -s)" = "Darwin" ]]; then

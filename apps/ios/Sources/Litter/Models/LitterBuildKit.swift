@@ -1209,11 +1209,33 @@ actor LitterBuildKit {
             diagnostics.append("support library directory missing or unreadable \(root.path)")
             return false
         }
+        var pending = supportLibraries
+            .filter { isCompilerSupportLibrary($0) }
+            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent })
+        var failures: [String: String] = [:]
         var loaded = false
-        for library in supportLibraries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where isCompilerSupportLibrary(library) {
-            if openDynamicLibrary(library, flags: RTLD_NOW | RTLD_GLOBAL, diagnostics: &diagnostics) != nil {
-                loaded = true
+
+        while !pending.isEmpty {
+            var retry: [URL] = []
+            var progressed = false
+            for library in pending {
+                _ = consumeDLError()
+                if let handle = dlopen(library.path, RTLD_NOW | RTLD_GLOBAL) {
+                    _ = handle
+                    diagnostics.append("loaded \(library.path)")
+                    loaded = true
+                    progressed = true
+                } else {
+                    failures[library.path] = consumeDLError() ?? "unknown dyld error"
+                    retry.append(library)
+                }
             }
+            pending = retry
+            if !progressed { break }
+        }
+
+        for library in pending {
+            diagnostics.append("dlopen failed \(library.path): \(failures[library.path] ?? "unknown dyld error")")
         }
         return loaded
     }

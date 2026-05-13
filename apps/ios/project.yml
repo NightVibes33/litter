@@ -139,15 +139,21 @@ targets:
             binary="$1"
             /usr/bin/otool -L "$binary" | /usr/bin/grep -Eq 'CoreCompiler\.framework/CoreCompiler|lib_Compiler|libLLVM|libllvm'
           }
+          has_usable_frameworks_rpath() {
+            binary="$1"
+            rpath="$2"
+            /usr/bin/otool -l "$binary" | /usr/bin/grep -F -q "$rpath" || \
+              /usr/bin/otool -l "$binary" | /usr/bin/grep -F -q '@executable_path/Frameworks'
+          }
           ensure_rpath() {
             binary="$1"
             rpath="$2"
-            if /usr/bin/otool -l "$binary" | /usr/bin/grep -F -q "$rpath"; then
+            if has_usable_frameworks_rpath "$binary" "$rpath"; then
               return 0
             fi
             /usr/bin/install_name_tool -add_rpath "$rpath" "$binary"
-            if ! /usr/bin/otool -l "$binary" | /usr/bin/grep -F -q "$rpath"; then
-              echo "error: failed to add $rpath rpath to $binary" >&2
+            if ! has_usable_frameworks_rpath "$binary" "$rpath"; then
+              echo "error: failed to add a usable Frameworks rpath to $binary" >&2
               exit 1
             fi
           }

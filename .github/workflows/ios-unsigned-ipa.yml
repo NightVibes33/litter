@@ -407,6 +407,16 @@ jobs:
           if not (root / sdk_settings).is_file():
               missing.append(str(sdk_settings))
 
+          support_root = root / "Toolchains/Nyxian/CoreCompilerSupportLibs"
+          support_dylibs = []
+          if support_root.is_dir():
+              support_dylibs = [
+                  path for path in support_root.iterdir()
+                  if path.is_file() and path.suffix == ".dylib" and (path.name.startswith("lib_Compiler") or path.name.startswith("libLLVM") or path.name.startswith("libllvm"))
+              ]
+          if not support_dylibs:
+              missing.append("Toolchains/Nyxian/CoreCompilerSupportLibs/*.dylib")
+
           if missing:
               print("::error::Private BuildKit asset bundle is incomplete:")
               for item in missing:
@@ -460,9 +470,25 @@ jobs:
             find "$APP_PATH" -maxdepth 2 -name '*BuildKit*' -print >&2 || true
             exit 1
           fi
+          if [ -d "$APP_PATH/BuildKitAssets" ]; then
+            echo "::error::Archived app contains expanded BuildKitAssets; SDK payload must stay inside LitterBuildKitAssets.zip" >&2
+            exit 1
+          fi
+          if find "$APP_PATH" -path "$APP_PATH/Frameworks" -prune -o -path '*/BuildKitAssets/SDK/*' -print -quit | grep -q .; then
+            echo "::error::Archived app contains expanded BuildKit SDK payload outside LitterBuildKitAssets.zip" >&2
+            exit 1
+          fi
 
           if [ ! -d "$APP_PATH/Frameworks/CoreCompiler.framework" ]; then
             echo "::error::Archived app is missing embedded CoreCompiler.framework" >&2
+            exit 1
+          fi
+          if [ -d "$APP_PATH/Frameworks/CoreCompiler.framework/CoreCompilerSupportLibs" ]; then
+            echo "::error::CoreCompilerSupportLibs must be embedded as signable app Frameworks dylibs, not nested inside CoreCompiler.framework" >&2
+            exit 1
+          fi
+          if find "$APP_PATH/Frameworks" -path '*SDK/iPhoneOS*.sdk*' -print -quit | grep -q .; then
+            echo "::error::Embedded Frameworks contain SDK payload files" >&2
             exit 1
           fi
 
@@ -483,15 +509,21 @@ jobs:
             exit 1
           fi
 
+          has_usable_frameworks_rpath() {
+            binary="$1"
+            rpath="$2"
+            /usr/bin/otool -l "$binary" | grep -F -q "$rpath" || \
+              /usr/bin/otool -l "$binary" | grep -F -q '@executable_path/Frameworks'
+          }
           ensure_rpath() {
             binary="$1"
             rpath="$2"
-            if /usr/bin/otool -l "$binary" | grep -F -q "$rpath"; then
+            if has_usable_frameworks_rpath "$binary" "$rpath"; then
               return 0
             fi
             /usr/bin/install_name_tool -add_rpath "$rpath" "$binary"
-            if ! /usr/bin/otool -l "$binary" | grep -F -q "$rpath"; then
-              echo "::error::$binary lacks required $rpath rpath" >&2
+            if ! has_usable_frameworks_rpath "$binary" "$rpath"; then
+              echo "::error::$binary lacks a usable Frameworks rpath" >&2
               exit 1
             fi
           }
