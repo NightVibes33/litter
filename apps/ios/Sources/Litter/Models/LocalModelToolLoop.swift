@@ -195,6 +195,13 @@ enum LocalModelToolLoop {
             """
         ),
         LocalModelToolSpec(
+            name: "swift_selftest",
+            description: "Run the built-in Swift toolchain proof: native driver loadability, CoreCompiler typecheck, iOS Swift compile, and artifact export.",
+            inputSchemaJSON: """
+            {"type":"object","properties":{}}
+            """
+        ),
+        LocalModelToolSpec(
             name: "swift_build",
             description: "Build a fakefs Swift project through Litter BuildKit. Requires approval because it writes build outputs.",
             inputSchemaJSON: """
@@ -267,7 +274,7 @@ enum LocalModelToolLoop {
 
     static func looksLikeMalformedToolRequest(_ text: String) -> Bool {
         let lowered = text.lowercased()
-        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") || lowered.contains("swift_check") || lowered.contains("ipa_build") || lowered.contains("buildkit") || lowered.contains("nyxian_status") || lowered.contains("dev_bootstrap") || lowered.contains("env_report") else {
+        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") || lowered.contains("swift_check") || lowered.contains("swift_selftest") || lowered.contains("ipa_build") || lowered.contains("buildkit") || lowered.contains("nyxian_status") || lowered.contains("dev_bootstrap") || lowered.contains("env_report") else {
             return false
         }
         return parseToolCalls(from: text).isEmpty
@@ -281,7 +288,7 @@ enum LocalModelToolLoop {
             return .shell
         case "write_file", "replace_text":
             return .write
-        case "swift_build", "swift_test", "ipa_build", "ipa_package", "build_cancel":
+        case "swift_selftest", "swift_build", "swift_test", "ipa_build", "ipa_package", "build_cancel":
             return .build
         default:
             return .unknown
@@ -382,6 +389,11 @@ enum LocalModelToolLoop {
         case "swift_check":
             let path = try argument("path", in: call)
             let result = await IshFS.run("litter-swift-check --timeout 120 \(IshFS.shellQuote(path))")
+            guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
+            return result.output
+        case "swift_selftest":
+            guard policy.allowsShell else { throw LocalModelToolLoopError.blocked("Swift toolchain self-test requires approval because it writes build outputs.") }
+            let result = await IshFS.run("litter-swift-selftest --timeout 240")
             guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
             return result.output
         case "build_status":

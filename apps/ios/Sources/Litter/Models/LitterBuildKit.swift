@@ -208,6 +208,7 @@ actor LitterBuildKit {
         "litter-env-report",
         "litter-dev-bootstrap",
         "litter-swift-check",
+        "litter-swift-selftest",
         "litter-swiftc",
         "litter-swift-build",
         "litter-swift-test",
@@ -399,6 +400,8 @@ actor LitterBuildKit {
             return await devBootstrap()
         case "litter-swift-check":
             return await swiftCheck(args: args, cwd: cwd, buildDir: buildDir)
+        case "litter-swift-selftest":
+            return await swiftSelfTest(cwd: cwd, buildDir: buildDir)
         case "litter-swiftc":
             return await swiftcCompile(args: args, cwd: cwd, buildDir: buildDir, compatibilityName: "litter-swiftc")
         case "litter-swift-build", "litter-swift-test", "litter-ipa-build", "litter-ipa-package":
@@ -539,6 +542,47 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 78, status: "toolchain-missing", log: log)
         }
         return await nativeBuildCommand(command: "litter-swift-check", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
+    }
+
+    private func swiftSelfTest(cwd: String, buildDir: String) async -> BuildKitCommandResult {
+        let sourcePath = "\(buildDir)/litter-swift-selftest.swift"
+        let outputPath = "\(buildDir)/litter-swift-selftest"
+        let source = """
+        import Foundation
+        print("Swift is running on device")
+        """
+        var log = """
+        Litter Swift toolchain self-test
+        Source: \(sourcePath)
+        Output: \(outputPath)
+        Checks: native driver loadability, CoreCompiler typecheck, iOS Swift compile, fakefs artifact export.
+
+        """
+
+        do {
+            try await IshFS.writeTextFile(path: sourcePath, text: source)
+        } catch {
+            log += "Could not write self-test source into fakefs: \(error.localizedDescription)\n"
+            return BuildKitCommandResult(exitCode: 73, status: "swift-selftest-setup-failed", log: log)
+        }
+
+        let check = await swiftCheck(args: sourcePath, cwd: cwd, buildDir: buildDir)
+        log += "Typecheck result: \(check.status) exitCode=\(check.exitCode)\n\n"
+        log += check.log
+        guard check.exitCode == 0 else {
+            log += "\nSelf-test failed before compile; native Swift typecheck did not complete.\n"
+            return BuildKitCommandResult(exitCode: check.exitCode, status: "swift-selftest-failed", log: log, artifacts: check.artifacts)
+        }
+
+        let compile = await swiftcCompile(args: "\(sourcePath) -o \(outputPath)", cwd: cwd, buildDir: buildDir, compatibilityName: "litter-swift-selftest")
+        log += "\nCompile result: \(compile.status) exitCode=\(compile.exitCode)\n\n"
+        log += compile.log
+        if compile.exitCode == 0 {
+            log += "\nSelf-test passed: native Swift typecheck and iOS compile completed. The produced binary is an iOS artifact and is not meant to execute inside iSH.\n"
+            return BuildKitCommandResult(exitCode: 0, status: "swift-selftest-ok", log: log, artifacts: compile.artifacts)
+        }
+        log += "\nSelf-test failed during native Swift compile.\n"
+        return BuildKitCommandResult(exitCode: compile.exitCode, status: "swift-selftest-failed", log: log, artifacts: compile.artifacts)
     }
 
     private func swiftCompatibility(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
@@ -1236,7 +1280,7 @@ actor LitterBuildKit {
             output += "Native driver diagnostics:\n"
             output += status.nativeDriverDiagnostics.prefix(8).map { "- \($0)" }.joined(separator: "\n") + "\n"
         }
-        output += "Canonical commands: litter-swift-check, litter-swift-build, litter-swift-test, litter-ipa-build\n"
+        output += "Canonical commands: litter-swift-selftest, litter-swift-check, litter-swift-build, litter-swift-test, litter-ipa-build\n"
         return output
     }
 
@@ -1250,6 +1294,7 @@ actor LitterBuildKit {
           swift test [LitterBuild.json]
 
         Canonical bot commands:
+          litter-swift-selftest
           litter-swift-check path/to/File.swift
           litter-swift-build LitterBuild.json
           litter-swift-test LitterBuild.json
@@ -1265,6 +1310,7 @@ actor LitterBuildKit {
           swiftc -typecheck path/to/File.swift
 
         Canonical bot commands:
+          litter-swift-selftest
           litter-swift-check path/to/File.swift
           litter-swiftc path/to/File.swift -o output
         """
@@ -1341,6 +1387,7 @@ actor LitterBuildKit {
         output += "- Driver mode: \(status.assetManifest?.toolchain.nativeDriverMode ?? "unknown")\n"
         output += "- Capabilities: \(status.installedCapabilities.isEmpty ? "none" : status.installedCapabilities.joined(separator: ", "))\n"
         output += "\nBot path examples:\n"
+        output += "- litter-swift-selftest\n"
         output += "- litter-swift-check /root/projects/App/Sources/App.swift\n"
         output += "- litter-swift-build /root/projects/App/LitterBuild.json\n"
         output += "- litter-ipa-build /root/projects/App/LitterBuild.json\n"
