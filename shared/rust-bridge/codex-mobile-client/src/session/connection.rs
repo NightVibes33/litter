@@ -611,6 +611,10 @@ impl ServerSession {
 
         let resolved_config = resolved_builder.build().await.unwrap_or(base_config);
 
+        let state_db = codex_rollout::state_db::try_init(&resolved_config)
+            .await
+            .map_err(|e| TransportError::ConnectionFailed(format!("state db init failed: {e}")))?;
+
         let feedback = CodexFeedback::new();
         let session_source = SessionSource::VSCode;
 
@@ -622,7 +626,7 @@ impl ServerSession {
             cloud_requirements,
             feedback,
             log_db: None,
-            state_db: None,
+            state_db: Some(state_db),
             thread_config_loader: Arc::new(codex_config::NoopThreadConfigLoader),
             environment_manager: Arc::new(
                 codex_exec_server::EnvironmentManager::default_for_tests(),
