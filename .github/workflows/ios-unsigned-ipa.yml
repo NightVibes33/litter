@@ -530,13 +530,9 @@ jobs:
             set_buildkit_dylib_id "$binary"
             /usr/bin/otool -L "$binary" | awk 'NR > 1 { print $1 }' | while IFS= read -r dependency; do
               base="$(basename "$dependency")"
-              case "$dependency" in
-                */CoreCompilerSupportLibs/*.dylib|BuildKitAssets/SDK/*/usr/lib/*.dylib|*/BuildKitAssets/SDK/*/usr/lib/*.dylib|SDK/iPhoneOS*.sdk/usr/lib/*.dylib|*/SDK/iPhoneOS*.sdk/usr/lib/*.dylib)
-                  if is_buildkit_support_dylib_name "$base"; then
-                    /usr/bin/install_name_tool -change "$dependency" "@rpath/$base" "$binary"
-                  fi
-                  ;;
-              esac
+              if is_buildkit_support_dylib_name "$base" && [ "$dependency" != "@rpath/$base" ]; then
+                /usr/bin/install_name_tool -change "$dependency" "@rpath/$base" "$binary" 2>/dev/null || true
+              fi
             done
           }
           has_usable_frameworks_rpath() {
@@ -561,15 +557,18 @@ jobs:
             binary="$1"
             /usr/bin/otool -L "$binary" | awk 'NR > 1 { print $1 }' | while IFS= read -r dependency; do
               base="$(basename "$dependency")"
-              case "$dependency" in
-                @rpath/lib_Compiler*.dylib|@rpath/libLLVM*.dylib|@rpath/libllvm*.dylib)
-                  if [ ! -f "$APP_PATH/Frameworks/$base" ]; then
-                    echo "::error::$binary links missing embedded compiler dylib $base" >&2
-                    /usr/bin/otool -L "$binary" >&2
-                    exit 1
-                  fi
-                  ;;
-              esac
+              if is_buildkit_support_dylib_name "$base"; then
+                if [ "$dependency" != "@rpath/$base" ]; then
+                  echo "::error::$binary links compiler dylib without @rpath: $dependency" >&2
+                  /usr/bin/otool -L "$binary" >&2
+                  exit 1
+                fi
+                if [ ! -f "$APP_PATH/Frameworks/$base" ]; then
+                  echo "::error::$binary links missing embedded compiler dylib $base" >&2
+                  /usr/bin/otool -L "$binary" >&2
+                  exit 1
+                fi
+              fi
             done
           }
           check_buildkit_rpath() {
