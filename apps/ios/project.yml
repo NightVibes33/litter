@@ -135,21 +135,30 @@ targets:
             exit 0
           fi
           mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
-          repair_corecompiler_rpath() {
+          buildkit_binary_needs_rpath() {
             binary="$1"
+            /usr/bin/otool -L "$binary" | /usr/bin/grep -Eq 'CoreCompiler\.framework/CoreCompiler|lib_Compiler|libLLVM|libllvm'
+          }
+          ensure_rpath() {
+            binary="$1"
+            rpath="$2"
+            if /usr/bin/otool -l "$binary" | /usr/bin/grep -F -q "$rpath"; then
+              return 0
+            fi
+            /usr/bin/install_name_tool -add_rpath "$rpath" "$binary"
+            if ! /usr/bin/otool -l "$binary" | /usr/bin/grep -F -q "$rpath"; then
+              echo "error: failed to add $rpath rpath to $binary" >&2
+              exit 1
+            fi
+          }
+          repair_buildkit_rpath() {
+            binary="$1"
+            rpath="$2"
             if [ ! -f "$binary" ]; then
               return 0
             fi
-            if ! /usr/bin/otool -L "$binary" | /usr/bin/grep -q 'CoreCompiler.framework/CoreCompiler'; then
-              return 0
-            fi
-            if /usr/bin/otool -l "$binary" | /usr/bin/grep -q '@loader_path/..'; then
-              return 0
-            fi
-            /usr/bin/install_name_tool -add_rpath '@loader_path/..' "$binary"
-            if ! /usr/bin/otool -l "$binary" | /usr/bin/grep -q '@loader_path/..'; then
-              echo "error: failed to add @loader_path/.. rpath to $binary" >&2
-              exit 1
+            if buildkit_binary_needs_rpath "$binary"; then
+              ensure_rpath "$binary" "$rpath"
             fi
           }
           sign_if_requested() {
@@ -193,7 +202,7 @@ targets:
           </plist>
           PLIST
               fi
-              repair_corecompiler_rpath "$destination/$executable"
+              repair_buildkit_rpath "$destination/$executable" "@loader_path/.."
               sign_if_requested "$destination"
             fi
           done
@@ -203,6 +212,7 @@ targets:
               destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$(basename "$library")"
               rm -f "$destination"
               cp "$library" "$destination"
+              repair_buildkit_rpath "$destination" "@loader_path"
               sign_if_requested "$destination"
             done
           fi

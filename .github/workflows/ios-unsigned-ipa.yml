@@ -477,19 +477,36 @@ jobs:
           fi
 
           DRIVER="$APP_PATH/Frameworks/LitterBuildKitNative.framework/LitterBuildKitNative"
+          CORE="$APP_PATH/Frameworks/CoreCompiler.framework/CoreCompiler"
           if ! /usr/bin/nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'; then
             echo "::error::Embedded LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
             exit 1
           fi
-          if /usr/bin/otool -L "$DRIVER" | grep -q 'CoreCompiler.framework/CoreCompiler'; then
-            if ! /usr/bin/otool -l "$DRIVER" | grep -q '@loader_path/..'; then
-              /usr/bin/install_name_tool -add_rpath '@loader_path/..' "$DRIVER"
+
+          ensure_rpath() {
+            binary="$1"
+            rpath="$2"
+            if /usr/bin/otool -l "$binary" | grep -F -q "$rpath"; then
+              return 0
             fi
-            if ! /usr/bin/otool -l "$DRIVER" | grep -q '@loader_path/..'; then
-              echo "::error::Embedded native driver links CoreCompiler but lacks @loader_path/.. rpath" >&2
+            /usr/bin/install_name_tool -add_rpath "$rpath" "$binary"
+            if ! /usr/bin/otool -l "$binary" | grep -F -q "$rpath"; then
+              echo "::error::$binary lacks required $rpath rpath" >&2
               exit 1
             fi
-          fi
+          }
+          check_buildkit_rpath() {
+            binary="$1"
+            rpath="$2"
+            if /usr/bin/otool -L "$binary" | grep -Eq 'CoreCompiler\.framework/CoreCompiler|lib_Compiler|libLLVM|libllvm'; then
+              ensure_rpath "$binary" "$rpath"
+            fi
+          }
+          check_buildkit_rpath "$DRIVER" '@loader_path/..'
+          check_buildkit_rpath "$CORE" '@loader_path/..'
+          find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print0 | while IFS= read -r -d '' library; do
+            check_buildkit_rpath "$library" '@loader_path'
+          done
 
           python3 - "$ASSET_ZIP" <<'PY'
           import json

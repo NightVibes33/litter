@@ -674,7 +674,7 @@ actor LitterBuildKit {
         }
         guard let result = Self.runNativeDriver(command: command, args: args, cwd: cwd, buildDir: buildDir, staging: staging) else {
             fullPrelude += "Native BuildKit assets are present, but the private native driver did not expose litter_buildkit_run_json.\n"
-            fullPrelude += "Embed LitterBuildKitNative.framework in the private sideload IPA and link it to CoreCompiler.framework.\n"
+            fullPrelude += "Embed signed CoreCompiler.framework, LitterBuildKitNative.framework, and compiler support dylibs in the private sideload IPA.\n"
             return BuildKitCommandResult(exitCode: 78, status: "adapter-missing", log: fullPrelude)
         }
         let artifactLog = await publishArtifacts(result.artifacts, buildDir: buildDir)
@@ -1183,11 +1183,12 @@ actor LitterBuildKit {
     }
 
     private static func supportLibraryRoots() -> [URL] {
-        var roots = [toolchainRoot.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true)]
+        var roots: [URL] = []
         if let frameworks = Bundle.main.privateFrameworksURL {
             roots.append(frameworks)
             roots.append(frameworks.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true))
         }
+        roots.append(toolchainRoot.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true))
         return roots
     }
 
@@ -1237,9 +1238,6 @@ actor LitterBuildKit {
     private static func nativeDriverCandidates() -> [URL] {
         let embedded = embeddedFrameworkURL(named: "LitterBuildKitNative")
         let installed = nativeDriverURL
-        if installedManifest?.toolchain.nativeDriverMode == "inprocess" {
-            return [installed, embedded]
-        }
         return [embedded, installed]
     }
 
