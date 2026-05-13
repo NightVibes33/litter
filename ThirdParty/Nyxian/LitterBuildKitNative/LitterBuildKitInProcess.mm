@@ -33,9 +33,50 @@ static char *LBICopyResponse(int exitCode, NSString *status, NSString *log)
 static NSArray<NSString *> *LBIWords(NSString *raw)
 {
     NSMutableArray<NSString *> *items = [NSMutableArray array];
-    [[raw componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] enumerateObjectsUsingBlock:^(NSString *part, NSUInteger idx, BOOL *stop) {
-        if(part.length > 0) { [items addObject:part]; }
-    }];
+    NSMutableString *current = [NSMutableString string];
+    unichar quote = 0;
+    BOOL escaping = NO;
+    NSCharacterSet *whitespace = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+
+    for(NSUInteger idx = 0; idx < raw.length; idx++)
+    {
+        unichar ch = [raw characterAtIndex:idx];
+        if(escaping)
+        {
+            [current appendFormat:@"%C", ch];
+            escaping = NO;
+            continue;
+        }
+        if(ch == '\\' && quote != '\'')
+        {
+            escaping = YES;
+            continue;
+        }
+        if(quote != 0)
+        {
+            if(ch == quote) { quote = 0; }
+            else { [current appendFormat:@"%C", ch]; }
+            continue;
+        }
+        if(ch == '\'' || ch == '"')
+        {
+            quote = ch;
+            continue;
+        }
+        if([whitespace characterIsMember:ch])
+        {
+            if(current.length > 0)
+            {
+                [items addObject:[current copy]];
+                [current setString:@""];
+            }
+            continue;
+        }
+        [current appendFormat:@"%C", ch];
+    }
+
+    if(escaping) { [current appendString:@"\\"]; }
+    if(current.length > 0) { [items addObject:[current copy]]; }
     return items;
 }
 
