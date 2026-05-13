@@ -97,13 +97,13 @@ static NSArray<NSString *> *LBISwiftcUserFlags(NSArray<NSString *> *words)
             preserveNext = NO;
             continue;
         }
-        if([word hasSuffix:@".swift"]) { continue; }
         if(preserveNext)
         {
             [flags addObject:word];
             preserveNext = NO;
             continue;
         }
+        if([word hasSuffix:@".swift"]) { continue; }
         if([word hasPrefix:@"-"])
         {
             [flags addObject:word];
