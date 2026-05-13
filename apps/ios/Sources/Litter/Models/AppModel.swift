@@ -1316,6 +1316,7 @@ final class AppModel {
         thread.modelContextWindow = state.modelContextWindow
         thread.rateLimits = state.rateLimits
         thread.realtimeSessionId = state.realtimeSessionId
+        thread.goal = state.goal
         thread.olderTurnsCursor = state.olderTurnsCursor
         thread.initialTurnsLoaded = state.initialTurnsLoaded
         let threadChanged = snapshot.threads[threadIndex] != thread

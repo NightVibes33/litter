@@ -215,6 +215,10 @@ jobs:
               echo "::warning::Swift UniFFI binding is stale: missing ishRuntimePreflight()."
               stale=1
             fi
+            if ! grep -q "AppThreadGoal" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing AppThreadGoal."
+              stale=1
+            fi
             if ! grep -q "ish_runtime_preflight" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
               echo "::warning::Swift UniFFI C header is stale: missing ish_runtime_preflight."
               stale=1

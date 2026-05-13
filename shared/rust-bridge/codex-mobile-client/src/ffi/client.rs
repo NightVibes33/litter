@@ -50,6 +50,57 @@ macro_rules! req {
     };
 }
 
+fn apply_thread_goal_to_store(
+    client: &MobileClient,
+    key: &types::ThreadKey,
+    goal: Option<upstream::ThreadGoal>,
+) -> Option<types::AppThreadGoal> {
+    match goal {
+        Some(goal) => {
+            let goal = types::AppThreadGoal::from(goal);
+            client.app_store.apply_thread_goal(key, goal.clone());
+            Some(goal)
+        }
+        None => {
+            client.app_store.clear_thread_goal(key);
+            None
+        }
+    }
+}
+
+async fn hydrate_thread_goal_if_available(
+    client: &MobileClient,
+    server_id: &str,
+    key: &types::ThreadKey,
+) {
+    let response: Result<upstream::ThreadGoalGetResponse, ClientError> = rpc_runtime(
+        client,
+        server_id,
+        types::AgentRuntimeKind::Codex,
+        req!(
+            server_id,
+            ThreadGoalGet,
+            upstream::ThreadGoalGetParams {
+                thread_id: key.thread_id.clone(),
+            }
+        ),
+    )
+    .await;
+    match response {
+        Ok(response) => {
+            apply_thread_goal_to_store(client, key, response.goal);
+        }
+        Err(error) => {
+            tracing::debug!(
+                server_id,
+                thread_id = key.thread_id,
+                %error,
+                "thread goal hydration skipped"
+            );
+        }
+    }
+}
+
 /// Flatten upstream `plugin/list` marketplaces into a deduped, sorted list of
 /// `PluginSummary` rows suitable for `@`-autocomplete. Pure so it can be unit-
 /// tested without running an RPC client.
@@ -197,8 +248,11 @@ impl AppClient {
                 req!(server_id, ThreadResume, params),
             )
             .await?;
-            c.apply_thread_resume_response(&server_id, &response)
-                .map_err(ClientError::Serialization)
+            let key = c
+                .apply_thread_resume_response(&server_id, &response)
+                .map_err(ClientError::Serialization)?;
+            hydrate_thread_goal_if_available(c.as_ref(), &server_id, &key).await;
+            Ok(key)
         })
     }
 
@@ -269,6 +323,77 @@ impl AppClient {
             )
             .await?;
             Ok(())
+        })
+    }
+
+    pub async fn get_thread_goal(
+        &self,
+        server_id: String,
+        params: types::AppThreadGoalGetRequest,
+    ) -> Result<Option<types::AppThreadGoal>, ClientError> {
+        blocking_async!(self.rt, self.inner, |c| {
+            let thread_id = params.thread_id.clone();
+            let response: upstream::ThreadGoalGetResponse = rpc_runtime(
+                c.as_ref(),
+                &server_id,
+                types::AgentRuntimeKind::Codex,
+                req!(server_id, ThreadGoalGet, params.into()),
+            )
+            .await?;
+            let key = types::ThreadKey {
+                server_id,
+                thread_id,
+            };
+            Ok(apply_thread_goal_to_store(c.as_ref(), &key, response.goal))
+        })
+    }
+
+    pub async fn set_thread_goal(
+        &self,
+        server_id: String,
+        params: types::AppThreadGoalSetRequest,
+    ) -> Result<types::AppThreadGoal, ClientError> {
+        blocking_async!(self.rt, self.inner, |c| {
+            let thread_id = params.thread_id.clone();
+            let response: upstream::ThreadGoalSetResponse = rpc_runtime(
+                c.as_ref(),
+                &server_id,
+                types::AgentRuntimeKind::Codex,
+                req!(server_id, ThreadGoalSet, params.into()),
+            )
+            .await?;
+            let key = types::ThreadKey {
+                server_id,
+                thread_id,
+            };
+            let goal = types::AppThreadGoal::from(response.goal);
+            c.app_store.apply_thread_goal(&key, goal.clone());
+            Ok(goal)
+        })
+    }
+
+    pub async fn clear_thread_goal(
+        &self,
+        server_id: String,
+        params: types::AppThreadGoalClearRequest,
+    ) -> Result<bool, ClientError> {
+        blocking_async!(self.rt, self.inner, |c| {
+            let thread_id = params.thread_id.clone();
+            let response: upstream::ThreadGoalClearResponse = rpc_runtime(
+                c.as_ref(),
+                &server_id,
+                types::AgentRuntimeKind::Codex,
+                req!(server_id, ThreadGoalClear, params.into()),
+            )
+            .await?;
+            if response.cleared {
+                let key = types::ThreadKey {
+                    server_id,
+                    thread_id,
+                };
+                c.app_store.clear_thread_goal(&key);
+            }
+            Ok(response.cleared)
         })
     }
 
@@ -471,8 +596,11 @@ impl AppClient {
                 req!(server_id, ThreadRead, params.into()),
             )
             .await?;
-            c.apply_thread_read_response(&server_id, &response)
-                .map_err(ClientError::Serialization)
+            let key = c
+                .apply_thread_read_response(&server_id, &response)
+                .map_err(ClientError::Serialization)?;
+            hydrate_thread_goal_if_available(c.as_ref(), &server_id, &key).await;
+            Ok(key)
         })
     }
 

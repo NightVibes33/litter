@@ -53,6 +53,8 @@ pub(super) fn windows_start_process_spec(
 ) -> (String, String) {
     let args = match binary {
         RemoteCodexBinary::Codex(_) => vec![
+            ps_quote("--enable"),
+            ps_quote("goals"),
             ps_quote("app-server"),
             ps_quote("--listen"),
             ps_quote(listen_url),
@@ -63,7 +65,7 @@ pub(super) fn windows_start_process_spec(
         let command = match binary {
             RemoteCodexBinary::Codex(path) => {
                 format!(
-                    r#""{}" app-server --listen {}"#,
+                    r#""{}" --enable goals app-server --listen {}"#,
                     cmd_quote(path),
                     listen_url
                 )
@@ -86,14 +88,14 @@ pub(super) fn server_launch_command(
     match shell {
         RemoteShell::Posix => match binary {
             RemoteCodexBinary::Codex(path) => format!(
-                "{} app-server --listen {}",
+                "{} --enable goals app-server --listen {}",
                 shell_quote(path),
                 shell_quote(listen_url)
             ),
         },
         RemoteShell::PowerShell => match binary {
             RemoteCodexBinary::Codex(path) => format!(
-                "{} app-server --listen {}",
+                "{} --enable goals app-server --listen {}",
                 ps_quote(path),
                 ps_quote(listen_url)
             ),

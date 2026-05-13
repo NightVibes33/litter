@@ -51,6 +51,9 @@ pub fn copy_thread_runtime_fields(source: &ThreadSnapshot, target: &mut ThreadSn
     target.model_context_window = source.model_context_window;
     target.rate_limits = source.rate_limits.clone();
     target.realtime_session_id = source.realtime_session_id.clone();
+    if target.goal.is_none() {
+        target.goal = source.goal.clone();
+    }
     if target.active_plan_progress.is_none() {
         target.active_plan_progress = source.active_plan_progress.clone();
     }

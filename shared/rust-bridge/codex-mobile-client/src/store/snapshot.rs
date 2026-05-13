@@ -9,7 +9,7 @@ use crate::types::{
     PendingApproval, PendingApprovalKey, PendingApprovalSeed, PendingUserInputRequest,
     RateLimitSnapshot, RateLimits, ThreadInfo, ThreadKey,
 };
-use crate::types::{AppVoiceSessionPhase, AppVoiceTranscriptEntry};
+use crate::types::{AppThreadGoal, AppVoiceSessionPhase, AppVoiceTranscriptEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum AppConnectionStepKind {
@@ -275,6 +275,7 @@ pub struct ThreadSnapshot {
     pub model_context_window: Option<u64>,
     pub rate_limits: Option<RateLimits>,
     pub realtime_session_id: Option<String>,
+    pub goal: Option<AppThreadGoal>,
     pub active_plan_progress: Option<AppPlanProgressSnapshot>,
     pub(crate) pending_plan_implementation_turn_id: Option<String>,
     /// Paginated-turns cursor pointing at the next older page, per
@@ -337,6 +338,7 @@ impl ThreadSnapshot {
             model_context_window: None,
             rate_limits: None,
             realtime_session_id: None,
+            goal: None,
             active_plan_progress: None,
             pending_plan_implementation_turn_id: None,
             older_turns_cursor: None,

@@ -411,6 +411,7 @@ mod mobile_client_tests {
                 reset_at: Some("2026-03-25T12:00:00Z".to_string()),
             }),
             realtime_session_id: Some("rt-1".to_string()),
+            goal: None,
             active_plan_progress: Some(crate::types::AppPlanProgressSnapshot {
                 turn_id: "turn-1".to_string(),
                 explanation: Some("Ship plan mode".to_string()),
@@ -475,6 +476,7 @@ mod mobile_client_tests {
             model_context_window: None,
             rate_limits: None,
             realtime_session_id: None,
+            goal: None,
             active_plan_progress: None,
             pending_plan_implementation_turn_id: None,
             older_turns_cursor: None,

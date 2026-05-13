@@ -74,6 +74,36 @@ impl From<AppThreadSourceKind> for upstream::ThreadSourceKind {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+pub enum AppThreadGoalStatus {
+    Active,
+    Paused,
+    BudgetLimited,
+    Complete,
+}
+
+impl From<upstream::ThreadGoalStatus> for AppThreadGoalStatus {
+    fn from(value: upstream::ThreadGoalStatus) -> Self {
+        match value {
+            upstream::ThreadGoalStatus::Active => Self::Active,
+            upstream::ThreadGoalStatus::Paused => Self::Paused,
+            upstream::ThreadGoalStatus::BudgetLimited => Self::BudgetLimited,
+            upstream::ThreadGoalStatus::Complete => Self::Complete,
+        }
+    }
+}
+
+impl From<AppThreadGoalStatus> for upstream::ThreadGoalStatus {
+    fn from(value: AppThreadGoalStatus) -> Self {
+        match value {
+            AppThreadGoalStatus::Active => Self::Active,
+            AppThreadGoalStatus::Paused => Self::Paused,
+            AppThreadGoalStatus::BudgetLimited => Self::BudgetLimited,
+            AppThreadGoalStatus::Complete => Self::Complete,
+        }
+    }
+}
+
 /// Summary status of a thread for mobile thread lists and local state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

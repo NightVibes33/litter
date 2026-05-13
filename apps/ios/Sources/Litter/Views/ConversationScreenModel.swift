@@ -30,6 +30,7 @@ struct ConversationComposerSnapshot: Equatable {
     var activeTaskSummary: ConversationActiveTaskSummary?
     var queuedFollowUps: [AppQueuedFollowUpPreview]
     var composerPrefillRequest: AppModel.ComposerPrefillRequest?
+    var goal: AppThreadGoal?
     var activeTurnId: String?
     var isTurnActive: Bool
     var threadPreview: String
@@ -50,6 +51,7 @@ struct ConversationComposerSnapshot: Equatable {
         activeTaskSummary: nil,
         queuedFollowUps: [],
         composerPrefillRequest: nil,
+        goal: nil,
         activeTurnId: nil,
         isTurnActive: false,
         threadPreview: "",
@@ -166,6 +168,7 @@ final class ConversationScreenModel {
             activeTaskSummary: activeTaskSummary,
             queuedFollowUps: thread.queuedFollowUps,
             composerPrefillRequest: composerPrefillRequest,
+            goal: thread.goal,
             activeTurnId: activeTurnId,
             isTurnActive: activeTurnId != nil,
             threadPreview: thread.resolvedPreview,

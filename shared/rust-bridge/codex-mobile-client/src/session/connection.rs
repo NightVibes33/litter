@@ -559,6 +559,7 @@ impl ServerSession {
         }
 
         let cli_overrides = vec![
+            ("features.goals".to_string(), true.into()),
             ("features.realtime_conversation".to_string(), true.into()),
             (
                 "experimental_realtime_ws_model".to_string(),

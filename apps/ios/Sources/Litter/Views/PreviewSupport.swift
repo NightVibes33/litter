@@ -337,6 +337,7 @@ enum LitterPreviewData {
             modelContextWindow: 200_000,
             rateLimits: nil,
             realtimeSessionId: nil,
+            goal: nil,
             stats: nil,
             tokenUsage: nil,
             olderTurnsCursor: nil,

@@ -278,6 +278,7 @@ final class HomeDashboardSupportTests: XCTestCase {
             modelContextWindow: nil,
             rateLimits: nil,
             realtimeSessionId: nil,
+            goal: nil,
             stats: nil,
             tokenUsage: nil,
             olderTurnsCursor: nil,

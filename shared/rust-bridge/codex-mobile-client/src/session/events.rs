@@ -11,6 +11,7 @@ use codex_app_server_protocol::{ServerNotification, ServerRequest};
 use tokio::sync::broadcast;
 use tracing::warn;
 
+use crate::types::AppThreadGoal;
 use crate::types::{
     ApprovalKind, PendingApproval, PendingApprovalSeed, PendingApprovalWithSeed,
     PendingUserInputOption, PendingUserInputQuestion, PendingUserInputRequest, ThreadKey,
@@ -39,6 +40,14 @@ pub(crate) enum UiEvent {
     ThreadStatusChanged {
         key: ThreadKey,
         notification: codex_app_server_protocol::ThreadStatusChangedNotification,
+    },
+    ThreadGoalUpdated {
+        key: ThreadKey,
+        goal: AppThreadGoal,
+        turn_id: Option<String>,
+    },
+    ThreadGoalCleared {
+        key: ThreadKey,
     },
     ModelRerouted {
         key: ThreadKey,
@@ -275,6 +284,18 @@ impl EventProcessor {
                     key,
                     notification: n.clone(),
                 });
+            }
+            ServerNotification::ThreadGoalUpdated(n) => {
+                let key = Self::make_key(server_id, &n.thread_id);
+                self.emit(UiEvent::ThreadGoalUpdated {
+                    key,
+                    goal: n.goal.clone().into(),
+                    turn_id: n.turn_id.clone(),
+                });
+            }
+            ServerNotification::ThreadGoalCleared(n) => {
+                let key = Self::make_key(server_id, &n.thread_id);
+                self.emit(UiEvent::ThreadGoalCleared { key });
             }
             ServerNotification::ModelRerouted(n) => {
                 let key = Self::make_key(server_id, &n.thread_id);

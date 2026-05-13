@@ -6,8 +6,8 @@ use crate::conversation_uniffi::{
 };
 use crate::types::AppSubagentStatus;
 use crate::types::{
-    AppModeKind, AppPlanImplementationPromptSnapshot, AppPlanProgressSnapshot, PendingApproval,
-    PendingUserInputRequest, ThreadInfo, ThreadKey, ThreadSummaryStatus,
+    AppModeKind, AppPlanImplementationPromptSnapshot, AppPlanProgressSnapshot, AppThreadGoal,
+    PendingApproval, PendingUserInputRequest, ThreadInfo, ThreadKey, ThreadSummaryStatus,
 };
 
 use super::snapshot::{
@@ -101,6 +101,7 @@ pub struct AppThreadSnapshot {
     pub model_context_window: Option<u64>,
     pub rate_limits: Option<crate::types::RateLimits>,
     pub realtime_session_id: Option<String>,
+    pub goal: Option<AppThreadGoal>,
     pub stats: Option<AppConversationStats>,
     pub token_usage: Option<AppTokenUsage>,
     /// Cursor for fetching the next older page of turns, or `None` when no
@@ -129,6 +130,7 @@ pub struct AppThreadStateRecord {
     pub model_context_window: Option<u64>,
     pub rate_limits: Option<crate::types::RateLimits>,
     pub realtime_session_id: Option<String>,
+    pub goal: Option<AppThreadGoal>,
     /// Mirrors `AppThreadSnapshot.older_turns_cursor`. Included so
     /// `ThreadMetadataChanged` events carry pagination state through to
     /// the platform mappers; without this the Kotlin/Swift projection
@@ -541,6 +543,7 @@ fn app_thread_snapshot_from_state(
         model_context_window: thread.model_context_window,
         rate_limits: thread.rate_limits.clone(),
         realtime_session_id: thread.realtime_session_id.clone(),
+        goal: thread.goal.clone(),
         stats,
         token_usage: thread_token_usage(thread),
         older_turns_cursor: thread.older_turns_cursor.clone(),
@@ -577,6 +580,7 @@ fn app_thread_state_record_from_state(
         model_context_window: thread.model_context_window,
         rate_limits: thread.rate_limits.clone(),
         realtime_session_id: thread.realtime_session_id.clone(),
+        goal: thread.goal.clone(),
         older_turns_cursor: thread.older_turns_cursor.clone(),
         initial_turns_loaded: thread.initial_turns_loaded,
     })
@@ -1513,6 +1517,7 @@ mod tests {
                 model_context_window: None,
                 rate_limits: None,
                 realtime_session_id: None,
+                goal: None,
                 active_plan_progress: None,
                 pending_plan_implementation_turn_id: None,
                 older_turns_cursor: None,

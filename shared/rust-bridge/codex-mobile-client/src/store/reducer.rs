@@ -23,8 +23,8 @@ use crate::types::{
     ThreadKey, ThreadSummaryStatus,
 };
 use crate::types::{
-    AppModeKind, AppOperationStatus, AppPlanProgressSnapshot, AppPlanStep, AppVoiceSessionPhase,
-    AppVoiceTranscriptEntry, AppVoiceTranscriptUpdate,
+    AppModeKind, AppOperationStatus, AppPlanProgressSnapshot, AppPlanStep, AppThreadGoal,
+    AppVoiceSessionPhase, AppVoiceTranscriptEntry, AppVoiceTranscriptUpdate,
 };
 
 use super::actions::{
@@ -1507,6 +1507,12 @@ impl AppStoreReducer {
                     }
                 });
             }
+            UiEvent::ThreadGoalUpdated { key, goal, .. } => {
+                self.apply_thread_goal(key, goal.clone());
+            }
+            UiEvent::ThreadGoalCleared { key } => {
+                self.clear_thread_goal(key);
+            }
             UiEvent::ModelRerouted { key, notification } => {
                 let item = make_model_rerouted_item(
                     &notification.turn_id,
@@ -2229,6 +2235,28 @@ impl AppStoreReducer {
         let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
         let thread = snapshot.threads.get_mut(key)?;
         Some(mutate(thread))
+    }
+
+    pub(crate) fn apply_thread_goal(&self, key: &ThreadKey, goal: AppThreadGoal) {
+        if self
+            .mutate_thread_with_result(key, |thread| {
+                thread.goal = Some(goal);
+            })
+            .is_some()
+        {
+            self.emit_thread_metadata_changed(key);
+        }
+    }
+
+    pub(crate) fn clear_thread_goal(&self, key: &ThreadKey) {
+        if self
+            .mutate_thread_with_result(key, |thread| {
+                thread.goal = None;
+            })
+            .is_some()
+        {
+            self.emit_thread_metadata_changed(key);
+        }
     }
 
     pub(crate) fn emit_thread_metadata_changed(&self, key: &ThreadKey) {
@@ -3112,6 +3140,9 @@ fn preserve_thread_runtime_state(source: &ThreadSnapshot, target: &mut ThreadSna
     }
     if target.reasoning_effort.is_none() {
         target.reasoning_effort = source.reasoning_effort.clone();
+    }
+    if target.goal.is_none() {
+        target.goal = source.goal.clone();
     }
     if target.active_plan_progress.is_none() {
         target.active_plan_progress = source.active_plan_progress.clone();

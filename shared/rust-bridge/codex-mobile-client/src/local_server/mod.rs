@@ -453,7 +453,9 @@ async fn spawn_local_server(
 ) -> Result<LocalServerHandle, LocalServerError> {
     let listen_url = format!("ws://127.0.0.1:{port}");
     let mut cmd = Command::new(codex_path);
-    cmd.arg("app-server")
+    cmd.arg("--enable")
+        .arg("goals")
+        .arg("app-server")
         .arg("--listen")
         .arg(&listen_url)
         .stdin(Stdio::null())

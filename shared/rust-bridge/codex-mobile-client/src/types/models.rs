@@ -10,7 +10,9 @@
 use codex_app_server_protocol as upstream;
 use serde::{Deserialize, Serialize};
 
-use super::enums::{AgentRuntimeKind, AppModeKind, AppPlanStepStatus, ThreadSummaryStatus};
+use super::enums::{
+    AgentRuntimeKind, AppModeKind, AppPlanStepStatus, AppThreadGoalStatus, ThreadSummaryStatus,
+};
 use crate::RpcClientError;
 
 const MAX_REASONABLE_EPOCH_SECONDS: i64 = 10_000_000_000;
@@ -128,6 +130,34 @@ pub struct AgentRuntimeInfo {
     pub name: String,
     pub display_name: String,
     pub available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct AppThreadGoal {
+    pub thread_id: String,
+    pub objective: String,
+    pub status: AppThreadGoalStatus,
+    pub token_budget: Option<i64>,
+    pub tokens_used: i64,
+    pub time_used_seconds: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl From<upstream::ThreadGoal> for AppThreadGoal {
+    fn from(value: upstream::ThreadGoal) -> Self {
+        Self {
+            thread_id: value.thread_id,
+            objective: value.objective,
+            status: value.status.into(),
+            token_budget: value.token_budget,
+            tokens_used: value.tokens_used,
+            time_used_seconds: value.time_used_seconds,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
 }
 
 impl From<upstream::Thread> for ThreadInfo {

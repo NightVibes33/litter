@@ -583,6 +583,56 @@ impl From<AppRenameThreadRequest> for upstream::ThreadSetNameParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
+pub struct AppThreadGoalGetRequest {
+    pub thread_id: String,
+}
+
+impl From<AppThreadGoalGetRequest> for upstream::ThreadGoalGetParams {
+    fn from(value: AppThreadGoalGetRequest) -> Self {
+        Self {
+            thread_id: value.thread_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct AppThreadGoalSetRequest {
+    pub thread_id: String,
+    pub objective: Option<String>,
+    pub status: Option<crate::types::AppThreadGoalStatus>,
+    pub token_budget: Option<i64>,
+}
+
+impl From<AppThreadGoalSetRequest> for upstream::ThreadGoalSetParams {
+    fn from(value: AppThreadGoalSetRequest) -> Self {
+        Self {
+            thread_id: value.thread_id,
+            objective: value.objective,
+            status: value.status.map(Into::into),
+            // Mobile can express leave-unchanged (None) or set-to-N (Some).
+            // Clearing a budget is not exposed from this surface.
+            token_budget: value.token_budget.map(Some),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct AppThreadGoalClearRequest {
+    pub thread_id: String,
+}
+
+impl From<AppThreadGoalClearRequest> for upstream::ThreadGoalClearParams {
+    fn from(value: AppThreadGoalClearRequest) -> Self {
+        Self {
+            thread_id: value.thread_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
 pub struct AppListThreadsRequest {
     #[uniffi(default = None)]
     pub cursor: Option<String>,

@@ -1264,6 +1264,7 @@ class AppModel private constructor(context: android.content.Context) {
             modelContextWindow = state.modelContextWindow,
             rateLimits = state.rateLimits,
             realtimeSessionId = state.realtimeSessionId,
+            goal = state.goal,
             olderTurnsCursor = state.olderTurnsCursor,
             initialTurnsLoaded = state.initialTurnsLoaded,
         )

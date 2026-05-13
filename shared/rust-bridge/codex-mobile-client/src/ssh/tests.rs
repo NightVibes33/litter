@@ -42,7 +42,7 @@ fn test_server_launch_command_for_codex() {
     );
     assert_eq!(
         command,
-        "'/usr/local/bin/codex' app-server --listen 'ws://127.0.0.1:8390'"
+        "'/usr/local/bin/codex' --enable goals app-server --listen 'ws://127.0.0.1:8390'"
     );
 }
 
@@ -55,7 +55,7 @@ fn test_windows_start_process_spec_for_cmd_shim() {
     assert_eq!(file_path, "$env:ComSpec");
     assert_eq!(
         argument_list,
-        r#"@('/d', '/c', '""C:\Users\me\AppData\Roaming\npm\codex.cmd" app-server --listen ws://127.0.0.1:8390"')"#
+        r#"@('/d', '/c', '""C:\Users\me\AppData\Roaming\npm\codex.cmd" --enable goals app-server --listen ws://127.0.0.1:8390"')"#
     );
 }
 
@@ -68,7 +68,7 @@ fn test_windows_start_process_spec_for_exe() {
     assert_eq!(file_path, r#"'C:\Program Files\Codex\codex.exe'"#);
     assert_eq!(
         argument_list,
-        "@('app-server', '--listen', 'ws://127.0.0.1:8390')"
+        "@('--enable', 'goals', 'app-server', '--listen', 'ws://127.0.0.1:8390')"
     );
 }
 
