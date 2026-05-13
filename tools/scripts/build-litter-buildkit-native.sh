@@ -36,6 +36,7 @@ CFLAGS=(
   -fmodules
   -dynamiclib
   -install_name "@rpath/LitterBuildKitNative.framework/LitterBuildKitNative"
+  -Wl,-headerpad_max_install_names
   -Wl,-rpath,@loader_path/..
   -Wl,-rpath,@loader_path/../CoreCompilerSupportLibs
   -Wl,-rpath,@executable_path/Frameworks

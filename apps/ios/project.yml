@@ -135,6 +135,23 @@ targets:
             exit 0
           fi
           mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+          repair_corecompiler_rpath() {
+            binary="$1"
+            if [ ! -f "$binary" ]; then
+              return 0
+            fi
+            if ! /usr/bin/otool -L "$binary" | /usr/bin/grep -q 'CoreCompiler.framework/CoreCompiler'; then
+              return 0
+            fi
+            if /usr/bin/otool -l "$binary" | /usr/bin/grep -q '@loader_path/..'; then
+              return 0
+            fi
+            /usr/bin/install_name_tool -add_rpath '@loader_path/..' "$binary"
+            if ! /usr/bin/otool -l "$binary" | /usr/bin/grep -q '@loader_path/..'; then
+              echo "error: failed to add @loader_path/.. rpath to $binary" >&2
+              exit 1
+            fi
+          }
           for framework in LitterBuildKitNative.framework; do
             if [ -d "$ASSET_ROOT/$framework" ]; then
               destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
@@ -169,6 +186,7 @@ targets:
           </plist>
           PLIST
               fi
+              repair_corecompiler_rpath "$destination/$executable"
               if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
                 codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$destination"
               fi

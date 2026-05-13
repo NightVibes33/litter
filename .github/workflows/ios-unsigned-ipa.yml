@@ -472,11 +472,14 @@ jobs:
           fi
 
           DRIVER="$APP_PATH/Frameworks/LitterBuildKitNative.framework/LitterBuildKitNative"
-          if ! /usr/bin/nm -gU "$DRIVER" | grep -q ' _litter_buildkit_run_json$'; then
+          if ! /usr/bin/nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'; then
             echo "::error::Embedded LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
             exit 1
           fi
           if /usr/bin/otool -L "$DRIVER" | grep -q 'CoreCompiler.framework/CoreCompiler'; then
+            if ! /usr/bin/otool -l "$DRIVER" | grep -q '@loader_path/..'; then
+              /usr/bin/install_name_tool -add_rpath '@loader_path/..' "$DRIVER"
+            fi
             if ! /usr/bin/otool -l "$DRIVER" | grep -q '@loader_path/..'; then
               echo "::error::Embedded native driver links CoreCompiler but lacks @loader_path/.. rpath" >&2
               exit 1

@@ -83,7 +83,7 @@ CORE="$ASSET_ROOT/Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler"
 if [[ "$(uname -s)" = "Darwin" ]]; then
   if [[ -f "$DRIVER" ]]; then
     /usr/bin/lipo -info "$DRIVER"
-    if ! /usr/bin/nm -gU "$DRIVER" | grep -q ' _litter_buildkit_run_json$'; then
+    if ! /usr/bin/nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'; then
       echo "error: LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
       exit 1
     fi
