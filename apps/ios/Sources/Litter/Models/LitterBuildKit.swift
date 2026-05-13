@@ -886,7 +886,7 @@ actor LitterBuildKit {
               nativeRunnerInstalled else {
             return false
         }
-        if let availableManifest = firstAvailableAssetCandidateManifest(), assetManifest(availableManifest, isNewerThan: manifest) {
+        if let availableManifest = firstAvailableAssetCandidateManifest(), assetManifest(availableManifest, shouldReplace: manifest) {
             return false
         }
         return true
@@ -990,11 +990,31 @@ actor LitterBuildKit {
         return nil
     }
 
-    private static func assetManifest(_ available: BuildKitAssetManifest, isNewerThan installed: BuildKitAssetManifest) -> Bool {
+    static func assetManifest(_ available: BuildKitAssetManifest, shouldReplace installed: BuildKitAssetManifest) -> Bool {
         guard available.bundleIdentifier == installed.bundleIdentifier else { return false }
-        guard let availableDate = assetManifestCreatedAtDate(available) else { return false }
-        guard let installedDate = assetManifestCreatedAtDate(installed) else { return true }
-        return availableDate > installedDate
+        switch compareSDKVersion(available.sdkVersion, installed.sdkVersion) {
+        case .orderedDescending:
+            return true
+        case .orderedAscending:
+            return false
+        case .orderedSame:
+            guard let availableDate = assetManifestCreatedAtDate(available) else { return false }
+            guard let installedDate = assetManifestCreatedAtDate(installed) else { return true }
+            return availableDate > installedDate
+        }
+    }
+
+    private static func compareSDKVersion(_ lhs: String, _ rhs: String) -> ComparisonResult {
+        let lhsParts = lhs.split(separator: ".").map { Int($0) ?? 0 }
+        let rhsParts = rhs.split(separator: ".").map { Int($0) ?? 0 }
+        let count = max(lhsParts.count, rhsParts.count)
+        for index in 0..<count {
+            let left = index < lhsParts.count ? lhsParts[index] : 0
+            let right = index < rhsParts.count ? rhsParts[index] : 0
+            if left > right { return .orderedDescending }
+            if left < right { return .orderedAscending }
+        }
+        return .orderedSame
     }
 
     private static func assetManifestCreatedAtDate(_ manifest: BuildKitAssetManifest) -> Date? {

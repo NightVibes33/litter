@@ -111,6 +111,27 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(staged.entitlements, "App.entitlements")
     }
 
+    func testBuildKitAssetRefreshPrefersHigherSDKVersion() {
+        let installed = buildKitManifest(sdkVersion: "26.2", createdAt: "2026-05-13T12:00:00Z")
+        let available = buildKitManifest(sdkVersion: "26.4", createdAt: "2026-05-12T12:00:00Z")
+
+        XCTAssertTrue(LitterBuildKit.assetManifest(available, shouldReplace: installed))
+    }
+
+    func testBuildKitAssetRefreshDoesNotDowngradeSDKVersion() {
+        let installed = buildKitManifest(sdkVersion: "26.4", createdAt: "2026-05-12T12:00:00Z")
+        let available = buildKitManifest(sdkVersion: "26.2", createdAt: "2026-05-13T12:00:00Z")
+
+        XCTAssertFalse(LitterBuildKit.assetManifest(available, shouldReplace: installed))
+    }
+
+    func testBuildKitAssetRefreshUsesCreatedAtWithinSameSDKVersion() {
+        let installed = buildKitManifest(sdkVersion: "26.4", createdAt: "2026-05-12T12:00:00Z")
+        let available = buildKitManifest(sdkVersion: "26.4", createdAt: "2026-05-13T12:00:00Z")
+
+        XCTAssertTrue(LitterBuildKit.assetManifest(available, shouldReplace: installed))
+    }
+
     func testBuildKitDownloadDefaultsTargetPrivateRelease() {
         let config = BuildKitAssetDownloadConfig()
 
@@ -127,4 +148,26 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(try BuildKitAssetDownloadStore.parseSHA256Sidecar("\(sha)  LitterBuildKitAssets.zip\n"), sha)
         XCTAssertThrowsError(try BuildKitAssetDownloadStore.parseSHA256Sidecar("not-a-sha"))
     }
+}
+
+private func buildKitManifest(sdkVersion: String, createdAt: String) -> BuildKitAssetManifest {
+    BuildKitAssetManifest(
+        schemaVersion: 1,
+        bundleIdentifier: "com.sigkitten.litter.buildkit.private",
+        createdAt: createdAt,
+        sdkVersion: sdkVersion,
+        swiftVersion: "6.x",
+        minimumIOS: "18.0",
+        toolchain: BuildKitAssetManifest.Toolchain(
+            name: "Nyxian/CoreCompiler",
+            coreCompilerFramework: "Toolchains/Nyxian/CoreCompiler.framework",
+            nativeDriverFramework: "Toolchains/Nyxian/LitterBuildKitNative.framework",
+            nativeRunner: "Toolchains/Nyxian/bin/litter-buildkit-runner",
+            supportLibraries: "Toolchains/Nyxian/CoreCompilerSupportLibs",
+            sdkPath: "SDK/iPhoneOS\(sdkVersion).sdk"
+        ),
+        capabilities: ["swift-check", "swift-build"],
+        requiredPaths: [],
+        sha256: nil
+    )
 }
