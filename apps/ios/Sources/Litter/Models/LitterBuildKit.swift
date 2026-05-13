@@ -648,10 +648,13 @@ actor LitterBuildKit {
         if tokens.contains("archive") {
             return await nativeBuildCommand(command: "litter-ipa-build", args: projectArgs, cwd: cwd, buildDir: buildDir)
         }
-        if tokens.contains("build") || tokens.isEmpty {
-            return await nativeBuildCommand(command: "litter-swift-build", args: projectArgs, cwd: cwd, buildDir: buildDir)
+        if tokens.contains("test") {
+            return await nativeBuildCommand(command: "litter-swift-test", args: projectArgs, cwd: cwd, buildDir: buildDir)
         }
-        return BuildKitCommandResult(exitCode: 64, status: "xcodebuild-unsupported", log: Self.xcodebuildCompatibilityUsage())
+        if tokens.contains("clean") {
+            return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-clean-ok", log: "Litter xcodebuild compatibility shim: clean is a no-op for staged BuildKit jobs.\n")
+        }
+        return await nativeBuildCommand(command: "litter-swift-build", args: projectArgs, cwd: cwd, buildDir: buildDir)
     }
 
     private func codeCompatibility(args: String, cwd: String) -> BuildKitCommandResult {
@@ -1557,10 +1560,12 @@ actor LitterBuildKit {
         Litter xcodebuild compatibility shim
         Supported:
           xcodebuild -version
-          xcodebuild build [LitterBuild.json]
+          xcodebuild [build] [LitterBuild.json]
+          xcodebuild test [LitterBuild.json]
           xcodebuild archive [LitterBuild.json]
+          xcodebuild clean
 
-        This is an iOS-only BuildKit bridge, not full Xcode. Use litter-swift-build or litter-ipa-build for reliable bot builds.
+        This is an iOS-only BuildKit bridge, not full Xcode. Use litter-swift-build, litter-swift-test, or litter-ipa-build for reliable bot builds.
         """
     }
 
