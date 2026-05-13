@@ -35,6 +35,11 @@ require_path() {
 }
 
 require_path "CoreCompiler.framework" "$CORECOMPILER_FRAMEWORK"
+if [[ -f "$CORECOMPILER_FRAMEWORK/CoreCompiler.tbd" && ! -f "$CORECOMPILER_FRAMEWORK/CoreCompiler" ]]; then
+  echo "error: CoreCompiler.framework only contains CoreCompiler.tbd; rebuild assets with the real framework product" >&2
+  exit 1
+fi
+require_path "CoreCompiler.framework executable" "$CORECOMPILER_FRAMEWORK/CoreCompiler"
 if [[ -z "$NATIVE_DRIVER_FRAMEWORK" ]]; then
   echo "==> LITTER_BUILDKIT_NATIVE_FRAMEWORK not set; building the default native wrapper"
   LITTER_BUILDKIT_NATIVE_MODE="$NATIVE_MODE" CORECOMPILER_FRAMEWORK="$CORECOMPILER_FRAMEWORK" "$ROOT_DIR/tools/scripts/build-litter-buildkit-native.sh"
@@ -80,7 +85,9 @@ runner_rel = sys.argv[4]
 native_mode = sys.argv[5]
 required = [
     "Toolchains/Nyxian/CoreCompiler.framework",
+    "Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler",
     "Toolchains/Nyxian/LitterBuildKitNative.framework",
+    "Toolchains/Nyxian/LitterBuildKitNative.framework/LitterBuildKitNative",
     "Toolchains/Nyxian/CoreCompilerSupportLibs",
     f"SDK/iPhoneOS{sdk_version}.sdk/SDKSettings.plist",
 ]
@@ -123,6 +130,11 @@ rm -f "$ZIP_PATH"
   NORMALIZED_DIR="$(mktemp -d)"
   trap 'rm -rf "$NORMALIZED_DIR"' EXIT
   cp -R -L "$OUT_DIR" "$NORMALIZED_DIR/$(basename "$OUT_DIR")"
+  if find "$NORMALIZED_DIR/$(basename "$OUT_DIR")" -type l -print -quit | grep -q .; then
+    echo "error: normalized BuildKit asset output still contains symlinks" >&2
+    find "$NORMALIZED_DIR/$(basename "$OUT_DIR")" -type l -print | sed -n '1,200p' >&2
+    exit 1
+  fi
   cd "$NORMALIZED_DIR"
   /usr/bin/zip -qry "$ZIP_PATH" "$(basename "$OUT_DIR")"
 )

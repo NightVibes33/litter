@@ -19,17 +19,24 @@ if ! xcode-select -p >/dev/null 2>&1; then
   exit 1
 fi
 
-find_first() {
-  local pattern="$1"
-  shift
+find_corecompiler_framework() {
   for root in "$@"; do
     [[ -e "$root" ]] || continue
-    local found
-    found="$(find "$root" -name "$pattern" -print 2>/dev/null | head -n 1 || true)"
-    if [[ -n "$found" ]]; then
-      printf '%s\n' "$found"
-      return 0
-    fi
+    while IFS= read -r found; do
+      case "$found" in
+        */EagerLinkingTBDs/*)
+          echo "warning: ignoring stub-only CoreCompiler framework: $found" >&2
+          continue
+          ;;
+      esac
+      if [[ -f "$found/CoreCompiler" ]]; then
+        printf '%s\n' "$found"
+        return 0
+      fi
+      if [[ -f "$found/CoreCompiler.tbd" ]]; then
+        echo "warning: ignoring CoreCompiler.framework without executable: $found" >&2
+      fi
+    done < <(find "$root" -type d -name CoreCompiler.framework -print 2>/dev/null | sort)
   done
   return 1
 }
@@ -50,8 +57,13 @@ if [[ "$BUILD_UPSTREAM" = "1" ]]; then
   fi
 fi
 
+if [[ -n "$CORECOMPILER_FRAMEWORK" && ! -f "$CORECOMPILER_FRAMEWORK/CoreCompiler" ]]; then
+  echo "error: CoreCompiler.framework is missing its executable: $CORECOMPILER_FRAMEWORK/CoreCompiler" >&2
+  echo "       Refusing to package a stub-only framework such as CoreCompiler.tbd." >&2
+  exit 1
+fi
 if [[ -z "$CORECOMPILER_FRAMEWORK" ]]; then
-  CORECOMPILER_FRAMEWORK="$(find_first CoreCompiler.framework "$NYXIAN_ROOT" "$ROOT_DIR/artifacts" "$ROOT_DIR/build" || true)"
+  CORECOMPILER_FRAMEWORK="$(find_corecompiler_framework "$NYXIAN_ROOT" "$ROOT_DIR/artifacts" "$ROOT_DIR/build" || true)"
 fi
 if [[ -z "$CORECOMPILER_FRAMEWORK" && -f "$NYXIAN_ROOT/Nyxian.xcodeproj/project.pbxproj" ]]; then
   echo "==> Building $CORECOMPILER_SCHEME framework from Nyxian.xcodeproj"
@@ -65,10 +77,10 @@ if [[ -z "$CORECOMPILER_FRAMEWORK" && -f "$NYXIAN_ROOT/Nyxian.xcodeproj/project.
     CODE_SIGNING_REQUIRED=NO \
     CODE_SIGN_IDENTITY="" \
     DEVELOPMENT_TEAM=""
-  CORECOMPILER_FRAMEWORK="$(find_first CoreCompiler.framework "$NYXIAN_ROOT" "$ROOT_DIR/artifacts/buildkit/DerivedData-Nyxian" || true)"
+  CORECOMPILER_FRAMEWORK="$(find_corecompiler_framework "$ROOT_DIR/artifacts/buildkit/DerivedData-Nyxian" "$NYXIAN_ROOT" || true)"
 fi
-if [[ -z "$CORECOMPILER_FRAMEWORK" || ! -d "$CORECOMPILER_FRAMEWORK" ]]; then
-  echo "error: CoreCompiler.framework was not found" >&2
+if [[ -z "$CORECOMPILER_FRAMEWORK" || ! -d "$CORECOMPILER_FRAMEWORK" || ! -f "$CORECOMPILER_FRAMEWORK/CoreCompiler" ]]; then
+  echo "error: CoreCompiler.framework with executable CoreCompiler was not found" >&2
   echo "Set CORECOMPILER_FRAMEWORK=/path/CoreCompiler.framework or run tools/scripts/vendor-nyxian.sh on a Mac and rebuild." >&2
   exit 1
 fi

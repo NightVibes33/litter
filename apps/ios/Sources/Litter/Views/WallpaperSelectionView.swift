@@ -33,6 +33,7 @@ struct WallpaperSelectionView: View {
         threadKey?.serverId ?? serverId
     }
 
+    @State private var selectedPresetSlug: String?
     @State private var selectedThemeSlug: String?
     @State private var selectedColor: Color?
     @State private var selectedPhoto: PhotosPickerItem?
@@ -137,6 +138,15 @@ struct WallpaperSelectionView: View {
     private var wallpaperPreview: some View {
         if let config = previewConfig {
             switch config.type {
+            case .preset:
+                if let slug = config.presetSlug,
+                   let image = wallpaperManager.generatePresetWallpaper(presetSlug: slug) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    LitterTheme.backgroundGradient
+                }
             case .theme:
                 if let slug = config.themeSlug,
                    let image = wallpaperManager.generateWallpaper(themeSlug: slug, themeManager: themeManager) {
@@ -154,9 +164,7 @@ struct WallpaperSelectionView: View {
                 }
             case .customImage:
                 if let customImage {
-                    Image(uiImage: customImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
+                    FittedWallpaperImage(image: customImage)
                 } else {
                     LitterTheme.backgroundGradient
                 }
@@ -244,15 +252,23 @@ struct WallpaperSelectionView: View {
     private var backgroundTabContent: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 16) {
-                // Theme thumbnails
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        noWallpaperThumbnail
-                        ForEach(themeManager.themeIndex) { entry in
-                            themeThumbnail(for: entry)
-                        }
+                wallpaperThumbnailSection(title: "Background Presets") {
+                    noWallpaperThumbnail
+                    ForEach(wallpaperManager.chatBackgroundPresets) { preset in
+                        presetThumbnail(for: preset)
                     }
-                    .padding(.horizontal, 16)
+                }
+
+                wallpaperThumbnailSection(title: "Light Themes") {
+                    ForEach(themeManager.lightThemes) { entry in
+                        themeThumbnail(for: entry)
+                    }
+                }
+
+                wallpaperThumbnailSection(title: "Dark Themes") {
+                    ForEach(themeManager.darkThemes) { entry in
+                        themeThumbnail(for: entry)
+                    }
                 }
 
                 Divider().overlay(LitterTheme.separator)
@@ -349,9 +365,26 @@ struct WallpaperSelectionView: View {
 
     // MARK: - Thumbnails
 
+    private func wallpaperThumbnailSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .litterFont(size: 13, weight: .semibold)
+                .foregroundStyle(LitterTheme.textSecondary)
+                .padding(.horizontal, 16)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    content()
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+
     private var noWallpaperThumbnail: some View {
         Button {
             previewConfig = WallpaperConfig(type: .none)
+            selectedPresetSlug = nil
             selectedThemeSlug = nil
             selectedColor = nil
             customImage = nil
@@ -373,7 +406,7 @@ struct WallpaperSelectionView: View {
                 }
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(selectedThemeSlug == nil && previewConfig?.type == .none ? LitterTheme.accent : LitterTheme.border, lineWidth: 2)
+                        .stroke(selectedPresetSlug == nil && selectedThemeSlug == nil && previewConfig?.type == .none ? LitterTheme.accent : LitterTheme.border, lineWidth: 2)
                 )
 
                 Text("None")
@@ -384,8 +417,39 @@ struct WallpaperSelectionView: View {
         }
     }
 
+    private func presetThumbnail(for preset: ChatBackgroundPreset) -> some View {
+        Button {
+            selectedPresetSlug = preset.slug
+            selectedThemeSlug = nil
+            selectedColor = nil
+            customImage = nil
+            let config = WallpaperConfig(type: .preset, presetSlug: preset.slug)
+            previewConfig = config
+            onSelectWallpaper?(config, nil)
+        } label: {
+            VStack(spacing: 6) {
+                Image(uiImage: wallpaperManager.generateThumbnail(for: preset))
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: 68, height: 100)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(selectedPresetSlug == preset.slug ? LitterTheme.accent : LitterTheme.border, lineWidth: 2)
+                    )
+
+                Text(preset.name)
+                    .litterFont(size: 10)
+                    .foregroundStyle(LitterTheme.textSecondary)
+                    .lineLimit(1)
+                    .frame(width: 68)
+            }
+        }
+    }
+
     private func themeThumbnail(for entry: ThemeIndexEntry) -> some View {
         Button {
+            selectedPresetSlug = nil
             selectedThemeSlug = entry.slug
             selectedColor = nil
             customImage = nil
@@ -429,6 +493,7 @@ struct WallpaperSelectionView: View {
                 get: { selectedColor ?? .black },
                 set: { color in
                     selectedColor = color
+                    selectedPresetSlug = nil
                     selectedThemeSlug = nil
                     customImage = nil
                     let hex = colorToHex(color)
@@ -582,6 +647,7 @@ struct WallpaperSelectionView: View {
               let image = UIImage(data: data) else { return }
         await MainActor.run {
             customImage = image
+            selectedPresetSlug = nil
             selectedThemeSlug = nil
             selectedColor = nil
             let config = WallpaperConfig(type: .customImage)
@@ -623,6 +689,7 @@ struct WallpaperSelectionView: View {
                 config.videoDuration = duration
                 previewConfig = config
                 videoFileURL = destURL
+                selectedPresetSlug = nil
                 selectedThemeSlug = nil
                 selectedColor = nil
                 customImage = nil
@@ -661,6 +728,7 @@ struct WallpaperSelectionView: View {
                 config.videoDuration = duration
                 previewConfig = config
                 videoFileURL = destURL
+                selectedPresetSlug = nil
                 selectedThemeSlug = nil
                 selectedColor = nil
                 customImage = nil

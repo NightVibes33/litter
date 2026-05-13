@@ -24,6 +24,15 @@ struct ChatWallpaperBackground: View {
     @ViewBuilder
     private func wallpaperContent(for config: WallpaperConfig) -> some View {
         switch config.type {
+        case .preset:
+            if let slug = config.presetSlug,
+               let image = wallpaperManager.generatePresetWallpaper(presetSlug: slug) {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                LitterTheme.backgroundGradient
+            }
         case .theme:
             if let slug = config.themeSlug,
                let image = wallpaperManager.generateWallpaper(themeSlug: slug, themeManager: themeManager) {
@@ -36,9 +45,7 @@ struct ChatWallpaperBackground: View {
         case .customImage:
             if let scope = wallpaperScope,
                let image = wallpaperManager.wallpaperImage(for: config, scope: scope, themeManager: themeManager) {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
+                FittedWallpaperImage(image: image)
             } else {
                 LitterTheme.backgroundGradient
             }
@@ -66,5 +73,22 @@ struct ChatWallpaperBackground: View {
         let threadScopeKey = "\(key.serverId)::\(key.threadId)"
         // We just need to determine scope for image loading
         return .thread(key)
+    }
+}
+
+struct FittedWallpaperImage: View {
+    let image: UIImage
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                LitterTheme.backgroundGradient
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
     }
 }

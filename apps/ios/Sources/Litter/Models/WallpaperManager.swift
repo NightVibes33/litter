@@ -7,6 +7,7 @@ import HairballUI
 
 enum WallpaperType: String, Codable {
     case none
+    case preset
     case theme
     case customImage = "custom_image"
     case solidColor = "solid_color"
@@ -28,8 +29,21 @@ enum PatternType: Int, CaseIterable {
     case waveLines
 }
 
+struct ChatBackgroundPreset: Identifiable, Equatable {
+    let slug: String
+    let name: String
+    let backgroundHex: String
+    let secondaryHex: String
+    let accentHex: String
+    let foregroundHex: String
+    let pattern: PatternType
+
+    var id: String { slug }
+}
+
 struct WallpaperConfig: Codable, Equatable {
     var type: WallpaperType = .none
+    var presetSlug: String?
     var themeSlug: String?
     var colorHex: String?
     var blur: Double = 0.0
@@ -122,6 +136,20 @@ final class WallpaperManager {
     private var imageCache: [String: UIImage] = [:]
 
     @ObservationIgnored
+    private static let defaultChatBackgroundPresets: [ChatBackgroundPreset] = [
+        ChatBackgroundPreset(slug: "aurora", name: "Aurora", backgroundHex: "#07111F", secondaryHex: "#231942", accentHex: "#6EE7F9", foregroundHex: "#ECFEFF", pattern: .waveLines),
+        ChatBackgroundPreset(slug: "terminal-grid", name: "Terminal Grid", backgroundHex: "#03120B", secondaryHex: "#08251A", accentHex: "#00FF9C", foregroundHex: "#D1FAE5", pattern: .dotGrid),
+        ChatBackgroundPreset(slug: "blueprint", name: "Blueprint", backgroundHex: "#061A33", secondaryHex: "#0E3A5B", accentHex: "#38BDF8", foregroundHex: "#E0F2FE", pattern: .crossHatch),
+        ChatBackgroundPreset(slug: "midnight-neon", name: "Midnight Neon", backgroundHex: "#0B0716", secondaryHex: "#24112E", accentHex: "#FF4ECD", foregroundHex: "#FAE8FF", pattern: .hexagonalMesh),
+        ChatBackgroundPreset(slug: "ocean-glass", name: "Ocean Glass", backgroundHex: "#071C24", secondaryHex: "#0F3440", accentHex: "#2DD4BF", foregroundHex: "#CCFBF1", pattern: .concentricCircles),
+        ChatBackgroundPreset(slug: "sakura", name: "Sakura", backgroundHex: "#24131B", secondaryHex: "#3A1D2C", accentHex: "#F9A8D4", foregroundHex: "#FCE7F3", pattern: .waveLines),
+        ChatBackgroundPreset(slug: "carbon-mesh", name: "Carbon Mesh", backgroundHex: "#101113", secondaryHex: "#1F2933", accentHex: "#94A3B8", foregroundHex: "#F8FAFC", pattern: .hexagonalMesh),
+        ChatBackgroundPreset(slug: "solar-flare", name: "Solar Flare", backgroundHex: "#241006", secondaryHex: "#4A1D0A", accentHex: "#FB923C", foregroundHex: "#FFF7ED", pattern: .concentricCircles),
+        ChatBackgroundPreset(slug: "paper", name: "Paper", backgroundHex: "#F7F1E3", secondaryHex: "#ECE1C9", accentHex: "#C08457", foregroundHex: "#2F2A23", pattern: .diagonalLines),
+        ChatBackgroundPreset(slug: "forest", name: "Forest", backgroundHex: "#07140F", secondaryHex: "#123524", accentHex: "#34D399", foregroundHex: "#DCFCE7", pattern: .waveLines)
+    ]
+
+    @ObservationIgnored
     private static let prefsFileName = "wallpaper_prefs.json"
 
     @ObservationIgnored
@@ -138,6 +166,7 @@ final class WallpaperManager {
     // Legacy compat — some views still check this
     var wallpaperImage: UIImage? { resolvedWallpaperImage }
     var isWallpaperSet: Bool { resolvedConfig != nil && resolvedConfig?.type != .none }
+    var chatBackgroundPresets: [ChatBackgroundPreset] { Self.defaultChatBackgroundPresets }
 
     private init() {
         loadPrefs()
@@ -297,7 +326,8 @@ final class WallpaperManager {
     // MARK: - Wallpaper Image Generation
 
     func generateWallpaper(themeSlug: String, themeManager: ThemeManager) -> UIImage? {
-        if let cached = imageCache[themeSlug] { return cached }
+        let cacheKey = "theme:\(themeSlug)"
+        if let cached = imageCache[cacheKey] { return cached }
 
         guard let entry = themeManager.themeIndex.first(where: { $0.slug == themeSlug }) else {
             return nil
@@ -339,7 +369,29 @@ final class WallpaperManager {
             }
         }
 
-        imageCache[themeSlug] = image
+        imageCache[cacheKey] = image
+        return image
+    }
+
+    func chatBackgroundPreset(slug: String?) -> ChatBackgroundPreset? {
+        guard let slug else { return nil }
+        return Self.defaultChatBackgroundPresets.first { $0.slug == slug }
+    }
+
+    func generatePresetWallpaper(presetSlug: String) -> UIImage? {
+        let cacheKey = "preset:wallpaper:\(presetSlug)"
+        if let cached = imageCache[cacheKey] { return cached }
+        guard let preset = chatBackgroundPreset(slug: presetSlug) else { return nil }
+        let image = renderChatBackgroundPreset(preset, size: CGSize(width: 390, height: 844), lineWidth: 1.0, patternAlpha: 0.14)
+        imageCache[cacheKey] = image
+        return image
+    }
+
+    func generateThumbnail(for preset: ChatBackgroundPreset) -> UIImage {
+        let cacheKey = "preset:thumbnail:\(preset.slug)"
+        if let cached = imageCache[cacheKey] { return cached }
+        let image = renderChatBackgroundPreset(preset, size: CGSize(width: 80, height: 120), lineWidth: 0.55, patternAlpha: 0.18)
+        imageCache[cacheKey] = image
         return image
     }
 
@@ -387,6 +439,9 @@ final class WallpaperManager {
         switch config.type {
         case .none:
             return nil
+        case .preset:
+            guard let slug = config.presetSlug else { return nil }
+            return generatePresetWallpaper(presetSlug: slug)
         case .theme:
             guard let slug = config.themeSlug else { return nil }
             return generateWallpaper(themeSlug: slug, themeManager: themeManager)
@@ -455,6 +510,59 @@ final class WallpaperManager {
         return renderer.image { ctx in
             color.setFill()
             ctx.fill(CGRect(origin: .zero, size: size))
+        }
+    }
+
+    private func renderChatBackgroundPreset(_ preset: ChatBackgroundPreset, size: CGSize, lineWidth: CGFloat, patternAlpha: CGFloat) -> UIImage {
+        let bgColor = UIColor(Color(hex: preset.backgroundHex))
+        let secondaryColor = UIColor(Color(hex: preset.secondaryHex))
+        let accentColor = UIColor(Color(hex: preset.accentHex))
+        let renderer = UIGraphicsImageRenderer(size: size)
+
+        return renderer.image { ctx in
+            let rect = CGRect(origin: .zero, size: size)
+            let context = ctx.cgContext
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let colors = [bgColor.cgColor, secondaryColor.cgColor] as CFArray
+            let locations: [CGFloat] = [0.0, 1.0]
+            let gradient = locations.withUnsafeBufferPointer { pointer in
+                CGGradient(colorsSpace: colorSpace, colors: colors, locations: pointer.baseAddress)
+            }
+            if let gradient {
+                context.drawLinearGradient(
+                    gradient,
+                    start: CGPoint(x: 0, y: 0),
+                    end: CGPoint(x: size.width, y: size.height),
+                    options: []
+                )
+            } else {
+                bgColor.setFill()
+                context.fill(rect)
+            }
+
+            let wash = accentColor.withAlphaComponent(patternAlpha * 0.45)
+            wash.setFill()
+            context.fill(rect)
+
+            let patternColor = accentColor.withAlphaComponent(patternAlpha)
+            patternColor.setStroke()
+            patternColor.setFill()
+            context.setLineWidth(lineWidth)
+
+            switch preset.pattern {
+            case .dotGrid:
+                drawDotGrid(in: context, size: size, color: patternColor)
+            case .diagonalLines:
+                drawDiagonalLines(in: context, size: size, color: patternColor)
+            case .concentricCircles:
+                drawConcentricCircles(in: context, size: size, color: patternColor)
+            case .hexagonalMesh:
+                drawHexagonalMesh(in: context, size: size, color: patternColor)
+            case .crossHatch:
+                drawCrossHatch(in: context, size: size, color: patternColor)
+            case .waveLines:
+                drawWaveLines(in: context, size: size, color: patternColor)
+            }
         }
     }
 

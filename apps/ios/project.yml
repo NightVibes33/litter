@@ -239,6 +239,13 @@ targets:
               rm -rf "$destination"
               cp -R "$ASSET_ROOT/$framework" "$destination"
               rm -rf "$destination/CoreCompilerSupportLibs"
+              if [ ! -f "$destination/$executable" ]; then
+                echo "error: $framework is missing executable $executable" >&2
+                if [ -f "$destination/$executable.tbd" ]; then
+                  echo "error: found $executable.tbd instead; rebuild BuildKit assets from the real framework product, not EagerLinkingTBDs" >&2
+                fi
+                exit 1
+              fi
               if [ ! -f "$destination/Info.plist" ]; then
                 cat > "$destination/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>

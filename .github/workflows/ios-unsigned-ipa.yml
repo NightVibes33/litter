@@ -396,11 +396,19 @@ jobs:
               value = toolchain.get(key)
               if value:
                   required.append(value)
+          required.extend([
+              "Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler",
+              "Toolchains/Nyxian/LitterBuildKitNative.framework/LitterBuildKitNative",
+          ])
 
           missing = []
           for relative in sorted(set(required)):
               if not (root / relative).exists():
                   missing.append(relative)
+
+          symlinks = [path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_symlink()]
+          if symlinks:
+              missing.append("symlinks are not allowed in BuildKitAssets")
 
           sdk_path = toolchain.get("sdkPath") or "SDK/iPhoneOS26.4.sdk"
           sdk_settings = pathlib.Path(sdk_path) / "SDKSettings.plist"
@@ -504,6 +512,15 @@ jobs:
 
           DRIVER="$APP_PATH/Frameworks/LitterBuildKitNative.framework/LitterBuildKitNative"
           CORE="$APP_PATH/Frameworks/CoreCompiler.framework/CoreCompiler"
+          for binary in "$DRIVER" "$CORE"; do
+            if [ ! -f "$binary" ]; then
+              echo "::error::Archived app is missing embedded executable: $binary" >&2
+              if [ -f "$binary.tbd" ]; then
+                echo "::error::Found $binary.tbd instead of a signable executable; rebuild the BuildKit asset pack from the real framework product." >&2
+              fi
+              exit 1
+            fi
+          done
           verify_code_signature() {
             binary="$1"
             signature_info="$(/usr/bin/codesign -dv --verbose=4 "$binary" 2>&1)" || {

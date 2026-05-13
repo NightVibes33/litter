@@ -38,6 +38,12 @@ PYZIP
   ASSET_ROOT="$(dirname "$MANIFEST")"
 fi
 
+if find "$ASSET_ROOT" -type l -print -quit | grep -q .; then
+  echo "error: BuildKit asset directory contains symlinks that iOS ZIPFoundation refuses to extract:" >&2
+  find "$ASSET_ROOT" -type l -print | sed -n '1,200p' >&2
+  exit 1
+fi
+
 python3 - "$ASSET_ROOT" <<'PYVERIFY'
 import hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
@@ -86,6 +92,17 @@ fi
 
 DRIVER="$ASSET_ROOT/Toolchains/Nyxian/LitterBuildKitNative.framework/LitterBuildKitNative"
 CORE="$ASSET_ROOT/Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler"
+if [[ ! -f "$CORE" ]]; then
+  echo "error: CoreCompiler.framework is missing executable CoreCompiler" >&2
+  if [[ -f "$ASSET_ROOT/Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler.tbd" ]]; then
+    echo "error: found CoreCompiler.tbd instead; rebuild assets from the real framework product, not EagerLinkingTBDs" >&2
+  fi
+  exit 1
+fi
+if [[ ! -f "$DRIVER" ]]; then
+  echo "error: LitterBuildKitNative.framework is missing executable LitterBuildKitNative" >&2
+  exit 1
+fi
 if [[ "$(uname -s)" = "Darwin" ]]; then
   if [[ -f "$DRIVER" ]]; then
     /usr/bin/lipo -info "$DRIVER"

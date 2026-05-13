@@ -73,6 +73,15 @@ struct WallpaperAdjustView: View {
     @ViewBuilder
     private var wallpaperPreview: some View {
         switch initialConfig.type {
+        case .preset:
+            if let slug = initialConfig.presetSlug,
+               let image = wallpaperManager.generatePresetWallpaper(presetSlug: slug) {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                LitterTheme.backgroundGradient
+            }
         case .theme:
             if let slug = initialConfig.themeSlug,
                let image = wallpaperManager.generateWallpaper(themeSlug: slug, themeManager: themeManager) {
@@ -91,9 +100,7 @@ struct WallpaperAdjustView: View {
                 }
                 return nil
             }() {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
+                FittedWallpaperImage(image: image)
             } else {
                 LitterTheme.backgroundGradient
             }
