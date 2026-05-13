@@ -141,6 +141,9 @@ targets:
               *) return 1 ;;
             esac
           }
+          is_macho_stub_dylib() {
+            /usr/bin/file "$1" 2>/dev/null | /usr/bin/grep -Eiq 'Mach-O.*stub|stub.*Mach-O'
+          }
           buildkit_framework_install_name() {
             binary="$1"
             parent="$(basename "$(dirname "$binary")")"
@@ -210,6 +213,9 @@ targets:
             if [ ! -f "$binary" ]; then
               return 0
             fi
+            if is_macho_stub_dylib "$binary"; then
+              return 0
+            fi
             rewrite_buildkit_dylib_references "$binary"
             if buildkit_binary_needs_rpath "$binary"; then
               ensure_rpath "$binary" "$rpath"
@@ -271,6 +277,9 @@ targets:
               return 0
             fi
             find "$root" -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print | while IFS= read -r library; do
+              if is_macho_stub_dylib "$library"; then
+                continue
+              fi
               destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$(basename "$library")"
               rm -f "$destination"
               cp "$library" "$destination"

@@ -530,6 +530,9 @@ jobs:
               *) return 1 ;;
             esac
           }
+          is_macho_stub_dylib() {
+            /usr/bin/file "$1" 2>/dev/null | grep -Eiq 'Mach-O.*stub|stub.*Mach-O'
+          }
           has_usable_frameworks_rpath() {
             binary="$1"
             rpath="$2"
@@ -624,6 +627,10 @@ jobs:
           check_buildkit_rpath "$DRIVER" '@loader_path/..'
           check_buildkit_rpath "$CORE" '@loader_path/..'
           find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print | while IFS= read -r library; do
+            if is_macho_stub_dylib "$library"; then
+              echo "::error::$library is a Mach-O stub dylib and must not be embedded" >&2
+              exit 1
+            fi
             verify_code_signature "$library"
             check_buildkit_rpath "$library" '@loader_path'
           done
