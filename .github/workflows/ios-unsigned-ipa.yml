@@ -504,6 +504,21 @@ jobs:
 
           DRIVER="$APP_PATH/Frameworks/LitterBuildKitNative.framework/LitterBuildKitNative"
           CORE="$APP_PATH/Frameworks/CoreCompiler.framework/CoreCompiler"
+          verify_code_signature() {
+            binary="$1"
+            signature_info="$(/usr/bin/codesign -dv --verbose=4 "$binary" 2>&1)" || {
+              echo "::error::$binary is not code signed" >&2
+              printf '%s\n' "$signature_info" >&2
+              exit 1
+            }
+            if ! printf '%s\n' "$signature_info" | grep -Eq 'CDHash=|CodeDirectory'; then
+              echo "::error::$binary is missing a code directory/CDHash" >&2
+              printf '%s\n' "$signature_info" >&2
+              exit 1
+            fi
+          }
+          verify_code_signature "$DRIVER"
+          verify_code_signature "$CORE"
           if ! /usr/bin/nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'; then
             echo "::error::Embedded LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
             exit 1
@@ -609,6 +624,7 @@ jobs:
           check_buildkit_rpath "$DRIVER" '@loader_path/..'
           check_buildkit_rpath "$CORE" '@loader_path/..'
           find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print | while IFS= read -r library; do
+            verify_code_signature "$library"
             check_buildkit_rpath "$library" '@loader_path'
           done
 

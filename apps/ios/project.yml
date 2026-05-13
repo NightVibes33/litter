@@ -217,8 +217,13 @@ targets:
           }
           sign_if_requested() {
             item="$1"
+            if ! command -v codesign >/dev/null 2>&1; then
+              return 0
+            fi
             if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
               codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$item"
+            else
+              codesign --force --sign - --timestamp=none "$item"
             fi
           }
           for framework in CoreCompiler.framework LitterBuildKitNative.framework; do

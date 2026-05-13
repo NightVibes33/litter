@@ -970,11 +970,11 @@ actor LitterBuildKit {
     }
 
     private static var nativeCompilerAssetsInstalled: Bool {
-        fileExists(toolchainRoot.appendingPathComponent("CoreCompiler.framework")) || fileExists(embeddedFrameworkURL(named: "CoreCompiler"))
+        fileExists(embeddedFrameworkURL(named: "CoreCompiler"))
     }
 
     private static var nativeDriverInstalled: Bool {
-        fileExists(nativeDriverURL) || fileExists(embeddedFrameworkURL(named: "LitterBuildKitNative"))
+        fileExists(embeddedFrameworkURL(named: "LitterBuildKitNative"))
     }
 
     private static var nativeDriverLoadable: Bool {
@@ -987,7 +987,7 @@ actor LitterBuildKit {
     }
 
     private static var supportLibrariesInstalled: Bool {
-        supportLibraryRoots().contains { root in
+        embeddedSupportLibraryRoots().contains { root in
             guard let contents = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
                 return false
             }
@@ -1013,8 +1013,12 @@ actor LitterBuildKit {
         return try? JSONDecoder().decode(BuildKitSourceImportManifest.self, from: data)
     }
 
+    private static var embeddedFrameworksRoot: URL {
+        Bundle.main.privateFrameworksURL ?? Bundle.main.bundleURL.appendingPathComponent("Frameworks", isDirectory: true)
+    }
+
     private static func embeddedFrameworkURL(named name: String) -> URL {
-        Bundle.main.privateFrameworksURL?.appendingPathComponent("\(name).framework/\(name)") ?? Bundle.main.bundleURL.appendingPathComponent("Frameworks/\(name).framework/\(name)")
+        embeddedFrameworksRoot.appendingPathComponent("\(name).framework/\(name)")
     }
 
     private static func fileExists(_ url: URL) -> Bool {
@@ -1357,15 +1361,18 @@ actor LitterBuildKit {
         return nil
     }
 
-    private static func supportLibraryRoots() -> [URL] {
-        var roots: [URL] = []
-        if let frameworks = Bundle.main.privateFrameworksURL {
-            roots.append(frameworks)
-            roots.append(frameworks.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true))
-        }
-        roots.append(toolchainRoot.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true))
-        return roots
+    private static func embeddedSupportLibraryRoots() -> [URL] {
+        let frameworks = embeddedFrameworksRoot
+        return [
+            frameworks,
+            frameworks.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true)
+        ]
     }
+
+    private static func installedSupportLibraryRoots() -> [URL] {
+        [toolchainRoot.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true)]
+    }
+
 
     private static func preloadSupportLibraries(at root: URL, diagnostics: inout [String]) -> Bool {
         guard let supportLibraries = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
@@ -1411,9 +1418,16 @@ actor LitterBuildKit {
 
     private static func preloadNativeDriverDependencies(diagnostics: inout [String]) {
         var loadedSupportLibrary = false
-        for supportRoot in supportLibraryRoots() {
+        for supportRoot in embeddedSupportLibraryRoots() {
             if preloadSupportLibraries(at: supportRoot, diagnostics: &diagnostics) {
                 loadedSupportLibrary = true
+            }
+        }
+        if !loadedSupportLibrary {
+            for supportRoot in installedSupportLibraryRoots() {
+                if preloadSupportLibraries(at: supportRoot, diagnostics: &diagnostics) {
+                    loadedSupportLibrary = true
+                }
             }
         }
         if !loadedSupportLibrary {
