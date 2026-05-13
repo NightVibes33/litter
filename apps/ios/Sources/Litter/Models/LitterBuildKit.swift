@@ -662,7 +662,10 @@ actor LitterBuildKit {
         } else {
             staging = await stageProjectForNativeDriver(command: command, args: args, cwd: cwd, buildDir: buildDir)
         }
-        var fullPrelude = prelude + staging.log
+        var fullPrelude = prelude
+        if providedStaging == nil {
+            fullPrelude += staging.log
+        }
         let current = await status()
         guard current.isReadyForNativeBuilds else {
             fullPrelude += "\(command) is routed through Litter BuildKit.\n"
