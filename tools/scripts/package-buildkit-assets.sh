@@ -120,7 +120,10 @@ PY
 
 rm -f "$ZIP_PATH"
 (
-  cd "$(dirname "$OUT_DIR")"
+  NORMALIZED_DIR="$(mktemp -d)"
+  trap 'rm -rf "$NORMALIZED_DIR"' EXIT
+  cp -R -L "$OUT_DIR" "$NORMALIZED_DIR/$(basename "$OUT_DIR")"
+  cd "$NORMALIZED_DIR"
   /usr/bin/zip -qry "$ZIP_PATH" "$(basename "$OUT_DIR")"
 )
 

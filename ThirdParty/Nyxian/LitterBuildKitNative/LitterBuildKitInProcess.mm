@@ -57,6 +57,40 @@ static NSString *LBIDiagnosticText(NSArray<MDKDiagnostic *> *diagnostics)
     return text;
 }
 
+static NSString *LBIOutputPath(NSArray<NSString *> *words, NSString *fallbackName)
+{
+    for(NSUInteger idx = 0; idx + 1 < words.count; idx++)
+    {
+        if([words[idx] isEqualToString:@"-o"]) { return words[idx + 1]; }
+    }
+    return fallbackName;
+}
+
+static NSArray<NSString *> *LBISwiftcUserFlags(NSArray<NSString *> *words)
+{
+    NSMutableArray<NSString *> *flags = [NSMutableArray array];
+    BOOL skipNext = NO;
+    for(NSUInteger idx = 0; idx < words.count; idx++)
+    {
+        NSString *word = words[idx];
+        if(skipNext) { skipNext = NO; continue; }
+        if([word isEqualToString:@"-o"] || [word isEqualToString:@"-sdk"] || [word isEqualToString:@"-target"])
+        {
+            skipNext = YES;
+            continue;
+        }
+        if([word hasSuffix:@".swift"]) { continue; }
+        if([word hasPrefix:@"-"]) { [flags addObject:word]; }
+    }
+    return flags;
+}
+
+static BOOL LBIWordsContain(NSArray<NSString *> *words, NSString *value)
+{
+    for(NSString *word in words) { if([word isEqualToString:value]) { return YES; } }
+    return NO;
+}
+
 static int LBIRunSwiftDriver(NSArray<NSString *> *arguments, NSMutableString *log)
 {
     [log appendFormat:@"swift driver args: %@\n", [arguments componentsJoinedByString:@" "]];
@@ -319,6 +353,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
         NSString *command = LBIString(request, @"command");
         NSString *args = LBIString(request, @"args");
         NSString *buildDir = LBIString(request, @"buildDir");
+        NSString *cwd = LBIString(request, @"cwd");
         NSString *sdkRoot = LBIString(request, @"sdkRoot");
         NSString *hostInputPath = LBIString(request, @"hostInputPath");
         NSString *hostProjectPath = LBIString(request, @"hostProjectPath");
@@ -332,6 +367,46 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             NSArray<NSString *> *driverArgs = @[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", source];
             int code = LBIRunSwiftDriver(driverArgs, log);
             return LBICopyResponse(code, code == 0 ? @"swift-check-ok" : @"swift-check-failed", log);
+        }
+
+
+        if([command isEqualToString:@"litter-swiftc"])
+        {
+            NSArray<NSString *> *words = LBIWords(args);
+            NSString *source = hostInputPath.length > 0 ? hostInputPath : nil;
+            if(source.length == 0)
+            {
+                for(NSString *word in words)
+                {
+                    if([word hasSuffix:@".swift"]) { source = word; break; }
+                }
+            }
+            if(source.length == 0) { return LBICopyResponse(64, @"missing-input", @"No Swift input was supplied.\n"); }
+
+            if(LBIWordsContain(words, @"-typecheck") || LBIWordsContain(words, @"-parse"))
+            {
+                NSArray<NSString *> *driverArgs = @[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", source];
+                int code = LBIRunSwiftDriver(driverArgs, log);
+                return LBICopyResponse(code, code == 0 ? @"swiftc-check-ok" : @"swiftc-check-failed", log);
+            }
+
+            NSString *fallbackOutput = source.lastPathComponent.stringByDeletingPathExtension;
+            if(fallbackOutput.length == 0) { fallbackOutput = @"main"; }
+            NSString *requestedOutput = LBIOutputPath(words, fallbackOutput);
+            NSString *artifactDir = [hostWorkDir stringByAppendingPathComponent:@"Artifacts"];
+            [NSFileManager.defaultManager createDirectoryAtPath:artifactDir withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *hostOutput = [artifactDir stringByAppendingPathComponent:requestedOutput.lastPathComponent];
+            NSMutableArray<NSString *> *driverArgs = [NSMutableArray array];
+            [driverArgs addObjectsFromArray:LBISwiftcUserFlags(words)];
+            [driverArgs addObjectsFromArray:@[@"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-o", hostOutput, source]];
+            int code = LBIRunSwiftDriver(driverArgs, log);
+            if(code != 0) { return LBICopyResponse(code, @"swiftc-failed", log); }
+            chmod(hostOutput.fileSystemRepresentation, 0755);
+            NSString *fakefsPath = [requestedOutput hasPrefix:@"/"] ? requestedOutput : [cwd stringByAppendingPathComponent:requestedOutput];
+            [log appendFormat:@"Swift compiler output: %@\n", hostOutput];
+            [log appendFormat:@"Fakefs output path: %@\n", fakefsPath];
+            NSArray *artifacts = @[@{@"hostPath": hostOutput, @"fakefsPath": fakefsPath}];
+            return LBICopyResponseWithArtifacts(0, @"swiftc-ok", log, artifacts);
         }
 
         if([command isEqualToString:@"litter-swift-build"] || [command isEqualToString:@"litter-swift-test"] || [command isEqualToString:@"litter-ipa-build"] || [command isEqualToString:@"litter-ipa-package"])

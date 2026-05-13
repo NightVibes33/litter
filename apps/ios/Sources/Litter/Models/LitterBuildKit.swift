@@ -198,7 +198,7 @@ actor LitterBuildKit {
 
     private static let requestRoot = "/root/.litter-buildkit/requests"
     private static let buildRoot = "/root/builds"
-    private static let shimInstallMarker = "/root/.litter-buildkit/shims-installed-v2"
+    private static let shimInstallMarker = "/root/.litter-buildkit/shims-installed-v3"
     private static let commandNames = [
         "litter-buildkit",
         "litter-nyxian-status",
@@ -207,12 +207,17 @@ actor LitterBuildKit {
         "litter-env-report",
         "litter-dev-bootstrap",
         "litter-swift-check",
+        "litter-swiftc",
         "litter-swift-build",
         "litter-swift-test",
         "litter-ipa-build",
         "litter-ipa-package",
         "litter-build-status",
-        "litter-build-cancel"
+        "litter-build-cancel",
+        "swift",
+        "swiftc",
+        "xcodebuild",
+        "code"
     ]
 
     private var monitorTask: Task<Void, Never>?
@@ -391,8 +396,18 @@ actor LitterBuildKit {
             return await devBootstrap()
         case "litter-swift-check":
             return await swiftCheck(args: args, cwd: cwd, buildDir: buildDir)
+        case "litter-swiftc":
+            return await swiftcCompile(args: args, cwd: cwd, buildDir: buildDir, compatibilityName: "litter-swiftc")
         case "litter-swift-build", "litter-swift-test", "litter-ipa-build", "litter-ipa-package":
             return await nativeBuildCommand(command: command, args: args, cwd: cwd, buildDir: buildDir)
+        case "swift":
+            return await swiftCompatibility(args: args, cwd: cwd, buildDir: buildDir)
+        case "swiftc":
+            return await swiftcCompile(args: args, cwd: cwd, buildDir: buildDir, compatibilityName: "swiftc")
+        case "xcodebuild":
+            return await xcodebuildCompatibility(args: args, cwd: cwd, buildDir: buildDir)
+        case "code":
+            return codeCompatibility(args: args, cwd: cwd)
         case "litter-build-cancel":
             return cancelCommand(args: args)
         default:
@@ -521,6 +536,77 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 78, status: "toolchain-missing", log: log)
         }
         return await nativeBuildCommand(command: "litter-swift-check", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
+    }
+
+    private func swiftCompatibility(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        guard let first = tokens.first else {
+            return BuildKitCommandResult(exitCode: 64, status: "swift-usage", log: Self.swiftCompatibilityUsage())
+        }
+        if ["--version", "-version", "version"].contains(first) {
+            let status = await status()
+            return BuildKitCommandResult(exitCode: 0, status: "swift-version", log: Self.compatibilityVersionLog(tool: "swift", status: status))
+        }
+        if ["--help", "-help", "help"].contains(first) {
+            return BuildKitCommandResult(exitCode: 0, status: "swift-help", log: Self.swiftCompatibilityUsage())
+        }
+        if first == "build" {
+            return await nativeBuildCommand(command: "litter-swift-build", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir)
+        }
+        if first == "test" {
+            return await nativeBuildCommand(command: "litter-swift-test", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir)
+        }
+        if first.hasSuffix(".swift") {
+            return await swiftCheck(args: args, cwd: cwd, buildDir: buildDir)
+        }
+        return BuildKitCommandResult(exitCode: 64, status: "swift-unsupported", log: "Litter's swift compatibility shim supports: --version, --help, swift <file.swift>, swift build, and swift test.\nUse litter-swift-check, litter-swift-build, or litter-swift-test for the canonical bot API.\n")
+    }
+
+    private func swiftcCompile(args: String, cwd: String, buildDir: String, compatibilityName: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if let first = tokens.first, ["--version", "-version", "version"].contains(first) {
+            let status = await status()
+            return BuildKitCommandResult(exitCode: 0, status: "swiftc-version", log: Self.compatibilityVersionLog(tool: compatibilityName, status: status))
+        }
+        if tokens.contains("--help") || tokens.contains("-help") || tokens.isEmpty {
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "swiftc-help", log: Self.swiftcCompatibilityUsage())
+        }
+        guard let sourceToken = tokens.first(where: { $0.hasSuffix(".swift") }) else {
+            return BuildKitCommandResult(exitCode: 64, status: "swiftc-missing-input", log: "Usage: swiftc path/to/File.swift -o output\n")
+        }
+        let sourcePath = sourceToken.hasPrefix("/") ? sourceToken : "\(cwd)/\(sourceToken)"
+        let source = (try? await IshFS.readTextFile(path: sourcePath, maxBytes: 512_000)) ?? ""
+        var log = "\(compatibilityName) compatibility shim\n"
+        log += "Input: \(sourcePath)\n"
+        log += "Backend: Litter BuildKit native Swift driver\n\n"
+        log += Self.staticSwiftPreflight(source: source, path: sourcePath)
+        let staging = Self.stageSwiftSourceForNativeDriver(fakefsPath: sourcePath, source: source, buildDir: buildDir)
+        log += staging.log
+        return await nativeBuildCommand(command: "litter-swiftc", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
+    }
+
+    private func xcodebuildCompatibility(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("-version") || tokens.contains("--version") {
+            let status = await status()
+            return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-version", log: Self.compatibilityVersionLog(tool: "xcodebuild", status: status))
+        }
+        if tokens.contains("-help") || tokens.contains("--help") {
+            return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-help", log: Self.xcodebuildCompatibilityUsage())
+        }
+        let projectArgs = Self.compatibilityProjectArgs(tokens: tokens)
+        if tokens.contains("archive") {
+            return await nativeBuildCommand(command: "litter-ipa-build", args: projectArgs, cwd: cwd, buildDir: buildDir)
+        }
+        if tokens.contains("build") || tokens.isEmpty {
+            return await nativeBuildCommand(command: "litter-swift-build", args: projectArgs, cwd: cwd, buildDir: buildDir)
+        }
+        return BuildKitCommandResult(exitCode: 64, status: "xcodebuild-unsupported", log: Self.xcodebuildCompatibilityUsage())
+    }
+
+    private func codeCompatibility(args: String, cwd: String) -> BuildKitCommandResult {
+        let target = Self.shellWords(args).first ?? cwd
+        return BuildKitCommandResult(exitCode: 0, status: "code-compat", log: "Litter code compatibility shim\nTarget: \(target)\nThis IPA does not embed VS Code. Use Litter's file browser/editor or bot file tools for edits, then build with litter-swift-check, litter-swift-build, or litter-ipa-build.\n")
     }
 
     private func nativeBuildCommand(command: String, args: String, cwd: String, buildDir: String, prelude: String = "", staging providedStaging: BuildKitHostStaging? = nil) async -> BuildKitCommandResult {
@@ -845,7 +931,18 @@ actor LitterBuildKit {
             let sanitized = try sanitizedZipEntryPath(entry.path)
             let output = destination.appendingPathComponent(sanitized)
             try fm.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-            _ = try archive.extract(entry, to: output)
+            do {
+                _ = try archive.extract(entry, to: output)
+            } catch {
+                throw NSError(
+                    domain: "LitterBuildKit",
+                    code: 12,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "Could not extract BuildKit ZIP entry \(entry.path): \(error.localizedDescription)",
+                        NSUnderlyingErrorKey: error
+                    ]
+                )
+            }
         }
     }
 
@@ -1038,6 +1135,65 @@ actor LitterBuildKit {
         }
         output += "- File: \(path)\n"
         return output
+    }
+
+    private static func compatibilityProjectArgs(tokens: [String]) -> String {
+        if let explicit = tokens.first(where: { $0.hasSuffix(".json") }) {
+            return explicit
+        }
+        return "LitterBuild.json"
+    }
+
+    private static func compatibilityVersionLog(tool: String, status: LitterBuildKitStatus) -> String {
+        var output = "\(tool) compatibility shim for Litter BuildKit\n"
+        output += "Swift: \(status.assetManifest?.swiftVersion ?? "unknown")\n"
+        output += "SDK: \(status.assetManifest?.sdkVersion ?? "missing")\n"
+        output += "iPhoneOS SDK installed: \(status.sdkInstalled ? "yes" : "no")\n"
+        output += "Native driver loadable: \(status.nativeDriverLoadable ? "yes" : "no")\n"
+        output += "Canonical commands: litter-swift-check, litter-swift-build, litter-swift-test, litter-ipa-build\n"
+        return output
+    }
+
+    private static func swiftCompatibilityUsage() -> String {
+        """
+        Litter swift compatibility shim
+        Supported:
+          swift --version
+          swift path/to/File.swift
+          swift build [LitterBuild.json]
+          swift test [LitterBuild.json]
+
+        Canonical bot commands:
+          litter-swift-check path/to/File.swift
+          litter-swift-build LitterBuild.json
+          litter-swift-test LitterBuild.json
+        """
+    }
+
+    private static func swiftcCompatibilityUsage() -> String {
+        """
+        Litter swiftc compatibility shim
+        Supported:
+          swiftc --version
+          swiftc path/to/File.swift -o output
+          swiftc -typecheck path/to/File.swift
+
+        Canonical bot commands:
+          litter-swift-check path/to/File.swift
+          litter-swiftc path/to/File.swift -o output
+        """
+    }
+
+    private static func xcodebuildCompatibilityUsage() -> String {
+        """
+        Litter xcodebuild compatibility shim
+        Supported:
+          xcodebuild -version
+          xcodebuild build [LitterBuild.json]
+          xcodebuild archive [LitterBuild.json]
+
+        This is an iOS-only BuildKit bridge, not full Xcode. Use litter-swift-build or litter-ipa-build for reliable bot builds.
+        """
     }
 
     private static func statusLog(_ status: LitterBuildKitStatus) -> String {

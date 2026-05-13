@@ -14,6 +14,21 @@ fi
 if [[ -d "$INPUT" ]]; then
   ASSET_ROOT="$INPUT"
 else
+  python3 - "$INPUT" <<'PYZIP'
+import pathlib, stat, sys, zipfile
+zip_path = pathlib.Path(sys.argv[1])
+bad = []
+with zipfile.ZipFile(zip_path) as archive:
+    for info in archive.infolist():
+        mode = (info.external_attr >> 16) & 0o170000
+        if mode == stat.S_IFLNK:
+            bad.append(info.filename)
+if bad:
+    print("error: BuildKit asset ZIP contains symlinks that iOS ZIPFoundation refuses to extract:")
+    for name in bad[:200]:
+        print(f"- {name}")
+    raise SystemExit(1)
+PYZIP
   unzip -q "$INPUT" -d "$TMP_DIR/unzipped"
   MANIFEST="$(find "$TMP_DIR/unzipped" -maxdepth 3 -name manifest.json -print | head -n 1)"
   if [[ -z "$MANIFEST" ]]; then

@@ -118,9 +118,12 @@ targets:
           fi
           RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
           DEST="$RESOURCES_DIR/LitterBuildKitAssets.zip"
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
           rm -rf "$RESOURCES_DIR/BuildKitAssets" "$DEST"
           mkdir -p "$RESOURCES_DIR"
-          (cd "$(dirname "$ASSET_ROOT")" && ditto -c -k --sequesterRsrc --keepParent "$(basename "$ASSET_ROOT")" "$DEST")
+          cp -R -L "$ASSET_ROOT" "$TMP_DIR/BuildKitAssets"
+          (cd "$TMP_DIR" && ditto -c -k --norsrc --keepParent BuildKitAssets "$DEST")
       - name: Embed Private BuildKit Frameworks
         script: |
           set -euo pipefail
