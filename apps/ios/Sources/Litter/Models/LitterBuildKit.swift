@@ -107,6 +107,61 @@ struct LitterBuildProjectManifest: Codable, Equatable, Sendable {
     var resources: [String]?
     var entitlements: String?
     var output: String?
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case name
+        case bundleIdentifier
+        case deploymentTarget
+        case sdk
+        case product
+        case entrypoint
+        case sources
+        case resources
+        case entitlements
+        case output
+    }
+
+    init(
+        schemaVersion: Int,
+        name: String,
+        bundleIdentifier: String,
+        deploymentTarget: String,
+        sdk: String?,
+        product: String,
+        entrypoint: String?,
+        sources: [String],
+        resources: [String]?,
+        entitlements: String?,
+        output: String?
+    ) {
+        self.schemaVersion = schemaVersion
+        self.name = name
+        self.bundleIdentifier = bundleIdentifier
+        self.deploymentTarget = deploymentTarget
+        self.sdk = sdk
+        self.product = product
+        self.entrypoint = entrypoint
+        self.sources = sources
+        self.resources = resources
+        self.entitlements = entitlements
+        self.output = output
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        name = try container.decode(String.self, forKey: .name)
+        bundleIdentifier = try container.decode(String.self, forKey: .bundleIdentifier)
+        deploymentTarget = try container.decode(String.self, forKey: .deploymentTarget)
+        sdk = try container.decodeIfPresent(String.self, forKey: .sdk)
+        product = try container.decode(String.self, forKey: .product)
+        entrypoint = try container.decodeIfPresent(String.self, forKey: .entrypoint)
+        sources = try container.decodeIfPresent([String].self, forKey: .sources) ?? []
+        resources = try container.decodeIfPresent([String].self, forKey: .resources)
+        entitlements = try container.decodeIfPresent(String.self, forKey: .entitlements)
+        output = try container.decodeIfPresent(String.self, forKey: .output)
+    }
 }
 
 private struct BuildKitHostStaging: Sendable {

@@ -88,6 +88,24 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(words, ["hello world", "a'b", "-D", "DEBUG", "/root/My App/main.swift"])
     }
 
+    func testBuildProjectManifestDefaultsMissingSourcesToEmpty() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "name": "EntrypointOnly",
+          "bundleIdentifier": "com.example.entrypoint",
+          "deploymentTarget": "18.0",
+          "product": "app",
+          "entrypoint": "Sources/App.swift"
+        }
+        """
+
+        let manifest = try JSONDecoder().decode(LitterBuildProjectManifest.self, from: Data(json.utf8))
+
+        XCTAssertEqual(manifest.entrypoint, "Sources/App.swift")
+        XCTAssertEqual(manifest.sources, [])
+    }
+
     func testStagedProjectManifestRewritesFakefsPathsForNativeDriver() {
         let manifest = LitterBuildProjectManifest(
             schemaVersion: 1,
