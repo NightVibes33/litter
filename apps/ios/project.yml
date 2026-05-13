@@ -135,6 +135,36 @@ targets:
             exit 0
           fi
           mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+          is_buildkit_support_dylib_name() {
+            case "$1" in
+              lib_Compiler*.dylib|libLLVM*.dylib|libllvm*.dylib) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          set_buildkit_dylib_id() {
+            binary="$1"
+            base="$(basename "$binary")"
+            if is_buildkit_support_dylib_name "$base"; then
+              /usr/bin/install_name_tool -id "@rpath/$base" "$binary"
+            fi
+          }
+          rewrite_buildkit_dylib_references() {
+            binary="$1"
+            if [ ! -f "$binary" ]; then
+              return 0
+            fi
+            set_buildkit_dylib_id "$binary"
+            /usr/bin/otool -L "$binary" | /usr/bin/awk 'NR > 1 { print $1 }' | while IFS= read -r dependency; do
+              base="$(basename "$dependency")"
+              case "$dependency" in
+                */CoreCompilerSupportLibs/*.dylib|*/BuildKitAssets/SDK/*/usr/lib/*.dylib|*/SDK/iPhoneOS*.sdk/usr/lib/*.dylib)
+                  if is_buildkit_support_dylib_name "$base"; then
+                    /usr/bin/install_name_tool -change "$dependency" "@rpath/$base" "$binary"
+                  fi
+                  ;;
+              esac
+            done
+          }
           buildkit_binary_needs_rpath() {
             binary="$1"
             /usr/bin/otool -L "$binary" | /usr/bin/grep -Eq 'CoreCompiler\.framework/CoreCompiler|lib_Compiler|libLLVM|libllvm'
@@ -163,6 +193,7 @@ targets:
             if [ ! -f "$binary" ]; then
               return 0
             fi
+            rewrite_buildkit_dylib_references "$binary"
             if buildkit_binary_needs_rpath "$binary"; then
               ensure_rpath "$binary" "$rpath"
             fi
@@ -212,16 +243,23 @@ targets:
               sign_if_requested "$destination"
             fi
           done
-          SUPPORT_ROOT="$ASSET_ROOT/CoreCompilerSupportLibs"
-          if [ -d "$SUPPORT_ROOT" ]; then
-            find "$SUPPORT_ROOT" -maxdepth 1 -type f -name '*.dylib' -print0 | while IFS= read -r -d '' library; do
+          copy_buildkit_support_dylibs_from() {
+            root="$1"
+            if [ ! -d "$root" ]; then
+              return 0
+            fi
+            find "$root" -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print0 | while IFS= read -r -d '' library; do
               destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$(basename "$library")"
               rm -f "$destination"
               cp "$library" "$destination"
               repair_buildkit_rpath "$destination" "@loader_path"
               sign_if_requested "$destination"
             done
-          fi
+          }
+          SUPPORT_ROOT="$ASSET_ROOT/CoreCompilerSupportLibs"
+          SDK_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/SDK"
+          copy_buildkit_support_dylibs_from "$SUPPORT_ROOT"
+          copy_buildkit_support_dylibs_from "$SDK_ROOT"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter
