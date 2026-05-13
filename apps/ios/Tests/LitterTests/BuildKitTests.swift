@@ -65,6 +65,29 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(words, ["hello world", "a'b", "-D", "DEBUG", "/root/My App/main.swift"])
     }
 
+    func testStagedProjectManifestRewritesFakefsPathsForNativeDriver() {
+        let manifest = LitterBuildProjectManifest(
+            schemaVersion: 1,
+            name: "Demo",
+            bundleIdentifier: "com.example.demo",
+            deploymentTarget: "18.0",
+            sdk: nil,
+            product: "app",
+            entrypoint: "/root/App/Sources/main.swift",
+            sources: ["/root/App/Sources", "Relative.swift", "/root/Shared", "../Common"],
+            resources: ["/root/App/Assets", "../Resources"],
+            entitlements: "/root/App/App.entitlements",
+            output: nil
+        )
+
+        let staged = LitterBuildKit.stagedProjectManifestForNativeDriver(manifest, fakefsProjectDir: "/root/App")
+
+        XCTAssertEqual(staged.entrypoint, "Sources/main.swift")
+        XCTAssertEqual(staged.sources, ["Sources", "Relative.swift", "_external/root/Shared", "_external/root/Common"])
+        XCTAssertEqual(staged.resources, ["Assets", "_external/root/Resources"])
+        XCTAssertEqual(staged.entitlements, "App.entitlements")
+    }
+
     func testBuildKitDownloadDefaultsTargetPrivateRelease() {
         let config = BuildKitAssetDownloadConfig()
 

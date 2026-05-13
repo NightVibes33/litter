@@ -720,11 +720,13 @@ actor LitterBuildKit {
         }
 
         let hostRoot = Self.hostJobRoot(buildDir: buildDir)
-        let fakefsProjectDir = (projectPath as NSString).deletingLastPathComponent
+        let fakefsProjectDir = Self.normalizedFakefsPath((projectPath as NSString).deletingLastPathComponent)
         let hostProjectPath = hostRoot.appendingPathComponent("LitterBuild.json")
+        let stagedManifest = Self.stagedProjectManifestForNativeDriver(manifest, fakefsProjectDir: fakefsProjectDir)
         do {
+            let hostManifestData = try JSONEncoder().encode(stagedManifest)
             try FileManager.default.createDirectory(at: hostRoot, withIntermediateDirectories: true, attributes: nil)
-            try data.write(to: hostProjectPath, options: .atomic)
+            try hostManifestData.write(to: hostProjectPath, options: .atomic)
         } catch {
             log += "- Could not stage project manifest for native driver: \(error.localizedDescription)\n"
             return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: projectPath)
@@ -732,14 +734,14 @@ actor LitterBuildKit {
 
         var copied = 0
         var skipped = 0
-        let roots = Set((manifest.sources + (manifest.resources ?? []) + [manifest.entitlements, manifest.entrypoint].compactMap { $0 }).map { path in
-            path.hasPrefix("/") ? path : "\(fakefsProjectDir)/\(path)"
-        })
-        for root in roots {
+        let roots = Self.stagedProjectRootMappings(for: manifest, fakefsProjectDir: fakefsProjectDir)
+        for mapping in roots.sorted(by: { $0.fakefsRoot < $1.fakefsRoot }) {
+            let root = mapping.fakefsRoot
+            let rootIsDirectory = await IshFS.run("[ -d \(IshFS.shellQuote(root)) ]").exitCode == 0
             let result = await IshFS.run("if [ -d \(IshFS.shellQuote(root)) ]; then find \(IshFS.shellQuote(root)) -type f; elif [ -f \(IshFS.shellQuote(root)) ]; then printf '%s\\n' \(IshFS.shellQuote(root)); fi")
             guard result.exitCode == 0 else { skipped += 1; continue }
             for file in result.output.split(separator: "\n").map(String.init) {
-                let relative = Self.relativeFakefsPath(file, base: fakefsProjectDir)
+                let relative = rootIsDirectory ? Self.joinRelativePath(mapping.stagedRoot, Self.relativeFakefsPath(file, base: root)) : mapping.stagedRoot
                 let hostFile = hostRoot.appendingPathComponent(relative)
                 do {
                     let text = try await IshFS.readTextFile(path: file, maxBytes: 4_000_000)
@@ -775,6 +777,56 @@ actor LitterBuildKit {
     private static func hostJobRoot(buildDir: String) -> URL {
         let id = URL(fileURLWithPath: buildDir).lastPathComponent.replacingOccurrences(of: "[^A-Za-z0-9._-]", with: "-", options: .regularExpression)
         return buildKitRoot.appendingPathComponent("Jobs/\(id)", isDirectory: true)
+    }
+
+    static func stagedProjectManifestForNativeDriver(_ manifest: LitterBuildProjectManifest, fakefsProjectDir: String) -> LitterBuildProjectManifest {
+        var staged = manifest
+        staged.sources = manifest.sources.map { stagedProjectRelativePath($0, fakefsProjectDir: fakefsProjectDir) }
+        staged.resources = manifest.resources?.map { stagedProjectRelativePath($0, fakefsProjectDir: fakefsProjectDir) }
+        staged.entitlements = manifest.entitlements.map { stagedProjectRelativePath($0, fakefsProjectDir: fakefsProjectDir) }
+        staged.entrypoint = manifest.entrypoint.map { stagedProjectRelativePath($0, fakefsProjectDir: fakefsProjectDir) }
+        return staged
+    }
+
+    private static func stagedProjectRootMappings(for manifest: LitterBuildProjectManifest, fakefsProjectDir: String) -> [(fakefsRoot: String, stagedRoot: String)] {
+        let paths = manifest.sources + (manifest.resources ?? []) + [manifest.entitlements, manifest.entrypoint].compactMap { $0 }
+        var seen: Set<String> = []
+        var mappings: [(fakefsRoot: String, stagedRoot: String)] = []
+        for path in paths {
+            let fakefsRoot = fakefsAbsolutePath(path, fakefsProjectDir: fakefsProjectDir)
+            guard seen.insert(fakefsRoot).inserted else { continue }
+            mappings.append((fakefsRoot: fakefsRoot, stagedRoot: stagedProjectRelativePath(path, fakefsProjectDir: fakefsProjectDir)))
+        }
+        return mappings
+    }
+
+    private static func stagedProjectRelativePath(_ path: String, fakefsProjectDir: String) -> String {
+        let projectDir = normalizedFakefsPath(fakefsProjectDir)
+        let absolute = fakefsAbsolutePath(path, fakefsProjectDir: projectDir)
+        let normalizedBase = projectDir.hasSuffix("/") ? projectDir : projectDir + "/"
+        if absolute.hasPrefix(normalizedBase) {
+            return String(absolute.dropFirst(normalizedBase.count))
+        }
+        if absolute == projectDir { return "." }
+        let external = absolute.split(separator: "/").map(String.init).joined(separator: "/")
+        return "_external/" + (external.isEmpty ? "root" : external)
+    }
+
+    private static func fakefsAbsolutePath(_ path: String, fakefsProjectDir: String) -> String {
+        if path.hasPrefix("/") { return normalizedFakefsPath(path) }
+        return normalizedFakefsPath((fakefsProjectDir as NSString).appendingPathComponent(path))
+    }
+
+    private static func normalizedFakefsPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    private static func joinRelativePath(_ base: String, _ child: String) -> String {
+        if base.isEmpty { return child }
+        if child.isEmpty { return base }
+        if base == "." { return child }
+        if base.hasSuffix("/") { return base + child }
+        return base + "/" + child
     }
 
     private static func relativeFakefsPath(_ path: String, base: String) -> String {
