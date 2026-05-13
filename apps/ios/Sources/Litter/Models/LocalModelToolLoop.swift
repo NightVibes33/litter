@@ -366,7 +366,7 @@ enum LocalModelToolLoop {
             guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
             return result.output
         case "buildkit_status":
-            let result = await IshFS.run("litter-buildkit --timeout 30")
+            let result = await IshFS.run("litter-buildkit --timeout 120")
             guard result.exitCode == 0 else { throw LocalModelToolLoopError.blocked(result.output) }
             return result.output
         case "nyxian_status":
