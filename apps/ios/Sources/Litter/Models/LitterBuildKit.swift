@@ -822,12 +822,19 @@ actor LitterBuildKit {
     }
 
     private static var installedAssetsAreUsable: Bool {
-        installedManifest != nil
-            && nativeCompilerAssetsInstalled
-            && nativeDriverInstalled
-            && supportLibrariesInstalled
-            && sdkInstalled
-            && nativeRunnerInstalled
+        guard let manifest = installedManifest else { return false }
+        guard nativeCompilerAssetsInstalled,
+              nativeDriverInstalled,
+              nativeDriverLoadable,
+              supportLibrariesInstalled,
+              sdkInstalled,
+              nativeRunnerInstalled else {
+            return false
+        }
+        if let availableManifest = firstAvailableAssetCandidateManifest(), availableManifest != manifest {
+            return false
+        }
+        return true
     }
 
     private static var nativeCompilerAssetsInstalled: Bool {
@@ -914,6 +921,47 @@ actor LitterBuildKit {
             }
         }
         return "none"
+    }
+
+    private static func firstAvailableAssetCandidateManifest() -> BuildKitAssetManifest? {
+        for candidate in assetCandidates() {
+            if let manifest = assetManifest(for: candidate) { return manifest }
+        }
+        return nil
+    }
+
+    private static func assetManifest(for candidate: AssetCandidate) -> BuildKitAssetManifest? {
+        guard let url = candidate.url else { return nil }
+        switch candidate.kind {
+        case .directory:
+            return directoryAssetManifest(url)
+        case .zip:
+            return zipAssetManifest(url)
+        }
+    }
+
+    private static func directoryAssetManifest(_ url: URL) -> BuildKitAssetManifest? {
+        let manifestURL = url.appendingPathComponent("manifest.json")
+        guard let data = try? Data(contentsOf: manifestURL) else { return nil }
+        return try? JSONDecoder().decode(BuildKitAssetManifest.self, from: data)
+    }
+
+    private static func zipAssetManifest(_ url: URL) -> BuildKitAssetManifest? {
+        guard fileExists(url), let archive = Archive(url: url, accessMode: .read) else { return nil }
+        for entry in archive {
+            let normalized = entry.path.replacingOccurrences(of: "\\", with: "/")
+            guard normalized == "manifest.json" || normalized.hasSuffix("/manifest.json") else { continue }
+            var data = Data()
+            do {
+                _ = try archive.extract(entry) { chunk in
+                    data.append(chunk)
+                }
+            } catch {
+                return nil
+            }
+            return try? JSONDecoder().decode(BuildKitAssetManifest.self, from: data)
+        }
+        return nil
     }
 
     private static func assetAvailabilityReport() -> String {
