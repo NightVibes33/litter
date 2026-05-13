@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <dispatch/dispatch.h>
 #import <MobileDevelopmentKit/MDKDriver.h>
 #import <MobileDevelopmentKit/MDKJob.h>
 #import <MobileDevelopmentKit/MDKDiagnostic.h>
@@ -66,10 +67,26 @@ static NSString *LBIOutputPath(NSArray<NSString *> *words, NSString *fallbackNam
     return fallbackName;
 }
 
+static BOOL LBIFlagTakesValue(NSString *word)
+{
+    static NSSet<NSString *> *valueFlags;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        valueFlags = [NSSet setWithArray:@[
+            @"-D", @"-I", @"-F", @"-L", @"-l", @"-framework",
+            @"-module-name", @"-package-name", @"-emit-module-path",
+            @"-emit-dependencies-path", @"-emit-reference-dependencies-path",
+            @"-Xcc", @"-Xlinker", @"-Xfrontend"
+        ]];
+    });
+    return [valueFlags containsObject:word];
+}
+
 static NSArray<NSString *> *LBISwiftcUserFlags(NSArray<NSString *> *words)
 {
     NSMutableArray<NSString *> *flags = [NSMutableArray array];
     BOOL skipNext = NO;
+    BOOL preserveNext = NO;
     for(NSUInteger idx = 0; idx < words.count; idx++)
     {
         NSString *word = words[idx];
@@ -77,10 +94,21 @@ static NSArray<NSString *> *LBISwiftcUserFlags(NSArray<NSString *> *words)
         if([word isEqualToString:@"-o"] || [word isEqualToString:@"-sdk"] || [word isEqualToString:@"-target"])
         {
             skipNext = YES;
+            preserveNext = NO;
             continue;
         }
         if([word hasSuffix:@".swift"]) { continue; }
-        if([word hasPrefix:@"-"]) { [flags addObject:word]; }
+        if(preserveNext)
+        {
+            [flags addObject:word];
+            preserveNext = NO;
+            continue;
+        }
+        if([word hasPrefix:@"-"])
+        {
+            [flags addObject:word];
+            preserveNext = LBIFlagTakesValue(word);
+        }
     }
     return flags;
 }
