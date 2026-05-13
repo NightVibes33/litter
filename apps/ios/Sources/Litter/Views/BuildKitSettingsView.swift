@@ -125,7 +125,7 @@ struct BuildKitSettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             Button {
-                taskBag.run { await runSwiftSmokeTest() }
+                taskBag.run { await runSwiftSelfTest() }
             } label: {
                 Label("Run Swift Self-Test", systemImage: "swift")
                     .foregroundStyle(LitterTheme.accent)
@@ -406,7 +406,7 @@ struct BuildKitSettingsView: View {
     }
 
     @MainActor
-    private func runSwiftSmokeTest() async {
+    private func runSwiftSelfTest() async {
         await runBuildKitCommand("litter-swift-selftest --timeout 240", title: "Swift Self-Test")
     }
 
