@@ -744,9 +744,9 @@ actor LitterBuildKit {
                 let relative = rootIsDirectory ? Self.joinRelativePath(mapping.stagedRoot, Self.relativeFakefsPath(file, base: root)) : mapping.stagedRoot
                 let hostFile = hostRoot.appendingPathComponent(relative)
                 do {
-                    let text = try await IshFS.readTextFile(path: file, maxBytes: 4_000_000)
+                    let data = try await IshFS.readFileData(path: file, maxBytes: 64_000_000)
                     try FileManager.default.createDirectory(at: hostFile.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-                    try Data(text.utf8).write(to: hostFile, options: .atomic)
+                    try data.write(to: hostFile, options: .atomic)
                     copied += 1
                 } catch {
                     skipped += 1
@@ -755,8 +755,7 @@ actor LitterBuildKit {
         }
         log += "- Manifest: \(manifest.name) \(manifest.bundleIdentifier) deployment \(manifest.deploymentTarget)\n"
         log += "- Staged host work dir: \(hostRoot.path)\n"
-        log += "- Staged text files: \(copied); skipped binary/large/unreadable files: \(skipped)\n"
-        if skipped > 0 { log += "- Binary resources need a native runner that can request byte-copy support; text Swift projects are staged now.\n" }
+        log += "- Staged files: \(copied); skipped large/unreadable files: \(skipped)\n"
         return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: hostProjectPath.path, hostInputPath: nil, fakefsProjectPath: projectPath)
     }
 
