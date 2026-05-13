@@ -529,15 +529,37 @@ jobs:
               exit 1
             fi
           }
-          verify_buildkit_dylib_id() {
+          buildkit_expected_install_name() {
             binary="$1"
+            parent="$(basename "$(dirname "$binary")")"
             base="$(basename "$binary")"
-            if ! is_buildkit_support_dylib_name "$base"; then
+            case "$parent/$base" in
+              CoreCompiler.framework/CoreCompiler|LitterBuildKitNative.framework/LitterBuildKitNative)
+                printf '%s\n' "@rpath/$parent/$base"
+                ;;
+              *)
+                if is_buildkit_support_dylib_name "$base"; then
+                  printf '%s\n' "@rpath/$base"
+                fi
+                ;;
+            esac
+          }
+          is_buildkit_corecompiler_reference() {
+            case "$1" in
+              *CoreCompiler.framework/CoreCompiler) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          verify_buildkit_install_name() {
+            binary="$1"
+            expected="$(buildkit_expected_install_name "$binary")"
+            if [ -z "$expected" ]; then
               return 0
             fi
             id="$(/usr/bin/otool -D "$binary" | awk 'NR == 2 { print $1 }')"
-            if [ "$id" != "@rpath/$base" ]; then
+            if [ "$id" != "$expected" ]; then
               echo "::error::$binary has unexpected install name: $id" >&2
+              echo "::error::Expected install name: $expected" >&2
               exit 1
             fi
           }
@@ -545,7 +567,18 @@ jobs:
             binary="$1"
             /usr/bin/otool -L "$binary" | awk 'NR > 1 { print $1 }' | while IFS= read -r dependency; do
               base="$(basename "$dependency")"
-              if is_buildkit_support_dylib_name "$base"; then
+              if is_buildkit_corecompiler_reference "$dependency"; then
+                if [ "$dependency" != "@rpath/CoreCompiler.framework/CoreCompiler" ]; then
+                  echo "::error::$binary links CoreCompiler without @rpath: $dependency" >&2
+                  /usr/bin/otool -L "$binary" >&2
+                  exit 1
+                fi
+                if [ ! -f "$APP_PATH/Frameworks/CoreCompiler.framework/CoreCompiler" ]; then
+                  echo "::error::$binary links missing embedded CoreCompiler.framework/CoreCompiler" >&2
+                  /usr/bin/otool -L "$binary" >&2
+                  exit 1
+                fi
+              elif is_buildkit_support_dylib_name "$base"; then
                 if [ "$dependency" != "@rpath/$base" ]; then
                   echo "::error::$binary links compiler dylib without @rpath: $dependency" >&2
                   /usr/bin/otool -L "$binary" >&2
@@ -562,11 +595,11 @@ jobs:
           check_buildkit_rpath() {
             binary="$1"
             rpath="$2"
-            verify_buildkit_dylib_id "$binary"
+            verify_buildkit_install_name "$binary"
             if /usr/bin/otool -L "$binary" | grep -Eq 'CoreCompiler\.framework/CoreCompiler|lib_Compiler|libLLVM|libllvm'; then
               verify_rpath "$binary" "$rpath"
             fi
-            if /usr/bin/otool -L "$binary" | grep -Eq 'BuildKitAssets/SDK|SDK/iPhoneOS.*\.sdk/usr/lib'; then
+            if /usr/bin/otool -L "$binary" | grep -Eq 'BuildKitAssets/(SDK|Toolchains)|SDK/iPhoneOS.*\.sdk/usr/lib|Documents/BuildKit|Toolchains/Nyxian'; then
               echo "::error::$binary still links SDK/BuildKit asset dylib paths" >&2
               /usr/bin/otool -L "$binary" >&2
               exit 1
