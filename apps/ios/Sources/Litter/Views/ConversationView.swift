@@ -2132,54 +2132,56 @@ private struct ConversationInputBar: View {
 
     private func handleGoalCommand(_ args: String?) async {
         let raw = args?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let lower = raw.lowercased()
+        let parsed = parseGoalSlashCommand(raw)
         do {
-            switch lower {
-            case "":
+            switch parsed {
+            case .show:
                 let goal = try await appModel.client.getThreadGoal(
                     serverId: snapshot.threadKey.serverId,
                     params: AppThreadGoalGetRequest(threadId: snapshot.threadKey.threadId)
                 )
-                guard let goal else {
-                    slashErrorMessage = "No goal is set for this thread."
-                    return
-                }
-                slashErrorMessage = goalSummary(goal)
-            case "pause":
+                slashErrorMessage = goal.map { goalSummary($0) } ?? goalSlashUsageMessage(prefix: "No goal is set for this thread.")
+            case .setObjective(let objective):
                 _ = try await appModel.client.setThreadGoal(
                     serverId: snapshot.threadKey.serverId,
                     params: AppThreadGoalSetRequest(
                         threadId: snapshot.threadKey.threadId,
-                        objective: nil,
-                        status: .paused,
-                        tokenBudget: nil
-                    )
-                )
-            case "resume":
-                _ = try await appModel.client.setThreadGoal(
-                    serverId: snapshot.threadKey.serverId,
-                    params: AppThreadGoalSetRequest(
-                        threadId: snapshot.threadKey.threadId,
-                        objective: nil,
+                        objective: objective,
                         status: .active,
                         tokenBudget: nil
                     )
                 )
-            case "clear":
+                slashErrorMessage = "Goal set. Use /goal to view it, /goal pause to pause it, or /goal complete when done."
+            case .setBudget(let budget):
+                _ = try await appModel.client.setThreadGoal(
+                    serverId: snapshot.threadKey.serverId,
+                    params: AppThreadGoalSetRequest(
+                        threadId: snapshot.threadKey.threadId,
+                        objective: nil,
+                        status: nil,
+                        tokenBudget: budget
+                    )
+                )
+                slashErrorMessage = "Goal token budget set to \(budget)."
+            case .setStatus(let status):
+                _ = try await appModel.client.setThreadGoal(
+                    serverId: snapshot.threadKey.serverId,
+                    params: AppThreadGoalSetRequest(
+                        threadId: snapshot.threadKey.threadId,
+                        objective: nil,
+                        status: status,
+                        tokenBudget: nil
+                    )
+                )
+                slashErrorMessage = "Goal status set to \(goalStatusLabel(status))."
+            case .clear:
                 _ = try await appModel.client.clearThreadGoal(
                     serverId: snapshot.threadKey.serverId,
                     params: AppThreadGoalClearRequest(threadId: snapshot.threadKey.threadId)
                 )
-            default:
-                _ = try await appModel.client.setThreadGoal(
-                    serverId: snapshot.threadKey.serverId,
-                    params: AppThreadGoalSetRequest(
-                        threadId: snapshot.threadKey.threadId,
-                        objective: raw,
-                        status: .active,
-                        tokenBudget: nil
-                    )
-                )
+                slashErrorMessage = "Goal cleared."
+            case .usage(let prefix):
+                slashErrorMessage = goalSlashUsageMessage(prefix: prefix)
             }
         } catch {
             slashErrorMessage = error.localizedDescription
@@ -2637,6 +2639,66 @@ private struct CollaborationModeSelectorSheet: View {
             .navigationTitle("Collaboration Mode")
         }
     }
+}
+
+enum GoalSlashCommandAction: Equatable {
+    case show
+    case setObjective(String)
+    case setBudget(Int64)
+    case setStatus(AppThreadGoalStatus)
+    case clear
+    case usage(String?)
+}
+
+func parseGoalSlashCommand(_ raw: String) -> GoalSlashCommandAction {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return .show }
+
+    let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+    let verb = parts.first.map { String($0).lowercased() } ?? ""
+    let rest = parts.dropFirst().first.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
+
+    switch verb {
+    case "show", "status", "current":
+        return .show
+    case "pause":
+        return .setStatus(.paused)
+    case "resume", "start", "active":
+        return .setStatus(.active)
+    case "complete", "done", "finish":
+        return .setStatus(.complete)
+    case "clear", "delete", "remove":
+        return .clear
+    case "set", "create", "objective":
+        guard !rest.isEmpty else { return .usage("Missing goal objective.") }
+        return .setObjective(rest)
+    case "budget", "tokens", "token-budget":
+        guard let value = Int64(rest), value > 0 else {
+            return .usage("Goal budget must be a positive token count, for example /goal budget 50000.")
+        }
+        return .setBudget(value)
+    case "help":
+        return .usage(nil)
+    default:
+        return .setObjective(trimmed)
+    }
+}
+
+func goalSlashUsageMessage(prefix: String? = nil) -> String {
+    var lines: [String] = []
+    if let prefix, !prefix.isEmpty { lines.append(prefix) }
+    lines.append(contentsOf: [
+        "Usage:",
+        "/goal <objective>",
+        "/goal set <objective>",
+        "/goal status",
+        "/goal budget <tokens>",
+        "/goal pause",
+        "/goal resume",
+        "/goal complete",
+        "/goal clear"
+    ])
+    return lines.joined(separator: "\n")
 }
 
 private func collaborationModeEffortLabel(_ effort: ReasoningEffort) -> String {
