@@ -152,12 +152,19 @@ targets:
               exit 1
             fi
           }
-          for framework in LitterBuildKitNative.framework; do
+          sign_if_requested() {
+            item="$1"
+            if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+              codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$item"
+            fi
+          }
+          for framework in CoreCompiler.framework LitterBuildKitNative.framework; do
             if [ -d "$ASSET_ROOT/$framework" ]; then
               destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
               executable="${framework%.framework}"
               rm -rf "$destination"
               cp -R "$ASSET_ROOT/$framework" "$destination"
+              rm -rf "$destination/CoreCompilerSupportLibs"
               if [ ! -f "$destination/Info.plist" ]; then
                 cat > "$destination/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -187,11 +194,18 @@ targets:
           PLIST
               fi
               repair_corecompiler_rpath "$destination/$executable"
-              if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
-                codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$destination"
-              fi
+              sign_if_requested "$destination"
             fi
           done
+          SUPPORT_ROOT="$ASSET_ROOT/CoreCompilerSupportLibs"
+          if [ -d "$SUPPORT_ROOT" ]; then
+            find "$SUPPORT_ROOT" -maxdepth 1 -type f -name '*.dylib' -print0 | while IFS= read -r -d '' library; do
+              destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$(basename "$library")"
+              rm -f "$destination"
+              cp "$library" "$destination"
+              sign_if_requested "$destination"
+            done
+          fi
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter

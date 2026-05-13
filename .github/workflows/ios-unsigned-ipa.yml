@@ -461,13 +461,18 @@ jobs:
             exit 1
           fi
 
-          if [ -d "$APP_PATH/Frameworks/CoreCompiler.framework" ]; then
-            echo "::error::CoreCompiler.framework must stay inside LitterBuildKitAssets.zip, not Payload/*.app/Frameworks" >&2
+          if [ ! -d "$APP_PATH/Frameworks/CoreCompiler.framework" ]; then
+            echo "::error::Archived app is missing embedded CoreCompiler.framework" >&2
             exit 1
           fi
 
           if [ ! -d "$APP_PATH/Frameworks/LitterBuildKitNative.framework" ]; then
             echo "::error::Archived app is missing embedded LitterBuildKitNative.framework" >&2
+            exit 1
+          fi
+
+          if ! find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print -quit | grep -q .; then
+            echo "::error::Archived app is missing embedded CoreCompiler support dylibs" >&2
             exit 1
           fi
 

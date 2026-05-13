@@ -1182,19 +1182,49 @@ actor LitterBuildKit {
         return nil
     }
 
-    private static func preloadNativeDriverDependencies(diagnostics: inout [String]) {
-        let supportRoot = toolchainRoot.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true)
-        if let supportLibraries = try? FileManager.default.contentsOfDirectory(at: supportRoot, includingPropertiesForKeys: nil) {
-            for library in supportLibraries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where library.pathExtension == "dylib" {
-                _ = openDynamicLibrary(library, flags: RTLD_NOW | RTLD_GLOBAL, diagnostics: &diagnostics)
+    private static func supportLibraryRoots() -> [URL] {
+        var roots = [toolchainRoot.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true)]
+        if let frameworks = Bundle.main.privateFrameworksURL {
+            roots.append(frameworks)
+            roots.append(frameworks.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true))
+        }
+        return roots
+    }
+
+    private static func preloadSupportLibraries(at root: URL, diagnostics: inout [String]) -> Bool {
+        guard let supportLibraries = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
+            diagnostics.append("support library directory missing or unreadable \(root.path)")
+            return false
+        }
+        var loaded = false
+        for library in supportLibraries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) where isCompilerSupportLibrary(library) {
+            if openDynamicLibrary(library, flags: RTLD_NOW | RTLD_GLOBAL, diagnostics: &diagnostics) != nil {
+                loaded = true
             }
-        } else {
-            diagnostics.append("support library directory missing or unreadable \(supportRoot.path)")
+        }
+        return loaded
+    }
+
+    private static func isCompilerSupportLibrary(_ url: URL) -> Bool {
+        guard url.pathExtension == "dylib" else { return false }
+        let name = url.lastPathComponent
+        return name.hasPrefix("lib_Compiler") || name.hasPrefix("libLLVM") || name.hasPrefix("libllvm")
+    }
+
+    private static func preloadNativeDriverDependencies(diagnostics: inout [String]) {
+        var loadedSupportLibrary = false
+        for supportRoot in supportLibraryRoots() {
+            if preloadSupportLibraries(at: supportRoot, diagnostics: &diagnostics) {
+                loadedSupportLibrary = true
+            }
+        }
+        if !loadedSupportLibrary {
+            diagnostics.append("no CoreCompiler support dylibs were loadable from installed assets or app Frameworks")
         }
 
         let coreCandidates = [
-            toolchainRoot.appendingPathComponent("CoreCompiler.framework/CoreCompiler"),
-            embeddedFrameworkURL(named: "CoreCompiler")
+            embeddedFrameworkURL(named: "CoreCompiler"),
+            toolchainRoot.appendingPathComponent("CoreCompiler.framework/CoreCompiler")
         ]
         for candidate in coreCandidates where fileExists(candidate) {
             if openDynamicLibrary(candidate, flags: RTLD_NOW | RTLD_GLOBAL, diagnostics: &diagnostics) != nil {
