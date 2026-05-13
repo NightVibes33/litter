@@ -962,6 +962,12 @@ actor LitterBuildKit {
         var kind: AssetCandidateKind
     }
 
+    private struct AvailableAssetCandidate {
+        var candidate: AssetCandidate
+        var url: URL
+        var manifest: BuildKitAssetManifest
+    }
+
     private static func assetCandidates() -> [AssetCandidate] {
         [
             AssetCandidate(label: "bundled BuildKitAssets directory", url: Bundle.main.url(forResource: "BuildKitAssets", withExtension: nil), kind: .directory),
@@ -974,27 +980,33 @@ actor LitterBuildKit {
     }
 
     private static func firstAvailableAssetCandidateDescription() -> String {
-        for candidate in assetCandidates() {
-            guard let url = candidate.url else { continue }
-            switch candidate.kind {
-            case .directory:
-                if fileExists(url.appendingPathComponent("manifest.json")) {
-                    return "\(candidate.label): \(url.path)"
-                }
-            case .zip:
-                if fileExists(url) {
-                    return "\(candidate.label): \(url.path)"
-                }
-            }
-        }
-        return "none"
+        guard let best = bestAvailableAssetCandidate() else { return "none" }
+        return "\(best.candidate.label): \(best.url.path)"
     }
 
     private static func firstAvailableAssetCandidateManifest() -> BuildKitAssetManifest? {
-        for candidate in assetCandidates() {
-            if let manifest = assetManifest(for: candidate) { return manifest }
+        bestAvailableAssetCandidate()?.manifest
+    }
+
+    private static func availableAssetCandidates() -> [AvailableAssetCandidate] {
+        assetCandidates().compactMap { candidate in
+            guard let url = candidate.url, let manifest = assetManifest(for: candidate) else { return nil }
+            return AvailableAssetCandidate(candidate: candidate, url: url, manifest: manifest)
         }
-        return nil
+    }
+
+    private static func bestAvailableAssetCandidate() -> AvailableAssetCandidate? {
+        var best: AvailableAssetCandidate?
+        for available in availableAssetCandidates() {
+            guard let current = best else {
+                best = available
+                continue
+            }
+            if assetManifest(available.manifest, shouldReplace: current.manifest) {
+                best = available
+            }
+        }
+        return best
     }
 
     static func assetManifest(_ available: BuildKitAssetManifest, shouldReplace installed: BuildKitAssetManifest) -> Bool {
@@ -1079,21 +1091,15 @@ actor LitterBuildKit {
     }
 
     private static func installFirstAvailableAssetDirectory() throws -> BuildKitAssetManifest {
-        for candidate in assetCandidates() {
-            guard let url = candidate.url else { continue }
-            switch candidate.kind {
-            case .directory:
-                if fileExists(url.appendingPathComponent("manifest.json")) {
-                    return try installAssetDirectory(url)
-                }
-            case .zip:
-                if fileExists(url) {
-                    return try installAssetZip(url)
-                }
-            }
+        guard let best = bestAvailableAssetCandidate() else {
+            throw NSError(domain: "LitterBuildKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected BuildKitAssets/manifest.json or LitterBuildKitAssets.zip in the app bundle, Documents, or Documents/Inbox.\n\(assetAvailabilityReport())"])
         }
-
-        throw NSError(domain: "LitterBuildKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected BuildKitAssets/manifest.json or LitterBuildKitAssets.zip in the app bundle, Documents, or Documents/Inbox.\n\(assetAvailabilityReport())"])
+        switch best.candidate.kind {
+        case .directory:
+            return try installAssetDirectory(best.url)
+        case .zip:
+            return try installAssetZip(best.url)
+        }
     }
 
     private static func resolveAssetDirectory(_ url: URL) throws -> URL {
