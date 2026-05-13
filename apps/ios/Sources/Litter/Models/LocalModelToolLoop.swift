@@ -274,7 +274,30 @@ enum LocalModelToolLoop {
 
     static func looksLikeMalformedToolRequest(_ text: String) -> Bool {
         let lowered = text.lowercased()
-        guard lowered.contains("tool") || lowered.contains("arguments") || lowered.contains("list_dir") || lowered.contains("read_file") || lowered.contains("write_file") || lowered.contains("shell") || lowered.contains("swift_check") || lowered.contains("swift_selftest") || lowered.contains("ipa_build") || lowered.contains("buildkit") || lowered.contains("nyxian_status") || lowered.contains("dev_bootstrap") || lowered.contains("env_report") else {
+        let markers = [
+            "tool",
+            "arguments",
+            "list_dir",
+            "read_file",
+            "write_file",
+            "replace_text",
+            "shell",
+            "buildkit",
+            "buildkit_status",
+            "nyxian_status",
+            "fs_doctor",
+            "env_report",
+            "dev_bootstrap",
+            "swift_check",
+            "swift_selftest",
+            "swift_build",
+            "swift_test",
+            "ipa_build",
+            "ipa_package",
+            "build_status",
+            "build_cancel"
+        ]
+        guard markers.contains(where: { lowered.contains($0) }) else {
             return false
         }
         return parseToolCalls(from: text).isEmpty

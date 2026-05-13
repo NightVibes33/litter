@@ -59,6 +59,20 @@ final class BuildKitTests: XCTestCase {
         XCTAssertEqual(calls.first.map(LocalModelToolLoop.risk(for:)), .safeRead)
     }
 
+    func testMalformedBuildKitToolRequestsAreDetected() {
+        let malformed = [
+            "please run swift_build with /root/App/LitterBuild.json",
+            "tool swift_test arguments project_path=/root/App/LitterBuild.json",
+            "ipa_package { project_path: /root/App/LitterBuild.json }",
+            "build_status job 123",
+            "build_cancel job 123"
+        ]
+
+        for text in malformed {
+            XCTAssertTrue(LocalModelToolLoop.looksLikeMalformedToolRequest(text), text)
+        }
+    }
+
     func testLocalModelBuildKitToolRiskCoverage() {
         let expected: [(String, LocalModelToolRisk)] = [
             ("buildkit_status", .safeRead),
