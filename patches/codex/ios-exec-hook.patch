@@ -5,7 +5,7 @@ index fd5cd7bcdc..a7cd3491fd 100644
 @@ -48,6 +48,90 @@ use codex_utils_absolute_path::AbsolutePathBuf;
  use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
  use codex_utils_pty::process_group::kill_child_process_group;
- 
+
 +#[cfg(target_os = "ios")]
 +use std::sync::Arc;
 +#[cfg(any(target_os = "ios", target_os = "android"))]
@@ -91,7 +91,7 @@ index fd5cd7bcdc..a7cd3491fd 100644
 +}
 +
  pub const DEFAULT_EXEC_COMMAND_TIMEOUT_MS: u64 = 10_000;
- 
+
  // Hardcode these since it does not seem worth including the libc crate just
 @@ -912,6 +996,7 @@ fn aggregate_output(
  /// Note this command does not apply any sandboxing logic. The caller is
@@ -154,9 +154,22 @@ index fd5cd7bcdc..a7cd3491fd 100644
 +            command[0] = resolved;
 +        }
 +    }
- 
+
      let (program, args) = command.split_first().ok_or_else(|| {
          CodexErr::Io(io::Error::new(
+diff --git a/codex-rs/core/src/unified_exec/async_watcher.rs b/codex-rs/core/src/unified_exec/async_watcher.rs
+index 33dbf843dc..8e2cd83393 100644
+--- a/codex-rs/core/src/unified_exec/async_watcher.rs
++++ b/codex-rs/core/src/unified_exec/async_watcher.rs
+@@ -156,7 +156,7 @@ pub(crate) fn spawn_exit_watcher(
+     });
+ }
+
+-async fn process_chunk(
++pub(crate) async fn process_chunk(
+     pending: &mut Vec<u8>,
+     transcript: &Arc<Mutex<HeadTailBuffer>>,
+     call_id: &str,
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
 index 4f85b1ddf7..5bf42ba58c 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
@@ -186,7 +199,7 @@ index 4f85b1ddf7..5bf42ba58c 100644
 @@ -591,6 +599,128 @@ impl UnifiedExecProcessManager {
          Ok(response)
      }
- 
+
 +    #[cfg(target_os = "ios")]
 +    async fn exec_command_ios(
 +        &self,

@@ -603,7 +603,6 @@ struct SettingsView: View {
         port: UInt16,
         credentials: SSHCredentials
     ) async throws -> String {
-        let ipcSocketPathOverride = ExperimentalFeatures.shared.ipcSocketPathOverride()
         switch credentials {
         case .password(let username, let password, let unlockMacosKeychain):
             return try await appModel.serverBridge.startRemoteOverSshConnect(
@@ -617,8 +616,7 @@ struct SettingsView: View {
                 passphrase: nil,
                 unlockMacosKeychain: unlockMacosKeychain,
                 acceptUnknownHost: true,
-                workingDir: nil,
-                ipcSocketPathOverride: ipcSocketPathOverride
+                workingDir: nil
             )
         case .key(let username, let privateKey, let passphrase):
             return try await appModel.serverBridge.startRemoteOverSshConnect(
@@ -632,8 +630,7 @@ struct SettingsView: View {
                 passphrase: passphrase,
                 unlockMacosKeychain: false,
                 acceptUnknownHost: true,
-                workingDir: nil,
-                ipcSocketPathOverride: ipcSocketPathOverride
+                workingDir: nil
             )
         }
     }

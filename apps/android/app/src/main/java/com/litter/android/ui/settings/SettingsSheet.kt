@@ -429,7 +429,6 @@ private fun SettingsTopLevel(
                             unlockMacosKeychain = credential.unlockMacosKeychain,
                             acceptUnknownHost = true,
                             workingDir = null,
-                            ipcSocketPathOverride = ExperimentalFeatures.ipcSocketPathOverride(),
                         )
                         SshAuthMethod.KEY -> appModel.serverBridge.startRemoteOverSshConnect(
                             serverId = saved.id,
@@ -443,7 +442,6 @@ private fun SettingsTopLevel(
                             unlockMacosKeychain = false,
                             acceptUnknownHost = true,
                             workingDir = null,
-                            ipcSocketPathOverride = ExperimentalFeatures.ipcSocketPathOverride(),
                         )
                     }
                     appModel.refreshSnapshot()
