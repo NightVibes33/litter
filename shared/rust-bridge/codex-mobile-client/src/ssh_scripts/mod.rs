@@ -22,9 +22,10 @@ pub(crate) mod posix {
     /// `$_litter_bun_global_bin`. Requires `PROFILE_INIT` first.
     pub(crate) const PACKAGE_MANAGER_PROBE: &str = include_str!("posix/package_manager_probe.sh");
 
-    /// Find an existing `codex` binary on the remote. Placeholders:
+    /// Find the newest existing `codex` binary on the remote. Placeholders:
     /// `{{PROFILE_INIT}}`, `{{PACKAGE_MANAGER_PROBE}}`, `{{SHARED_LINES}}`.
-    pub(crate) const RESOLVE_CODEX_BINARY: &str = include_str!("posix/resolve_codex_binary.sh");
+    pub(crate) const RESOLVE_CODEX_BINARY: &str =
+        alleycat_bridge_core::codex_resolver::POSIX_RESOLVE_CODEX_BINARY;
 
     /// Detect whether anything is listening on TCP `{{PORT}}` using lsof,
     /// then ss, then netstat (whichever is present).
@@ -72,9 +73,9 @@ pub(crate) mod posix {
 
 /// PowerShell snippets.
 pub(crate) mod powershell {
-    /// Find an existing `codex.cmd` on the remote.
+    /// Find the newest existing `codex` executable on the remote.
     pub(crate) const RESOLVE_CODEX_BINARY: &str =
-        include_str!("powershell/resolve_codex_binary.ps1");
+        alleycat_bridge_core::codex_resolver::POWERSHELL_RESOLVE_CODEX_BINARY;
 
     /// Detect whether anything is listening on TCP `{{PORT}}`.
     pub(crate) const PORT_LISTENING: &str = include_str!("powershell/port_listening.ps1");

@@ -8,6 +8,7 @@ struct ServerPill: View {
     let onRestartAppServer: () -> Void
     let onRename: () -> Void
     let onRemove: () -> Void
+    let onShowMountedFolders: () -> Void
 
     var body: some View {
         Button(action: onTap) {
@@ -46,6 +47,13 @@ struct ServerPill: View {
                 onRestartAppServer()
             } label: {
                 Label("Restart app server", systemImage: "arrow.triangle.2.circlepath")
+            }
+            if server.isLocal {
+                Button {
+                    onShowMountedFolders()
+                } label: {
+                    Label("Mounted folders", systemImage: "externaldrive.badge.icloud")
+                }
             }
             if !server.isLocal {
                 Button {

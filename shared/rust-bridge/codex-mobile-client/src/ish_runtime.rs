@@ -15,7 +15,7 @@
 //! persistent `/bin/sh` the same way `codex_ish_run` did in Obj-C.
 
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int, c_uint, CStr};
+use std::ffi::{CStr, c_char, c_int, c_uint};
 use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt;

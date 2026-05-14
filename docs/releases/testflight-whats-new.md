@@ -1,5 +1,6 @@
 Summary
 
+- Added a file/folder mount picker for local iPhone runtime mounts: press and hold the server pill to mount a file or directory.
 - Added a Real Time voice fallback to use the API key when both OAuth and API-key auth are configured.
 - Fixed the conversation composer hiding Send behind Cancel while a turn is active.
 - Fixed a CarPlay voice crash when reopening or resuming an active voice session.
@@ -15,6 +16,7 @@ Summary
 
 What to test
 
+- Local iPhone mounts: connect to the local iPhone runtime, press and hold the server pill, choose a file or directory in the mount picker, and confirm it mounts successfully.
 - Real Time auth fallback: configure both ChatGPT OAuth and an OpenAI API key, start a Real Time voice session, and confirm it can connect using the API key fallback when OAuth realtime auth is unavailable.
 - Active-turn composer: start a conversation turn, type into the composer while the turn is still active, and confirm the outer action changes to Send instead of staying as Cancel. Clear the text and confirm Cancel returns.
 - CarPlay voice: connect through CarPlay, start a voice session, resume a recent voice session, and tap back into the active session. Confirm the Now Playing view opens without crashing or duplicating.

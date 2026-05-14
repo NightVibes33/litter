@@ -62,18 +62,29 @@ val AgentRuntimeKind.runtimeSortIndex: Int
     get() = metadata?.presentation?.sortOrder?.toInt() ?: Int.MAX_VALUE
 
 /**
- * BETA badge driven by `presentation.is_beta`. Unknown agents are
- * beta by default until metadata is cached.
+ * BETA badge driven by `presentation.is_beta`. Codex is always stable,
+ * including cold-start SSH/alleycat paths before metadata is cached; other
+ * unknown agents stay beta by default until metadata says otherwise.
  */
 val AgentRuntimeKind.isBeta: Boolean
-    get() = metadata?.presentation?.isBeta ?: true
+    get() = if (isStableAgentIdentity(this, "")) {
+        false
+    } else {
+        metadata?.presentation?.isBeta ?: true
+    }
 
 /** Picker callers that only know `name` / `displayName` from a probe. */
 fun isBetaAgentName(name: String, displayName: String): Boolean {
     val key = name.trim().lowercase()
+    if (isStableAgentIdentity(key, displayName)) {
+        return false
+    }
     val cached = AgentRuntimeMetadataProvider.lookup?.invoke(key)
-    return cached?.presentation?.isBeta ?: !(key == "codex" || displayName.trim().lowercase() == "codex")
+    return cached?.presentation?.isBeta ?: true
 }
+
+private fun isStableAgentIdentity(name: String, displayName: String): Boolean =
+    name.trim().lowercase() == "codex" || displayName.trim().lowercase() == "codex"
 
 private fun AgentRuntimeKind.titlecased(): String {
     if (isEmpty()) return "Agent"

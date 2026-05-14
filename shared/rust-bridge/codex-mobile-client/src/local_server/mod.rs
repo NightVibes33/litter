@@ -37,98 +37,9 @@ const READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
 const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 
-// ---------------------------------------------------------------------------
-// Shared path list
-// ---------------------------------------------------------------------------
-
-/// A single candidate path where we might find the `codex` binary locally
-/// (or equivalently, on a POSIX SSH host). Each entry is expanded at
-/// resolution time against `$HOME` and a small set of env anchors.
-///
-/// The list is shared with the SSH bash script in `ssh.rs` so the two
-/// resolvers cannot drift.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct CodexPathCandidate {
-    /// Home-relative path (no leading `$HOME/`) or absolute path.
-    pub rel_or_abs: &'static str,
-    /// If set, the path uses the named env anchor for a configurable
-    /// prefix (e.g. `BUN_INSTALL`). Rust resolver falls back to the
-    /// documented default when the env var is unset.
-    pub env_anchor: Option<EnvAnchor>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct EnvAnchor {
-    pub name: &'static str,
-    /// Default value when the env var is unset, relative to `$HOME`
-    /// (empty string means "no home prefix").
-    pub default_home_rel: &'static str,
-    /// Suffix appended after the resolved anchor before the binary name.
-    /// For example, `/bin` for most package-manager homes.
-    pub suffix: &'static str,
-}
-
-/// POSIX candidate paths in priority order. Kept in sync with
-/// `resolve_codex_binary_script_posix` in `ssh.rs` — any addition here
-/// should be mirrored in that script.
-pub(crate) const CODEX_BINARY_POSIX_CANDIDATES: &[CodexPathCandidate] = &[
-    // Bun (env-overridable, defaults to ~/.bun).
-    CodexPathCandidate {
-        rel_or_abs: "",
-        env_anchor: Some(EnvAnchor {
-            name: "BUN_INSTALL",
-            default_home_rel: ".bun",
-            suffix: "/bin/codex",
-        }),
-    },
-    // Volta shim dir.
-    CodexPathCandidate {
-        rel_or_abs: ".volta/bin/codex",
-        env_anchor: None,
-    },
-    // Generic per-user bin.
-    CodexPathCandidate {
-        rel_or_abs: ".local/bin/codex",
-        env_anchor: None,
-    },
-    // Cargo install bin (env-overridable, defaults to ~/.cargo).
-    CodexPathCandidate {
-        rel_or_abs: "",
-        env_anchor: Some(EnvAnchor {
-            name: "CARGO_HOME",
-            default_home_rel: ".cargo",
-            suffix: "/bin/codex",
-        }),
-    },
-    // Homebrew / system prefixes.
-    CodexPathCandidate {
-        rel_or_abs: "/opt/homebrew/bin/codex",
-        env_anchor: None,
-    },
-    CodexPathCandidate {
-        rel_or_abs: "/usr/local/bin/codex",
-        env_anchor: None,
-    },
-];
-
-/// Named env anchors referenced from `resolve_codex_binary_script_posix`
-/// when emitting the shell equivalent of this list. Rendered as
-/// `_litter_emit_from_dir codex codex "${ANCHOR:-$HOME/<default>}"`.
+/// POSIX candidate lines shared with Alleycat's Codex resolver.
 pub(crate) const fn shell_candidate_lines() -> &'static [&'static str] {
-    // Pre-rendered lines. Keeping them here (rather than generating at
-    // runtime) avoids building the script string every time it is used.
-    &[
-        r#"_litter_emit_candidate codex "$(command -v codex 2>/dev/null || true)""#,
-        r#"_litter_emit_candidate codex "${BUN_INSTALL:-$HOME/.bun}/bin/codex""#,
-        r#"_litter_emit_candidate codex "$HOME/.volta/bin/codex""#,
-        r#"_litter_emit_candidate codex "$HOME/.local/bin/codex""#,
-        r#"_litter_emit_from_dir codex codex "${PNPM_HOME:-}""#,
-        r#"_litter_emit_from_dir codex codex "${NVM_BIN:-}""#,
-        r#"_litter_emit_from_dir codex codex "${VOLTA_HOME:+$VOLTA_HOME/bin}""#,
-        r#"_litter_emit_from_dir codex codex "${CARGO_HOME:-$HOME/.cargo}/bin""#,
-        r#"_litter_emit_candidate codex "/opt/homebrew/bin/codex""#,
-        r#"_litter_emit_candidate codex "/usr/local/bin/codex""#,
-    ]
+    alleycat_bridge_core::codex_resolver::POSIX_SHELL_CANDIDATE_LINES
 }
 
 // ---------------------------------------------------------------------------
@@ -150,88 +61,10 @@ pub async fn probe_local_server(port: u16) -> bool {
     }
 }
 
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
-}
-
-/// Resolve a local `codex` binary by probing the shared candidate list.
-/// Returns the first path that exists and is executable.
-///
-/// Ordering matches `resolve_codex_binary_script_posix` in `ssh.rs`:
-///   1. `which codex` (walk PATH)
-///   2. common user install directories (Bun, Volta, pnpm, cargo, Homebrew)
+/// Resolve a local `codex` binary using Alleycat's shared newest-version
+/// resolver, which is also used by SSH bootstrap and the Alleycat daemon.
 pub fn resolve_codex_binary_local() -> Option<PathBuf> {
-    let home = home_dir();
-
-    if let Some(path) = which_codex() {
-        return Some(path);
-    }
-
-    for candidate in CODEX_BINARY_POSIX_CANDIDATES {
-        if let Some(path) = expand_candidate(candidate, home.as_deref()) {
-            if is_executable_file(&path) {
-                return Some(path);
-            }
-        }
-    }
-
-    None
-}
-
-fn which_codex() -> Option<PathBuf> {
-    let path_var = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path_var) {
-        let candidate = dir.join("codex");
-        if is_executable_file(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn expand_candidate(candidate: &CodexPathCandidate, home: Option<&Path>) -> Option<PathBuf> {
-    if let Some(anchor) = candidate.env_anchor {
-        let base = match std::env::var(anchor.name) {
-            Ok(val) if !val.is_empty() => PathBuf::from(val),
-            _ => {
-                if anchor.default_home_rel.is_empty() {
-                    return None;
-                }
-                home?.join(anchor.default_home_rel)
-            }
-        };
-        // suffix starts with `/` by convention.
-        let suffix = anchor.suffix.trim_start_matches('/');
-        return Some(base.join(suffix));
-    }
-
-    if candidate.rel_or_abs.starts_with('/') {
-        return Some(PathBuf::from(candidate.rel_or_abs));
-    }
-
-    if candidate.rel_or_abs.is_empty() {
-        return None;
-    }
-
-    Some(home?.join(candidate.rel_or_abs))
-}
-
-fn is_executable_file(path: &Path) -> bool {
-    let Ok(metadata) = std::fs::metadata(path) else {
-        return false;
-    };
-    if !metadata.is_file() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        metadata.permissions().mode() & 0o111 != 0
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    alleycat_bridge_core::codex_resolver::resolve_latest_codex_binary(Path::new("codex"))
 }
 
 // ---------------------------------------------------------------------------
@@ -526,32 +359,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn expands_anchor_with_env() {
-        // Take the first env-anchored candidate (BUN_INSTALL) and check
-        // expansion both with and without the env var set.
-        let anchor_candidate = CODEX_BINARY_POSIX_CANDIDATES
-            .iter()
-            .find(|c| c.env_anchor.is_some())
-            .expect("at least one env-anchored candidate");
-        let home = PathBuf::from("/tmp/home-fake");
-        let expanded = expand_candidate(anchor_candidate, Some(&home)).unwrap();
-        // With no env set, falls back to $HOME/.bun/bin/codex (for the
-        // BUN_INSTALL anchor) or similar.
-        assert!(expanded.starts_with(&home) || expanded.is_absolute());
-    }
-
-    #[test]
     fn shell_candidate_lines_has_matching_entries() {
-        // Every path pattern in the Rust list should appear textually in
-        // the shell lines — a cheap way to catch divergence when someone
-        // edits one but not the other.
         let shell = shell_candidate_lines().join("\n");
-        assert!(shell.contains("command -v codex"));
+        assert!(shell.contains("_litter_consider_path_candidates codex codex"));
+        assert!(shell.contains("packages/standalone/current/codex"));
         assert!(!shell.contains(".litter/bin/codex"));
         assert!(!shell.contains(".litter/codex/node_modules/.bin/codex"));
         assert!(shell.contains(".local/bin/codex"));
         assert!(shell.contains("/opt/homebrew/bin/codex"));
         assert!(shell.contains("/usr/local/bin/codex"));
+        assert!(shell.contains("/usr/bin/codex"));
     }
 
     #[test]

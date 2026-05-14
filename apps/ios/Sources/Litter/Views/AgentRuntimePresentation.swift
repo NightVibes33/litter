@@ -65,11 +65,14 @@ extension AgentRuntimeKind {
         return Int.max
     }
 
-    /// BETA badge driven entirely by `presentation.is_beta` from
-    /// alleycat. Unknown ids (no metadata cached yet) are treated as
-    /// beta by default — agents only lose the badge when the manifest
-    /// says so.
+    /// BETA badge driven by `presentation.is_beta` from alleycat. Codex is
+    /// always treated as stable, including cold-start SSH/alleycat paths where
+    /// metadata may not be cached yet. Other unknown agents stay beta by
+    /// default until metadata says otherwise.
     var isBeta: Bool {
+        if Self.isStableAgentIdentity(self, displayName: "") {
+            return false
+        }
         metadata?.presentation?.isBeta ?? true
     }
 
@@ -87,10 +90,18 @@ extension AgentRuntimeKind {
     /// Picker / add-server callers check whether an agent should show
     /// a BETA badge before its metadata has been promoted into the
     /// store. With no enum to consult, defer entirely to the cached
-    /// metadata; unknown agents are beta by default.
-    static func isBetaAgentName(_ name: String, displayName _: String) -> Bool {
+    /// metadata; unknown agents are beta by default except Codex.
+    static func isBetaAgentName(_ name: String, displayName: String) -> Bool {
         let key = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if isStableAgentIdentity(key, displayName: displayName) {
+            return false
+        }
         return AgentRuntimeMetadataProvider.lookup?(key)?.presentation?.isBeta ?? true
+    }
+
+    private static func isStableAgentIdentity(_ name: String, displayName: String) -> Bool {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "codex"
+            || displayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "codex"
     }
 
     private var titlecased: String {

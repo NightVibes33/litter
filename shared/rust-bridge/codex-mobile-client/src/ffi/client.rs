@@ -1134,11 +1134,7 @@ impl AppClient {
                 req!(server_id, GetAccountRateLimits, None),
             )
             .await?;
-            c.apply_account_rate_limits_response(
-                &server_id,
-                "codex".to_string(),
-                &response,
-            );
+            c.apply_account_rate_limits_response(&server_id, "codex".to_string(), &response);
             Ok(())
         })
     }

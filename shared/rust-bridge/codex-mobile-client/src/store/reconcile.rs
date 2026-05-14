@@ -104,11 +104,7 @@ impl MobileClient {
                     upstream::GetAccountRateLimitsResponse,
                 >(wire_method, response)?;
                 // `account/rateLimits/read` is Codex-runtime specific upstream.
-                self.apply_account_rate_limits_response(
-                    server_id,
-                    "codex".to_string(),
-                    response,
-                );
+                self.apply_account_rate_limits_response(server_id, "codex".to_string(), response);
                 Ok(())
             }
             "model/list" => {

@@ -105,6 +105,7 @@ printf 'command -v codex='
 command -v codex 2>/dev/null || printf '<missing>'
 	printf '\n'
 	for candidate in \
+	  "${{CODEX_HOME:-$HOME/.codex}}/packages/standalone/current/codex" \
 	  "${{BUN_INSTALL:-$HOME/.bun}}/bin/codex" \
 	  "$HOME/.volta/bin/codex" \
   "$HOME/.local/bin/codex" \
@@ -112,11 +113,14 @@ command -v codex 2>/dev/null || printf '<missing>'
   "${{NVM_BIN:-}}/codex" \
   "${{VOLTA_HOME:+$VOLTA_HOME/bin/codex}}" \
   "${{CARGO_HOME:-$HOME/.cargo}}/bin/codex" \
+  "$HOME/Applications/Codex.app/Contents/Resources/codex" \
+  "/Applications/Codex.app/Contents/Resources/codex" \
   "${{_litter_bun_global_bin:-}}/codex" \
   "${{_litter_npm_global_bin:-}}/codex" \
   "${{_litter_pnpm_global_bin:-}}/codex" \
   "/opt/homebrew/bin/codex" \
-  "/usr/local/bin/codex"
+  "/usr/local/bin/codex" \
+  "/usr/bin/codex"
 do
   if [ -e "$candidate" ]; then
     if [ -x "$candidate" ]; then

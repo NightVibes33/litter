@@ -435,11 +435,7 @@ impl AppStore {
                     tokio::time::sleep(tokio::time::Duration::from_millis(delta)).await;
                 }
             }
-            processor.process_notification(
-                server_id,
-                "codex".to_string(),
-                notification,
-            );
+            processor.process_notification(server_id, "codex".to_string(), notification);
         }
         Ok(())
     }

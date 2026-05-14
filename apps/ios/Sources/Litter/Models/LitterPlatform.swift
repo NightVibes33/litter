@@ -55,6 +55,9 @@ enum LitterPlatform {
                 applicationSupportDir: appSupport.path,
                 documentsDir: docs.path
             )
+            Task { @MainActor in
+                await UserMountStore.shared.loadAndRemountAll()
+            }
         } catch {
             NSLog("[ish] bootstrap failed: \(error)")
         }
