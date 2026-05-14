@@ -15,6 +15,7 @@
 		0304FC5F7B0B88BF697AEDAD /* dracula.json in Resources */ = {isa = PBXBuildFile; fileRef = D93C0CB12BB32FF612C11AA9 /* dracula.json */; };
 		03587EF282BCD78673E5C90C /* LLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DD7A3A61A3B02E7E5BF0FBD /* LLog.swift */; };
 		039D6B6B26D29936E31B67BA /* MinigameOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22B0C284B20FB135A3A35BE /* MinigameOverlayView.swift */; };
+		03B054AAAFF1A47EB7582377 /* UserMountStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1E2519849D8BEDC1496591 /* UserMountStore.swift */; };
 		040DA1C4B152364555F79660 /* LocalCodexBootstrap.swift in Sources */ = {isa = PBXBuildFile; fileRef = D330E51EBB1EC86C197A9296 /* LocalCodexBootstrap.swift */; };
 		04743D5A1900185832682235 /* SSHLoginSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A9876F2929290D47ED57D77 /* SSHLoginSheet.swift */; };
 		04A9DBF10C6021392CB30528 /* ComputerUseToolCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32A00D8BD24DF9E3C4F5EA2C /* ComputerUseToolCallView.swift */; };
@@ -171,6 +172,7 @@
 		45F288FF7E7BB030854C85B3 /* everforest-light.json in Resources */ = {isa = PBXBuildFile; fileRef = 88B886829FDF299DFFCC1A86 /* everforest-light.json */; };
 		46B24CBC2FD5FD3799BE207D /* ConversationAttachmentSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 347FEEBE4E54174740D93E9D /* ConversationAttachmentSupportTests.swift */; };
 		46C5F0B53F9EF54FE8F311A4 /* ChatGPTOAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33402D8F29D5CAA2DD07ED9F /* ChatGPTOAuthTests.swift */; };
+		47248B9E35D3302200F65C05 /* UserMountStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E1E2519849D8BEDC1496591 /* UserMountStore.swift */; };
 		479BECE08ABF9348B42A3468 /* SilentAudioKeeper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB9C4946A911272FC0DC850 /* SilentAudioKeeper.swift */; };
 		483C48A38E7D5B48F9735CB6 /* CarPlayVoiceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E75F2343E53BABCD1C8207E /* CarPlayVoiceManager.swift */; };
 		48EDBB2A1FFD97003248727D /* OrientationResponder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1022F3BB191F207126130232 /* OrientationResponder.swift */; };
@@ -328,6 +330,7 @@
 		880BBADF5B0B0C903616FB4A /* ayu-dark.json in Resources */ = {isa = PBXBuildFile; fileRef = B5F860FAB94036E3AB6CEA11 /* ayu-dark.json */; };
 		8862AE7067AD18E0FC392766 /* proof-light.json in Resources */ = {isa = PBXBuildFile; fileRef = 9465B38F1CE05DAC59F5A918 /* proof-light.json */; };
 		88D410DEA96DA18A8D8BD729 /* PetSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 563C1D21677CDE5F94F909B8 /* PetSettingsView.swift */; };
+		89106690CD537B726E304C02 /* MountedFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52698C6E7E0EC0CCEC716DFD /* MountedFoldersView.swift */; };
 		89324C555E2014AB0DC466B7 /* ConversationComposerContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35815D57BE688636CDD27415 /* ConversationComposerContentView.swift */; };
 		89534C276B9E1C94047E2B32 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 034CE02FECF86AB9EC0842D0 /* DiscoveryView.swift */; };
 		899B24B709F4057392A7EE2E /* HomeDashboardSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FB206863136DF3B8FA50457 /* HomeDashboardSupport.swift */; };
@@ -426,6 +429,7 @@
 		B696926BA0B2FD5CB3374502 /* PathDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66961A8B9B89E5B34B6C5A93 /* PathDisplay.swift */; };
 		B697B660D9D3648B06FF1F00 /* usgc-themes-LICENSE.txt in Resources */ = {isa = PBXBuildFile; fileRef = B7160E74B034DD87D77CCDDC /* usgc-themes-LICENSE.txt */; };
 		B6F805201F93AF9AD6AAC48D /* SavedServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4C10A9AB37FCCDDA975381 /* SavedServer.swift */; };
+		B7952C904D305D8E0CA73E9A /* MountedFoldersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52698C6E7E0EC0CCEC716DFD /* MountedFoldersView.swift */; };
 		B7E7D6A9419675AA695B99EF /* InlineVoiceButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FF595EEF152ACD3EE165F6E /* InlineVoiceButton.swift */; };
 		B7F922F9446425B1FE35924E /* material-theme-darker-D.json in Resources */ = {isa = PBXBuildFile; fileRef = 20596BA6184B72B07775A5E1 /* material-theme-darker-D.json */; };
 		B8ADBB0D7496B3BE1285B20F /* SavedAppDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6058552E839CA44F15DA3186 /* SavedAppDetailView.swift */; };
@@ -770,6 +774,7 @@
 		519F6AEAD567269B99288339 /* Litter-Catalyst.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Litter-Catalyst.entitlements"; sourceTree = "<group>"; };
 		51C3C78C013D314F7F09AB6F /* oscurange-C.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "oscurange-C.json"; sourceTree = "<group>"; };
 		521F9A2BAAA77D9F934C3573 /* WatchCompanionBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchCompanionBridgeTests.swift; sourceTree = "<group>"; };
+		52698C6E7E0EC0CCEC716DFD /* MountedFoldersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MountedFoldersView.swift; sourceTree = "<group>"; };
 		52BB963EAE95E8BF49FA4F19 /* min-dark-.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "min-dark-.json"; sourceTree = "<group>"; };
 		53D6AE46E0E50D55EC178533 /* LitterTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LitterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		54D8F5EDCE6292E1F9B7B19E /* NotificationScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationScreen.swift; sourceTree = "<group>"; };
@@ -877,6 +882,7 @@
 		9CD31922D3510DA506B0EC85 /* ThemeDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeDefinition.swift; sourceTree = "<group>"; };
 		9D216CEBFB1B4B71CFC2C0F8 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 		9DFE934B56ED67FA473EA25A /* MacCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCommands.swift; sourceTree = "<group>"; };
+		9E1E2519849D8BEDC1496591 /* UserMountStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserMountStore.swift; sourceTree = "<group>"; };
 		9EB7EE8D376CFC9A7FC00334 /* fs */ = {isa = PBXFileReference; lastKnownFileType = folder; name = fs; path = Resources/fs; sourceTree = SOURCE_ROOT; };
 		9F39212507F7334160D127E8 /* CrossServerTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossServerTools.swift; sourceTree = "<group>"; };
 		9F86295AB7DE370727377248 /* UWBDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UWBDebugView.swift; sourceTree = "<group>"; };
@@ -1439,6 +1445,7 @@
 				7D3ACFB8DE4FE6FD3D957F27 /* TurnLiveActivityController.swift */,
 				661D06D9BB4571F38A7AD272 /* UltrasonicEmitter.swift */,
 				E97B8D236FEDF8F743D857C5 /* UltrasonicReader.swift */,
+				9E1E2519849D8BEDC1496591 /* UserMountStore.swift */,
 				554F4A83699FF91F38D1E4CE /* VideoWallpaperProcessor.swift */,
 				92C2D998EDEC4E6034DC956F /* VoiceRuntimeController.swift */,
 				62DD5EE6826564A0EA6AE3FA /* VoiceSessionControl.swift */,
@@ -1509,6 +1516,7 @@
 				1959956ABBEC98793B97B468 /* MessageBubbleView.swift */,
 				47D3FB91329C177A51F198B3 /* MessageRenderCache.swift */,
 				B22B0C284B20FB135A3A35BE /* MinigameOverlayView.swift */,
+				52698C6E7E0EC0CCEC716DFD /* MountedFoldersView.swift */,
 				E603FBE2AAD5D7C19649F986 /* NewThreadHeroView.swift */,
 				A71F4E34844D8B42B4D170F9 /* OnboardingCoachmarks.swift */,
 				563C1D21677CDE5F94F909B8 /* PetSettingsView.swift */,
@@ -2173,6 +2181,7 @@
 				1AF5B0CFD0F28F0A7E787A04 /* MessageRenderCache.swift in Sources */,
 				27B1C10E386286FA2A30A8DF /* MinigameOverlayView.swift in Sources */,
 				714E942B02990424C166E85C /* MobilePreferencesDirectory.swift in Sources */,
+				B7952C904D305D8E0CA73E9A /* MountedFoldersView.swift in Sources */,
 				5CAC2A329BF000D744E4B9B0 /* NearbyMacPairing.swift in Sources */,
 				FF4D813592AD383AD342CFFB /* NetworkDiscovery.swift in Sources */,
 				36B2248451363077E0104FC0 /* NetworkReachabilityObserver.swift in Sources */,
@@ -2245,6 +2254,7 @@
 				FB63AA835CB7A5C829CF0366 /* UltrasonicEmitter.swift in Sources */,
 				2A0D5F4749DADFCD128AE0E2 /* UltrasonicReader.swift in Sources */,
 				24BC9D9AB6965DF7E4E07B98 /* UniFFICodexClient.generated.swift in Sources */,
+				03B054AAAFF1A47EB7582377 /* UserMountStore.swift in Sources */,
 				62816361851EAD6AC2299E97 /* VideoWallpaperPlayerView.swift in Sources */,
 				D07B503DB96496A43AE6FC20 /* VideoWallpaperProcessor.swift in Sources */,
 				BD6FE62FBDFE995C765D197A /* VoiceCallView.swift in Sources */,
@@ -2352,6 +2362,7 @@
 				BB3DED8F932A301FB7E9BA42 /* MessageRenderCache.swift in Sources */,
 				039D6B6B26D29936E31B67BA /* MinigameOverlayView.swift in Sources */,
 				023216994D8B1FF4D1E01A6C /* MobilePreferencesDirectory.swift in Sources */,
+				89106690CD537B726E304C02 /* MountedFoldersView.swift in Sources */,
 				F36A83E0E99555F6B48692C9 /* NearbyMacPairing.swift in Sources */,
 				3B231AE724CB8BEE3E7DE445 /* NetworkDiscovery.swift in Sources */,
 				52479A0932D4896CD0847B46 /* NetworkReachabilityObserver.swift in Sources */,
@@ -2419,6 +2430,7 @@
 				1C111A40B60EEFA10E9171A8 /* UltrasonicEmitter.swift in Sources */,
 				E399B21FC88F75DEDE2C8032 /* UltrasonicReader.swift in Sources */,
 				68518458DD2BF18BE0CB0F0E /* UniFFICodexClient.generated.swift in Sources */,
+				47248B9E35D3302200F65C05 /* UserMountStore.swift in Sources */,
 				AABDEAC2D1616649533BC57E /* VideoWallpaperPlayerView.swift in Sources */,
 				F6BA2F46C027DC2EE2FAF9CF /* VideoWallpaperProcessor.swift in Sources */,
 				4FE3963019E8A8C3DCC15764 /* VoiceTranscriptionManager.swift in Sources */,

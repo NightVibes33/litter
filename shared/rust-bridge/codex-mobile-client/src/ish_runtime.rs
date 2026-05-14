@@ -41,6 +41,9 @@ pub const ISH_E_NOMEM: i32 = -9;
 pub const ISH_E_ARGS: i32 = -10;
 const BOOTSTRAP_COMMAND_TIMEOUT_MS: u64 = 10_000;
 const ROOTFS_STAMP_FILE: &str = ".litter-rootfs-id";
+const ROOTFS_ARCH_FILE: &str = "data/etc/apk/arch";
+const ROOTFS_ALPINE_RELEASE_FILE: &str = "data/etc/alpine-release";
+const ROOTFS_ROOT_HOME_DIR: &str = "data/root";
 
 impl From<ish_embed_host::IshError> for IshBootstrapError {
     fn from(err: ish_embed_host::IshError) -> Self {
@@ -290,8 +293,17 @@ fn extract_rootfs_if_needed(source: &Path, dest: &Path) -> Result<(), IshBootstr
         ));
     }
 
-    if dest.is_dir() && rootfs_stamp_matches(source, dest)? {
-        return Ok(());
+    if dest.is_dir() {
+        let source_identity = rootfs_identity(source)?;
+        let dest_identity = rootfs_identity(dest)?;
+        if rootfs_identity_matches(source_identity.as_ref(), dest_identity.as_ref()) {
+            return Ok(());
+        }
+        eprintln!(
+            "[ish] rootfs identity changed bundled={} installed={}",
+            display_rootfs_identity(source_identity.as_ref()),
+            display_rootfs_identity(dest_identity.as_ref())
+        );
     }
 
     if dest.exists() {
@@ -304,16 +316,40 @@ fn extract_rootfs_if_needed(source: &Path, dest: &Path) -> Result<(), IshBootstr
     Ok(())
 }
 
-fn rootfs_stamp_matches(source: &Path, dest: &Path) -> io::Result<bool> {
-    let Some(source_stamp) = read_rootfs_stamp(source)? else {
-        return Ok(true);
-    };
-    let dest_stamp = read_rootfs_stamp(dest)?;
-    Ok(dest_stamp.as_deref() == Some(source_stamp.as_str()))
+fn rootfs_identity(root: &Path) -> io::Result<Option<String>> {
+    if let Some(stamp) = read_rootfs_stamp(root)? {
+        return Ok(Some(format!("stamp:{stamp}")));
+    }
+
+    let arch = read_trimmed_file(root.join(ROOTFS_ARCH_FILE))?;
+    let alpine_release = read_trimmed_file(root.join(ROOTFS_ALPINE_RELEASE_FILE))?;
+    if let Some(arch) = arch.or_else(|| detect_musl_arch(root)) {
+        return Ok(Some(format!(
+            "arch:{arch};alpine:{}",
+            alpine_release.as_deref().unwrap_or("unknown")
+        )));
+    }
+
+    Ok(None)
+}
+
+fn rootfs_identity_matches(source: Option<&String>, dest: Option<&String>) -> bool {
+    match source {
+        Some(source) => dest.is_some_and(|dest| dest == source),
+        None => true,
+    }
+}
+
+fn display_rootfs_identity(identity: Option<&String>) -> &str {
+    identity.map(String::as_str).unwrap_or("unknown")
 }
 
 fn read_rootfs_stamp(root: &Path) -> io::Result<Option<String>> {
-    match fs::read_to_string(root.join(ROOTFS_STAMP_FILE)) {
+    read_trimmed_file(root.join(ROOTFS_STAMP_FILE))
+}
+
+fn read_trimmed_file(path: impl AsRef<Path>) -> io::Result<Option<String>> {
+    match fs::read_to_string(path) {
         Ok(value) => {
             let value = value.trim();
             if value.is_empty() {
@@ -325,6 +361,23 @@ fn read_rootfs_stamp(root: &Path) -> io::Result<Option<String>> {
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err),
     }
+}
+
+fn detect_musl_arch(root: &Path) -> Option<String> {
+    let entries = fs::read_dir(root.join("data/lib")).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.contains("musl-aarch64") {
+            return Some("aarch64".to_string());
+        }
+        if name.contains("musl-x86") || name.contains("musl-i386") {
+            return Some("x86".to_string());
+        }
+    }
+    None
 }
 
 fn replace_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
@@ -340,8 +393,30 @@ fn replace_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
 
     remove_path_if_exists(&tmp)?;
     copy_dir_recursive(src, &tmp)?;
+    preserve_root_home(dst, &tmp)?;
     remove_path_if_exists(dst)?;
     fs::rename(&tmp, dst)?;
+    Ok(())
+}
+
+fn preserve_root_home(old_root: &Path, new_root: &Path) -> io::Result<()> {
+    let old_home = old_root.join(ROOTFS_ROOT_HOME_DIR);
+    let old_meta = match fs::symlink_metadata(&old_home) {
+        Ok(meta) => meta,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err),
+    };
+    if !old_meta.is_dir() {
+        return Ok(());
+    }
+
+    let new_home = new_root.join(ROOTFS_ROOT_HOME_DIR);
+    remove_path_if_exists(&new_home)?;
+    if let Some(parent) = new_home.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    copy_dir_recursive(&old_home, &new_home)?;
+    eprintln!("[ish] preserved /root across rootfs replacement");
     Ok(())
 }
 

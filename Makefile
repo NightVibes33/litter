@@ -447,7 +447,7 @@ rust-shellcheck:
 rust-host-dev: rust-check rust-test
 
 rust-android: $(STAMP_RUST_ANDROID)
-$(STAMP_RUST_ANDROID): alleycat-main $(STAMP_SYNC) $(STAMP_BINDINGS_K) $(ANDROID_RUST_SOURCES) tools/scripts/build-android-rust.sh Makefile
+$(STAMP_RUST_ANDROID): $(STAMP_SYNC) $(STAMP_BINDINGS_K) $(ANDROID_RUST_SOURCES) tools/scripts/build-android-rust.sh Makefile | alleycat-main
 	@echo "==> Building Rust for Android..."
 	@cd $(ROOT) && $(ANDROID_ENV) ANDROID_ABIS="$(ANDROID_ABIS)" ANDROID_RUST_PROFILE="$(ANDROID_RUST_PROFILE)" $(DEV_CARGO_ENV) ./tools/scripts/build-android-rust.sh
 	@touch $@
@@ -499,7 +499,7 @@ unpatch:
 bindings: bindings-swift bindings-kotlin
 
 bindings-swift: $(STAMP_BINDINGS_S)
-$(STAMP_BINDINGS_S): alleycat-main $(STAMP_SYNC) $(BOUNDARY_SOURCES)
+$(STAMP_BINDINGS_S): $(STAMP_SYNC) $(BOUNDARY_SOURCES) | alleycat-main
 	@echo "==> Generating Swift bindings..."
 	@cd $(RUST_DIR) && ./generate-bindings.sh --swift-only
 	@mkdir -p $(IOS_GENERATED)/Headers
@@ -510,7 +510,7 @@ $(STAMP_BINDINGS_S): alleycat-main $(STAMP_SYNC) $(BOUNDARY_SOURCES)
 	@touch $@
 
 bindings-kotlin: $(STAMP_BINDINGS_K)
-$(STAMP_BINDINGS_K): alleycat-main $(STAMP_SYNC) $(BOUNDARY_SOURCES)
+$(STAMP_BINDINGS_K): $(STAMP_SYNC) $(BOUNDARY_SOURCES) | alleycat-main
 	@echo "==> Generating Kotlin bindings..."
 	@cd $(RUST_DIR) && ./generate-bindings.sh --kotlin-only
 	@touch $@

@@ -31,7 +31,7 @@ use crate::types::AgentRuntimeKind;
 const REMOTE_RECONNECT_MAX_ATTEMPTS: u32 = 5;
 const REMOTE_RECONNECT_DELAY: Duration = Duration::from_secs(1);
 const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
-const APP_SERVER_PROXY_WEBSOCKET_URL: &str = "ws://codex-app-server-proxy.localhost/";
+const APP_SERVER_PROXY_WEBSOCKET_URL: &str = "ws://codex-app-server-proxy.localhost/rpc";
 
 #[derive(Clone)]
 pub(crate) struct SshReconnectTransport {

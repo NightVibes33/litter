@@ -3,8 +3,9 @@
 //! The flow:
 //!   1. Resolve a user-installed `codex` binary on the remote.
 //!   2. On POSIX remotes with `codex app-server proxy`, prefer the upstream
-//!      Unix-socket app-server transport: probe an existing socket, otherwise
-//!      launch `codex app-server --listen unix://`, then connect each client via
+//!      Unix-socket app-server transport: start the upstream app-server daemon
+//!      when available, probe an existing socket, otherwise launch
+//!      `codex app-server --listen unix://`, then connect each client via
 //!      `codex app-server proxy`.
 //!   3. Fallback: try `PORT_CANDIDATES` consecutive remote ports starting at
 //!      `DEFAULT_REMOTE_PORT`. If a port is already listening and answers a
@@ -27,7 +28,7 @@ use super::{
     remote_shell_name, server_launch_command, windows_start_process_spec,
 };
 
-const APP_SERVER_PROXY_WEBSOCKET_URL: &str = "ws://codex-app-server-proxy.localhost/";
+const APP_SERVER_PROXY_WEBSOCKET_URL: &str = "ws://codex-app-server-proxy.localhost/rpc";
 
 impl SshClient {
     /// Bootstrap a remote Codex server and set up a local tunnel.
@@ -128,6 +129,56 @@ impl SshClient {
         }
 
         if self
+            .app_server_daemon_supported(codex_binary, shell)
+            .await?
+        {
+            match self
+                .start_codex_app_server_daemon(codex_binary, shell)
+                .await
+            {
+                Ok(()) => {
+                    self.probe_app_server_proxy(codex_binary, shell)
+                        .await
+                        .map_err(|stderr| SshError::ExecFailed {
+                            exit_code: 1,
+                            stderr,
+                        })?;
+                    let version = self
+                        .read_server_version_shell(codex_binary.path(), shell)
+                        .await;
+                    info!(
+                        "ssh app-server proxy bootstrap started upstream daemon binary={} version={}",
+                        codex_binary.path(),
+                        version.clone().unwrap_or_else(|| "<unknown>".to_string())
+                    );
+                    append_bridge_info_log(&format!(
+                        "ssh_app_server_daemon_start_success version={}",
+                        version.clone().unwrap_or_else(|| "<unknown>".to_string())
+                    ));
+                    return Ok(SshBootstrapResult {
+                        server_port: 0,
+                        tunnel_local_port: 0,
+                        server_version: version,
+                        pid: None,
+                        codex_path: codex_binary.path().to_string(),
+                        shell,
+                        transport: SshBootstrapTransport::AppServerProxy,
+                    });
+                }
+                Err(error) => {
+                    warn!(
+                        "ssh app-server daemon start failed; falling back to legacy unix app-server launch: {}",
+                        error
+                    );
+                    append_bridge_info_log(&format!(
+                        "ssh_app_server_daemon_start_fallback error={}",
+                        error
+                    ));
+                }
+            }
+        }
+
+        if self
             .probe_app_server_proxy(codex_binary, shell)
             .await
             .is_ok()
@@ -208,6 +259,62 @@ impl SshClient {
         };
         let result = self.exec_shell(&command, shell).await?;
         Ok(result.exit_code == 0)
+    }
+
+    async fn app_server_daemon_supported(
+        &self,
+        codex_binary: &RemoteCodexBinary,
+        shell: RemoteShell,
+    ) -> Result<bool, SshError> {
+        let command = match shell {
+            RemoteShell::Posix => format!(
+                "{profile_init}\n{bin} app-server daemon --help >/dev/null 2>&1",
+                profile_init = PROFILE_INIT,
+                bin = shell_quote(codex_binary.path()),
+            ),
+            RemoteShell::PowerShell => format!(
+                "& {} app-server daemon --help *> $null",
+                ps_quote(codex_binary.path())
+            ),
+        };
+        let result = self.exec_shell(&command, shell).await?;
+        Ok(result.exit_code == 0)
+    }
+
+    async fn start_codex_app_server_daemon(
+        &self,
+        codex_binary: &RemoteCodexBinary,
+        shell: RemoteShell,
+    ) -> Result<(), SshError> {
+        let command = match shell {
+            RemoteShell::Posix => format!(
+                "{profile_init}\n{bin} app-server daemon start",
+                profile_init = PROFILE_INIT,
+                bin = shell_quote(codex_binary.path()),
+            ),
+            RemoteShell::PowerShell => format!(
+                "& {} app-server daemon start",
+                ps_quote(codex_binary.path())
+            ),
+        };
+        let result = self.exec_shell(&command, shell).await?;
+        if result.exit_code != 0 {
+            return Err(SshError::ExecFailed {
+                exit_code: result.exit_code,
+                stderr: format!(
+                    "codex app-server daemon start failed: stdout={} stderr={}",
+                    result.stdout.trim(),
+                    result.stderr.trim()
+                ),
+            });
+        }
+
+        append_bridge_info_log(&format!(
+            "ssh_app_server_daemon_start_output stdout={} stderr={}",
+            result.stdout.trim(),
+            result.stderr.trim()
+        ));
+        Ok(())
     }
 
     async fn launch_codex_app_server_unix(
