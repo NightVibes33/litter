@@ -114,6 +114,7 @@ sign_macho_binary() {
     printf '%s\n' "$signature_info" >&2
     exit 1
   fi
+  echo "signed: ${path#$OUT_DIR/}"
 }
 
 sign_buildkit_payload() {
@@ -128,11 +129,7 @@ sign_buildkit_payload() {
   \) -print | sort -u | while IFS= read -r binary; do
     sign_macho_binary "$binary"
   done
-  find "$OUT_DIR/SDK" -type f \( \
-    -name 'lib_Compiler*.dylib' -o \
-    -name 'libLLVM*.dylib' -o \
-    -name 'libllvm*.dylib' \
-  \) -print | sort -u | while IFS= read -r binary; do
+  find "$OUT_DIR/SDK" -type f -name '*.dylib' -print | sort -u | while IFS= read -r binary; do
     sign_macho_binary "$binary"
   done
 }
