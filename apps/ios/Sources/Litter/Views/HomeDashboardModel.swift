@@ -309,7 +309,9 @@ final class HomeDashboardModel {
             key: key,
             serverId: key.serverId,
             serverDisplayName: server.displayName,
-            agentRuntimeKind: server.agentRuntimes.first(where: \.available)?.kind ?? .codex,
+            agentRuntimeKind: server.agentRuntimes.first(where: \.available)?.kind
+                ?? AgentRuntimeMetadataProvider.all?().first?.name
+                ?? "",
             isLocal: server.isLocal,
             sessionTitle: "Loading thread",
             preview: "",
@@ -321,12 +323,15 @@ final class HomeDashboardModel {
             isResumed: false,
             isSubagent: false,
             isFork: false,
+            forkedFromId: nil,
+            lineage: nil,
             lastResponsePreview: nil,
             lastResponseTurnId: nil,
             lastUserMessage: nil,
             lastToolLabel: nil,
             stats: nil,
             tokenUsage: nil,
+            goal: nil,
             recentToolLog: [],
             lastTurnStart: nil,
             lastTurnEnd: nil

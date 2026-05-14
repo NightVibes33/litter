@@ -244,6 +244,12 @@ impl ReconnectController {
 
     pub async fn on_app_became_active(&self) -> Vec<ReconnectResult> {
         self.note_app_became_active();
+        // Hint iroh-backed sessions that the host network may have changed
+        // before we run the reconnect plan. This lets healthy alleycat
+        // sessions migrate paths/refresh relays without going through the
+        // (heavier) full reconnect path; reconnect_saved_servers is still
+        // run for transports that can't recover on their own.
+        self.notify_network_change().await;
         let results = self.reconnect_saved_servers().await;
         self.probe_active_remote_servers().await;
         results
@@ -253,6 +259,51 @@ impl ReconnectController {
         self.inner
             .app_store
             .note_app_lifecycle_phase(AppLifecyclePhaseSnapshot::Active);
+    }
+
+    /// Tell every session that the host network may have changed. iOS
+    /// suspends app processes (which freezes UDP sockets and relay
+    /// keepalives) and there's no in-process API to detect that — without
+    /// this hint, iroh would only notice paths are dead via the QUIC idle
+    /// timeout (10 min). Calling this on `appDidBecomeActive` lets iroh
+    /// re-probe paths immediately. Cheap when nothing changed.
+    pub async fn notify_network_change(&self) {
+        let inner = Arc::clone(&self.inner);
+        let _ = self
+            .rt
+            .spawn(async move {
+                inner.notify_network_change().await;
+            })
+            .await
+            .inspect_err(|error| {
+                warn!("ReconnectController: notify_network_change task failed: {error}");
+            });
+    }
+
+    /// Lifecycle hook for "I just resumed from a long background or a
+    /// push wake." iroh's `network_change` hint operates on the endpoint
+    /// discovery layer; it can't observe that our connection-level path
+    /// has been silently dead since the OS suspended us. After more than
+    /// ~iroh's per-path idle (15s), the existing `Connection` is almost
+    /// certainly toast and waiting on the 30s connection-idle timer for
+    /// the worker to notice would make the next user request hang up to
+    /// 30s. This hook short-circuits that wait by closing every active
+    /// alleycat `Connection` and letting the worker rebuild via the
+    /// existing reconnect path.
+    ///
+    /// Cheap: alleycat-only (no-op for SSH/WebSocket transports), and
+    /// the new `Connection` is opened on the same shared `Endpoint`.
+    pub async fn on_long_resume(&self) {
+        let inner = Arc::clone(&self.inner);
+        let _ = self
+            .rt
+            .spawn(async move {
+                inner.abandon_alleycat_connections().await;
+            })
+            .await
+            .inspect_err(|error| {
+                warn!("ReconnectController: on_long_resume task failed: {error}");
+            });
     }
 
     pub fn on_app_became_inactive(&self) {
@@ -268,6 +319,7 @@ impl ReconnectController {
     }
 
     pub async fn on_network_reachable(&self) -> Vec<ReconnectResult> {
+        self.notify_network_change().await;
         self.reconnect_saved_servers().await
     }
 }
@@ -520,6 +572,7 @@ mod tests {
             pending_approvals: Vec::new(),
             pending_approval_seeds: HashMap::new(),
             pending_user_inputs: Vec::new(),
+            pending_user_input_seeds: HashMap::new(),
             voice_session: AppVoiceSessionSnapshot::default(),
         }
     }

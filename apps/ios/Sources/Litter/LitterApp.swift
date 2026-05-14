@@ -195,6 +195,26 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         LLog.error("push", "registration failed", error: error)
     }
 
+    func applicationWillTerminate(_ application: UIApplication) {
+        // Best-effort graceful shutdown of the iroh endpoint. iOS only
+        // fires this hook reliably on Catalyst (NSApplicationDelegate)
+        // and on OS-initiated terminations from background — swipe-up-
+        // to-kill from app switcher does NOT fire it. Acceptable: the
+        // cost of skipping is one "Aborting ungracefully" log on iroh's
+        // side and the daemon waiting up to its idle timeout to reap
+        // the final zombie.
+        LLog.info("lifecycle", "applicationWillTerminate — closing alleycat endpoint")
+        let semaphore = DispatchSemaphore(value: 0)
+        Task { @MainActor in
+            await self.appRuntime?.shutdownAlleycatEndpoint()
+            semaphore.signal()
+        }
+        // applicationWillTerminate gets ~5s before the OS kills us.
+        // Block briefly on the close handshake so iroh can flush
+        // CONNECTION_CLOSE frames; bail if iroh's drain takes too long.
+        _ = semaphore.wait(timeout: .now() + 2.5)
+    }
+
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
         LLog.info(
             "push",
@@ -381,6 +401,7 @@ struct ContentView: View {
     @State private var composerBottomInset: CGFloat = 0
     @State private var splashDismissed = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.large.rawValue
 
     private var textScale: CGFloat {
@@ -394,51 +415,30 @@ struct ContentView: View {
             ZStack {
                 LitterTheme.backgroundGradient.ignoresSafeArea()
 
-                HomeNavigationView(
+                #if DEBUG
+                if ConversationDisplayUITestHarnessView.isEnabled {
+                    ConversationDisplayUITestHarnessView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    standardHomeNavigationView(
+                        topInset: geometry.safeAreaInsets.top,
+                        bottomInset: composerBottomInset
+                    )
+                }
+                #else
+                standardHomeNavigationView(
                     topInset: geometry.safeAreaInsets.top,
                     bottomInset: composerBottomInset
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(.container, edges: [.top, .bottom])
-                .id(themeManager.themeVersion)
-                .onAppear {
-                    if !splashDismissed {
-                        splashDismissed = true
-                        (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
-                    }
-                }
+                #endif
 
-                if petOverlay.visible, let pet = petOverlay.selectedPet {
-                    PetOverlayView(
-                        pet: pet,
-                        state: petOverlay.avatarState(snapshot: appModel.snapshot),
-                        message: petOverlay.avatarMessage(snapshot: appModel.snapshot),
-                        reduceMotion: UIAccessibility.isReduceMotionEnabled
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                #if DEBUG
+                if !ConversationDisplayUITestHarnessView.isEnabled {
+                    standardOverlays
                 }
-
-                if let approval = appModel.snapshot?.pendingApprovals.first(where: {
-                    $0.kind != .mcpElicitation
-                }) {
-                    ApprovalPromptView(approval: approval) { decision in
-                        Task {
-                            try? await appModel.store.respondToApproval(
-                                requestId: approval.id,
-                                decision: decision
-                            )
-                        }
-                    } onViewThread: { threadKey in
-                        appState.pendingThreadNavigation = threadKey
-                    }
-                }
-
-                if let warmupID = conversationWarmup.activeWarmupID {
-                    ConversationWarmupView(warmupID: warmupID) {
-                        conversationWarmup.finishWarmup()
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                }
+                #else
+                standardOverlays
+                #endif
 
             }
             .ignoresSafeArea(.container)
@@ -477,7 +477,24 @@ struct ContentView: View {
             }
         }
         .onChange(of: colorScheme) { _, nextColorScheme in
+            // iOS toggles `colorScheme` while capturing light+dark
+            // app-switcher snapshots on background. Reacting to that
+            // bumps `themeManager.themeVersion`, which the navigation
+            // root uses as `.id(...)` and would tear down every
+            // in-flight @State (composer text, focus, scroll) every
+            // time the user switches apps. Only react when the scene
+            // is actually active — i.e., a real user theme toggle.
+            guard scenePhase == .active else { return }
             themeManager.syncSystemColorScheme(nextColorScheme)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            // Catch up to any colorScheme change that landed while we
+            // were inactive but represents a real user-driven theme
+            // toggle (e.g. system appearance changed in Settings while
+            // the app was backgrounded).
+            if newPhase == .active {
+                themeManager.syncSystemColorScheme(colorScheme)
+            }
         }
         .onChange(of: appModel.snapshot?.activeThread) { _, _ in
             appState.selectedModel = ""
@@ -514,6 +531,57 @@ struct ContentView: View {
             appState.showSettings = true
         }
         #endif
+    }
+
+    private func standardHomeNavigationView(topInset: CGFloat, bottomInset: CGFloat) -> some View {
+        HomeNavigationView(
+            topInset: topInset,
+            bottomInset: bottomInset
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
+        .id(themeManager.themeVersion)
+        .onAppear {
+            if !splashDismissed {
+                splashDismissed = true
+                (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var standardOverlays: some View {
+        if petOverlay.visible, let pet = petOverlay.selectedPet {
+            PetOverlayView(
+                pet: pet,
+                state: petOverlay.avatarState(snapshot: appModel.snapshot),
+                message: petOverlay.avatarMessage(snapshot: appModel.snapshot),
+                reduceMotion: UIAccessibility.isReduceMotionEnabled
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+
+        if let approval = appModel.snapshot?.pendingApprovals.first(where: {
+            $0.kind != .mcpElicitation
+        }) {
+            ApprovalPromptView(approval: approval) { decision in
+                Task {
+                    try? await appModel.store.respondToApproval(
+                        requestId: approval.id,
+                        decision: decision
+                    )
+                }
+            } onViewThread: { threadKey in
+                appState.pendingThreadNavigation = threadKey
+            }
+        }
+
+        if let warmupID = conversationWarmup.activeWarmupID {
+            ConversationWarmupView(warmupID: warmupID) {
+                conversationWarmup.finishWarmup()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
     }
 }
 
@@ -1383,6 +1451,7 @@ private struct HomeNavigationView: View {
             },
             onSendReply: sendQuickReply,
             onCancelThread: cancelThread,
+            onForkThread: forkSessionFromHome,
             onInputModeChange: { mode in
                 homeInputMode = mode
             },
@@ -1424,6 +1493,7 @@ private struct HomeNavigationView: View {
             },
             onSendReply: sendQuickReply,
             onCancelThread: cancelThread,
+            onForkThread: forkSessionFromHome,
             onInputModeChange: { mode in
                 homeInputMode = mode
             },
@@ -1604,6 +1674,33 @@ private struct HomeNavigationView: View {
             params: AppArchiveThreadRequest(threadId: key.threadId)
         )
         await appModel.refreshThreadSnapshot(key: key)
+    }
+
+    /// Long-press → "Fork" on a home session card. Head-of-thread fork:
+    /// duplicates the full thread server-side (no rollback) and navigates
+    /// to the new copy. Mirrors `ConversationInfoView.forkConversation`.
+    @MainActor
+    private func forkSessionFromHome(_ session: HomeDashboardRecentSession) async {
+        let threadKey = session.key
+        do {
+            let sourceKey = await appModel.hydrateThreadPermissions(for: threadKey, appState: appState) ?? threadKey
+            let source = appModel.snapshot?.threadSnapshot(for: sourceKey)
+            let newKey = try await appModel.client.forkThread(
+                serverId: sourceKey.serverId,
+                params: AppThreadLaunchConfig(
+                    model: source?.model,
+                    approvalPolicy: appState.launchApprovalPolicy(for: sourceKey),
+                    sandbox: appState.launchSandboxMode(for: sourceKey),
+                    developerInstructions: nil,
+                    persistExtendedHistory: true
+                ).threadForkRequest(threadId: sourceKey.threadId, cwdOverride: source?.info.cwd)
+            )
+            appModel.store.setActiveThread(key: newKey)
+            await appModel.refreshThreadSnapshot(key: newKey)
+            openConversation(newKey)
+        } catch {
+            actionErrorMessage = error.localizedDescription
+        }
     }
 
     @MainActor
@@ -1815,7 +1912,7 @@ private struct ConversationDestinationScreen: View {
         guard let snapshot = appModel.snapshot else { return [] }
         let key = resolvedThreadKey
         return snapshot.pendingUserInputs.filter {
-            $0.serverId == key.serverId && $0.threadId == key.threadId
+            $0.isRelevant(to: key)
         }
     }
 
@@ -1838,6 +1935,7 @@ private struct ConversationDestinationScreen: View {
     var body: some View {
         Group {
             if let conversationThread {
+                @Bindable var bindableScreenModel = screenModel
                 ConversationView(
                     thread: conversationThread,
                     activeThreadKey: resolvedThreadKey,
@@ -1845,6 +1943,8 @@ private struct ConversationDestinationScreen: View {
                     followScrollToken: screenModel.followScrollToken,
                     pinnedContextItems: screenModel.pinnedContextItems,
                     composer: screenModel.composer,
+                    composerInputText: $bindableScreenModel.composerInputText,
+                    composerAttachedImage: $bindableScreenModel.composerAttachedImage,
                     topInset: 0,
                     bottomInset: bottomInset,
                     onOpenConversation: onOpenConversation,
@@ -1954,6 +2054,7 @@ private struct ReplayDestinationScreen: View {
     var body: some View {
         Group {
             if let thread = conversationThread, let key = replayThreadKey {
+                @Bindable var bindableScreenModel = screenModel
                 ConversationView(
                     thread: thread,
                     activeThreadKey: key,
@@ -1961,6 +2062,8 @@ private struct ReplayDestinationScreen: View {
                     followScrollToken: screenModel.followScrollToken,
                     pinnedContextItems: screenModel.pinnedContextItems,
                     composer: screenModel.composer,
+                    composerInputText: $bindableScreenModel.composerInputText,
+                    composerAttachedImage: $bindableScreenModel.composerAttachedImage,
                     topInset: 0,
                     bottomInset: bottomInset,
                     onOpenConversation: nil,

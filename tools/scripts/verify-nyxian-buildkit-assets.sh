@@ -104,7 +104,30 @@ if [[ ! -f "$DRIVER" ]]; then
   exit 1
 fi
 if [[ "$(uname -s)" = "Darwin" ]]; then
+  is_macho_binary() {
+    local path="$1"
+    [[ -f "$path" && ! -L "$path" ]] || return 1
+    /usr/bin/file "$path" 2>/dev/null | /usr/bin/grep -Eiq 'Mach-O'
+  }
+
+  verify_code_signature() {
+    local binary="$1"
+    is_macho_binary "$binary" || return 0
+    local signature_info
+    signature_info="$(/usr/bin/codesign -dv --verbose=4 "$binary" 2>&1)" || {
+      echo "error: $binary is not code signed" >&2
+      printf '%s\n' "$signature_info" >&2
+      exit 1
+    }
+    if ! printf '%s\n' "$signature_info" | /usr/bin/grep -Eq 'CDHash=|CodeDirectory'; then
+      echo "error: $binary is missing a code directory/CDHash" >&2
+      printf '%s\n' "$signature_info" >&2
+      exit 1
+    fi
+  }
+
   if [[ -f "$DRIVER" ]]; then
+    verify_code_signature "$DRIVER"
     /usr/bin/lipo -info "$DRIVER"
     if ! /usr/bin/nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'; then
       echo "error: LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
@@ -118,5 +141,30 @@ if [[ "$(uname -s)" = "Darwin" ]]; then
       fi
     fi
   fi
-  [[ -f "$CORE" ]] && /usr/bin/lipo -info "$CORE" || true
+  if [[ -f "$CORE" ]]; then
+    verify_code_signature "$CORE"
+    /usr/bin/lipo -info "$CORE"
+  fi
+  find "$SUPPORT_DIR" -maxdepth 1 -type f \( \
+    -name 'lib_Compiler*.dylib' -o \
+    -name 'libLLVM*.dylib' -o \
+    -name 'libllvm*.dylib' \
+  \) -print | while IFS= read -r library; do
+    verify_code_signature "$library"
+  done
+  SDK_ROOT="$ASSET_ROOT/$(python3 - "$ASSET_ROOT/manifest.json" <<'PYSDK'
+import json, pathlib, sys
+manifest = json.loads(pathlib.Path(sys.argv[1]).read_text())
+print((manifest.get("toolchain") or {}).get("sdkPath") or "")
+PYSDK
+)"
+  if [[ -d "$SDK_ROOT" ]]; then
+    find "$SDK_ROOT" -type f \( \
+      -name 'lib_Compiler*.dylib' -o \
+      -name 'libLLVM*.dylib' -o \
+      -name 'libllvm*.dylib' \
+    \) -print | while IFS= read -r library; do
+      verify_code_signature "$library"
+    done
+  fi
 fi

@@ -17,11 +17,11 @@ class ComposerBarSlashCommandTest {
 
     @Test
     fun parseSlashCommandInvocationRecognizesAndroidParityCommands() {
-        val commands = listOf("/skills", "/permissions", "/experimental")
+        val commands = listOf("/skills", "/permissions", "/experimental", "/goal")
 
         val parsed = commands.mapNotNull(::parseSlashCommandInvocation)
 
-        assertEquals(listOf("skills", "permissions", "experimental"), parsed.map { it.command.name })
+        assertEquals(listOf("skills", "permissions", "experimental", "goal"), parsed.map { it.command.name })
     }
 
     @Test

@@ -10,6 +10,7 @@ final class AppRuntimeController {
     @ObservationIgnored private weak var voiceRuntime: VoiceRuntimeController?
     @ObservationIgnored private let lifecycle = AppLifecycleController()
     @ObservationIgnored private let liveActivities = TurnLiveActivityController()
+    @ObservationIgnored private let reachability = NetworkReachabilityObserver()
     @ObservationIgnored private var pendingLiveActivitySync = false
     @ObservationIgnored private var lastLiveActivitySyncTime: CFAbsoluteTime = 0
 
@@ -17,6 +18,55 @@ final class AppRuntimeController {
         self.appModel = appModel
         self.voiceRuntime = voiceRuntime
         lifecycle.requestNotificationPermissionIfNeeded()
+        reachability.bind(appModel: appModel)
+        reachability.start()
+        loadAndPushAlleycatSecretKey(client: appModel.client)
+    }
+
+    /// Load the persisted iroh device secret key from the keychain (if
+    /// any) and push it to the Rust client BEFORE any alleycat
+    /// operation triggers the endpoint bind. After the first bind, the
+    /// Rust side may have generated a fresh key — observe via
+    /// `persistAlleycatSecretKeyIfNeeded`. Together these maintain a
+    /// stable `EndpointId` across cold launches.
+    private func loadAndPushAlleycatSecretKey(client: AppClient) {
+        do {
+            if let bytes = try AlleycatCredentialStore.shared.loadDeviceSecretKey() {
+                client.setAlleycatSecretKey(secretKeyBytes: bytes)
+                LLog.info("alleycat", "loaded persisted device secret key from keychain")
+            }
+        } catch {
+            LLog.error("alleycat", "failed to load device secret key", error: error)
+        }
+    }
+
+    /// After an alleycat operation has triggered the Rust endpoint
+    /// bind, read back the actually-used bytes and persist them so the
+    /// next cold launch reuses the same `EndpointId`. Idempotent — safe
+    /// to call any time; if the bind hasn't happened yet, returns
+    /// silently.
+    func persistAlleycatSecretKeyIfNeeded() {
+        guard let appModel else { return }
+        guard let data = appModel.client.alleycatSecretKey() else { return }
+        do {
+            let existing = try AlleycatCredentialStore.shared.loadDeviceSecretKey()
+            if existing == data { return }
+            try AlleycatCredentialStore.shared.saveDeviceSecretKey(data)
+            LLog.info("alleycat", "persisted device secret key to keychain")
+        } catch {
+            LLog.error("alleycat", "failed to persist device secret key", error: error)
+        }
+    }
+
+    /// Best-effort graceful shutdown of the iroh endpoint. Wired from
+    /// `applicationWillTerminate` (UIKit) — see comment on that hook
+    /// in LitterApp.swift for reliability caveats. iroh sends a clean
+    /// CONNECTION_CLOSE to peers instead of logging "Aborting
+    /// ungracefully" when the static MobileClient slot is finally
+    /// dropped at process exit.
+    func shutdownAlleycatEndpoint() async {
+        guard let appModel else { return }
+        await appModel.client.shutdownAlleycatEndpoint()
     }
 
     func setDevicePushToken(_ token: Data) {

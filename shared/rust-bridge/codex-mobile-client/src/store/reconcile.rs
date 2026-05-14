@@ -171,7 +171,7 @@ impl MobileClient {
         server_id: &str,
         threads: &[upstream::Thread],
     ) -> Vec<ThreadInfo> {
-        self.upsert_thread_list_page_for_runtime(server_id, AgentRuntimeKind::Codex, threads)
+        self.upsert_thread_list_page_for_runtime(server_id, "codex".to_string(), threads)
     }
 
     pub fn upsert_thread_list_page_for_runtime(
@@ -548,6 +548,7 @@ mod tests {
     fn test_upstream_thread(id: &str) -> upstream::Thread {
         upstream::Thread {
             id: id.to_string(),
+            session_id: format!("session-{id}"),
             forked_from_id: None,
             preview: "hello".to_string(),
             ephemeral: false,
@@ -559,6 +560,7 @@ mod tests {
             cwd: test_abs_path("/tmp"),
             cli_version: "1.0.0".to_string(),
             source: upstream::SessionSource::default(),
+            thread_source: None,
             agent_nickname: None,
             agent_role: None,
             git_info: None,
@@ -698,6 +700,7 @@ mod tests {
                 input_modalities: vec![codex_protocol::openai_models::InputModality::Text],
                 supports_personality: true,
                 additional_speed_tiers: Vec::new(),
+                service_tiers: Vec::new(),
                 is_default: true,
                 availability_nux: None,
                 upgrade_info: None,
@@ -814,6 +817,7 @@ mod tests {
             agent_nickname: None,
             agent_role: None,
             parent_thread_id: None,
+            forked_from_id: None,
             agent_status: None,
             created_at: None,
             updated_at: None,
@@ -938,6 +942,7 @@ mod tests {
             id: "turn-1".to_string(),
             status: upstream::TurnStatus::Completed,
             items: Vec::new(),
+            items_view: upstream::TurnItemsView::Full,
             error: None,
             started_at: None,
             completed_at: None,
@@ -991,6 +996,7 @@ mod tests {
             approvals_reviewer: upstream::ApprovalsReviewer::User,
             sandbox: upstream::SandboxPolicy::DangerFullAccess,
             permission_profile: None,
+            active_permission_profile: None,
             reasoning_effort: None,
         };
         let key = client
@@ -1072,6 +1078,7 @@ mod tests {
             agent_nickname: None,
             agent_role: None,
             parent_thread_id: None,
+            forked_from_id: None,
             agent_status: None,
             created_at: None,
             updated_at: None,
@@ -1092,6 +1099,7 @@ mod tests {
                     text_elements: Vec::new(),
                 }],
             }],
+            items_view: upstream::TurnItemsView::Full,
             error: None,
             started_at: None,
             completed_at: None,
@@ -1149,6 +1157,7 @@ mod tests {
             agent_nickname: None,
             agent_role: None,
             parent_thread_id: None,
+            forked_from_id: None,
             agent_status: None,
             created_at: None,
             updated_at: None,

@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "agent_devin.svg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

@@ -473,29 +473,20 @@ fun PetSpriteView(
         frameIndex = 0
         if (reducedMotion) return@LaunchedEffect
 
-        suspend fun playLoop(loopState: PetAvatarState, cycles: Int? = null) {
+        suspend fun playLoop(loopState: PetAvatarState) {
             val loopFrames = atlas?.framesFor(loopState) ?: listOf(0)
             if (loopFrames.size <= 1) return
             val profile = animationProfileFor(loopState)
-            var completedCycles = 0
-            while (cycles == null || completedCycles < cycles) {
+            while (true) {
                 loopFrames.indices.forEach { index ->
                     playbackState = loopState
                     frameIndex = index
                     delay(profile.durationMs(index))
                 }
-                completedCycles += 1
             }
         }
 
-        if (state == PetAvatarState.IDLE) {
-            playLoop(PetAvatarState.IDLE)
-        } else {
-            playLoop(state, cycles = 3)
-            playbackState = PetAvatarState.IDLE
-            frameIndex = 0
-            playLoop(PetAvatarState.IDLE)
-        }
+        playLoop(state)
     }
 
     Canvas(

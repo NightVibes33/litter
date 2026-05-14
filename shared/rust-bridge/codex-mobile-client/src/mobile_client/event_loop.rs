@@ -81,7 +81,7 @@ impl MobileClient {
                         note_notification_runtime(
                             &app_store,
                             &server_id,
-                            runtime_kind,
+                            runtime_kind.clone(),
                             &notification,
                         );
                         if let upstream::ServerNotification::AccountLoginCompleted(payload) =
@@ -107,8 +107,12 @@ impl MobileClient {
                                 ssh_client.abort_forward_port(tunnel.local_port).await;
                             }
                         }
+                        // Log the variant kind only — full `{:?}` bodies on
+                        // hot variants (TurnDiffUpdated, AgentMessageDelta,
+                        // CommandExecutionOutputDelta) allocate hundreds of
+                        // KB per event during streaming.
                         debug!(
-                            "event reader server_id={} notification={:?}",
+                            "event reader server_id={} notification={}",
                             server_id, notification
                         );
                         recorder.record_notification(&server_id, &notification);
@@ -125,9 +129,11 @@ impl MobileClient {
                         method,
                         params,
                     }) => {
+                        // Log only the method name — full params JSON can be
+                        // unbounded (e.g. large diffs / outputs).
                         debug!(
-                            "event reader server_id={} legacy_method={} params={}",
-                            server_id, method, params
+                            "event reader server_id={} legacy_method={}",
+                            server_id, method
                         );
                         processor.process_legacy_notification(&server_id, &method, &params);
                     }
@@ -236,6 +242,11 @@ impl MobileClient {
                             "reconnect",
                         );
                     }
+                    // Re-subscribe per-thread listeners on the new
+                    // connection: server-side `ConnectionId` changed, so
+                    // turn-stream events would otherwise be silently
+                    // dropped until the user navigates.
+                    run_post_reconnect_resubscribe(Arc::clone(&app_store), server_id.clone());
                 }
                 prev_connected = is_connected;
 
@@ -602,7 +613,7 @@ impl MobileClient {
         R: serde::de::DeserializeOwned,
     {
         let mut request = request;
-        self.normalize_model_selection_for_request(server_id, runtime_kind, &mut request);
+        self.normalize_model_selection_for_request(server_id, runtime_kind.clone(), &mut request);
         self.recorder.record_request(server_id, &request);
         let wire_method = client_request_wire_method(&request);
         let started_at = Instant::now();
@@ -612,7 +623,7 @@ impl MobileClient {
             server_id, runtime_kind, wire_method
         );
         let value = session
-            .request_client_for_runtime(runtime_kind, request)
+            .request_client_for_runtime(runtime_kind.clone(), request)
             .await
             .map_err(|error| {
                 self.reconcile_transport_error(server_id, &error);
@@ -690,7 +701,7 @@ impl MobileClient {
                     thread_id: thread_id.to_string(),
                 })
             })
-            .unwrap_or(AgentRuntimeKind::Codex)
+            .unwrap_or("codex".to_string())
     }
 
     pub(super) fn pending_approval(&self, request_id: &str) -> Result<PendingApproval, RpcError> {
@@ -756,6 +767,7 @@ where
     normalize_empty_cwd_fields(&mut normalized, None);
     normalize_default_service_tier(&mut normalized);
     normalize_legacy_v0_128_compat(&mut normalized);
+    normalize_legacy_thread_status(&mut normalized);
     normalize_dynamic_tool_content_item_aliases(&mut normalized);
     normalize_tool_status_aliases(&mut normalized);
     normalize_command_action_aliases(&mut normalized);
@@ -963,6 +975,43 @@ fn normalize_legacy_v0_128_compat(value: &mut serde_json::Value) {
         serde_json::Value::Array(items) => {
             for child in items {
                 normalize_legacy_v0_128_compat(child);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Wrap bare-string `status` values inside Thread-shaped objects into the
+/// canonical tagged form (`{"type": "..."}`). Upstream `ThreadStatus` is
+/// `#[serde(tag = "type")]`, but third-party bridges (older
+/// `alleycat-opencode-bridge` versions) have shipped `"status": "notLoaded"`
+/// as a bare string, which made the typed deserializer reject the entire
+/// `thread/list` response and left those threads invisible in the sidebar.
+/// The detection mirrors `normalize_legacy_v0_128_compat`'s Thread shape
+/// (id+preview+source) so we only rewrite genuine Thread payloads, not the
+/// other unrelated `status` fields scattered through item/tool payloads.
+fn normalize_legacy_thread_status(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            let looks_like_thread = map.contains_key("id")
+                && map.contains_key("preview")
+                && map.contains_key("source")
+                && map.contains_key("status");
+            if looks_like_thread && let Some(serde_json::Value::String(tag)) = map.get("status") {
+                let tag = tag.clone();
+                if matches!(tag.as_str(), "notLoaded" | "idle" | "systemError") {
+                    let mut wrapped = serde_json::Map::new();
+                    wrapped.insert("type".to_string(), serde_json::Value::String(tag));
+                    map.insert("status".to_string(), serde_json::Value::Object(wrapped));
+                }
+            }
+            for child in map.values_mut() {
+                normalize_legacy_thread_status(child);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for child in items {
+                normalize_legacy_thread_status(child);
             }
         }
         _ => {}
@@ -1700,10 +1749,10 @@ fn apply_bridge_event(app_store: &AppStoreReducer, server_id: &str, event: Bridg
                 delta: n.delta,
             }
         }
-        ServerNotification::ThreadStatusChanged(_) => {
-            // Thread status is handled by TurnStarted/TurnCompleted
-            return;
-        }
+        ServerNotification::ThreadStatusChanged(n) => UiEvent::ThreadStatusChanged {
+            key,
+            notification: n,
+        },
         ServerNotification::ServerRequestResolved(_) => {
             // Handled via sync_ipc_thread_requests_from_projection
             return;
@@ -1913,6 +1962,44 @@ mod tests {
             deserialize_typed_response(&payload).expect("thread/list should deserialize");
 
         assert_eq!(parsed.data[0].cwd.as_path(), Path::new("/"));
+    }
+
+    #[test]
+    fn deserialize_typed_response_accepts_bare_thread_status_string() {
+        // Older alleycat-opencode-bridge releases shipped `status` as a
+        // bare string instead of the tagged form upstream `ThreadStatus`
+        // expects. Without this normalization the typed deserializer
+        // rejects the entire `thread/list` page and OpenCode threads
+        // never appear in the sidebar.
+        let payload = json!({
+            "data": [{
+                "id": "thread-1",
+                "preview": "hello",
+                "ephemeral": false,
+                "modelProvider": "opencode",
+                "createdAt": 1_777_345_792,
+                "updatedAt": 1_777_345_792,
+                "status": "notLoaded",
+                "path": null,
+                "cwd": "/Users/sigkitten/dev/health",
+                "cliVersion": "alleycat-opencode-bridge/0.1.0",
+                "source": "appServer",
+                "gitInfo": null,
+                "name": "Greeting",
+                "turns": []
+            }],
+            "nextCursor": null,
+            "backwardsCursor": null
+        });
+
+        let parsed: upstream::ThreadListResponse =
+            deserialize_typed_response(&payload).expect("thread/list should deserialize");
+
+        assert_eq!(parsed.data.len(), 1);
+        assert!(matches!(
+            parsed.data[0].status,
+            upstream::ThreadStatus::NotLoaded
+        ));
     }
 
     #[test]

@@ -12,28 +12,22 @@
 //! - [`forwarding`] — local↔remote TCP forward + Unix socket helpers
 //! - [`port_forward`] — the bidirectional channel proxy task
 //! - [`bootstrap`] — `bootstrap_codex_server` orchestration
-//! - [`install`] — codex tarball / npm install + 24h update sentinel
 //! - [`resolve_binary`] — locate an existing remote codex binary
 //! - [`detect`] — remote shell + platform detection
 //! - [`probes`] — port-listening / process-alive / log-tail
 //! - [`keychain`] — macOS unlock-keychain via stdin
 //! - [`codex_binary`] — `RemoteCodexBinary` + per-shell launch builders
-//! - [`codex_release`] — GitHub releases API
 //! - [`clixml`] — strip PowerShell CLIXML envelopes
-//! - [`parsers`] — `KEY:value` line parsers
 //! - [`types`] — public records (`SshCredentials`, `SshError`, …)
 
 mod bootstrap;
 mod clixml;
 mod codex_binary;
-mod codex_release;
 mod connect;
 mod detect;
 mod exec;
 mod forwarding;
-mod install;
 mod keychain;
-mod parsers;
 mod port_forward;
 mod probes;
 mod resolve_binary;
@@ -50,25 +44,20 @@ use crate::logging::{LogLevelName, log_rust};
 
 use clixml::strip_clixml;
 use codex_binary::{
-    RemoteCodexBinary, resolve_codex_binary_script_posix, resolve_codex_binary_script_powershell,
+    resolve_codex_binary_script_posix, resolve_codex_binary_script_powershell,
     server_launch_command, windows_start_process_spec,
 };
-use codex_release::fetch_latest_stable_codex_release;
 use connect::ClientHandler;
-use parsers::{parse_install_status_and_path, parse_kv_lines};
 
-pub(crate) use crate::shell_quoting::{
-    cmd_quote, posix_quote as shell_quote, powershell_quote as ps_quote,
-};
+pub(crate) use crate::shell_quoting::posix_quote as shell_quote;
 pub(crate) use crate::ssh_scripts::posix::{PACKAGE_MANAGER_PROBE, PROFILE_INIT};
+pub(crate) use codex_binary::RemoteCodexBinary;
 pub(crate) use exec::build_posix_exec_command;
-pub(crate) use types::{
-    CodexInstallOutcome, RemotePlatform, RemoteShell, ResolvedCodexRelease, exit_status_from_code,
-};
 pub use types::{
-    ExecResult, SshAuth, SshBootstrapResult, SshCredentials, SshError, SshExecChild, SshExecStderr,
-    SshExecStdin, SshExecStdout,
+    ExecResult, SshAuth, SshBootstrapResult, SshCredentials, SshError, SshExecChild, SshExecIo,
+    SshExecStderr, SshExecStdin, SshExecStdout,
 };
+pub(crate) use types::{RemoteShell, SshBootstrapTransport};
 
 // SSH channel sizing — tuned for high-throughput interactive workloads.
 const SSH_CHANNEL_WINDOW_SIZE: u32 = 16 * 1024 * 1024;
@@ -91,9 +80,6 @@ const LISTEN_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const TUNNEL_HEALTH_ATTEMPTS: u32 = 20;
 const TUNNEL_HEALTH_INTERVAL: Duration = Duration::from_millis(250);
 const SYNC_DIAG_TIMEOUT: Duration = Duration::from_secs(8);
-
-/// Seconds before we re-check GitHub for a newer Codex release.
-const CODEX_UPDATE_CHECK_INTERVAL_SECS: u64 = 24 * 60 * 60;
 
 /// A connected SSH session that can execute commands, upload files,
 /// forward ports, and bootstrap a remote Codex server.
@@ -131,17 +117,6 @@ pub(super) fn append_bridge_info_log(line: &str) {
 
 pub(super) fn remote_shell_name(shell: RemoteShell) -> &'static str {
     shell.name()
-}
-
-pub(super) fn remote_platform_name(platform: RemotePlatform) -> &'static str {
-    match platform {
-        RemotePlatform::MacosArm64 => "macos-arm64",
-        RemotePlatform::MacosX64 => "macos-x64",
-        RemotePlatform::LinuxArm64 => "linux-arm64",
-        RemotePlatform::LinuxX64 => "linux-x64",
-        RemotePlatform::WindowsX64 => "windows-x64",
-        RemotePlatform::WindowsArm64 => "windows-arm64",
-    }
 }
 
 pub(super) fn normalize_host(host: &str) -> String {

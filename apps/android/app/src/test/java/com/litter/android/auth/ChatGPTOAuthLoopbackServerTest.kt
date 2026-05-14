@@ -7,6 +7,26 @@ import java.net.URI
 
 class ChatGPTOAuthLoopbackServerTest {
     @Test
+    fun bindHostsForRedirectHost_supportsIpv4AndIpv6LoopbackForLocalhost() {
+        assertEquals(
+            listOf("127.0.0.1", "::1"),
+            ChatGPTOAuthLoopbackServer.bindHostsForRedirectHost("localhost"),
+        )
+        assertEquals(
+            listOf("127.0.0.1", "::1"),
+            ChatGPTOAuthLoopbackServer.bindHostsForRedirectHost("LOCALHOST"),
+        )
+    }
+
+    @Test
+    fun bindHostsForRedirectHost_keepsExplicitHosts() {
+        assertEquals(
+            listOf("127.0.0.1"),
+            ChatGPTOAuthLoopbackServer.bindHostsForRedirectHost("127.0.0.1"),
+        )
+    }
+
+    @Test
     fun requestTargetFromLine_parsesGetRequests() {
         assertEquals(
             "/auth/callback?code=abc&state=xyz",

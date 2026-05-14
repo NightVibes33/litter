@@ -3,14 +3,19 @@
 use codex_app_server_protocol as upstream;
 use serde::{Deserialize, Serialize};
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, uniffi::Enum,
-)]
-pub enum AgentRuntimeKind {
-    Codex,
-    Pi,
-    Opencode,
-    Claude,
+/// Opaque agent identifier — the stable lowercase name that alleycat
+/// advertises for an agent (`"codex"`, `"claude"`, `"hermes"`, …). All
+/// UI labels, icons, and capability flags come from
+/// [`crate::store::AgentMetadataStore`] keyed off this id. Litter does
+/// not maintain a typed enum so the only place anyone adds a new agent
+/// is the alleycat manifest.
+pub type AgentRuntimeKind = String;
+
+/// Canonical default agent id used when a record carried no explicit
+/// agent. Keeps Serde `default` callers happy; real records resolve
+/// their actual id through probe metadata or thread routing.
+pub fn default_agent_runtime_kind() -> AgentRuntimeKind {
+    "codex".to_owned()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]

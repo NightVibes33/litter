@@ -1,12 +1,7 @@
 package com.litter.android.state
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Intent
 import android.graphics.PixelFormat
-import android.os.Build
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
@@ -25,7 +20,6 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.core.app.NotificationCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -52,9 +46,6 @@ class PetOverlayService : LifecycleService() {
     companion object {
         const val ACTION_SYNC = "com.litter.android.pet.ACTION_SYNC"
         const val ACTION_HIDE = "com.litter.android.pet.ACTION_HIDE"
-
-        private const val CHANNEL_ID = "pet_overlay"
-        private const val NOTIFICATION_ID = 9011
     }
 
     private lateinit var appModel: AppModel
@@ -99,7 +90,6 @@ class PetOverlayService : LifecycleService() {
             return START_NOT_STICKY
         }
 
-        startForeground(NOTIFICATION_ID, buildNotification())
         refreshOverlay()
         return START_STICKY
     }
@@ -260,38 +250,6 @@ class PetOverlayService : LifecycleService() {
         runCatching { windowManager.updateViewLayout(view, params) }
     }
 
-    private fun buildNotification(): Notification {
-        ensureChannel()
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setContentTitle("Pet awake")
-            .setContentText("Your Codex pet is floating over other apps.")
-            .setOngoing(true)
-            .setSilent(true)
-            .setContentIntent(openAppPendingIntent())
-            .addAction(
-                0,
-                "Hide Pet",
-                PendingIntent.getService(
-                    this,
-                    0,
-                    Intent(this, PetOverlayService::class.java).apply { action = ACTION_HIDE },
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                ),
-            )
-            .build()
-    }
-
-    private fun openAppPendingIntent(): PendingIntent =
-        PendingIntent.getActivity(
-            this,
-            1,
-            Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
     private fun openActiveThreadOrHome() {
         val activeThread: ThreadKey? = latestSnapshot?.activeThread
         val intent = Intent(this, MainActivity::class.java).apply {
@@ -323,17 +281,6 @@ class PetOverlayService : LifecycleService() {
             putExtra(MainActivity.EXTRA_OPEN_PET_SETTINGS, true)
         }
         startActivity(intent)
-    }
-
-    private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Pet Overlay",
-                NotificationManager.IMPORTANCE_LOW,
-            )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
     }
 
     private fun animationsDisabled(): Boolean {

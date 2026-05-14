@@ -9,10 +9,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -74,6 +77,8 @@ import com.litter.android.state.statusLabel
 import com.litter.android.ui.ExperimentalFeatures
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.LocalAppModel
+import com.litter.android.ui.common.BetaBadge
+import com.litter.android.ui.common.isBeta
 import com.litter.android.util.LLog
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -87,7 +92,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import uniffi.codex_mobile_client.AgentAvailabilityStatus
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
+import com.litter.android.ui.common.metadata
+import com.litter.android.ui.common.runtimeLabel
+import com.litter.android.ui.common.runtimeSortIndex
 import uniffi.codex_mobile_client.AppSshSessionResult
 import uniffi.codex_mobile_client.AppServerHealth
 import uniffi.codex_mobile_client.AppServerSnapshot
@@ -662,59 +670,6 @@ fun DiscoveryScreen(
         )
     }
 
-    snapshot?.servers?.firstOrNull { it.connectionProgress?.pendingInstall == true }?.let { serverSnapshot ->
-        AlertDialog(
-            onDismissRequest = {},
-            title = { Text("Install Codex?") },
-            text = {
-                Text(
-                    serverSnapshot.connectionProgressDetail
-                        ?: "Codex was not found on the remote host. Install the latest stable release into ~/.litter?",
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            LLog.t(
-                                logTag,
-                                "responding to install prompt",
-                                fields = mapOf(
-                                    "serverId" to serverSnapshot.serverId,
-                                    "install" to true,
-                                    "detail" to serverSnapshot.connectionProgressDetail,
-                                ),
-                            )
-                            appModel.ssh.sshRespondToInstallPrompt(serverSnapshot.serverId, true)
-                        }
-                    },
-                ) {
-                    Text("Install")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            LLog.t(
-                                logTag,
-                                "responding to install prompt",
-                                fields = mapOf(
-                                    "serverId" to serverSnapshot.serverId,
-                                    "install" to false,
-                                    "detail" to serverSnapshot.connectionProgressDetail,
-                                ),
-                            )
-                            appModel.ssh.sshRespondToInstallPrompt(serverSnapshot.serverId, false)
-                        }
-                    },
-                ) {
-                    Text("Cancel")
-                }
-            },
-        )
-    }
-
     connectError?.let { message ->
         AlertDialog(
             onDismissRequest = { connectError = null },
@@ -739,8 +694,15 @@ fun DiscoveryScreen(
         ) {
             androidx.compose.foundation.layout.Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(LitterTheme.background),
+                    // Without fillMaxHeight the Dialog Box wraps content,
+                    // and the inner Column's `verticalScroll` has no height
+                    // bound to scroll within — so long forms (especially
+                    // when many agents are listed) get clipped offscreen
+                    // with no way to reach the Connect button.
+                    .fillMaxSize()
+                    .background(LitterTheme.background)
+                    .systemBarsPadding()
+                    .imePadding(),
             ) {
                 AlleycatAddServerSheet(
                     onDismiss = { showAlleycatSheet = false },
@@ -1314,7 +1276,9 @@ private fun SSHAgentPickerDialog(
     val availableKinds = remember(context.sessionId) {
         availableSshBridgeKinds(context.availability)
     }
-    var selectedKinds by remember(context.sessionId) { mutableStateOf(availableKinds.toSet()) }
+    var selectedKinds by remember(context.sessionId) {
+        mutableStateOf(availableKinds.filterNot { it.isBeta }.toSet())
+    }
     var isConnecting by remember(context.sessionId) { mutableStateOf(false) }
     var errorMessage by remember(context.sessionId) { mutableStateOf<String?>(null) }
 
@@ -1349,16 +1313,22 @@ private fun SSHAgentPickerDialog(
                             .padding(vertical = 4.dp),
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = sshRuntimeLabel(agent.kind),
-                                color = if (agent.status == AgentAvailabilityStatus.AVAILABLE) {
-                                    LitterTheme.textPrimary
-                                } else {
-                                    LitterTheme.textSecondary
-                                },
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = sshRuntimeLabel(agent.kind),
+                                    color = if (agent.status == AgentAvailabilityStatus.AVAILABLE) {
+                                        LitterTheme.textPrimary
+                                    } else {
+                                        LitterTheme.textSecondary
+                                    },
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                                if (agent.kind.isBeta) {
+                                    Spacer(Modifier.width(6.dp))
+                                    BetaBadge()
+                                }
+                            }
                             Text(
                                 text = sshAgentStatusLabel(agent),
                                 color = LitterTheme.textSecondary,
@@ -1425,26 +1395,12 @@ private fun availableSshBridgeKinds(agents: List<RemoteAgentAvailability>): List
         .map { it.kind }
         .sortedBy(::sshRuntimeSortRank)
 
-private fun isSshBridgeKind(kind: AgentRuntimeKind): Boolean = when (kind) {
-    AgentRuntimeKind.CODEX,
-    AgentRuntimeKind.CLAUDE,
-    AgentRuntimeKind.PI,
-    AgentRuntimeKind.OPENCODE -> true
-}
+private fun isSshBridgeKind(kind: AgentRuntimeKind): Boolean =
+    kind.metadata?.capabilities?.supportsSshBridge ?: false
 
-private fun sshRuntimeLabel(kind: AgentRuntimeKind): String = when (kind) {
-    AgentRuntimeKind.CODEX -> "Codex"
-    AgentRuntimeKind.PI -> "Pi"
-    AgentRuntimeKind.OPENCODE -> "OpenCode"
-    AgentRuntimeKind.CLAUDE -> "Claude"
-}
+private fun sshRuntimeLabel(kind: AgentRuntimeKind): String = kind.runtimeLabel
 
-private fun sshRuntimeSortRank(kind: AgentRuntimeKind): Int = when (kind) {
-    AgentRuntimeKind.CLAUDE -> 0
-    AgentRuntimeKind.PI -> 1
-    AgentRuntimeKind.OPENCODE -> 2
-    AgentRuntimeKind.CODEX -> 3
-}
+private fun sshRuntimeSortRank(kind: AgentRuntimeKind): Int = kind.runtimeSortIndex
 
 private fun sshAgentStatusLabel(agent: RemoteAgentAvailability): String = when (agent.status) {
     AgentAvailabilityStatus.AVAILABLE -> "Available"

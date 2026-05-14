@@ -378,6 +378,7 @@ jobs:
       - name: Verify private BuildKit assets are prepared
         run: |
           set -euo pipefail
+          tools/scripts/verify-nyxian-buildkit-assets.sh apps/ios/Sources/Litter/Resources/BuildKitAssets
           python3 - <<'PY'
           import json
           import pathlib

@@ -5,6 +5,8 @@
 //!   `direct-tcpip` channel to the remote, and proxy bytes via
 //!   [`port_forward::proxy_connection`].
 //! - `abort_forward_port` — abort a previously-started forward.
+//! - `open_app_server_proxy_stream` — exec `codex app-server proxy` on the
+//!   remote host and expose its stdin/stdout as a bidirectional async stream.
 //! - `open_streamlocal` — open a `direct-streamlocal` channel to a
 //!   remote Unix socket (used to talk to `codex-ipc` over SSH).
 //! - `resolve_remote_ipc_socket_path` / `remote_ipc_socket_if_present` —
@@ -14,13 +16,15 @@ use std::sync::Arc;
 
 use russh::ChannelStream;
 use russh::client::Msg;
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tracing::{debug, error, info, warn};
 
-use crate::shell_quoting::posix_quote as shell_quote;
+use crate::shell_quoting::{cmd_quote, posix_quote as shell_quote};
 
 use super::{
-    ForwardTask, SshClient, SshError, append_android_debug_log, port_forward::proxy_connection,
+    ForwardTask, RemoteShell, SshClient, SshError, SshExecIo, append_android_debug_log,
+    build_posix_exec_command, port_forward::proxy_connection,
 };
 
 impl SshClient {
@@ -183,6 +187,80 @@ impl SshClient {
         });
 
         Ok((actual_port, task))
+    }
+
+    /// Open Codex's app-server proxy over SSH exec.
+    ///
+    /// The remote `codex app-server proxy` process speaks the same WebSocket
+    /// byte stream that `RemoteAppServerClient::connect_websocket_stream`
+    /// expects, so callers can avoid allocating a local TCP listener.
+    pub(crate) async fn open_app_server_proxy_stream(
+        &self,
+        codex_path: &str,
+        shell: RemoteShell,
+        socket_path: Option<&str>,
+    ) -> Result<SshExecIo, SshError> {
+        let command = match shell {
+            RemoteShell::Posix => {
+                let mut command = format!("exec {} app-server proxy", shell_quote(codex_path));
+                if let Some(socket_path) = socket_path {
+                    command.push_str(&format!(" --sock {}", shell_quote(socket_path)));
+                }
+                build_posix_exec_command(&command)
+            }
+            RemoteShell::PowerShell => {
+                // Keep the proxy byte stream out of PowerShell's object/text
+                // pipeline. `cmd.exe /c` preserves the child process stdio as
+                // raw bytes, which the WebSocket stream requires.
+                let mut inner = format!(r#""{}" app-server proxy"#, cmd_quote(codex_path));
+                if let Some(socket_path) = socket_path {
+                    inner.push_str(&format!(r#" --sock "{}""#, cmd_quote(socket_path)));
+                }
+                format!(r#"cmd.exe /d /c "{inner}""#)
+            }
+        };
+
+        let mut child = self.open_exec_child(&command).await?;
+        let stdin = child.take_stdin().ok_or_else(|| {
+            SshError::ConnectionFailed("app-server proxy exec missing stdin".to_string())
+        })?;
+        let stdout = child.take_stdout().ok_or_else(|| {
+            SshError::ConnectionFailed("app-server proxy exec missing stdout".to_string())
+        })?;
+        let stderr = child.take_stderr();
+        let remote_label = socket_path
+            .map(|socket_path| format!("app-server-proxy:{socket_path}"))
+            .unwrap_or_else(|| "app-server-proxy:default".to_string());
+
+        tokio::spawn(async move {
+            let Some(mut stderr) = stderr else {
+                return;
+            };
+            let mut buf = vec![0u8; 4096];
+            loop {
+                match stderr.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let text = String::from_utf8_lossy(&buf[..n]);
+                        for line in text.lines().filter(|line| !line.trim().is_empty()) {
+                            append_android_debug_log(&format!(
+                                "ssh_app_server_proxy_stderr remote={} line={}",
+                                remote_label, line
+                            ));
+                        }
+                    }
+                    Err(error) => {
+                        append_android_debug_log(&format!(
+                            "ssh_app_server_proxy_stderr_error remote={} error={}",
+                            remote_label, error
+                        ));
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(SshExecIo::new(stdout, stdin))
     }
 
     /// Open a direct streamlocal channel to a remote Unix socket path.

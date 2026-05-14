@@ -16,12 +16,30 @@ pub struct AppProject {
 }
 
 fn canonical_cwd(cwd: &str) -> String {
-    let trimmed = cwd.trim().trim_end_matches('/');
-    if trimmed.is_empty() {
-        "/".to_string()
+    canonical_cwd_opt(cwd).unwrap_or_else(|| cwd.trim().to_string())
+}
+
+fn canonical_cwd_opt(cwd: &str) -> Option<String> {
+    let normalized = crate::remote_path::normalize_thread_cwd(cwd)?;
+    let is_windows = crate::remote_path::RemotePath::parse(&normalized).is_windows();
+    let trimmed = if is_windows {
+        trim_trailing_windows_separator(&normalized)
     } else {
-        trimmed.to_string()
+        normalized.trim_end_matches('/').to_string()
+    };
+    if trimmed.is_empty() {
+        Some("/".to_string())
+    } else {
+        Some(trimmed)
     }
+}
+
+fn trim_trailing_windows_separator(path: &str) -> String {
+    let mut trimmed = path.to_string();
+    while trimmed.len() > 3 && trimmed.ends_with('\\') {
+        trimmed.pop();
+    }
+    trimmed
 }
 
 /// Stable composite key; platforms use this to look up a specific project.
@@ -34,6 +52,13 @@ pub fn project_id_for(server_id: String, cwd: String) -> String {
 #[uniffi::export]
 pub fn project_default_label(cwd: String) -> String {
     let canon = canonical_cwd(&cwd);
+    if crate::remote_path::RemotePath::parse(&canon).is_windows() {
+        return canon
+            .rsplit('\\')
+            .find(|segment| !segment.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or(canon);
+    }
     canon
         .rsplit('/')
         .find(|segment| !segment.is_empty())
@@ -49,10 +74,9 @@ pub fn derive_projects(sessions: Vec<AppSessionSummary>) -> Vec<AppProject> {
     let mut by_id: HashMap<String, AppProject> = HashMap::new();
 
     for summary in sessions {
-        if summary.cwd.is_empty() {
+        let Some(cwd) = canonical_cwd_opt(&summary.cwd) else {
             continue;
-        }
-        let cwd = canonical_cwd(&summary.cwd);
+        };
         let server_id = summary.key.server_id.clone();
         let id = project_id_for(server_id.clone(), cwd.clone());
         let entry = by_id.entry(id.clone()).or_insert_with(|| AppProject {
@@ -95,7 +119,7 @@ mod tests {
                 server_id: server.to_string(),
                 thread_id: thread.to_string(),
             },
-            agent_runtime_kind: AgentRuntimeKind::Codex,
+            agent_runtime_kind: "codex".to_string(),
             server_display_name: server.to_string(),
             server_host: "".into(),
             title: "".into(),
@@ -104,6 +128,7 @@ mod tests {
             model: "".into(),
             model_provider: "".into(),
             parent_thread_id: None,
+            forked_from_id: None,
             agent_nickname: None,
             agent_role: None,
             agent_display_label: None,
@@ -122,6 +147,7 @@ mod tests {
             last_turn_end_ms: None,
             stats: None,
             token_usage: None,
+            goal: None,
         }
     }
 
@@ -145,11 +171,32 @@ mod tests {
         assert_eq!(project_default_label("/a/b/c".into()), "c");
         assert_eq!(project_default_label("/a/b/c/".into()), "c");
         assert_eq!(project_default_label("/".into()), "/");
+        assert_eq!(project_default_label(r"C:\Users\npace".into()), "npace");
+        assert_eq!(project_default_label(r"C:\Users\npace\dev".into()), "dev");
+    }
+
+    #[test]
+    fn derives_projects_with_normalized_windows_cwd() {
+        let sessions = vec![
+            session("srv1", "t1", r"C:\Users\npace\Users\npace", Some(10)),
+            session("srv1", "t2", r"C:\Users\npace", Some(20)),
+        ];
+        let projects = derive_projects(sessions);
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].cwd, r"C:\Users\npace");
+        assert_eq!(projects[0].last_used_at_ms, Some(20));
     }
 
     #[test]
     fn empty_cwd_sessions_are_ignored() {
         let sessions = vec![session("srv1", "t1", "", Some(10))];
+        let projects = derive_projects(sessions);
+        assert!(projects.is_empty());
+    }
+
+    #[test]
+    fn unexpanded_home_fragment_sessions_are_ignored() {
+        let sessions = vec![session("srv1", "t1", r"Users\npace", Some(10))];
         let projects = derive_projects(sessions);
         assert!(projects.is_empty());
     }

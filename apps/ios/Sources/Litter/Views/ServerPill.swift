@@ -138,11 +138,7 @@ private struct AgentRuntimeBadge: View {
     let runtime: AgentRuntimeInfo
 
     var body: some View {
-        Image(runtime.kind.assetName)
-            .resizable()
-            .scaledToFit()
-            .padding(runtime.kind == .codex ? 2 : 1)
-            .frame(width: 18, height: 18)
+        AgentIconView(kind: runtime.kind, size: 18)
             .background(
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(Color.black.opacity(0.82))

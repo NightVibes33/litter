@@ -76,6 +76,53 @@ if [[ -n "$NYXIAN_RUNNER" ]]; then
   RUNNER_REL="Toolchains/Nyxian/bin/litter-buildkit-runner"
 fi
 
+is_macho_binary() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  /usr/bin/file "$path" 2>/dev/null | /usr/bin/grep -Eiq 'Mach-O'
+}
+
+sign_macho_binary() {
+  local path="$1"
+  is_macho_binary "$path" || return 0
+  chmod u+w "$path" 2>/dev/null || true
+  /usr/bin/codesign --force --sign - --timestamp=none "$path"
+  local signature_info
+  signature_info="$(/usr/bin/codesign -dv --verbose=4 "$path" 2>&1)" || {
+    echo "error: failed to sign BuildKit Mach-O payload: $path" >&2
+    printf '%s\n' "$signature_info" >&2
+    exit 1
+  }
+  if ! printf '%s\n' "$signature_info" | /usr/bin/grep -Eq 'CDHash=|CodeDirectory'; then
+    echo "error: BuildKit Mach-O payload is missing a code directory/CDHash after signing: $path" >&2
+    printf '%s\n' "$signature_info" >&2
+    exit 1
+  fi
+}
+
+sign_buildkit_payload() {
+  echo "==> Ad-hoc signing BuildKit Mach-O payloads"
+  find "$OUT_DIR/Toolchains/Nyxian" -type f \( \
+    -name 'CoreCompiler' -o \
+    -name 'LitterBuildKitNative' -o \
+    -name 'litter-buildkit-runner' -o \
+    -name 'lib_Compiler*.dylib' -o \
+    -name 'libLLVM*.dylib' -o \
+    -name 'libllvm*.dylib' \
+  \) -print | sort -u | while IFS= read -r binary; do
+    sign_macho_binary "$binary"
+  done
+  find "$OUT_DIR/SDK" -type f \( \
+    -name 'lib_Compiler*.dylib' -o \
+    -name 'libLLVM*.dylib' -o \
+    -name 'libllvm*.dylib' \
+  \) -print | sort -u | while IFS= read -r binary; do
+    sign_macho_binary "$binary"
+  done
+}
+
+sign_buildkit_payload
+
 python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" <<'PY'
 import datetime, hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])

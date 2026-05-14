@@ -462,6 +462,7 @@ final class WatchCompanionBridgeTests: XCTestCase {
             model: "",
             modelProvider: "",
             parentThreadId: nil,
+            forkedFromId: nil,
             agentNickname: nil,
             agentRole: nil,
             agentDisplayLabel: nil,
@@ -479,7 +480,8 @@ final class WatchCompanionBridgeTests: XCTestCase {
             lastTurnStartMs: lastTurnStartMs,
             lastTurnEndMs: nil,
             stats: nil,
-            tokenUsage: nil
+            tokenUsage: nil,
+            goal: nil
         )
     }
 

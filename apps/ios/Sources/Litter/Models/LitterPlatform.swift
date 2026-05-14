@@ -19,6 +19,19 @@ enum LitterPlatform {
         return ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] == nil
     }()
 
+    /// `true` whenever the process renders as a Mac app — Catalyst or
+    /// "Designed for iPad" on Apple Silicon. AppKit-bridge bugs hit
+    /// both modes (NSVisualEffectView ignoring `fractionComplete=0`,
+    /// NavigationSplitView Liquid Glass material being clobbered by
+    /// gradient backdrops, menu-equivalent shortcuts not firing in-view),
+    /// so UI workarounds gate on this rather than the compile-time
+    /// `targetEnvironment(macCatalyst)` flag — the iOS lane in
+    /// "Designed for iPad" mode hits the same AppKit bridge.
+    static let rendersAsMacApp: Bool = {
+        if isCatalyst { return true }
+        return ProcessInfo.processInfo.isiOSAppOnMac
+    }()
+
     static let supportsLocalRuntime = !isCatalyst
     static let supportsVoiceRuntime = !isCatalyst
 

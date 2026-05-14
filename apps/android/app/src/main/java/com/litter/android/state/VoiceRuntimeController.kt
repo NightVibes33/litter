@@ -526,6 +526,7 @@ class VoiceRuntimeController {
             "medium" -> ReasoningEffort.MEDIUM
             "high" -> ReasoningEffort.HIGH
             "xhigh", "x-high" -> ReasoningEffort.X_HIGH
+            "max" -> ReasoningEffort.MAX
             else -> null
         }
 

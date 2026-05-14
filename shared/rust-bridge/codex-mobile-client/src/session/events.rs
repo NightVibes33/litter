@@ -14,7 +14,8 @@ use tracing::warn;
 use crate::types::AppThreadGoal;
 use crate::types::{
     ApprovalKind, PendingApproval, PendingApprovalSeed, PendingApprovalWithSeed,
-    PendingUserInputOption, PendingUserInputQuestion, PendingUserInputRequest, ThreadKey,
+    PendingUserInputOption, PendingUserInputQuestion, PendingUserInputRequest,
+    PendingUserInputResponseKind, PendingUserInputSeed, ThreadKey,
 };
 
 /// High-level events for platform UI consumption.
@@ -69,6 +70,15 @@ pub(crate) enum UiEvent {
     TurnPlanUpdated {
         key: ThreadKey,
         notification: codex_app_server_protocol::TurnPlanUpdatedNotification,
+    },
+    /// Progressive patch updates streamed by upstream while a FileChange
+    /// item is still applying. Without handling this, diff stats and the
+    /// Edit tool-log entry don't appear until ItemCompleted lands at the
+    /// end of the patch — see `reducer.rs::UiEvent::FileChangePatchUpdated`
+    /// for the upsert path.
+    FileChangePatchUpdated {
+        key: ThreadKey,
+        notification: codex_app_server_protocol::FileChangePatchUpdatedNotification,
     },
     ItemStarted {
         key: ThreadKey,
@@ -132,6 +142,7 @@ pub(crate) enum UiEvent {
     },
     UserInputRequested {
         request: PendingUserInputRequest,
+        seed: Option<PendingUserInputSeed>,
     },
 
     // ── Account / limits ───────────────────────────────────────────────
@@ -323,6 +334,13 @@ impl EventProcessor {
             ServerNotification::TurnDiffUpdated(n) => {
                 let key = Self::make_key(server_id, &n.thread_id);
                 self.emit(UiEvent::TurnDiffUpdated {
+                    key,
+                    notification: n.clone(),
+                });
+            }
+            ServerNotification::FileChangePatchUpdated(n) => {
+                let key = Self::make_key(server_id, &n.thread_id);
+                self.emit(UiEvent::FileChangePatchUpdated {
                     key,
                     notification: n.clone(),
                 });
@@ -529,7 +547,10 @@ impl EventProcessor {
     ) {
         if method == "item/tool/requestUserInput" {
             if let Some(request) = pending_user_input_request_from_raw(server_id, params) {
-                self.emit(UiEvent::UserInputRequested { request });
+                self.emit(UiEvent::UserInputRequested {
+                    request,
+                    seed: None,
+                });
                 return;
             }
         }
@@ -610,26 +631,28 @@ impl EventProcessor {
                 )
             }
             ServerRequest::McpServerElicitationRequest { request_id, params } => {
-                let raw = serde_json::to_value(params).unwrap_or_default();
-                (
-                    ApprovalKind::McpElicitation,
-                    Some(params.thread_id.clone()),
-                    params.turn_id.clone(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    request_id,
-                    raw,
-                )
+                if let Some((request, seed)) =
+                    mcp_elicitation_user_input_request_from_upstream(server_id, request_id, params)
+                {
+                    self.emit(UiEvent::UserInputRequested {
+                        request,
+                        seed: Some(seed),
+                    });
+                }
+                return;
             }
             ServerRequest::ToolRequestUserInput { request_id, params } => {
                 if let Some(request) =
                     pending_user_input_request_from_upstream(server_id, request_id, params)
                 {
-                    self.emit(UiEvent::UserInputRequested { request });
+                    self.emit(UiEvent::UserInputRequested {
+                        request,
+                        seed: Some(PendingUserInputSeed {
+                            request_id: request_id.clone(),
+                            response_kind: PendingUserInputResponseKind::ToolRequestUserInput,
+                            raw_params: serde_json::to_value(params).unwrap_or_default(),
+                        }),
+                    });
                 }
                 return;
             }
@@ -766,6 +789,15 @@ pub(crate) fn sanitize_pending_user_input_questions(
         .collect()
 }
 
+const MCP_APPROVAL_FIELD_ID: &str = "__approval";
+const MCP_URL_ACTION_FIELD_ID: &str = "__url_action";
+const MCP_APPROVAL_ACCEPT_ONCE_LABEL: &str = "Allow";
+const MCP_APPROVAL_ACCEPT_SESSION_LABEL: &str = "Allow for this session";
+const MCP_APPROVAL_ACCEPT_ALWAYS_LABEL: &str = "Always allow";
+const MCP_APPROVAL_DECLINE_LABEL: &str = "Deny";
+const MCP_APPROVAL_CANCEL_LABEL: &str = "Cancel";
+const MCP_URL_FINISHED_LABEL: &str = "I finished";
+
 fn pending_user_input_request_from_upstream(
     server_id: &str,
     request_id: &codex_app_server_protocol::RequestId,
@@ -809,6 +841,333 @@ fn pending_user_input_request_from_upstream(
         requester_agent_nickname: None,
         requester_agent_role: None,
     })
+}
+
+fn mcp_elicitation_user_input_request_from_upstream(
+    server_id: &str,
+    request_id: &codex_app_server_protocol::RequestId,
+    params: &codex_app_server_protocol::McpServerElicitationRequestParams,
+) -> Option<(PendingUserInputRequest, PendingUserInputSeed)> {
+    let request_id_string = request_id_to_string(request_id);
+    let questions = sanitize_pending_user_input_questions(mcp_elicitation_questions(params));
+    if questions.is_empty() {
+        return None;
+    }
+
+    let request = PendingUserInputRequest {
+        id: request_id_string.clone(),
+        server_id: server_id.to_string(),
+        thread_id: params.thread_id.clone(),
+        turn_id: params.turn_id.clone().unwrap_or_default(),
+        item_id: format!("mcp-elicitation:{request_id_string}"),
+        questions,
+        requester_agent_nickname: None,
+        requester_agent_role: None,
+    };
+    let seed = PendingUserInputSeed {
+        request_id: request_id.clone(),
+        response_kind: PendingUserInputResponseKind::McpServerElicitation,
+        raw_params: serde_json::to_value(params).unwrap_or_default(),
+    };
+    Some((request, seed))
+}
+
+fn mcp_elicitation_questions(
+    params: &codex_app_server_protocol::McpServerElicitationRequestParams,
+) -> Vec<PendingUserInputQuestion> {
+    match &params.request {
+        codex_app_server_protocol::McpServerElicitationRequest::Form {
+            meta,
+            message,
+            requested_schema,
+        } => {
+            if requested_schema.properties.is_empty() {
+                return vec![mcp_approval_action_question(
+                    message,
+                    meta.as_ref(),
+                    &params.server_name,
+                )];
+            }
+
+            let mut questions = requested_schema
+                .properties
+                .iter()
+                .filter_map(|(id, schema)| mcp_schema_question(id, schema))
+                .collect::<Vec<_>>();
+            if questions.is_empty() {
+                return vec![mcp_approval_action_question(
+                    message,
+                    meta.as_ref(),
+                    &params.server_name,
+                )];
+            }
+            if let Some(first) = questions.first_mut() {
+                let message = message.trim();
+                if !message.is_empty() && first.question.trim() != message {
+                    first.question = format!("{message}\n\n{}", first.question);
+                }
+            }
+            questions
+        }
+        codex_app_server_protocol::McpServerElicitationRequest::Url { message, url, .. } => {
+            let prompt = if message.trim().is_empty() {
+                url.clone()
+            } else {
+                format!("{}\n\n{}", message.trim(), url)
+            };
+            vec![PendingUserInputQuestion {
+                id: MCP_URL_ACTION_FIELD_ID.to_string(),
+                header: Some(format!("MCP: {}", params.server_name)),
+                question: prompt,
+                is_other_allowed: false,
+                is_secret: false,
+                options: vec![
+                    PendingUserInputOption {
+                        label: MCP_URL_FINISHED_LABEL.to_string(),
+                        description: Some(
+                            "Resolve the request after completing the browser action.".to_string(),
+                        ),
+                    },
+                    PendingUserInputOption {
+                        label: MCP_APPROVAL_CANCEL_LABEL.to_string(),
+                        description: Some("Cancel this request.".to_string()),
+                    },
+                ],
+            }]
+        }
+    }
+}
+
+fn mcp_approval_action_question(
+    message: &str,
+    meta: Option<&serde_json::Value>,
+    server_name: &str,
+) -> PendingUserInputQuestion {
+    let mut options = vec![PendingUserInputOption {
+        label: MCP_APPROVAL_ACCEPT_ONCE_LABEL.to_string(),
+        description: Some("Allow this request and continue.".to_string()),
+    }];
+    if mcp_approval_supports_persist_mode(meta, codex_protocol::mcp_approval_meta::PERSIST_SESSION)
+    {
+        options.push(PendingUserInputOption {
+            label: MCP_APPROVAL_ACCEPT_SESSION_LABEL.to_string(),
+            description: Some(
+                "Allow this request and remember this choice for this session.".to_string(),
+            ),
+        });
+    }
+    if mcp_approval_supports_persist_mode(meta, codex_protocol::mcp_approval_meta::PERSIST_ALWAYS) {
+        options.push(PendingUserInputOption {
+            label: MCP_APPROVAL_ACCEPT_ALWAYS_LABEL.to_string(),
+            description: Some(
+                "Allow this request and remember this choice for future requests.".to_string(),
+            ),
+        });
+    }
+    options.push(PendingUserInputOption {
+        label: MCP_APPROVAL_DECLINE_LABEL.to_string(),
+        description: Some("Decline this request and continue.".to_string()),
+    });
+    options.push(PendingUserInputOption {
+        label: MCP_APPROVAL_CANCEL_LABEL.to_string(),
+        description: Some("Cancel this request.".to_string()),
+    });
+
+    PendingUserInputQuestion {
+        id: MCP_APPROVAL_FIELD_ID.to_string(),
+        header: Some(format!("MCP: {server_name}")),
+        question: if message.trim().is_empty() {
+            "Allow this MCP request?".to_string()
+        } else {
+            message.trim().to_string()
+        },
+        is_other_allowed: false,
+        is_secret: false,
+        options,
+    }
+}
+
+fn mcp_approval_supports_persist_mode(
+    meta: Option<&serde_json::Value>,
+    expected_mode: &str,
+) -> bool {
+    let Some(persist) = meta
+        .and_then(serde_json::Value::as_object)
+        .and_then(|meta| meta.get(codex_protocol::mcp_approval_meta::PERSIST_KEY))
+    else {
+        return false;
+    };
+
+    match persist {
+        serde_json::Value::String(value) => value == expected_mode,
+        serde_json::Value::Array(values) => values
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .any(|value| value == expected_mode),
+        _ => false,
+    }
+}
+
+fn mcp_schema_question(
+    id: &str,
+    schema: &codex_app_server_protocol::McpElicitationPrimitiveSchema,
+) -> Option<PendingUserInputQuestion> {
+    match schema {
+        codex_app_server_protocol::McpElicitationPrimitiveSchema::String(schema) => {
+            let title = schema.title.clone().unwrap_or_else(|| id.to_string());
+            Some(PendingUserInputQuestion {
+                id: id.to_string(),
+                header: Some(title.clone()),
+                question: schema.description.clone().unwrap_or(title),
+                is_other_allowed: true,
+                is_secret: false,
+                options: Vec::new(),
+            })
+        }
+        codex_app_server_protocol::McpElicitationPrimitiveSchema::Number(schema) => {
+            let title = schema.title.clone().unwrap_or_else(|| id.to_string());
+            Some(PendingUserInputQuestion {
+                id: id.to_string(),
+                header: Some(title.clone()),
+                question: schema.description.clone().unwrap_or(title),
+                is_other_allowed: true,
+                is_secret: false,
+                options: Vec::new(),
+            })
+        }
+        codex_app_server_protocol::McpElicitationPrimitiveSchema::Boolean(schema) => {
+            let title = schema.title.clone().unwrap_or_else(|| id.to_string());
+            Some(PendingUserInputQuestion {
+                id: id.to_string(),
+                header: Some(title.clone()),
+                question: schema.description.clone().unwrap_or(title),
+                is_other_allowed: false,
+                is_secret: false,
+                options: vec![
+                    PendingUserInputOption {
+                        label: "True".to_string(),
+                        description: None,
+                    },
+                    PendingUserInputOption {
+                        label: "False".to_string(),
+                        description: None,
+                    },
+                ],
+            })
+        }
+        codex_app_server_protocol::McpElicitationPrimitiveSchema::Enum(schema) => {
+            mcp_enum_question(id, schema)
+        }
+    }
+}
+
+fn mcp_enum_question(
+    id: &str,
+    schema: &codex_app_server_protocol::McpElicitationEnumSchema,
+) -> Option<PendingUserInputQuestion> {
+    match schema {
+        codex_app_server_protocol::McpElicitationEnumSchema::Legacy(schema) => {
+            let title = schema.title.clone().unwrap_or_else(|| id.to_string());
+            let enum_names = schema.enum_names.clone().unwrap_or_default();
+            Some(PendingUserInputQuestion {
+                id: id.to_string(),
+                header: Some(title.clone()),
+                question: schema.description.clone().unwrap_or(title),
+                is_other_allowed: false,
+                is_secret: false,
+                options: schema
+                    .enum_
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| PendingUserInputOption {
+                        label: enum_names
+                            .get(index)
+                            .cloned()
+                            .unwrap_or_else(|| value.clone()),
+                        description: None,
+                    })
+                    .collect(),
+            })
+        }
+        codex_app_server_protocol::McpElicitationEnumSchema::SingleSelect(schema) => match schema {
+            codex_app_server_protocol::McpElicitationSingleSelectEnumSchema::Untitled(schema) => {
+                let title = schema.title.clone().unwrap_or_else(|| id.to_string());
+                Some(PendingUserInputQuestion {
+                    id: id.to_string(),
+                    header: Some(title.clone()),
+                    question: schema.description.clone().unwrap_or(title),
+                    is_other_allowed: false,
+                    is_secret: false,
+                    options: schema
+                        .enum_
+                        .iter()
+                        .map(|value| PendingUserInputOption {
+                            label: value.clone(),
+                            description: None,
+                        })
+                        .collect(),
+                })
+            }
+            codex_app_server_protocol::McpElicitationSingleSelectEnumSchema::Titled(schema) => {
+                let title = schema.title.clone().unwrap_or_else(|| id.to_string());
+                Some(PendingUserInputQuestion {
+                    id: id.to_string(),
+                    header: Some(title.clone()),
+                    question: schema.description.clone().unwrap_or(title),
+                    is_other_allowed: false,
+                    is_secret: false,
+                    options: schema
+                        .one_of
+                        .iter()
+                        .map(|entry| PendingUserInputOption {
+                            label: entry.title.clone(),
+                            description: None,
+                        })
+                        .collect(),
+                })
+            }
+        },
+        codex_app_server_protocol::McpElicitationEnumSchema::MultiSelect(schema) => {
+            let (title, description, options) = match schema {
+                codex_app_server_protocol::McpElicitationMultiSelectEnumSchema::Untitled(
+                    schema,
+                ) => (
+                    schema.title.clone().unwrap_or_else(|| id.to_string()),
+                    schema.description.clone(),
+                    schema
+                        .items
+                        .enum_
+                        .iter()
+                        .map(|value| PendingUserInputOption {
+                            label: value.clone(),
+                            description: None,
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+                codex_app_server_protocol::McpElicitationMultiSelectEnumSchema::Titled(schema) => (
+                    schema.title.clone().unwrap_or_else(|| id.to_string()),
+                    schema.description.clone(),
+                    schema
+                        .items
+                        .any_of
+                        .iter()
+                        .map(|entry| PendingUserInputOption {
+                            label: entry.title.clone(),
+                            description: None,
+                        })
+                        .collect::<Vec<_>>(),
+                ),
+            };
+            Some(PendingUserInputQuestion {
+                id: id.to_string(),
+                header: Some(title.clone()),
+                question: description.unwrap_or(title),
+                is_other_allowed: false,
+                is_secret: false,
+                options,
+            })
+        }
+    }
 }
 
 fn pending_user_input_request_from_raw(
@@ -896,6 +1255,7 @@ mod tests {
         proto::Turn {
             id: id.to_string(),
             items: Vec::new(),
+            items_view: proto::TurnItemsView::Full,
             status: proto::TurnStatus::Completed,
             error: None,
             started_at: None,
@@ -961,6 +1321,7 @@ mod tests {
         let notification = ServerNotification::ThreadStarted(proto::ThreadStartedNotification {
             thread: proto::Thread {
                 id: "thr_1".to_string(),
+                session_id: "session_1".to_string(),
                 forked_from_id: None,
                 preview: "Preview".to_string(),
                 ephemeral: false,
@@ -972,6 +1333,7 @@ mod tests {
                 cwd: test_abs_path("/tmp"),
                 cli_version: "1.0.0".to_string(),
                 source: proto::SessionSource::Cli,
+                thread_source: None,
                 agent_nickname: Some("builder".to_string()),
                 agent_role: Some("worker".to_string()),
                 git_info: None,
@@ -1111,6 +1473,7 @@ mod tests {
             thread_id: "thr_1".to_string(),
             turn_id: "turn_1".to_string(),
             item: make_item("item_1"),
+            started_at_ms: 0,
         });
         let evt = process_and_recv("srv1", &notification).expect("should emit");
         match evt {
@@ -1130,6 +1493,7 @@ mod tests {
             thread_id: "thr_1".to_string(),
             turn_id: "turn_1".to_string(),
             item: make_item("item_2"),
+            completed_at_ms: 0,
         });
         let evt = process_and_recv("srv1", &notification).expect("should emit");
         match evt {
@@ -1289,7 +1653,7 @@ mod tests {
         let notification =
             ServerNotification::ThreadRealtimeStarted(proto::ThreadRealtimeStartedNotification {
                 thread_id: "thr_1".to_string(),
-                session_id: Some("sess_abc".to_string()),
+                realtime_session_id: Some("sess_abc".to_string()),
                 version: codex_protocol::protocol::RealtimeConversationVersion::V2,
             });
         let evt = process_and_recv("srv1", &notification).expect("should emit");
@@ -1297,7 +1661,10 @@ mod tests {
             UiEvent::RealtimeStarted { key, notification } => {
                 assert_eq!(key.thread_id, "thr_1");
                 assert_eq!(notification.thread_id, "thr_1");
-                assert_eq!(notification.session_id.as_deref(), Some("sess_abc"));
+                assert_eq!(
+                    notification.realtime_session_id.as_deref(),
+                    Some("sess_abc")
+                );
             }
             other => panic!("expected RealtimeStarted, got {other:?}"),
         }
@@ -1539,6 +1906,7 @@ mod tests {
             ServerNotification::ThreadStarted(proto::ThreadStartedNotification {
                 thread: proto::Thread {
                     id: "thr_1".to_string(),
+                    session_id: "session_1".to_string(),
                     forked_from_id: None,
                     preview: String::new(),
                     ephemeral: false,
@@ -1550,6 +1918,7 @@ mod tests {
                     cwd: test_abs_path("/tmp"),
                     cli_version: "1.0.0".to_string(),
                     source: proto::SessionSource::Cli,
+                    thread_source: None,
                     agent_nickname: None,
                     agent_role: None,
                     git_info: None,
@@ -1646,7 +2015,8 @@ mod tests {
         );
         let evt = rx.try_recv().expect("should emit UiEvent");
         match evt {
-            UiEvent::UserInputRequested { request } => {
+            UiEvent::UserInputRequested { request, seed } => {
+                assert!(seed.is_none());
                 assert_eq!(request.server_id, "srv1");
                 assert_eq!(request.id, "req-1");
                 assert_eq!(request.thread_id, "thr_1");
@@ -1668,6 +2038,7 @@ mod tests {
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
+                started_at_ms: 0,
                 approval_id: None,
                 reason: None,
                 network_approval_context: None,
@@ -1700,6 +2071,7 @@ mod tests {
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
+                started_at_ms: 0,
                 reason: Some("modify file".to_string()),
                 grant_root: None,
             },
@@ -1722,6 +2094,7 @@ mod tests {
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
+                started_at_ms: 0,
                 cwd: test_abs_path("/tmp"),
                 reason: Some("need network access".to_string()),
                 permissions: proto::RequestPermissionProfile {
@@ -1764,10 +2137,23 @@ mod tests {
         };
         let evt = request_and_recv("srv1", &request).expect("should emit");
         match evt {
-            UiEvent::ApprovalRequested { approval, .. } => {
-                assert_eq!(approval.approval.kind, ApprovalKind::McpElicitation);
+            UiEvent::UserInputRequested { request, seed } => {
+                assert_eq!(request.server_id, "srv1");
+                assert_eq!(request.id, "12");
+                assert_eq!(request.thread_id, "thr_1");
+                assert_eq!(request.questions.len(), 1);
+                assert_eq!(request.questions[0].id, MCP_APPROVAL_FIELD_ID);
+                assert_eq!(request.questions[0].question, "Allow?");
+                assert_eq!(
+                    request.questions[0].options[0].label,
+                    MCP_APPROVAL_ACCEPT_ONCE_LABEL
+                );
+                assert!(matches!(
+                    seed.map(|seed| seed.response_kind),
+                    Some(PendingUserInputResponseKind::McpServerElicitation)
+                ));
             }
-            other => panic!("expected ApprovalRequested, got {other:?}"),
+            other => panic!("expected UserInputRequested, got {other:?}"),
         }
     }
 
@@ -1794,7 +2180,7 @@ mod tests {
         };
         let evt = request_and_recv("srv1", &request).expect("should emit");
         match evt {
-            UiEvent::UserInputRequested { request } => {
+            UiEvent::UserInputRequested { request, seed } => {
                 assert_eq!(request.server_id, "srv1");
                 assert_eq!(request.id, "13");
                 assert_eq!(request.thread_id, "thr_1");
@@ -1806,6 +2192,10 @@ mod tests {
                 assert_eq!(request.questions[0].question, "Pick one");
                 assert_eq!(request.questions[0].options.len(), 1);
                 assert_eq!(request.questions[0].options[0].label, "Yes");
+                assert!(matches!(
+                    seed.map(|seed| seed.response_kind),
+                    Some(PendingUserInputResponseKind::ToolRequestUserInput)
+                ));
             }
             other => panic!("expected UserInputRequested, got {other:?}"),
         }
@@ -1850,7 +2240,7 @@ mod tests {
 
         let evt = request_and_recv("srv1", &request).expect("should emit");
         match evt {
-            UiEvent::UserInputRequested { request } => {
+            UiEvent::UserInputRequested { request, .. } => {
                 let ids = request
                     .questions
                     .iter()
@@ -1917,6 +2307,7 @@ mod tests {
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
+                started_at_ms: 0,
                 approval_id: None,
                 reason: None,
                 network_approval_context: None,
@@ -1935,6 +2326,7 @@ mod tests {
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_2".to_string(),
+                started_at_ms: 0,
                 reason: None,
                 grant_root: None,
             },
@@ -1953,6 +2345,7 @@ mod tests {
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
+                started_at_ms: 0,
                 approval_id: None,
                 reason: None,
                 network_approval_context: None,
@@ -1971,6 +2364,7 @@ mod tests {
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_2".to_string(),
+                started_at_ms: 0,
                 reason: None,
                 grant_root: None,
             },

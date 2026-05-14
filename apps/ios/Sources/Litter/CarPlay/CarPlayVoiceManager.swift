@@ -505,13 +505,18 @@ final class CarPlayVoiceManager {
     }
 
     private func pushActiveSession(_ session: VoiceSessionState) {
+        guard let interfaceController else { return }
+        let nowPlaying = CPNowPlayingTemplate.shared
+        let isAlreadyShowingNowPlaying = isShowingNowPlaying
+            || interfaceController.templates.contains(where: { $0 === nowPlaying })
         configureNowPlayingTemplate(session)
         updateNowPlayingInfo(session)
         isShowingNowPlaying = true
         lastPhase = session.phase
         lastTranscriptHistoryID = session.transcriptHistory.last?.id
         lastTranscriptLive = session.transcriptText
-        interfaceController?.pushTemplate(CPNowPlayingTemplate.shared, animated: true, completion: nil)
+        guard !isAlreadyShowingNowPlaying else { return }
+        interfaceController.pushTemplate(nowPlaying, animated: true, completion: nil)
     }
 
     private func openTranscript() {

@@ -28,3 +28,7 @@
 "directory_picker_new_folder_placeholder" = "Folder name";
 "directory_picker_create" = "Create";
 "directory_picker_create_folder_failed" = "Couldn't create folder";
+"directory_picker_go_to_path" = "Go to Path";
+"directory_picker_go_to_path_title" = "Go to Path";
+"directory_picker_path_placeholder" = "D:\\Projects or /home/me/project";
+"directory_picker_go" = "Go";

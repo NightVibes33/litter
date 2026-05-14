@@ -15,6 +15,8 @@ use super::snapshot::{
     ServerHealthSnapshot, ServerIpcStateSnapshot, ServerSnapshot, ThreadSnapshot,
 };
 
+const LOCAL_USER_MESSAGE_ITEM_PREFIX: &str = "local-user-message:";
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct AppServerSnapshot {
     pub server_id: String,
@@ -162,8 +164,37 @@ fn merged_hydrated_items(
             selected_overlays.push(overlay);
         }
     }
-    merged.extend(selected_overlays.into_iter().cloned().map(Into::into));
+    for overlay in selected_overlays {
+        insert_overlay_item(&mut merged, overlay.clone().into());
+    }
     merged
+}
+
+fn insert_overlay_item(
+    merged: &mut Vec<HydratedConversationItem>,
+    overlay: HydratedConversationItem,
+) {
+    // Bound local user overlays semantically start their turn even when the
+    // server has not echoed a UserMessage item yet.
+    let insert_at = if is_local_user_turn_boundary_overlay(&overlay) {
+        overlay.source_turn_id.as_deref().and_then(|turn_id| {
+            merged.iter().position(|item| {
+                item.source_turn_id.as_deref() == Some(turn_id)
+                    && !is_local_user_turn_boundary_overlay(item)
+            })
+        })
+    } else {
+        None
+    }
+    .unwrap_or(merged.len());
+
+    merged.insert(insert_at, overlay);
+}
+
+fn is_local_user_turn_boundary_overlay(item: &HydratedConversationItem) -> bool {
+    item.id.starts_with(LOCAL_USER_MESSAGE_ITEM_PREFIX)
+        && item.is_from_user_turn_boundary
+        && matches!(&item.content, HydratedConversationItemContent::User(_))
 }
 
 pub(crate) fn project_hydrated_item(
@@ -272,7 +303,7 @@ fn same_overlay_semantics(
             crate::conversation_uniffi::HydratedConversationItemContent::User(lhs_data),
             crate::conversation_uniffi::HydratedConversationItemContent::User(rhs_data),
         ) => {
-            lhs.id.starts_with("local-user-message:")
+            lhs.id.starts_with(LOCAL_USER_MESSAGE_ITEM_PREFIX)
                 && lhs_data == rhs_data
                 && (
                     // Both bound to the same turn.
@@ -376,7 +407,13 @@ pub struct AppSessionSummary {
     pub cwd: String,
     pub model: String,
     pub model_provider: String,
+    /// Sub-agent parent thread id. `None` for fork lineage; see
+    /// `forked_from_id` for that.
     pub parent_thread_id: Option<String>,
+    /// Source thread id when this thread was created by `forkThread` /
+    /// `forkThreadFromMessage`. Independent from `parent_thread_id`, which
+    /// is sub-agent-only.
+    pub forked_from_id: Option<String>,
     pub agent_nickname: Option<String>,
     pub agent_role: Option<String>,
     pub agent_display_label: Option<String>,
@@ -407,6 +444,7 @@ pub struct AppSessionSummary {
     // Stats (None when thread has no hydrated items)
     pub stats: Option<AppConversationStats>,
     pub token_usage: Option<AppTokenUsage>,
+    pub goal: Option<AppThreadGoal>,
 }
 
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
@@ -520,7 +558,7 @@ fn app_thread_snapshot_from_state(
     Ok(AppThreadSnapshot {
         key: thread.key.clone(),
         info: thread.info.clone(),
-        agent_runtime_kind: thread.agent_runtime_kind,
+        agent_runtime_kind: thread.agent_runtime_kind.clone(),
         collaboration_mode: thread.collaboration_mode,
         model: thread.model.clone(),
         reasoning_effort: thread.reasoning_effort.clone(),
@@ -558,7 +596,7 @@ fn app_thread_state_record_from_state(
     Ok(AppThreadStateRecord {
         key: thread.key.clone(),
         info: thread.info.clone(),
-        agent_runtime_kind: thread.agent_runtime_kind,
+        agent_runtime_kind: thread.agent_runtime_kind.clone(),
         collaboration_mode: thread.collaboration_mode,
         model: thread.model.clone(),
         reasoning_effort: thread.reasoning_effort.clone(),
@@ -622,7 +660,7 @@ pub(crate) fn session_summaries_from_snapshot(snapshot: &AppSnapshot) -> Vec<App
 /// this row anyway, so every other field is trivially defaulted.
 pub(crate) fn empty_session_summary(key: ThreadKey) -> AppSessionSummary {
     AppSessionSummary {
-        agent_runtime_kind: crate::types::AgentRuntimeKind::Codex,
+        agent_runtime_kind: "codex".to_string(),
         server_display_name: key.server_id.clone(),
         server_host: key.server_id.clone(),
         key,
@@ -632,6 +670,7 @@ pub(crate) fn empty_session_summary(key: ThreadKey) -> AppSessionSummary {
         model: String::new(),
         model_provider: String::new(),
         parent_thread_id: None,
+        forked_from_id: None,
         agent_nickname: None,
         agent_role: None,
         agent_display_label: None,
@@ -650,6 +689,7 @@ pub(crate) fn empty_session_summary(key: ThreadKey) -> AppSessionSummary {
         last_turn_end_ms: None,
         stats: None,
         token_usage: None,
+        goal: None,
     }
 }
 
@@ -672,13 +712,15 @@ pub(crate) fn app_session_summary(
             })
             .unwrap_or_else(|| "Untitled session".to_string())
     };
-    let parent_thread_id = thread
-        .info
-        .parent_thread_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+    let sanitize_id = |value: &Option<String>| -> Option<String> {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    let parent_thread_id = sanitize_id(&thread.info.parent_thread_id);
+    let forked_from_id = sanitize_id(&thread.info.forked_from_id);
     let has_agent_label = thread
         .info
         .agent_nickname
@@ -689,14 +731,18 @@ pub(crate) fn app_session_summary(
             .agent_role
             .as_deref()
             .is_some_and(|value| !value.trim().is_empty());
-    let is_fork = parent_thread_id.is_some();
+    // Sub-agent: spawned by another thread (parent_thread_id) and tagged
+    // with an agent label. Fork: created via forkThread / forkThreadFromMessage
+    // (forked_from_id). The two are mutually exclusive in practice.
+    let is_subagent = parent_thread_id.is_some() && has_agent_label;
+    let is_fork = forked_from_id.is_some();
 
     // Derive conversation activity from hydrated items (if any).
     let activity = extract_conversation_activity(&thread.items);
 
     AppSessionSummary {
         key: thread.key.clone(),
-        agent_runtime_kind: thread.agent_runtime_kind,
+        agent_runtime_kind: thread.agent_runtime_kind.clone(),
         server_display_name: server
             .map(|server| server.display_name.clone())
             .unwrap_or_else(|| thread.key.server_id.clone()),
@@ -714,6 +760,7 @@ pub(crate) fn app_session_summary(
             .unwrap_or_default(),
         model_provider: thread.info.model_provider.clone().unwrap_or_default(),
         parent_thread_id,
+        forked_from_id,
         agent_nickname: thread.info.agent_nickname.clone(),
         agent_role: thread.info.agent_role.clone(),
         agent_display_label: agent_display_label(
@@ -730,7 +777,7 @@ pub(crate) fn app_session_summary(
         updated_at: thread.info.updated_at,
         has_active_turn: thread_has_active_turn(thread),
         is_resumed: thread.is_resumed,
-        is_subagent: is_fork && has_agent_label,
+        is_subagent,
         is_fork,
         last_response_preview: activity.last_response,
         last_response_turn_id: activity.last_response_turn_id,
@@ -745,6 +792,7 @@ pub(crate) fn app_session_summary(
             Some(activity.stats)
         },
         token_usage: thread_token_usage(thread),
+        goal: thread.goal.clone(),
     }
 }
 
@@ -1469,6 +1517,7 @@ mod tests {
                 agent_nickname: None,
                 agent_role: None,
                 parent_thread_id: None,
+                forked_from_id: None,
                 agent_status: None,
                 created_at: None,
                 status: ThreadSummaryStatus::Idle,
@@ -1495,6 +1544,7 @@ mod tests {
                     path: None,
                     model_provider: None,
                     parent_thread_id: Some(" thread-a ".to_string()),
+                    forked_from_id: None,
                     agent_nickname: Some("assistant".to_string()),
                     agent_role: Some("coder".to_string()),
                     agent_status: Some("running".to_string()),
@@ -1502,7 +1552,7 @@ mod tests {
                     status: ThreadSummaryStatus::Active,
                     updated_at: Some(10),
                 },
-                agent_runtime_kind: AgentRuntimeKind::Codex,
+                agent_runtime_kind: "codex".to_string(),
                 collaboration_mode: AppModeKind::Default,
                 model: None,
                 reasoning_effort: None,
@@ -1545,6 +1595,7 @@ mod tests {
                 agent_nickname: None,
                 agent_role: None,
                 parent_thread_id: None,
+                forked_from_id: None,
                 agent_status: None,
                 created_at: None,
                 status: ThreadSummaryStatus::Active,
@@ -1573,6 +1624,7 @@ mod tests {
                     agent_nickname: None,
                     agent_role: None,
                     parent_thread_id: None,
+                    forked_from_id: None,
                     agent_status: None,
                     created_at: None,
                     status: ThreadSummaryStatus::Idle,
@@ -1604,6 +1656,7 @@ mod tests {
                     agent_nickname: None,
                     agent_role: None,
                     parent_thread_id: None,
+                    forked_from_id: None,
                     agent_status: None,
                     created_at: None,
                     status: ThreadSummaryStatus::Idle,
@@ -1657,6 +1710,7 @@ mod tests {
                 agent_nickname: None,
                 agent_role: None,
                 parent_thread_id: None,
+                forked_from_id: None,
                 agent_status: None,
                 created_at: None,
                 status: ThreadSummaryStatus::Active,
@@ -1722,6 +1776,7 @@ mod tests {
                 agent_nickname: None,
                 agent_role: None,
                 parent_thread_id: None,
+                forked_from_id: None,
                 agent_status: None,
                 created_at: None,
                 status: ThreadSummaryStatus::Idle,
@@ -1774,6 +1829,115 @@ mod tests {
     }
 
     #[test]
+    fn app_thread_snapshot_places_bound_local_user_overlay_before_same_turn_items() {
+        let mut snapshot = AppSnapshot::default();
+        let mut thread = ThreadSnapshot::from_info(
+            "srv",
+            ThreadInfo {
+                id: "thread".to_string(),
+                title: None,
+                model: None,
+                preview: None,
+                cwd: None,
+                path: None,
+                model_provider: None,
+                agent_nickname: None,
+                agent_role: None,
+                parent_thread_id: None,
+                forked_from_id: None,
+                agent_status: None,
+                created_at: None,
+                status: ThreadSummaryStatus::Active,
+                updated_at: None,
+            },
+        );
+        thread
+            .items
+            .push(crate::conversation_uniffi::HydratedConversationItem {
+                id: "old-user".to_string(),
+                content: crate::conversation_uniffi::HydratedConversationItemContent::User(
+                    crate::conversation_uniffi::HydratedUserMessageData {
+                        text: "previous prompt".to_string(),
+                        image_data_uris: Vec::new(),
+                    },
+                ),
+                source_turn_id: Some("turn-0".to_string()),
+                source_turn_index: Some(0),
+                timestamp: None,
+                is_from_user_turn_boundary: true,
+            });
+        thread
+            .items
+            .push(crate::conversation_uniffi::HydratedConversationItem {
+                id: "old-assistant".to_string(),
+                content: crate::conversation_uniffi::HydratedConversationItemContent::Assistant(
+                    crate::conversation_uniffi::HydratedAssistantMessageData {
+                        text: "previous response".to_string(),
+                        agent_nickname: None,
+                        agent_role: None,
+                        phase: None,
+                    },
+                ),
+                source_turn_id: Some("turn-0".to_string()),
+                source_turn_index: Some(0),
+                timestamp: None,
+                is_from_user_turn_boundary: false,
+            });
+        thread
+            .items
+            .push(crate::conversation_uniffi::HydratedConversationItem {
+                id: "assistant-1".to_string(),
+                content: crate::conversation_uniffi::HydratedConversationItemContent::Assistant(
+                    crate::conversation_uniffi::HydratedAssistantMessageData {
+                        text: "new response".to_string(),
+                        agent_nickname: None,
+                        agent_role: None,
+                        phase: None,
+                    },
+                ),
+                source_turn_id: Some("turn-1".to_string()),
+                source_turn_index: None,
+                timestamp: None,
+                is_from_user_turn_boundary: false,
+            });
+        thread
+            .local_overlay_items
+            .push(crate::conversation_uniffi::HydratedConversationItem {
+                id: "local-user-message:1".to_string(),
+                content: crate::conversation_uniffi::HydratedConversationItemContent::User(
+                    crate::conversation_uniffi::HydratedUserMessageData {
+                        text: "new prompt".to_string(),
+                        image_data_uris: Vec::new(),
+                    },
+                ),
+                source_turn_id: Some("turn-1".to_string()),
+                source_turn_index: None,
+                timestamp: None,
+                is_from_user_turn_boundary: true,
+            });
+        let key = thread.key.clone();
+        snapshot.threads.insert(key.clone(), thread);
+
+        let projected =
+            app_thread_snapshot_from_state(&snapshot, snapshot.threads.get(&key).unwrap()).unwrap();
+        let item_ids = projected
+            .hydrated_conversation_items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            item_ids,
+            vec![
+                "old-user",
+                "old-assistant",
+                "local-user-message:1",
+                "assistant-1"
+            ]
+        );
+    }
+
+    #[test]
     fn app_thread_snapshot_projects_multi_agent_targets_to_display_labels() {
         let mut snapshot = AppSnapshot::default();
 
@@ -1790,6 +1954,7 @@ mod tests {
                 agent_nickname: None,
                 agent_role: None,
                 parent_thread_id: None,
+                forked_from_id: None,
                 agent_status: None,
                 created_at: None,
                 status: ThreadSummaryStatus::Idle,
@@ -1812,6 +1977,7 @@ mod tests {
                 agent_nickname: Some("Scout".to_string()),
                 agent_role: Some("explorer".to_string()),
                 parent_thread_id: Some("parent-thread".to_string()),
+                forked_from_id: None,
                 agent_status: Some("running".to_string()),
                 created_at: None,
                 status: ThreadSummaryStatus::Active,
@@ -1889,6 +2055,7 @@ mod tests {
             agent_nickname: None,
             agent_role: None,
             parent_thread_id: None,
+            forked_from_id: None,
             agent_status: None,
             created_at: None,
             updated_at: None,

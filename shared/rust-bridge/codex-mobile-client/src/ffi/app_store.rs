@@ -285,6 +285,22 @@ impl AppStore {
         })
     }
 
+    /// Force a fresh `thread/resume` (with `exclude_turns: false`) so the
+    /// store can reconcile a stale `active_turn_id` against the server's
+    /// authoritative turn list. Use after a long resume / push wake when
+    /// the in-flight turn we believe is still running may have completed
+    /// during the background window.
+    pub async fn force_refresh_thread_authoritative(
+        &self,
+        key: ThreadKey,
+    ) -> Result<(), ClientError> {
+        blocking_async!(self.rt, self.inner, |c| {
+            c.force_refresh_thread_authoritative(&key.server_id, &key.thread_id)
+                .await
+                .map_err(|e| ClientError::Rpc(e.to_string()))
+        })
+    }
+
     pub async fn load_thread_turns_page(
         &self,
         key: ThreadKey,

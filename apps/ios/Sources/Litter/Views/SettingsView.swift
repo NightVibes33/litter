@@ -8,6 +8,9 @@ struct SettingsView: View {
     @AppStorage("fontFamily") private var fontFamily = FontFamilyOption.mono.rawValue
     @AppStorage("collapseTurns") private var collapseTurns = false
     @AppStorage("developerToolsEnabled") private var developerToolsEnabled = false
+    @AppStorage(ConversationDisplayPreferenceKey.reasoning) private var reasoningDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
+    @AppStorage(ConversationDisplayPreferenceKey.commands) private var commandDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
+    @AppStorage(ConversationDisplayPreferenceKey.tools) private var toolDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
     @State private var showAddServer = false
 
     @StateObject private var taskBag = ViewTaskBag()
@@ -112,10 +115,61 @@ struct SettingsView: View {
             }
             .tint(LitterTheme.accent)
             .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            transcriptDisplayPicker(
+                title: "Internal Thinking",
+                subtitle: "Reasoning and analysis blocks",
+                systemImage: "brain.head.profile",
+                selection: $reasoningDisplayMode
+            )
+
+            transcriptDisplayPicker(
+                title: "Commands",
+                subtitle: "Shell commands and command output",
+                systemImage: "terminal",
+                selection: $commandDisplayMode
+            )
+
+            transcriptDisplayPicker(
+                title: "Tools",
+                subtitle: "MCP, web, image, and file-change cards",
+                systemImage: "wrench.and.screwdriver",
+                selection: $toolDisplayMode
+            )
         } header: {
             Text("Conversation")
                 .foregroundColor(LitterTheme.textSecondary)
         }
+    }
+
+    private func transcriptDisplayPicker(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        selection: Binding<String>
+    ) -> some View {
+        Picker(selection: selection) {
+            ForEach(ConversationDetailDisplayMode.allCases) { mode in
+                Text(mode.displayName).tag(mode.rawValue)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .foregroundColor(LitterTheme.accent)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .litterFont(.subheadline)
+                        .foregroundColor(LitterTheme.textPrimary)
+                    Text(subtitle)
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textSecondary)
+                }
+            }
+        }
+        .pickerStyle(.menu)
+        .tint(LitterTheme.accent)
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     // MARK: - Font Section
@@ -403,9 +457,11 @@ private struct SettingsConnectionAccountSection: View {
     @Environment(AppModel.self) private var appModel
     let server: AppServerSnapshot
     @State private var apiKey = ""
+    @State private var openAIBaseURL = ""
     @State private var isAuthWorking = false
     @State private var authError: String?
     @State private var hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
+    @State private var hasStoredBaseURL = OpenAIApiKeyStore.shared.hasStoredBaseURL
     @State private var hasStoredChatGPTTokens = false
 
     @StateObject private var taskBag = ViewTaskBag()
@@ -438,6 +494,13 @@ private struct SettingsConnectionAccountSection: View {
 
             if server.isLocal, hasStoredApiKey {
                 Text("Local OpenAI API key is saved.")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.accent)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+
+            if server.isLocal, hasStoredBaseURL {
+                Text("OpenAI-compatible base URL is saved.")
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.accent)
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -497,6 +560,52 @@ private struct SettingsConnectionAccountSection: View {
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.accent)
                     .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty || isAuthWorking)
+                }
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    if hasStoredBaseURL {
+                        Text("Custom OpenAI-compatible endpoint saved for the local Codex server.")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    } else {
+                        Text("Optional OpenAI-compatible endpoint for local models.")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                    HStack(spacing: 8) {
+                        TextField("http://host:port/v1", text: $openAIBaseURL)
+                            .litterFont(.footnote)
+                            .foregroundColor(LitterTheme.textPrimary)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                        Button {
+                            let baseURL = openAIBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+                            Task {
+                                isAuthWorking = true
+                                await saveBaseURL(baseURL)
+                                isAuthWorking = false
+                            }
+                        } label: {
+                            Text(hasStoredBaseURL ? "Update Base URL" : "Save Base URL")
+                        }
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.accent)
+                        .disabled(openAIBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAuthWorking)
+                    }
+                    if hasStoredBaseURL {
+                        Button("Clear Base URL") {
+                            Task {
+                                isAuthWorking = true
+                                await clearBaseURL()
+                                isAuthWorking = false
+                            }
+                        }
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.danger)
+                        .disabled(isAuthWorking)
+                    }
                 }
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
@@ -595,6 +704,7 @@ private struct SettingsConnectionAccountSection: View {
 
     private func refreshStoredCredentialFlags() {
         hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
+        hasStoredBaseURL = OpenAIApiKeyStore.shared.hasStoredBaseURL
         do {
             hasStoredChatGPTTokens = try ChatGPTOAuthTokenStore.shared.load() != nil
         } catch let error as ChatGPTOAuthError where error.isTransientKeychainAvailabilityFailure {
@@ -645,6 +755,57 @@ private struct SettingsConnectionAccountSection: View {
         } catch {
             authError = error.localizedDescription
         }
+    }
+
+    private func saveBaseURL(_ rawBaseURL: String) async {
+        guard server.isLocal else {
+            authError = "Base URL can only be saved for the local server."
+            return
+        }
+        guard let baseURL = normalizedOpenAIBaseURL(rawBaseURL) else {
+            authError = "Enter a valid http or https base URL."
+            return
+        }
+        do {
+            authError = nil
+            try OpenAIApiKeyStore.shared.saveBaseURL(baseURL)
+            try await appModel.restartLocalServer()
+            refreshStoredCredentialFlags()
+            guard hasStoredBaseURL else {
+                authError = "Base URL did not persist locally."
+                return
+            }
+            openAIBaseURL = ""
+        } catch {
+            authError = error.localizedDescription
+        }
+    }
+
+    private func clearBaseURL() async {
+        guard server.isLocal else {
+            authError = "Base URL can only be cleared for the local server."
+            return
+        }
+        do {
+            authError = nil
+            try OpenAIApiKeyStore.shared.clearBaseURL()
+            try await appModel.restartLocalServer()
+            refreshStoredCredentialFlags()
+            openAIBaseURL = ""
+        } catch {
+            authError = error.localizedDescription
+        }
+    }
+
+    private func normalizedOpenAIBaseURL(_ rawValue: String) -> String? {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil else {
+            return nil
+        }
+        return trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
     private func logout() async {

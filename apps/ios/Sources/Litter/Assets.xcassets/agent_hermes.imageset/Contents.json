@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "agent_hermes.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

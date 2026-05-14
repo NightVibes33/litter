@@ -1,0 +1,62 @@
+Make new approval/review timestamp fields tolerate older app-servers.
+
+In rust-v0.130.0, several server->client request/notification params gained
+required `started_at_ms` / `completed_at_ms` `i64` fields with no
+`#[serde(default)]`. Older codex-app-server builds (rust-v0.129.0 and
+earlier) don't emit these fields, so the mobile client cannot deserialize
+their approval and guardian-review payloads.
+
+Add `#[serde(default)]` so missing fields fall back to `0` (epoch) on the
+wire. The mobile client treats these timestamps as informational and
+already supplies `0` in test fixtures.
+
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/item.rs b/codex-rs/app-server-protocol/src/protocol/v2/item.rs
+--- a/codex-rs/app-server-protocol/src/protocol/v2/item.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/item.rs
+@@ -1074,6 +1074,7 @@ pub struct ItemGuardianApprovalReviewStartedNotification {
+     pub thread_id: String,
+     pub turn_id: String,
+     /// Unix timestamp (in milliseconds) when this review started.
++    #[serde(default)]
+     #[ts(type = "number")]
+     pub started_at_ms: i64,
+     /// Stable identifier for this review.
+@@ -1103,9 +1104,11 @@ pub struct ItemGuardianApprovalReviewCompletedNotification {
+     pub thread_id: String,
+     pub turn_id: String,
+     /// Unix timestamp (in milliseconds) when this review started.
++    #[serde(default)]
+     #[ts(type = "number")]
+     pub started_at_ms: i64,
+     /// Unix timestamp (in milliseconds) when this review completed.
++    #[serde(default)]
+     #[ts(type = "number")]
+     pub completed_at_ms: i64,
+     /// Stable identifier for this review.
+@@ -1274,6 +1277,7 @@ pub struct CommandExecutionRequestApprovalParams {
+     pub turn_id: String,
+     pub item_id: String,
+     /// Unix timestamp (in milliseconds) when this approval request started.
++    #[serde(default)]
+     #[ts(type = "number")]
+     pub started_at_ms: i64,
+     /// Unique identifier for this specific approval callback.
+@@ -1351,6 +1355,7 @@ pub struct FileChangeRequestApprovalParams {
+     pub turn_id: String,
+     pub item_id: String,
+     /// Unix timestamp (in milliseconds) when this approval request started.
++    #[serde(default)]
+     #[ts(type = "number")]
+     pub started_at_ms: i64,
+     /// Optional explanatory reason (e.g. request for extra write access).
+diff --git a/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs b/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs
+--- a/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs
++++ b/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs
+@@ -827,6 +827,7 @@ pub struct PermissionsRequestApprovalParams {
+     pub turn_id: String,
+     pub item_id: String,
+     /// Unix timestamp (in milliseconds) when this approval request started.
++    #[serde(default)]
+     #[ts(type = "number")]
+     pub started_at_ms: i64,
+     pub cwd: AbsolutePathBuf,

@@ -42,11 +42,11 @@ import com.litter.android.state.statusDotState
 import com.litter.android.ui.LitterTextStyle
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.common.StatusDot
-import com.litter.android.ui.common.runtimeDrawable
+import com.litter.android.ui.common.AgentIconView
 import com.litter.android.ui.common.runtimeSortIndex
 import com.litter.android.ui.scaled
 import uniffi.codex_mobile_client.AgentRuntimeInfo
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.AppServerSnapshot
 
 private const val MaxRuntimeBadgesWithoutOverflow = 4
@@ -226,7 +226,6 @@ private fun AgentRuntimeBadge(
     runtime: AgentRuntimeInfo,
     modifier: Modifier = Modifier,
 ) {
-    val isCodex = runtime.kind == AgentRuntimeKind.CODEX
     Box(
         modifier = modifier
             .size(18.dp)
@@ -235,13 +234,7 @@ private fun AgentRuntimeBadge(
             .border(0.55.dp, LitterTheme.textPrimary.copy(alpha = 0.28f), RoundedCornerShape(5.dp)),
         contentAlignment = Alignment.Center,
     ) {
-        Image(
-            painter = painterResource(id = runtime.kind.runtimeDrawable),
-            contentDescription = runtime.displayName,
-            modifier = Modifier
-                .size(16.dp)
-                .padding(if (isCodex) 2.dp else 1.dp),
-        )
+        AgentIconView(kind = runtime.kind, sizeDp = 14)
     }
 }
 

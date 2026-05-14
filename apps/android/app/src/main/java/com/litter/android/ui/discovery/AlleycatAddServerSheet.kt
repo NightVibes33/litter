@@ -12,6 +12,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,6 +67,8 @@ import com.litter.android.core.bridge.UniffiInit
 import com.litter.android.state.AlleycatCredentialStore
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.LocalAppModel
+import com.litter.android.ui.common.BetaBadge
+import com.litter.android.ui.common.isBetaAgentName
 import com.sigkitten.litter.android.BuildConfig
 import java.util.concurrent.Executors
 import kotlinx.coroutines.Dispatchers
@@ -126,7 +129,10 @@ fun AlleycatAddServerSheet(
                 }
                 if (parsedParams?.nodeId == params.nodeId) {
                     agents = loaded
-                    selectedAgentNames = loaded.filter { it.available }.map { it.name }.toSet()
+                    selectedAgentNames = loaded
+                        .filter { it.available && !isBetaAgentName(it.name, it.displayName) }
+                        .map { it.name }
+                        .toSet()
                     isLoadingAgents = false
                 }
             } catch (e: Exception) {
@@ -388,8 +394,7 @@ fun AlleycatAddServerSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(LitterTheme.surface, RoundedCornerShape(8.dp))
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                    .padding(vertical = 4.dp),
             ) {
                 when {
                     isLoadingAgents -> Row(
@@ -465,37 +470,56 @@ private fun AgentRow(
     selected: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
-    TextButton(
-        onClick = { onCheckedChange(!selected) },
-        enabled = agent.available,
-        modifier = Modifier.fillMaxWidth(),
+    // Plain clickable Row instead of TextButton — TextButton injects
+    // Material's minimum touch target (~48dp) plus internal content
+    // padding, which made each agent row much taller than the actual
+    // text content needed and forced the agent list to take far more
+    // vertical space than necessary on small screens.
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (agent.available) {
+                    Modifier.clickable { onCheckedChange(!selected) }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 12.dp, vertical = 4.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = agent.displayName,
                     color = if (agent.available) LitterTheme.textPrimary else LitterTheme.textMuted,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                 )
-                Text(
-                    text = wireLabel(agent.wire),
-                    color = LitterTheme.textSecondary,
-                    fontSize = 11.sp,
-                )
+                if (isBetaAgentName(agent.name, agent.displayName)) {
+                    Spacer(Modifier.width(6.dp))
+                    BetaBadge()
+                }
             }
-            if (!agent.available) {
-                Text("Unavailable", color = LitterTheme.textMuted, fontSize = 11.sp)
-            } else {
-                Checkbox(
-                    checked = selected,
-                    onCheckedChange = onCheckedChange,
-                    enabled = true,
-                )
-            }
+            Text(
+                text = wireLabel(agent.wire),
+                color = LitterTheme.textSecondary,
+                fontSize = 11.sp,
+            )
+        }
+        if (!agent.available) {
+            Text("Unavailable", color = LitterTheme.textMuted, fontSize = 11.sp)
+        } else {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = onCheckedChange,
+                enabled = true,
+                modifier = Modifier.size(28.dp),
+            )
         }
     }
 }
+
 
 @Composable
 private fun SectionHeader(label: String, modifier: Modifier = Modifier) {

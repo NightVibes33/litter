@@ -55,12 +55,12 @@ struct HomeModelChip: View {
                     runtime: appState.preferredAgentRuntimeKind
                 )
             }) {
-                return match.displayName
+                return modelPickerDisplayName(match)
             }
             return trimmed
         }
         if let defaultModel = availableModels.first(where: { $0.isDefault }) {
-            return defaultModel.displayName
+            return modelPickerDisplayName(defaultModel)
         }
         return "model"
     }

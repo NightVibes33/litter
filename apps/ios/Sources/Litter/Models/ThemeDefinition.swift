@@ -11,7 +11,56 @@ struct ThemeDefinition: Codable {
         case light, dark
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case type
+        case colors
+    }
+
+    init(name: String, type: ThemeType, colors: [String: String]) {
+        self.name = name
+        self.type = type
+        self.colors = colors
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        type = try container.decode(ThemeType.self, forKey: .type)
+
+        // VS Code themes occasionally include null entries or non-string
+        // values (arrays, objects) under `colors`. Decode tolerantly and
+        // drop anything that isn't a string so the rest of the app can
+        // assume `[String: String]`.
+        let rawColors = try container.decode([String: ThemeColorValue].self, forKey: .colors)
+        colors = rawColors.compactMapValues { value in
+            value.string.map(Self.sanitizeHex)
+        }
+    }
+
+    // VS Code allows #RRGGBBAA. Downstream color helpers assume 6-digit
+    // RGB, so strip the trailing alpha pair at the decode boundary.
+    private static func sanitizeHex(_ raw: String) -> String {
+        guard raw.hasPrefix("#"), raw.count == 9 else { return raw }
+        return String(raw.prefix(7))
+    }
+
     // tokenColors are ignored — syntax highlighting is handled by Hairball
+}
+
+private struct ThemeColorValue: Decodable {
+    let string: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            string = nil
+        } else {
+            // Only string values are usable as theme colors; arrays,
+            // objects, numbers, etc. fall through as nil and get dropped.
+            string = try? container.decode(String.self)
+        }
+    }
 }
 
 // MARK: - Lightweight index entry for picker UI

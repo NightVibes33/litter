@@ -112,7 +112,7 @@ import com.litter.android.ui.scaled
 import com.sigkitten.litter.android.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.AppProject
 import uniffi.codex_mobile_client.AppServerSnapshot
 import uniffi.codex_mobile_client.AppSessionSummary
@@ -159,6 +159,13 @@ fun HomeDashboardScreen(
     // view so the user can pin any thread.
     val allSessions = remember(snap) {
         snap?.let { HomeDashboardSupport.recentSessions(it, limit = Int.MAX_VALUE) } ?: emptyList()
+    }
+    // Fork lineage map computed from the unfiltered snapshot so a fork
+    // whose parent lives on the same server resolves even when later
+    // server-scoping drops sessions. Only multi-branch lineages are kept;
+    // singletons resolve to `null` at the call site.
+    val lineageMap = remember(allSessions) {
+        HomeDashboardSupport.computeLineageMap(allSessions)
     }
 
     // Pinned + hidden state. Refreshed when the user mutates via the UI.
@@ -221,6 +228,10 @@ fun HomeDashboardScreen(
     }
 
     var confirmAction by remember { mutableStateOf<ConfirmAction?>(null) }
+    // Hoisted reply-sheet target. Both the row swipe and the long-press
+    // "Reply" menu item set this; the QuickReplySheet renders once at this
+    // scope so the two paths stay aligned.
+    var replyTargetSession by remember { mutableStateOf<AppSessionSummary?>(null) }
     var isComposerActive by remember { mutableStateOf(false) }
     // When the user taps a composer chip (model / project), a modal sheet
     // opens and the IME dismisses — which would otherwise cascade through
@@ -415,6 +426,11 @@ fun HomeDashboardScreen(
                     // `SessionReplySwipe` would have the two pointer handlers
                     // fighting over the same drag stream.
                     val sessionApps = savedAppsByThread[session.key.threadId].orEmpty()
+                    val sessionPinKey = PinnedThreadKey(
+                        serverId = session.key.serverId,
+                        threadId = session.key.threadId,
+                    )
+                    val sessionIsPinned = pinnedKeys.contains(sessionPinKey)
                     SessionReplySwipe(
                         session = session,
                         appModel = appModel,
@@ -438,6 +454,7 @@ fun HomeDashboardScreen(
                         onError = { msg ->
                             confirmAction = ConfirmAction.ReplyError(msg)
                         },
+                        onReply = { replyTargetSession = session },
                         modifier = Modifier.animateItem(),
                     ) {
                         SessionCanvasRow(
@@ -445,12 +462,69 @@ fun HomeDashboardScreen(
                             zoomLevel = zoomLevel,
                             isHydrating = isHydrating,
                             isLocal = snap?.servers?.firstOrNull { it.serverId == session.key.serverId }?.isLocal == true,
+                            lineage = lineageMap[session.key]?.takeIf { it.hasMultipleBranches },
+                            isPinned = sessionIsPinned,
                             onClick = {
                                 appModel.launchState.updateCurrentCwd(session.cwd)
                                 onOpenConversation(session.key)
                             },
                             onDelete = {
                                 confirmAction = ConfirmAction.ArchiveSession(session)
+                            },
+                            onReply = { replyTargetSession = session },
+                            onPin = {
+                                pinThreadOnHome(session.key)
+                            },
+                            onUnpin = {
+                                SavedThreadsStore.remove(context, sessionPinKey)
+                                pinnedKeys = SavedThreadsStore.pinnedKeys(context)
+                            },
+                            onCancelTurn = {
+                                // `interruptTurn` requires both threadId and
+                                // turnId; the active turn id lives on the
+                                // thread snapshot, not on the session
+                                // summary, so look it up just-in-time.
+                                scope.launch {
+                                    val turnId = appModel.threadSnapshot(session.key)?.activeTurnId
+                                        ?: return@launch
+                                    runCatching {
+                                        appModel.client.interruptTurn(
+                                            session.key.serverId,
+                                            uniffi.codex_mobile_client.AppInterruptTurnRequest(
+                                                threadId = session.key.threadId,
+                                                turnId = turnId,
+                                            ),
+                                        )
+                                    }
+                                }
+                            },
+                            onFork = {
+                                // Long-press → "Fork" on a home session card.
+                                // Head-of-thread fork: duplicates the full
+                                // thread server-side (no rollback) and
+                                // navigates to the new copy. Mirrors iOS
+                                // `forkSessionFromHome` in LitterApp.swift.
+                                scope.launch {
+                                    try {
+                                        val sourceKey = appModel.hydrateThreadPermissions(session.key) ?: session.key
+                                        val newKey = appModel.client.forkThread(
+                                            sourceKey.serverId,
+                                            appModel.launchState.threadForkRequest(
+                                                sourceThreadId = sourceKey.threadId,
+                                                cwdOverride = session.cwd,
+                                                threadKey = sourceKey,
+                                            ),
+                                        )
+                                        appModel.store.setActiveThread(newKey)
+                                        appModel.refreshThreadSnapshot(newKey)
+                                        appModel.launchState.updateCurrentCwd(session.cwd)
+                                        onOpenConversation(newKey)
+                                    } catch (e: Exception) {
+                                        confirmAction = ConfirmAction.ReplyError(
+                                            e.message ?: "Failed to fork thread",
+                                        )
+                                    }
+                                }
                             },
                         )
                     }
@@ -924,6 +998,22 @@ fun HomeDashboardScreen(
 
     }
 
+    replyTargetSession?.let { target ->
+        QuickReplySheet(
+            thread = target,
+            onDismiss = { replyTargetSession = null },
+            onSend = { threadKey, text ->
+                runCatching {
+                    sendQuickReplyTurn(appModel, threadKey, text)
+                }.onFailure { err ->
+                    confirmAction = ConfirmAction.ReplyError(
+                        err.message ?: "Failed to send reply",
+                    )
+                }
+            },
+        )
+    }
+
     confirmAction?.let { action ->
         AlertDialog(
             onDismissRequest = { confirmAction = null },
@@ -1122,7 +1212,7 @@ private fun placeholderPinnedSession(
         serverId = pinned.serverId,
         threadId = pinned.threadId,
     ),
-    agentRuntimeKind = uniffi.codex_mobile_client.AgentRuntimeKind.CODEX,
+    agentRuntimeKind = "codex",
     serverDisplayName = server.displayName,
     serverHost = server.host,
     title = "Loading thread",
@@ -1131,6 +1221,7 @@ private fun placeholderPinnedSession(
     model = "",
     modelProvider = "",
     parentThreadId = null,
+    forkedFromId = null,
     agentNickname = null,
     agentRole = null,
     agentDisplayLabel = null,
@@ -1149,6 +1240,7 @@ private fun placeholderPinnedSession(
     lastTurnEndMs = null,
     stats = null,
     tokenUsage = null,
+    goal = null,
 )
 
 private sealed class ConfirmAction {

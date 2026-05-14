@@ -2,7 +2,7 @@
 
 [package]
 name = "kittylitter"
-version = "0.1.0"
+version = "0.2.11"
 edition = "2024"
 license = "GPL-3.0-only"
 authors = ["The Alleycat Authors"]
@@ -22,10 +22,8 @@ name = "kittylitter"
 path = "src/main.rs"
 
 [dependencies]
-# Tracks dnakov/alleycat main. `cargo update` pulls the latest commit;
-# Cargo.lock pins the exact one for any given build. CI clones from this
-# git URL, so the alleycat lib refactor (adding `pub struct App` and
-# `pub fn run`) must be pushed to main before this resolves.
+# Tracks dnakov/alleycat main. `./tools/scripts/update-alleycat-main.sh`
+# refreshes Cargo.lock to whatever `main` points at before build/release lanes.
 alleycat = { git = "https://github.com/dnakov/alleycat.git", branch = "main" }
 anyhow = "1"
 

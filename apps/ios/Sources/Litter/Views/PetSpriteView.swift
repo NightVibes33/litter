@@ -214,15 +214,7 @@ struct PetSpriteView: View {
             frameIndex = 0
             guard !reduceMotion else { return }
 
-            if state == .idle {
-                await playLoop(for: .idle)
-            } else {
-                await playLoop(for: state, cycles: 3)
-                guard !Task.isCancelled else { return }
-                playbackState = .idle
-                frameIndex = 0
-                await playLoop(for: .idle)
-            }
+            await playLoop(for: state)
         }
     }
 
@@ -230,20 +222,18 @@ struct PetSpriteView: View {
         frames.indices.contains(frameIndex) ? frames[frameIndex] : frames.first
     }
 
-    private func playLoop(for state: PetAvatarState, cycles: Int? = nil) async {
+    private func playLoop(for state: PetAvatarState) async {
         let frames = atlas?.frames(for: state) ?? []
         guard frames.count > 1 else { return }
         let profile = PetAnimationProfile.profile(for: state)
-        var completedCycles = 0
 
-        while cycles == nil || completedCycles < (cycles ?? 0) {
+        while true {
             for index in frames.indices {
                 guard !Task.isCancelled else { return }
                 playbackState = state
                 frameIndex = index
                 try? await Task.sleep(for: .milliseconds(profile.durationMs(for: index)))
             }
-            completedCycles += 1
         }
     }
 

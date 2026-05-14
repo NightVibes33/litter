@@ -6,8 +6,9 @@ use codex_app_server_protocol as upstream;
 use crate::conversation_uniffi::HydratedConversationItem;
 use crate::types::{
     Account, AgentRuntimeInfo, AgentRuntimeKind, AppModeKind, AppPlanProgressSnapshot, ModelInfo,
-    PendingApproval, PendingApprovalKey, PendingApprovalSeed, PendingUserInputRequest,
-    RateLimitSnapshot, RateLimits, ThreadInfo, ThreadKey,
+    PendingApproval, PendingApprovalKey, PendingApprovalSeed, PendingUserInputKey,
+    PendingUserInputRequest, PendingUserInputSeed, RateLimitSnapshot, RateLimits, ThreadInfo,
+    ThreadKey,
 };
 use crate::types::{AppThreadGoal, AppVoiceSessionPhase, AppVoiceTranscriptEntry};
 
@@ -322,7 +323,7 @@ impl ThreadSnapshot {
         };
         Self {
             key,
-            agent_runtime_kind: AgentRuntimeKind::Codex,
+            agent_runtime_kind: "codex".to_string(),
             collaboration_mode: AppModeKind::Default,
             model: info.model.clone(),
             info,
@@ -356,5 +357,6 @@ pub struct AppSnapshot {
     pub pending_approvals: Vec<PendingApproval>,
     pub(crate) pending_approval_seeds: HashMap<PendingApprovalKey, PendingApprovalSeed>,
     pub pending_user_inputs: Vec<PendingUserInputRequest>,
+    pub(crate) pending_user_input_seeds: HashMap<PendingUserInputKey, PendingUserInputSeed>,
     pub voice_session: AppVoiceSessionSnapshot,
 }

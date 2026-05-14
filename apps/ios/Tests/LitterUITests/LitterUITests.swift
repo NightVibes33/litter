@@ -6,6 +6,69 @@ final class LitterUITests: XCTestCase {
     }
 
     @MainActor
+    func testConversationDisplaySettingsRowsAreReachable() throws {
+        let app = conversationDisplayHarnessApp()
+        app.launch()
+
+        XCTAssertTrue(
+            app.staticTexts["conversationDisplayHarness.title"].waitForExistence(timeout: 10),
+            "Conversation display harness did not launch"
+        )
+
+        app.buttons["conversationDisplayHarness.settingsButton"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Conversation"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Internal Thinking"].exists)
+        XCTAssertTrue(app.staticTexts["Commands"].exists)
+        XCTAssertTrue(findStaticText("Tools", in: app))
+    }
+
+    @MainActor
+    func testConversationDisplayExpandedModeShowsAllDetails() throws {
+        let app = conversationDisplayHarnessApp(reasoning: "expanded", commands: "expanded", tools: "expanded")
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["UITEST_USER_MESSAGE"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["UITEST_ASSISTANT_MESSAGE"].exists)
+        XCTAssertTrue(app.staticTexts["UITEST_REASONING_DETAIL"].exists)
+        XCTAssertTrue(app.staticTexts["UITEST_COMMAND_OUTPUT"].exists)
+        XCTAssertTrue(app.staticTexts["UITEST_TOOL_DETAIL"].exists)
+    }
+
+    @MainActor
+    func testConversationDisplayCollapsedModeKeepsRowsAndRetainsRecentDetails() throws {
+        let app = conversationDisplayHarnessApp(reasoning: "collapsed", commands: "collapsed", tools: "collapsed")
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["UITEST_USER_MESSAGE"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["UITEST_ASSISTANT_MESSAGE"].exists)
+        XCTAssertTrue(app.staticTexts["Thinking"].exists)
+        XCTAssertTrue(app.staticTexts["Internal reasoning"].exists)
+        XCTAssertTrue(app.staticTexts["printf UITEST_COMMAND_HEADER"].exists)
+        XCTAssertTrue(app.staticTexts["uiTest.fixtureTool"].exists)
+        XCTAssertFalse(app.staticTexts["UITEST_REASONING_DETAIL"].exists)
+        XCTAssertFalse(app.staticTexts["UITEST_COMMAND_OUTPUT"].exists)
+        XCTAssertTrue(app.staticTexts["UITEST_TOOL_DETAIL"].exists)
+        XCTAssertTrue(app.staticTexts["UITEST_LIVE_COMMAND_OUTPUT"].exists)
+    }
+
+    @MainActor
+    func testConversationDisplayHiddenModeRemovesDetailRows() throws {
+        let app = conversationDisplayHarnessApp(reasoning: "hidden", commands: "hidden", tools: "hidden")
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["UITEST_USER_MESSAGE"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["UITEST_ASSISTANT_MESSAGE"].exists)
+        XCTAssertFalse(app.staticTexts["Thinking"].exists)
+        XCTAssertFalse(app.staticTexts["Internal reasoning"].exists)
+        XCTAssertFalse(app.staticTexts["printf UITEST_COMMAND_HEADER"].exists)
+        XCTAssertFalse(app.staticTexts["uiTest.fixtureTool"].exists)
+        XCTAssertFalse(app.staticTexts["UITEST_REASONING_DETAIL"].exists)
+        XCTAssertFalse(app.staticTexts["UITEST_COMMAND_OUTPUT"].exists)
+        XCTAssertFalse(app.staticTexts["UITEST_TOOL_DETAIL"].exists)
+    }
+
+    @MainActor
     func testCaptureAppStoreScreenshots() throws {
         let app = XCUIApplication()
         setupSnapshot(app)
@@ -299,5 +362,35 @@ final class LitterUITests: XCTestCase {
 
     private func sshDiscoveryRows(in app: XCUIApplication) -> XCUIElementQuery {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "discovery.server.ssh."))
+    }
+
+    @MainActor
+    private func conversationDisplayHarnessApp(
+        reasoning: String = "collapsed",
+        commands: String = "collapsed",
+        tools: String = "collapsed"
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments.append("--ui-test-conversation-display")
+        app.launchEnvironment["CODEXIOS_UI_TEST_REASONING_MODE"] = reasoning
+        app.launchEnvironment["CODEXIOS_UI_TEST_COMMAND_MODE"] = commands
+        app.launchEnvironment["CODEXIOS_UI_TEST_TOOL_MODE"] = tools
+        return app
+    }
+
+    private func findStaticText(_ label: String, in app: XCUIApplication) -> Bool {
+        let text = app.staticTexts[label]
+        if text.exists {
+            return true
+        }
+
+        for _ in 0..<4 {
+            app.swipeUp()
+            if text.waitForExistence(timeout: 1) {
+                return true
+            }
+        }
+
+        return false
     }
 }

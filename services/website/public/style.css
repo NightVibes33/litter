@@ -213,7 +213,7 @@ nav .container {
 .agent-track {
   display: block;
   width: 100%;
-  animation: agent-cycle 9s infinite cubic-bezier(0.65, 0, 0.35, 1);
+  animation: agent-cycle 11.25s infinite cubic-bezier(0.65, 0, 0.35, 1);
   will-change: transform;
 }
 
@@ -251,11 +251,12 @@ nav .container {
 }
 
 @keyframes agent-cycle {
-  0%,   17.5% { transform: translateY(0); }
-  25%,  42.5% { transform: translateY(-1.15em); }
-  50%,  67.5% { transform: translateY(-2.30em); }
-  75%,  92.5% { transform: translateY(-3.45em); }
-  100%        { transform: translateY(-4.60em); }
+  0%,  14% { transform: translateY(0); }
+  20%, 34% { transform: translateY(-1.15em); }
+  40%, 54% { transform: translateY(-2.30em); }
+  60%, 74% { transform: translateY(-3.45em); }
+  80%, 94% { transform: translateY(-4.60em); }
+  100%     { transform: translateY(-5.75em); }
 }
 
 @media (prefers-reduced-motion: reduce) {

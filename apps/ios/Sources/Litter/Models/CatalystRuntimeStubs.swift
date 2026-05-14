@@ -9,9 +9,42 @@ final class AppRuntimeController {
     static let shared = AppRuntimeController()
 
     @ObservationIgnored private weak var appModel: AppModel?
+    @ObservationIgnored private let reachability = NetworkReachabilityObserver()
 
     func bind(appModel: AppModel, voiceRuntime: VoiceRuntimeController) {
         self.appModel = appModel
+        reachability.bind(appModel: appModel)
+        reachability.start()
+        do {
+            if let bytes = try AlleycatCredentialStore.shared.loadDeviceSecretKey() {
+                appModel.client.setAlleycatSecretKey(secretKeyBytes: bytes)
+            }
+        } catch {
+            NSLog("[ALLEYCAT_DEVICE_KEY] load failed: %@", error.localizedDescription)
+        }
+    }
+
+    /// Catalyst-side mirror of the iOS persist hook. Called from the
+    /// lifecycle stub after reconnect cycles so freshly-generated
+    /// device secret keys land in the keychain.
+    func persistAlleycatSecretKeyIfNeeded() {
+        guard let appModel else { return }
+        guard let data = appModel.client.alleycatSecretKey() else { return }
+        do {
+            let existing = try AlleycatCredentialStore.shared.loadDeviceSecretKey()
+            if existing == data { return }
+            try AlleycatCredentialStore.shared.saveDeviceSecretKey(data)
+        } catch {
+            NSLog("[ALLEYCAT_DEVICE_KEY] save failed: %@", error.localizedDescription)
+        }
+    }
+
+    /// Best-effort graceful shutdown of the iroh endpoint. Wired from
+    /// `applicationWillTerminate` on Catalyst (NSApplicationDelegate
+    /// fires this reliably; iOS proper does not on swipe-up-to-kill).
+    func shutdownAlleycatEndpoint() async {
+        guard let appModel else { return }
+        await appModel.client.shutdownAlleycatEndpoint()
     }
 
     func setDevicePushToken(_ token: Data) {}
@@ -24,6 +57,7 @@ final class AppRuntimeController {
         )
         appModel.reconnectController.setMultiClankerAndQuicEnabled(enabled: true)
         appModel.reconnectController.syncSavedServers(servers: servers)
+        await appModel.reconnectController.notifyNetworkChange()
         let results = await appModel.reconnectController.reconnectSavedServers()
         await appModel.refreshSnapshot()
         for result in results where result.needsLocalAuthRestore {
@@ -31,6 +65,7 @@ final class AppRuntimeController {
         }
         await appModel.restoreMissingLocalAuthStateIfNeeded()
         await appModel.refreshSnapshot()
+        persistAlleycatSecretKeyIfNeeded()
     }
 
     func reconnectServer(serverId: String) async {
@@ -65,20 +100,37 @@ final class AppRuntimeController {
     }
 
     func handleSnapshot(_ snapshot: AppSnapshotRecord?) {}
-    func appDidEnterBackground() {}
+    func appDidEnterBackground() {
+        lastBackgroundedAt = Date()
+    }
     func appDidBecomeInactive() {}
 
     func appDidBecomeActive() {
         guard !hasRecoveredOnForeground else { return }
         hasRecoveredOnForeground = true
-        Task { [weak self] in
-            await self?.reconnectSavedServers()
+        let backgroundDuration = lastBackgroundedAt.map { Date().timeIntervalSince($0) }
+        lastBackgroundedAt = nil
+        Task { [weak self, backgroundDuration] in
+            guard let self else { return }
+            // Same long-resume short-circuit as iOS: if we were
+            // suspended longer than iroh's per-path idle, kill the
+            // existing alleycat Connection so the worker rebuilds
+            // before any user request lands.
+            if let appModel = self.appModel,
+               let duration = backgroundDuration,
+               duration > Self.longResumeThreshold
+            {
+                await appModel.reconnectController.onLongResume()
+            }
+            await self.reconnectSavedServers()
         }
     }
 
     func handleBackgroundPush() async {}
 
     @ObservationIgnored private var hasRecoveredOnForeground = false
+    @ObservationIgnored private var lastBackgroundedAt: Date?
+    private static let longResumeThreshold: TimeInterval = 15
 }
 
 @MainActor

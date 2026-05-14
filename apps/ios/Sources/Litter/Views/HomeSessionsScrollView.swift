@@ -1,3 +1,4 @@
+import AVKit
 import ImageIO
 import SwiftUI
 import UIKit
@@ -21,6 +22,8 @@ struct HomeSessionsScrollView: UIViewRepresentable {
         var onUnpin: (ThreadKey) -> Void
         var onCancelTurn: (HomeDashboardRecentSession) -> Void
         var onDelete: (HomeDashboardRecentSession) -> Void
+        var onFork: (HomeDashboardRecentSession) -> Void
+        var onShowPiP: (HomeDashboardRecentSession) -> Void
     }
 
     let sessions: [HomeDashboardRecentSession]
@@ -39,6 +42,8 @@ struct HomeSessionsScrollView: UIViewRepresentable {
     /// Appearance settings. Pass this in from the caller with
     /// `@Environment(\.textScale) private var textScale`.
     @Environment(\.textScale) private var textScale
+    @Environment(ThemeManager.self) private var themeManager
+    @Environment(WallpaperManager.self) private var wallpaperManager
 
     func makeUIView(context: Context) -> HomeSessionsScrollUIView {
         HomeSessionsScrollUIView()
@@ -64,6 +69,8 @@ struct HomeSessionsScrollView: UIViewRepresentable {
             topInset: topInset,
             bottomInset: bottomInset,
             textScale: textScale,
+            themeManager: themeManager,
+            wallpaperManager: wallpaperManager,
             callbacks: callbacks
         )
     }
@@ -71,13 +78,15 @@ struct HomeSessionsScrollView: UIViewRepresentable {
 
 // MARK: - Zoom height anchors
 
-/// Fixed height anchors for zoom levels 1 and 2 (fallback only — the
-/// row's own `forceMeasureHostHeight` supersedes these when the row is
-/// actually rendered at that zoom). Zoom 4 is always per-row measured.
-/// Zoom 3 is intentionally skipped — the UI has three levels: 1, 2, 4.
+/// Fixed height anchors for zoom levels 1, 2, and 3 (fallback only —
+/// the row's own `forceMeasureHostHeight` supersedes these when the row
+/// is actually rendered at that zoom). Zoom 4 is always per-row
+/// measured because its content height varies wildly with the assistant
+/// response preview.
 private enum ZoomHeights {
     static let z1: CGFloat = 28
     static let z2: CGFloat = 54
+    static let z3: CGFloat = 110
     static let z4Minimum: CGFloat = 120
 }
 
@@ -150,8 +159,8 @@ final class HomeSessionsScrollUIView: UIView {
     /// content around like a scroll.
     private var pinchStartMidpoint: CGPoint = .zero
 
-    private var topInsetValue: CGFloat = 0
-    private var bottomInsetValue: CGFloat = 0
+    private(set) var topInsetValue: CGFloat = 0
+    private(set) var bottomInsetValue: CGFloat = 0
     private var catFooterCountEligible = false
     private var catFooterHostVisible = false
     private var catFooterEntranceStarted = false
@@ -164,6 +173,11 @@ final class HomeSessionsScrollUIView: UIView {
     private var lastTextScale: CGFloat = 0
 
     var zoomCommit: ((Int) -> Void)?
+
+    /// Surface the scroll view's safe-area top for row containers — they
+    /// need it to keep the previous card's bottom from peeking into the
+    /// dynamic-island zone during page-fit transitions.
+    var scrollViewSafeAreaTop: CGFloat { scrollView.safeAreaInsets.top }
 
     // Used by row containers to know whether to short-circuit tap/swipe.
     var pinchActive: Bool { isPinching }
@@ -200,6 +214,7 @@ final class HomeSessionsScrollUIView: UIView {
         // the scroll view edge-to-edge without the top row sliding
         // under the dynamic island / status bar.
         scrollView.contentInsetAdjustmentBehavior = .always
+        scrollView.delegate = self
         scrollView.addGestureRecognizer(pinchRecognizer)
         catFooterHostingController.view.backgroundColor = .clear
         catFooterHostingController.view.isHidden = true
@@ -271,19 +286,33 @@ final class HomeSessionsScrollUIView: UIView {
         topInset: CGFloat,
         bottomInset: CGFloat,
         textScale: CGFloat,
+        themeManager: ThemeManager,
+        wallpaperManager: WallpaperManager,
         callbacks: HomeSessionsScrollView.Callbacks
     ) {
         let zoomChanged = self.zoomLevel != zoomLevel && !isPinching
+        let enteredPageFit = zoomChanged && zoomLevel == 4
         self.zoomLevel = zoomLevel
         if !isPinching {
             self.continuousZoom = Double(zoomLevel)
         }
         self.lastCommittedInteger = zoomLevel
+        // Zoom 4 = page-fit. Snappier deceleration so the snap-to-page
+        // arrives quickly instead of drifting like a normal long scroll.
+        scrollView.decelerationRate = (zoomLevel == 4) ? .fast : .normal
         self.topInsetValue = topInset
         self.bottomInsetValue = bottomInset
         self.catFooterCountEligible = showCatFooter && !sessions.isEmpty && sessions.count <= 10
-        scrollView.contentInset = UIEdgeInsets(top: topInset, left: 0, bottom: bottomInset, right: 0)
-        scrollView.verticalScrollIndicatorInsets = UIEdgeInsets(top: topInset, left: 0, bottom: bottomInset, right: 0)
+        // At zoom 4 each card *frame* is the full scroll-view height,
+        // and the card's internal layout puts the title below the top
+        // chrome via fixed offsets in `HomeRowContainer.layoutSubviews`.
+        // We zero out both content insets so the scroll view's natural
+        // rest position has card 0's frame top at bounds.y == 0 — i.e.
+        // truly the top edge of the phone (modulo safe-area auto-adjust).
+        let effectiveTopInset: CGFloat = (zoomLevel == 4) ? 0 : topInset
+        let effectiveBottomInset: CGFloat = (zoomLevel == 4) ? 0 : bottomInset
+        scrollView.contentInset = UIEdgeInsets(top: effectiveTopInset, left: 0, bottom: effectiveBottomInset, right: 0)
+        scrollView.verticalScrollIndicatorInsets = UIEdgeInsets(top: effectiveTopInset, left: 0, bottom: effectiveBottomInset, right: 0)
         refreshCatFooterVisibility()
 
         // Text scale change → blow out every row's height cache and
@@ -329,11 +358,48 @@ final class HomeSessionsScrollUIView: UIView {
                 pinned: pinned,
                 displayZoom: displayZoom,
                 textScale: textScale,
+                themeManager: themeManager,
+                wallpaperManager: wallpaperManager,
                 callbacks: callbacks
             )
         }
 
-        relayout(animated: zoomChanged || textScaleChanged)
+        let layoutAnimated = zoomChanged || textScaleChanged
+        relayout(animated: layoutAnimated)
+        updatePageBackgroundVisibility()
+
+        // Just landed on the page-fit zoom from a different one — bring
+        // the scroll position to the nearest page boundary so the user
+        // doesn't end up resting between two cards. Done after relayout
+        // so we snap against the freshly-sized rows.
+        if enteredPageFit {
+            snapToNearestPage(animated: layoutAnimated)
+        }
+    }
+
+    /// Move `contentOffset` to the closest page boundary. Used when
+    /// zooming into the page-fit zoom (4) and after layout shifts that
+    /// would otherwise leave the user between cards.
+    private func snapToNearestPage(animated: Bool) {
+        let page = pageFitHeight()
+        guard page > 0 else { return }
+        let insetTop = scrollView.adjustedContentInset.top
+        let pageOriginInScroll = -insetTop
+        let relative = scrollView.contentOffset.y - pageOriginInScroll
+        let nearestPage = (relative / page).rounded()
+        let snapped = pageOriginInScroll + nearestPage * page
+        let maxY = max(
+            pageOriginInScroll,
+            scrollView.contentSize.height
+                - scrollView.bounds.height
+                + scrollView.adjustedContentInset.bottom
+        )
+        let target = min(maxY, max(pageOriginInScroll, snapped))
+        // Only animate if we're actually moving — otherwise the no-op
+        // animation can introduce a one-frame offset glitch.
+        if abs(target - scrollView.contentOffset.y) > 0.5 {
+            scrollView.setContentOffset(CGPoint(x: 0, y: target), animated: animated)
+        }
     }
 
     // MARK: - Layout
@@ -367,12 +433,27 @@ final class HomeSessionsScrollUIView: UIView {
                 self.catFooterHostingController.view.frame = footerFrame
                 self.contentView.frame = CGRect(origin: .zero, size: newContentSize)
                 self.scrollView.contentSize = newContentSize
+                self.updatePageBackgroundVisibility()
+            } completion: { _ in
+                self.updatePageBackgroundVisibility()
             }
         } else {
             for (container, frame) in frames { container.frame = frame }
             catFooterHostingController.view.frame = footerFrame
             contentView.frame = CGRect(origin: .zero, size: newContentSize)
             scrollView.contentSize = newContentSize
+            updatePageBackgroundVisibility()
+        }
+    }
+
+    fileprivate func updatePageBackgroundVisibility() {
+        let canShowPageBackground = zoomLevel == 4 && !isPinching
+        let visibleRect = scrollView.convert(scrollView.bounds, to: contentView)
+            .insetBy(dx: 0, dy: -1)
+        for key in order {
+            guard let container = containers[key] else { continue }
+            let isVisible = canShowPageBackground && visibleRect.intersects(container.frame)
+            container.setPageBackgroundVisible(isVisible)
         }
     }
 
@@ -404,21 +485,46 @@ final class HomeSessionsScrollUIView: UIView {
         at zoom: Double,
         width: CGFloat
     ) -> CGFloat {
-        // Three committed zoom levels: 1, 2, 4. Continuous pinch
-        // interpolates between anchors, skipping 3 entirely.
+        // Four committed zoom levels: 1 SCAN, 2 GLANCE, 3 READ, 4 DEEP.
+        // Continuous pinch interpolates linearly between adjacent anchors.
         let zc = max(1.0, min(4.0, zoom))
+        // Zoom 4 (committed, not mid-pinch) is page-fit: every card is
+        // exactly one visible-area tall so only one shows at a time and
+        // the scroll view snaps to integer page boundaries — TikTok-style.
+        // During a pinch, we still interpolate via the natural h4 so the
+        // user can see content size grow continuously.
+        if zc >= 4.0 && !isPinching {
+            return pageFitHeight()
+        }
         let h1 = heightAnchor(for: container, zoomInt: 1, width: width)
         let h2 = heightAnchor(for: container, zoomInt: 2, width: width)
+        let h3 = heightAnchor(for: container, zoomInt: 3, width: width)
         let h4 = heightAnchor(for: container, zoomInt: 4, width: width)
         if zc <= 1.0 { return h1 }
         if zc <= 2.0 {
             let t = CGFloat(zc - 1.0)
             return h1 + t * (h2 - h1)
         }
+        if zc <= 3.0 {
+            let t = CGFloat(zc - 2.0)
+            return h2 + t * (h3 - h2)
+        }
         if zc >= 4.0 { return h4 }
-        // 2 → 4: single interpolation segment, no z=3 stop.
-        let t = CGFloat((zc - 2.0) / 2.0)
-        return h2 + t * (h4 - h2)
+        let t = CGFloat(zc - 3.0)
+        return h3 + t * (h4 - h3)
+    }
+
+    /// Page-fit card height at zoom 4. Each card frame is exactly the
+    /// full scroll-view bounds — that way card N's frame in scroll
+    /// content runs `[N · boundsH, (N+1) · boundsH]` with no carved-out
+    /// inset zones. The card's *internal* layout (`HomeRowContainer`)
+    /// then offsets its host view by `topInsetValue` and stops it short
+    /// of the bottom by `safeAreaInsets.top` so the chrome zones at the
+    /// top of the *next* page (and the safe-area zone at the bottom of
+    /// the *previous* page) draw empty container space rather than a
+    /// neighbour's content.
+    private func pageFitHeight() -> CGFloat {
+        max(120, bounds.height)
     }
 
     private func heightAnchor(
@@ -435,6 +541,7 @@ final class HomeSessionsScrollUIView: UIView {
         switch zoomInt {
         case 1: return ZoomHeights.z1
         case 2: return ZoomHeights.z2
+        case 3: return ZoomHeights.z3
         default: return container.naturalHeightAtZoom4(width: width)
         }
     }
@@ -631,6 +738,7 @@ final class HomeSessionsScrollUIView: UIView {
             // left the rows with slightly taller natural sizes than
             // needed at the snapped zoom.
             self.relayout(animated: false)
+            self.updatePageBackgroundVisibility()
         }
 
         // Vignette + anchor highlight fade out together — slightly
@@ -708,6 +816,91 @@ extension HomeSessionsScrollUIView: UIGestureRecognizerDelegate {
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
         true
+    }
+}
+
+// MARK: - UIScrollViewDelegate (page snap at zoom 4)
+//
+// Stock `UIScrollView.isPagingEnabled` pages at `bounds.height`, which
+// ignores `contentInset.top`/`bottom`. Our scroll view ducks below the
+// dynamic island via a top inset, so paging on raw bounds would drop
+// each card half-under the island. Instead we retarget the deceleration
+// destination ourselves: round to the nearest integer "page" (each one
+// `pageFitHeight()` tall), measured in `contentInset.top`-anchored
+// coordinates, then translate back to the raw `contentOffset.y` the
+// scroll view will animate to.
+extension HomeSessionsScrollUIView: UIScrollViewDelegate {
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updatePageBackgroundVisibility()
+    }
+
+    func scrollViewWillEndDragging(
+        _ scrollView: UIScrollView,
+        withVelocity velocity: CGPoint,
+        targetContentOffset: UnsafeMutablePointer<CGPoint>
+    ) {
+        guard zoomLevel == 4, !isPinching else { return }
+        let page = pageFitHeight()
+        guard page > 0 else { return }
+
+        let insetTop = scrollView.adjustedContentInset.top
+        let pageOriginInScroll = -insetTop  // contentOffset.y when first card is on screen
+
+        // TikTok-style snap: velocity *direction* picks the next page,
+        // not the proposed target distance. With `.fast` deceleration, a
+        // hard flick covers a short distance — the system's
+        // `targetContentOffset` can land in the first half of the next
+        // page, which a nearest-rounding snap then pulls back to the
+        // current page. The user reads that as "the flick didn't take".
+        //
+        // Instead: figure out which page the user is leaving (the one
+        // they were resting on at drag start, ≈ floor of current offset
+        // relative to page), then advance ±1 page based on velocity sign.
+        // A truly slow lift (no flick) falls through to nearest-rounding
+        // so it still snaps to whichever page is closer.
+        let currentRelative = scrollView.contentOffset.y - pageOriginInScroll
+        let lowerPage = floor(currentRelative / page)
+        let upperPage = lowerPage + 1
+
+        let velocityThreshold: CGFloat = 0.1
+        let targetPage: CGFloat
+        if velocity.y > velocityThreshold {
+            targetPage = upperPage
+        } else if velocity.y < -velocityThreshold {
+            targetPage = lowerPage
+        } else {
+            // No real flick — snap to whichever side they're closer to.
+            targetPage = (currentRelative / page).rounded()
+        }
+
+        let snapped = pageOriginInScroll + targetPage * page
+        let maxY = max(pageOriginInScroll, scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom)
+        let minY = pageOriginInScroll
+        targetContentOffset.pointee.y = min(maxY, max(minY, snapped))
+    }
+
+    /// Cover the case where the user drags slowly and lifts without
+    /// triggering deceleration — `willEndDragging` doesn't redirect that
+    /// path. Without this, a careful drag rests between cards.
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard !decelerate else { return }
+        guard zoomLevel == 4, !isPinching else { return }
+        snapToNearestPage(animated: true)
+    }
+
+    /// Belt-and-braces: if any path leaves us at a non-page offset
+    /// after deceleration finishes, snap once more.
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard zoomLevel == 4, !isPinching else { return }
+        let page = pageFitHeight()
+        guard page > 0 else { return }
+        let insetTop = scrollView.adjustedContentInset.top
+        let relative = scrollView.contentOffset.y - (-insetTop)
+        let drift = abs(relative.truncatingRemainder(dividingBy: page))
+        // Within 0.5pt of an exact page boundary → already aligned.
+        if drift > 0.5 && drift < (page - 0.5) {
+            snapToNearestPage(animated: true)
+        }
     }
 }
 
@@ -885,6 +1078,16 @@ struct AlphaAnimatedImageView: UIViewRepresentable {
 
 final class HomeRowContainer: UIView {
     private let hostingController: UIHostingController<AnyView>
+    private let backgroundHostingController: UIHostingController<AnyView>
+    /// Clipping window for the hosted SwiftUI view. At zoom 4 the
+    /// SwiftUI content can be naturally taller than the available
+    /// screen-fit space (long response previews). The hosting view's
+    /// own `.clipsToBounds` doesn't help, because UIHostingController
+    /// sizes its `view` to the SwiftUI body's intrinsic height — so
+    /// the view itself grows. Putting it inside this fixed-height
+    /// clipping container is what actually keeps the title pinned at
+    /// the top while the bottom of the content gets cut off.
+    private let hostClip = UIView()
     private let actionsBackground = UIView()
     private let pinchHighlight = UIView()
     private let pinchBlur = UIVisualEffectView(effect: nil)
@@ -927,6 +1130,9 @@ final class HomeRowContainer: UIView {
     private var cachedNaturalHeight: CGFloat?
     private var cachedMeasureWidth: CGFloat = 0
     private var textScale: CGFloat = 1.0
+    private var themeManager: ThemeManager?
+    private var wallpaperManager: WallpaperManager?
+    private var pageBackgroundVisible = false
     private var fadeLink: CADisplayLink?
     /// Highest `setPinchBlurProgress` value observed during the current
     /// pinch. When progress dips below this, we're on the way back and
@@ -962,9 +1168,15 @@ final class HomeRowContainer: UIView {
     init(scrollHost: HomeSessionsScrollUIView) {
         self.scrollHost = scrollHost
         self.hostingController = UIHostingController(rootView: AnyView(EmptyView()))
+        self.backgroundHostingController = UIHostingController(rootView: AnyView(EmptyView()))
         super.init(frame: .zero)
         clipsToBounds = true
         backgroundColor = .clear
+
+        backgroundHostingController.view.backgroundColor = .clear
+        backgroundHostingController.view.isUserInteractionEnabled = false
+        backgroundHostingController.view.isHidden = true
+        addSubview(backgroundHostingController.view)
 
         // Actions background — tinted view that fills the row behind the
         // content, crossfading between leading (reply) / trailing (hide).
@@ -985,19 +1197,22 @@ final class HomeRowContainer: UIView {
         actionsBackground.addSubview(trailingIconView)
 
         hostingController.view.backgroundColor = .clear
-        addSubview(hostingController.view)
+        hostClip.clipsToBounds = true
+        hostClip.backgroundColor = .clear
+        addSubview(hostClip)
+        hostClip.addSubview(hostingController.view)
 
         // Pinch blur — non-anchor rows have their visual effect
         // interpolated via `pinchBlurAnimator.fractionComplete` during
         // pinch. Starts with `effect = nil` (no blur) and scrubs up
         // to a thin material blur as zoom progresses.
         //
-        // Catalyst skips this entirely: UIBlurEffect bridges to
-        // NSVisualEffectView on macOS and does not honor a paused
-        // animator at fractionComplete=0 — it renders the full
-        // material instead of nothing, so the blur sits over every
-        // row obscuring all content. No pinch gesture on Catalyst
-        // anyway, so the whole pipeline is unused there.
+        // Skipped whenever we render as a Mac app (Catalyst OR iOS-on-Mac):
+        // UIBlurEffect bridges to NSVisualEffectView and does not honor a
+        // paused animator at fractionComplete=0 — it renders the full
+        // material instead of nothing, so the blur sits over every row
+        // obscuring all content. No pinch gesture in Mac modes anyway,
+        // so the whole pipeline is unused there.
         //
         // iOS Reduce Transparency has the same practical failure mode:
         // system material can collapse to an opaque fallback over the
@@ -1005,15 +1220,15 @@ final class HomeRowContainer: UIView {
         // safe behavior is no blur overlay at all.
         pinchBlur.isUserInteractionEnabled = false
         pinchBlur.alpha = 1
-        #if !targetEnvironment(macCatalyst)
-        updatePinchBlurAvailability()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(reduceTransparencyDidChange),
-            name: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
-            object: nil
-        )
-        #endif
+        if !LitterPlatform.rendersAsMacApp {
+            updatePinchBlurAvailability()
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(reduceTransparencyDidChange),
+                name: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
+                object: nil
+            )
+        }
 
         // Pinch highlight — subtle accent tint over the anchor row
         // while a pinch is live. Fades in on `.began`, tracks the
@@ -1036,17 +1251,16 @@ final class HomeRowContainer: UIView {
         // (running or paused). We hold it paused-active for
         // `fractionComplete` scrubbing, so terminate it explicitly here.
         fadeLink?.invalidate()
-        #if !targetEnvironment(macCatalyst)
-        NotificationCenter.default.removeObserver(
-            self,
-            name: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
-            object: nil
-        )
-        tearDownPinchBlurAnimator()
-        #endif
+        if !LitterPlatform.rendersAsMacApp {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
+                object: nil
+            )
+            tearDownPinchBlurAnimator()
+        }
     }
 
-    #if !targetEnvironment(macCatalyst)
     @objc private func reduceTransparencyDidChange() {
         updatePinchBlurAvailability()
         setNeedsLayout()
@@ -1064,7 +1278,7 @@ final class HomeRowContainer: UIView {
             if pinchHighlight.superview === self {
                 insertSubview(pinchBlur, belowSubview: pinchHighlight)
             } else {
-                insertSubview(pinchBlur, aboveSubview: hostingController.view)
+                insertSubview(pinchBlur, aboveSubview: hostClip)
             }
         }
 
@@ -1079,10 +1293,10 @@ final class HomeRowContainer: UIView {
         animator.finishAnimation(at: .current)
         pinchBlurAnimator = nil
     }
-    #endif
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        backgroundHostingController.view.frame = bounds
         actionsBackground.frame = bounds
         pinchBlur.frame = bounds
         pinchHighlight.frame = bounds.insetBy(dx: 4, dy: 2)
@@ -1097,19 +1311,37 @@ final class HomeRowContainer: UIView {
             width: iconSize, height: iconSize
         )
 
-        // Size hosting view to its INTRINSIC natural height at the current
-        // displayZoom. SwiftUI renders at natural size (no compression);
-        // container clips via clipsToBounds when its frame is shorter.
-        // We cache per displayZoom so pinch ticks don't remeasure.
+        // Two-layer layout:
+        //   * `hostClip` is the visible window — at zoom 4 it's the
+        //     screen-fit rectangle (offset by the chrome height at top
+        //     and stopped short by the safe-area top at the bottom);
+        //     at lower zooms it equals the SwiftUI natural height.
+        //   * `hostingController.view` sits at (0, 0) inside `hostClip`
+        //     and is sized to the SwiftUI content's natural height.
+        //     When natural > clipHeight (long response preview at z4),
+        //     the hosting view extends below the clip's bottom and is
+        //     cut off there. The title at (0, 0) of the hosting view
+        //     stays pinned to the top of the clip — never pushed up.
         let width = bounds.width
         guard width > 0 else { return }
         if hostHeightCachedWidth != width {
             hostHeightByZoom.removeAll(keepingCapacity: true)
             hostHeightCachedWidth = width
         }
-        let h = hostHeightByZoom[displayZoom] ?? measureHostHeight(width: width)
+        let pageFit = displayZoom == 4 && (scrollHost?.isPinching == false)
+        let topPad: CGFloat = pageFit ? (scrollHost?.topInsetValue ?? 0) : 0
+        let safeAreaTop: CGFloat = pageFit ? (scrollHost?.scrollViewSafeAreaTop ?? 0) : 0
+        let naturalHeight = hostHeightByZoom[displayZoom] ?? measureHostHeight(width: width)
+        let clipHeight: CGFloat = if pageFit {
+            max(0, bounds.height - topPad - safeAreaTop)
+        } else {
+            naturalHeight
+        }
+        hostClip.frame = CGRect(
+            x: offsetX, y: topPad, width: width, height: clipHeight
+        )
         hostingController.view.frame = CGRect(
-            x: offsetX, y: 0, width: width, height: h
+            x: 0, y: 0, width: width, height: naturalHeight
         )
     }
 
@@ -1154,6 +1386,8 @@ final class HomeRowContainer: UIView {
         pinned: Bool,
         displayZoom: Int,
         textScale: CGFloat,
+        themeManager: ThemeManager,
+        wallpaperManager: WallpaperManager,
         callbacks: HomeSessionsScrollView.Callbacks
     ) {
         let sessionChanged = self.session != session
@@ -1163,6 +1397,8 @@ final class HomeRowContainer: UIView {
             self.pinned != pinned
         let zoomChanged = self.displayZoom != displayZoom
         let textScaleChanged = abs(self.textScale - textScale) > 0.001
+        let environmentChanged = self.themeManager !== themeManager ||
+            self.wallpaperManager !== wallpaperManager
         self.session = session
         self.isOpening = isOpening
         self.isHydrating = isHydrating
@@ -1170,6 +1406,8 @@ final class HomeRowContainer: UIView {
         self.pinned = pinned
         self.displayZoom = displayZoom
         self.textScale = textScale
+        self.themeManager = themeManager
+        self.wallpaperManager = wallpaperManager
         self.callbacks = callbacks
 
         if sessionChanged || textScaleChanged {
@@ -1179,6 +1417,9 @@ final class HomeRowContainer: UIView {
         if sessionChanged || stateChanged || zoomChanged || textScaleChanged {
             refreshRootView()
             setNeedsLayout()
+        }
+        if sessionChanged || zoomChanged || environmentChanged {
+            refreshPageBackgroundView()
         }
     }
 
@@ -1194,10 +1435,9 @@ final class HomeRowContainer: UIView {
     private static let pinchBlurCeiling: CGFloat = 0.5
     private static let pinchBlurExponent: CGFloat = 2.8
     func setPinchBlurProgress(_ progress: CGFloat) {
-        #if targetEnvironment(macCatalyst)
-        // Catalyst doesn't install the pinch-blur view (see init).
-        return
-        #else
+        // Mac modes (Catalyst + iOS-on-Mac) don't install the
+        // pinch-blur view (see init).
+        if LitterPlatform.rendersAsMacApp { return }
         guard !UIAccessibility.isReduceTransparencyEnabled else {
             pinchBlur.removeFromSuperview()
             pinchBlur.effect = nil
@@ -1214,7 +1454,6 @@ final class HomeRowContainer: UIView {
         // blur abruptly vanished.
         let eased = pow(p, Self.pinchBlurExponent) * Self.pinchBlurCeiling
         pinchBlurAnimator.fractionComplete = max(0, min(0.999, eased))
-        #endif
     }
 
     /// No-op kept for the scroll host's `.began` call site; the
@@ -1225,9 +1464,7 @@ final class HomeRowContainer: UIView {
     /// a CADisplayLink-driven tween because UIViewPropertyAnimator's
     /// `fractionComplete` can't be animated with `UIView.animate`.
     func fadeOutPinchBlur(duration: TimeInterval = 0.25) {
-        #if targetEnvironment(macCatalyst)
-        return
-        #else
+        if LitterPlatform.rendersAsMacApp { return }
         guard !UIAccessibility.isReduceTransparencyEnabled,
               let pinchBlurAnimator else {
             fadeLink?.invalidate()
@@ -1252,7 +1489,6 @@ final class HomeRowContainer: UIView {
         }, selector: #selector(PinchBlurFadeTarget.tick))
         link.add(to: .main, forMode: .common)
         fadeLink = link
-        #endif
     }
 
     /// Set the highlight opacity directly (0–1). Used during a live
@@ -1276,6 +1512,7 @@ final class HomeRowContainer: UIView {
         guard displayZoom != z else { return }
         displayZoom = z
         refreshRootView()
+        refreshPageBackgroundView()
         // Re-measure host height for the new displayZoom (cached per zoom).
         setNeedsLayout()
         layoutIfNeeded()
@@ -1316,10 +1553,36 @@ final class HomeRowContainer: UIView {
             onPin: { callbacks.onPin(sessionSnapshot.key) },
             onUnpin: { callbacks.onUnpin(sessionSnapshot.key) },
             onCancelTurn: { callbacks.onCancelTurn(sessionSnapshot) },
-            onDelete: { callbacks.onDelete(sessionSnapshot) }
+            onDelete: { callbacks.onDelete(sessionSnapshot) },
+            onFork: { callbacks.onFork(sessionSnapshot) },
+            onShowPiP: { callbacks.onShowPiP(sessionSnapshot) }
         )
         .environment(\.textScale, textScale)
         hostingController.rootView = AnyView(content)
+    }
+
+    func setPageBackgroundVisible(_ visible: Bool) {
+        guard pageBackgroundVisible != visible else { return }
+        pageBackgroundVisible = visible
+        refreshPageBackgroundView()
+    }
+
+    private func refreshPageBackgroundView() {
+        guard displayZoom == 4,
+              pageBackgroundVisible,
+              let session,
+              let themeManager,
+              let wallpaperManager else {
+            backgroundHostingController.rootView = AnyView(EmptyView())
+            backgroundHostingController.view.isHidden = true
+            return
+        }
+
+        let background = ChatWallpaperBackground(threadKey: session.key)
+            .environment(themeManager)
+            .environment(wallpaperManager)
+        backgroundHostingController.rootView = AnyView(background)
+        backgroundHostingController.view.isHidden = false
     }
 
     // MARK: - Measurement
@@ -1495,6 +1758,8 @@ struct HomeSessionRowContent: View {
     let onUnpin: () -> Void
     let onCancelTurn: () -> Void
     let onDelete: () -> Void
+    let onFork: () -> Void
+    let onShowPiP: () -> Void
 
     var body: some View {
         SessionCanvasLine(
@@ -1510,6 +1775,10 @@ struct HomeSessionRowContent: View {
             Button { onReply() } label: {
                 Label("Reply", systemImage: "arrowshape.turn.up.left")
             }
+            Button { onFork() } label: {
+                Label("Fork", systemImage: "arrow.triangle.branch")
+            }
+            .disabled(session.hasTurnActive)
             if session.hasTurnActive {
                 Button(role: .destructive) { onCancelTurn() } label: {
                     Label("Cancel Turn", systemImage: "stop.circle")
@@ -1522,6 +1791,11 @@ struct HomeSessionRowContent: View {
                     pinned ? "Remove from Home" : "Pin to Home",
                     systemImage: pinned ? "minus.circle" : "pin"
                 )
+            }
+            if AVPictureInPictureController.isPictureInPictureSupported() {
+                Button { onShowPiP() } label: {
+                    Label("Show in Picture in Picture", systemImage: "pip")
+                }
             }
             Button { onHide() } label: {
                 Label("Hide from Home", systemImage: "eye.slash")

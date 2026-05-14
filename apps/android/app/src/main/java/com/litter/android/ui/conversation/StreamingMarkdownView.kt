@@ -106,12 +106,20 @@ private fun StreamingRenderBlocks(
                 }
             }
             is AppMessageRenderBlock.CodeBlock -> {
-                StreamingCodeBlock(
-                    language = block.language,
-                    code = block.code,
-                    modifier = Modifier.alpha(alpha),
-                    bodySize = bodySize,
-                )
+                if (isMathLanguage(block.language)) {
+                    StreamingMarkdownText(
+                        text = mathMarkdownBlock(block.code),
+                        modifier = Modifier.alpha(alpha),
+                        bodySize = bodySize,
+                    )
+                } else {
+                    StreamingCodeBlock(
+                        language = block.language,
+                        code = block.code,
+                        modifier = Modifier.alpha(alpha),
+                        bodySize = bodySize,
+                    )
+                }
             }
             is AppMessageRenderBlock.InlineImage -> {
                 val bitmap = remember(block.data) {

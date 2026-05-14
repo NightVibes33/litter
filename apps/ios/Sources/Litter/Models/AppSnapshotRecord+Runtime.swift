@@ -37,7 +37,7 @@ extension AppSnapshotRecord {
         }
 
         return pendingUserInputs.contains(where: {
-            $0.serverId == key.serverId && $0.threadId == key.threadId
+            $0.isRelevant(to: key)
         })
     }
 

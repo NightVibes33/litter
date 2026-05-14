@@ -40,6 +40,7 @@ pub const ISH_E_TIMEOUT: i32 = -8;
 pub const ISH_E_NOMEM: i32 = -9;
 pub const ISH_E_ARGS: i32 = -10;
 const BOOTSTRAP_COMMAND_TIMEOUT_MS: u64 = 10_000;
+const ROOTFS_STAMP_FILE: &str = ".litter-rootfs-id";
 
 impl From<ish_embed_host::IshError> for IshBootstrapError {
     fn from(err: ish_embed_host::IshError) -> Self {
@@ -133,6 +134,18 @@ pub fn preflight() -> (i32, Vec<u8>) {
 /// and an empty byte vector â matching the IshBridge.m error semantics so the
 /// exec-hook path can surface the failure without a nil pointer panic.
 pub fn run(cmd: &str, cwd: Option<&str>, timeout_ms: Option<u64>) -> (i32, Vec<u8>) {
+    run_streaming(cmd, cwd, timeout_ms, |_| {})
+}
+
+pub fn run_streaming<F>(
+    cmd: &str,
+    cwd: Option<&str>,
+    timeout_ms: Option<u64>,
+    mut on_output: F,
+) -> (i32, Vec<u8>)
+where
+    F: FnMut(&[u8]),
+{
     let Some(instance) = INSTANCE.get() else {
         eprintln!("[ish] run() called before bootstrap succeeded");
         return (ISH_E_NOT_RUNNING, Vec::new());
@@ -150,7 +163,7 @@ pub fn run(cmd: &str, cwd: Option<&str>, timeout_ms: Option<u64>) -> (i32, Vec<u
     let argv = ["/bin/sh".to_string(), "-c".to_string(), wrapped];
     let env = runtime_env();
     let cwd_path = PathBuf::from("/");
-    instance.run_oneshot(&argv, &cwd_path, &env, timeout_ms)
+    instance.run_oneshot_streaming(&argv, &cwd_path, &env, timeout_ms, &mut on_output)
 }
 
 // ââ post-init setup helpers ââââââââââââââââââââââââââââââââââââââââââââââ
@@ -271,19 +284,74 @@ fn mount_apps_dir(documents_dir: &Path) {
 // ââ bundled rootfs extraction ââââââââââââââââââââââââââââââââââââââââââââ
 
 fn extract_rootfs_if_needed(source: &Path, dest: &Path) -> Result<(), IshBootstrapError> {
-    if dest.is_dir() {
-        return Ok(());
-    }
     if !source.is_dir() {
         return Err(IshBootstrapError::BundledRootfsMissing(
             source.display().to_string(),
         ));
     }
-    if let Some(parent) = dest.parent() {
+
+    if dest.is_dir() && rootfs_stamp_matches(source, dest)? {
+        return Ok(());
+    }
+
+    if dest.exists() {
+        eprintln!(
+            "[ish] replacing extracted rootfs at '{}' with bundled rootfs",
+            dest.display()
+        );
+    }
+    replace_dir_recursive(source, dest)?;
+    Ok(())
+}
+
+fn rootfs_stamp_matches(source: &Path, dest: &Path) -> io::Result<bool> {
+    let Some(source_stamp) = read_rootfs_stamp(source)? else {
+        return Ok(true);
+    };
+    let dest_stamp = read_rootfs_stamp(dest)?;
+    Ok(dest_stamp.as_deref() == Some(source_stamp.as_str()))
+}
+
+fn read_rootfs_stamp(root: &Path) -> io::Result<Option<String>> {
+    match fs::read_to_string(root.join(ROOTFS_STAMP_FILE)) {
+        Ok(value) => {
+            let value = value.trim();
+            if value.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(value.to_string()))
+            }
+        }
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+fn replace_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
+    if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent)?;
     }
-    copy_dir_recursive(source, dest)?;
+
+    let name = dst
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("fs");
+    let tmp = dst.with_file_name(format!(".{name}.tmp-{}", std::process::id()));
+
+    remove_path_if_exists(&tmp)?;
+    copy_dir_recursive(src, &tmp)?;
+    remove_path_if_exists(dst)?;
+    fs::rename(&tmp, dst)?;
     Ok(())
+}
+
+fn remove_path_if_exists(path: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.is_dir() => fs::remove_dir_all(path),
+        Ok(_) => fs::remove_file(path),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {

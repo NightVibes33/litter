@@ -59,6 +59,28 @@ final class AppSnapshotRuntimeTests: XCTestCase {
         XCTAssertEqual(snapshot.threadsWithTrackedTurns.map(\.key), [key])
     }
 
+    func testThreadHasTrackedTurnWhenServerScopedUserInputIsPending() {
+        let key = ThreadKey(serverId: "srv", threadId: "thread-1")
+        var snapshot = makeSnapshot(
+            threads: [makeThreadSnapshot(key: key)]
+        )
+        snapshot.pendingUserInputs = [
+            PendingUserInputRequest(
+                id: "input-1",
+                serverId: key.serverId,
+                threadId: "",
+                turnId: "turn-1",
+                itemId: "item-1",
+                questions: [],
+                requesterAgentNickname: nil,
+                requesterAgentRole: nil
+            )
+        ]
+
+        XCTAssertTrue(snapshot.threadHasTrackedTurn(for: key))
+        XCTAssertEqual(snapshot.threadsWithTrackedTurns.map(\.key), [key])
+    }
+
     func testThreadHasTrackedTurnIgnoresOtherThreadsPendingState() {
         let trackedKey = ThreadKey(serverId: "srv", threadId: "thread-1")
         let otherKey = ThreadKey(serverId: "srv", threadId: "thread-2")
@@ -355,6 +377,7 @@ final class AppSnapshotRuntimeTests: XCTestCase {
                 model: thread.model ?? "",
                 modelProvider: thread.info.modelProvider ?? "",
                 parentThreadId: thread.info.parentThreadId,
+                forkedFromId: nil,
                 agentNickname: thread.info.agentNickname,
                 agentRole: thread.info.agentRole,
                 agentDisplayLabel: thread.key.threadId,
@@ -372,7 +395,8 @@ final class AppSnapshotRuntimeTests: XCTestCase {
                 lastTurnStartMs: nil,
                 lastTurnEndMs: nil,
                 stats: nil,
-                tokenUsage: nil
+                tokenUsage: nil,
+                goal: nil
             )
         }
 
@@ -418,6 +442,7 @@ final class AppSnapshotRuntimeTests: XCTestCase {
                 agentNickname: nil,
                 agentRole: nil,
                 parentThreadId: parentThreadId,
+                forkedFromId: nil,
                 agentStatus: nil,
                 createdAt: nil,
                 updatedAt: nil

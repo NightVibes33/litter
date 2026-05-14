@@ -232,6 +232,19 @@ final class VoiceRuntimeController: VoiceActions {
                 dynamicTools: appModel.localGenerativeUiToolSpecs(for: serverId)
             )
         )
+        do {
+            try await appModel.renameThread(
+                serverId: serverId,
+                threadId: key.threadId,
+                title: "realtime session"
+            )
+        } catch {
+            LLog.warn(
+                "voice",
+                "failed to name realtime session thread",
+                fields: ["error": String(describing: error)]
+            )
+        }
         SavedThreadsStore.add(.init(threadKey: key))
         appModel.store.setActiveThread(key: key)
         setPersistedLocalVoiceThreadId(key.threadId)
@@ -566,14 +579,21 @@ final class VoiceRuntimeController: VoiceActions {
             return
         }
 
-        if reason == "requested" {
-            endVoiceSessionImmediately()
-            return
-        }
-
         // Unexpected close — end the session with an error so the UI doesn't
         // get stuck in a stale "Listening" / "Speaking" state.
-        let message = reason.isEmpty ? "Voice session closed unexpectedly" : "Voice session closed: \(reason)"
+        let message: String
+        switch reason {
+        case "":
+            message = "Voice session closed unexpectedly"
+        case "requested":
+            message = "Voice session ended by the server"
+        case "transport_closed":
+            message = "Realtime transport closed unexpectedly"
+        case "error":
+            message = "Realtime session ended with an error"
+        default:
+            message = "Voice session closed: \(reason)"
+        }
         failVoiceSession(message)
     }
 

@@ -65,6 +65,7 @@ import com.litter.android.state.statusColor
 import com.litter.android.ui.LitterTextStyle
 import com.litter.android.ui.LocalAppModel
 import com.litter.android.ui.LitterTheme
+import com.litter.android.ui.common.modelPickerDisplayName
 import com.litter.android.ui.common.matchesModelSelection
 import com.litter.android.ui.scaled
 import kotlinx.coroutines.launch
@@ -99,7 +100,7 @@ fun HeaderBar(
     val pendingRuntime = launchState.selectedAgentRuntimeKind
     val pendingModelLabel = server?.availableModels
         ?.firstOrNull { it.matchesModelSelection(pendingModelId, pendingRuntime) }
-        ?.displayName
+        ?.modelPickerDisplayName()
         ?.ifBlank { pendingModelId }
         ?: pendingModelId.ifBlank { null }
     val currentModelId = pendingModelId.ifBlank {
@@ -119,6 +120,8 @@ fun HeaderBar(
             val threadReasoning = thread?.reasoningEffort?.trim().orEmpty()
             if (threadReasoning.isNotEmpty()) {
                 threadReasoning
+            } else if (selectedModelDefinition?.supportedReasoningEfforts?.isEmpty() == true) {
+                ""
             } else {
                 selectedModelDefinition?.defaultReasoningEffort?.let(::effortLabelLocal) ?: "default"
             }
@@ -196,14 +199,16 @@ fun HeaderBar(
                             fontSize = LitterTextStyle.caption2.scaled,
                         )
                     }
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = reasoningLabel,
-                        color = LitterTheme.textSecondary,
-                        fontSize = LitterTextStyle.caption.scaled,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (reasoningLabel.isNotBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = reasoningLabel,
+                            color = LitterTheme.textSecondary,
+                            fontSize = LitterTextStyle.caption.scaled,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Spacer(Modifier.width(2.dp))
                     Icon(
                         Icons.Default.KeyboardArrowDown,
@@ -386,4 +391,5 @@ private fun effortLabelLocal(value: uniffi.codex_mobile_client.ReasoningEffort):
         uniffi.codex_mobile_client.ReasoningEffort.MEDIUM -> "medium"
         uniffi.codex_mobile_client.ReasoningEffort.HIGH -> "high"
         uniffi.codex_mobile_client.ReasoningEffort.X_HIGH -> "xhigh"
+        uniffi.codex_mobile_client.ReasoningEffort.MAX -> "max"
     }

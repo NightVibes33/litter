@@ -19,7 +19,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.litter.android.ui.LitterTheme
-import com.litter.android.ui.common.runtimeDrawable
+import com.litter.android.ui.common.AgentIconView
 import com.litter.android.ui.common.runtimeLabel
 import com.litter.android.ui.scaled
 import uniffi.codex_mobile_client.AppSessionSummary
@@ -69,11 +69,7 @@ fun ModelBadgeLine(
             )
             if (model.isNotEmpty()) {
                 SeparatorDot()
-                Image(
-                    painter = painterResource(session.agentRuntimeKind.runtimeDrawable),
-                    contentDescription = session.agentRuntimeKind.runtimeLabel,
-                    modifier = Modifier.size(12.dp),
-                )
+                AgentIconView(kind = session.agentRuntimeKind, sizeDp = 12)
                 BadgeText(
                     text = model,
                     color = LitterTheme.textSecondary.copy(alpha = 0.7f),

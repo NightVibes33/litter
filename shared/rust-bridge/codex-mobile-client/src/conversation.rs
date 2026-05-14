@@ -1866,6 +1866,7 @@ mod tests {
         Turn {
             id: id.to_string(),
             items,
+            items_view: codex_app_server_protocol::TurnItemsView::Full,
             status: TurnStatus::Completed,
             error: None,
             started_at: None,

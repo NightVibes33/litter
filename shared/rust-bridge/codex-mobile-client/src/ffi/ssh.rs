@@ -2,8 +2,7 @@ use crate::ffi::ClientError;
 use crate::ffi::shared::{shared_mobile_client, shared_runtime};
 use crate::session::connection::ServerConfig;
 use crate::ssh::{
-    CodexInstallOutcome, RemoteShell, SshAuth, SshBootstrapResult, SshClient, SshCredentials,
-    SshError,
+    RemoteShell, SshAuth, SshBootstrapTransport, SshClient, SshCredentials, SshError,
 };
 use crate::store::{
     AppConnectionProgressSnapshot, AppConnectionStepKind, AppConnectionStepState,
@@ -13,7 +12,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
-use tokio::sync::oneshot;
 use tracing::{debug, info, warn};
 
 const WAKE_MAC_SCRIPT: &str = r#"iface="$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')"
@@ -34,11 +32,6 @@ pub(crate) struct ManagedSshSession {
     pub(crate) pid: Option<u32>,
     pub(crate) shell: RemoteShell,
 }
-
-// `ManagedSshBootstrapFlow` lives on `MobileClient::ssh_bootstrap_flows` so
-// the connect entry point (now on `ServerBridge`) and the install-prompt
-// response (on `SshBridge`) can share state across bridges.
-pub(crate) use crate::mobile_client::ManagedSshBootstrapFlow;
 
 #[derive(uniffi::Object)]
 pub struct SshBridge {
@@ -371,31 +364,6 @@ impl SshBridge {
         debug!("SshBridge: ssh_close completed session_id={}", session_id);
         Ok(())
     }
-
-    pub async fn ssh_respond_to_install_prompt(
-        &self,
-        server_id: String,
-        install: bool,
-    ) -> Result<(), ClientError> {
-        info!(
-            "SshBridge: ssh_respond_to_install_prompt server_id={} install={}",
-            server_id, install
-        );
-        let mobile_client = shared_mobile_client();
-        let sender = {
-            let mut flows = mobile_client.ssh_bootstrap_flows.lock().await;
-            flows
-                .get_mut(&server_id)
-                .and_then(|flow| flow.install_decision.take())
-        }
-        .ok_or_else(|| {
-            ClientError::InvalidParams(format!("no pending install prompt for {server_id}"))
-        })?;
-
-        sender
-            .send(install)
-            .map_err(|_| ClientError::EventClosed("install prompt already closed".to_string()))
-    }
 }
 
 pub(crate) fn ssh_auth_kind(auth: &SshAuth) -> &'static str {
@@ -443,9 +411,6 @@ async fn read_wake_mac(session: Arc<SshClient>) -> Option<String> {
 
 pub(crate) async fn run_guided_ssh_connect(
     mobile_client: Arc<crate::MobileClient>,
-    bootstrap_flows: Arc<
-        tokio::sync::Mutex<std::collections::HashMap<String, ManagedSshBootstrapFlow>>,
-    >,
     config: ServerConfig,
     credentials: SshCredentials,
     accept_unknown_host: bool,
@@ -527,137 +492,42 @@ pub(crate) async fn run_guided_ssh_connect(
                 .app_store
                 .update_server_connection_progress(&server_id, Some(progress.clone()));
 
-            // Best-effort: if this looks like our managed `~/.litter/` install
-            // and we haven't checked in 24h, probe for a newer release and
-            // swap in the updated binary. Any failure falls through to the
-            // already-resolved binary.
-            let update_result = ssh_client
-                .maybe_update_managed_codex(&binary, remote_shell)
-                .await;
-            let (effective_binary, install_detail, install_state) = match update_result {
-                Some((new_binary, CodexInstallOutcome::Installed)) => {
-                    info!(
-                        "guided ssh connect auto-updated codex server_id={} path={}",
-                        server_id,
-                        new_binary.path()
-                    );
-                    let detail = format!("Updated Codex ({})", new_binary.path());
-                    (new_binary, detail, AppConnectionStepState::Completed)
-                }
-                Some((_, CodexInstallOutcome::AlreadyAtLatestTag)) => (
-                    binary,
-                    "Already installed (up to date)".to_string(),
-                    AppConnectionStepState::Cancelled,
-                ),
-                None => (
-                    binary,
-                    "Already installed".to_string(),
-                    AppConnectionStepState::Cancelled,
-                ),
-            };
             progress.update_step(
                 AppConnectionStepKind::InstallingCodex,
-                install_state,
-                Some(install_detail),
+                AppConnectionStepState::Cancelled,
+                Some("Using user-installed Codex".to_string()),
             );
             mobile_client
                 .app_store
                 .update_server_connection_progress(&server_id, Some(progress.clone()));
-            effective_binary
+            binary
         }
         None => {
             info!(
-                "guided ssh connect missing codex server_id={} host={}; awaiting install decision",
+                "guided ssh connect missing codex server_id={} host={}",
                 server_id,
                 credentials.host.as_str()
             );
-            progress.pending_install = true;
             progress.update_step(
                 AppConnectionStepKind::FindingCodex,
-                AppConnectionStepState::AwaitingUserInput,
-                Some("Codex not found on remote host".to_string()),
-            );
-            mobile_client
-                .app_store
-                .update_server_connection_progress(&server_id, Some(progress.clone()));
-
-            let (tx, rx) = oneshot::channel();
-            {
-                let mut flows = bootstrap_flows.lock().await;
-                if let Some(flow) = flows.get_mut(&server_id) {
-                    flow.install_decision = Some(tx);
-                }
-            }
-
-            let should_install = rx.await.unwrap_or(false);
-            info!(
-                "guided ssh connect install decision server_id={} install={}",
-                server_id, should_install
-            );
-            progress.pending_install = false;
-            if !should_install {
-                progress.update_step(
-                    AppConnectionStepKind::FindingCodex,
-                    AppConnectionStepState::Failed,
-                    Some("Install declined".to_string()),
-                );
-                progress.update_step(
-                    AppConnectionStepKind::InstallingCodex,
-                    AppConnectionStepState::Cancelled,
-                    Some("Install declined".to_string()),
-                );
-                progress.terminal_message = Some("Install declined".to_string());
-                mobile_client
-                    .app_store
-                    .update_server_health(&server_id, ServerHealthSnapshot::Disconnected);
-                mobile_client
-                    .app_store
-                    .update_server_connection_progress(&server_id, Some(progress.clone()));
-                ssh_client.disconnect().await;
-                return Ok(());
-            }
-
-            progress.update_step(
-                AppConnectionStepKind::FindingCodex,
-                AppConnectionStepState::Completed,
-                Some("Installing latest stable release".to_string()),
+                AppConnectionStepState::Failed,
+                Some("Codex CLI not found on remote host".to_string()),
             );
             progress.update_step(
                 AppConnectionStepKind::InstallingCodex,
-                AppConnectionStepState::InProgress,
-                None,
+                AppConnectionStepState::Cancelled,
+                Some("Install Codex yourself and make `codex` available on PATH".to_string()),
             );
+            progress.terminal_message =
+                Some("Codex CLI not found on remote host; install Codex and retry".to_string());
+            mobile_client
+                .app_store
+                .update_server_health(&server_id, ServerHealthSnapshot::Disconnected);
             mobile_client
                 .app_store
                 .update_server_connection_progress(&server_id, Some(progress.clone()));
-
-            let platform = ssh_client
-                .detect_remote_platform_with_shell(Some(remote_shell))
-                .await
-                .map_err(map_ssh_error)?;
-            info!(
-                "guided ssh connect install platform server_id={} platform={:?}",
-                server_id, platform
-            );
-            let (installed_binary, install_outcome) = ssh_client
-                .install_latest_stable_codex(platform)
-                .await
-                .map_err(map_ssh_error)?;
-            info!(
-                "guided ssh connect install completed server_id={} path={} outcome={:?}",
-                server_id,
-                installed_binary.path(),
-                install_outcome
-            );
-            progress.update_step(
-                AppConnectionStepKind::InstallingCodex,
-                AppConnectionStepState::Completed,
-                Some(installed_binary.path().to_string()),
-            );
-            mobile_client
-                .app_store
-                .update_server_connection_progress(&server_id, Some(progress.clone()));
-            installed_binary
+            ssh_client.disconnect().await;
+            return Ok(());
         }
     };
 
@@ -691,12 +561,22 @@ pub(crate) async fn run_guided_ssh_connect(
     progress.update_step(
         AppConnectionStepKind::StartingAppServer,
         AppConnectionStepState::Completed,
-        Some(format!("Remote port {}", bootstrap.server_port)),
+        Some(match bootstrap.transport {
+            SshBootstrapTransport::AppServerProxy => "Codex app-server proxy".to_string(),
+            SshBootstrapTransport::WebSocketTunnel => {
+                format!("Remote port {}", bootstrap.server_port)
+            }
+        }),
     );
     progress.update_step(
         AppConnectionStepKind::OpeningTunnel,
         AppConnectionStepState::Completed,
-        Some(format!("127.0.0.1:{}", bootstrap.tunnel_local_port)),
+        Some(match bootstrap.transport {
+            SshBootstrapTransport::AppServerProxy => "Unix app-server proxy".to_string(),
+            SshBootstrapTransport::WebSocketTunnel => {
+                format!("127.0.0.1:{}", bootstrap.tunnel_local_port)
+            }
+        }),
     );
     progress.update_step(
         AppConnectionStepKind::Connected,
@@ -714,12 +594,7 @@ pub(crate) async fn run_guided_ssh_connect(
             credentials,
             accept_unknown_host,
             ssh_client,
-            SshBootstrapResult {
-                server_port: bootstrap.server_port,
-                tunnel_local_port: bootstrap.tunnel_local_port,
-                server_version: bootstrap.server_version,
-                pid: bootstrap.pid,
-            },
+            bootstrap,
             working_dir,
             ipc_socket_path_override,
         )

@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -17,7 +18,7 @@ import java.util.concurrent.atomic.AtomicLong
 import uniffi.codex_mobile_client.AppClient
 import uniffi.codex_mobile_client.AppMinigameRequest
 import uniffi.codex_mobile_client.AppMinigameResult
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.AppSessionSummary
 import uniffi.codex_mobile_client.AppSnapshotRecord
 import uniffi.codex_mobile_client.AppSortDirection
@@ -63,6 +64,25 @@ class AppModel private constructor(context: android.content.Context) {
         val text: String,
     )
 
+    /**
+     * Live composer draft (typed-but-unsent text plus any pasted/picked
+     * attachment) for a thread. Cached on `AppModel` so the draft survives
+     * `ComposerBar` recomposition / view-tree teardown when the user
+     * backgrounds the app — otherwise the local `remember { mutableStateOf }`
+     * inside `ComposerBar` is dropped and the user's text disappears.
+     */
+    data class ComposerDraft(
+        val text: String = "",
+        val attachment: ComposerImageAttachment? = null,
+    ) {
+        val isEmpty: Boolean
+            get() = text.isEmpty() && attachment == null
+
+        companion object {
+            val EMPTY = ComposerDraft()
+        }
+    }
+
     companion object {
         private var _instance: AppModel? = null
 
@@ -81,6 +101,7 @@ class AppModel private constructor(context: android.content.Context) {
          */
         const val INITIAL_TURN_PAGE_LIMIT: UInt = 5u
         const val OLDER_TURN_PAGE_LIMIT: UInt = 5u
+        private const val SESSION_LIST_PAGE_LIMIT: UInt = 80u
     }
 
     // --- Rust bridges (singletons behind the scenes) -------------------------
@@ -94,6 +115,10 @@ class AppModel private constructor(context: android.content.Context) {
     val parser: MessageParser
     val reconnectController: ReconnectController
     val launchState: AppLaunchState
+    /** Observes Wi-Fi ↔ cellular handoffs etc. and hints iroh. */
+    val reachability: NetworkReachabilityObserver
+    /** Persists the iroh device secret key across cold launches. */
+    val alleycatCredentials: AlleycatCredentialStore
     val appContext: android.content.Context = context
     init {
         UniffiInit.ensure(context)
@@ -118,6 +143,29 @@ class AppModel private constructor(context: android.content.Context) {
         )
         reconnectController.setMultiClankerAndQuicEnabled(true)
         launchState = AppLaunchState(context)
+        reachability = NetworkReachabilityObserver(context, this)
+        reachability.start()
+
+        // Push any persisted iroh device secret key to the Rust client
+        // BEFORE any alleycat operation triggers the endpoint bind, so
+        // the same `EndpointId` is reused across cold launches.
+        alleycatCredentials = AlleycatCredentialStore(context)
+        runCatching { alleycatCredentials.loadDeviceSecretKey() }
+            .getOrNull()
+            ?.let { client.setAlleycatSecretKey(it) }
+    }
+
+    /**
+     * After an alleycat operation has triggered the Rust endpoint
+     * bind, read back the device key bytes from Rust and persist if
+     * not already saved. Idempotent.
+     */
+    fun persistAlleycatSecretKeyIfNeeded() {
+        val bytes = client.alleycatSecretKey() ?: return
+        val existing = runCatching { alleycatCredentials.loadDeviceSecretKey() }.getOrNull()
+        if (existing != null && existing.contentEquals(bytes)) return
+        runCatching { alleycatCredentials.saveDeviceSecretKey(bytes) }
+            .onFailure { LLog.w("AppModel", "saveDeviceSecretKey failed: ${it.message}") }
     }
 
     // --- Observable state ----------------------------------------------------
@@ -153,6 +201,32 @@ class AppModel private constructor(context: android.content.Context) {
         if (_composerPrefillRequest.value?.requestId == requestId) {
             _composerPrefillRequest.value = null
         }
+    }
+
+    // --- Live composer drafts (per-thread typed-but-unsent text + attachment)
+
+    private val _composerDrafts = MutableStateFlow<Map<ThreadKey, ComposerDraft>>(emptyMap())
+    val composerDrafts: StateFlow<Map<ThreadKey, ComposerDraft>> = _composerDrafts.asStateFlow()
+
+    fun composerDraft(threadKey: ThreadKey): ComposerDraft =
+        _composerDrafts.value[threadKey] ?: ComposerDraft.EMPTY
+
+    fun setComposerDraft(threadKey: ThreadKey, draft: ComposerDraft) {
+        _composerDrafts.update { current ->
+            if (draft.isEmpty) {
+                if (threadKey in current) current - threadKey else current
+            } else {
+                current + (threadKey to draft)
+            }
+        }
+    }
+
+    fun updateComposerDraft(threadKey: ThreadKey, transform: (ComposerDraft) -> ComposerDraft) {
+        setComposerDraft(threadKey, transform(composerDraft(threadKey)))
+    }
+
+    fun clearComposerDraft(threadKey: ThreadKey) {
+        setComposerDraft(threadKey, ComposerDraft.EMPTY)
     }
 
     // --- Thinking-indicator minigame -----------------------------------------
@@ -387,10 +461,14 @@ class AppModel private constructor(context: android.content.Context) {
                         serverId,
                         AppListThreadsRequest(
                             cursor = null,
-                            limit = null,
+                            limit = SESSION_LIST_PAGE_LIMIT,
+                            sortKey = AppThreadSortKey.UPDATED_AT,
+                            sortDirection = AppSortDirection.DESC,
                             archived = null,
                             cwd = null,
                             searchTerm = null,
+                            useStateDbOnly = false,
+                            runtimeKinds = null,
                         ),
                     )
                 }
@@ -702,15 +780,57 @@ class AppModel private constructor(context: android.content.Context) {
         }
     }
 
+    /**
+     * Force a fresh `thread/resume` (with `excludeTurns = false`) so the
+     * store reconciles `active_turn_id` against the server's authoritative
+     * turn list. Use after a long resume / push wake — the in-flight turn
+     * the local snapshot shows as running may have completed during the
+     * background window with no `TurnCompleted` event delivered.
+     */
+    suspend fun forceRefreshThreadAuthoritative(key: ThreadKey) {
+        restoreStoredLocalAuthIfNeeded(key.serverId, reason = "forceRefreshAuthoritative")
+        try {
+            store.forceRefreshThreadAuthoritative(key)
+            _lastError.value = null
+        } catch (e: Exception) {
+            _lastError.value = e.message
+            throw e
+        }
+    }
+
     suspend fun refreshThreadIncludingTurns(key: ThreadKey): ThreadKey {
         try {
+            // 1. Refresh thread metadata only — title, status, model,
+            //    active_turn_id, etc. The full historical turn list is
+            //    append-only on the server, so we don't need to re-pull it
+            //    here. Sending `includeTurns = true` would have the server
+            //    reconstruct the entire rollout in one response, which is
+            //    unbounded and OOMs the device on long threads.
             val nextKey = client.readThread(
                 key.serverId,
                 AppReadThreadRequest(
                     threadId = key.threadId,
-                    includeTurns = true,
+                    includeTurns = false,
                 ),
             )
+            // 2. Reload the most-recent N turns via the paginated path. On
+            //    v0.125+ remotes this hits `thread/turns/list`; on older
+            //    remotes that don't implement it, the Rust client falls back
+            //    to `thread/resume(excludeTurns: false)` and pulls the
+            //    embedded turn list — preserving the prior reload behavior
+            //    for legacy servers.
+            try {
+                store.loadThreadTurnsPage(nextKey, null, INITIAL_TURN_PAGE_LIMIT)
+            } catch (e: Exception) {
+                LLog.w(
+                    "Pagination",
+                    "refreshThreadIncludingTurns: initial-turn page load failed",
+                    fields = mapOf(
+                        "threadId" to nextKey.threadId,
+                        "error" to (e.message ?: e.toString()),
+                    ),
+                )
+            }
             val threadSnapshot = store.threadSnapshot(nextKey)
             if (threadSnapshot != null) {
                 applyThreadSnapshot(threadSnapshot)
@@ -854,10 +974,14 @@ class AppModel private constructor(context: android.content.Context) {
                         currentKey.serverId,
                         AppListThreadsRequest(
                             cursor = null,
-                            limit = null,
+                            limit = SESSION_LIST_PAGE_LIMIT,
+                            sortKey = AppThreadSortKey.UPDATED_AT,
+                            sortDirection = AppSortDirection.DESC,
                             archived = null,
                             cwd = null,
                             searchTerm = null,
+                            useStateDbOnly = false,
+                            runtimeKinds = null,
                         ),
                     )
                 } catch (e: Exception) {
@@ -1257,6 +1381,7 @@ class AppModel private constructor(context: android.content.Context) {
             reasoningEffort = state.reasoningEffort,
             effectiveApprovalPolicy = state.effectiveApprovalPolicy,
             effectiveSandboxPolicy = state.effectiveSandboxPolicy,
+            queuedFollowUps = state.queuedFollowUps,
             activeTurnId = state.activeTurnId,
             activePlanProgress = state.activePlanProgress,
             pendingPlanImplementationPrompt = state.pendingPlanImplementationPrompt,

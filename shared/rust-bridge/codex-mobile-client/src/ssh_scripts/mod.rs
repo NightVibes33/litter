@@ -14,7 +14,7 @@
 /// POSIX-shell snippets.
 pub(crate) mod posix {
     /// Source common shell rc files into `$PATH`. Inline this at the top of
-    /// any POSIX script that calls user-installed binaries (npm, codex, …).
+    /// any POSIX script that calls user-installed binaries.
     pub(crate) const PROFILE_INIT: &str = include_str!("posix/profile_init.sh");
 
     /// Probe `npm` / `pnpm` / `bun` for their global bin directories. Sets
@@ -25,19 +25,6 @@ pub(crate) mod posix {
     /// Find an existing `codex` binary on the remote. Placeholders:
     /// `{{PROFILE_INIT}}`, `{{PACKAGE_MANAGER_PROBE}}`, `{{SHARED_LINES}}`.
     pub(crate) const RESOLVE_CODEX_BINARY: &str = include_str!("posix/resolve_codex_binary.sh");
-
-    /// Download + install a Codex release tarball into `$HOME/.litter/`.
-    /// Placeholders: `{{TAG}}`, `{{ASSET_NAME}}`, `{{BINARY_NAME}}`,
-    /// `{{DOWNLOAD_URL}}` — all must be passed shell-quoted by the caller.
-    pub(crate) const INSTALL_CODEX_RELEASE: &str = include_str!("posix/install_codex_release.sh");
-
-    /// Install Codex via `npm` into `$HOME/.litter/codex/`. Placeholders:
-    /// `{{PROFILE_INIT}}`.
-    pub(crate) const INSTALL_CODEX_NPM: &str = include_str!("posix/install_codex_npm.sh");
-
-    /// Check whether the 24-hour Codex update sentinel is still fresh.
-    /// Emits `FRESH` or `STALE`. Placeholders: `{{INTERVAL}}` (seconds).
-    pub(crate) const UPDATE_SENTINEL_CHECK: &str = include_str!("posix/update_sentinel_check.sh");
 
     /// Detect whether anything is listening on TCP `{{PORT}}` using lsof,
     /// then ss, then netstat (whichever is present).
@@ -88,14 +75,6 @@ pub(crate) mod powershell {
     /// Find an existing `codex.cmd` on the remote.
     pub(crate) const RESOLVE_CODEX_BINARY: &str =
         include_str!("powershell/resolve_codex_binary.ps1");
-
-    /// Install Codex via `npm` into `~\.litter\codex\`.
-    pub(crate) const INSTALL_CODEX_NPM: &str = include_str!("powershell/install_codex_npm.ps1");
-
-    /// Check whether the 24-hour Codex update sentinel is still fresh.
-    /// Emits `FRESH` or `STALE`. Placeholders: `{{INTERVAL}}` (seconds).
-    pub(crate) const UPDATE_SENTINEL_CHECK: &str =
-        include_str!("powershell/update_sentinel_check.ps1");
 
     /// Detect whether anything is listening on TCP `{{PORT}}`.
     pub(crate) const PORT_LISTENING: &str = include_str!("powershell/port_listening.ps1");

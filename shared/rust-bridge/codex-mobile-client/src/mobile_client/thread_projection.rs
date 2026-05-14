@@ -603,6 +603,7 @@ pub fn reasoning_effort_string(value: crate::types::ReasoningEffort) -> String {
         crate::types::ReasoningEffort::Medium => "medium".to_string(),
         crate::types::ReasoningEffort::High => "high".to_string(),
         crate::types::ReasoningEffort::XHigh => "xhigh".to_string(),
+        crate::types::ReasoningEffort::Max => "max".to_string(),
     }
 }
 
@@ -614,6 +615,7 @@ pub fn reasoning_effort_from_string(value: &str) -> Option<crate::types::Reasoni
         "medium" => Some(crate::types::ReasoningEffort::Medium),
         "high" => Some(crate::types::ReasoningEffort::High),
         "xhigh" => Some(crate::types::ReasoningEffort::XHigh),
+        "max" => Some(crate::types::ReasoningEffort::Max),
         _ => None,
     }
 }
@@ -634,6 +636,7 @@ pub(super) fn core_reasoning_effort_from_mobile(
         crate::types::ReasoningEffort::XHigh => {
             codex_protocol::openai_models::ReasoningEffort::XHigh
         }
+        crate::types::ReasoningEffort::Max => codex_protocol::openai_models::ReasoningEffort::XHigh,
     }
 }
 
@@ -698,7 +701,9 @@ pub(super) async fn refresh_thread_list_from_app_server(
         let mut cursor = None;
         loop {
             let response =
-                match request_thread_list_page_for_runtime(&session, runtime_kind, cursor).await {
+                match request_thread_list_page_for_runtime(&session, runtime_kind.clone(), cursor)
+                    .await
+                {
                     Ok(response) => response,
                     Err(error) => {
                         warn!(
@@ -709,7 +714,7 @@ pub(super) async fn refresh_thread_list_from_app_server(
                     }
                 };
             let page = thread_list_page_to_thread_infos(response.data, &mut incoming_ids);
-            app_store.upsert_thread_list_page_for_runtime(server_id, runtime_kind, &page);
+            app_store.upsert_thread_list_page_for_runtime(server_id, runtime_kind.clone(), &page);
 
             let Some(next_cursor) = response.next_cursor else {
                 break;

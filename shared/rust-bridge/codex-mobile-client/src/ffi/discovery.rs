@@ -309,8 +309,8 @@ impl ServerBridge {
 
     /// Start a guided SSH connect: spawns the bootstrap task and returns
     /// immediately so the UI can show step-by-step progress via
-    /// `AppConnectionProgressSnapshot`. Pair with `SshBridge::ssh_respond_to_install_prompt`
-    /// when the remote needs Codex installed.
+    /// `AppConnectionProgressSnapshot`. Codex must already be installed on the
+    /// remote host and discoverable as `codex`.
     #[allow(clippy::too_many_arguments)]
     pub async fn start_remote_over_ssh_connect(
         &self,
@@ -367,12 +367,7 @@ impl ServerBridge {
                 );
                 return Ok(server_id);
             }
-            flows.insert(
-                server_id.clone(),
-                ManagedSshBootstrapFlow {
-                    install_decision: None,
-                },
-            );
+            flows.insert(server_id.clone(), ManagedSshBootstrapFlow {});
         }
 
         mobile_client
@@ -394,7 +389,6 @@ impl ServerBridge {
             );
             let task_result = run_guided_ssh_connect(
                 Arc::clone(&mobile_client),
-                Arc::clone(&flows),
                 config,
                 credentials,
                 accept_unknown_host,

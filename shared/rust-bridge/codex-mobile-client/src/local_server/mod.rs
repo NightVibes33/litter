@@ -9,11 +9,8 @@
 //!      listening, attach to it and do not spawn.
 //!   2. Resolve a `codex` binary from the same candidate paths the SSH
 //!      bootstrap would probe remotely.
-//!   3. If not found, install via `npm @openai/codex@latest` into
-//!      `~/.litter/codex` (same layout as the SSH installer).
-//!   4. If an existing install is >24h old, re-run the npm install to
-//!      refresh.
-//!   5. Spawn `codex app-server --listen ws://127.0.0.1:{port}` and poll
+//!   3. If not found, fail with a clear "install Codex" error.
+//!   4. Spawn `codex app-server --listen ws://127.0.0.1:{port}` and poll
 //!      the WebSocket up to 20 × 250 ms for readiness.
 //!
 //! The returned `LocalServerHandle` keeps the child alive; dropping it or
@@ -38,10 +35,7 @@ const PROBE_CONNECT_TIMEOUT: Duration = Duration::from_millis(150);
 const READINESS_MAX_ATTEMPTS: u32 = 20;
 const READINESS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 
-/// If the managed codex install under `~/.litter/codex` is older than this,
-/// re-run `npm install @openai/codex@latest` on next spawn. Mirrors
-/// `CODEX_UPDATE_CHECK_INTERVAL_SECS` in `ssh.rs`.
-const MANAGED_CODEX_MAX_AGE_SECS: u64 = 24 * 60 * 60;
+const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 
 // ---------------------------------------------------------------------------
 // Shared path list
@@ -78,16 +72,6 @@ pub(crate) struct EnvAnchor {
 /// `resolve_codex_binary_script_posix` in `ssh.rs` — any addition here
 /// should be mirrored in that script.
 pub(crate) const CODEX_BINARY_POSIX_CANDIDATES: &[CodexPathCandidate] = &[
-    // Managed Litter install (release tarball symlink).
-    CodexPathCandidate {
-        rel_or_abs: ".litter/bin/codex",
-        env_anchor: None,
-    },
-    // Managed Litter install (npm fallback).
-    CodexPathCandidate {
-        rel_or_abs: ".litter/codex/node_modules/.bin/codex",
-        env_anchor: None,
-    },
     // Bun (env-overridable, defaults to ~/.bun).
     CodexPathCandidate {
         rel_or_abs: "",
@@ -134,8 +118,6 @@ pub(crate) const fn shell_candidate_lines() -> &'static [&'static str] {
     // Pre-rendered lines. Keeping them here (rather than generating at
     // runtime) avoids building the script string every time it is used.
     &[
-        r#"_litter_emit_candidate codex "$HOME/.litter/bin/codex""#,
-        r#"_litter_emit_candidate codex "$HOME/.litter/codex/node_modules/.bin/codex""#,
         r#"_litter_emit_candidate codex "$(command -v codex 2>/dev/null || true)""#,
         r#"_litter_emit_candidate codex "${BUN_INSTALL:-$HOME/.bun}/bin/codex""#,
         r#"_litter_emit_candidate codex "$HOME/.volta/bin/codex""#,
@@ -176,30 +158,16 @@ fn home_dir() -> Option<PathBuf> {
 /// Returns the first path that exists and is executable.
 ///
 /// Ordering matches `resolve_codex_binary_script_posix` in `ssh.rs`:
-///   1. managed `~/.litter/bin/codex` symlink
-///   2. managed `~/.litter/codex/node_modules/.bin/codex`
-///   3. `which codex` (walk PATH)
-///   4. the remaining env-anchored / literal candidates
+///   1. `which codex` (walk PATH)
+///   2. common user install directories (Bun, Volta, pnpm, cargo, Homebrew)
 pub fn resolve_codex_binary_local() -> Option<PathBuf> {
     let home = home_dir();
-
-    let managed = [
-        CODEX_BINARY_POSIX_CANDIDATES[0],
-        CODEX_BINARY_POSIX_CANDIDATES[1],
-    ];
-    for candidate in &managed {
-        if let Some(path) = expand_candidate(candidate, home.as_deref()) {
-            if is_executable_file(&path) {
-                return Some(path);
-            }
-        }
-    }
 
     if let Some(path) = which_codex() {
         return Some(path);
     }
 
-    for candidate in &CODEX_BINARY_POSIX_CANDIDATES[2..] {
+    for candidate in CODEX_BINARY_POSIX_CANDIDATES {
         if let Some(path) = expand_candidate(candidate, home.as_deref()) {
             if is_executable_file(&path) {
                 return Some(path);
@@ -273,8 +241,10 @@ fn is_executable_file(path: &Path) -> bool {
 /// Errors produced by the local-server bootstrap flow.
 #[derive(Debug, thiserror::Error)]
 pub enum LocalServerError {
-    #[error("codex binary not found locally and npm install failed: {0}")]
-    Install(String),
+    #[error(
+        "codex binary not found locally; install the Codex CLI and make `codex` available on PATH"
+    )]
+    BinaryNotFound,
     #[error("failed to spawn codex app-server: {0}")]
     Spawn(String),
     #[error(
@@ -399,35 +369,7 @@ pub async fn attach_or_spawn_local_server(
         port
     );
 
-    let codex_path = match resolve_codex_binary_local() {
-        Some(path) => {
-            if is_managed_install(&path) && is_managed_codex_stale() {
-                info!(
-                    "managed codex install older than 24h; refreshing via npm ({:?})",
-                    path
-                );
-                if let Err(err) = install_codex_via_local_npm().await {
-                    warn!("npm refresh failed, continuing with existing binary: {err}");
-                } else {
-                    touch_managed_codex_sentinel();
-                }
-            }
-            path
-        }
-        None => {
-            info!("codex binary not found locally; installing via npm");
-            install_codex_via_local_npm()
-                .await
-                .map_err(LocalServerError::Install)?;
-            touch_managed_codex_sentinel();
-            resolve_codex_binary_local().ok_or_else(|| {
-                LocalServerError::Install(
-                    "npm install reported success but codex binary not found in expected locations"
-                        .into(),
-                )
-            })?
-        }
-    };
+    let codex_path = resolve_codex_binary_local().ok_or(LocalServerError::BinaryNotFound)?;
 
     let handle = spawn_local_server(port, &codex_path, codex_home.as_deref()).await?;
 
@@ -453,9 +395,16 @@ async fn spawn_local_server(
 ) -> Result<LocalServerHandle, LocalServerError> {
     let listen_url = format!("ws://127.0.0.1:{port}");
     let mut cmd = Command::new(codex_path);
-    cmd.arg("--enable")
-        .arg("goals")
-        .arg("app-server")
+    cmd.arg("--enable").arg("goals");
+
+    if let Some(base_url) = openai_base_url_from_env() {
+        cmd.arg("--config").arg(format!(
+            "openai_base_url={}",
+            toml_string_literal(&base_url)
+        ));
+    }
+
+    cmd.arg("app-server")
         .arg("--listen")
         .arg(&listen_url)
         .stdin(Stdio::null())
@@ -523,112 +472,37 @@ async fn wait_for_local_server_ready(port: u16) -> Result<(), LocalServerError> 
     })
 }
 
-// ---------------------------------------------------------------------------
-// npm install + managed sentinel
-// ---------------------------------------------------------------------------
-
-fn managed_codex_dir() -> Option<PathBuf> {
-    home_dir().map(|home| home.join(".litter/codex"))
+fn openai_base_url_from_env() -> Option<String> {
+    std::env::var(OPENAI_BASE_URL_ENV_KEY)
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
 }
 
-fn managed_codex_sentinel() -> Option<PathBuf> {
-    managed_codex_dir().map(|dir| dir.join(".last-update-check"))
-}
-
-fn is_managed_install(path: &Path) -> bool {
-    let Some(home) = home_dir() else {
-        return false;
-    };
-    let litter_root = home.join(".litter");
-    path.starts_with(&litter_root)
-}
-
-fn is_managed_codex_stale() -> bool {
-    let Some(sentinel) = managed_codex_sentinel() else {
-        return false;
-    };
-    let Ok(metadata) = std::fs::metadata(&sentinel) else {
-        // No sentinel yet — treat as stale so we pick up updates on first
-        // launch after install.
-        return true;
-    };
-    match metadata.modified() {
-        Ok(modified) => match modified.elapsed() {
-            Ok(age) => age.as_secs() >= MANAGED_CODEX_MAX_AGE_SECS,
-            Err(_) => true,
-        },
-        Err(_) => true,
-    }
-}
-
-fn touch_managed_codex_sentinel() {
-    let Some(dir) = managed_codex_dir() else {
-        return;
-    };
-    let _ = std::fs::create_dir_all(&dir);
-    let Some(path) = managed_codex_sentinel() else {
-        return;
-    };
-    // Rewrite empty to update mtime (simpler than threading a filetime
-    // crate dependency just for this).
-    let _ = std::fs::write(&path, b"");
-}
-
-/// Run `npm install @openai/codex@latest` into `~/.litter/codex/`. Mirrors
-/// the POSIX branch of `SshClient::install_codex_via_npm`.
-async fn install_codex_via_local_npm() -> Result<(), String> {
-    let Some(dir) = managed_codex_dir() else {
-        return Err("HOME not set".to_string());
-    };
-
-    std::fs::create_dir_all(&dir).map_err(|err| format!("mkdir {:?} failed: {err}", dir))?;
-
-    // Initialize a package.json if absent.
-    if !dir.join("package.json").exists() {
-        let status = Command::new("npm")
-            .arg("init")
-            .arg("-y")
-            .current_dir(&dir)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await
-            .map_err(|err| format!("failed to run `npm init -y`: {err}"))?;
-        if !status.success() {
-            return Err(format!("npm init exited with {:?}", status.code()));
+fn toml_string_literal(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len() + 2);
+    escaped.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            ch if ch.is_control() => {
+                use std::fmt::Write as _;
+                let codepoint = ch as u32;
+                if codepoint <= 0xFFFF {
+                    let _ = write!(escaped, "\\u{codepoint:04X}");
+                } else {
+                    let _ = write!(escaped, "\\U{codepoint:08X}");
+                }
+            }
+            ch => escaped.push(ch),
         }
     }
-
-    let output = Command::new("npm")
-        .arg("install")
-        .arg("@openai/codex@latest")
-        .current_dir(&dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .await
-        .map_err(|err| format!("failed to run `npm install @openai/codex@latest`: {err}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "npm install @openai/codex exited with {:?}: {}",
-            output.status.code(),
-            stderr.trim()
-        ));
-    }
-
-    let bin = dir.join("node_modules/.bin/codex");
-    if !is_executable_file(&bin) {
-        return Err(format!(
-            "npm install succeeded but {:?} is not present/executable",
-            bin
-        ));
-    }
-
-    Ok(())
+    escaped.push('"');
+    escaped
 }
 
 // ---------------------------------------------------------------------------
@@ -672,11 +546,24 @@ mod tests {
         // the shell lines — a cheap way to catch divergence when someone
         // edits one but not the other.
         let shell = shell_candidate_lines().join("\n");
-        assert!(shell.contains(".litter/bin/codex"));
-        assert!(shell.contains(".litter/codex/node_modules/.bin/codex"));
+        assert!(shell.contains("command -v codex"));
+        assert!(!shell.contains(".litter/bin/codex"));
+        assert!(!shell.contains(".litter/codex/node_modules/.bin/codex"));
         assert!(shell.contains(".local/bin/codex"));
         assert!(shell.contains("/opt/homebrew/bin/codex"));
         assert!(shell.contains("/usr/local/bin/codex"));
+    }
+
+    #[test]
+    fn toml_string_literal_escapes_base_url_value() {
+        assert_eq!(
+            toml_string_literal("http://localhost:11434/v1"),
+            "\"http://localhost:11434/v1\""
+        );
+        assert_eq!(
+            toml_string_literal("http://host/quote\"slash\\"),
+            "\"http://host/quote\\\"slash\\\\\""
+        );
     }
 
     #[tokio::test]

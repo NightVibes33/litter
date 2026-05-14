@@ -70,6 +70,7 @@ import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.launch
 import uniffi.codex_mobile_client.AppProject
 import uniffi.codex_mobile_client.AuthStatusRequest
+import uniffi.codex_mobile_client.ReasoningEffort
 import uniffi.codex_mobile_client.ThreadKey
 
 /**
@@ -171,6 +172,10 @@ fun HomeComposerBar(
                         ?.servers
                         ?.firstOrNull { it.serverId == currentProject.serverId }
                         ?.isLocal == true
+                    val launchSnapshot = appModel.launchState.snapshot.value
+                    val selectedModel = launchSnapshot.selectedModel.trim().ifEmpty { null }
+                    val selectedEffort = launchSnapshot.reasoningEffort.trim().ifEmpty { null }
+                        ?.let(::reasoningEffortFromServerValue)
                     val threadKey = appModel.startThread(
                         currentProject.serverId,
                         appModel.launchState.threadStartRequest(
@@ -185,8 +190,8 @@ fun HomeComposerBar(
                         additionalInputs = listOfNotNull(attachmentToSend?.toUserInput()),
                         approvalPolicy = appModel.launchState.approvalPolicyValue(threadKey),
                         sandboxPolicy = appModel.launchState.turnSandboxPolicy(threadKey),
-                        model = appModel.launchState.snapshot.value.selectedModel.trim().ifEmpty { null },
-                        reasoningEffort = null,
+                        model = selectedModel,
+                        reasoningEffort = selectedEffort,
                         serviceTier = null,
                     )
                     appModel.startTurn(threadKey, payload)
@@ -493,6 +498,18 @@ private fun homeComposerInsertionText(insertion: String, text: String, start: In
     }
     return replacement
 }
+
+private fun reasoningEffortFromServerValue(value: String): ReasoningEffort? =
+    when (value.trim().lowercase()) {
+        "none" -> ReasoningEffort.NONE
+        "minimal" -> ReasoningEffort.MINIMAL
+        "low" -> ReasoningEffort.LOW
+        "medium" -> ReasoningEffort.MEDIUM
+        "high" -> ReasoningEffort.HIGH
+        "xhigh" -> ReasoningEffort.X_HIGH
+        "max" -> ReasoningEffort.MAX
+        else -> null
+    }
 
 private fun readAttachmentFromUri(context: Context, uri: Uri): ComposerImageAttachment? {
     val resolver = context.contentResolver

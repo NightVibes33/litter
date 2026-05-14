@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 struct ConversationTranscriptSnapshot: Equatable {
     var items: [ConversationItem]
@@ -93,6 +94,13 @@ final class ConversationScreenModel {
     private(set) var composer: ConversationComposerSnapshot = .empty
     private(set) var followScrollToken = 0
     private(set) var minigameOverlay: MinigameOverlayState = .idle
+    /// Live composer draft. Lifted out of `ConversationInputBar` so it
+    /// survives view teardown when `ConversationDestinationScreen` flips
+    /// through its `if let conversationThread` branch during foreground
+    /// refresh — otherwise typed-but-unsent text and pasted attachments
+    /// vanish on app switch.
+    var composerInputText: String = ""
+    var composerAttachedImage: UIImage?
 
     @ObservationIgnored private var thread: AppThreadSnapshot?
     @ObservationIgnored private var appModel: AppModel?
@@ -125,6 +133,8 @@ final class ConversationScreenModel {
             minigameTask?.cancel()
             minigameTask = nil
             minigameOverlay = .idle
+            composerInputText = ""
+            composerAttachedImage = nil
         }
 
         refreshState()
@@ -153,7 +163,7 @@ final class ConversationScreenModel {
         }
         let hasTurnInFlight = activeTurnId != nil || thread.info.status == .active
         let pendingUserInputRequest = appModel.snapshot?.pendingUserInputs.first {
-            $0.serverId == thread.key.serverId && $0.threadId == thread.key.threadId
+            $0.isRelevant(to: thread.key)
         }
         let activeTaskSummary = items.latestActiveTaskSummary
         let composerPrefillRequest = appModel.composerPrefillRequest.flatMap { request in

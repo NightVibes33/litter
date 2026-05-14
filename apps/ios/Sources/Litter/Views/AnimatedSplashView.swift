@@ -383,18 +383,29 @@ struct AnimatedSplashView: View {
 // center, then a short eased transition advances to the next word.
 
 private struct CarouselProvider: Identifiable {
-    let label: String
-    let assetName: String
+    /// Lowercase id used as the carousel word.
+    let kind: AgentRuntimeKind
 
-    var id: String { label }
+    var id: String { kind }
+    var label: String { kind }
 }
 
 private struct SplashCarouselText: View {
+    /// The splash carousel runs *before* any server probe completes, so
+    /// the metadata store is empty here. List the bundled agent names
+    /// inline; once probes populate the cache the rest of the UI
+    /// renders icons + labels metadata-driven (see `AgentIconView`).
+    /// New agents go in the alleycat manifest; this list only affects
+    /// the cold-start splash teaser.
     private let providers: [CarouselProvider] = [
-        .init(label: "codex", assetName: "agent_codex"),
-        .init(label: "opencode", assetName: "agent_opencode"),
-        .init(label: "pi", assetName: "agent_pi"),
-        .init(label: "claude", assetName: "agent_claude")
+        CarouselProvider(kind: "codex"),
+        CarouselProvider(kind: "opencode"),
+        CarouselProvider(kind: "amp"),
+        CarouselProvider(kind: "pi"),
+        CarouselProvider(kind: "claude"),
+        CarouselProvider(kind: "droid"),
+        CarouselProvider(kind: "hermes"),
+        CarouselProvider(kind: "devin"),
     ]
 
     var body: some View {
@@ -443,11 +454,11 @@ private struct SpinningWordCarousel: View {
                     let opacity = isSelected ? 1.0 : max(0.18, 1.0 - Double(dist) * 0.7)
 
                     HStack(spacing: 5) {
-                        Image(provider.assetName)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 14, height: 14)
-
+                        // Icons are intentionally omitted here: the
+                        // splash plays at cold start, before any probe
+                        // populates `AgentMetadataStore`, so the
+                        // alleycat-shipped PNG bytes aren't available
+                        // yet. The carousel just rolls the agent names.
                         Text(provider.label)
                             .litterMonoFont(size: fontSize, weight: .regular)
                             .foregroundColor(isSelected ? selectedColor : dimColor)

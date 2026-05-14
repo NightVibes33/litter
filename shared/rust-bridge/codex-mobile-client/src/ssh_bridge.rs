@@ -17,8 +17,11 @@ use tracing::{debug, info, warn};
 
 use crate::session::connection::{
     RuntimeRemoteSessionResource, SshReconnectTransport, connect_remote_client,
+    connect_remote_client_over_app_server_proxy,
 };
-use crate::ssh::{PROFILE_INIT, RemoteShell, SshClient, SshError, shell_quote};
+use crate::ssh::{
+    PROFILE_INIT, RemoteShell, SshBootstrapTransport, SshClient, SshError, shell_quote,
+};
 use crate::ssh_detached_launcher::SshDetachedLauncher;
 use crate::ssh_launcher::SshLauncher;
 use crate::types::{AgentRuntimeInfo, AgentRuntimeKind};
@@ -83,10 +86,10 @@ pub async fn probe_remote_agents(
     let shell = ssh.detect_remote_shell().await;
     info!("ssh bridge agent probe shell={shell:?}");
     let kinds = [
-        AgentRuntimeKind::Claude,
-        AgentRuntimeKind::Pi,
-        AgentRuntimeKind::Opencode,
-        AgentRuntimeKind::Codex,
+        "claude".to_string(),
+        "pi".to_string(),
+        "opencode".to_string(),
+        "codex".to_string(),
     ];
     if shell == RemoteShell::PowerShell {
         let availability = kinds
@@ -187,7 +190,7 @@ pub async fn connect_runtime_resources_via_ssh(
     let mut infos = Vec::new();
     for kind in runtime_kinds {
         info!("ssh bridge runtime connect begin kind={kind:?}");
-        let (client, trait_transport) = if kind == AgentRuntimeKind::Codex {
+        let (client, trait_transport) = if kind == "codex" {
             let (client, reconnect_transport) =
                 connect_codex_via_ssh(Arc::clone(&ssh), prefer_ipv6).await?;
             let t: std::sync::Arc<dyn crate::session::remote_transport::RemoteTransport> =
@@ -197,8 +200,8 @@ pub async fn connect_runtime_resources_via_ssh(
             (
                 connect_app_server_client_via_ssh(
                     Arc::clone(&ssh),
-                    state_root.join(runtime_label(kind)),
-                    kind,
+                    state_root.join(runtime_label(&kind)),
+                    kind.clone(),
                     None,
                     transport,
                 )
@@ -207,16 +210,18 @@ pub async fn connect_runtime_resources_via_ssh(
             )
         };
         info!("ssh bridge runtime connect ready kind={kind:?}");
+        let name = runtime_label(&kind).to_string();
+        let display_name = runtime_display_name(&kind).to_string();
         resources.push(RuntimeRemoteSessionResource {
-            runtime_kind: kind,
+            runtime_kind: kind.clone(),
             client,
             transport: trait_transport,
             keepalive: None,
         });
         infos.push(AgentRuntimeInfo {
             kind,
-            name: runtime_label(kind).to_string(),
-            display_name: runtime_display_name(kind).to_string(),
+            name,
+            display_name,
             available: true,
         });
     }
@@ -224,7 +229,7 @@ pub async fn connect_runtime_resources_via_ssh(
         "ssh bridge runtime connect complete registered_runtimes={:?}",
         resources
             .iter()
-            .map(|resource| resource.runtime_kind)
+            .map(|resource| resource.runtime_kind.clone())
             .collect::<Vec<_>>()
     );
     Ok((resources, infos))
@@ -250,8 +255,8 @@ pub async fn connect_app_server_client_via_ssh(
         SshBridgeTransport::Ephemeral => Arc::new(SshLauncher::new(Arc::clone(&ssh), shell)),
         SshBridgeTransport::Detached => Arc::new(SshDetachedLauncher::new(Arc::clone(&ssh), shell)),
     };
-    let bridge: Arc<dyn Bridge> = match kind {
-        AgentRuntimeKind::Claude => {
+    let bridge: Arc<dyn Bridge> = match kind.as_str() {
+        "claude" => {
             let bin = resolve_remote_cli(
                 &ssh,
                 shell,
@@ -270,7 +275,7 @@ pub async fn connect_app_server_client_via_ssh(
                 .await
                 .map_err(|error| SshBridgeError::BridgeStartupFailed(error.to_string()))?
         }
-        AgentRuntimeKind::Pi => {
+        "pi" => {
             let bin = resolve_remote_cli(
                 &ssh,
                 shell,
@@ -302,10 +307,18 @@ pub async fn connect_app_server_client_via_ssh(
                 .await
                 .map_err(|error| SshBridgeError::BridgeStartupFailed(error.to_string()))?
         }
-        AgentRuntimeKind::Opencode => {
+        "opencode" => {
             return connect_opencode_via_ssh(ssh, state_dir, bin_override).await;
         }
-        AgentRuntimeKind::Codex => return Err(SshBridgeError::UseExistingCodexPath),
+        "codex" => return Err(SshBridgeError::UseExistingCodexPath),
+        // Every other agent (amp/droid/hermes/anything new from
+        // alleycat) is alleycat-only — the SSH bootstrap path doesn't
+        // know how to launch it on the remote.
+        _ => {
+            return Err(SshBridgeError::BridgeStartupFailed(format!(
+                "agent `{kind}` is only available through Alleycat pairing"
+            )));
+        }
     };
     connect_bridge_stream(bridge, kind).await
 }
@@ -315,12 +328,13 @@ async fn connect_bridge_stream(
     kind: AgentRuntimeKind,
 ) -> Result<AppServerClient, SshBridgeError> {
     let (client_io, server_io) = duplex(64 * 1024);
+    let spawn_kind = kind.clone();
     tokio::spawn(async move {
         if let Err(error) = serve_stream(bridge, server_io).await {
-            warn!("ssh bridge stream ended kind={kind:?}: {error:#}");
+            warn!("ssh bridge stream ended kind={spawn_kind:?}: {error:#}");
         }
     });
-    let label = format!("ssh-bridge://{}", runtime_label(kind));
+    let label = format!("ssh-bridge://{}", runtime_label(&kind));
     info!("ssh bridge stream connect start kind={kind:?} label={label}");
     let args = RemoteAppServerConnectArgs {
         websocket_url: label.clone(),
@@ -343,7 +357,12 @@ async fn connect_codex_via_ssh(
     prefer_ipv6: bool,
 ) -> Result<(AppServerClient, SshReconnectTransport), SshBridgeError> {
     let bootstrap = ssh.bootstrap_codex_server(None, prefer_ipv6).await?;
-    let websocket_url = format!("ws://127.0.0.1:{}", bootstrap.tunnel_local_port);
+    let websocket_url = match bootstrap.transport {
+        SshBootstrapTransport::AppServerProxy => "app-server-proxy://codex".to_string(),
+        SshBootstrapTransport::WebSocketTunnel => {
+            format!("ws://127.0.0.1:{}", bootstrap.tunnel_local_port)
+        }
+    };
     let args = RemoteAppServerConnectArgs {
         websocket_url: websocket_url.clone(),
         auth_token: None,
@@ -353,21 +372,31 @@ async fn connect_codex_via_ssh(
         opt_out_notification_methods: Vec::new(),
         channel_capacity: 256,
     };
-    let client = connect_remote_client(&args)
-        .await
-        .map_err(|error| SshBridgeError::HandshakeFailed(error.to_string()))?;
-    let ssh_pid = Arc::new(StdMutex::new(bootstrap.pid));
-    let reconnect_transport = SshReconnectTransport {
-        ssh_client: Arc::clone(&ssh),
-        local_port: bootstrap.tunnel_local_port,
-        remote_port: Arc::new(StdMutex::new(bootstrap.server_port)),
-        prefer_ipv6,
-        working_dir: None,
-        ssh_pid: Some(ssh_pid),
+    let client_result = match bootstrap.transport {
+        SshBootstrapTransport::AppServerProxy => {
+            connect_remote_client_over_app_server_proxy(
+                &ssh,
+                &args,
+                &bootstrap.codex_path,
+                bootstrap.shell,
+            )
+            .await
+        }
+        SshBootstrapTransport::WebSocketTunnel => connect_remote_client(&args).await,
     };
+    let client =
+        client_result.map_err(|error| SshBridgeError::HandshakeFailed(error.to_string()))?;
+    let ssh_pid = Arc::new(StdMutex::new(bootstrap.pid));
+    let reconnect_transport = SshReconnectTransport::from_bootstrap(
+        Arc::clone(&ssh),
+        &bootstrap,
+        None,
+        prefer_ipv6,
+        ssh_pid,
+    );
     info!(
-        "ssh codex runtime connected via direct bootstrap: websocket_url={} remote_port={} local_port={}",
-        websocket_url, bootstrap.server_port, bootstrap.tunnel_local_port
+        "ssh codex runtime connected via direct bootstrap: websocket_url={} transport={:?} remote_port={} local_port={}",
+        websocket_url, bootstrap.transport, bootstrap.server_port, bootstrap.tunnel_local_port
     );
     Ok((client, reconnect_transport))
 }
@@ -415,7 +444,7 @@ async fn connect_opencode_via_ssh(
         .build()
         .await
         .map_err(|error| SshBridgeError::BridgeStartupFailed(error.to_string()))?;
-    connect_bridge_stream(bridge, AgentRuntimeKind::Opencode).await
+    connect_bridge_stream(bridge, "opencode".to_string()).await
 }
 
 fn cli_candidates(defaults: &[&str], bin_override: Option<&str>) -> Vec<String> {
@@ -789,10 +818,10 @@ fn parse_agent_probe(stdout: &str) -> Vec<RemoteAgentAvailability> {
         .filter_map(|line| {
             let (cmd, path) = line.split_once('\t').unwrap_or((line, ""));
             let kind = match cmd {
-                "claude" => AgentRuntimeKind::Claude,
-                "pi" | "pi-coding-agent" => AgentRuntimeKind::Pi,
-                "opencode" => AgentRuntimeKind::Opencode,
-                "codex" => AgentRuntimeKind::Codex,
+                "claude" => "claude".to_string(),
+                "pi" | "pi-coding-agent" => "pi".to_string(),
+                "opencode" => "opencode".to_string(),
+                "codex" => "codex".to_string(),
                 _ => return None,
             };
             let status = if path.trim().is_empty() {
@@ -870,20 +899,16 @@ fn now_millis() -> u128 {
         .as_millis()
 }
 
-pub fn runtime_label(kind: AgentRuntimeKind) -> &'static str {
-    match kind {
-        AgentRuntimeKind::Codex => "codex",
-        AgentRuntimeKind::Pi => "pi",
-        AgentRuntimeKind::Opencode => "opencode",
-        AgentRuntimeKind::Claude => "claude",
-    }
+pub fn runtime_label(kind: &str) -> &str {
+    // The stable name *is* the wire label now — alleycat advertises
+    // each agent by its id (`"codex"`, `"claude"`, …) and litter just
+    // passes the same string through to logging / SSH state paths.
+    kind
 }
 
-fn runtime_display_name(kind: AgentRuntimeKind) -> &'static str {
-    match kind {
-        AgentRuntimeKind::Codex => "Codex",
-        AgentRuntimeKind::Pi => "Pi",
-        AgentRuntimeKind::Opencode => "OpenCode",
-        AgentRuntimeKind::Claude => "Claude",
-    }
+fn runtime_display_name(kind: &str) -> &str {
+    // Fall back to the raw id when no metadata is cached. Real
+    // human-facing display strings come from
+    // `AgentMetadataStore::get(kind).display_name`.
+    kind
 }

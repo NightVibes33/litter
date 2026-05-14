@@ -702,10 +702,10 @@ fn parse_ssh_bridge_runtime_kinds(value: Option<&str>) -> Vec<AgentRuntimeKind> 
         .unwrap_or_default()
         .split(',')
         .filter_map(|part| match part.trim().to_ascii_lowercase().as_str() {
-            "codex" => Some(AgentRuntimeKind::Codex),
-            "claude" => Some(AgentRuntimeKind::Claude),
-            "pi" => Some(AgentRuntimeKind::Pi),
-            "opencode" | "open-code" | "open_code" => Some(AgentRuntimeKind::Opencode),
+            "codex" => Some("codex".to_string()),
+            "claude" => Some("claude".to_string()),
+            "pi" => Some("pi".to_string()),
+            "opencode" | "open-code" | "open_code" => Some("opencode".to_string()),
             _ => None,
         })
         .fold(Vec::new(), |mut acc, kind| {
@@ -727,20 +727,20 @@ async fn resolve_ssh_bridge_runtime_kinds(
         "reconnect: SSH bridge agent availability requested={:?} availability={:?}",
         requested, availability
     );
-    let available = |kind: AgentRuntimeKind| {
-        kind == AgentRuntimeKind::Codex
+    let available = |kind: &AgentRuntimeKind| {
+        kind == "codex"
             || availability.iter().any(|entry| {
-                entry.kind == kind
+                &entry.kind == kind
                     && entry.status == crate::ssh_bridge::AgentAvailabilityStatus::Available
             })
     };
 
     let candidates = if requested.is_empty() {
         vec![
-            AgentRuntimeKind::Claude,
-            AgentRuntimeKind::Pi,
-            AgentRuntimeKind::Opencode,
-            AgentRuntimeKind::Codex,
+            "claude".to_string(),
+            "pi".to_string(),
+            "opencode".to_string(),
+            "codex".to_string(),
         ]
     } else {
         requested.to_vec()
@@ -748,7 +748,7 @@ async fn resolve_ssh_bridge_runtime_kinds(
     let mut selected =
         candidates
             .into_iter()
-            .filter(|kind| available(*kind))
+            .filter(|kind| available(kind))
             .fold(Vec::new(), |mut acc, kind| {
                 if !acc.contains(&kind) {
                     acc.push(kind);
@@ -756,7 +756,7 @@ async fn resolve_ssh_bridge_runtime_kinds(
                 acc
             });
     if selected.is_empty() {
-        selected.push(AgentRuntimeKind::Codex);
+        selected.push("codex".to_string());
     }
     info!(
         "reconnect: SSH bridge selected runtimes requested={:?} selected={:?}",
@@ -1171,7 +1171,7 @@ mod tests {
             Some(ReconnectPlan::SshBridge { runtime_kinds, .. }) => {
                 assert_eq!(
                     runtime_kinds,
-                    vec![AgentRuntimeKind::Pi, AgentRuntimeKind::Opencode]
+                    vec!["pi".to_string(), "opencode".to_string()]
                 );
             }
             other => panic!("expected ssh bridge reconnect plan, got {other:?}"),

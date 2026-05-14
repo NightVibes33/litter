@@ -18,9 +18,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.style.TextOverflow
+import uniffi.codex_mobile_client.ThreadKey
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,11 +47,11 @@ import androidx.compose.ui.unit.sp
 import com.litter.android.state.displayTitle
 import com.litter.android.ui.LitterTextStyle
 import com.litter.android.ui.LitterTheme
-import com.litter.android.ui.common.runtimeDrawable
+import com.litter.android.ui.common.AgentIconView
 import com.litter.android.ui.common.runtimeLabel
 import com.litter.android.ui.common.runtimeSortIndex
 import com.litter.android.ui.scaled
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.AppSessionSummary
 import uniffi.codex_mobile_client.PinnedThreadKey
 
@@ -76,6 +85,24 @@ fun ThreadSearchResults(
                 || session.preview.lowercase().contains(needle))
         }
     }
+
+    // Lineage for the *unfiltered* sessions, so a fork's parent (potentially
+    // dropped by the filter) is still discoverable. Mirrors iOS clusters.
+    val lineageMap = remember(sessions) { HomeDashboardSupport.computeLineageMap(sessions) }
+    val clusters = remember(filtered, lineageMap) {
+        val bucket = LinkedHashMap<ThreadKey, MutableList<AppSessionSummary>>()
+        for (session in filtered) {
+            val root = lineageMap[session.key]?.rootKey ?: session.key
+            bucket.getOrPut(root) { mutableListOf() }.add(session)
+        }
+        bucket.map { (rootKey, members) ->
+            ThreadSearchCluster(
+                rootKey = rootKey,
+                members = members.sortedByDescending { it.updatedAt ?: 0L },
+            )
+        }
+    }
+    var expandedClusters by remember { mutableStateOf<Set<ThreadKey>>(emptySet()) }
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,
@@ -115,21 +142,39 @@ fun ThreadSearchResults(
                 }
             } else {
                 items(
-                    filtered,
-                    key = { "${it.key.serverId}/${it.key.threadId}" },
-                ) { session ->
-                    val key = PinnedThreadKey(
-                        serverId = session.key.serverId,
-                        threadId = session.key.threadId,
-                    )
-                    val isPinned = pinnedKeys.contains(key)
-                    ThreadSearchRow(
-                        session = session,
-                        isPinned = isPinned,
-                        onToggle = {
-                            if (isPinned) onUnpin(session) else onPin(session)
-                        },
-                    )
+                    clusters,
+                    key = { "${it.rootKey.serverId}/${it.rootKey.threadId}" },
+                ) { cluster ->
+                    if (cluster.members.size == 1) {
+                        val only = cluster.members.first()
+                        val key = PinnedThreadKey(
+                            serverId = only.key.serverId,
+                            threadId = only.key.threadId,
+                        )
+                        val isPinned = pinnedKeys.contains(key)
+                        ThreadSearchRow(
+                            session = only,
+                            isPinned = isPinned,
+                            onToggle = {
+                                if (isPinned) onUnpin(only) else onPin(only)
+                            },
+                        )
+                    } else {
+                        ThreadSearchClusterRow(
+                            cluster = cluster,
+                            pinnedKeys = pinnedKeys,
+                            isExpanded = expandedClusters.contains(cluster.rootKey),
+                            onToggleExpanded = {
+                                expandedClusters = if (expandedClusters.contains(cluster.rootKey)) {
+                                    expandedClusters - cluster.rootKey
+                                } else {
+                                    expandedClusters + cluster.rootKey
+                                }
+                            },
+                            onPin = onPin,
+                            onUnpin = onUnpin,
+                        )
+                    }
                     Divider(color = LitterTheme.border.copy(alpha = 0.15f))
                 }
             }
@@ -189,11 +234,7 @@ private fun RuntimeFilterPill(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (kind != null) {
-            Image(
-                painter = painterResource(id = kind.runtimeDrawable),
-                contentDescription = null,
-                modifier = Modifier.size(12.dp),
-            )
+            AgentIconView(kind = kind, sizeDp = 12)
         }
         Text(
             text = label,
@@ -278,9 +319,158 @@ private fun ThreadSearchRow(
 
 @Composable
 private fun ThreadSearchRuntimeIcon(kind: AgentRuntimeKind) {
-    Image(
-        painter = painterResource(id = kind.runtimeDrawable),
-        contentDescription = HomeDashboardSupport.runtimeLabel(kind),
-        modifier = Modifier.size(16.dp),
-    )
+    AgentIconView(kind = kind, sizeDp = 16)
+}
+
+/**
+ * One lineage's worth of search rows. Mirrors iOS `ThreadSearchCluster`.
+ * `members` is sorted by `updatedAt` desc, so `members.first()` is the head
+ * (most recently active branch).
+ */
+data class ThreadSearchCluster(
+    val rootKey: ThreadKey,
+    val members: List<AppSessionSummary>,
+)
+
+/**
+ * Cluster row that collapses N sibling threads into a single visual unit.
+ * Tapping the branches pill expands the children inline — each child has
+ * its own pin button. Mirrors iOS `ThreadSearchClusterRow`.
+ */
+@Composable
+private fun ThreadSearchClusterRow(
+    cluster: ThreadSearchCluster,
+    pinnedKeys: Set<PinnedThreadKey>,
+    isExpanded: Boolean,
+    onToggleExpanded: () -> Unit,
+    onPin: (AppSessionSummary) -> Unit,
+    onUnpin: (AppSessionSummary) -> Unit,
+) {
+    // Prefer the root thread for the head row identity (forks come and go;
+    // the root is canonical). Fall back to the most-recent member when the
+    // root isn't loaded into the snapshot.
+    val head = cluster.members.firstOrNull { it.key == cluster.rootKey }
+        ?: cluster.members.first()
+    val headLatestUpdatedAt = cluster.members.maxOf { it.updatedAt ?: 0L }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                if (isExpanded) LitterTheme.surface.copy(alpha = 0.3f)
+                else androidx.compose.ui.graphics.Color.Transparent,
+            ),
+    ) {
+        val headPinKey = PinnedThreadKey(serverId = head.key.serverId, threadId = head.key.threadId)
+        val headPinned = pinnedKeys.contains(headPinKey)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ThreadSearchRuntimeIcon(kind = head.agentRuntimeKind)
+            Spacer(Modifier.size(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = head.displayTitle,
+                    color = LitterTheme.textPrimary,
+                    fontSize = 13f.scaled,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = head.serverDisplayName,
+                        color = LitterTheme.accent.copy(alpha = 0.7f),
+                        fontSize = 10f.scaled,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Text(
+                        text = "·",
+                        color = LitterTheme.textMuted.copy(alpha = 0.5f),
+                        fontSize = 10f.scaled,
+                    )
+                    Text(
+                        text = HomeDashboardSupport.workspaceLabel(head.cwd),
+                        color = LitterTheme.textSecondary.copy(alpha = 0.8f),
+                        fontSize = 10f.scaled,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    val relative = HomeDashboardSupport.relativeTime(headLatestUpdatedAt)
+                    if (relative.isNotEmpty()) {
+                        Text(
+                            text = "·",
+                            color = LitterTheme.textMuted.copy(alpha = 0.5f),
+                            fontSize = 10f.scaled,
+                        )
+                        Text(
+                            text = relative,
+                            color = LitterTheme.textMuted.copy(alpha = 0.8f),
+                            fontSize = 10f.scaled,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.size(6.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(
+                        LitterTheme.accent.copy(alpha = if (isExpanded) 0.18f else 0.12f),
+                    )
+                    .clickable(onClick = onToggleExpanded)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "${cluster.members.size}",
+                    color = LitterTheme.textPrimary,
+                    fontSize = 11f.scaled,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = FontFamily.Monospace,
+                )
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp
+                        else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = LitterTheme.accent,
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+            Spacer(Modifier.size(6.dp))
+            Icon(
+                imageVector = if (headPinned) Icons.Default.CheckCircle else Icons.Default.Add,
+                contentDescription = null,
+                tint = if (headPinned) LitterTheme.accent else LitterTheme.textPrimary,
+                modifier = Modifier
+                    .size(20.dp)
+                    .clickable {
+                        if (headPinned) onUnpin(head) else onPin(head)
+                    },
+            )
+        }
+        AnimatedVisibility(visible = isExpanded) {
+            Column {
+                cluster.members.forEach { member ->
+                    val pin = PinnedThreadKey(
+                        serverId = member.key.serverId,
+                        threadId = member.key.threadId,
+                    )
+                    val isPinned = pinnedKeys.contains(pin)
+                    ThreadSearchRow(
+                        session = member,
+                        isPinned = isPinned,
+                        onToggle = {
+                            if (isPinned) onUnpin(member) else onPin(member)
+                        },
+                    )
+                }
+            }
+        }
+    }
 }

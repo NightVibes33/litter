@@ -11,7 +11,8 @@ import uniffi.codex_mobile_client.HydratedConversationItemContent
 import uniffi.codex_mobile_client.AppConnectionStepKind
 import uniffi.codex_mobile_client.AppConnectionStepSnapshot
 import uniffi.codex_mobile_client.AppConnectionStepState
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
+import com.litter.android.ui.common.runtimeLabel
 import uniffi.codex_mobile_client.ThreadSummaryStatus
 
 /** Accent green matching iOS theme. */
@@ -170,6 +171,10 @@ val ThreadSummaryStatus.isActiveStatus: Boolean
 val AppThreadSnapshot.hasActiveTurn: Boolean
     get() = activeTurnId?.trim()?.isNotEmpty() == true || info.status.isActiveStatus
 
+val AppThreadSnapshot.ampReasoningEffortLocked: Boolean
+    get() = agentRuntimeKind == "amp" &&
+        (hydratedConversationItems.isNotEmpty() || activeTurnId?.trim()?.isNotEmpty() == true)
+
 val AppThreadSnapshot.resolvedModel: String
     get() = model?.trim()?.takeIf { it.isNotEmpty() }
         ?: info.model?.trim()?.takeIf { it.isNotEmpty() }
@@ -201,12 +206,20 @@ private fun modelProviderDisplayLabel(provider: String?): String? {
 
     return when (val normalized = trimmed.lowercase()) {
         "anthropic", "claude", "claude-code", "claude_code" -> "Claude"
+        "amp", "ampcode", "amp-code", "amp_code", "amp code" -> "Amp"
         "opencode", "open-code", "open_code" -> "opencode"
         "pi", "pi.dev", "pidev" -> "Pi"
         "openai", "codex" -> "Codex"
         else -> {
             if (normalized.startsWith("claude") || normalized.contains("anthropic")) {
                 "Claude"
+            } else if (
+                normalized.startsWith("amp") ||
+                normalized.contains("ampcode") ||
+                normalized.contains("amp-code") ||
+                normalized.contains("amp_code")
+            ) {
+                "Amp"
             } else {
                 trimmed
             }
@@ -214,12 +227,7 @@ private fun modelProviderDisplayLabel(provider: String?): String? {
     }
 }
 
-private fun agentRuntimeDisplayLabel(kind: AgentRuntimeKind): String = when (kind) {
-    AgentRuntimeKind.CODEX -> "Codex"
-    AgentRuntimeKind.PI -> "Pi"
-    AgentRuntimeKind.OPENCODE -> "opencode"
-    AgentRuntimeKind.CLAUDE -> "Claude"
-}
+private fun agentRuntimeDisplayLabel(kind: AgentRuntimeKind): String = kind.runtimeLabel
 
 val AppThreadSnapshot.displayTitle: String
     get() = info.preview?.takeIf { it.isNotBlank() }

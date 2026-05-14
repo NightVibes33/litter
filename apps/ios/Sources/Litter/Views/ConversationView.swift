@@ -40,6 +40,8 @@ struct ConversationView: View {
     let followScrollToken: Int
     let pinnedContextItems: [ConversationItem]
     let composer: ConversationComposerSnapshot
+    @Binding var composerInputText: String
+    @Binding var composerAttachedImage: UIImage?
     var topInset: CGFloat = 0
     var bottomInset: CGFloat = 0
     var onOpenConversation: ((ThreadKey) -> Void)? = nil
@@ -78,6 +80,9 @@ struct ConversationView: View {
     }
 
     private var pendingReasoningOverride: String? {
+        if thread.ampReasoningEffortLocked {
+            return nil
+        }
         let trimmed = appState.reasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
@@ -147,6 +152,8 @@ struct ConversationView: View {
                 ConversationBottomChrome(
                     pinnedContextItems: pinnedContextItems,
                     composer: composer,
+                    composerInputText: $composerInputText,
+                    composerAttachedImage: $composerAttachedImage,
                     onSend: sendMessage,
                     onFileSearch: searchComposerFiles,
                     bottomInset: bottomInset,
@@ -269,10 +276,28 @@ struct ConversationView: View {
         appModel.snapshot?.resolvedAgentTargetLabel(for: target, serverId: activeThreadKey.serverId)
     }
 
+    /// Resolve the user-message position in the currently-loaded transcript.
+    /// `forkThreadFromMessage` / `editMessage` on the Rust side expect an
+    /// index into `thread.items` filtered to user messages — see
+    /// `rollback_depth_for_turn` in `mobile_client/thread_projection.rs`.
+    /// Recomputing from the live `items` keeps the index correct under
+    /// pagination (older turns can shift positions; cached `sourceTurnIndex`
+    /// from a prior hydrate would be stale).
+    private func loadedUserItemIndex(for item: ConversationItem) -> Int? {
+        var idx = 0
+        for candidate in items {
+            guard candidate.isUserItem else { continue }
+            if candidate.id == item.id { return idx }
+            idx += 1
+        }
+        return nil
+    }
+
     private func editMessage(_ item: ConversationItem) {
         taskBag.run {
             do {
-                guard let selectedTurnIndex = item.sourceTurnIndex, item.isUserItem, item.isFromUserTurnBoundary else {
+                guard item.isUserItem, item.isFromUserTurnBoundary,
+                      let selectedTurnIndex = loadedUserItemIndex(for: item) else {
                     throw NSError(
                         domain: "Litter",
                         code: 1020,
@@ -293,7 +318,8 @@ struct ConversationView: View {
     private func forkFromMessage(_ item: ConversationItem) {
         taskBag.run {
             do {
-                guard let selectedTurnIndex = item.sourceTurnIndex, item.isUserItem, item.isFromUserTurnBoundary else {
+                guard item.isUserItem, item.isFromUserTurnBoundary,
+                      let selectedTurnIndex = loadedUserItemIndex(for: item) else {
                     throw NSError(
                         domain: "Litter",
                         code: 1016,
@@ -391,6 +417,8 @@ private struct ConversationBottomChrome: View {
     @Environment(AppModel.self) private var appModel
     let pinnedContextItems: [ConversationItem]
     let composer: ConversationComposerSnapshot
+    @Binding var composerInputText: String
+    @Binding var composerAttachedImage: UIImage?
     let onSend: (String, [ConversationAttachment], [SkillMentionSelection], [PluginMentionSelection]) -> Void
     let onFileSearch: (String) async throws -> [FileSearchResult]
     var bottomInset: CGFloat = 0
@@ -415,7 +443,9 @@ private struct ConversationBottomChrome: View {
                 showModeChip: !hasPinnedDiff,
                 onOpenModePicker: openCollaborationModePicker,
                 onOpenConversation: onOpenConversation,
-                onResumeSessions: onResumeSessions
+                onResumeSessions: onResumeSessions,
+                inputText: $composerInputText,
+                attachedImage: $composerAttachedImage
             )
             .background(.clear, ignoresSafeAreaEdges: .bottom)
         }
@@ -1395,7 +1425,8 @@ private struct ConversationInputBar: View {
     let onOpenConversation: ((ThreadKey) -> Void)?
     let onResumeSessions: ((String) -> Void)?
 
-    @State private var inputText = ""
+    @Binding var inputText: String
+    @Binding var attachedImage: UIImage?
     @State private var showAttachMenu = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
@@ -1440,10 +1471,12 @@ private struct ConversationInputBar: View {
     @State private var hasLoggedKeyboardShown = false
     @State private var isComposerFocused = false
     @State private var composerSelectionRange = NSRange(location: 0, length: 0)
+    @State private var dismissedPendingUserInputIds: Set<String> = []
     @StateObject private var taskBag = ViewTaskBag()
 
     private var pendingUserInputRequest: PendingUserInputRequest? {
-        snapshot.pendingUserInputRequest
+        guard let request = snapshot.pendingUserInputRequest else { return nil }
+        return dismissedPendingUserInputIds.contains(request.id) ? nil : request
     }
 
     private var pendingModelOverride: String? {
@@ -1591,6 +1624,7 @@ private struct ConversationInputBar: View {
                 showAttachMenu: $showAttachMenu,
                 onRemoveAttachment: removeAttachment,
                 onRespondToPendingUserInput: respondToPendingUserInput,
+                onDismissPendingUserInput: dismissPendingUserInput,
                 onImplementPlan: { taskBag.run { await implementPlan() } },
                 onDismissPlanImplementation: dismissPlanImplementationPrompt,
                 onSteerQueuedFollowUp: steerQueuedFollowUp,
@@ -1711,6 +1745,9 @@ private struct ConversationInputBar: View {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         let pendingAttachments = attachments
         guard !text.isEmpty || !pendingAttachments.isEmpty else { return }
+        if let request = snapshot.pendingUserInputRequest {
+            dismissedPendingUserInputIds.insert(request.id)
+        }
         if pendingAttachments.isEmpty,
            let invocation = parseSlashCommandInvocation(text) {
             inputText = ""
@@ -1728,6 +1765,11 @@ private struct ConversationInputBar: View {
         let pluginMentions = collectPluginMentionsForSubmission(text)
         pluginMentionSelections = []
         onSend(text, pendingAttachments, skillMentions, pluginMentions)
+    }
+
+    private func dismissPendingUserInput() {
+        guard let request = snapshot.pendingUserInputRequest else { return }
+        dismissedPendingUserInputIds.insert(request.id)
     }
 
     private func collectPluginMentionsForSubmission(_ text: String) -> [PluginMentionSelection] {
@@ -2212,7 +2254,13 @@ private struct ConversationInputBar: View {
     private func makeGoalCardActions() -> GoalCardActions {
         GoalCardActions(
             togglePause: {
-                let next: AppThreadGoalStatus = (snapshot.goal?.status == .paused) ? .active : .paused
+                guard let current = snapshot.goal?.status else { return }
+                let next: AppThreadGoalStatus
+                switch current {
+                case .active: next = .paused
+                case .paused, .budgetLimited: next = .active
+                case .complete: return
+                }
                 taskBag.run { await applyGoalUpdate(status: next) }
             },
             markComplete: {
@@ -2222,7 +2270,15 @@ private struct ConversationInputBar: View {
                 taskBag.run { await applyGoalUpdate(objective: objective) }
             },
             setBudget: { value in
-                taskBag.run { await applyGoalUpdate(tokenBudget: value) }
+                let goal = snapshot.goal
+                let resumeFromLimit = goal?.status == .budgetLimited
+                    && (value ?? 0) > (goal?.tokensUsed ?? 0)
+                taskBag.run {
+                    await applyGoalUpdate(
+                        status: resumeFromLimit ? .active : nil,
+                        tokenBudget: value
+                    )
+                }
             },
             clear: {
                 taskBag.run { await clearGoal() }
@@ -2715,6 +2771,8 @@ private func collaborationModeEffortLabel(_ effort: ReasoningEffort) -> String {
         return "High"
     case .xHigh:
         return "XHigh"
+    case .max:
+        return "Max"
     }
 }
 
@@ -3094,6 +3152,7 @@ private func index(in text: String, offset: Int) -> String.Index? {
 struct PendingUserInputPromptView: View {
     let request: PendingUserInputRequest
     let onSubmit: ([String: [String]]) -> Void
+    let onDismiss: () -> Void
 
     @State private var selectedAnswers: [String: String] = [:]
     @State private var otherAnswers: [String: String] = [:]
@@ -3133,6 +3192,13 @@ struct PendingUserInputPromptView: View {
                     .litterFont(.caption, weight: .semibold)
                     .foregroundColor(LitterTheme.textPrimary)
                 Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark.circle.fill")
+                        .litterFont(.body)
+                        .foregroundColor(LitterTheme.textMuted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss input request")
             }
 
             if let requesterLabel {

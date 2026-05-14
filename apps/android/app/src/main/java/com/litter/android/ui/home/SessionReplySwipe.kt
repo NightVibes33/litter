@@ -36,6 +36,12 @@ fun SessionReplySwipe(
     modifier: Modifier = Modifier,
     trailingAction: SwipeAction? = null,
     onError: (String) -> Unit = {},
+    /**
+     * Caller-provided trigger so the long-press menu can open the same
+     * reply sheet path as the swipe. When null, the swipe still owns its
+     * own local sheet state (legacy behavior).
+     */
+    onReply: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     var isSheetVisible by remember { mutableStateOf(false) }
@@ -45,7 +51,7 @@ fun SessionReplySwipe(
             icon = Icons.AutoMirrored.Filled.Reply,
             label = "reply",
             tint = LitterTheme.accent,
-            onTrigger = { isSheetVisible = true },
+            onTrigger = { onReply?.invoke() ?: run { isSheetVisible = true } },
         ),
         trailingAction = trailingAction,
         modifier = modifier,
@@ -59,39 +65,52 @@ fun SessionReplySwipe(
             onDismiss = { isSheetVisible = false },
             onSend = { threadKey, text ->
                 runCatching {
-                    // Resume the thread first so the server can find it —
-                    // cold-launch snapshots have the thread hydrated locally
-                    // but not yet registered with the upstream session.
-                    val resumeKey = appModel.hydrateThreadPermissions(threadKey) ?: threadKey
-                    try {
-                        appModel.externalResumeThread(resumeKey)
-                    } catch (_: Exception) {
-                        val cwdOverride = appModel.threadSnapshot(resumeKey)?.info?.cwd
-                        appModel.client.resumeThread(
-                            resumeKey.serverId,
-                            appModel.launchState.threadResumeRequest(
-                                resumeKey.threadId,
-                                cwdOverride = cwdOverride,
-                                threadKey = resumeKey,
-                            ),
-                        )
-                    }
-                    val payload = AppComposerPayload(
-                        text = text,
-                        additionalInputs = emptyList(),
-                        approvalPolicy = appModel.launchState.approvalPolicyValue(resumeKey),
-                        sandboxPolicy = appModel.launchState.turnSandboxPolicy(resumeKey),
-                        model = appModel.launchState.snapshot.value.selectedModel
-                            .trim().ifEmpty { null },
-                        reasoningEffort = null,
-                        serviceTier = null,
-                    )
-                    appModel.startTurn(resumeKey, payload)
-                    appModel.refreshThreadSnapshot(resumeKey)
+                    sendQuickReplyTurn(appModel, threadKey, text)
                 }.onFailure { err ->
                     onError(err.message ?: "Failed to send reply")
                 }
             },
         )
     }
+}
+
+/**
+ * Send-path for a quick reply from the home dashboard. Hoisted out of
+ * `SessionReplySwipe` so the long-press menu can reuse it via a single
+ * caller-owned reply sheet. Mirrors iOS `LitterApp.swift:1043-1078`.
+ */
+suspend fun sendQuickReplyTurn(
+    appModel: AppModel,
+    threadKey: uniffi.codex_mobile_client.ThreadKey,
+    text: String,
+) {
+    // Resume the thread first so the server can find it — cold-launch
+    // snapshots have the thread hydrated locally but not yet registered
+    // with the upstream session.
+    val resumeKey = appModel.hydrateThreadPermissions(threadKey) ?: threadKey
+    try {
+        appModel.externalResumeThread(resumeKey)
+    } catch (_: Exception) {
+        val cwdOverride = appModel.threadSnapshot(resumeKey)?.info?.cwd
+        appModel.client.resumeThread(
+            resumeKey.serverId,
+            appModel.launchState.threadResumeRequest(
+                resumeKey.threadId,
+                cwdOverride = cwdOverride,
+                threadKey = resumeKey,
+            ),
+        )
+    }
+    val payload = AppComposerPayload(
+        text = text,
+        additionalInputs = emptyList(),
+        approvalPolicy = appModel.launchState.approvalPolicyValue(resumeKey),
+        sandboxPolicy = appModel.launchState.turnSandboxPolicy(resumeKey),
+        model = appModel.launchState.snapshot.value.selectedModel
+            .trim().ifEmpty { null },
+        reasoningEffort = null,
+        serviceTier = null,
+    )
+    appModel.startTurn(resumeKey, payload)
+    appModel.refreshThreadSnapshot(resumeKey)
 }

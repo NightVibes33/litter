@@ -9,6 +9,7 @@ static ISH_EXEC_HOOK_INSTALLED: OnceLock<()> = OnceLock::new();
 pub(crate) fn install() {
     ISH_EXEC_HOOK_INSTALLED.get_or_init(|| {
         codex_core::exec::set_ios_exec_hook(run_command);
+        codex_core::exec::set_ios_streaming_exec_hook(run_command_streaming);
         crate::shell_preflight::install();
     });
 }
@@ -62,7 +63,7 @@ pub(crate) fn run_command(
                 None,
             ));
             let code = match result {
-                Ok(()) => 0,
+                Ok(_) => 0,
                 Err(err) => {
                     eprintln!("[ish-exec] apply_patch error: {err}");
                     if stderr_buf.is_empty() {
@@ -95,6 +96,50 @@ pub(crate) fn run_command(
     };
     eprintln!(
         "[ish-exec] exit={code} output_len={} preview={preview}",
+        output.len()
+    );
+
+    (code, output)
+}
+
+pub(crate) fn run_command_streaming(
+    argv: &[String],
+    cwd: &Path,
+    _env: &HashMap<String, String>,
+    timeout_ms: Option<u64>,
+    on_output: codex_core::exec::IosExecOutputHandler,
+) -> (i32, Vec<u8>) {
+    // Run apply_patch in-process since iSH cannot exec the app binary.
+    if argv
+        .iter()
+        .any(|arg| arg == codex_apply_patch::CODEX_CORE_APPLY_PATCH_ARG1)
+    {
+        let (code, output) = run_command(argv, cwd, _env, timeout_ms);
+        if !output.is_empty() {
+            on_output(output.clone());
+        }
+        return (code, output);
+    }
+
+    let cmd = mobile_system_command(argv);
+    eprintln!("[ish-exec] run(streaming): {cmd} (cwd={})", cwd.display());
+
+    let cwd_str = cwd.to_string_lossy();
+    let (code, output) =
+        crate::ish_runtime::run_streaming(&cmd, Some(cwd_str.as_ref()), timeout_ms, |chunk| {
+            if !chunk.is_empty() {
+                on_output(chunk.to_vec());
+            }
+        });
+
+    let preview = String::from_utf8_lossy(&output);
+    let preview = if preview.len() > 200 {
+        &preview[..200]
+    } else {
+        &preview
+    };
+    eprintln!(
+        "[ish-exec] exit(streaming)={code} output_len={} preview={preview}",
         output.len()
     );
 

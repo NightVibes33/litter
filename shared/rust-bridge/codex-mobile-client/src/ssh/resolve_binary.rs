@@ -103,12 +103,10 @@ printf 'whoami='; whoami 2>/dev/null || true
 printf 'pwd='; pwd 2>/dev/null || true
 printf 'command -v codex='
 command -v codex 2>/dev/null || printf '<missing>'
-printf '\n'
-for candidate in \
-  "$HOME/.litter/bin/codex" \
-  "$HOME/.litter/codex/node_modules/.bin/codex" \
-  "${{BUN_INSTALL:-$HOME/.bun}}/bin/codex" \
-  "$HOME/.volta/bin/codex" \
+	printf '\n'
+	for candidate in \
+	  "${{BUN_INSTALL:-$HOME/.bun}}/bin/codex" \
+	  "$HOME/.volta/bin/codex" \
   "$HOME/.local/bin/codex" \
   "${{PNPM_HOME:-}}/codex" \
   "${{NVM_BIN:-}}/codex" \
