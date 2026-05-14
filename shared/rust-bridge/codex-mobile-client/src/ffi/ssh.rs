@@ -415,17 +415,15 @@ pub(crate) async fn run_guided_ssh_connect(
     credentials: SshCredentials,
     accept_unknown_host: bool,
     working_dir: Option<String>,
-    ipc_socket_path_override: Option<String>,
     progress: &mut AppConnectionProgressSnapshot,
 ) -> Result<(), ClientError> {
     let server_id = config.server_id.clone();
     info!(
-        "guided ssh connect start server_id={} host={} ssh_port={} working_dir={} ipc_socket_path_override={}",
+        "guided ssh connect start server_id={} host={} ssh_port={} working_dir={}",
         server_id,
         credentials.host.as_str(),
         credentials.port,
-        working_dir.as_deref().unwrap_or("<none>"),
-        ipc_socket_path_override.as_deref().unwrap_or("<none>")
+        working_dir.as_deref().unwrap_or("<none>")
     );
     let ssh_client = Arc::new(
         SshClient::connect(
@@ -596,7 +594,6 @@ pub(crate) async fn run_guided_ssh_connect(
             ssh_client,
             bootstrap,
             working_dir,
-            ipc_socket_path_override,
         )
         .await
         .map_err(|error| ClientError::Transport(error.to_string()))?;

@@ -6,10 +6,6 @@ extension AppServerSnapshot {
         transportState == .connected
     }
 
-    var isIpcConnected: Bool {
-        ipcState == .ready
-    }
-
     var canUseTransportActions: Bool {
         capabilities.canUseTransportActions
     }
@@ -18,21 +14,9 @@ extension AppServerSnapshot {
         capabilities.canBrowseDirectories
     }
 
-    var canResumeViaIpc: Bool {
-        capabilities.canResumeViaIpc
-    }
-
     var connectionModeLabel: String {
         guard !isLocal else { return "local" }
-        guard ExperimentalFeatures.shared.isEnabled(.ipc) else { return "remote" }
-        switch ipcState {
-        case .ready:
-            return "remote · ipc"
-        case .disconnected:
-            return "remote · no ipc"
-        case .unsupported:
-            return "remote"
-        }
+        return "remote"
     }
 
     var currentConnectionStep: AppConnectionStepSnapshot? {
@@ -73,10 +57,6 @@ extension AppServerSnapshot {
         if transportState == .connected, !isLocal, account == nil {
             return "Sign in required"
         }
-        if transportState == .connected, ipcState == .disconnected,
-           ExperimentalFeatures.shared.isEnabled(.ipc) {
-            return "Connected, IPC unavailable"
-        }
         return transportState.displayLabel
     }
 
@@ -91,10 +71,6 @@ extension AppServerSnapshot {
             return LitterTheme.accent
         }
         if transportState == .connected, !isLocal, account == nil {
-            return .orange
-        }
-        if transportState == .connected, ipcState == .disconnected,
-           ExperimentalFeatures.shared.isEnabled(.ipc) {
             return .orange
         }
         return transportState.accentColor
@@ -113,10 +89,6 @@ extension AppServerSnapshot {
             return .pending
         }
         if transportState == .connected, !isLocal, account == nil {
-            return .pending
-        }
-        if transportState == .connected, ipcState == .disconnected,
-           ExperimentalFeatures.shared.isEnabled(.ipc) {
             return .pending
         }
         switch transportState {

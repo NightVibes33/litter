@@ -86,6 +86,25 @@ composer.
 | Ephemeral thread is torn down | `thread/archive` after waiter resolves or times out | Same |
 | Generation timeout (~30s) | Overlay shows failure card with "Try again" | Overlay shows failure card with "Try again" |
 
+## Settings — Server Connection Editor (iOS + Android)
+
+Tapping a saved server row in Settings opens the inline editor. Local servers are
+name-only; alleycat-paired servers are name-only; everything else allows
+mode + host/port/wake-MAC + URL editing. Save persists, Save & Reconnect
+disconnects and re-establishes the chosen transport.
+
+| Check | iOS | Android |
+|---|---|---|
+| Tap saved server row opens editor | `SettingsServerSheet.edit` opens `SettingsServerConnectionEditor` form sheet | Tap or row-menu "Edit" opens `ServerEditSheet` ModalBottomSheet |
+| Local server: only name editable | Editor displays "managed automatically" copy; only Save & Restart action shown | Same — `ServerEditSheet` shows the same copy and uses "Save & Restart" |
+| Alleycat-paired server: only name editable | Editor shows paired-pairing-metadata copy; mode picker hidden | Same — mode picker hidden, message visible |
+| Switch to Direct Codex + Save & Reconnect | Persists, disconnects, calls `serverBridge.connectRemoteServer` | Same — `reconnectController.reconnectServer` reconnects via persisted record |
+| Switch to WebSocket + Save & Reconnect | Persists, disconnects, calls `serverBridge.connectRemoteUrlServer` with `ws://` or `wss://` | Same — record stores `websocketURL`; reconnect dispatches via Rust `ReconnectController` |
+| Switch to SSH + Save & Reconnect | Persists, dismisses editor, opens `SSHLoginSheet`; connect uses `serverBridge.startRemoteOverSshConnect` | Persists, dismisses editor, opens shared `SSHLoginDialog`; connect uses `serverBridge.startRemoteOverSshConnect` |
+| Validation errors surface inline | Alert "Invalid Server" with localized reason, dismiss returns to editor | Same — `AlertDialog` with reason; dismiss returns to editor |
+| Save (no reconnect) | Persists `SavedServerStore` + calls `store.renameServer`, leaves connection intact | Same |
+| Remove server | `SavedServerStore.remove` + closes SSH session + disconnects bridge | Same |
+
 ## Sidebar + Picker Parity Checklist (iOS + Android)
 
 ### Session Sidebar

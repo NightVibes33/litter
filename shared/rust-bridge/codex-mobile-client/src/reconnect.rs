@@ -370,7 +370,6 @@ pub(crate) fn compute_reconnect_plan(
 pub(crate) async fn execute_reconnect_plan(
     plan: &ReconnectPlan,
     client: &MobileClient,
-    ipc_override: Option<String>,
 ) -> ReconnectResult {
     match plan {
         ReconnectPlan::Ssh {
@@ -410,7 +409,7 @@ pub(crate) async fn execute_reconnect_plan(
                 tls: false,
             };
             match client
-                .connect_remote_over_ssh(config, ssh_creds, true, None, ipc_override)
+                .connect_remote_over_ssh(config, ssh_creds, true, None)
                 .await
             {
                 Ok(_) => ReconnectResult {

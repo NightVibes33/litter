@@ -186,7 +186,10 @@ final class ConversationScreenModel {
             threadReasoningEffort: thread.reasoningEffort,
             modelContextWindow: thread.modelContextWindow.map(Int64.init),
             contextTokensUsed: thread.contextTokensUsed.map(Int64.init),
-            rateLimits: appModel.rateLimits(for: thread.key.serverId),
+            rateLimits: appModel.rateLimits(
+                forServer: thread.key.serverId,
+                runtime: thread.agentRuntimeKind
+            ),
             availableModels: appModel.availableModels(for: thread.key.serverId),
             isConnected: appModel.snapshot?.serverSnapshot(for: thread.key.serverId)?.isConnected ?? false
         )

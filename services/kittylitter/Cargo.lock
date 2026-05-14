@@ -44,6 +44,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahash"
+version = "0.8.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
+dependencies = [
+ "cfg-if",
+ "once_cell",
+ "version_check",
+ "zerocopy",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -55,11 +67,13 @@ dependencies = [
 [[package]]
 name = "alleycat"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
+ "alleycat-acp-bridge",
  "alleycat-amp-bridge",
  "alleycat-bridge-core",
  "alleycat-claude-bridge",
+ "alleycat-devin-bridge",
  "alleycat-droid-bridge",
  "alleycat-hermes-bridge",
  "alleycat-opencode-bridge",
@@ -82,6 +96,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tokio",
+ "tokio-tungstenite",
  "toml",
  "tracing",
  "tracing-appender",
@@ -90,9 +105,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "alleycat-acp-bridge"
+version = "0.1.0"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
+dependencies = [
+ "alleycat-bridge-core",
+ "alleycat-codex-proto",
+ "anyhow",
+ "async-trait",
+ "base64",
+ "chrono",
+ "dashmap",
+ "futures",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "alleycat-amp-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-claude-bridge",
@@ -115,7 +153,7 @@ dependencies = [
 [[package]]
 name = "alleycat-bridge-core"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-codex-proto",
  "anyhow",
@@ -134,7 +172,7 @@ dependencies = [
 [[package]]
 name = "alleycat-claude-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -158,7 +196,7 @@ dependencies = [
 [[package]]
 name = "alleycat-codex-proto"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "chrono",
  "serde",
@@ -167,9 +205,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "alleycat-devin-bridge"
+version = "0.1.0"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
+dependencies = [
+ "alleycat-acp-bridge",
+ "alleycat-bridge-core",
+ "anyhow",
+ "async-trait",
+ "rusqlite",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "alleycat-droid-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -188,7 +241,7 @@ dependencies = [
 [[package]]
 name = "alleycat-hermes-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -213,7 +266,7 @@ dependencies = [
 [[package]]
 name = "alleycat-opencode-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-bridge-core",
  "anyhow",
@@ -237,7 +290,7 @@ dependencies = [
 [[package]]
 name = "alleycat-pi-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -1138,6 +1191,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fallible-iterator"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649"
+
+[[package]]
+name = "fallible-streaming-iterator"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a"
+
+[[package]]
 name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1440,6 +1505,9 @@ name = "hashbrown"
 version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+dependencies = [
+ "ahash",
+]
 
 [[package]]
 name = "hashbrown"
@@ -1466,6 +1534,15 @@ name = "hashbrown"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
+
+[[package]]
+name = "hashlink"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af"
+dependencies = [
+ "hashbrown 0.14.5",
+]
 
 [[package]]
 name = "heapless"
@@ -2163,7 +2240,7 @@ dependencies = [
 
 [[package]]
 name = "kittylitter"
-version = "0.2.11"
+version = "0.3.0"
 dependencies = [
  "alleycat",
  "anyhow",
@@ -2194,6 +2271,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e02f3bb43d335493c96bf3fd3a321600bf6bd07ed34bc64118e9293bdffea46c"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "libsqlite3-sys"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c10584274047cb335c23d3e61bcef8e323adae7c5c8c760540f73610177fc3f"
+dependencies = [
+ "cc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -2814,6 +2902,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pkg-config"
+version = "0.3.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
+
+[[package]]
 name = "plist"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3265,6 +3359,20 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rusqlite"
+version = "0.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b838eba278d213a8beaf485bd313fd580ca4505a00d5871caeb1457c55322cae"
+dependencies = [
+ "bitflags 2.11.1",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "hashlink",
+ "libsqlite3-sys",
+ "smallvec",
 ]
 
 [[package]]
@@ -4331,6 +4439,12 @@ name = "valuable"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
+
+[[package]]
+name = "vcpkg"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vergen"

@@ -1607,9 +1607,8 @@ private struct HomeNavigationView: View {
         // For pinned home rows, resuming preemptively avoids the "first
         // half-second of a stream is missed while we set up a subscription"
         // latency window that an active-only subscription strategy would
-        // have. `externalResume`
-        // short-circuits to a no-op when IPC is live and the thread's
-        // items are already populated, so warm/IPC paths are cheap.
+        // have. `externalResume` short-circuits to a no-op when the thread's
+        // items are already populated, so warm paths are cheap.
         let resumed = (try? await appModel.store.externalResumeThread(key: key, hostId: nil)) != nil
         if resumed, loadInitialTurns {
             await appModel.loadInitialTurnsIfNeeded(threadId: key)

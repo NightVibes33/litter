@@ -70,11 +70,9 @@ import com.litter.android.state.SavedSshCredential
 import com.litter.android.state.SshAuthMethod
 import com.litter.android.state.SshCredentialStore
 import com.litter.android.state.connectionProgressDetail
-import com.litter.android.state.isIpcConnected
 import com.litter.android.state.isConnected
 import com.litter.android.state.statusColor
 import com.litter.android.state.statusLabel
-import com.litter.android.ui.ExperimentalFeatures
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.LocalAppModel
 import com.litter.android.ui.common.BetaBadge
@@ -216,7 +214,6 @@ fun DiscoveryScreen(
                     unlockMacosKeychain = credential.unlockMacosKeychain,
                     acceptUnknownHost = true,
                     workingDir = null,
-                    ipcSocketPathOverride = ExperimentalFeatures.ipcSocketPathOverride(),
                 )
             }
 
@@ -233,7 +230,6 @@ fun DiscoveryScreen(
                     unlockMacosKeychain = false,
                     acceptUnknownHost = true,
                     workingDir = null,
-                    ipcSocketPathOverride = ExperimentalFeatures.ipcSocketPathOverride(),
                 )
             }
         }
@@ -868,17 +864,7 @@ private fun ServerRow(
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
-        if (connectedServer?.isIpcConnected == true) {
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = "IPC",
-                color = LitterTheme.accentStrong,
-                fontSize = 10.sp,
-                modifier = Modifier
-                    .background(LitterTheme.accentStrong.copy(alpha = 0.14f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            )
-        } else if (isWaking) {
+        if (isWaking) {
             Spacer(Modifier.width(6.dp))
             CircularProgressIndicator(
                 modifier = Modifier.size(14.dp),
@@ -1063,7 +1049,7 @@ private fun RenameServerDialog(
 }
 
 @Composable
-private fun SSHLoginDialog(
+internal fun SSHLoginDialog(
     server: SavedServer,
     initialCredential: SavedSshCredential?,
     onDismiss: () -> Unit,

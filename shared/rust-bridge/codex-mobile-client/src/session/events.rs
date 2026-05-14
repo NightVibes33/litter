@@ -13,7 +13,7 @@ use tracing::warn;
 
 use crate::types::AppThreadGoal;
 use crate::types::{
-    ApprovalKind, PendingApproval, PendingApprovalSeed, PendingApprovalWithSeed,
+    AgentRuntimeKind, ApprovalKind, PendingApproval, PendingApprovalSeed, PendingApprovalWithSeed,
     PendingUserInputOption, PendingUserInputQuestion, PendingUserInputRequest,
     PendingUserInputResponseKind, PendingUserInputSeed, ThreadKey,
 };
@@ -148,6 +148,7 @@ pub(crate) enum UiEvent {
     // ── Account / limits ───────────────────────────────────────────────
     AccountRateLimitsUpdated {
         server_id: String,
+        runtime_kind: AgentRuntimeKind,
         notification: codex_app_server_protocol::AccountRateLimitsUpdatedNotification,
     },
 
@@ -268,7 +269,12 @@ impl EventProcessor {
     /// Matches on the upstream enum variants (which carry typed payloads),
     /// extracts relevant fields directly, and emits the corresponding
     /// [`UiEvent`] to all subscribers.
-    pub fn process_notification(&self, server_id: &str, notification: &ServerNotification) {
+    pub fn process_notification(
+        &self,
+        server_id: &str,
+        runtime_kind: AgentRuntimeKind,
+        notification: &ServerNotification,
+    ) {
         match notification {
             // ── Turn lifecycle ──────────────────────────────────────
             ServerNotification::ThreadStarted(n) => {
@@ -444,6 +450,7 @@ impl EventProcessor {
             ServerNotification::AccountRateLimitsUpdated(n) => {
                 self.emit(UiEvent::AccountRateLimitsUpdated {
                     server_id: server_id.to_string(),
+                    runtime_kind,
                     notification: n.clone(),
                 });
             }
@@ -1239,7 +1246,7 @@ mod tests {
     fn process_and_recv(server_id: &str, notification: &ServerNotification) -> Option<UiEvent> {
         let proc = EventProcessor::new();
         let mut rx = proc.subscribe();
-        proc.process_notification(server_id, notification);
+        proc.process_notification(server_id, "codex".to_string(), notification);
         rx.try_recv().ok()
     }
 
@@ -1863,9 +1870,11 @@ mod tests {
         match evt {
             UiEvent::AccountRateLimitsUpdated {
                 server_id,
+                runtime_kind,
                 notification,
             } => {
                 assert_eq!(server_id, "srv1");
+                assert_eq!(runtime_kind, "codex");
                 assert_eq!(
                     notification.rate_limits.limit_id.as_deref(),
                     Some("primary")
@@ -2405,7 +2414,7 @@ mod tests {
             thread_id: "thr_1".to_string(),
             turn: make_turn("turn_1"),
         });
-        proc.process_notification("srv1", &notification);
+        proc.process_notification("srv1", "codex".to_string(), &notification);
 
         assert!(rx1.try_recv().is_ok());
         assert!(rx2.try_recv().is_ok());
@@ -2420,7 +2429,7 @@ mod tests {
             thread_id: "thr_1".to_string(),
             turn: make_turn("turn_1"),
         });
-        proc.process_notification("srv1", &notification);
+        proc.process_notification("srv1", "codex".to_string(), &notification);
         // No panic = success.
     }
 }

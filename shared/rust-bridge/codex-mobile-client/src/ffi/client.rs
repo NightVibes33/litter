@@ -1134,7 +1134,11 @@ impl AppClient {
                 req!(server_id, GetAccountRateLimits, None),
             )
             .await?;
-            c.apply_account_rate_limits_response(&server_id, &response);
+            c.apply_account_rate_limits_response(
+                &server_id,
+                "codex".to_string(),
+                &response,
+            );
             Ok(())
         })
     }
@@ -2963,12 +2967,11 @@ mod tests {
             port: 0,
             wake_mac: None,
             is_local,
-            supports_ipc: false,
-            has_ipc: false,
             health,
             account: None,
             requires_openai_auth: false,
             rate_limits: None,
+            rate_limits_by_runtime: std::collections::HashMap::new(),
             available_models: None,
             agent_runtimes: Vec::new(),
             connection_progress: None,

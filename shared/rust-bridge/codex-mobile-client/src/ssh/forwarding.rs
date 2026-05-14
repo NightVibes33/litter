@@ -7,15 +7,9 @@
 //! - `abort_forward_port` — abort a previously-started forward.
 //! - `open_app_server_proxy_stream` — exec `codex app-server proxy` on the
 //!   remote host and expose its stdin/stdout as a bidirectional async stream.
-//! - `open_streamlocal` — open a `direct-streamlocal` channel to a
-//!   remote Unix socket (used to talk to `codex-ipc` over SSH).
-//! - `resolve_remote_ipc_socket_path` / `remote_ipc_socket_if_present` —
-//!   compute / probe the Codex IPC socket path on the remote.
 
 use std::sync::Arc;
 
-use russh::ChannelStream;
-use russh::client::Msg;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tracing::{debug, error, info, warn};
@@ -261,69 +255,5 @@ impl SshClient {
         });
 
         Ok(SshExecIo::new(stdout, stdin))
-    }
-
-    /// Open a direct streamlocal channel to a remote Unix socket path.
-    pub async fn open_streamlocal(
-        &self,
-        socket_path: &str,
-    ) -> Result<ChannelStream<Msg>, SshError> {
-        let handle = self.handle.lock().await;
-        if handle.is_closed() {
-            return Err(SshError::Disconnected);
-        }
-        let channel = handle
-            .channel_open_direct_streamlocal(socket_path)
-            .await
-            .map_err(|e| {
-                SshError::ConnectionFailed(format!("open direct-streamlocal {socket_path}: {e}"))
-            })?;
-        Ok(channel.into_stream())
-    }
-
-    /// Resolve the default remote Codex IPC socket path for the current SSH user.
-    pub async fn resolve_remote_ipc_socket_path(&self) -> Result<String, SshError> {
-        const SCRIPT: &str = r#"uid="$(id -u 2>/dev/null || printf '0')"
-tmp="${TMPDIR:-${TMP:-/tmp}}"
-tmp="${tmp%/}"
-printf '%s/codex-ipc/ipc-%s.sock' "$tmp" "$uid""#;
-        let result = self.exec_posix(SCRIPT).await?;
-        let path = result.stdout.trim().to_string();
-        if path.is_empty() {
-            return Err(SshError::ExecFailed {
-                exit_code: result.exit_code,
-                stderr: "failed to resolve remote IPC socket path".to_string(),
-            });
-        }
-        Ok(path)
-    }
-
-    /// Return the requested IPC socket path if it exists on the remote host.
-    pub async fn remote_ipc_socket_if_present(
-        &self,
-        override_path: Option<&str>,
-    ) -> Result<Option<String>, SshError> {
-        let socket_path = match override_path {
-            Some(path) if path.trim().is_empty() => return Ok(None),
-            Some(path) => path.to_string(),
-            None => self.resolve_remote_ipc_socket_path().await?,
-        };
-        let check = format!(
-            "if [ -S {path} ]; then printf '%s' {path}; fi",
-            path = shell_quote(&socket_path),
-        );
-        let result = self.exec_posix(&check).await?;
-        if result.exit_code != 0 {
-            return Err(SshError::ExecFailed {
-                exit_code: result.exit_code,
-                stderr: result.stderr,
-            });
-        }
-        let resolved = result.stdout.trim();
-        if resolved.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(resolved.to_string()))
-        }
     }
 }

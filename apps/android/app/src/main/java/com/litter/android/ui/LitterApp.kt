@@ -47,6 +47,7 @@ import com.litter.android.ui.sessions.SessionLaunchSupport
 import com.litter.android.ui.sessions.SessionsUiState
 import uniffi.codex_mobile_client.AppProject
 import uniffi.codex_mobile_client.ApprovalKind
+import uniffi.codex_mobile_client.PendingUserInputRequest
 import uniffi.codex_mobile_client.PinnedThreadKey
 import uniffi.codex_mobile_client.ThreadKey
 import uniffi.codex_mobile_client.deriveProjects
@@ -473,8 +474,18 @@ fun LitterApp(
             val approvals = snapshot?.pendingApprovals.orEmpty().filter {
                 it.kind != ApprovalKind.MCP_ELICITATION
             }
+            val currentThreadKey = when (val route = currentRoute) {
+                is Route.Conversation -> route.key
+                is Route.ConversationInfo -> route.key
+                is Route.WallpaperSelection -> route.key
+                is Route.WallpaperAdjust -> route.key
+                is Route.RealtimeVoice -> route.key
+                else -> null
+            }
             val userInputs = snapshot?.pendingUserInputs.orEmpty().filter {
-                !dismissedUserInputs.isDismissed(it.id)
+                currentThreadKey != null &&
+                    it.isRelevantToThread(currentThreadKey) &&
+                    !dismissedUserInputs.isDismissed(it.id)
             }
             if (approvals.isNotEmpty() || userInputs.isNotEmpty()) {
                 ApprovalOverlay(
@@ -648,6 +659,13 @@ fun LitterApp(
             }
         }
     }
+}
+
+private fun PendingUserInputRequest.isRelevantToThread(threadKey: ThreadKey): Boolean {
+    if (serverId != threadKey.serverId) return false
+
+    val requestThreadId = threadId.trim()
+    return requestThreadId.isEmpty() || requestThreadId == threadKey.threadId
 }
 
 private fun android.content.Context.animationsDisabled(): Boolean {

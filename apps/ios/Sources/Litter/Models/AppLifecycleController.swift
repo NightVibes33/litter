@@ -261,7 +261,7 @@ final class AppLifecycleController {
         } else {
             LLog.info(
                 "push",
-                "background push skipped tracked thread reload because live IPC state is recent",
+                "background push skipped tracked thread reload because live state is recent",
                 fields: ["trackedKeys": Array(keys).map(\.debugLabel)]
             )
         }
@@ -484,7 +484,7 @@ final class AppLifecycleController {
         } else if !keysToRefresh.isEmpty {
             LLog.info(
                 "lifecycle",
-                "performForegroundRecovery skipped thread reloads because live IPC state is already current",
+                "performForegroundRecovery skipped thread reloads because live state is already current",
                 fields: ["refreshKeys": Array(keysToRefresh).map(\.debugLabel)]
             )
         }
@@ -709,8 +709,8 @@ final class AppLifecycleController {
         appModel: AppModel,
         within interval: TimeInterval = 3
     ) -> Bool {
-        // IPC-vs-direct routing is now handled in Rust. Always refresh —
-        // Rust's external_resume_thread will no-op if IPC data is already fresh.
+        // Always refresh tracked threads after lifecycle transitions; Rust
+        // will no-op when the state is already fresh.
         false
     }
 

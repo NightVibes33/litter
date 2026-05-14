@@ -59,7 +59,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litter.android.state.accentColor
 import com.litter.android.state.displayModelLabel
-import com.litter.android.state.isIpcConnected
 import com.litter.android.state.resolvedModel
 import com.litter.android.state.statusColor
 import com.litter.android.ui.LitterTextStyle
@@ -264,20 +263,6 @@ fun HeaderBar(
                                 contentDescription = "Full access permissions",
                                 tint = LitterTheme.danger,
                                 modifier = Modifier.size(10.dp),
-                            )
-                        }
-                        if (server?.isIpcConnected == true) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "IPC",
-                                color = LitterTheme.accentStrong,
-                                fontSize = 10f.scaled,
-                                modifier = Modifier
-                                    .background(
-                                        LitterTheme.accentStrong.copy(alpha = 0.14f),
-                                        RoundedCornerShape(999.dp),
-                                    )
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
                             )
                         }
                     }

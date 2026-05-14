@@ -2,7 +2,6 @@ package com.litter.android.state
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import uniffi.codex_mobile_client.AgentRuntimeKind
 
 class SnapshotExtensionsTest {
 
@@ -14,7 +13,7 @@ class SnapshotExtensionsTest {
                 model = "gpt-5.4",
                 infoModel = null,
                 modelProvider = "anthropic",
-                agentRuntimeKind = AgentRuntimeKind.CLAUDE,
+                agentRuntimeKind = "claude",
             ),
         )
     }
@@ -27,16 +26,16 @@ class SnapshotExtensionsTest {
                 model = null,
                 infoModel = null,
                 modelProvider = "anthropic",
-                agentRuntimeKind = AgentRuntimeKind.CLAUDE,
+                agentRuntimeKind = "claude",
             ),
         )
         assertEquals(
-            "opencode",
+            "Opencode",
             displayModelLabel(
                 model = null,
                 infoModel = null,
                 modelProvider = null,
-                agentRuntimeKind = AgentRuntimeKind.OPENCODE,
+                agentRuntimeKind = "opencode",
             ),
         )
     }

@@ -103,7 +103,12 @@ impl MobileClient {
                 let response = downcast_public_rpc_response::<
                     upstream::GetAccountRateLimitsResponse,
                 >(wire_method, response)?;
-                self.apply_account_rate_limits_response(server_id, response);
+                // `account/rateLimits/read` is Codex-runtime specific upstream.
+                self.apply_account_rate_limits_response(
+                    server_id,
+                    "codex".to_string(),
+                    response,
+                );
                 Ok(())
             }
             "model/list" => {
@@ -135,10 +140,14 @@ impl MobileClient {
     pub fn apply_account_rate_limits_response(
         &self,
         server_id: &str,
+        runtime_kind: AgentRuntimeKind,
         response: &upstream::GetAccountRateLimitsResponse,
     ) {
-        self.app_store
-            .update_server_rate_limits(server_id, Some(response.rate_limits.clone().into()));
+        self.app_store.update_server_rate_limits(
+            server_id,
+            runtime_kind,
+            Some(response.rate_limits.clone().into()),
+        );
     }
 
     pub fn apply_model_list_response(
@@ -583,7 +592,6 @@ mod tests {
                 tls: false,
             },
             ServerHealthSnapshot::Connected,
-            false,
         );
 
         let response = upstream::GetAccountResponse {
@@ -622,7 +630,6 @@ mod tests {
                 tls: false,
             },
             ServerHealthSnapshot::Connected,
-            false,
         );
 
         let response = upstream::GetAccountRateLimitsResponse {
@@ -681,7 +688,6 @@ mod tests {
                 tls: false,
             },
             ServerHealthSnapshot::Connected,
-            false,
         );
 
         let response = upstream::ModelListResponse {
@@ -738,7 +744,6 @@ mod tests {
                 tls: false,
             },
             ServerHealthSnapshot::Connected,
-            false,
         );
 
         let list_response = upstream::ThreadListResponse {
@@ -983,7 +988,6 @@ mod tests {
                 tls: false,
             },
             ServerHealthSnapshot::Connected,
-            false,
         );
         let response = upstream::ThreadStartResponse {
             thread: test_upstream_thread("thread-1"),
@@ -1027,7 +1031,6 @@ mod tests {
                 tls: false,
             },
             ServerHealthSnapshot::Connected,
-            false,
         );
         let response = upstream::ThreadReadResponse {
             thread: test_upstream_thread("thread-1"),
@@ -1062,7 +1065,6 @@ mod tests {
                 tls: false,
             },
             ServerHealthSnapshot::Connected,
-            false,
         );
         // Prime the snapshot with a stale cursor to confirm the embedded
         // path clears it.
@@ -1141,7 +1143,6 @@ mod tests {
                 tls: false,
             },
             ServerHealthSnapshot::Connected,
-            false,
         );
         // Prime the snapshot as if load_thread_turns_page had just
         // applied a page: items populated, cursor stored, flag set.

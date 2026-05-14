@@ -313,7 +313,7 @@ dependencies = [
 [[package]]
 name = "alleycat-bridge-core"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-codex-proto",
  "anyhow",
@@ -332,7 +332,7 @@ dependencies = [
 [[package]]
 name = "alleycat-claude-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "alleycat-codex-proto"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "chrono",
  "serde",
@@ -367,7 +367,7 @@ dependencies = [
 [[package]]
 name = "alleycat-opencode-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-bridge-core",
  "anyhow",
@@ -391,7 +391,7 @@ dependencies = [
 [[package]]
 name = "alleycat-pi-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#9fcc9815ff51555c55e51cd02e046c62999f1905"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#94e79a6d0f92838d63971a6fc01210728234a871"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -3013,7 +3013,6 @@ dependencies = [
  "codex-exec-server",
  "codex-feedback",
  "codex-git-utils",
- "codex-ipc",
  "codex-login",
  "codex-protocol",
  "codex-shell-command",

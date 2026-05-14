@@ -12,7 +12,7 @@ use crate::types::{
 
 use super::snapshot::{
     AppConnectionProgressSnapshot, AppQueuedFollowUpPreview, AppSnapshot, AppVoiceSessionSnapshot,
-    ServerHealthSnapshot, ServerIpcStateSnapshot, ServerSnapshot, ThreadSnapshot,
+    ServerHealthSnapshot, ServerSnapshot, ThreadSnapshot,
 };
 
 const LOCAL_USER_MESSAGE_ITEM_PREFIX: &str = "local-user-message:";
@@ -25,15 +25,13 @@ pub struct AppServerSnapshot {
     pub port: u16,
     pub wake_mac: Option<String>,
     pub is_local: bool,
-    pub supports_ipc: bool,
-    pub has_ipc: bool,
     pub health: AppServerHealth,
     pub transport_state: AppServerTransportState,
-    pub ipc_state: AppServerIpcState,
     pub capabilities: AppServerCapabilities,
     pub account: Option<crate::types::Account>,
     pub requires_openai_auth: bool,
     pub rate_limits: Option<crate::types::RateLimitSnapshot>,
+    pub rate_limits_by_runtime: Vec<AppRateLimitsForRuntime>,
     pub available_models: Option<Vec<crate::types::ModelInfo>>,
     pub agent_runtimes: Vec<crate::types::AgentRuntimeInfo>,
     pub connection_progress: Option<AppConnectionProgressSnapshot>,
@@ -62,26 +60,23 @@ pub enum AppServerTransportState {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum AppServerIpcState {
-    Unsupported,
-    Disconnected,
-    Ready,
-}
-
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct AppServerCapabilities {
     pub can_use_transport_actions: bool,
     pub can_browse_directories: bool,
     pub can_start_threads: bool,
     pub can_resume_threads: bool,
-    pub can_use_ipc: bool,
-    pub can_resume_via_ipc: bool,
     /// Whether the remote server supports paginated turn fetching via
     /// `thread/turns/list` and the `exclude_turns` resume/fork parameter.
     /// Derived from `codex_version >= 0.125.0`, with runtime fallback when
     /// the RPC returns method-not-found.
     pub supports_turn_pagination: bool,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct AppRateLimitsForRuntime {
+    pub runtime_kind: crate::types::AgentRuntimeKind,
+    pub rate_limits: crate::types::RateLimitSnapshot,
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -479,11 +474,8 @@ impl TryFrom<AppSnapshot> for AppSnapshotRecord {
             .cloned()
             .map(|server| {
                 let transport_state = AppServerTransportState::from(server.health.clone());
-                let ipc_state = AppServerIpcState::from(server.ipc_state());
                 let can_use_transport_actions =
                     transport_state == AppServerTransportState::Connected;
-                let can_use_ipc =
-                    can_use_transport_actions && ipc_state == AppServerIpcState::Ready;
 
                 let usage_stats = compute_server_usage_stats(&snapshot, &server.server_id);
 
@@ -494,23 +486,30 @@ impl TryFrom<AppSnapshot> for AppSnapshotRecord {
                     port: server.port,
                     wake_mac: server.wake_mac,
                     is_local: server.is_local,
-                    supports_ipc: server.supports_ipc,
-                    has_ipc: server.has_ipc,
                     health: server.health.into(),
                     transport_state,
-                    ipc_state,
                     capabilities: AppServerCapabilities {
                         can_use_transport_actions,
                         can_browse_directories: can_use_transport_actions,
                         can_start_threads: can_use_transport_actions,
                         can_resume_threads: can_use_transport_actions,
-                        can_use_ipc,
-                        can_resume_via_ipc: can_use_ipc,
                         supports_turn_pagination: server.supports_turn_pagination,
                     },
                     account: server.account,
                     requires_openai_auth: server.requires_openai_auth,
                     rate_limits: server.rate_limits,
+                    rate_limits_by_runtime: {
+                        let mut entries = server
+                            .rate_limits_by_runtime
+                            .into_iter()
+                            .map(|(runtime_kind, rate_limits)| AppRateLimitsForRuntime {
+                                runtime_kind,
+                                rate_limits,
+                            })
+                            .collect::<Vec<_>>();
+                        entries.sort_by_key(|entry| entry.runtime_kind.clone());
+                        entries
+                    },
                     available_models: server.available_models,
                     agent_runtimes: server.agent_runtimes,
                     connection_progress: server.connection_progress,
@@ -1435,16 +1434,6 @@ impl From<ServerHealthSnapshot> for AppServerTransportState {
             ServerHealthSnapshot::Connected => Self::Connected,
             ServerHealthSnapshot::Unresponsive => Self::Unresponsive,
             ServerHealthSnapshot::Unknown(_) => Self::Unknown,
-        }
-    }
-}
-
-impl From<ServerIpcStateSnapshot> for AppServerIpcState {
-    fn from(value: ServerIpcStateSnapshot) -> Self {
-        match value {
-            ServerIpcStateSnapshot::Unsupported => Self::Unsupported,
-            ServerIpcStateSnapshot::Disconnected => Self::Disconnected,
-            ServerIpcStateSnapshot::Ready => Self::Ready,
         }
     }
 }

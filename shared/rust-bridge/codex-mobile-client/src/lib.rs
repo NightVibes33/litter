@@ -131,7 +131,6 @@ pub mod discovery;
 pub mod discovery_uniffi;
 pub mod ffi;
 pub mod hydration;
-pub mod immer_patch;
 mod local_runtime_instructions;
 pub mod local_server;
 pub mod logging;

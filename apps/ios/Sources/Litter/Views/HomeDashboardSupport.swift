@@ -93,7 +93,6 @@ struct HomeDashboardServer: Identifiable, Equatable {
     let host: String
     let port: UInt16
     let isLocal: Bool
-    let hasIpc: Bool
     let health: AppServerHealth
     let sourceLabel: String
     let statusLabel: String
@@ -125,7 +124,6 @@ struct HomeDashboardServer: Identifiable, Equatable {
             lhs.host == rhs.host &&
             lhs.port == rhs.port &&
             lhs.isLocal == rhs.isLocal &&
-            lhs.hasIpc == rhs.hasIpc &&
             lhs.health == rhs.health &&
             lhs.sourceLabel == rhs.sourceLabel &&
             lhs.statusLabel == rhs.statusLabel &&
@@ -204,7 +202,6 @@ enum HomeDashboardSupport {
                     host: server.host,
                     port: server.port,
                     isLocal: server.isLocal,
-                    hasIpc: server.hasIpc,
                     health: server.health,
                     sourceLabel: server.connectionModeLabel,
                     statusLabel: server.statusLabel,
@@ -253,7 +250,6 @@ enum HomeDashboardSupport {
             host: saved.hostname,
             port: saved.preferredCodexPort ?? saved.port ?? saved.sshPort ?? 0,
             isLocal: saved.source == .local,
-            hasIpc: false,
             health: .disconnected,
             sourceLabel: sourceLabel(for: saved),
             statusLabel: AppServerHealth.disconnected.displayLabel,

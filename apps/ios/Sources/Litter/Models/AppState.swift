@@ -112,6 +112,7 @@ final class AppState {
     var showModelSelector = false
     var showSettings = false
     var pendingThreadNavigation: ThreadKey?
+    private var dismissedPendingUserInputIds: Set<String> = []
     private var threadPermissionOverrides: [String: ThreadPermissionOverride] = [:]
     var approvalPolicy: String {
         didSet {
@@ -170,6 +171,14 @@ final class AppState {
 
     func isSessionFolderCollapsed(_ folderPath: String) -> Bool {
         collapsedSessionFolders.contains(folderPath)
+    }
+
+    func dismissPendingUserInput(id: String) {
+        dismissedPendingUserInputIds.insert(id)
+    }
+
+    func isPendingUserInputDismissed(id: String) -> Bool {
+        dismissedPendingUserInputIds.contains(id)
     }
 
     func approvalPolicy(for threadKey: ThreadKey?) -> String {

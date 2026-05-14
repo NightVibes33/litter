@@ -121,20 +121,6 @@ impl ServerHealthSnapshot {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ServerIpcStateSnapshot {
-    Unsupported,
-    Disconnected,
-    Ready,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ServerTransportAuthority {
-    IpcPrimary,
-    DirectOnly,
-    Recovering,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppLifecyclePhaseSnapshot {
     Active,
     Inactive,
@@ -152,58 +138,32 @@ pub enum ServerMutatingCommandKind {
     CollaborationModeSync,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ServerMutatingCommandRoute {
-    Ipc,
-    Direct,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IpcFailureClassification {
-    FollowerCommandTimeoutWhileIpcHealthy,
-    IpcConnectionLost,
-    LifecycleInterrupted,
-    ServerTransportUnhealthy,
-    UnknownTimeout,
-}
-
 #[derive(Debug, Clone)]
 pub struct PendingServerMutatingCommand {
     pub kind: ServerMutatingCommandKind,
     pub thread_id: String,
     pub local_request_id: String,
     pub started_at: Instant,
-    pub route: ServerMutatingCommandRoute,
     pub lifecycle_phase_at_send: AppLifecyclePhaseSnapshot,
 }
 
 #[derive(Debug, Clone)]
 pub struct ServerTransportDiagnostics {
-    pub authority: ServerTransportAuthority,
-    pub actual_ipc_connected: bool,
-    pub last_ipc_broadcast_at: Option<Instant>,
-    pub last_ipc_mutation_ok_at: Option<Instant>,
     pub last_direct_request_ok_at: Option<Instant>,
     pub last_lifecycle_phase: AppLifecyclePhaseSnapshot,
     pub last_lifecycle_transition_at: Option<Instant>,
     pub last_resumed_at: Option<Instant>,
     pub pending_mutation: Option<PendingServerMutatingCommand>,
-    pub last_ipc_failure: Option<IpcFailureClassification>,
 }
 
 impl Default for ServerTransportDiagnostics {
     fn default() -> Self {
         Self {
-            authority: ServerTransportAuthority::DirectOnly,
-            actual_ipc_connected: false,
-            last_ipc_broadcast_at: None,
-            last_ipc_mutation_ok_at: None,
             last_direct_request_ok_at: None,
             last_lifecycle_phase: AppLifecyclePhaseSnapshot::Active,
             last_lifecycle_transition_at: None,
             last_resumed_at: None,
             pending_mutation: None,
-            last_ipc_failure: None,
         }
     }
 }
@@ -216,12 +176,11 @@ pub struct ServerSnapshot {
     pub port: u16,
     pub wake_mac: Option<String>,
     pub is_local: bool,
-    pub supports_ipc: bool,
-    pub has_ipc: bool,
     pub health: ServerHealthSnapshot,
     pub account: Option<Account>,
     pub requires_openai_auth: bool,
     pub rate_limits: Option<RateLimitSnapshot>,
+    pub rate_limits_by_runtime: HashMap<AgentRuntimeKind, RateLimitSnapshot>,
     pub available_models: Option<Vec<ModelInfo>>,
     pub agent_runtimes: Vec<AgentRuntimeInfo>,
     pub connection_progress: Option<AppConnectionProgressSnapshot>,
@@ -233,18 +192,6 @@ pub struct ServerSnapshot {
     /// Derived from `codex_version` at handshake time; can be flipped to
     /// `false` at runtime if a paginated RPC comes back as method-not-found.
     pub supports_turn_pagination: bool,
-}
-
-impl ServerSnapshot {
-    pub fn ipc_state(&self) -> ServerIpcStateSnapshot {
-        if self.is_local || !self.supports_ipc {
-            ServerIpcStateSnapshot::Unsupported
-        } else if self.has_ipc {
-            ServerIpcStateSnapshot::Ready
-        } else {
-            ServerIpcStateSnapshot::Disconnected
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default, uniffi::Record)]

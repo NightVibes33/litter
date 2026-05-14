@@ -98,7 +98,6 @@ import com.litter.android.state.SavedThreadsStore
 import com.litter.android.state.connectionModeLabel
 import com.litter.android.state.displayTitle
 import com.litter.android.state.isConnected
-import com.litter.android.state.isIpcConnected
 import com.litter.android.state.statusColor
 import com.litter.android.state.statusLabel
 import com.litter.android.ui.ExperimentalFeatures

@@ -1471,12 +1471,11 @@ private struct ConversationInputBar: View {
     @State private var hasLoggedKeyboardShown = false
     @State private var isComposerFocused = false
     @State private var composerSelectionRange = NSRange(location: 0, length: 0)
-    @State private var dismissedPendingUserInputIds: Set<String> = []
     @StateObject private var taskBag = ViewTaskBag()
 
     private var pendingUserInputRequest: PendingUserInputRequest? {
         guard let request = snapshot.pendingUserInputRequest else { return nil }
-        return dismissedPendingUserInputIds.contains(request.id) ? nil : request
+        return appState.isPendingUserInputDismissed(id: request.id) ? nil : request
     }
 
     private var pendingModelOverride: String? {
@@ -1746,7 +1745,7 @@ private struct ConversationInputBar: View {
         let pendingAttachments = attachments
         guard !text.isEmpty || !pendingAttachments.isEmpty else { return }
         if let request = snapshot.pendingUserInputRequest {
-            dismissedPendingUserInputIds.insert(request.id)
+            appState.dismissPendingUserInput(id: request.id)
         }
         if pendingAttachments.isEmpty,
            let invocation = parseSlashCommandInvocation(text) {
@@ -1769,7 +1768,7 @@ private struct ConversationInputBar: View {
 
     private func dismissPendingUserInput() {
         guard let request = snapshot.pendingUserInputRequest else { return }
-        dismissedPendingUserInputIds.insert(request.id)
+        appState.dismissPendingUserInput(id: request.id)
     }
 
     private func collectPluginMentionsForSubmission(_ text: String) -> [PluginMentionSelection] {

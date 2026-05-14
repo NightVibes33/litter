@@ -38,10 +38,9 @@ use super::boundary::{
 };
 use super::snapshot::{
     AppConnectionProgressSnapshot, AppLifecyclePhaseSnapshot, AppQueuedFollowUpPreview,
-    AppSnapshot, AppVoiceSessionSnapshot, IpcFailureClassification, PendingServerMutatingCommand,
-    QueuedFollowUpDraft, ServerHealthSnapshot, ServerMutatingCommandKind,
-    ServerMutatingCommandRoute, ServerSnapshot, ServerTransportAuthority,
-    ServerTransportDiagnostics, ThreadSnapshot,
+    AppSnapshot, AppVoiceSessionSnapshot, PendingServerMutatingCommand, QueuedFollowUpDraft,
+    ServerHealthSnapshot, ServerMutatingCommandKind, ServerSnapshot, ServerTransportDiagnostics,
+    ThreadSnapshot,
 };
 use super::updates::{AppStoreUpdateRecord, ThreadStreamingDeltaKind};
 use super::voice::{VoiceDerivedUpdate, VoiceRealtimeState};
@@ -169,12 +168,7 @@ impl AppStoreReducer {
         self.updates_tx.subscribe()
     }
 
-    pub fn upsert_server(
-        &self,
-        config: &ServerConfig,
-        health: ServerHealthSnapshot,
-        supports_ipc: bool,
-    ) {
+    pub fn upsert_server(&self, config: &ServerConfig, health: ServerHealthSnapshot) {
         {
             let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
             let (
@@ -182,10 +176,9 @@ impl AppStoreReducer {
                 existing_account,
                 requires_openai_auth,
                 existing_rate_limits,
+                existing_rate_limits_by_runtime,
                 existing_available_models,
                 existing_agent_runtimes,
-                existing_supports_ipc,
-                existing_has_ipc,
                 existing_connection_progress,
                 existing_transport,
                 existing_codex_version,
@@ -196,10 +189,9 @@ impl AppStoreReducer {
                     existing.account.clone(),
                     existing.requires_openai_auth,
                     existing.rate_limits.clone(),
+                    existing.rate_limits_by_runtime.clone(),
                     existing.available_models.clone(),
                     existing.agent_runtimes.clone(),
-                    existing.supports_ipc,
-                    existing.has_ipc,
                     existing.connection_progress.clone(),
                     existing.transport.clone(),
                     existing.codex_version.clone(),
@@ -211,6 +203,7 @@ impl AppStoreReducer {
                     None,
                     false,
                     None,
+                    HashMap::new(),
                     None,
                     vec![AgentRuntimeInfo {
                         kind: "codex".to_string(),
@@ -218,8 +211,6 @@ impl AppStoreReducer {
                         display_name: "Codex".to_string(),
                         available: true,
                     }],
-                    false,
-                    false,
                     None,
                     ServerTransportDiagnostics::default(),
                     None,
@@ -235,12 +226,11 @@ impl AppStoreReducer {
                     port: config.port,
                     wake_mac: existing_wake_mac,
                     is_local: config.is_local,
-                    supports_ipc: existing_supports_ipc || supports_ipc,
-                    has_ipc: existing_has_ipc,
                     health,
                     account: existing_account,
                     requires_openai_auth,
                     rate_limits: existing_rate_limits,
+                    rate_limits_by_runtime: existing_rate_limits_by_runtime,
                     available_models: existing_available_models,
                     agent_runtimes: existing_agent_runtimes,
                     connection_progress: existing_connection_progress,
@@ -1213,11 +1203,22 @@ impl AppStoreReducer {
     pub fn update_server_rate_limits(
         &self,
         server_id: &str,
+        runtime_kind: AgentRuntimeKind,
         rate_limits: Option<crate::types::RateLimitSnapshot>,
     ) {
         {
             let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
             if let Some(server) = snapshot.servers.get_mut(server_id) {
+                match rate_limits.clone() {
+                    Some(snapshot_value) => {
+                        server
+                            .rate_limits_by_runtime
+                            .insert(runtime_kind, snapshot_value);
+                    }
+                    None => {
+                        server.rate_limits_by_runtime.remove(&runtime_kind);
+                    }
+                }
                 server.rate_limits = rate_limits;
             }
         }
@@ -1273,40 +1274,6 @@ impl AppStoreReducer {
         }
     }
 
-    pub fn update_server_ipc_state(&self, server_id: &str, has_ipc: bool) {
-        {
-            let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
-            if let Some(server) = snapshot.servers.get_mut(server_id) {
-                server.transport.actual_ipc_connected = has_ipc;
-                match server.transport.authority {
-                    ServerTransportAuthority::IpcPrimary => {
-                        server.has_ipc = has_ipc;
-                    }
-                    ServerTransportAuthority::Recovering => {
-                        if has_ipc {
-                            server.transport.authority = ServerTransportAuthority::IpcPrimary;
-                            server.transport.last_ipc_failure = None;
-                            server.has_ipc = true;
-                        } else {
-                            server.has_ipc = false;
-                        }
-                    }
-                    ServerTransportAuthority::DirectOnly => {
-                        if has_ipc && server.transport.last_ipc_failure.is_none() {
-                            server.transport.authority = ServerTransportAuthority::IpcPrimary;
-                            server.has_ipc = true;
-                        } else {
-                            server.has_ipc = false;
-                        }
-                    }
-                }
-            }
-        }
-        self.emit(AppStoreUpdateRecord::ServerChanged {
-            server_id: server_id.to_string(),
-        });
-    }
-
     pub fn update_server_health(&self, server_id: &str, health: ServerHealthSnapshot) {
         {
             let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
@@ -1358,19 +1325,6 @@ impl AppStoreReducer {
         }
     }
 
-    pub fn server_transport_authority(&self, server_id: &str) -> Option<ServerTransportAuthority> {
-        self.snapshot
-            .read()
-            .expect("app store lock poisoned")
-            .servers
-            .get(server_id)
-            .map(|server| server.transport.authority)
-    }
-
-    pub fn is_server_ipc_primary(&self, server_id: &str) -> bool {
-        self.server_transport_authority(server_id) == Some(ServerTransportAuthority::IpcPrimary)
-    }
-
     pub fn server_has_active_turns(&self, server_id: &str) -> bool {
         self.snapshot
             .read()
@@ -1397,65 +1351,11 @@ impl AppStoreReducer {
             .map(|pending| pending.kind)
     }
 
-    pub fn mark_server_ipc_primary(&self, server_id: &str) {
-        {
-            let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
-            if let Some(server) = snapshot.servers.get_mut(server_id) {
-                server.transport.authority = ServerTransportAuthority::IpcPrimary;
-                server.transport.last_ipc_failure = None;
-                server.has_ipc = server.transport.actual_ipc_connected || server.has_ipc;
-            }
-        }
-        self.emit(AppStoreUpdateRecord::ServerChanged {
-            server_id: server_id.to_string(),
-        });
-    }
-
-    pub fn mark_server_ipc_recovering(&self, server_id: &str) {
-        {
-            let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
-            if let Some(server) = snapshot.servers.get_mut(server_id) {
-                server.transport.authority = ServerTransportAuthority::Recovering;
-                server.has_ipc = false;
-            }
-        }
-        self.emit(AppStoreUpdateRecord::ServerChanged {
-            server_id: server_id.to_string(),
-        });
-    }
-
-    pub fn fail_server_over_to_direct_only(
-        &self,
-        server_id: &str,
-        classification: IpcFailureClassification,
-    ) {
-        {
-            let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
-            if let Some(server) = snapshot.servers.get_mut(server_id) {
-                server.transport.authority = ServerTransportAuthority::DirectOnly;
-                server.transport.last_ipc_failure = Some(classification);
-                server.has_ipc = false;
-                server.transport.pending_mutation = None;
-            }
-        }
-        self.emit(AppStoreUpdateRecord::ServerChanged {
-            server_id: server_id.to_string(),
-        });
-    }
-
-    pub fn note_server_ipc_broadcast(&self, server_id: &str) {
-        let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
-        if let Some(server) = snapshot.servers.get_mut(server_id) {
-            server.transport.last_ipc_broadcast_at = Some(std::time::Instant::now());
-        }
-    }
-
     pub fn begin_server_mutating_command(
         &self,
         server_id: &str,
         kind: ServerMutatingCommandKind,
         thread_id: &str,
-        route: ServerMutatingCommandRoute,
     ) -> String {
         let request_id = uuid::Uuid::new_v4().to_string();
         let started_at = std::time::Instant::now();
@@ -1466,19 +1366,13 @@ impl AppStoreReducer {
                 thread_id: thread_id.to_string(),
                 local_request_id: request_id.clone(),
                 started_at,
-                route,
                 lifecycle_phase_at_send: server.transport.last_lifecycle_phase,
             });
         }
         request_id
     }
 
-    pub fn finish_server_mutating_command_success(
-        &self,
-        server_id: &str,
-        local_request_id: &str,
-        route: ServerMutatingCommandRoute,
-    ) {
+    pub fn finish_server_mutating_command_success(&self, server_id: &str, local_request_id: &str) {
         let now = std::time::Instant::now();
         let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
         if let Some(server) = snapshot.servers.get_mut(server_id) {
@@ -1490,14 +1384,7 @@ impl AppStoreReducer {
             {
                 server.transport.pending_mutation = None;
             }
-            match route {
-                ServerMutatingCommandRoute::Ipc => {
-                    server.transport.last_ipc_mutation_ok_at = Some(now)
-                }
-                ServerMutatingCommandRoute::Direct => {
-                    server.transport.last_direct_request_ok_at = Some(now)
-                }
-            }
+            server.transport.last_direct_request_ok_at = Some(now);
         }
     }
 
@@ -1505,43 +1392,6 @@ impl AppStoreReducer {
         let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
         if let Some(server) = snapshot.servers.get_mut(server_id) {
             server.transport.last_direct_request_ok_at = Some(std::time::Instant::now());
-        }
-    }
-
-    pub fn classify_ipc_mutation_failure(
-        &self,
-        server_id: &str,
-        transport_lost: bool,
-        timed_out: bool,
-    ) -> IpcFailureClassification {
-        let snapshot = self.snapshot.read().expect("app store lock poisoned");
-        let Some(server) = snapshot.servers.get(server_id) else {
-            return IpcFailureClassification::UnknownTimeout;
-        };
-
-        if transport_lost || !server.transport.actual_ipc_connected {
-            return IpcFailureClassification::IpcConnectionLost;
-        }
-
-        if server.health != ServerHealthSnapshot::Connected {
-            return IpcFailureClassification::ServerTransportUnhealthy;
-        }
-
-        if let Some(pending) = server.transport.pending_mutation.as_ref() {
-            if server.transport.last_lifecycle_phase != pending.lifecycle_phase_at_send
-                || server
-                    .transport
-                    .last_lifecycle_transition_at
-                    .is_some_and(|at| at >= pending.started_at)
-            {
-                return IpcFailureClassification::LifecycleInterrupted;
-            }
-        }
-
-        if timed_out {
-            IpcFailureClassification::FollowerCommandTimeoutWhileIpcHealthy
-        } else {
-            IpcFailureClassification::UnknownTimeout
         }
     }
 
@@ -2061,10 +1911,11 @@ impl AppStoreReducer {
             }
             UiEvent::AccountRateLimitsUpdated {
                 server_id,
+                runtime_kind,
                 notification,
             } => {
                 let rate_limits = notification.rate_limits.clone().into();
-                self.update_server_rate_limits(server_id, Some(rate_limits));
+                self.update_server_rate_limits(server_id, runtime_kind.clone(), Some(rate_limits));
             }
             UiEvent::ConnectionStateChanged { server_id, health } => {
                 {
@@ -3618,7 +3469,7 @@ mod tests {
     fn sync_thread_list_for_runtime_tags_threads() {
         let reducer = AppStoreReducer::new();
         let config = make_server_config("srv");
-        reducer.upsert_server(&config, ServerHealthSnapshot::Connected, false);
+        reducer.upsert_server(&config, ServerHealthSnapshot::Connected);
 
         reducer.sync_thread_list_for_runtime(
             "srv",
@@ -3640,7 +3491,7 @@ mod tests {
     fn update_server_agent_runtimes_replaces_available_metadata() {
         let reducer = AppStoreReducer::new();
         let config = make_server_config("srv");
-        reducer.upsert_server(&config, ServerHealthSnapshot::Connected, false);
+        reducer.upsert_server(&config, ServerHealthSnapshot::Connected);
 
         reducer.update_server_agent_runtimes(
             "srv",
@@ -3692,9 +3543,9 @@ mod tests {
         let reducer = AppStoreReducer::new();
         let config = make_server_config("srv");
 
-        reducer.upsert_server(&config, ServerHealthSnapshot::Connecting, true);
+        reducer.upsert_server(&config, ServerHealthSnapshot::Connecting);
         reducer.update_server_wake_mac("srv", Some("aa:bb:cc:dd:ee:ff".to_string()));
-        reducer.upsert_server(&config, ServerHealthSnapshot::Connected, true);
+        reducer.upsert_server(&config, ServerHealthSnapshot::Connected);
 
         let snapshot = reducer.snapshot();
         let server = snapshot.servers.get("srv").expect("server snapshot");

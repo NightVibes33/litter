@@ -1,9 +1,8 @@
 use std::collections::hash_map::DefaultHasher;
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::future::Future;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex as StdMutex, RwLock};
-use tokio::sync::{Mutex, broadcast, mpsc};
+use tokio::sync::{Mutex, broadcast};
 use tracing::{debug, info, trace, warn};
 use url::Url;
 
@@ -19,10 +18,7 @@ use crate::session::connection::{
 };
 use crate::session::events::{EventProcessor, UiEvent};
 use crate::ssh::{SshBootstrapResult, SshBootstrapTransport, SshClient, SshCredentials};
-use crate::store::snapshot::{
-    IpcFailureClassification, ServerMutatingCommandKind, ServerMutatingCommandRoute,
-    ServerTransportAuthority,
-};
+use crate::store::snapshot::ServerMutatingCommandKind;
 use crate::store::{
     AppConnectionProgressSnapshot, AppQueuedFollowUpKind, AppQueuedFollowUpPreview, AppSnapshot,
     AppStoreReducer, AppStoreUpdateRecord, ServerHealthSnapshot, ThreadSnapshot,
@@ -30,24 +26,14 @@ use crate::store::{
 use crate::transport::{RpcError, TransportError};
 use crate::types::{
     AgentRuntimeInfo, AgentRuntimeKind, AppCollaborationModePreset, AppModeKind,
-    ApprovalDecisionValue, PendingApproval, PendingApprovalSeed, PendingApprovalWithSeed,
-    PendingUserInputAnswer, PendingUserInputRequest, PendingUserInputResponseKind,
-    PendingUserInputSeed, ThreadInfo, ThreadKey, ThreadSummaryStatus,
+    ApprovalDecisionValue, PendingApproval, PendingApprovalSeed, PendingUserInputAnswer,
+    PendingUserInputRequest, PendingUserInputResponseKind, PendingUserInputSeed, ThreadInfo,
+    ThreadKey, ThreadSummaryStatus,
 };
 use codex_app_server_protocol as upstream;
-use codex_ipc::{
-    ClientStatus, CommandExecutionApprovalDecision, FileChangeApprovalDecision, IpcClient,
-    IpcClientConfig, IpcError, ProjectedApprovalKind, ProjectedApprovalRequest,
-    ProjectedUserInputRequest, ReconnectPolicy, ReconnectingIpcClient, RequestError, StreamChange,
-    ThreadFollowerCommandApprovalDecisionParams, ThreadFollowerFileApprovalDecisionParams,
-    ThreadFollowerSetCollaborationModeParams, ThreadFollowerStartTurnParams,
-    ThreadFollowerSubmitUserInputParams, ThreadStreamStateChangedParams, TypedBroadcast,
-    project_conversation_state, seed_conversation_state_from_thread,
-};
 
 mod dynamic_tools;
 mod event_loop;
-mod ipc_attach;
 pub(crate) mod minigame;
 mod store_listener;
 #[cfg(test)]
@@ -55,7 +41,6 @@ mod tests;
 mod thread_projection;
 
 use self::dynamic_tools::*;
-use self::ipc_attach::*;
 use self::store_listener::*;
 use self::thread_projection::*;
 pub use self::thread_projection::{
@@ -165,66 +150,6 @@ const MCP_APPROVAL_DECLINE_LABEL: &str = "Deny";
 const MCP_APPROVAL_CANCEL_LABEL: &str = "Cancel";
 const MCP_URL_FINISHED_LABEL: &str = "I finished";
 
-fn ipc_command_error_clears_server_ipc_state(error: &IpcError) -> bool {
-    matches!(
-        error,
-        IpcError::Transport(_)
-            | IpcError::NotConnected
-            | IpcError::Request(RequestError::NoClientFound | RequestError::ClientDisconnected)
-    )
-}
-
-fn ipc_command_error_context(error: &IpcError) -> &'static str {
-    if ipc_command_error_clears_server_ipc_state(error) {
-        "IPC transport is no longer connected"
-    } else {
-        "IPC stream is still attached, but desktop follower commands are unavailable"
-    }
-}
-
-fn server_supports_ipc(session: &ServerSession) -> bool {
-    session.ssh_client().is_some() || session.has_ipc()
-}
-
-fn server_has_live_ipc(
-    app_store: &AppStoreReducer,
-    server_id: &str,
-    session: &ServerSession,
-) -> bool {
-    session.has_ipc()
-        && app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .map(|server| {
-                server.has_ipc && server.transport.authority == ServerTransportAuthority::IpcPrimary
-            })
-            .unwrap_or(false)
-}
-
-fn should_fail_over_server_after_ipc_mutation_error(error: &IpcError) -> bool {
-    matches!(
-        error,
-        IpcError::Request(RequestError::NoClientFound | RequestError::ClientDisconnected)
-            | IpcError::Transport(_)
-            | IpcError::NotConnected
-    )
-}
-
-fn should_fall_back_to_direct_after_ipc_mutation_error(error: &IpcError) -> bool {
-    matches!(
-        error,
-        IpcError::Request(
-            RequestError::Timeout | RequestError::NoClientFound | RequestError::ClientDisconnected
-        ) | IpcError::Transport(_)
-            | IpcError::NotConnected
-    )
-}
-
-fn is_timeout_like_ipc_mutation_error(error: &IpcError) -> bool {
-    matches!(error, IpcError::Request(RequestError::Timeout))
-}
-
 fn should_fallback_to_thread_metadata_after_resume_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     lower.contains("no rollout found for thread id")
@@ -261,101 +186,12 @@ fn normalize_pending_user_input_answers(
         .collect()
 }
 
-fn fail_server_over_from_ipc_mutation(
-    app_store: &AppStoreReducer,
-    session: &ServerSession,
-    server_id: &str,
-    error: &IpcError,
-) -> IpcFailureClassification {
-    let classification = app_store.classify_ipc_mutation_failure(
-        server_id,
-        ipc_command_error_clears_server_ipc_state(error),
-        is_timeout_like_ipc_mutation_error(error),
-    );
-    app_store.fail_server_over_to_direct_only(server_id, classification);
-    if ipc_command_error_clears_server_ipc_state(error) {
-        session.invalidate_ipc();
-    }
-    classification
-}
-
-fn start_remote_reconnecting_ipc_client(
-    ssh_client: Arc<SshClient>,
-    server_id: String,
-    ipc_socket_path_override: Option<String>,
-    bridge_pid_slot: Option<Arc<StdMutex<Option<u32>>>>,
-    lane: &'static str,
-) -> Arc<ReconnectingIpcClient> {
-    Arc::new(ReconnectingIpcClient::start_with_connector(
-        None,
-        move || {
-            let reconnect_ssh_client = Arc::clone(&ssh_client);
-            let reconnect_server_id = server_id.clone();
-            let reconnect_ipc_socket_path_override = ipc_socket_path_override.clone();
-            let reconnect_bridge_pid = bridge_pid_slot.as_ref().map(Arc::clone);
-            async move {
-                if let Some(bridge_pid_slot) = reconnect_bridge_pid.as_ref() {
-                    let previous_pid = match bridge_pid_slot.lock() {
-                        Ok(mut guard) => guard.take(),
-                        Err(error) => {
-                            warn!("MobileClient: recovering poisoned {lane} ipc bridge pid lock");
-                            error.into_inner().take()
-                        }
-                    };
-                    if let Some(pid) = previous_pid {
-                        let _ = reconnect_ssh_client
-                            .exec(&format!("kill {pid} 2>/dev/null"))
-                            .await;
-                    }
-                }
-
-                let (client, bridge_pid) = attach_ipc_client_for_remote_session(
-                    &reconnect_ssh_client,
-                    reconnect_server_id.as_str(),
-                    reconnect_ipc_socket_path_override.as_deref(),
-                )
-                .await;
-
-                if let Some(bridge_pid_slot) = reconnect_bridge_pid.as_ref() {
-                    match bridge_pid_slot.lock() {
-                        Ok(mut guard) => *guard = bridge_pid,
-                        Err(error) => {
-                            warn!("MobileClient: recovering poisoned {lane} ipc bridge pid lock");
-                            *error.into_inner() = bridge_pid;
-                        }
-                    }
-                }
-
-                client.ok_or(IpcError::NotConnected)
-            }
-        },
-        ipc_reconnect_policy(),
-    ))
-}
-
-async fn run_ipc_command<T, F, Fut>(session: &ServerSession, op: F) -> Result<Option<T>, IpcError>
-where
-    F: FnOnce(IpcClient) -> Fut,
-    Fut: Future<Output = Result<T, IpcError>>,
-{
-    if let Some(ipc_client) = session.ipc_stream_client() {
-        return op(ipc_client).await.map(Some);
-    }
-    Ok(None)
-}
-
 /// Returns true when an RPC error string looks like a JSON-RPC -32601
 /// "method not found" error.
 fn is_method_not_found(error: &str) -> bool {
     error.contains("-32601")
         || error.to_ascii_lowercase().contains("method not found")
         || error.to_ascii_lowercase().contains("not implemented")
-}
-
-fn ipc_pending_user_input_submission_id(request: &PendingUserInputRequest) -> &str {
-    // Desktop thread-follower user-input replies resolve the pending app-server request,
-    // not the turn id that originally emitted it.
-    &request.id
 }
 
 fn normalize_pending_user_input_answer_entries(
@@ -728,7 +564,7 @@ fn alleycat_requested_runtime_kinds(
 impl MobileClient {
     /// Create a new `MobileClient`.
     pub fn new() -> Self {
-        crate::logging::install_ipc_wire_trace_logger();
+        crate::logging::install_tracing_subscriber();
         let event_processor = Arc::new(EventProcessor::new());
         let app_store = Arc::new(AppStoreReducer::new());
         let sessions = Arc::new(RwLock::new(HashMap::new()));
@@ -1232,9 +1068,7 @@ impl MobileClient {
     ///
     /// Runs the steps that are identical across transports: marking the server
     /// `Connected`, registering runtime info, spawning event/health readers,
-    /// inserting into the session map, and queuing post-connect warmup. IPC
-    /// readers are wired conditionally on `session.has_ipc()` so the SSH-direct
-    /// IPC stream attaches without polluting the other paths.
+    /// inserting into the session map, and queuing post-connect warmup.
     fn attach_remote_session(
         &self,
         server_id: &str,
@@ -1246,19 +1080,10 @@ impl MobileClient {
             "MobileClient: attaching remote session server_id={} session_runtimes={:?} runtime_infos={:?}",
             server_id, session_runtime_kinds, runtime_infos
         );
-        self.app_store.upsert_server(
-            session.config(),
-            ServerHealthSnapshot::Connected,
-            server_supports_ipc(&session),
-        );
+        self.app_store
+            .upsert_server(session.config(), ServerHealthSnapshot::Connected);
         self.app_store
             .update_server_agent_runtimes(server_id, runtime_infos);
-        if session.has_ipc() {
-            self.app_store.update_server_ipc_state(server_id, true);
-            self.app_store.mark_server_ipc_primary(server_id);
-            self.spawn_ipc_reader(server_id.to_string(), Arc::clone(&session));
-            self.spawn_ipc_connection_state_reader(server_id.to_string(), Arc::clone(&session));
-        }
         self.sessions_write()
             .insert(server_id.to_string(), Arc::clone(&session));
         self.spawn_event_reader(server_id.to_string(), Arc::clone(&session));
@@ -1283,11 +1108,8 @@ impl MobileClient {
         }
         self.replace_existing_session(server_id.as_str()).await;
         let session = Arc::new(ServerSession::connect_local(config, in_process).await?);
-        self.app_store.upsert_server(
-            session.config(),
-            ServerHealthSnapshot::Connected,
-            server_supports_ipc(&session),
-        );
+        self.app_store
+            .upsert_server(session.config(), ServerHealthSnapshot::Connected);
 
         self.sessions_write()
             .insert(server_id.clone(), Arc::clone(&session));
@@ -1310,11 +1132,8 @@ impl MobileClient {
         }
         self.replace_existing_session(server_id.as_str()).await;
         let session = Arc::new(ServerSession::connect_remote(config).await?);
-        self.app_store.upsert_server(
-            session.config(),
-            ServerHealthSnapshot::Connected,
-            server_supports_ipc(&session),
-        );
+        self.app_store
+            .upsert_server(session.config(), ServerHealthSnapshot::Connected);
 
         self.sessions_write()
             .insert(server_id.clone(), Arc::clone(&session));
@@ -1479,7 +1298,7 @@ impl MobileClient {
             }
         }
         self.app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connecting, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connecting);
         self.replace_existing_session(server_id.as_str()).await;
 
         let endpoint = match self.alleycat_endpoint().await {
@@ -1640,7 +1459,7 @@ impl MobileClient {
             tls: false,
         };
         self.app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connecting, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connecting);
         self.replace_existing_session(server_id.as_str()).await;
 
         let (runtime_resources, runtime_infos) =
@@ -1708,7 +1527,6 @@ impl MobileClient {
         ssh_credentials: SshCredentials,
         accept_unknown_host: bool,
         working_dir: Option<String>,
-        ipc_socket_path_override: Option<String>,
     ) -> Result<String, TransportError> {
         let server_id = config.server_id.clone();
         info!(
@@ -1720,21 +1538,21 @@ impl MobileClient {
             working_dir.as_deref().unwrap_or("<none>")
         );
         self.app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connecting, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connecting);
         self.app_store.update_server_connection_progress(
             server_id.as_str(),
             Some(AppConnectionProgressSnapshot::ssh_bootstrap()),
         );
-        // SSH-backed sessions depend on a local tunnel and optional IPC bridge
-        // that may be torn down while the app is backgrounded even if the
-        // session health never observed a clean disconnect. Prefer replacing
-        // any existing session so resume can rebuild the full SSH transport.
+        // SSH-backed sessions depend on a local tunnel that may be torn down
+        // while the app is backgrounded even if the session health never
+        // observed a clean disconnect. Prefer replacing any existing session
+        // so resume can rebuild the full SSH transport.
         self.replace_existing_session(server_id.as_str()).await;
 
         let ssh_client = Arc::new(
             SshClient::connect(
                 ssh_credentials.clone(),
-                make_accept_unknown_host_callback(accept_unknown_host),
+                Box::new(move |_fingerprint| Box::pin(async move { accept_unknown_host })),
             )
             .await
             .map_err(map_ssh_transport_error)?,
@@ -1788,7 +1606,6 @@ impl MobileClient {
                 ssh_client,
                 bootstrap,
                 working_dir,
-                ipc_socket_path_override,
             )
             .await;
         match &result {
@@ -1814,17 +1631,15 @@ impl MobileClient {
         ssh_client: Arc<SshClient>,
         bootstrap: SshBootstrapResult,
         working_dir: Option<String>,
-        ipc_socket_path_override: Option<String>,
     ) -> Result<String, TransportError> {
         let server_id = config.server_id.clone();
         trace!(
-            "MobileClient: finish_connect_remote_over_ssh start server_id={} host={} bootstrap_remote_port={} bootstrap_local_port={} pid={:?} ipc_socket_path_override={}",
+            "MobileClient: finish_connect_remote_over_ssh start server_id={} host={} bootstrap_remote_port={} bootstrap_local_port={} pid={:?}",
             server_id,
             ssh_credentials.host.as_str(),
             bootstrap.server_port,
             bootstrap.tunnel_local_port,
-            bootstrap.pid,
-            ipc_socket_path_override.as_deref().unwrap_or("<none>")
+            bootstrap.pid
         );
 
         match bootstrap.transport {
@@ -1847,29 +1662,6 @@ impl MobileClient {
             working_dir,
             config.host.contains(':'),
             Arc::clone(&ssh_pid),
-        );
-
-        let ipc_enabled = ipc_socket_path_override
-            .as_deref()
-            .is_none_or(|path| !path.trim().is_empty());
-        let ipc_stream_bridge_pid = ipc_enabled.then(|| Arc::new(StdMutex::new(None)));
-        let ipc_stream_client = if ipc_enabled {
-            Some(start_remote_reconnecting_ipc_client(
-                Arc::clone(&ssh_client),
-                config.server_id.clone(),
-                ipc_socket_path_override.clone(),
-                ipc_stream_bridge_pid.as_ref().map(Arc::clone),
-                "stream",
-            ))
-        } else {
-            None
-        };
-        trace!(
-            "MobileClient: finish_connect_remote_over_ssh IPC attach result server_id={} attached={}",
-            server_id,
-            ipc_stream_client
-                .as_ref()
-                .is_some_and(|client| client.is_connected())
         );
 
         // Eagerly establish the Codex client now that the SSH bootstrap is up.
@@ -1915,9 +1707,6 @@ impl MobileClient {
         let extras = RemoteSessionExtras {
             ssh_client: Some(Arc::clone(&ssh_client)),
             ssh_pid: Some(Arc::clone(&ssh_pid)),
-            ipc_stream_client,
-            ipc_ssh_client: None,
-            ipc_stream_bridge_pid,
         };
         let session = match ServerSession::connect_remote_multiplexed(
             config,
@@ -2265,22 +2054,9 @@ impl MobileClient {
         force_authoritative: bool,
     ) -> Result<(), RpcError> {
         let session = self.get_session(server_id)?;
-        if self.app_store.server_transport_authority(server_id)
-            == Some(ServerTransportAuthority::DirectOnly)
-            && !self.app_store.server_has_active_turns(server_id)
-        {
-            self.app_store.mark_server_ipc_recovering(server_id);
-            if session.has_ipc() {
-                info!(
-                    "IPC recovery: invalidating server={} before explicit thread reopen",
-                    server_id
-                );
-                session.invalidate_ipc();
-            }
-        }
         if host_id.is_some() {
             trace!(
-                "IPC out: external_resume_thread ignoring explicit host_id for server={} thread={}",
+                "external_resume_thread ignoring explicit host_id for server={} thread={}",
                 server_id, thread_id
             );
         }
@@ -2293,30 +2069,6 @@ impl MobileClient {
         // knowledge that the locally-cached snapshot may have missed
         // turn-completion events.
         if !force_authoritative {
-            // If the server has live IPC and the thread already exists in the store
-            // with populated data, skip the RPC — IPC broadcasts are already keeping
-            // the thread state up to date.  This is the "passive IPC open" path that
-            // was previously handled in platform code (Swift/Kotlin).
-            if server_has_live_ipc(&self.app_store, server_id, &session) {
-                let thread_exists_with_data = self
-                    .app_store
-                    .snapshot()
-                    .threads
-                    .get(&key)
-                    .is_some_and(|t| !t.items.is_empty());
-                if thread_exists_with_data {
-                    debug!(
-                        "external_resume_thread: skipping RPC for server={} thread={} — IPC is live and thread data exists in store",
-                        server_id, thread_id
-                    );
-                    self.app_store.mark_thread_resumed(&key, true);
-                    return Ok(());
-                }
-                debug!(
-                    "external_resume_thread: IPC live but thread not in store, falling back to thread/read for server={} thread={}",
-                    server_id, thread_id
-                );
-            }
             if self.has_direct_resume_marker(&key) {
                 // The marker is set after a successful `thread/resume`
                 // for the current session — server-side this means the
@@ -2799,7 +2551,7 @@ impl MobileClient {
         server_id: &str,
         params: upstream::TurnStartParams,
     ) -> Result<(), RpcError> {
-        let session = self.get_session(server_id)?;
+        self.get_session(server_id)?;
         let mut params = params;
         let thread_key = ThreadKey {
             server_id: server_id.to_string(),
@@ -2823,7 +2575,6 @@ impl MobileClient {
             .as_ref()
             .is_some_and(|thread| thread.active_turn_id.is_some());
         let direct_params = params.clone();
-        let has_live_ipc = server_has_live_ipc(&self.app_store, server_id, &session);
         // Stage an optimistic local overlay so the user sees their message
         // immediately, before the server echoes it back.
         let optimistic_overlay_id = if !has_active_turn {
@@ -2837,153 +2588,9 @@ impl MobileClient {
                 queued_follow_up_draft_from_inputs(&params.input, AppQueuedFollowUpKind::Message)
             })
             .flatten();
-        let queued_follow_up_command_id =
-            queued_draft.as_ref().filter(|_| has_live_ipc).map(|_| {
-                self.app_store.begin_server_mutating_command(
-                    server_id,
-                    ServerMutatingCommandKind::SetQueuedFollowUpsState,
-                    &params.thread_id,
-                    ServerMutatingCommandRoute::Ipc,
-                )
-            });
         if let Some(draft) = queued_draft.clone() {
             self.app_store
                 .enqueue_thread_follow_up_draft(&thread_key, draft.clone());
-
-            if has_live_ipc {
-                let mut next_drafts = thread_snapshot
-                    .as_ref()
-                    .map(|thread| thread.queued_follow_up_drafts.clone())
-                    .unwrap_or_default();
-                next_drafts.push(draft);
-                let thread_id = params.thread_id.clone();
-                info!(
-                    "IPC out: set_queued_follow_ups_state server={} thread={}",
-                    server_id, thread_id
-                );
-                let ipc_thread_id = thread_id.clone();
-                let ipc_state = queued_follow_up_state_json_from_drafts(&next_drafts);
-                let ipc_result = run_ipc_command(&session, move |ipc_client| async move {
-                    ipc_client
-                        .set_queued_follow_ups_state(
-                            codex_ipc::ThreadFollowerSetQueuedFollowUpsStateParams {
-                                conversation_id: ipc_thread_id,
-                                state: ipc_state,
-                            },
-                        )
-                        .await
-                })
-                .await;
-                match ipc_result {
-                    Ok(Some(_)) => {
-                        if let Some(command_id) = queued_follow_up_command_id.as_deref() {
-                            self.app_store.finish_server_mutating_command_success(
-                                server_id,
-                                command_id,
-                                ServerMutatingCommandRoute::Ipc,
-                            );
-                        }
-                        debug!(
-                            "IPC out: set_queued_follow_ups_state ok server={} thread={}",
-                            server_id, thread_id
-                        );
-                        return Ok(());
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        warn!(
-                            "MobileClient: IPC queued follow-up update failed for {} thread {}: {} ({})",
-                            server_id,
-                            thread_id,
-                            error,
-                            ipc_command_error_context(&error)
-                        );
-                        if should_fail_over_server_after_ipc_mutation_error(&error) {
-                            let classification = fail_server_over_from_ipc_mutation(
-                                &self.app_store,
-                                &session,
-                                server_id,
-                                &error,
-                            );
-                            warn!(
-                                "MobileClient: server {} failed over to direct-only after queued follow-up IPC failure: {:?}",
-                                server_id, classification
-                            );
-                        } else if !should_fall_back_to_direct_after_ipc_mutation_error(&error) {
-                            return Err(RpcError::Deserialization(format!(
-                                "IPC queued follow-up update: {error}"
-                            )));
-                        }
-                    }
-                }
-            }
-            // In direct-only mode (no IPC), the draft was enqueued locally
-            // for UI feedback but we still need to steer/start the turn below.
-        }
-
-        if queued_draft.is_none() && has_live_ipc {
-            let thread_id = params.thread_id.clone();
-            let command_id = self.app_store.begin_server_mutating_command(
-                server_id,
-                ServerMutatingCommandKind::StartTurn,
-                &thread_id,
-                ServerMutatingCommandRoute::Ipc,
-            );
-            info!(
-                "IPC out: start_turn server={} thread={}",
-                server_id, thread_id
-            );
-            let ipc_thread_id = thread_id.clone();
-            let ipc_params = params.clone();
-            let ipc_result = run_ipc_command(&session, move |ipc_client| async move {
-                ipc_client
-                    .start_turn(ThreadFollowerStartTurnParams {
-                        conversation_id: ipc_thread_id,
-                        turn_start_params: ipc_params,
-                    })
-                    .await
-            })
-            .await;
-            match ipc_result {
-                Ok(Some(_)) => {
-                    self.app_store.finish_server_mutating_command_success(
-                        server_id,
-                        &command_id,
-                        ServerMutatingCommandRoute::Ipc,
-                    );
-                    debug!(
-                        "IPC out: start_turn ok server={} thread={}",
-                        server_id, thread_id
-                    );
-                    return Ok(());
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    warn!(
-                        "MobileClient: IPC follower start turn failed for {} thread {}: {} ({})",
-                        server_id,
-                        thread_id,
-                        error,
-                        ipc_command_error_context(&error)
-                    );
-                    if should_fail_over_server_after_ipc_mutation_error(&error) {
-                        let classification = fail_server_over_from_ipc_mutation(
-                            &self.app_store,
-                            &session,
-                            server_id,
-                            &error,
-                        );
-                        warn!(
-                            "MobileClient: server {} failed over to direct-only after start_turn IPC failure: {:?}",
-                            server_id, classification
-                        );
-                    } else if !should_fall_back_to_direct_after_ipc_mutation_error(&error) {
-                        return Err(RpcError::Deserialization(format!(
-                            "IPC follower start turn: {error}"
-                        )));
-                    }
-                }
-            }
         }
 
         // If there's an active turn and we didn't queue a follow-up draft,
@@ -3035,7 +2642,6 @@ impl MobileClient {
                 ServerMutatingCommandKind::StartTurn
             },
             &params.thread_id,
-            ServerMutatingCommandRoute::Direct,
         );
         let response = self
             .request_typed_for_server::<upstream::TurnStartResponse>(
@@ -3057,11 +2663,8 @@ impl MobileClient {
                 }
                 RpcError::Deserialization(error)
             })?;
-        self.app_store.finish_server_mutating_command_success(
-            server_id,
-            &direct_command_id,
-            ServerMutatingCommandRoute::Direct,
-        );
+        self.app_store
+            .finish_server_mutating_command_success(server_id, &direct_command_id);
         if let Some(overlay_id) = optimistic_overlay_id.as_ref() {
             self.app_store.bind_local_user_message_overlay_to_turn(
                 &thread_key,
@@ -3077,7 +2680,7 @@ impl MobileClient {
         key: &ThreadKey,
         preview_id: &str,
     ) -> Result<(), RpcError> {
-        let session = self.get_session(&key.server_id)?;
+        self.get_session(&key.server_id)?;
         let thread = self.snapshot_thread(key)?;
         if !thread
             .queued_follow_up_drafts
@@ -3093,70 +2696,12 @@ impl MobileClient {
         // pending (concurrent/duplicate tap), drop this request so we don't
         // fire a second steer that would inject another copy of the user
         // message.
-        let Some((draft, next_drafts)) = self
+        let Some((draft, _next_drafts)) = self
             .app_store
             .try_begin_steer_queued_follow_up(key, preview_id)
         else {
             return Ok(());
         };
-
-        if server_has_live_ipc(&self.app_store, &key.server_id, &session) {
-            let command_id = self.app_store.begin_server_mutating_command(
-                &key.server_id,
-                ServerMutatingCommandKind::SteerQueuedFollowUp,
-                &key.thread_id,
-                ServerMutatingCommandRoute::Ipc,
-            );
-            let ipc_state = queued_follow_up_state_json_from_drafts(&next_drafts);
-            match run_ipc_command(&session, move |ipc_client| async move {
-                ipc_client
-                    .set_queued_follow_ups_state(
-                        codex_ipc::ThreadFollowerSetQueuedFollowUpsStateParams {
-                            conversation_id: key.thread_id.clone(),
-                            state: ipc_state,
-                        },
-                    )
-                    .await
-            })
-            .await
-            {
-                Ok(Some(_)) => {
-                    self.app_store.finish_server_mutating_command_success(
-                        &key.server_id,
-                        &command_id,
-                        ServerMutatingCommandRoute::Ipc,
-                    );
-                    self.app_store.set_thread_follow_up_drafts(key, next_drafts);
-                    return Ok(());
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    warn!(
-                        "MobileClient: IPC steer queued follow-up failed for {} thread {}: {} ({})",
-                        key.server_id,
-                        key.thread_id,
-                        error,
-                        ipc_command_error_context(&error)
-                    );
-                    if should_fail_over_server_after_ipc_mutation_error(&error) {
-                        let classification = fail_server_over_from_ipc_mutation(
-                            &self.app_store,
-                            &session,
-                            &key.server_id,
-                            &error,
-                        );
-                        warn!(
-                            "MobileClient: server {} failed over to direct-only after steer queued follow-up IPC failure: {:?}",
-                            key.server_id, classification
-                        );
-                    } else if !should_fall_back_to_direct_after_ipc_mutation_error(&error) {
-                        return Err(RpcError::Deserialization(format!(
-                            "IPC steer queued follow-up: {error}"
-                        )));
-                    }
-                }
-            }
-        }
 
         let active_turn_id = thread.active_turn_id.ok_or_else(|| {
             RpcError::Deserialization("no active turn available to steer".to_string())
@@ -3166,7 +2711,6 @@ impl MobileClient {
             &key.server_id,
             ServerMutatingCommandKind::SteerQueuedFollowUp,
             &key.thread_id,
-            ServerMutatingCommandRoute::Direct,
         );
         self.request_typed_for_server::<upstream::TurnSteerResponse>(
             &key.server_id,
@@ -3182,11 +2726,8 @@ impl MobileClient {
         )
         .await
         .map_err(RpcError::Deserialization)?;
-        self.app_store.finish_server_mutating_command_success(
-            &key.server_id,
-            &direct_command_id,
-            ServerMutatingCommandRoute::Direct,
-        );
+        self.app_store
+            .finish_server_mutating_command_success(&key.server_id, &direct_command_id);
         // Keep draft visible as PendingSteer; TurnCompleted will clean it up.
         Ok(())
     }
@@ -3196,7 +2737,7 @@ impl MobileClient {
         key: &ThreadKey,
         preview_id: &str,
     ) -> Result<(), RpcError> {
-        let session = self.get_session(&key.server_id)?;
+        self.get_session(&key.server_id)?;
         let thread = self.snapshot_thread(key)?;
         let next_drafts = thread
             .queued_follow_up_drafts
@@ -3204,74 +2745,14 @@ impl MobileClient {
             .filter(|draft| draft.preview.id != preview_id)
             .collect::<Vec<_>>();
 
-        if server_has_live_ipc(&self.app_store, &key.server_id, &session) {
-            let command_id = self.app_store.begin_server_mutating_command(
-                &key.server_id,
-                ServerMutatingCommandKind::DeleteQueuedFollowUp,
-                &key.thread_id,
-                ServerMutatingCommandRoute::Ipc,
-            );
-            let ipc_state = queued_follow_up_state_json_from_drafts(&next_drafts);
-            match run_ipc_command(&session, move |ipc_client| async move {
-                ipc_client
-                    .set_queued_follow_ups_state(
-                        codex_ipc::ThreadFollowerSetQueuedFollowUpsStateParams {
-                            conversation_id: key.thread_id.clone(),
-                            state: ipc_state,
-                        },
-                    )
-                    .await
-            })
-            .await
-            {
-                Ok(Some(_)) => {
-                    self.app_store.finish_server_mutating_command_success(
-                        &key.server_id,
-                        &command_id,
-                        ServerMutatingCommandRoute::Ipc,
-                    );
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    warn!(
-                        "MobileClient: IPC delete queued follow-up failed for {} thread {}: {} ({})",
-                        key.server_id,
-                        key.thread_id,
-                        error,
-                        ipc_command_error_context(&error)
-                    );
-                    if should_fail_over_server_after_ipc_mutation_error(&error) {
-                        let classification = fail_server_over_from_ipc_mutation(
-                            &self.app_store,
-                            &session,
-                            &key.server_id,
-                            &error,
-                        );
-                        warn!(
-                            "MobileClient: server {} failed over to direct-only after delete queued follow-up IPC failure: {:?}",
-                            key.server_id, classification
-                        );
-                    } else if !should_fall_back_to_direct_after_ipc_mutation_error(&error) {
-                        return Err(RpcError::Deserialization(format!(
-                            "IPC delete queued follow-up: {error}"
-                        )));
-                    }
-                }
-            }
-        }
-
         let direct_command_id = self.app_store.begin_server_mutating_command(
             &key.server_id,
             ServerMutatingCommandKind::DeleteQueuedFollowUp,
             &key.thread_id,
-            ServerMutatingCommandRoute::Direct,
         );
         self.app_store.set_thread_follow_up_drafts(key, next_drafts);
-        self.app_store.finish_server_mutating_command_success(
-            &key.server_id,
-            &direct_command_id,
-            ServerMutatingCommandRoute::Direct,
-        );
+        self.app_store
+            .finish_server_mutating_command_success(&key.server_id, &direct_command_id);
         Ok(())
     }
 
@@ -3413,86 +2894,29 @@ impl MobileClient {
             .app_store
             .pending_approval_seed(&approval.server_id, &approval.id);
         let session = self.get_session(&approval.server_id)?;
-        if server_has_live_ipc(&self.app_store, &approval.server_id, &session)
-            && let Some(thread_id) = approval.thread_id.clone()
-        {
-            let approval_server_id = approval.server_id.clone();
-            let command_id = self.app_store.begin_server_mutating_command(
-                &approval_server_id,
-                ServerMutatingCommandKind::ApprovalResponse,
-                &thread_id,
-                ServerMutatingCommandRoute::Ipc,
-            );
-            let approval_for_ipc = approval.clone();
-            let thread_id_for_ipc = thread_id.clone();
-            let decision_for_ipc = decision.clone();
-            match run_ipc_command(&session, move |ipc_client| async move {
-                send_ipc_approval_response(
-                    &ipc_client,
-                    &approval_for_ipc,
-                    &thread_id_for_ipc,
-                    decision_for_ipc,
-                )
-                .await
-            })
-            .await
-            {
-                Ok(Some(true)) => {
-                    self.app_store.finish_server_mutating_command_success(
-                        &approval.server_id,
-                        &command_id,
-                        ServerMutatingCommandRoute::Ipc,
-                    );
-                    debug!(
-                        "MobileClient: approval response sent over IPC for server={} request_id={}",
-                        approval.server_id, request_id
-                    );
-                    self.app_store.resolve_approval(request_id);
-                    return Ok(());
-                }
-                Ok(Some(false)) | Ok(None) => {}
-                Err(error) => {
-                    warn!(
-                        "MobileClient: IPC approval response failed for server={} request_id={}: {} ({})",
-                        approval.server_id,
-                        request_id,
-                        error,
-                        ipc_command_error_context(&error)
-                    );
-                    if should_fail_over_server_after_ipc_mutation_error(&error) {
-                        let classification = fail_server_over_from_ipc_mutation(
-                            &self.app_store,
-                            &session,
-                            &approval.server_id,
-                            &error,
-                        );
-                        warn!(
-                            "MobileClient: server {} failed over to direct-only after approval IPC failure: {:?}",
-                            approval.server_id, classification
-                        );
-                    } else if !should_fall_back_to_direct_after_ipc_mutation_error(&error) {
-                        return Err(RpcError::Deserialization(format!(
-                            "IPC approval response: {error}"
-                        )));
-                    }
-                }
-            }
-        }
         let direct_command_id = self.app_store.begin_server_mutating_command(
             &approval.server_id,
             ServerMutatingCommandKind::ApprovalResponse,
             approval.thread_id.as_deref().unwrap_or(""),
-            ServerMutatingCommandRoute::Direct,
         );
         let response_json = approval_response_json(&approval, approval_seed.as_ref(), decision)?;
         let response_request_id =
             server_request_id_json(approval_request_id(&approval, approval_seed.as_ref()));
-        session.respond(response_request_id, response_json).await?;
-        self.app_store.finish_server_mutating_command_success(
-            &approval.server_id,
-            &direct_command_id,
-            ServerMutatingCommandRoute::Direct,
-        );
+        let runtime_kind = approval
+            .thread_id
+            .as_ref()
+            .map(|thread_id| {
+                self.runtime_for_thread(&ThreadKey {
+                    server_id: approval.server_id.clone(),
+                    thread_id: thread_id.clone(),
+                })
+            })
+            .unwrap_or_else(|| "codex".to_string());
+        session
+            .respond_for_runtime(runtime_kind, response_request_id, response_json)
+            .await?;
+        self.app_store
+            .finish_server_mutating_command_success(&approval.server_id, &direct_command_id);
         debug!(
             "MobileClient: approval response sent for server={} request_id={}",
             approval.server_id, request_id
@@ -3523,16 +2947,18 @@ impl MobileClient {
                 &request.server_id,
                 ServerMutatingCommandKind::UserInputResponse,
                 &request.thread_id,
-                ServerMutatingCommandRoute::Direct,
             );
             let response_json = mcp_elicitation_response_json(seed, &answers)?;
             let response_request_id = server_request_id_json(seed.request_id.clone());
-            session.respond(response_request_id, response_json).await?;
-            self.app_store.finish_server_mutating_command_success(
-                &request.server_id,
-                &direct_command_id,
-                ServerMutatingCommandRoute::Direct,
-            );
+            let runtime_kind = self.runtime_for_thread(&ThreadKey {
+                server_id: request.server_id.clone(),
+                thread_id: request.thread_id.clone(),
+            });
+            session
+                .respond_for_runtime(runtime_kind, response_request_id, response_json)
+                .await?;
+            self.app_store
+                .finish_server_mutating_command_success(&request.server_id, &direct_command_id);
             debug!(
                 "MobileClient: MCP elicitation response sent for server={} request_id={}",
                 request.server_id, request_id
@@ -3546,81 +2972,10 @@ impl MobileClient {
             );
             return Ok(());
         }
-        if server_has_live_ipc(&self.app_store, &request.server_id, &session) {
-            let request_server_id = request.server_id.clone();
-            let submission_id = ipc_pending_user_input_submission_id(&request).to_string();
-            let command_id = self.app_store.begin_server_mutating_command(
-                &request_server_id,
-                ServerMutatingCommandKind::UserInputResponse,
-                &request.thread_id,
-                ServerMutatingCommandRoute::Ipc,
-            );
-            let request_thread_id = request.thread_id.clone();
-            let submission_id_for_ipc = submission_id.clone();
-            let normalized_answers_for_ipc = normalized_answers.clone();
-            match run_ipc_command(&session, move |ipc_client| async move {
-                send_ipc_user_input_response(
-                    &ipc_client,
-                    &request_thread_id,
-                    &submission_id_for_ipc,
-                    normalized_answers_for_ipc,
-                )
-                .await
-            })
-            .await
-            {
-                Ok(Some(true)) => {
-                    self.app_store.finish_server_mutating_command_success(
-                        &request.server_id,
-                        &command_id,
-                        ServerMutatingCommandRoute::Ipc,
-                    );
-                    debug!(
-                        "MobileClient: user input response sent over IPC for server={} request_id={} submission_id={}",
-                        request.server_id, request_id, submission_id
-                    );
-                    self.app_store
-                        .resolve_pending_user_input_with_response(request_id, answered_inputs);
-                    self.spawn_post_user_input_reconcile(
-                        request.server_id.clone(),
-                        request.thread_id.clone(),
-                        Arc::clone(&session),
-                    );
-                    return Ok(());
-                }
-                Ok(Some(false)) | Ok(None) => {}
-                Err(error) => {
-                    warn!(
-                        "MobileClient: IPC user input response failed for server={} request_id={}: {} ({})",
-                        request.server_id,
-                        request_id,
-                        error,
-                        ipc_command_error_context(&error)
-                    );
-                    if should_fail_over_server_after_ipc_mutation_error(&error) {
-                        let classification = fail_server_over_from_ipc_mutation(
-                            &self.app_store,
-                            &session,
-                            &request.server_id,
-                            &error,
-                        );
-                        warn!(
-                            "MobileClient: server {} failed over to direct-only after user-input IPC failure: {:?}",
-                            request.server_id, classification
-                        );
-                    } else if !should_fall_back_to_direct_after_ipc_mutation_error(&error) {
-                        return Err(RpcError::Deserialization(format!(
-                            "IPC user input response: {error}"
-                        )));
-                    }
-                }
-            }
-        }
         let direct_command_id = self.app_store.begin_server_mutating_command(
             &request.server_id,
             ServerMutatingCommandKind::UserInputResponse,
             &request.thread_id,
-            ServerMutatingCommandRoute::Direct,
         );
         let response = upstream::ToolRequestUserInputResponse {
             answers: normalized_answers
@@ -3649,12 +3004,15 @@ impl MobileClient {
                 .map(|seed| seed.request_id.clone())
                 .unwrap_or_else(|| fallback_server_request_id(&request.id)),
         );
-        session.respond(response_request_id, response_json).await?;
-        self.app_store.finish_server_mutating_command_success(
-            &request.server_id,
-            &direct_command_id,
-            ServerMutatingCommandRoute::Direct,
-        );
+        let runtime_kind = self.runtime_for_thread(&ThreadKey {
+            server_id: request.server_id.clone(),
+            thread_id: request.thread_id.clone(),
+        });
+        session
+            .respond_for_runtime(runtime_kind, response_request_id, response_json)
+            .await?;
+        self.app_store
+            .finish_server_mutating_command_success(&request.server_id, &direct_command_id);
         debug!(
             "MobileClient: user input response sent for server={} request_id={}",
             request.server_id, request_id
@@ -3741,76 +3099,8 @@ impl MobileClient {
         key: &ThreadKey,
         mode: AppModeKind,
     ) -> Result<(), RpcError> {
-        let session = self.get_session(&key.server_id)?;
-        let thread = self.snapshot_thread(key)?;
+        self.get_session(&key.server_id)?;
         self.app_store.set_thread_collaboration_mode(key, mode);
-
-        if !server_has_live_ipc(&self.app_store, &key.server_id, &session) {
-            return Ok(());
-        }
-        let Some(collaboration_mode) = collaboration_mode_from_thread(&thread, mode, None, None)
-        else {
-            return Ok(());
-        };
-
-        info!(
-            "IPC out: set_collaboration_mode server={} thread={}",
-            key.server_id, key.thread_id
-        );
-        let command_id = self.app_store.begin_server_mutating_command(
-            &key.server_id,
-            ServerMutatingCommandKind::CollaborationModeSync,
-            &key.thread_id,
-            ServerMutatingCommandRoute::Ipc,
-        );
-        let ipc_result = run_ipc_command(&session, move |ipc_client| async move {
-            ipc_client
-                .set_collaboration_mode(ThreadFollowerSetCollaborationModeParams {
-                    conversation_id: key.thread_id.clone(),
-                    collaboration_mode,
-                })
-                .await
-        })
-        .await;
-        match ipc_result {
-            Ok(Some(_)) => {
-                self.app_store.finish_server_mutating_command_success(
-                    &key.server_id,
-                    &command_id,
-                    ServerMutatingCommandRoute::Ipc,
-                );
-                debug!(
-                    "IPC out: set_collaboration_mode ok server={} thread={}",
-                    key.server_id, key.thread_id
-                );
-            }
-            Ok(None) => return Ok(()),
-            Err(error) => {
-                warn!(
-                    "MobileClient: IPC collaboration mode sync failed for {} thread {}: {} ({})",
-                    key.server_id,
-                    key.thread_id,
-                    error,
-                    ipc_command_error_context(&error)
-                );
-                if should_fail_over_server_after_ipc_mutation_error(&error) {
-                    let classification = fail_server_over_from_ipc_mutation(
-                        &self.app_store,
-                        &session,
-                        &key.server_id,
-                        &error,
-                    );
-                    warn!(
-                        "MobileClient: server {} failed over to direct-only after collaboration mode IPC failure: {:?}",
-                        key.server_id, classification
-                    );
-                } else if !should_fall_back_to_direct_after_ipc_mutation_error(&error) {
-                    return Err(RpcError::Deserialization(format!(
-                        "IPC collaboration mode sync: {error}"
-                    )));
-                }
-            }
-        }
         Ok(())
     }
 

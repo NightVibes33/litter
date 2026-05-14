@@ -170,6 +170,9 @@ fn test_bootstrap_result_clone() {
         tunnel_local_port: 12345,
         server_version: Some("1.0.0".into()),
         pid: Some(42),
+        codex_path: "/usr/local/bin/codex".into(),
+        shell: RemoteShell::Posix,
+        transport: SshBootstrapTransport::WebSocketTunnel,
     };
     let r2 = r.clone();
     assert_eq!(r2.server_port, 8390);

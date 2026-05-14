@@ -246,20 +246,18 @@ impl ServerBridge {
         unlock_macos_keychain: bool,
         accept_unknown_host: bool,
         working_dir: Option<String>,
-        ipc_socket_path_override: Option<String>,
     ) -> Result<String, ClientError> {
         let normalized_host = normalize_ssh_host(&host);
         let auth = ssh_auth(password, private_key_pem, passphrase)?;
         info!(
-            "ServerBridge: connect_remote_over_ssh start server_id={} host={} normalized_host={} ssh_port={} username={} auth={} working_dir={} ipc_socket_path_override={}",
+            "ServerBridge: connect_remote_over_ssh start server_id={} host={} normalized_host={} ssh_port={} username={} auth={} working_dir={}",
             server_id,
             host.as_str(),
             normalized_host.as_str(),
             port,
             username.as_str(),
             ssh_auth_kind(&auth),
-            working_dir.as_deref().unwrap_or("<none>"),
-            ipc_socket_path_override.as_deref().unwrap_or("<none>")
+            working_dir.as_deref().unwrap_or("<none>")
         );
         let credentials = SshCredentials {
             host: normalized_host.clone(),
@@ -282,13 +280,7 @@ impl ServerBridge {
         let task_server_id = config.server_id.clone();
         tokio::spawn(async move {
             let result = mobile_client
-                .connect_remote_over_ssh(
-                    config,
-                    credentials,
-                    accept_unknown_host,
-                    working_dir,
-                    ipc_socket_path_override,
-                )
+                .connect_remote_over_ssh(config, credentials, accept_unknown_host, working_dir)
                 .await
                 .map_err(|e| ClientError::Transport(e.to_string()));
             match &result {
@@ -325,20 +317,18 @@ impl ServerBridge {
         unlock_macos_keychain: bool,
         accept_unknown_host: bool,
         working_dir: Option<String>,
-        ipc_socket_path_override: Option<String>,
     ) -> Result<String, ClientError> {
         let normalized_host = normalize_ssh_host(&host);
         let auth = ssh_auth(password, private_key_pem, passphrase)?;
         info!(
-            "ServerBridge: start_remote_over_ssh_connect start server_id={} host={} normalized_host={} ssh_port={} username={} auth={} working_dir={} ipc_socket_path_override={}",
+            "ServerBridge: start_remote_over_ssh_connect start server_id={} host={} normalized_host={} ssh_port={} username={} auth={} working_dir={}",
             server_id,
             host.as_str(),
             normalized_host.as_str(),
             port,
             username.as_str(),
             ssh_auth_kind(&auth),
-            working_dir.as_deref().unwrap_or("<none>"),
-            ipc_socket_path_override.as_deref().unwrap_or("<none>")
+            working_dir.as_deref().unwrap_or("<none>")
         );
         let credentials = SshCredentials {
             host: normalized_host.clone(),
@@ -372,7 +362,7 @@ impl ServerBridge {
 
         mobile_client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connecting, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connecting);
         let initial_progress = AppConnectionProgressSnapshot::ssh_bootstrap();
         mobile_client
             .app_store
@@ -393,7 +383,6 @@ impl ServerBridge {
                 credentials,
                 accept_unknown_host,
                 working_dir,
-                ipc_socket_path_override,
                 &mut progress,
             )
             .await;

@@ -67,7 +67,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litter.android.state.contextPercent
 import com.litter.android.state.hasActiveTurn
-import com.litter.android.state.canResumeViaIpc
 import com.litter.android.state.isActiveStatus
 import com.litter.android.ui.BerkeleyMono
 import com.litter.android.ui.ChatWallpaperBackground
@@ -202,8 +201,8 @@ fun ConversationScreen(
             val resolvedThreadKey = appModel.hydrateThreadPermissions(threadKey) ?: threadKey
             appModel.activateThread(resolvedThreadKey)
             // Always call externalResumeThread so the server attaches a
-            // streaming listener for this connection.  Rust handles IPC vs
-            // direct routing and skips the RPC when IPC is already live.
+            // streaming listener for this connection. Rust skips the RPC when
+            // state is already fresh.
             try {
                 appModel.externalResumeThread(resolvedThreadKey)
             } catch (_: Exception) {
@@ -806,7 +805,9 @@ fun ConversationScreen(
                         activeTaskSummary = activeTaskSummary,
                         queuedFollowUps = thread?.queuedFollowUps ?: emptyList(),
                         goal = thread?.goal,
-                        rateLimits = server?.rateLimits,
+                        rateLimits = thread?.agentRuntimeKind?.let { runtimeKind ->
+                            server?.rateLimitsByRuntime?.firstOrNull { it.runtimeKind == runtimeKind }?.rateLimits
+                        },
                         showCollaborationModeChip = pinnedContext?.diffSummary == null,
                         onOpenCollaborationModePicker = { showCollaborationModeSelector = true },
                         onToggleModelSelector = { showModelSelector = !showModelSelector },

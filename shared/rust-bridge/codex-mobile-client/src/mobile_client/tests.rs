@@ -1,35 +1,12 @@
 #[cfg(test)]
 mod mobile_client_tests {
     use super::super::*;
-    use crate::conversation_uniffi::HydratedConversationItemContent;
-    use crate::session::connection::{TestRequestHandler, TestResolveHandler};
-    use crate::store::AppStoreUpdateRecord;
-    use crate::store::updates::ThreadStreamingDeltaKind;
+    use crate::session::connection::TestRequestHandler;
     use crate::types::ThreadSummaryStatus;
     use crate::types::{PendingUserInputOption, PendingUserInputQuestion};
-    use codex_ipc::{Envelope, InitializeResult, Method, Response};
     use serde_json::json;
-    use std::collections::HashMap;
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex as StdMutex};
-    use std::time::Duration;
-    use tokio::sync::broadcast::error::TryRecvError;
-    use tokio::time::{Instant, sleep};
-
-    fn drain_app_updates(
-        rx: &mut tokio::sync::broadcast::Receiver<AppStoreUpdateRecord>,
-    ) -> Vec<AppStoreUpdateRecord> {
-        let mut updates = Vec::new();
-        loop {
-            match rx.try_recv() {
-                Ok(update) => updates.push(update),
-                Err(TryRecvError::Empty) | Err(TryRecvError::Closed) => break,
-                Err(TryRecvError::Lagged(_)) => continue,
-            }
-        }
-        updates
-    }
 
     fn make_thread_info(id: &str) -> ThreadInfo {
         ThreadInfo {
@@ -99,178 +76,6 @@ mod mobile_client_tests {
             supports_personality: false,
             is_default: false,
             agent_runtime_kind: runtime_kind,
-        }
-    }
-
-    async fn connect_test_ipc_client(label: &str) -> IpcClient {
-        let (client_stream, mut server_stream) = tokio::io::duplex(4096);
-        let label = label.to_string();
-        let router_label = label.clone();
-        let client_label = label.clone();
-        tokio::spawn(async move {
-            let raw = codex_ipc::transport::frame::read_frame(&mut server_stream)
-                .await
-                .expect("initialize request frame");
-            let envelope: Envelope = serde_json::from_str(&raw).expect("initialize envelope");
-            let request = match envelope {
-                Envelope::Request(request) => request,
-                other => panic!("expected initialize request, got {other:?}"),
-            };
-            assert_eq!(request.method, Method::Initialize.wire_name());
-
-            let response = Envelope::Response(Response::Success {
-                request_id: request.request_id,
-                method: request.method,
-                handled_by_client_id: format!("router-{router_label}"),
-                result: serde_json::to_value(InitializeResult {
-                    client_id: format!("client-{client_label}"),
-                })
-                .expect("initialize result"),
-            });
-            codex_ipc::transport::frame::write_frame(
-                &mut server_stream,
-                &serde_json::to_string(&response).expect("response json"),
-            )
-            .await
-            .expect("initialize response write");
-
-            let _ = codex_ipc::transport::frame::read_frame(&mut server_stream).await;
-        });
-
-        IpcClient::connect_with_stream(
-            &IpcClientConfig {
-                socket_path: PathBuf::from(format!("/tmp/{label}.sock")),
-                client_type: "mobile-test".to_string(),
-                request_timeout: Duration::from_secs(1),
-            },
-            client_stream,
-        )
-        .await
-        .expect("ipc client should connect")
-    }
-
-    async fn connect_error_ipc_client(label: &str, error: &str) -> IpcClient {
-        let (client_stream, mut server_stream) = tokio::io::duplex(4096);
-        let label = label.to_string();
-        let router_label = label.clone();
-        let client_label = label.clone();
-        let request_error = error.to_string();
-        tokio::spawn(async move {
-            let raw = codex_ipc::transport::frame::read_frame(&mut server_stream)
-                .await
-                .expect("initialize request frame");
-            let envelope: Envelope = serde_json::from_str(&raw).expect("initialize envelope");
-            let request = match envelope {
-                Envelope::Request(request) => request,
-                other => panic!("expected initialize request, got {other:?}"),
-            };
-            assert_eq!(request.method, Method::Initialize.wire_name());
-
-            let response = Envelope::Response(Response::Success {
-                request_id: request.request_id,
-                method: request.method,
-                handled_by_client_id: format!("router-{router_label}"),
-                result: serde_json::to_value(InitializeResult {
-                    client_id: format!("client-{client_label}"),
-                })
-                .expect("initialize result"),
-            });
-            codex_ipc::transport::frame::write_frame(
-                &mut server_stream,
-                &serde_json::to_string(&response).expect("response json"),
-            )
-            .await
-            .expect("initialize response write");
-
-            while let Ok(raw) = codex_ipc::transport::frame::read_frame(&mut server_stream).await {
-                let envelope: Envelope =
-                    serde_json::from_str(&raw).expect("request envelope after initialize");
-                let request = match envelope {
-                    Envelope::Request(request) => request,
-                    other => panic!("expected request after initialize, got {other:?}"),
-                };
-                let response = Envelope::Response(Response::Error {
-                    request_id: request.request_id,
-                    error: request_error.clone(),
-                });
-                codex_ipc::transport::frame::write_frame(
-                    &mut server_stream,
-                    &serde_json::to_string(&response).expect("error response json"),
-                )
-                .await
-                .expect("error response write");
-            }
-        });
-
-        IpcClient::connect_with_stream(
-            &IpcClientConfig {
-                socket_path: PathBuf::from(format!("/tmp/{label}-err.sock")),
-                client_type: "mobile-test".to_string(),
-                request_timeout: Duration::from_secs(1),
-            },
-            client_stream,
-        )
-        .await
-        .expect("ipc client should connect")
-    }
-
-    async fn make_reconnecting_ipc_client(
-        connect_count: Arc<AtomicUsize>,
-        reconnect_delay: Duration,
-    ) -> ReconnectingIpcClient {
-        ReconnectingIpcClient::start_with_connector(
-            None,
-            move || {
-                let connect_count = Arc::clone(&connect_count);
-                async move {
-                    let attempt = connect_count.fetch_add(1, Ordering::SeqCst) + 1;
-                    if reconnect_delay > Duration::ZERO {
-                        sleep(reconnect_delay).await;
-                    }
-                    Ok(connect_test_ipc_client(&attempt.to_string()).await)
-                }
-            },
-            ReconnectPolicy {
-                initial_delay: Duration::from_millis(1),
-                max_delay: Duration::from_millis(5),
-                max_attempts: Some(16),
-            },
-        )
-    }
-
-    async fn make_error_reconnecting_ipc_client(
-        connect_count: Arc<AtomicUsize>,
-        reconnect_delay: Duration,
-        error: &'static str,
-    ) -> ReconnectingIpcClient {
-        ReconnectingIpcClient::start_with_connector(
-            None,
-            move || {
-                let connect_count = Arc::clone(&connect_count);
-                async move {
-                    let attempt = connect_count.fetch_add(1, Ordering::SeqCst) + 1;
-                    if reconnect_delay > Duration::ZERO {
-                        sleep(reconnect_delay).await;
-                    }
-                    Ok(connect_error_ipc_client(&attempt.to_string(), error).await)
-                }
-            },
-            ReconnectPolicy {
-                initial_delay: Duration::from_millis(1),
-                max_delay: Duration::from_millis(5),
-                max_attempts: Some(16),
-            },
-        )
-    }
-
-    async fn wait_until(timeout: Duration, mut predicate: impl FnMut() -> bool) {
-        let deadline = Instant::now() + timeout;
-        loop {
-            if predicate() {
-                return;
-            }
-            assert!(Instant::now() < deadline, "timed out waiting for condition");
-            sleep(Duration::from_millis(5)).await;
         }
     }
 
@@ -361,20 +166,6 @@ mod mobile_client_tests {
                 ],
             }]
         );
-    }
-
-    #[test]
-    fn ipc_pending_user_input_submission_id_uses_request_id() {
-        let request = make_user_input_request(PendingUserInputQuestion {
-            id: "q-1".to_string(),
-            header: None,
-            question: "Choose one".to_string(),
-            is_other_allowed: false,
-            is_secret: false,
-            options: Vec::new(),
-        });
-
-        assert_eq!(ipc_pending_user_input_submission_id(&request), "req-1");
     }
 
     #[test]
@@ -503,11 +294,9 @@ mod mobile_client_tests {
     #[test]
     fn thread_start_runtime_uses_selected_model_runtime() {
         let client = MobileClient::new();
-        client.app_store.upsert_server(
-            &make_server_config("srv"),
-            ServerHealthSnapshot::Connected,
-            false,
-        );
+        client
+            .app_store
+            .upsert_server(&make_server_config("srv"), ServerHealthSnapshot::Connected);
         client.app_store.update_server_models(
             "srv",
             Some(vec![make_model_info(
@@ -526,11 +315,9 @@ mod mobile_client_tests {
     #[test]
     fn thread_start_runtime_explicit_agent_wins_over_duplicate_model() {
         let client = MobileClient::new();
-        client.app_store.upsert_server(
-            &make_server_config("srv"),
-            ServerHealthSnapshot::Connected,
-            false,
-        );
+        client
+            .app_store
+            .upsert_server(&make_server_config("srv"), ServerHealthSnapshot::Connected);
         client.app_store.update_server_models(
             "srv",
             Some(vec![
@@ -556,11 +343,9 @@ mod mobile_client_tests {
     #[test]
     fn normalizes_selected_model_to_runtime_advertised_id() {
         let client = MobileClient::new();
-        client.app_store.upsert_server(
-            &make_server_config("srv"),
-            ServerHealthSnapshot::Connected,
-            false,
-        );
+        client
+            .app_store
+            .upsert_server(&make_server_config("srv"), ServerHealthSnapshot::Connected);
         client.app_store.update_server_models(
             "srv",
             Some(vec![make_model_info(
@@ -579,11 +364,9 @@ mod mobile_client_tests {
     #[test]
     fn thread_start_runtime_explicit_override_wins_over_selected_model() {
         let client = MobileClient::new();
-        client.app_store.upsert_server(
-            &make_server_config("srv"),
-            ServerHealthSnapshot::Connected,
-            false,
-        );
+        client
+            .app_store
+            .upsert_server(&make_server_config("srv"), ServerHealthSnapshot::Connected);
         client.app_store.update_server_models(
             "srv",
             Some(vec![make_model_info(
@@ -613,6 +396,8 @@ mod mobile_client_tests {
                     display_name: "Codex".to_string(),
                     wire: AlleycatAgentWire::Websocket,
                     available: true,
+                    presentation: None,
+                    capabilities: None,
                 },
             ),
             (
@@ -622,6 +407,8 @@ mod mobile_client_tests {
                     display_name: "Droid".to_string(),
                     wire: AlleycatAgentWire::Jsonl,
                     available: true,
+                    presentation: None,
+                    capabilities: None,
                 },
             ),
             (
@@ -631,6 +418,8 @@ mod mobile_client_tests {
                     display_name: "Amp".to_string(),
                     wire: AlleycatAgentWire::Jsonl,
                     available: true,
+                    presentation: None,
+                    capabilities: None,
                 },
             ),
         ];
@@ -863,7 +652,7 @@ mod mobile_client_tests {
         let config = make_server_config(server_id);
         client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
 
         let requests = Arc::new(StdMutex::new(Vec::<String>::new()));
         let request_handler: TestRequestHandler = {
@@ -919,7 +708,6 @@ mod mobile_client_tests {
         };
         let session = Arc::new(ServerSession::test_stub_with_handlers(
             config,
-            None,
             Some(request_handler),
             None,
             None,
@@ -974,7 +762,7 @@ mod mobile_client_tests {
         let config = make_server_config(server_id);
         client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
 
         let requests = Arc::new(StdMutex::new(Vec::<String>::new()));
         let codex_handler: TestRequestHandler = {
@@ -1088,7 +876,7 @@ mod mobile_client_tests {
         let config = make_server_config(server_id);
         client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, false);
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
 
         let requests = Arc::new(StdMutex::new(Vec::<String>::new()));
         let request_handler: TestRequestHandler = {
@@ -1140,7 +928,6 @@ mod mobile_client_tests {
         };
         let session = Arc::new(ServerSession::test_stub_with_handlers(
             config,
-            None,
             Some(request_handler),
             None,
             None,
@@ -1178,7 +965,7 @@ mod mobile_client_tests {
         let config = make_server_config(server_id);
         client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
 
         let requests = Arc::new(StdMutex::new(Vec::<String>::new()));
         let request_handler: TestRequestHandler = {
@@ -1265,7 +1052,6 @@ mod mobile_client_tests {
         };
         let session = Arc::new(ServerSession::test_stub_with_handlers(
             config,
-            None,
             Some(request_handler),
             None,
             None,
@@ -1339,7 +1125,7 @@ mod mobile_client_tests {
         let config = make_server_config(server_id);
         client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
 
         let mut thread = thread_snapshot_with_active_turn(server_id, thread_id, "turn-active");
         thread.agent_runtime_kind = "amp".to_string();
@@ -1464,7 +1250,7 @@ mod mobile_client_tests {
         let config = make_server_config(server_id);
         client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
 
         let requests = Arc::new(StdMutex::new(Vec::<String>::new()));
         let request_handler: TestRequestHandler = {
@@ -1533,7 +1319,6 @@ mod mobile_client_tests {
         };
         let session = Arc::new(ServerSession::test_stub_with_handlers(
             config,
-            None,
             Some(request_handler),
             None,
             None,
@@ -1588,7 +1373,7 @@ mod mobile_client_tests {
         let config = make_server_config(server_id);
         client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
         client
             .app_store
             .set_server_supports_turn_pagination(server_id, false);
@@ -1656,7 +1441,6 @@ mod mobile_client_tests {
         };
         let session = Arc::new(ServerSession::test_stub_with_handlers(
             config,
-            None,
             Some(request_handler),
             None,
             None,
@@ -1749,809 +1533,6 @@ mod mobile_client_tests {
         );
     }
 
-    #[test]
-    fn websocket_stream_suppression_only_targets_stream_delta_events() {
-        let key = ThreadKey {
-            server_id: "srv".to_string(),
-            thread_id: "thread-1".to_string(),
-        };
-        let stream_events = [
-            UiEvent::MessageDelta {
-                key: key.clone(),
-                item_id: "item-1".to_string(),
-                delta: "a".to_string(),
-            },
-            UiEvent::ReasoningDelta {
-                key: key.clone(),
-                item_id: "item-2".to_string(),
-                delta: "b".to_string(),
-            },
-            UiEvent::PlanDelta {
-                key: key.clone(),
-                item_id: "item-3".to_string(),
-                delta: "c".to_string(),
-            },
-            UiEvent::CommandOutputDelta {
-                key: key.clone(),
-                item_id: "item-4".to_string(),
-                delta: "d".to_string(),
-            },
-        ];
-        for event in stream_events {
-            assert!(should_suppress_websocket_stream_event(&event, true));
-            assert!(!should_suppress_websocket_stream_event(&event, false));
-        }
-
-        let non_stream_event = UiEvent::TurnCompleted {
-            key,
-            turn_id: "turn-1".to_string(),
-            error: None,
-        };
-        assert!(!should_suppress_websocket_stream_event(
-            &non_stream_event,
-            true
-        ));
-    }
-
-    #[tokio::test]
-    async fn store_listener_suppresses_websocket_stream_deltas_while_ipc_is_live() {
-        let app_store = Arc::new(AppStoreReducer::new());
-        let mut updates = app_store.subscribe();
-        let sessions = Arc::new(RwLock::new(HashMap::new()));
-        let server_id = "srv";
-        let key = ThreadKey {
-            server_id: server_id.to_string(),
-            thread_id: "thread-1".to_string(),
-        };
-        let config = make_server_config(server_id);
-        app_store.upsert_server(&config, ServerHealthSnapshot::Connected, true);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc =
-            make_reconnecting_ipc_client(Arc::clone(&connect_count), Duration::ZERO).await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-        app_store.update_server_ipc_state(server_id, true);
-        app_store.mark_server_ipc_primary(server_id);
-
-        let session = Arc::new(ServerSession::test_stub(
-            config.clone(),
-            Some(reconnecting_ipc),
-        ));
-        sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), session);
-
-        let (event_tx, event_rx) = broadcast::channel(16);
-        spawn_store_listener(Arc::clone(&app_store), Arc::clone(&sessions), event_rx);
-        drain_app_updates(&mut updates);
-
-        event_tx
-            .send(UiEvent::MessageDelta {
-                key: key.clone(),
-                item_id: "assistant-1".to_string(),
-                delta: "hello".to_string(),
-            })
-            .expect("send delta");
-        sleep(Duration::from_millis(25)).await;
-        let suppressed_updates = drain_app_updates(&mut updates);
-        assert!(!suppressed_updates.iter().any(|update| matches!(
-            update,
-            AppStoreUpdateRecord::ThreadStreamingDelta { key: emitted_key, .. } if emitted_key == &key
-        )));
-
-        app_store.update_server_ipc_state(server_id, false);
-        event_tx
-            .send(UiEvent::MessageDelta {
-                key: key.clone(),
-                item_id: "assistant-1".to_string(),
-                delta: "world".to_string(),
-            })
-            .expect("send fallback delta");
-        wait_until(Duration::from_secs(1), || {
-            drain_app_updates(&mut updates).iter().any(|update| {
-                matches!(
-                    update,
-                    AppStoreUpdateRecord::ThreadStreamingDelta {
-                        key: emitted_key,
-                        item_id,
-                        kind: ThreadStreamingDeltaKind::AssistantText,
-                        text,
-                    } if emitted_key == &key && item_id == "assistant-1" && text == "world"
-                )
-            })
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn store_listener_uses_websocket_stream_deltas_after_server_failover_to_direct_only() {
-        let app_store = Arc::new(AppStoreReducer::new());
-        let mut updates = app_store.subscribe();
-        let sessions = Arc::new(RwLock::new(HashMap::new()));
-        let server_id = "srv";
-        let key = ThreadKey {
-            server_id: server_id.to_string(),
-            thread_id: "thread-1".to_string(),
-        };
-        let config = make_server_config(server_id);
-        app_store.upsert_server(&config, ServerHealthSnapshot::Connected, true);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc =
-            make_reconnecting_ipc_client(Arc::clone(&connect_count), Duration::ZERO).await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-        app_store.update_server_ipc_state(server_id, true);
-        app_store.mark_server_ipc_primary(server_id);
-
-        let session = Arc::new(ServerSession::test_stub(
-            config.clone(),
-            Some(reconnecting_ipc),
-        ));
-        sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), session);
-
-        let (event_tx, event_rx) = broadcast::channel(16);
-        spawn_store_listener(Arc::clone(&app_store), Arc::clone(&sessions), event_rx);
-        drain_app_updates(&mut updates);
-
-        app_store.fail_server_over_to_direct_only(
-            server_id,
-            IpcFailureClassification::FollowerCommandTimeoutWhileIpcHealthy,
-        );
-
-        event_tx
-            .send(UiEvent::MessageDelta {
-                key: key.clone(),
-                item_id: "assistant-1".to_string(),
-                delta: "after-failover".to_string(),
-            })
-            .expect("send post-failover delta");
-        wait_until(Duration::from_secs(1), || {
-            drain_app_updates(&mut updates).iter().any(|update| {
-                matches!(
-                    update,
-                    AppStoreUpdateRecord::ThreadStreamingDelta {
-                        key: emitted_key,
-                        item_id,
-                        kind: ThreadStreamingDeltaKind::AssistantText,
-                        text,
-                    } if emitted_key == &key && item_id == "assistant-1" && text == "after-failover"
-                )
-            })
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn ipc_wrapper_invalidation_reconnects_with_new_client() {
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc =
-            make_reconnecting_ipc_client(Arc::clone(&connect_count), Duration::from_millis(40))
-                .await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-        let first_client_id = reconnecting_ipc
-            .client()
-            .expect("ipc client should be connected")
-            .client_id()
-            .to_string();
-
-        reconnecting_ipc.invalidate();
-
-        wait_until(Duration::from_secs(1), || {
-            reconnecting_ipc
-                .client()
-                .is_some_and(|ipc_client| ipc_client.client_id() != first_client_id)
-                && connect_count.load(Ordering::SeqCst) >= 2
-        })
-        .await;
-        reconnecting_ipc.shutdown().await;
-    }
-
-    #[tokio::test]
-    async fn ipc_connection_state_reader_seeds_store_from_current_connection_state() {
-        let client = MobileClient::new();
-        let server_id = "srv";
-        let config = make_server_config(server_id);
-        client
-            .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc =
-            make_reconnecting_ipc_client(Arc::clone(&connect_count), Duration::ZERO).await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-
-        let session = Arc::new(ServerSession::test_stub(
-            config.clone(),
-            Some(reconnecting_ipc),
-        ));
-        client
-            .sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), Arc::clone(&session));
-        client.spawn_ipc_connection_state_reader(server_id.to_string(), Arc::clone(&session));
-
-        wait_until(Duration::from_secs(1), || {
-            client
-                .app_store
-                .snapshot()
-                .servers
-                .get(server_id)
-                .is_some_and(|server| server.has_ipc)
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn ipc_connection_state_reader_clears_store_after_invalidation() {
-        let client = MobileClient::new();
-        let server_id = "srv";
-        let config = make_server_config(server_id);
-        client
-            .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc =
-            make_reconnecting_ipc_client(Arc::clone(&connect_count), Duration::from_millis(100))
-                .await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-
-        let session = Arc::new(ServerSession::test_stub(
-            config.clone(),
-            Some(reconnecting_ipc),
-        ));
-        client
-            .sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), Arc::clone(&session));
-        client.spawn_ipc_connection_state_reader(server_id.to_string(), Arc::clone(&session));
-
-        wait_until(Duration::from_secs(1), || {
-            client
-                .app_store
-                .snapshot()
-                .servers
-                .get(server_id)
-                .is_some_and(|server| server.has_ipc)
-        })
-        .await;
-
-        session.invalidate_ipc();
-
-        wait_until(Duration::from_secs(1), || {
-            client
-                .app_store
-                .snapshot()
-                .servers
-                .get(server_id)
-                .is_some_and(|server| !server.has_ipc)
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn store_listener_resumes_websocket_stream_deltas_after_ipc_invalidation() {
-        let client = MobileClient::new();
-        let mut updates = client.app_store.subscribe();
-        let sessions = Arc::new(RwLock::new(HashMap::new()));
-        let server_id = "srv";
-        let key = ThreadKey {
-            server_id: server_id.to_string(),
-            thread_id: "thread-1".to_string(),
-        };
-        let config = make_server_config(server_id);
-        client
-            .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc =
-            make_reconnecting_ipc_client(Arc::clone(&connect_count), Duration::from_millis(100))
-                .await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-        let session = Arc::new(ServerSession::test_stub(
-            config.clone(),
-            Some(reconnecting_ipc),
-        ));
-        sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), Arc::clone(&session));
-        client
-            .sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), Arc::clone(&session));
-        client.app_store.update_server_ipc_state(server_id, true);
-        client.app_store.mark_server_ipc_primary(server_id);
-        client.spawn_ipc_connection_state_reader(server_id.to_string(), Arc::clone(&session));
-
-        let (event_tx, event_rx) = broadcast::channel(16);
-        spawn_store_listener(
-            Arc::clone(&client.app_store),
-            Arc::clone(&sessions),
-            event_rx,
-        );
-        drain_app_updates(&mut updates);
-
-        event_tx
-            .send(UiEvent::MessageDelta {
-                key: key.clone(),
-                item_id: "assistant-1".to_string(),
-                delta: "suppressed".to_string(),
-            })
-            .expect("send suppressed delta");
-        sleep(Duration::from_millis(25)).await;
-        let suppressed_updates = drain_app_updates(&mut updates);
-        assert!(!suppressed_updates.iter().any(|update| matches!(
-            update,
-            AppStoreUpdateRecord::ThreadStreamingDelta { key: emitted_key, .. } if emitted_key == &key
-        )));
-
-        session.invalidate_ipc();
-
-        wait_until(Duration::from_secs(1), || {
-            client
-                .app_store
-                .snapshot()
-                .servers
-                .get(server_id)
-                .is_some_and(|server| !server.has_ipc)
-        })
-        .await;
-
-        event_tx
-            .send(UiEvent::MessageDelta {
-                key: key.clone(),
-                item_id: "assistant-1".to_string(),
-                delta: "after-drop".to_string(),
-            })
-            .expect("send post-invalidation delta");
-        wait_until(Duration::from_secs(1), || {
-            drain_app_updates(&mut updates).iter().any(|update| {
-                matches!(
-                    update,
-                    AppStoreUpdateRecord::ThreadStreamingDelta {
-                        key: emitted_key,
-                        item_id,
-                        kind: ThreadStreamingDeltaKind::AssistantText,
-                        text,
-                    } if emitted_key == &key && item_id == "assistant-1" && text == "after-drop"
-                )
-            })
-        })
-        .await;
-    }
-
-    #[test]
-    fn server_transport_requires_explicit_recovery_before_ipc_becomes_primary_again() {
-        let app_store = AppStoreReducer::new();
-        let server_id = "srv";
-        let config = make_server_config(server_id);
-        app_store.upsert_server(&config, ServerHealthSnapshot::Connected, true);
-
-        app_store.update_server_ipc_state(server_id, true);
-        app_store.mark_server_ipc_primary(server_id);
-        let server = app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .expect("server snapshot")
-            .clone();
-        assert_eq!(
-            server.transport.authority,
-            ServerTransportAuthority::IpcPrimary
-        );
-        assert!(server.has_ipc);
-
-        app_store.fail_server_over_to_direct_only(
-            server_id,
-            IpcFailureClassification::FollowerCommandTimeoutWhileIpcHealthy,
-        );
-        app_store.update_server_ipc_state(server_id, true);
-
-        let server = app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .expect("server snapshot")
-            .clone();
-        assert_eq!(
-            server.transport.authority,
-            ServerTransportAuthority::DirectOnly
-        );
-        assert!(!server.has_ipc);
-
-        app_store.mark_server_ipc_recovering(server_id);
-        app_store.update_server_ipc_state(server_id, true);
-
-        let server = app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .expect("server snapshot")
-            .clone();
-        assert_eq!(
-            server.transport.authority,
-            ServerTransportAuthority::IpcPrimary
-        );
-        assert!(server.has_ipc);
-    }
-
-    #[tokio::test]
-    async fn stale_ipc_start_turn_falls_back_to_direct_only_once_per_server() {
-        let client = MobileClient::new();
-        let server_id = "srv";
-        let thread_id = "thread-1";
-        let key = ThreadKey {
-            server_id: server_id.to_string(),
-            thread_id: thread_id.to_string(),
-        };
-        let config = make_server_config(server_id);
-        client
-            .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
-        client.app_store.update_server_ipc_state(server_id, true);
-        client.app_store.mark_server_ipc_primary(server_id);
-        let mut thread = ThreadSnapshot::from_info(server_id, make_thread_info(thread_id));
-        thread.info.status = ThreadSummaryStatus::Idle;
-        client.app_store.upsert_thread_snapshot(thread);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc = make_error_reconnecting_ipc_client(
-            Arc::clone(&connect_count),
-            Duration::from_millis(20),
-            "no-client-found",
-        )
-        .await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-
-        let turn_start_calls = Arc::new(StdMutex::new(Vec::<upstream::ClientRequest>::new()));
-        let request_handler: TestRequestHandler = {
-            let turn_start_calls = Arc::clone(&turn_start_calls);
-            Arc::new(move |request| {
-                turn_start_calls
-                    .lock()
-                    .expect("turn start calls lock should not be poisoned")
-                    .push(request.clone());
-                match request {
-                    upstream::ClientRequest::TurnStart { .. } => {
-                        serde_json::to_value(upstream::TurnStartResponse {
-                            turn: upstream::Turn {
-                                id: "turn-next".to_string(),
-                                items: Vec::new(),
-                                items_view: upstream::TurnItemsView::Full,
-                                status: upstream::TurnStatus::InProgress,
-                                error: None,
-                                started_at: None,
-                                completed_at: None,
-                                duration_ms: None,
-                            },
-                        })
-                        .map_err(|error| RpcError::Deserialization(error.to_string()))
-                    }
-                    other => Err(RpcError::Deserialization(format!(
-                        "unexpected request in test: {}",
-                        other.method()
-                    ))),
-                }
-            })
-        };
-        let session = Arc::new(ServerSession::test_stub_with_handlers(
-            config,
-            Some(reconnecting_ipc),
-            Some(request_handler),
-            None,
-            None,
-        ));
-        client
-            .sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), Arc::clone(&session));
-
-        client
-            .start_turn(
-                server_id,
-                upstream::TurnStartParams {
-                    thread_id: thread_id.to_string(),
-                    input: vec![upstream::UserInput::Text {
-                        text: "hello".to_string(),
-                        text_elements: Vec::new(),
-                    }],
-                    responsesapi_client_metadata: None,
-                    cwd: None,
-                    approval_policy: None,
-                    approvals_reviewer: None,
-                    sandbox_policy: None,
-                    environments: None,
-                    permissions: None,
-                    model: None,
-                    service_tier: None,
-                    effort: None,
-                    summary: None,
-                    personality: None,
-                    output_schema: None,
-                    collaboration_mode: None,
-                },
-            )
-            .await
-            .expect("start turn should succeed");
-
-        let captured = turn_start_calls
-            .lock()
-            .expect("turn start calls lock should not be poisoned");
-        assert_eq!(captured.len(), 1);
-        drop(captured);
-
-        let server = client
-            .app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .expect("server snapshot")
-            .clone();
-        assert_eq!(
-            server.transport.authority,
-            ServerTransportAuthority::DirectOnly
-        );
-        assert!(!server.has_ipc);
-
-        let thread = client.snapshot_thread(&key).expect("thread snapshot");
-        // The overlay is created before the IPC attempt and stays after
-        // the fallback direct turn/start succeeds and binds it.
-        assert_eq!(thread.local_overlay_items.len(), 1);
-        assert!(
-            thread.local_overlay_items[0]
-                .id
-                .starts_with("local-user-message:")
-        );
-    }
-
-    #[tokio::test]
-    async fn timed_out_ipc_start_turn_falls_back_to_direct_without_server_failover() {
-        let client = MobileClient::new();
-        let server_id = "srv";
-        let thread_id = "thread-1";
-        let key = ThreadKey {
-            server_id: server_id.to_string(),
-            thread_id: thread_id.to_string(),
-        };
-        let config = make_server_config(server_id);
-        client
-            .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
-        client.app_store.update_server_ipc_state(server_id, true);
-        client.app_store.mark_server_ipc_primary(server_id);
-        let mut thread = ThreadSnapshot::from_info(server_id, make_thread_info(thread_id));
-        thread.info.status = ThreadSummaryStatus::Idle;
-        client.app_store.upsert_thread_snapshot(thread);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc = make_error_reconnecting_ipc_client(
-            Arc::clone(&connect_count),
-            Duration::from_millis(20),
-            "request-timeout",
-        )
-        .await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-
-        let turn_start_calls = Arc::new(StdMutex::new(Vec::<upstream::ClientRequest>::new()));
-        let request_handler: TestRequestHandler = {
-            let turn_start_calls = Arc::clone(&turn_start_calls);
-            Arc::new(move |request| {
-                turn_start_calls
-                    .lock()
-                    .expect("turn start calls lock should not be poisoned")
-                    .push(request.clone());
-                match request {
-                    upstream::ClientRequest::TurnStart { .. } => {
-                        serde_json::to_value(upstream::TurnStartResponse {
-                            turn: upstream::Turn {
-                                id: "turn-timeout-fallback".to_string(),
-                                items: Vec::new(),
-                                items_view: upstream::TurnItemsView::Full,
-                                status: upstream::TurnStatus::InProgress,
-                                error: None,
-                                started_at: None,
-                                completed_at: None,
-                                duration_ms: None,
-                            },
-                        })
-                        .map_err(|error| RpcError::Deserialization(error.to_string()))
-                    }
-                    other => Err(RpcError::Deserialization(format!(
-                        "unexpected request in test: {}",
-                        other.method()
-                    ))),
-                }
-            })
-        };
-        let session = Arc::new(ServerSession::test_stub_with_handlers(
-            config,
-            Some(reconnecting_ipc),
-            Some(request_handler),
-            None,
-            None,
-        ));
-        client
-            .sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), Arc::clone(&session));
-
-        client
-            .start_turn(
-                server_id,
-                upstream::TurnStartParams {
-                    thread_id: thread_id.to_string(),
-                    input: vec![upstream::UserInput::Text {
-                        text: "hello".to_string(),
-                        text_elements: Vec::new(),
-                    }],
-                    responsesapi_client_metadata: None,
-                    cwd: None,
-                    approval_policy: None,
-                    approvals_reviewer: None,
-                    sandbox_policy: None,
-                    environments: None,
-                    permissions: None,
-                    model: None,
-                    service_tier: None,
-                    effort: None,
-                    summary: None,
-                    personality: None,
-                    output_schema: None,
-                    collaboration_mode: None,
-                },
-            )
-            .await
-            .expect("start turn should succeed");
-
-        let captured = turn_start_calls
-            .lock()
-            .expect("turn start calls lock should not be poisoned");
-        assert_eq!(captured.len(), 1);
-        drop(captured);
-
-        let server = client
-            .app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .expect("server snapshot")
-            .clone();
-        assert_eq!(
-            server.transport.authority,
-            ServerTransportAuthority::IpcPrimary
-        );
-        assert!(server.has_ipc);
-
-        let thread = client.snapshot_thread(&key).expect("thread snapshot");
-        // The overlay is created before the IPC attempt and stays after
-        // the fallback direct turn/start succeeds and binds it.
-        assert_eq!(thread.local_overlay_items.len(), 1);
-        assert!(
-            thread.local_overlay_items[0]
-                .id
-                .starts_with("local-user-message:")
-        );
-    }
-
-    #[tokio::test]
-    async fn stale_ipc_steer_queued_follow_up_falls_back_to_turn_steer() {
-        let client = MobileClient::new();
-        let server_id = "srv";
-        let thread_id = "thread-1";
-        let key = ThreadKey {
-            server_id: server_id.to_string(),
-            thread_id: thread_id.to_string(),
-        };
-        let config = make_server_config(server_id);
-        client
-            .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
-        client.app_store.update_server_ipc_state(server_id, true);
-        client.app_store.mark_server_ipc_primary(server_id);
-
-        let mut thread = thread_snapshot_with_active_turn(server_id, thread_id, "turn-active");
-        let draft = queued_follow_up_draft_from_inputs(
-            &[upstream::UserInput::Text {
-                text: "follow up".to_string(),
-                text_elements: Vec::new(),
-            }],
-            AppQueuedFollowUpKind::Message,
-        )
-        .expect("draft");
-        let preview_id = draft.preview.id.clone();
-        thread.queued_follow_up_drafts.push(draft);
-        client.app_store.upsert_thread_snapshot(thread);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc = make_error_reconnecting_ipc_client(
-            Arc::clone(&connect_count),
-            Duration::from_millis(20),
-            "no-client-found",
-        )
-        .await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-
-        let steer_calls = Arc::new(StdMutex::new(Vec::<upstream::ClientRequest>::new()));
-        let request_handler: TestRequestHandler = {
-            let steer_calls = Arc::clone(&steer_calls);
-            Arc::new(move |request| {
-                let request_for_log = request.clone();
-                steer_calls
-                    .lock()
-                    .expect("steer calls lock should not be poisoned")
-                    .push(request_for_log);
-                match request {
-                    upstream::ClientRequest::TurnSteer { .. } => {
-                        Ok(json!({ "turnId": "turn-next" }))
-                    }
-                    other => Err(RpcError::Deserialization(format!(
-                        "unexpected request in test: {}",
-                        other.method()
-                    ))),
-                }
-            })
-        };
-        let session = Arc::new(ServerSession::test_stub_with_handlers(
-            config,
-            Some(reconnecting_ipc),
-            Some(request_handler),
-            None,
-            None,
-        ));
-        client
-            .sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), Arc::clone(&session));
-
-        client
-            .steer_queued_follow_up(&key, &preview_id)
-            .await
-            .expect("steer should succeed");
-
-        let captured = steer_calls
-            .lock()
-            .expect("steer calls lock should not be poisoned");
-        assert_eq!(captured.len(), 1);
-        assert!(matches!(
-            &captured[0],
-            upstream::ClientRequest::TurnSteer { params, .. }
-                if params.thread_id == thread_id && params.expected_turn_id == "turn-active"
-        ));
-        drop(captured);
-
-        let thread = client.snapshot_thread(&key).expect("thread snapshot");
-        assert!(
-            thread
-                .queued_follow_up_drafts
-                .iter()
-                .all(|d| d.preview.kind == AppQueuedFollowUpKind::PendingSteer)
-        );
-        let server = client
-            .app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .expect("server snapshot")
-            .clone();
-        assert!(!server.has_ipc);
-        assert_eq!(
-            server.transport.authority,
-            ServerTransportAuthority::DirectOnly
-        );
-    }
-
     #[tokio::test]
     async fn duplicate_steer_queued_follow_up_taps_drop_after_first() {
         let client = MobileClient::new();
@@ -2564,7 +1545,7 @@ mod mobile_client_tests {
         let config = make_server_config(server_id);
         client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
 
         let mut thread = thread_snapshot_with_active_turn(server_id, thread_id, "turn-active");
         let draft = queued_follow_up_draft_from_inputs(
@@ -2601,7 +1582,6 @@ mod mobile_client_tests {
         };
         let session = Arc::new(ServerSession::test_stub_with_handlers(
             config,
-            None,
             Some(request_handler),
             None,
             None,
@@ -2641,378 +1621,6 @@ mod mobile_client_tests {
         );
     }
 
-    #[tokio::test]
-    async fn stale_ipc_delete_queued_follow_up_updates_local_state_and_reconnects() {
-        let client = MobileClient::new();
-        let server_id = "srv";
-        let thread_id = "thread-1";
-        let key = ThreadKey {
-            server_id: server_id.to_string(),
-            thread_id: thread_id.to_string(),
-        };
-        let config = make_server_config(server_id);
-        client
-            .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
-        client.app_store.update_server_ipc_state(server_id, true);
-        client.app_store.mark_server_ipc_primary(server_id);
-
-        let mut thread = thread_snapshot_with_active_turn(server_id, thread_id, "turn-active");
-        let first = queued_follow_up_draft_from_inputs(
-            &[upstream::UserInput::Text {
-                text: "first".to_string(),
-                text_elements: Vec::new(),
-            }],
-            AppQueuedFollowUpKind::Message,
-        )
-        .expect("first draft");
-        let second = queued_follow_up_draft_from_inputs(
-            &[upstream::UserInput::Text {
-                text: "second".to_string(),
-                text_elements: Vec::new(),
-            }],
-            AppQueuedFollowUpKind::Message,
-        )
-        .expect("second draft");
-        let delete_id = first.preview.id.clone();
-        let keep_id = second.preview.id.clone();
-        thread.queued_follow_up_drafts.extend([first, second]);
-        client.app_store.upsert_thread_snapshot(thread);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc = make_error_reconnecting_ipc_client(
-            Arc::clone(&connect_count),
-            Duration::from_millis(20),
-            "no-client-found",
-        )
-        .await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-        let session = Arc::new(ServerSession::test_stub(config, Some(reconnecting_ipc)));
-        client
-            .sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), session);
-
-        client
-            .delete_queued_follow_up(&key, &delete_id)
-            .await
-            .expect("delete should succeed");
-
-        let thread = client.snapshot_thread(&key).expect("thread snapshot");
-        assert_eq!(thread.queued_follow_up_drafts.len(), 1);
-        assert_eq!(thread.queued_follow_up_drafts[0].preview.id, keep_id);
-        let server = client
-            .app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .expect("server snapshot")
-            .clone();
-        assert!(!server.has_ipc);
-        assert_eq!(
-            server.transport.authority,
-            ServerTransportAuthority::DirectOnly
-        );
-    }
-
-    #[tokio::test]
-    async fn stale_ipc_approval_response_falls_back_to_server_request_resolution() {
-        let client = MobileClient::new();
-        let server_id = "srv";
-        let thread_id = "thread-1";
-        let config = make_server_config(server_id);
-        client
-            .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
-        client.app_store.update_server_ipc_state(server_id, true);
-        client.app_store.mark_server_ipc_primary(server_id);
-
-        let approval = PendingApproval {
-            id: "approval-1".to_string(),
-            server_id: server_id.to_string(),
-            kind: crate::types::ApprovalKind::Command,
-            thread_id: Some(thread_id.to_string()),
-            turn_id: Some("turn-1".to_string()),
-            item_id: Some("item-1".to_string()),
-            command: Some("ls".to_string()),
-            path: None,
-            grant_root: None,
-            cwd: Some("/repo".to_string()),
-            reason: None,
-        };
-        client
-            .app_store
-            .replace_pending_approvals_with_seeds(vec![PendingApprovalWithSeed {
-                approval: approval.clone(),
-                seed: PendingApprovalSeed {
-                    request_id: upstream::RequestId::Integer(42),
-                    raw_params: json!({}),
-                },
-            }]);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc = make_error_reconnecting_ipc_client(
-            Arc::clone(&connect_count),
-            Duration::from_millis(20),
-            "no-client-found",
-        )
-        .await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-
-        let resolved = Arc::new(StdMutex::new(
-            Vec::<(upstream::RequestId, serde_json::Value)>::new(),
-        ));
-        let resolve_handler: TestResolveHandler = {
-            let resolved = Arc::clone(&resolved);
-            Arc::new(move |request_id, result| {
-                resolved
-                    .lock()
-                    .expect("resolved approvals lock should not be poisoned")
-                    .push((
-                        request_id,
-                        serde_json::to_value(result).expect("jsonrpc result"),
-                    ));
-                Ok(())
-            })
-        };
-        let session = Arc::new(ServerSession::test_stub_with_handlers(
-            config,
-            Some(reconnecting_ipc),
-            None,
-            Some(resolve_handler),
-            None,
-        ));
-        client
-            .sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), session);
-
-        client
-            .respond_to_approval("approval-1", ApprovalDecisionValue::Accept)
-            .await
-            .expect("approval response should succeed");
-
-        let resolved = resolved
-            .lock()
-            .expect("resolved approvals lock should not be poisoned");
-        assert_eq!(resolved.len(), 1);
-        assert!(matches!(&resolved[0].0, upstream::RequestId::Integer(42)));
-        drop(resolved);
-        assert!(client.app_store.snapshot().pending_approvals.is_empty());
-        let server = client
-            .app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .expect("server snapshot")
-            .clone();
-        assert_eq!(
-            server.transport.authority,
-            ServerTransportAuthority::DirectOnly
-        );
-        assert!(!server.has_ipc);
-    }
-
-    #[tokio::test]
-    async fn stale_ipc_user_input_response_falls_back_to_server_request_resolution() {
-        let client = MobileClient::new();
-        let server_id = "srv";
-        let thread_id = "thread-1";
-        let key = ThreadKey {
-            server_id: server_id.to_string(),
-            thread_id: thread_id.to_string(),
-        };
-        let config = make_server_config(server_id);
-        client
-            .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connected, true);
-        client.app_store.update_server_ipc_state(server_id, true);
-        client.app_store.mark_server_ipc_primary(server_id);
-        client
-            .app_store
-            .upsert_thread_snapshot(ThreadSnapshot::from_info(
-                server_id,
-                make_thread_info(thread_id),
-            ));
-
-        let question = PendingUserInputQuestion {
-            id: "question-1".to_string(),
-            header: Some("Pick".to_string()),
-            question: "Pick one".to_string(),
-            is_other_allowed: false,
-            is_secret: false,
-            options: vec![PendingUserInputOption {
-                label: "One".to_string(),
-                description: None,
-            }],
-        };
-        let mut request = make_user_input_request(question);
-        request.thread_id = thread_id.to_string();
-        client.app_store.replace_pending_user_inputs(vec![request]);
-
-        let connect_count = Arc::new(AtomicUsize::new(0));
-        let reconnecting_ipc = make_error_reconnecting_ipc_client(
-            Arc::clone(&connect_count),
-            Duration::from_millis(20),
-            "no-client-found",
-        )
-        .await;
-        wait_until(Duration::from_secs(1), || reconnecting_ipc.is_connected()).await;
-
-        let resolved = Arc::new(StdMutex::new(
-            Vec::<(upstream::RequestId, serde_json::Value)>::new(),
-        ));
-        let resolve_handler: TestResolveHandler = {
-            let resolved = Arc::clone(&resolved);
-            Arc::new(move |request_id, result| {
-                resolved
-                    .lock()
-                    .expect("resolved user inputs lock should not be poisoned")
-                    .push((
-                        request_id,
-                        serde_json::to_value(result).expect("jsonrpc result"),
-                    ));
-                Ok(())
-            })
-        };
-        let session = Arc::new(ServerSession::test_stub_with_handlers(
-            config,
-            Some(reconnecting_ipc),
-            None,
-            Some(resolve_handler),
-            None,
-        ));
-        client
-            .sessions
-            .write()
-            .expect("sessions lock should not be poisoned")
-            .insert(server_id.to_string(), session);
-
-        client
-            .respond_to_user_input(
-                "req-1",
-                vec![PendingUserInputAnswer {
-                    question_id: "question-1".to_string(),
-                    answers: vec!["opt-1".to_string()],
-                }],
-            )
-            .await
-            .expect("user input response should succeed");
-
-        let resolved = resolved
-            .lock()
-            .expect("resolved user inputs lock should not be poisoned");
-        assert_eq!(resolved.len(), 1);
-        assert!(matches!(
-            &resolved[0].0,
-            upstream::RequestId::String(id) if id == "req-1"
-        ));
-        drop(resolved);
-        assert!(client.app_store.snapshot().pending_user_inputs.is_empty());
-        let thread = client.snapshot_thread(&key).expect("thread snapshot");
-        assert!(matches!(
-            thread
-                .local_overlay_items
-                .iter()
-                .find(|item| item.id == "user-input-response:req-1"),
-            Some(item)
-                if matches!(
-                    item.content,
-                    HydratedConversationItemContent::UserInputResponse(_)
-                )
-        ));
-        let server = client
-            .app_store
-            .snapshot()
-            .servers
-            .get(server_id)
-            .expect("server snapshot")
-            .clone();
-        assert_eq!(
-            server.transport.authority,
-            ServerTransportAuthority::DirectOnly
-        );
-        assert!(!server.has_ipc);
-    }
-
-    #[test]
-    fn thread_projection_restores_queued_follow_up_previews_from_input_state() {
-        let projection = thread_projection_from_conversation_json(
-            "srv",
-            "thread-1",
-            &json!({
-                "title": "IPC Thread",
-                "cwd": "/repo",
-                "rolloutPath": "/repo/.codex/session.jsonl",
-                "createdAt": 1710000000000i64,
-                "updatedAt": 1710000005000i64,
-                "threadRuntimeStatus": { "type": "active", "activeFlags": [] },
-                "source": "vscode",
-                "turns": [],
-                "requests": [],
-                "inputState": {
-                    "pendingSteers": [
-                        { "text": "Please continue." }
-                    ],
-                    "rejectedSteersQueue": [
-                        { "text": "Try again after the tool call." }
-                    ],
-                    "queuedUserMessages": [
-                        { "text": "Queued follow-up" }
-                    ]
-                }
-            }),
-        )
-        .expect("thread projection should succeed");
-
-        assert_eq!(
-            projection
-                .snapshot
-                .queued_follow_ups
-                .iter()
-                .map(|preview| (preview.kind, preview.text.as_str()))
-                .collect::<Vec<_>>(),
-            vec![
-                (AppQueuedFollowUpKind::PendingSteer, "Please continue."),
-                (
-                    AppQueuedFollowUpKind::RetryingSteer,
-                    "Try again after the tool call.",
-                ),
-                (AppQueuedFollowUpKind::Message, "Queued follow-up"),
-            ]
-        );
-    }
-
-    #[test]
-    fn queued_followups_broadcast_payload_supports_text_and_attachment_only_messages() {
-        let drafts = queued_follow_up_drafts_from_message_values(&[
-            json!("Queued follow-up"),
-            json!({
-                "kind": "pending_steer",
-                "text": "Please continue."
-            }),
-            json!({
-                "kind": "rejected_steer",
-                "localImages": [{}],
-                "remoteImageUrls": ["https://example.com/image.png"]
-            }),
-        ]);
-
-        assert_eq!(
-            drafts
-                .iter()
-                .map(|draft| (draft.preview.kind, draft.preview.text.as_str()))
-                .collect::<Vec<_>>(),
-            vec![
-                (AppQueuedFollowUpKind::Message, "Queued follow-up"),
-                (AppQueuedFollowUpKind::PendingSteer, "Please continue."),
-                (AppQueuedFollowUpKind::RetryingSteer, "2 image attachments",),
-            ]
-        );
-    }
-
     #[test]
     fn queued_follow_up_message_json_round_trips_skill_inputs() {
         let inputs = vec![
@@ -3046,17 +1654,5 @@ mod mobile_client_tests {
 
         assert_eq!(preview.kind, AppQueuedFollowUpKind::PendingSteer);
         assert_eq!(preview.text, "Please try the same search again.");
-    }
-
-    #[test]
-    fn ipc_no_client_found_clears_server_ipc_state() {
-        let error = IpcError::Request(RequestError::NoClientFound);
-        assert!(ipc_command_error_clears_server_ipc_state(&error));
-    }
-
-    #[test]
-    fn ipc_client_disconnected_clears_server_ipc_state() {
-        let error = IpcError::Request(RequestError::ClientDisconnected);
-        assert!(ipc_command_error_clears_server_ipc_state(&error));
     }
 }

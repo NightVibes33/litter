@@ -301,7 +301,10 @@ elif [ "$MACABI_ONLY" -eq 1 ]; then
 else
   rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-ios-macabi x86_64-apple-ios-macabi
 fi
-rustup target add i686-unknown-linux-musl
+# litter-ish builds a small Linux supervisor into the embedded rootfs. Older
+# releases used i686, current releases use AArch64; keep both targets available
+# so the git-tracked dependency can move without breaking iOS/Catalyst builds.
+rustup target add i686-unknown-linux-musl aarch64-unknown-linux-musl
 
 if [ "$DEVICE_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios ($PROFILE)..."

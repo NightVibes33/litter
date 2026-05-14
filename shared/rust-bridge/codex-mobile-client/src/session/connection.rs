@@ -18,7 +18,6 @@ use codex_app_server_protocol::{
     ClientNotification, ClientRequest, JSONRPCErrorError, RequestId, Result as JsonRpcResult,
     ServerNotification, ServerRequest,
 };
-use codex_ipc::{IpcClient, ReconnectingIpcClient, TypedBroadcast};
 use serde_json::Value as JsonValue;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tracing::{debug, info, warn};
@@ -387,17 +386,14 @@ pub struct ServerConfig {
 
 /// Session-wide bookkeeping passed to `connect_remote_multiplexed`.
 ///
-/// These fields back side-channels (IPC streams, SSH client retained for log
-/// commands and disconnect cleanup) that live on `ServerSession` for the
+/// These fields back side-channels (SSH client retained for log commands and
+/// disconnect cleanup) that live on `ServerSession` for the
 /// lifetime of the session. They are independent of any single runtime's RPC
 /// transport — that's described per-runtime by `RuntimeRemoteSessionResource`.
 #[derive(Default)]
 pub struct RemoteSessionExtras {
     pub ssh_client: Option<Arc<SshClient>>,
     pub ssh_pid: Option<Arc<StdMutex<Option<u32>>>>,
-    pub ipc_stream_client: Option<Arc<ReconnectingIpcClient>>,
-    pub ipc_ssh_client: Option<Arc<SshClient>>,
-    pub ipc_stream_bridge_pid: Option<Arc<StdMutex<Option<u32>>>>,
 }
 
 pub struct RuntimeRemoteSessionResource {
@@ -503,11 +499,8 @@ pub struct ServerSession {
     runtime_command_txs: std::collections::HashMap<AgentRuntimeKind, mpsc::Sender<SessionCommand>>,
     runtime_transports: Vec<Arc<dyn RemoteTransport>>,
     event_tx: broadcast::Sender<ServerEvent>,
-    ipc_stream_client: Option<Arc<ReconnectingIpcClient>>,
     ssh_client: Option<Arc<SshClient>>,
     ssh_pid: Option<Arc<StdMutex<Option<u32>>>>,
-    ipc_ssh_client: Option<Arc<SshClient>>,
-    ipc_stream_bridge_pid: Option<Arc<StdMutex<Option<u32>>>>,
     worker_handle: tokio::task::JoinHandle<()>,
 }
 
@@ -800,11 +793,8 @@ impl ServerSession {
             runtime_command_txs: std::collections::HashMap::new(),
             runtime_transports: Vec::new(),
             event_tx,
-            ipc_stream_client: None,
             ssh_client: None,
             ssh_pid: None,
-            ipc_ssh_client: None,
-            ipc_stream_bridge_pid: None,
             worker_handle,
         })
     }
@@ -902,11 +892,8 @@ impl ServerSession {
             runtime_command_txs,
             runtime_transports,
             event_tx,
-            ipc_stream_client: extras.ipc_stream_client,
             ssh_client: extras.ssh_client,
             ssh_pid: extras.ssh_pid,
-            ipc_ssh_client: extras.ipc_ssh_client,
-            ipc_stream_bridge_pid: extras.ipc_stream_bridge_pid,
             worker_handle,
         })
     }
@@ -1062,36 +1049,6 @@ impl ServerSession {
         self.event_tx.subscribe()
     }
 
-    pub fn has_ipc(&self) -> bool {
-        self.ipc_stream_client
-            .as_ref()
-            .is_some_and(|client| client.is_connected())
-    }
-
-    pub fn ipc_stream_client(&self) -> Option<IpcClient> {
-        self.ipc_stream_client
-            .as_ref()
-            .and_then(|client| client.client())
-    }
-
-    pub fn ipc_broadcasts(&self) -> Option<broadcast::Receiver<TypedBroadcast>> {
-        self.ipc_stream_client
-            .as_ref()
-            .map(|client| client.subscribe_broadcasts())
-    }
-
-    pub fn ipc_connection_state(&self) -> Option<watch::Receiver<bool>> {
-        self.ipc_stream_client
-            .as_ref()
-            .map(|client| client.subscribe_connection_state())
-    }
-
-    pub fn invalidate_ipc(&self) {
-        if let Some(ipc_client) = self.ipc_stream_client.as_ref() {
-            ipc_client.invalidate();
-        }
-    }
-
     /// Respond to a server-initiated request.
     pub async fn respond(&self, id: JsonValue, result: JsonValue) -> Result<(), RpcError> {
         self.respond_for_runtime("codex".to_string(), id, result)
@@ -1159,25 +1116,7 @@ impl ServerSession {
         for tx in self.runtime_command_txs.values() {
             let _ = tx.send(SessionCommand::Shutdown).await;
         }
-        if let Some(ipc_client) = self.ipc_stream_client.as_ref() {
-            ipc_client.shutdown().await;
-        }
-        if let Some(ipc_ssh_client) = self.ipc_ssh_client.as_ref() {
-            ipc_ssh_client.disconnect().await;
-        }
         if let Some(ssh_client) = self.ssh_client.as_ref() {
-            if let Some(ipc_bridge_pid) = self.ipc_stream_bridge_pid.as_ref() {
-                let pid = match ipc_bridge_pid.lock() {
-                    Ok(mut guard) => guard.take(),
-                    Err(error) => {
-                        warn!("ServerSession: recovering poisoned ipc_stream_bridge_pid lock");
-                        error.into_inner().take()
-                    }
-                };
-                if let Some(pid) = pid {
-                    let _ = ssh_client.exec(&format!("kill {pid} 2>/dev/null")).await;
-                }
-            }
             if let Some(pid) = self.ssh_pid.as_ref() {
                 let pid = match pid.lock() {
                     Ok(mut guard) => guard.take(),
@@ -1816,16 +1755,12 @@ fn route_in_process_event(
 
 #[cfg(test)]
 impl ServerSession {
-    pub(crate) fn test_stub(
-        config: ServerConfig,
-        ipc_client: Option<ReconnectingIpcClient>,
-    ) -> Self {
-        Self::test_stub_with_handlers(config, ipc_client, None, None, None)
+    pub(crate) fn test_stub(config: ServerConfig) -> Self {
+        Self::test_stub_with_handlers(config, None, None, None)
     }
 
     pub(crate) fn test_stub_with_handlers(
         config: ServerConfig,
-        ipc_client: Option<ReconnectingIpcClient>,
         request_handler: Option<TestRequestHandler>,
         resolve_handler: Option<TestResolveHandler>,
         reject_handler: Option<TestRejectHandler>,
@@ -1877,8 +1812,6 @@ impl ServerSession {
                 }
             }
         });
-        let shared_ipc_client = ipc_client.map(Arc::new);
-
         Self {
             config,
             health_tx,
@@ -1887,11 +1820,8 @@ impl ServerSession {
             runtime_command_txs: std::collections::HashMap::new(),
             runtime_transports: Vec::new(),
             event_tx,
-            ipc_stream_client: shared_ipc_client,
             ssh_client: None,
             ssh_pid: None,
-            ipc_ssh_client: None,
-            ipc_stream_bridge_pid: None,
             worker_handle,
         }
     }
@@ -1926,11 +1856,8 @@ impl ServerSession {
             runtime_command_txs,
             runtime_transports: Vec::new(),
             event_tx,
-            ipc_stream_client: None,
             ssh_client: None,
             ssh_pid: None,
-            ipc_ssh_client: None,
-            ipc_stream_bridge_pid: None,
             worker_handle,
         }
     }

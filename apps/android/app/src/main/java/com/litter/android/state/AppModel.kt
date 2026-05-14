@@ -138,9 +138,6 @@ class AppModel private constructor(context: android.content.Context) {
         reconnectController.setCredentialProvider(
             KotlinSshCredentialProvider(SshCredentialStore(context))
         )
-        reconnectController.setIpcSocketPathOverride(
-            com.litter.android.ui.ExperimentalFeatures.ipcSocketPathOverride()
-        )
         reconnectController.setMultiClankerAndQuicEnabled(true)
         launchState = AppLaunchState(context)
         reachability = NetworkReachabilityObserver(context, this)

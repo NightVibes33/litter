@@ -1954,7 +1954,7 @@ mod tests {
                 text: serde_json::json!({
                     "findings": [
                         {
-                            "title": "[P1] Fall back to turn/start when IPC queue sync fails",
+                            "title": "[P1] Fall back to turn/start when queue sync fails",
                             "body": "A queued follow-up can get stuck indefinitely.",
                             "confidence_score": 0.97,
                             "priority": 1,
@@ -1981,7 +1981,7 @@ mod tests {
                 assert_eq!(data.findings.len(), 1);
                 assert_eq!(
                     data.findings[0].title,
-                    "Fall back to turn/start when IPC queue sync fails"
+                    "Fall back to turn/start when queue sync fails"
                 );
                 assert_eq!(data.findings[0].priority, Some(1));
                 assert_eq!(data.overall_correctness.as_deref(), Some("incorrect"));

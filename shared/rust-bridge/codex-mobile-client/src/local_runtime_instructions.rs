@@ -97,7 +97,6 @@ mod tests {
         client.app_store.upsert_server(
             &server_config("local", true),
             ServerHealthSnapshot::Connected,
-            false,
         );
 
         let result = splice_local_runtime_developer_instructions(
@@ -117,7 +116,6 @@ mod tests {
         client.app_store.upsert_server(
             &server_config("remote", false),
             ServerHealthSnapshot::Connected,
-            false,
         );
 
         let result = splice_local_runtime_developer_instructions(
@@ -135,7 +133,6 @@ mod tests {
         client.app_store.upsert_server(
             &server_config("local", true),
             ServerHealthSnapshot::Connected,
-            false,
         );
         let existing = IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS.to_string();
 

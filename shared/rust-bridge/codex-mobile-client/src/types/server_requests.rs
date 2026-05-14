@@ -250,7 +250,7 @@ pub struct PendingApproval {
     pub reason: Option<String>,
 }
 
-/// Rust-only raw request seed retained for IPC hydration and approval responses.
+/// Rust-only raw request seed retained for approval responses.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PendingApprovalSeed {
     pub request_id: codex_app_server_protocol::RequestId,

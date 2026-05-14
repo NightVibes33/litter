@@ -11,7 +11,8 @@ struct SettingsView: View {
     @AppStorage(ConversationDisplayPreferenceKey.reasoning) private var reasoningDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
     @AppStorage(ConversationDisplayPreferenceKey.commands) private var commandDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
     @AppStorage(ConversationDisplayPreferenceKey.tools) private var toolDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
-    @State private var showAddServer = false
+    @State private var activeServerSheet: SettingsServerSheet?
+    @State private var serverEditError: String?
 
     @StateObject private var taskBag = ViewTaskBag()
     private var localServer: AppServerSnapshot? {
@@ -24,6 +25,7 @@ struct SettingsView: View {
     private var connectedServers: [HomeDashboardServer] {
         HomeDashboardSupport.sortedConnectedServers(
             from: appModel.snapshot?.servers ?? [],
+            savedServers: SavedServerStore.rememberedServers(),
             activeServerId: appModel.snapshot?.activeThread?.serverId
         )
     }
@@ -57,18 +59,52 @@ struct SettingsView: View {
                         .foregroundColor(LitterTheme.accent)
                 }
             }
-        .sheet(isPresented: $showAddServer) {
-            NavigationStack {
-                DiscoveryView(onServerSelected: { _ in
-                    showAddServer = false
-                })
+            .sheet(item: $activeServerSheet) { sheet in
+                switch sheet {
+                case .add:
+                    NavigationStack {
+                        DiscoveryView(onServerSelected: { _ in
+                            activeServerSheet = nil
+                        })
+                    }
+                    .environment(appModel)
+                    .environment(appState)
+                    .environment(\.textScale, textScale)
+                case .edit(let server):
+                    SettingsServerConnectionEditor(
+                        server: server,
+                        onSave: { configuration in
+                            saveServerConfiguration(configuration, reconnect: false)
+                            activeServerSheet = nil
+                        },
+                        onReconnect: { configuration in
+                            activeServerSheet = nil
+                            saveServerConfiguration(configuration, reconnect: true)
+                        }
+                    )
+                    .environment(\.textScale, textScale)
+                case .sshReconnect(let server):
+                    SSHLoginSheet(server: server) { target in
+                        activeServerSheet = nil
+                        if case .sshThenRemote(let host, let credentials) = target {
+                            Task { await reconnectViaSSH(server: server, host: host, credentials: credentials) }
+                        }
+                    }
+                }
+            }
+            .alert("Server Update Failed", isPresented: Binding(
+                get: { serverEditError != nil },
+                set: { if !$0 { serverEditError = nil } }
+            )) {
+                Button("OK") { serverEditError = nil }
+            } message: {
+                Text(serverEditError ?? "Unable to update this server.")
             }
             .environment(appModel)
             .environment(appState)
             .environment(\.textScale, textScale)
         }
         .onDisappear { taskBag.cancelAll() }
-        }
     }
 
     // MARK: - Appearance Section
@@ -407,32 +443,38 @@ struct SettingsView: View {
             } else {
                 ForEach(connectedServers, id: \.id) { conn in
                     HStack {
-                        Image(systemName: conn.isLocal ? "iphone" : "server.rack")
-                            .foregroundColor(LitterTheme.accent)
-                            .frame(width: 20)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(conn.displayName)
-                                .litterFont(.footnote)
-                                .foregroundColor(LitterTheme.textPrimary)
-                            Text(conn.health.displayLabel)
-                                .litterFont(.caption)
-                                .foregroundColor(conn.health.accentColor)
+                        Button {
+                            activeServerSheet = .edit(conn)
+                        } label: {
+                            HStack {
+                                Image(systemName: conn.isLocal ? "iphone" : "server.rack")
+                                    .foregroundColor(LitterTheme.accent)
+                                    .frame(width: 20)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(conn.displayName)
+                                        .litterFont(.footnote)
+                                        .foregroundColor(LitterTheme.textPrimary)
+                                    Text(conn.health.displayLabel)
+                                        .litterFont(.caption)
+                                        .foregroundColor(conn.health.accentColor)
+                                }
+                                Spacer()
+                            }
                         }
-                        Spacer()
+                        .buttonStyle(.plain)
                         Button("Remove") {
-                            SavedServerStore.remove(serverId: conn.id)
-                            taskBag.run { await SshSessionStore.shared.close(serverId: conn.id, ssh: appModel.ssh) }
-                            appModel.serverBridge.disconnectServer(serverId: conn.id)
+                            removeServer(conn)
                         }
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.danger)
+                        .buttonStyle(.borderless)
                     }
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
                 }
             }
 
             Button {
-                showAddServer = true
+                activeServerSheet = .add
             } label: {
                 HStack {
                     Image(systemName: "plus.circle.fill")
@@ -451,6 +493,580 @@ struct SettingsView: View {
         }
     }
 
+    private func removeServer(_ server: HomeDashboardServer) {
+        SavedServerStore.remove(serverId: server.id)
+        taskBag.run { await SshSessionStore.shared.close(serverId: server.id, ssh: appModel.ssh) }
+        appModel.serverBridge.disconnectServer(serverId: server.id)
+    }
+
+    private func saveServerConfiguration(
+        _ configuration: SettingsServerConnectionConfiguration,
+        reconnect: Bool
+    ) {
+        var saved = SavedServerStore.load()
+        if let index = saved.firstIndex(where: { $0.id == configuration.savedServer.id }) {
+            saved[index] = configuration.savedServer
+        } else {
+            saved.append(configuration.savedServer)
+        }
+        SavedServerStore.save(saved)
+        appModel.reconnectController.setMultiClankerAndQuicEnabled(enabled: true)
+        appModel.reconnectController.syncSavedServers(
+            servers: SavedServerStore.reconnectRecords(
+                localDisplayName: appModel.resolvedLocalServerDisplayName()
+            )
+        )
+        appModel.store.renameServer(
+            serverId: configuration.savedServer.id,
+            displayName: configuration.savedServer.name
+        )
+
+        guard reconnect else { return }
+        reconnectServer(using: configuration)
+    }
+
+    private func reconnectServer(using configuration: SettingsServerConnectionConfiguration) {
+        let server = configuration.discoveredServer
+
+        // For SSH we keep the existing connection alive until the user actually
+        // submits credentials, so a cancelled credential sheet does not leave
+        // them disconnected.
+        if case .ssh = configuration.connectionMode {
+            activeServerSheet = .sshReconnect(server)
+            return
+        }
+
+        Task {
+            await SshSessionStore.shared.close(serverId: server.id, ssh: appModel.ssh)
+            appModel.serverBridge.disconnectServer(serverId: server.id)
+
+            do {
+                switch configuration.connectionMode {
+                case .local:
+                    try await appModel.restartLocalServer()
+                case .directCodex:
+                    guard let port = server.resolvedDirectCodexPort else {
+                        throw SettingsServerConnectionError.missingCodexPort
+                    }
+                    _ = try await appModel.serverBridge.connectRemoteServer(
+                        serverId: server.id,
+                        displayName: server.name,
+                        host: server.hostname,
+                        port: port
+                    )
+                    await appModel.refreshSnapshot()
+                case .websocket:
+                    guard let websocketURL = server.websocketURL else {
+                        throw SettingsServerConnectionError.invalidWebsocketURL
+                    }
+                    _ = try await appModel.serverBridge.connectRemoteUrlServer(
+                        serverId: server.id,
+                        displayName: server.name,
+                        websocketUrl: websocketURL
+                    )
+                    await appModel.refreshSnapshot()
+                case .ssh:
+                    break
+                }
+            } catch {
+                serverEditError = error.localizedDescription
+            }
+        }
+    }
+
+    private func reconnectViaSSH(
+        server: DiscoveredServer,
+        host: String,
+        credentials: SSHCredentials
+    ) async {
+        await SshSessionStore.shared.close(serverId: server.id, ssh: appModel.ssh)
+        appModel.serverBridge.disconnectServer(serverId: server.id)
+
+        do {
+            _ = try await startRemoteOverSSH(
+                serverId: server.id,
+                displayName: server.name,
+                host: host,
+                port: server.resolvedSSHPort,
+                credentials: credentials
+            )
+            await appModel.refreshSnapshot()
+        } catch {
+            serverEditError = error.localizedDescription
+        }
+    }
+
+    private func startRemoteOverSSH(
+        serverId: String,
+        displayName: String,
+        host: String,
+        port: UInt16,
+        credentials: SSHCredentials
+    ) async throws -> String {
+        let ipcSocketPathOverride = ExperimentalFeatures.shared.ipcSocketPathOverride()
+        switch credentials {
+        case .password(let username, let password, let unlockMacosKeychain):
+            return try await appModel.serverBridge.startRemoteOverSshConnect(
+                serverId: serverId,
+                displayName: displayName,
+                host: host,
+                port: port,
+                username: username,
+                password: password,
+                privateKeyPem: nil,
+                passphrase: nil,
+                unlockMacosKeychain: unlockMacosKeychain,
+                acceptUnknownHost: true,
+                workingDir: nil,
+                ipcSocketPathOverride: ipcSocketPathOverride
+            )
+        case .key(let username, let privateKey, let passphrase):
+            return try await appModel.serverBridge.startRemoteOverSshConnect(
+                serverId: serverId,
+                displayName: displayName,
+                host: host,
+                port: port,
+                username: username,
+                password: nil,
+                privateKeyPem: privateKey,
+                passphrase: passphrase,
+                unlockMacosKeychain: false,
+                acceptUnknownHost: true,
+                workingDir: nil,
+                ipcSocketPathOverride: ipcSocketPathOverride
+            )
+        }
+    }
+
+}
+
+private enum SettingsServerSheet: Identifiable {
+    case add
+    case edit(HomeDashboardServer)
+    case sshReconnect(DiscoveredServer)
+
+    var id: String {
+        switch self {
+        case .add:
+            return "add"
+        case .edit(let server):
+            return "edit-\(server.id)"
+        case .sshReconnect(let server):
+            return "ssh-\(server.id)"
+        }
+    }
+}
+
+private enum SettingsServerConnectionMode: String, CaseIterable, Identifiable {
+    case local
+    case ssh
+    case directCodex
+    case websocket
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .local:
+            return "Local"
+        case .ssh:
+            return "SSH"
+        case .directCodex:
+            return "Codex"
+        case .websocket:
+            return "WebSocket"
+        }
+    }
+
+    var formHeader: String {
+        switch self {
+        case .local:
+            return "Local Runtime"
+        case .ssh:
+            return "SSH Host"
+        case .directCodex:
+            return "Codex Server"
+        case .websocket:
+            return "Codex URL"
+        }
+    }
+}
+
+private enum SettingsServerConnectionError: LocalizedError {
+    case emptyName
+    case emptyHost
+    case invalidCodexPort
+    case missingCodexPort
+    case invalidSSHPort
+    case invalidWakeMAC
+    case invalidWebsocketURL
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyName:
+            return "Server name cannot be empty."
+        case .emptyHost:
+            return "Host cannot be empty."
+        case .invalidCodexPort, .missingCodexPort:
+            return "Codex port must be a valid number."
+        case .invalidSSHPort:
+            return "SSH port must be a valid number."
+        case .invalidWakeMAC:
+            return "Wake MAC must look like aa:bb:cc:dd:ee:ff."
+        case .invalidWebsocketURL:
+            return "Enter a valid ws:// or wss:// URL."
+        }
+    }
+}
+
+private struct SettingsServerConnectionConfiguration {
+    let savedServer: SavedServer
+    let discoveredServer: DiscoveredServer
+    let connectionMode: SettingsServerConnectionMode
+}
+
+private struct SettingsServerConnectionEditor: View {
+    let server: HomeDashboardServer
+    let onSave: (SettingsServerConnectionConfiguration) -> Void
+    let onReconnect: (SettingsServerConnectionConfiguration) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var displayName: String
+    @State private var connectionMode: SettingsServerConnectionMode
+    @State private var host: String
+    @State private var codexPort: String
+    @State private var websocketURL: String
+    @State private var sshPort: String
+    @State private var wakeMAC: String
+    @State private var validationError: String?
+
+    private let originalSavedServer: SavedServer?
+
+    @MainActor
+    init(
+        server: HomeDashboardServer,
+        onSave: @escaping (SettingsServerConnectionConfiguration) -> Void,
+        onReconnect: @escaping (SettingsServerConnectionConfiguration) -> Void
+    ) {
+        self.server = server
+        self.onSave = onSave
+        self.onReconnect = onReconnect
+
+        let saved = SavedServerStore.load().first { $0.id == server.id }
+        self.originalSavedServer = saved
+
+        let resolvedMode: SettingsServerConnectionMode
+        if server.isLocal {
+            resolvedMode = .local
+        } else if saved?.websocketURL != nil {
+            resolvedMode = .websocket
+        } else if saved?.preferredConnectionMode == .ssh || saved?.sshPort != nil && saved?.hasCodexServer == false {
+            resolvedMode = .ssh
+        } else {
+            resolvedMode = .directCodex
+        }
+
+        let name = saved?.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedHost = saved?.hostname.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedCodexPort = saved?.preferredCodexPort ?? saved?.port ?? (server.port == 0 ? nil : server.port)
+        let resolvedSSHPort = saved?.sshPort ?? (resolvedMode == .ssh ? server.port : nil) ?? 22
+
+        _displayName = State(initialValue: name?.isEmpty == false ? name! : server.displayName)
+        _connectionMode = State(initialValue: resolvedMode)
+        _host = State(initialValue: resolvedHost?.isEmpty == false ? resolvedHost! : server.host)
+        _codexPort = State(initialValue: resolvedCodexPort.map(String.init) ?? "8390")
+        _websocketURL = State(initialValue: saved?.websocketURL ?? "")
+        _sshPort = State(initialValue: String(resolvedSSHPort))
+        _wakeMAC = State(initialValue: saved?.wakeMAC ?? "")
+    }
+
+    private var availableModes: [SettingsServerConnectionMode] {
+        server.isLocal ? [.local] : [.ssh, .directCodex, .websocket]
+    }
+
+    private var isSpecialPairedServer: Bool {
+        originalSavedServer?.alleycatNodeId != nil || originalSavedServer?.alleycatAgentWire == "ssh-bridge"
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                LitterTheme.backgroundGradient.ignoresSafeArea()
+                Form {
+                    nameSection
+                    connectionSection
+                    actionSection
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .navigationTitle("Edit Server")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(LitterTheme.accent)
+                }
+            }
+            .alert("Invalid Server", isPresented: Binding(
+                get: { validationError != nil },
+                set: { if !$0 { validationError = nil } }
+            )) {
+                Button("OK") { validationError = nil }
+            } message: {
+                Text(validationError ?? "Check the server details.")
+            }
+        }
+    }
+
+    private var nameSection: some View {
+        Section {
+            TextField("Server name", text: $displayName)
+                .litterFont(.footnote)
+                .foregroundColor(LitterTheme.textPrimary)
+        } header: {
+            Text("Name")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
+    }
+
+    private var connectionSection: some View {
+        Section {
+            if isSpecialPairedServer {
+                Text("This paired server uses saved pairing metadata. Edit its display name here, or remove and add it again to change the pairing.")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textSecondary)
+            } else if connectionMode == .local {
+                Text("This device's local runtime is managed automatically.")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textSecondary)
+            } else {
+                Picker("Connection Type", selection: $connectionMode) {
+                    ForEach(availableModes) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                switch connectionMode {
+                case .local:
+                    EmptyView()
+                case .ssh:
+                    hostField
+                    TextField("ssh port", text: $sshPort)
+                        .litterFont(.footnote)
+                        .foregroundColor(LitterTheme.textPrimary)
+                        .keyboardType(.numberPad)
+                    TextField("wake MAC (optional)", text: $wakeMAC)
+                        .litterFont(.footnote)
+                        .foregroundColor(LitterTheme.textPrimary)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                case .directCodex:
+                    hostField
+                    TextField("codex port", text: $codexPort)
+                        .litterFont(.footnote)
+                        .foregroundColor(LitterTheme.textPrimary)
+                        .keyboardType(.numberPad)
+                case .websocket:
+                    TextField("ws://host:port or wss://...", text: $websocketURL)
+                        .litterFont(.footnote)
+                        .foregroundColor(LitterTheme.textPrimary)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                        .keyboardType(.URL)
+                }
+            }
+        } header: {
+            Text(connectionMode.formHeader)
+                .foregroundColor(LitterTheme.textSecondary)
+        } footer: {
+            if !isSpecialPairedServer, connectionMode == .websocket {
+                Text("Prefer SSH when possible. If you run codex manually, bind loopback and tunnel it yourself; do not expose it directly to the internet unless you know what you are doing.")
+                    .litterFont(.caption2)
+                    .foregroundColor(LitterTheme.textMuted)
+            }
+        }
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
+    }
+
+    private var hostField: some View {
+        TextField("hostname or IP", text: $host)
+            .litterFont(.footnote)
+            .foregroundColor(LitterTheme.textPrimary)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
+    }
+
+    private var actionSection: some View {
+        Section {
+            Button("Save") {
+                submit(reconnect: false)
+            }
+            .foregroundColor(LitterTheme.accent)
+            .litterFont(.subheadline)
+
+            if !isSpecialPairedServer {
+                Button(connectionMode == .local ? "Save & Restart" : "Save & Reconnect") {
+                    submit(reconnect: true)
+                }
+                .foregroundColor(LitterTheme.accent)
+                .litterFont(.subheadline)
+            }
+        }
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
+    }
+
+    private func submit(reconnect: Bool) {
+        do {
+            let configuration = try buildConfiguration()
+            if reconnect {
+                onReconnect(configuration)
+            } else {
+                onSave(configuration)
+            }
+        } catch {
+            validationError = error.localizedDescription
+        }
+    }
+
+    private func buildConfiguration() throws -> SettingsServerConnectionConfiguration {
+        let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw SettingsServerConnectionError.emptyName }
+
+        if isSpecialPairedServer, let originalSavedServer {
+            let updated = originalSavedServer.withName(name)
+            return SettingsServerConnectionConfiguration(
+                savedServer: updated,
+                discoveredServer: updated.toDiscoveredServer(),
+                connectionMode: connectionMode
+            )
+        }
+
+        switch connectionMode {
+        case .local:
+            let saved = SavedServer(
+                id: server.id,
+                name: name,
+                hostname: "127.0.0.1",
+                port: 0,
+                codexPorts: [],
+                sshPort: nil,
+                source: .local,
+                hasCodexServer: true,
+                wakeMAC: nil,
+                preferredConnectionMode: nil,
+                preferredCodexPort: nil,
+                sshPortForwardingEnabled: nil,
+                websocketURL: nil,
+                rememberedByUser: true
+            )
+            return SettingsServerConnectionConfiguration(
+                savedServer: saved,
+                discoveredServer: saved.toDiscoveredServer(),
+                connectionMode: .local
+            )
+        case .ssh:
+            let resolvedHost = try validatedHost()
+            let resolvedWakeMAC = try validatedWakeMAC()
+            guard let resolvedSSHPort = UInt16(sshPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                throw SettingsServerConnectionError.invalidSSHPort
+            }
+            let saved = SavedServer(
+                id: server.id,
+                name: name,
+                hostname: resolvedHost,
+                port: nil,
+                codexPorts: [],
+                sshPort: resolvedSSHPort,
+                source: .manual,
+                hasCodexServer: false,
+                wakeMAC: resolvedWakeMAC,
+                preferredConnectionMode: .ssh,
+                preferredCodexPort: nil,
+                sshPortForwardingEnabled: nil,
+                websocketURL: nil,
+                rememberedByUser: true
+            )
+            return SettingsServerConnectionConfiguration(
+                savedServer: saved,
+                discoveredServer: saved.toDiscoveredServer(),
+                connectionMode: .ssh
+            )
+        case .directCodex:
+            let resolvedHost = try validatedHost()
+            guard let resolvedCodexPort = UInt16(codexPort.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+                throw SettingsServerConnectionError.invalidCodexPort
+            }
+            let saved = SavedServer(
+                id: server.id,
+                name: name,
+                hostname: resolvedHost,
+                port: resolvedCodexPort,
+                codexPorts: [resolvedCodexPort],
+                sshPort: nil,
+                source: .manual,
+                hasCodexServer: true,
+                wakeMAC: nil,
+                preferredConnectionMode: .directCodex,
+                preferredCodexPort: resolvedCodexPort,
+                sshPortForwardingEnabled: nil,
+                websocketURL: nil,
+                rememberedByUser: true
+            )
+            return SettingsServerConnectionConfiguration(
+                savedServer: saved,
+                discoveredServer: saved.toDiscoveredServer(),
+                connectionMode: .directCodex
+            )
+        case .websocket:
+            let rawURL = websocketURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: rawURL),
+                  let scheme = url.scheme?.lowercased(),
+                  (scheme == "ws" || scheme == "wss"),
+                  let resolvedHost = url.host,
+                  !resolvedHost.isEmpty else {
+                throw SettingsServerConnectionError.invalidWebsocketURL
+            }
+            let resolvedPort = url.port.flatMap { UInt16(exactly: $0) }
+            let saved = SavedServer(
+                id: server.id,
+                name: name,
+                hostname: resolvedHost,
+                port: resolvedPort,
+                codexPorts: resolvedPort.map { [$0] } ?? [],
+                sshPort: nil,
+                source: .manual,
+                hasCodexServer: true,
+                wakeMAC: nil,
+                preferredConnectionMode: .directCodex,
+                preferredCodexPort: resolvedPort,
+                sshPortForwardingEnabled: nil,
+                websocketURL: rawURL,
+                rememberedByUser: true
+            )
+            return SettingsServerConnectionConfiguration(
+                savedServer: saved,
+                discoveredServer: saved.toDiscoveredServer(),
+                connectionMode: .websocket
+            )
+        }
+    }
+
+    private func validatedHost() throws -> String {
+        let resolvedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !resolvedHost.isEmpty else { throw SettingsServerConnectionError.emptyHost }
+        return resolvedHost
+    }
+
+    private func validatedWakeMAC() throws -> String? {
+        let wakeInput = wakeMAC.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wakeInput.isEmpty else { return nil }
+        guard let normalized = DiscoveredServer.normalizeWakeMAC(wakeInput) else {
+            throw SettingsServerConnectionError.invalidWakeMAC
+        }
+        return normalized
+    }
 }
 
 private struct SettingsConnectionAccountSection: View {

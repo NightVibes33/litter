@@ -2,7 +2,6 @@ package com.litter.android.state
 
 import androidx.compose.ui.graphics.Color
 import uniffi.codex_mobile_client.AppServerHealth
-import uniffi.codex_mobile_client.AppServerIpcState
 import uniffi.codex_mobile_client.AppServerSnapshot
 import uniffi.codex_mobile_client.AppServerTransportState
 import uniffi.codex_mobile_client.AppSessionSummary
@@ -59,23 +58,15 @@ val AppServerTransportState.accentColor: Color
 val AppServerSnapshot.isConnected: Boolean
     get() = transportState == AppServerTransportState.CONNECTED
 
-val AppServerSnapshot.isIpcConnected: Boolean
-    get() = ipcState == AppServerIpcState.READY
-
 val AppServerSnapshot.canUseTransportActions: Boolean
     get() = capabilities.canUseTransportActions
 
 val AppServerSnapshot.canBrowseDirectories: Boolean
     get() = capabilities.canBrowseDirectories
 
-val AppServerSnapshot.canResumeViaIpc: Boolean
-    get() = capabilities.canResumeViaIpc
-
 val AppServerSnapshot.connectionModeLabel: String
     get() = when {
         isLocal -> "local"
-        ipcState == AppServerIpcState.READY -> "remote · ipc"
-        ipcState == AppServerIpcState.DISCONNECTED -> "remote · no ipc"
         else -> "remote"
     }
 
@@ -106,7 +97,6 @@ val AppServerSnapshot.statusLabel: String
     get() = when {
         connectionProgressLabel != null -> connectionProgressLabel!!
         transportState == AppServerTransportState.CONNECTED && !isLocal && account == null -> "Sign in required"
-        transportState == AppServerTransportState.CONNECTED && ipcState == AppServerIpcState.DISCONNECTED -> "Connected, IPC unavailable"
         else -> transportState.displayLabel
     }
 
@@ -116,16 +106,6 @@ val AppServerSnapshot.statusColor: Color
         currentConnectionStep?.state == AppConnectionStepState.AWAITING_USER_INPUT -> WarningOrange
         connectionProgressLabel != null -> AccentGreen
         transportState == AppServerTransportState.CONNECTED && !isLocal && account == null -> WarningOrange
-        // Only surface IPC-disconnected as "warning orange" when the
-        // experimental IPC feature is enabled — mirrors iOS
-        // `AppServerSnapshot+UI.swift` + the same gate in
-        // `statusDotState` above. Without this, the conversation header
-        // dot stays orange on every remote server that doesn't speak IPC.
-        transportState == AppServerTransportState.CONNECTED &&
-            ipcState == AppServerIpcState.DISCONNECTED &&
-            com.litter.android.ui.ExperimentalFeatures.isEnabled(
-                com.litter.android.ui.LitterFeature.IPC,
-            ) -> WarningOrange
         else -> transportState.accentColor
     }
 
@@ -142,17 +122,6 @@ val AppServerSnapshot.statusDotState: com.litter.android.ui.common.StatusDotStat
         connectionProgressLabel != null ->
             com.litter.android.ui.common.StatusDotState.PENDING
         transportState == AppServerTransportState.CONNECTED && !isLocal && account == null ->
-            com.litter.android.ui.common.StatusDotState.PENDING
-        // Only treat IPC-disconnected as pending when the experimental IPC
-        // feature is actually enabled — mirrors iOS `AppServerSnapshot+UI.swift`
-        // gate on `ExperimentalFeatures.shared.isEnabled(.ipc)`. Without this,
-        // remote servers (which don't speak IPC) would blink orange even after
-        // they've fully connected.
-        transportState == AppServerTransportState.CONNECTED &&
-            ipcState == AppServerIpcState.DISCONNECTED &&
-            com.litter.android.ui.ExperimentalFeatures.isEnabled(
-                com.litter.android.ui.LitterFeature.IPC,
-            ) ->
             com.litter.android.ui.common.StatusDotState.PENDING
         transportState == AppServerTransportState.CONNECTED ->
             com.litter.android.ui.common.StatusDotState.OK

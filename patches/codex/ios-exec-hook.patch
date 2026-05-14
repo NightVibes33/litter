@@ -1,11 +1,13 @@
 diff --git a/codex-rs/core/src/exec.rs b/codex-rs/core/src/exec.rs
-index fd5cd7bcdc..4d8c5a1aef 100644
+index fd5cd7bcdc..a7cd3491fd 100644
 --- a/codex-rs/core/src/exec.rs
 +++ b/codex-rs/core/src/exec.rs
-@@ -48,6 +48,59 @@ use codex_utils_absolute_path::AbsolutePathBuf;
+@@ -48,6 +48,90 @@ use codex_utils_absolute_path::AbsolutePathBuf;
  use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
  use codex_utils_pty::process_group::kill_child_process_group;
  
++#[cfg(target_os = "ios")]
++use std::sync::Arc;
 +#[cfg(any(target_os = "ios", target_os = "android"))]
 +use std::sync::OnceLock;
 +
@@ -15,12 +17,41 @@ index fd5cd7bcdc..4d8c5a1aef 100644
 +    fn(&[String], &Path, &HashMap<String, String>, Option<u64>) -> (i32, Vec<u8>),
 +> = OnceLock::new();
 +
++#[cfg(target_os = "ios")]
++pub type IosExecOutputHandler = Arc<dyn Fn(Vec<u8>) + Send + Sync + 'static>;
++
++#[cfg(target_os = "ios")]
++pub(crate) static IOS_STREAMING_EXEC_HOOK: OnceLock<
++    fn(
++        &[String],
++        &Path,
++        &HashMap<String, String>,
++        Option<u64>,
++        IosExecOutputHandler,
++    ) -> (i32, Vec<u8>),
++> = OnceLock::new();
++
 +/// Register the iOS exec hook before starting the server.
 +#[cfg(target_os = "ios")]
 +pub fn set_ios_exec_hook(
 +    f: fn(&[String], &Path, &HashMap<String, String>, Option<u64>) -> (i32, Vec<u8>),
 +) {
 +    let _ = IOS_EXEC_HOOK.set(f);
++}
++
++/// Register an iOS exec hook that can stream stdout/stderr chunks before the
++/// command completes. Falls back to `set_ios_exec_hook` when unset.
++#[cfg(target_os = "ios")]
++pub fn set_ios_streaming_exec_hook(
++    f: fn(
++        &[String],
++        &Path,
++        &HashMap<String, String>,
++        Option<u64>,
++        IosExecOutputHandler,
++    ) -> (i32, Vec<u8>),
++) {
++    let _ = IOS_STREAMING_EXEC_HOOK.set(f);
 +}
 +
 +/// Resolve a CLI tool name (e.g. "git") to an absolute path on Android.
@@ -62,7 +93,7 @@ index fd5cd7bcdc..4d8c5a1aef 100644
  pub const DEFAULT_EXEC_COMMAND_TIMEOUT_MS: u64 = 10_000;
  
  // Hardcode these since it does not seem worth including the libc crate just
-@@ -912,6 +965,7 @@ fn aggregate_output(
+@@ -912,6 +996,7 @@ fn aggregate_output(
  /// Note this command does not apply any sandboxing logic. The caller is
  /// responsible for constructing [ExecParams::command] to include any sandboxing
  /// wrapper args, as appropriate.
@@ -70,7 +101,7 @@ index fd5cd7bcdc..4d8c5a1aef 100644
  async fn exec(
      params: ExecParams,
      network_sandbox_policy: NetworkSandboxPolicy,
-@@ -938,6 +992,55 @@ async fn exec(
+@@ -938,6 +1023,55 @@ async fn exec(
      if let Some(network) = network.as_ref() {
          network.apply_to_env(&mut env);
      }
@@ -127,10 +158,19 @@ index fd5cd7bcdc..4d8c5a1aef 100644
      let (program, args) = command.split_first().ok_or_else(|| {
          CodexErr::Io(io::Error::new(
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
-index 4f85b1ddf7..5cbd1943e5 100644
+index 4f85b1ddf7..5bf42ba58c 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
 +++ b/codex-rs/core/src/unified_exec/process_manager.rs
-@@ -372,6 +372,12 @@ impl UnifiedExecProcessManager {
+@@ -41,6 +41,8 @@ use crate::unified_exec::WARNING_UNIFIED_EXEC_PROCESSES;
+ use crate::unified_exec::WriteStdinRequest;
+ use crate::unified_exec::async_watcher::emit_exec_end_for_unified_exec;
+ use crate::unified_exec::async_watcher::emit_failed_exec_end_for_unified_exec;
++#[cfg(target_os = "ios")]
++use crate::unified_exec::async_watcher::process_chunk;
+ use crate::unified_exec::async_watcher::spawn_exit_watcher;
+ use crate::unified_exec::async_watcher::start_streaming_output;
+ use crate::unified_exec::clamp_yield_time;
+@@ -372,6 +374,12 @@ impl UnifiedExecProcessManager {
          context: &UnifiedExecContext,
      ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
          let cwd = request.cwd.clone();
@@ -143,7 +183,7 @@ index 4f85b1ddf7..5cbd1943e5 100644
          let process = self
              .open_session_with_sandbox(&request, cwd.clone(), context)
              .await;
-@@ -591,6 +597,84 @@ impl UnifiedExecProcessManager {
+@@ -591,6 +599,128 @@ impl UnifiedExecProcessManager {
          Ok(response)
      }
  
@@ -155,6 +195,8 @@ index 4f85b1ddf7..5cbd1943e5 100644
 +        context: &UnifiedExecContext,
 +    ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
 +        use crate::exec::IOS_EXEC_HOOK;
++        use crate::exec::IOS_STREAMING_EXEC_HOOK;
++        use crate::exec::IosExecOutputHandler;
 +        use crate::exec::MOBILE_EXEC_PREFLIGHT;
 +
 +        let event_ctx = ToolEventCtx::new(
@@ -176,25 +218,67 @@ index 4f85b1ddf7..5cbd1943e5 100644
 +            Some(context.session.conversation_id),
 +        );
 +        let start = Instant::now();
-+        let (exit_code, raw_output) = tokio::task::spawn_blocking({
++        let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
++        let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
++        let output_handler: IosExecOutputHandler = Arc::new(move |chunk| {
++            let _ = chunk_tx.send(chunk);
++        });
++        let mut join = tokio::task::spawn_blocking({
 +            let mut command = request.command.clone();
 +            let cwd = cwd.clone();
++            let output_handler = Arc::clone(&output_handler);
 +            move || {
 +                if let Some(preflight) = MOBILE_EXEC_PREFLIGHT.get() {
 +                    preflight(&mut command);
 +                }
-+                IOS_EXEC_HOOK
-+                    .get()
-+                    .map(|f| f(&command, &cwd, &env, None))
-+                    .unwrap_or((-1, b"no iOS exec hook registered\n".to_vec()))
++                if let Some(streaming_hook) = IOS_STREAMING_EXEC_HOOK.get() {
++                    streaming_hook(&command, &cwd, &env, None, output_handler)
++                } else {
++                    IOS_EXEC_HOOK
++                        .get()
++                        .map(|f| f(&command, &cwd, &env, None))
++                        .unwrap_or((-1, b"no iOS exec hook registered\n".to_vec()))
++                }
 +            }
-+        })
-+        .await
-+        .unwrap_or((-1, b"spawn_blocking panicked\n".to_vec()));
++        });
++
++        let mut pending = Vec::<u8>::new();
++        let mut emitted_deltas: usize = 0;
++        let (exit_code, raw_output) = loop {
++            tokio::select! {
++                maybe_chunk = chunk_rx.recv() => {
++                    if let Some(chunk) = maybe_chunk {
++                        process_chunk(
++                            &mut pending,
++                            &transcript,
++                            &context.call_id,
++                            &context.session,
++                            &context.turn,
++                            &mut emitted_deltas,
++                            chunk,
++                        ).await;
++                    }
++                }
++                result = &mut join => {
++                    break result.unwrap_or((-1, b"spawn_blocking panicked\n".to_vec()));
++                }
++            }
++        };
++        while let Ok(chunk) = chunk_rx.try_recv() {
++            process_chunk(
++                &mut pending,
++                &transcript,
++                &context.call_id,
++                &context.session,
++                &context.turn,
++                &mut emitted_deltas,
++                chunk,
++            )
++            .await;
++        }
 +        let wall_time = Instant::now().saturating_duration_since(start);
 +
 +        let text = String::from_utf8_lossy(&raw_output).to_string();
-+        let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
 +        emit_exec_end_for_unified_exec(
 +            Arc::clone(&context.session),
 +            Arc::clone(&context.turn),

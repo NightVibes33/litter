@@ -67,7 +67,6 @@ pub struct ReconnectController {
     rt: Arc<Runtime>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
     credential_provider: Arc<tokio::sync::Mutex<Option<Arc<dyn SshCredentialProvider>>>>,
-    ipc_socket_path_override: Arc<std::sync::Mutex<Option<String>>>,
     multi_clanker_and_quic_enabled: Arc<std::sync::Mutex<bool>>,
     reconnect_guard: Arc<tokio::sync::Mutex<()>>,
 }
@@ -81,7 +80,6 @@ impl ReconnectController {
             rt: shared_runtime(),
             saved_servers: Arc::new(RwLock::new(Vec::new())),
             credential_provider: Arc::new(tokio::sync::Mutex::new(None)),
-            ipc_socket_path_override: Arc::new(std::sync::Mutex::new(None)),
             multi_clanker_and_quic_enabled: Arc::new(std::sync::Mutex::new(false)),
             reconnect_guard: Arc::new(tokio::sync::Mutex::new(())),
         }
@@ -104,13 +102,6 @@ impl ReconnectController {
         }
     }
 
-    pub fn set_ipc_socket_path_override(&self, path: Option<String>) {
-        match self.ipc_socket_path_override.lock() {
-            Ok(mut guard) => *guard = path,
-            Err(e) => *e.into_inner() = path,
-        }
-    }
-
     pub fn set_multi_clanker_and_quic_enabled(&self, enabled: bool) {
         match self.multi_clanker_and_quic_enabled.lock() {
             Ok(mut guard) => *guard = enabled,
@@ -129,7 +120,6 @@ impl ReconnectController {
         let inner = Arc::clone(&self.inner);
         let saved_servers = Arc::clone(&self.saved_servers);
         let credential_provider = Arc::clone(&self.credential_provider);
-        let ipc_socket_path_override = Arc::clone(&self.ipc_socket_path_override);
         let multi_clanker_and_quic_enabled = match self.multi_clanker_and_quic_enabled.lock() {
             Ok(guard) => *guard,
             Err(e) => *e.into_inner(),
@@ -145,7 +135,6 @@ impl ReconnectController {
                     inner,
                     saved_servers,
                     credential_provider,
-                    ipc_socket_path_override,
                     multi_clanker_and_quic_enabled,
                     reconnect_guard,
                 )
@@ -162,7 +151,6 @@ impl ReconnectController {
         let inner = Arc::clone(&self.inner);
         let saved_servers = Arc::clone(&self.saved_servers);
         let credential_provider = Arc::clone(&self.credential_provider);
-        let ipc_socket_path_override = Arc::clone(&self.ipc_socket_path_override);
         let multi_clanker_and_quic_enabled = match self.multi_clanker_and_quic_enabled.lock() {
             Ok(guard) => *guard,
             Err(e) => *e.into_inner(),
@@ -177,7 +165,6 @@ impl ReconnectController {
                     Arc::clone(&inner),
                     saved_servers,
                     credential_provider,
-                    ipc_socket_path_override,
                     multi_clanker_and_quic_enabled,
                     server_id,
                 )
@@ -328,7 +315,6 @@ async fn reconnect_saved_servers_inner(
     inner: Arc<MobileClient>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
     credential_provider: Arc<tokio::sync::Mutex<Option<Arc<dyn SshCredentialProvider>>>>,
-    ipc_socket_path_override: Arc<std::sync::Mutex<Option<String>>>,
     multi_clanker_and_quic_enabled: bool,
     reconnect_guard: Arc<tokio::sync::Mutex<()>>,
 ) -> Vec<ReconnectResult> {
@@ -389,11 +375,6 @@ async fn reconnect_saved_servers_inner(
         }
     }
 
-    let ipc_override = match ipc_socket_path_override.lock() {
-        Ok(g) => g.clone(),
-        Err(e) => e.into_inner().clone(),
-    };
-
     let credential_provider = credential_provider.lock().await;
 
     let mut plans = Vec::new();
@@ -420,8 +401,7 @@ async fn reconnect_saved_servers_inner(
     let mut join_set = JoinSet::new();
     for plan in plans {
         let client = Arc::clone(&inner);
-        let ipc = ipc_override.clone();
-        join_set.spawn(async move { execute_reconnect_plan(&plan, &client, ipc).await });
+        join_set.spawn(async move { execute_reconnect_plan(&plan, &client).await });
     }
 
     let mut results = Vec::new();
@@ -443,7 +423,6 @@ async fn reconnect_server_inner(
     inner: Arc<MobileClient>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
     credential_provider: Arc<tokio::sync::Mutex<Option<Arc<dyn SshCredentialProvider>>>>,
-    ipc_socket_path_override: Arc<std::sync::Mutex<Option<String>>>,
     multi_clanker_and_quic_enabled: bool,
     server_id: String,
 ) -> ReconnectResult {
@@ -512,11 +491,7 @@ async fn reconnect_server_inner(
             false,
             multi_clanker_and_quic_enabled,
         ) {
-            let ipc_override = match ipc_socket_path_override.lock() {
-                Ok(g) => g.clone(),
-                Err(e) => e.into_inner().clone(),
-            };
-            return execute_reconnect_plan(&plan, &inner, ipc_override).await;
+            return execute_reconnect_plan(&plan, &inner).await;
         }
     }
 
@@ -585,12 +560,11 @@ mod tests {
             port: 0,
             wake_mac: None,
             is_local: false,
-            supports_ipc: false,
-            has_ipc: false,
             health,
             account: None,
             requires_openai_auth: false,
             rate_limits: None,
+            rate_limits_by_runtime: std::collections::HashMap::new(),
             available_models: None,
             agent_runtimes: Vec::new(),
             connection_progress: None,
@@ -628,12 +602,11 @@ mod tests {
                 port: 0,
                 wake_mac: None,
                 is_local: true,
-                supports_ipc: false,
-                has_ipc: false,
                 health: ServerHealthSnapshot::Disconnected,
                 account: None,
                 requires_openai_auth: false,
                 rate_limits: None,
+                rate_limits_by_runtime: std::collections::HashMap::new(),
                 available_models: None,
                 agent_runtimes: Vec::new(),
                 connection_progress: None,
@@ -693,12 +666,11 @@ mod tests {
                 port: 0,
                 wake_mac: None,
                 is_local: true,
-                supports_ipc: false,
-                has_ipc: false,
                 health: ServerHealthSnapshot::Disconnected,
                 account: None,
                 requires_openai_auth: false,
                 rate_limits: None,
+                rate_limits_by_runtime: std::collections::HashMap::new(),
                 available_models: None,
                 agent_runtimes: Vec::new(),
                 connection_progress: None,

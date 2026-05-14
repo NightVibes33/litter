@@ -170,7 +170,7 @@ STAMP_LLAMA_IOS := $(STAMPS)/llama-ios-turboquant-main
 # Pinned release tag of the prebuilt Alpine rootfs tarball (still hosted
 # on the dnakov/litter-ish releases page). The iSH kernel itself is built
 # from the `ish` Rust crate. Bump and re-run `make alpine-fs` to upgrade.
-ALPINE_FS_VERSION := v0.1.0
+ALPINE_FS_VERSION := v0.1.1
 STAMP_ALPINE_FS := $(STAMPS)/alpine-fs-$(ALPINE_FS_VERSION)
 
 empty :=
