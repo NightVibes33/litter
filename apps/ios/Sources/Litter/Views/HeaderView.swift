@@ -1086,6 +1086,21 @@ struct ModelSelectorSheet: View {
     }
 }
 
+private struct RuntimeModelBucket: Identifiable {
+    let kind: AgentRuntimeKind
+    let count: Int
+
+    var id: AgentRuntimeKind { kind }
+}
+
+private func runtimeModelBuckets(for models: [ModelInfo]) -> [RuntimeModelBucket] {
+    let grouped = Dictionary(grouping: models, by: \.agentRuntimeKind)
+    return AgentRuntimeKind.presentationOrder.compactMap { kind in
+        guard let models = grouped[kind], !models.isEmpty else { return nil }
+        return RuntimeModelBucket(kind: kind, count: models.count)
+    }
+}
+
 struct RuntimeFilterRow: View {
     let buckets: [RuntimeModelBucket]
     let totalCount: Int
