@@ -1101,7 +1101,7 @@ private func runtimeModelBuckets(for models: [ModelInfo]) -> [RuntimeModelBucket
     }
 }
 
-struct RuntimeFilterRow: View {
+private struct RuntimeFilterRow: View {
     let buckets: [RuntimeModelBucket]
     let totalCount: Int
     let selectedRuntime: AgentRuntimeKind?
