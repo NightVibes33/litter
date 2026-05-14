@@ -60,6 +60,6 @@ fi
 
 rm -rf "$DEST"
 mkdir -p "$(dirname "$DEST")"
-cp -R "$ASSET_DIR" "$DEST"
+cp -R -L "$ASSET_DIR" "$DEST"
 "$ROOT_DIR/tools/scripts/verify-nyxian-buildkit-assets.sh" "$DEST"
 echo "==> Private BuildKit assets prepared at $DEST"
