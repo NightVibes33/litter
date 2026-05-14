@@ -92,6 +92,18 @@ normalize_buildkit_payload_symlinks() {
   rm -rf "$normalized_dir"
 }
 
+prune_sdk_compiler_dylibs() {
+  echo "==> Pruning SDK compiler dylibs from BuildKit assets"
+  find "$OUT_DIR/SDK" -type f \( \
+    -name 'lib_Compiler*.dylib' -o \
+    -name 'libLLVM*.dylib' -o \
+    -name 'libllvm*.dylib' \
+  \) -print | sort -u | while IFS= read -r library; do
+    echo "removed: ${library#$OUT_DIR/}"
+    rm -f "$library"
+  done
+}
+
 is_macho_binary() {
   local path="$1"
   [[ -f "$path" && ! -L "$path" ]] || return 1
@@ -135,6 +147,7 @@ sign_buildkit_payload() {
 }
 
 normalize_buildkit_payload_symlinks
+prune_sdk_compiler_dylibs
 sign_buildkit_payload
 
 python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" <<'PY'

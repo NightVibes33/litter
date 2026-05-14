@@ -159,12 +159,15 @@ print((manifest.get("toolchain") or {}).get("sdkPath") or "")
 PYSDK
 )"
   if [[ -d "$SDK_ROOT" ]]; then
-    find "$SDK_ROOT" -type f \( \
+    sdk_compiler_dylibs="$(find "$SDK_ROOT" -type f \( \
       -name 'lib_Compiler*.dylib' -o \
       -name 'libLLVM*.dylib' -o \
       -name 'libllvm*.dylib' \
-    \) -print | while IFS= read -r library; do
-      verify_code_signature "$library"
-    done
+    \) -print)"
+    if [[ -n "$sdk_compiler_dylibs" ]]; then
+      echo "error: SDK payload contains compiler dylibs that do not keep portable code signatures in the asset ZIP" >&2
+      printf '%s\n' "$sdk_compiler_dylibs" | sed -n '1,200p' >&2
+      exit 1
+    fi
   fi
 fi
