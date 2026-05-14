@@ -76,6 +76,22 @@ if [[ -n "$NYXIAN_RUNNER" ]]; then
   RUNNER_REL="Toolchains/Nyxian/bin/litter-buildkit-runner"
 fi
 
+normalize_buildkit_payload_symlinks() {
+  echo "==> Normalizing BuildKit asset symlinks"
+  local normalized_dir
+  normalized_dir="$(mktemp -d)"
+  cp -R -L "$OUT_DIR" "$normalized_dir/$(basename "$OUT_DIR")"
+  if find "$normalized_dir/$(basename "$OUT_DIR")" -type l -print -quit | grep -q .; then
+    echo "error: normalized BuildKit asset output still contains symlinks" >&2
+    find "$normalized_dir/$(basename "$OUT_DIR")" -type l -print | sed -n '1,200p' >&2
+    rm -rf "$normalized_dir"
+    exit 1
+  fi
+  rm -rf "$OUT_DIR"
+  mv "$normalized_dir/$(basename "$OUT_DIR")" "$OUT_DIR"
+  rm -rf "$normalized_dir"
+}
+
 is_macho_binary() {
   local path="$1"
   [[ -f "$path" && ! -L "$path" ]] || return 1
@@ -121,6 +137,7 @@ sign_buildkit_payload() {
   done
 }
 
+normalize_buildkit_payload_symlinks
 sign_buildkit_payload
 
 python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" <<'PY'
@@ -174,15 +191,12 @@ PY
 
 rm -f "$ZIP_PATH"
 (
-  NORMALIZED_DIR="$(mktemp -d)"
-  trap 'rm -rf "$NORMALIZED_DIR"' EXIT
-  cp -R -L "$OUT_DIR" "$NORMALIZED_DIR/$(basename "$OUT_DIR")"
-  if find "$NORMALIZED_DIR/$(basename "$OUT_DIR")" -type l -print -quit | grep -q .; then
-    echo "error: normalized BuildKit asset output still contains symlinks" >&2
-    find "$NORMALIZED_DIR/$(basename "$OUT_DIR")" -type l -print | sed -n '1,200p' >&2
+  if find "$OUT_DIR" -type l -print -quit | grep -q .; then
+    echo "error: BuildKit asset output still contains symlinks" >&2
+    find "$OUT_DIR" -type l -print | sed -n '1,200p' >&2
     exit 1
   fi
-  cd "$NORMALIZED_DIR"
+  cd "$(dirname "$OUT_DIR")"
   /usr/bin/zip -qry "$ZIP_PATH" "$(basename "$OUT_DIR")"
 )
 
