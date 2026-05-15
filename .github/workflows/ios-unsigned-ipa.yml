@@ -34,7 +34,7 @@ on:
       - '.github/workflows/ios-unsigned-ipa.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ios-unsigned-ipa-${{ github.ref }}
@@ -746,3 +746,42 @@ jobs:
           name: Litter-Unsigned-iOS26-SideStore-AltStore
           path: build/unsigned-ipa
           if-no-files-found: error
+
+      - name: Publish unsigned IPA release asset
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: unsigned-ipa-${{ github.run_id }}-${{ github.run_attempt }}
+          BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
+        run: |
+          set -euo pipefail
+          IPA_PATH="build/unsigned-ipa/Litter-iOS26-Unsigned-SideStore-AltStore.ipa"
+          METADATA_PATH="build/unsigned-ipa/build-metadata.json"
+          NOTES_PATH="build/unsigned-ipa/release-notes.md"
+
+          if [ ! -s "$IPA_PATH" ]; then
+            echo "::error::Missing unsigned IPA at $IPA_PATH" >&2
+            exit 1
+          fi
+
+          cat > "$NOTES_PATH" <<EOF
+          Unsigned Litter IPA for SideStore/AltStore re-signing.
+
+          - Commit: ${GITHUB_SHA}
+          - Branch: ${GITHUB_REF_NAME}
+          - Build mode: ${BUILD_MODE}
+          - Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          This IPA is unsigned and must be signed by SideStore, AltStore, or another signing tool before installation.
+          EOF
+
+          gh release create "$RELEASE_TAG" \
+            "$IPA_PATH" \
+            "$METADATA_PATH" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Litter unsigned iOS IPA ${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}" \
+            --notes-file "$NOTES_PATH" \
+            --prerelease
+
+          echo "Release download page: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
