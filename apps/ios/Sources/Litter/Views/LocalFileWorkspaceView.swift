@@ -17,8 +17,11 @@ struct LocalFileWorkspaceView: View {
     @State private var showDeleteSelection = false
     @State private var alertMessage: String?
     @State private var previewTarget: LocalFileEntry?
+    @State private var inspectorTarget: LocalFileEntry?
     @State private var sharePayload: LocalFileSharePayload?
     @State private var commandOutput: LocalCommandOutput?
+    @State private var selectedTab: LocalWorkspaceTab = .files
+    @State private var terminalRequestedPath = HomeAnchor.path
 
     @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
@@ -29,6 +32,16 @@ struct LocalFileWorkspaceView: View {
         alertLayer
             .sheet(item: $previewTarget) { file in
                 previewSheet(for: file)
+            }
+            .sheet(item: $inspectorTarget) { file in
+                LocalFileInspectorSheet(
+                    file: file,
+                    onPreview: { previewTarget = file },
+                    onEdit: { model.openFile = file },
+                    onCopyPath: { copyPath(file.path) },
+                    onCopyBotMention: { copyBotMention(file) },
+                    onOpenTerminal: { openTerminal(at: terminalPath(for: file)) }
+                )
             }
             .sheet(item: $model.openFile) { file in
                 LocalTextFileEditorView(file: file) { saved in
@@ -121,9 +134,9 @@ struct LocalFileWorkspaceView: View {
 
     private var chromeLayer: some View {
         rootLayer
-            .navigationTitle(model.isSelecting ? "\(model.selectedPaths.count) Selected" : "Files")
+            .navigationTitle(model.isSelecting ? "\(model.selectedPaths.count) Selected" : selectedTab.title)
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search Files")
+            .searchable(text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: selectedTab == .files ? "Search Files" : "Search command history")
             .toolbar { toolbarContent }
             .task { await model.loadInitial() }
             .onChange(of: model.showHidden) { _, _ in taskBag.run { await model.reload() } }
@@ -135,10 +148,23 @@ struct LocalFileWorkspaceView: View {
             LitterTheme.backgroundGradient.ignoresSafeArea()
             VStack(spacing: 0) {
                 pathBar
+                workspaceTabs
                 Divider().overlay(LitterTheme.surfaceLight.opacity(0.4))
                 content
             }
         }
+    }
+
+
+    private var workspaceTabs: some View {
+        Picker("Workspace", selection: $selectedTab) {
+            ForEach(LocalWorkspaceTab.allCases) { tab in
+                Label(tab.title, systemImage: tab.systemImage).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 10)
     }
 
     private func previewSheet(for file: LocalFileEntry) -> some View {
@@ -200,18 +226,33 @@ struct LocalFileWorkspaceView: View {
                             Label(sort.title, systemImage: sort.systemImage).tag(sort)
                         }
                     }
+                    Picker("Filter", selection: $model.activeFilter) {
+                        ForEach(LocalFileFilter.allCases) { filter in
+                            Label(filter.title, systemImage: filter.systemImage).tag(filter)
+                        }
+                    }
                     Toggle("Show Hidden Files", isOn: $model.showHidden)
+                    Toggle("Advanced Locations", isOn: $model.showAdvancedLocations)
                     if !model.trimmedSearchQuery.isEmpty {
                         Button("Search Recursively", systemImage: "magnifyingglass.circle") { taskBag.run { await runRecursiveSearch() } }
                     }
+                    Button("Find Large Files", systemImage: "internaldrive") { taskBag.run { await runLargeFileSearch() } }
+                    Button("Folder Tree", systemImage: "list.bullet.indent") { taskBag.run { await runTreeSnapshot() } }
+                    Button("Git Status Here", systemImage: "point.3.connected.trianglepath.dotted") { taskBag.run { await runGitStatus() } }
                     if model.hasLitterBuildManifest {
                         Divider()
                         Button("Swift Build", systemImage: "hammer") { taskBag.run { await runSwiftBuild() } }
                         Button("Build IPA", systemImage: "shippingbox") { taskBag.run { await runIPABuild() } }
                     }
                     Divider()
+                    Button("Build Status", systemImage: "chart.bar.doc.horizontal") { taskBag.run { await runBuildStatus() } }
+                    Button("Filesystem Doctor", systemImage: "stethoscope") { taskBag.run { await runFilesystemDoctor() } }
+                    Button("Create LitterBuild.json", systemImage: "doc.badge.gearshape") { taskBag.run { await createLitterBuildManifest() } }
+                    Divider()
                     Button("Select", systemImage: "checkmark.circle") { model.isSelecting = true }
                     Button("Copy Folder Path", systemImage: "doc.on.doc") { copyPath(model.currentPath) }
+                    Button("Copy Folder for Bot", systemImage: "bubble.left.and.text.bubble.right") { copyBotPath(model.currentPath) }
+                    Button("Open Terminal Here", systemImage: "terminal") { openTerminal(at: model.currentPath) }
                     Button("Home", systemImage: "house") { taskBag.run { await model.navigate(to: HomeAnchor.path) } }
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -272,6 +313,27 @@ struct LocalFileWorkspaceView: View {
 
     @ViewBuilder
     private var content: some View {
+        if selectedTab == .terminal {
+            LocalTerminalPanel(
+                browserPath: model.currentPath,
+                requestedDirectory: terminalRequestedPath,
+                searchQuery: model.searchQuery,
+                onBrowse: { path in
+                    selectedTab = .files
+                    taskBag.run { await model.navigate(to: path) }
+                },
+                onCopy: { text in
+                    UIPasteboard.general.string = text
+                    alertMessage = "Copied terminal output."
+                }
+            )
+        } else {
+            fileContent
+        }
+    }
+
+    @ViewBuilder
+    private var fileContent: some View {
         if model.isLoading {
             ProgressView("Loading files...")
                 .foregroundStyle(LitterTheme.textSecondary)
@@ -296,9 +358,9 @@ struct LocalFileWorkspaceView: View {
             LocalFileEmptyState(
                 systemImage: "magnifyingglass",
                 title: "No Results",
-                message: "No files match \"\(model.trimmedSearchQuery)\" in this folder.",
+                message: "No files match the current search and filter.",
                 actionTitle: "Clear Search",
-                action: { model.searchQuery = "" }
+                action: { model.searchQuery = ""; model.activeFilter = .all }
             )
         } else {
             switch model.viewMode {
@@ -314,6 +376,20 @@ struct LocalFileWorkspaceView: View {
         List {
             if model.showsShortcuts {
                 Section {
+                    LocalFileWorkspaceOverview(
+                        stats: model.workspaceStats,
+                        currentPath: model.displayPath,
+                        advancedLocationsEnabled: model.showAdvancedLocations,
+                        onBuildStatus: { taskBag.run { await runBuildStatus() } },
+                        onDoctor: { taskBag.run { await runFilesystemDoctor() } },
+                        onTerminal: { openTerminal(at: model.currentPath) },
+                        onCreateManifest: { taskBag.run { await createLitterBuildManifest() } }
+                    )
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 8, trailing: 14))
+                    LocalFileFilterBar(selection: $model.activeFilter, counts: model.filterCounts)
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 14, bottom: 8, trailing: 14))
                     shortcutStrip
                         .listRowBackground(Color.clear)
                         .listRowInsets(EdgeInsets(top: 10, leading: 14, bottom: 8, trailing: 14))
@@ -326,7 +402,8 @@ struct LocalFileWorkspaceView: View {
                             entry: entry,
                             isSelected: model.selectedPaths.contains(entry.path),
                             isFavorite: model.isFavorite(entry.path),
-                            showsSelection: model.isSelecting
+                            showsSelection: model.isSelecting,
+                            onInspect: { inspectorTarget = entry }
                         )
                     }
                     .listRowBackground(LitterTheme.surface.opacity(0.58))
@@ -344,9 +421,21 @@ struct LocalFileWorkspaceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if model.showsShortcuts {
+                    LocalFileWorkspaceOverview(
+                        stats: model.workspaceStats,
+                        currentPath: model.displayPath,
+                        advancedLocationsEnabled: model.showAdvancedLocations,
+                        onBuildStatus: { taskBag.run { await runBuildStatus() } },
+                        onDoctor: { taskBag.run { await runFilesystemDoctor() } },
+                        onTerminal: { openTerminal(at: model.currentPath) },
+                        onCreateManifest: { taskBag.run { await createLitterBuildManifest() } }
+                    )
+                    .padding(.horizontal, 14)
+                    .padding(.top, 12)
+                    LocalFileFilterBar(selection: $model.activeFilter, counts: model.filterCounts)
+                        .padding(.horizontal, 14)
                     shortcutStrip
                         .padding(.horizontal, 14)
-                        .padding(.top, 12)
                 }
                 LocalFileSectionHeader(title: "Current Folder", detail: model.visibleSummary)
                     .padding(.horizontal, 18)
@@ -357,7 +446,8 @@ struct LocalFileWorkspaceView: View {
                                 entry: entry,
                                 isSelected: model.selectedPaths.contains(entry.path),
                                 isFavorite: model.isFavorite(entry.path),
-                                showsSelection: model.isSelecting
+                                showsSelection: model.isSelecting,
+                                onInspect: { inspectorTarget = entry }
                             )
                         }
                     }
@@ -400,6 +490,8 @@ struct LocalFileWorkspaceView: View {
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button("Copy Path", systemImage: "doc.on.doc") { copyPath(shortcut.path) }
+                            Button("Copy for Bot", systemImage: "bubble.left.and.text.bubble.right") { copyBotPath(shortcut.path) }
+                            Button("Open Terminal Here", systemImage: "terminal") { openTerminal(at: shortcut.path) }
                             if shortcut.canRemove {
                                 Button("Remove", systemImage: "xmark.circle", role: .destructive) {
                                     model.removeShortcut(shortcut)
@@ -437,7 +529,9 @@ struct LocalFileWorkspaceView: View {
     @ViewBuilder
     private func contextMenu(for entry: LocalFileEntry) -> some View {
         Button("Preview", systemImage: "doc.text.magnifyingglass") { previewTarget = entry }
+        Button("Inspector", systemImage: "info.circle") { inspectorTarget = entry }
         Button("Copy Path", systemImage: "doc.on.doc") { copyPath(entry.path) }
+        Button("Copy for Bot", systemImage: "bubble.left.and.text.bubble.right") { copyBotMention(entry) }
         if let linkTarget = entry.linkTarget {
             Button("Copy Link Target", systemImage: "link") { copyPath(linkTarget) }
         }
@@ -456,7 +550,11 @@ struct LocalFileWorkspaceView: View {
         Button("Duplicate", systemImage: "plus.square.on.square") { taskBag.run { await duplicate(entry) } }
         Button("Move", systemImage: "folder") { beginMove(entry) }
         Button("Rename", systemImage: "pencil") { beginRename(entry) }
+        Button("Open Terminal Here", systemImage: "terminal") { openTerminal(at: terminalPath(for: entry)) }
         Divider()
+        if entry.kind == .directory {
+            Button("Summarize Directory", systemImage: "text.badge.magnifyingglass") { taskBag.run { await summarizeDirectory(entry) } }
+        }
         if entry.isSwiftSource {
             Button("Swift Check", systemImage: "checkmark.seal") { taskBag.run { await runSwiftCheck(entry) } }
         }
@@ -466,6 +564,9 @@ struct LocalFileWorkspaceView: View {
         }
         if entry.isShellScript {
             Button("Run Script", systemImage: "terminal") { taskBag.run { await runShellScript(entry) } }
+        }
+        if entry.isBuildLog {
+            Button("Explain Build Log", systemImage: "exclamationmark.bubble") { copyBuildLogPrompt(entry) }
         }
         Button("Delete", systemImage: "trash", role: .destructive) { deleteTarget = entry }
     }
@@ -500,6 +601,30 @@ struct LocalFileWorkspaceView: View {
     private func copyPath(_ path: String) {
         UIPasteboard.general.string = path
         alertMessage = "Copied path."
+    }
+
+    private func copyBotPath(_ path: String) {
+        UIPasteboard.general.string = "Use the file browser path \(path) as context."
+        alertMessage = "Copied bot context."
+    }
+
+    private func copyBotMention(_ entry: LocalFileEntry) {
+        UIPasteboard.general.string = "Use \(entry.path) as context. Kind: \(entry.kindLabel)."
+        alertMessage = "Copied bot context."
+    }
+
+    private func copyBuildLogPrompt(_ entry: LocalFileEntry) {
+        UIPasteboard.general.string = "Read and explain this build log, then identify the first actionable failure: \(entry.path)"
+        alertMessage = "Copied build log prompt."
+    }
+
+    private func openTerminal(at path: String) {
+        terminalRequestedPath = path
+        selectedTab = .terminal
+    }
+
+    private func terminalPath(for entry: LocalFileEntry) -> String {
+        entry.kind == .directory ? entry.path : RemotePath.parse(path: entry.path).parent().asString()
     }
 
     private func copySelectedPaths() {
@@ -613,6 +738,93 @@ struct LocalFileWorkspaceView: View {
         commandOutput = LocalCommandOutput(title: "Recursive Search", command: "search \(query)", result: result)
     }
 
+    private func runLargeFileSearch() async {
+        let command = """
+        dir=\(IshFS.shellQuote(model.currentPath))
+        find "$dir" -type f 2>/dev/null | head -n 1200 | while IFS= read -r f; do
+          size=$(wc -c < "$f" 2>/dev/null || echo 0)
+          if [ "$size" -ge 1048576 ]; then printf '%12s  %s\n' "$size" "$f"; fi
+        done | sort -nr | head -n 100
+        """
+        let result = await IshFS.run(command, cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Large Files", command: "find files over 1 MB", result: result)
+    }
+
+    private func runTreeSnapshot() async {
+        let command = """
+        dir=\(IshFS.shellQuote(model.currentPath))
+        find "$dir" -maxdepth 3 2>/dev/null | sed "s#^$dir#.#" | head -n 300
+        """
+        let result = await IshFS.run(command, cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Folder Tree", command: "tree \(model.displayPath)", result: result)
+    }
+
+    private func runGitStatus() async {
+        let command = """
+        dir=\(IshFS.shellQuote(model.currentPath))
+        top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)
+        if [ -z "$top" ]; then echo "No git repository found from $dir"; exit 1; fi
+        git -C "$top" status --short --branch
+        """
+        let result = await IshFS.run(command, cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Git Status", command: "git status", result: result)
+    }
+
+    private func runBuildStatus() async {
+        let result = await IshFS.run("litter-build-status", cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Build Status", command: "litter-build-status", result: result)
+    }
+
+    private func runFilesystemDoctor() async {
+        let result = await IshFS.run("litter-fs-doctor", cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Filesystem Doctor", command: "litter-fs-doctor", result: result)
+    }
+
+    private func createLitterBuildManifest() async {
+        let target = RemotePath.parse(path: model.currentPath).join(name: "LitterBuild.json").asString()
+        guard !(await IshFS.exists(path: target)) else {
+            alertMessage = "LitterBuild.json already exists here."
+            return
+        }
+        let folderName = (model.currentPath as NSString).lastPathComponent
+        let appName = folderName.isEmpty ? "LitterApp" : folderName
+        let manifest = """
+        {
+          "name": "\(appName)",
+          "entrypoint": "main.swift",
+          "sources": ["main.swift"],
+          "resources": []
+        }
+        """
+        do {
+            try await IshFS.writeTextFile(path: target, text: manifest + "\n")
+            let mainPath = RemotePath.parse(path: model.currentPath).join(name: "main.swift").asString()
+            if !(await IshFS.exists(path: mainPath)) {
+                try await IshFS.writeTextFile(path: mainPath, text: "import Foundation\n\nprint(\"Hello from Litter\")\n")
+            }
+            await model.reload()
+            alertMessage = "Created LitterBuild.json."
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    private func summarizeDirectory(_ entry: LocalFileEntry) async {
+        let command = """
+        dir=\(IshFS.shellQuote(entry.path))
+        echo "Path: $dir"
+        echo
+        echo "Counts:"
+        find "$dir" -maxdepth 1 -type d 2>/dev/null | wc -l | sed 's/^/folders: /'
+        find "$dir" -maxdepth 1 -type f 2>/dev/null | wc -l | sed 's/^/files: /'
+        echo
+        echo "Top files:"
+        find "$dir" -maxdepth 2 -type f 2>/dev/null | head -n 80
+        """
+        let result = await IshFS.run(command, cwd: model.currentPath)
+        commandOutput = LocalCommandOutput(title: "Directory Summary", command: "summarize \(entry.name)", result: result)
+    }
+
     private func runShellScript(_ entry: LocalFileEntry) async {
         let result = await IshFS.run("sh \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Script Output", command: "sh \(entry.name)", result: result)
@@ -713,6 +925,94 @@ struct LocalFileWorkspaceView: View {
     }
 }
 
+private enum LocalWorkspaceTab: String, CaseIterable, Identifiable {
+    case files
+    case terminal
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .files: return "Files"
+        case .terminal: return "Terminal"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .files: return "folder"
+        case .terminal: return "terminal"
+        }
+    }
+}
+
+private enum LocalFileFilter: String, CaseIterable, Identifiable {
+    case all
+    case folders
+    case code
+    case images
+    case archives
+    case builds
+    case recent
+    case large
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .folders: return "Folders"
+        case .code: return "Code"
+        case .images: return "Images"
+        case .archives: return "Archives"
+        case .builds: return "Builds"
+        case .recent: return "Recent"
+        case .large: return "Large"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .folders: return "folder"
+        case .code: return "curlybraces"
+        case .images: return "photo"
+        case .archives: return "archivebox"
+        case .builds: return "shippingbox"
+        case .recent: return "clock"
+        case .large: return "internaldrive"
+        }
+    }
+
+    func matches(_ entry: LocalFileEntry) -> Bool {
+        switch self {
+        case .all: return true
+        case .folders: return entry.kind == .directory
+        case .code: return entry.isCode
+        case .images: return entry.isImage
+        case .archives: return entry.isArchive
+        case .builds: return entry.isBuildArtifact || entry.name == "LitterBuild.json"
+        case .recent: return entry.isRecentlyModified
+        case .large: return entry.isLarge
+        }
+    }
+}
+
+private struct LocalFileWorkspaceStats: Equatable {
+    let folders: Int
+    let files: Int
+    let code: Int
+    let builds: Int
+    let images: Int
+    let totalBytes: Int64
+
+    var totalItems: Int { folders + files }
+
+    var sizeText: String {
+        ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
+    }
+}
+
 private enum LocalFileViewMode: String, CaseIterable, Identifiable {
     case list
     case grid
@@ -795,10 +1095,14 @@ private final class LocalFileWorkspaceModel {
     var showHidden = UserDefaults.standard.object(forKey: LocalFileWorkspaceModel.showHiddenKey) as? Bool ?? true {
         didSet { UserDefaults.standard.set(showHidden, forKey: Self.showHiddenKey) }
     }
+    var showAdvancedLocations = UserDefaults.standard.object(forKey: LocalFileWorkspaceModel.showAdvancedLocationsKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showAdvancedLocations, forKey: Self.showAdvancedLocationsKey) }
+    }
     var openFile: LocalFileEntry?
     var searchQuery = ""
     var sort: LocalFileSort = .name
     var viewMode: LocalFileViewMode = .list
+    var activeFilter: LocalFileFilter = .all
     var isSelecting = false
     var selectedPaths: Set<String> = []
 
@@ -806,6 +1110,7 @@ private final class LocalFileWorkspaceModel {
     private var recentItems: [LocalFileStoredShortcut] = []
 
     private static let showHiddenKey = "local_file_workspace_show_hidden_v1"
+    private static let showAdvancedLocationsKey = "local_file_workspace_show_advanced_locations_v1"
     private let favoritesKey = "local_file_workspace_favorites_v1"
     private let recentsKey = "local_file_workspace_recents_v1"
     private let maxStoredShortcuts = 20
@@ -833,7 +1138,24 @@ private final class LocalFileWorkspaceModel {
                     entry.kindLabel.localizedCaseInsensitiveContains(trimmedSearchQuery)
             }
         }
-        return sortEntries(searched)
+        return sortEntries(searched.filter { activeFilter.matches($0) })
+    }
+
+    var filterCounts: [LocalFileFilter: Int] {
+        Dictionary(uniqueKeysWithValues: LocalFileFilter.allCases.map { filter in
+            (filter, entries.filter { filter.matches($0) }.count)
+        })
+    }
+
+    var workspaceStats: LocalFileWorkspaceStats {
+        LocalFileWorkspaceStats(
+            folders: entries.filter { $0.kind == .directory }.count,
+            files: entries.filter { $0.kind != .directory }.count,
+            code: entries.filter(\.isCode).count,
+            builds: entries.filter { $0.isBuildArtifact || $0.name == "LitterBuild.json" }.count,
+            images: entries.filter(\.isImage).count,
+            totalBytes: entries.reduce(Int64(0)) { $0 + max($1.size, 0) }
+        )
     }
 
     var selectedEntries: [LocalFileEntry] {
@@ -864,15 +1186,23 @@ private final class LocalFileWorkspaceModel {
     }
 
     var quickLocations: [LocalFileShortcut] {
-        [
+        var locations = [
             LocalFileShortcut(source: .quick, path: HomeAnchor.path, title: "Home", subtitle: "~", systemImage: "house.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/root/litter", title: "Litter", subtitle: "/root/litter", systemImage: "shippingbox.fill", kind: .directory),
+            LocalFileShortcut(source: .quick, path: "/root/projects", title: "Projects", subtitle: "/root/projects", systemImage: "folder.fill.badge.gearshape", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/root/.litter/builds", title: "Builds", subtitle: "~/.litter/builds", systemImage: "hammer.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/mnt/apps", title: "App Files", subtitle: "/mnt/apps", systemImage: "externaldrive.fill", kind: .directory),
-            LocalFileShortcut(source: .quick, path: "/mnt/codex", title: "Codex Home", subtitle: "/mnt/codex", systemImage: "folder.badge.gearshape", kind: .directory),
-            LocalFileShortcut(source: .quick, path: "/tmp", title: "Temp", subtitle: "/tmp", systemImage: "tray.fill", kind: .directory),
-            LocalFileShortcut(source: .quick, path: "/usr/local/bin", title: "Commands", subtitle: "/usr/local/bin", systemImage: "terminal.fill", kind: .directory)
+            LocalFileShortcut(source: .quick, path: "/mnt/codex", title: "Codex Home", subtitle: "/mnt/codex", systemImage: "folder.badge.gearshape", kind: .directory)
         ]
+        if showAdvancedLocations {
+            locations += [
+                LocalFileShortcut(source: .quick, path: "/", title: "iSH Root", subtitle: "/", systemImage: "server.rack", kind: .directory),
+                LocalFileShortcut(source: .quick, path: "/tmp", title: "Temp", subtitle: "/tmp", systemImage: "tray.fill", kind: .directory),
+                LocalFileShortcut(source: .quick, path: "/usr/local/bin", title: "Commands", subtitle: "/usr/local/bin", systemImage: "terminal.fill", kind: .directory),
+                LocalFileShortcut(source: .quick, path: "/etc", title: "Config", subtitle: "/etc", systemImage: "gearshape.fill", kind: .directory)
+            ]
+        }
+        return locations
     }
 
     var favoriteShortcuts: [LocalFileShortcut] {
@@ -1231,7 +1561,7 @@ struct LocalFileEntry: Identifiable, Hashable {
     }
 
     var isImage: Bool {
-        ["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "bmp"].contains(fileExtension)
+        ["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "bmp", "svg"].contains(fileExtension)
     }
 
     var isArchive: Bool {
@@ -1241,6 +1571,45 @@ struct LocalFileEntry: Identifiable, Hashable {
     var isSwiftSource: Bool { fileExtension == "swift" }
 
     var isShellScript: Bool { fileExtension == "sh" }
+
+    var isBuildLog: Bool { fileExtension == "log" || name.localizedCaseInsensitiveContains("build") || path.contains("/builds/") }
+
+    var isBuildArtifact: Bool {
+        ["ipa", "app", "dSYM", "xcarchive"].contains { $0.caseInsensitiveCompare(fileExtension) == .orderedSame || name.hasSuffix($0) }
+    }
+
+    var isCode: Bool {
+        ["swift", "rs", "js", "ts", "tsx", "jsx", "py", "sh", "rb", "go", "c", "h", "m", "mm", "cpp", "json", "yml", "yaml", "toml", "xml", "html", "css", "md"].contains(fileExtension)
+    }
+
+    var isLarge: Bool { size >= 1_048_576 }
+
+    var isRecentlyModified: Bool {
+        guard let modifiedAt else { return false }
+        return modifiedAt > Date().addingTimeInterval(-86_400)
+    }
+
+    var badgeText: String? {
+        if isBrokenLink { return "Broken" }
+        if isSwiftSource { return "Swift" }
+        if isBuildArtifact { return "Artifact" }
+        if isBuildLog { return "Log" }
+        if isArchive { return "Archive" }
+        if isImage { return "Image" }
+        if isLarge { return "Large" }
+        if kind == .directory && name == ".git" { return "Git" }
+        return nil
+    }
+
+    var compactMetaText: String {
+        if kind == .directory { return "Folder" }
+        let sizeText = ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+        guard let modifiedAt else { return "\(kindLabel) - \(sizeText)" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        let dateText = formatter.localizedString(for: modifiedAt, relativeTo: Date())
+        return "\(kindLabel) - \(sizeText) - \(dateText)"
+    }
 
     var isTextPreviewable: Bool {
         if kind == .directory || kind == .special || isImage || isArchive { return false }
@@ -1280,6 +1649,132 @@ struct LocalFileEntry: Identifiable, Hashable {
     }
 }
 
+private struct LocalFileWorkspaceOverview: View {
+    let stats: LocalFileWorkspaceStats
+    let currentPath: String
+    let advancedLocationsEnabled: Bool
+    let onBuildStatus: () -> Void
+    let onDoctor: () -> Void
+    let onTerminal: () -> Void
+    let onCreateManifest: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Workspace")
+                        .litterFont(.headline, weight: .semibold)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                    Text(currentPath)
+                        .litterMonoFont(size: 11, weight: .regular)
+                        .foregroundStyle(LitterTheme.textMuted)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Label(advancedLocationsEnabled ? "Advanced" : "Clean", systemImage: advancedLocationsEnabled ? "lock.open" : "lock")
+                    .litterMonoFont(size: 10, weight: .semibold)
+                    .foregroundStyle(advancedLocationsEnabled ? LitterTheme.warning : LitterTheme.success)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    LocalFileStatPill(title: "Items", value: "\(stats.totalItems)", systemImage: "square.grid.2x2")
+                    LocalFileStatPill(title: "Code", value: "\(stats.code)", systemImage: "curlybraces")
+                    LocalFileStatPill(title: "Builds", value: "\(stats.builds)", systemImage: "hammer")
+                    LocalFileStatPill(title: "Size", value: stats.sizeText, systemImage: "internaldrive")
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    LocalFileActionChip(title: "Terminal", systemImage: "terminal", action: onTerminal)
+                    LocalFileActionChip(title: "Builds", systemImage: "chart.bar.doc.horizontal", action: onBuildStatus)
+                    LocalFileActionChip(title: "Doctor", systemImage: "stethoscope", action: onDoctor)
+                    LocalFileActionChip(title: "Manifest", systemImage: "doc.badge.gearshape", action: onCreateManifest)
+                }
+            }
+        }
+        .padding(12)
+        .background(LitterTheme.surface.opacity(0.58), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(LitterTheme.border.opacity(0.32), lineWidth: 1)
+        )
+    }
+}
+
+private struct LocalFileStatPill: View {
+    let title: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(LitterTheme.accent)
+            Text(value)
+                .litterMonoFont(size: 11, weight: .semibold)
+                .foregroundStyle(LitterTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(title)
+                .litterMonoFont(size: 9, weight: .regular)
+                .foregroundStyle(LitterTheme.textMuted)
+        }
+        .frame(width: 72, alignment: .leading)
+        .padding(8)
+        .background(LitterTheme.surfaceLight.opacity(0.36), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct LocalFileActionChip: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .litterMonoFont(size: 11, weight: .semibold)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(LitterTheme.textPrimary)
+        .background(LitterTheme.surfaceLight.opacity(0.42), in: Capsule())
+    }
+}
+
+private struct LocalFileFilterBar: View {
+    @Binding var selection: LocalFileFilter
+    let counts: [LocalFileFilter: Int]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(LocalFileFilter.allCases) { filter in
+                    Button {
+                        selection = filter
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: filter.systemImage)
+                            Text(filter.title)
+                            Text("\(counts[filter] ?? 0)")
+                                .foregroundStyle(selection == filter ? LitterTheme.textPrimary : LitterTheme.textMuted)
+                        }
+                        .litterMonoFont(size: 11, weight: .semibold)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(selection == filter ? LitterTheme.accent.opacity(0.22) : LitterTheme.surface.opacity(0.5), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(selection == filter ? LitterTheme.accent : LitterTheme.textSecondary)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+}
+
 private struct LocalFileSectionHeader: View {
     let title: String
     let detail: String
@@ -1302,6 +1797,7 @@ private struct LocalFileRow: View {
     let isSelected: Bool
     let isFavorite: Bool
     let showsSelection: Bool
+    let onInspect: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1311,12 +1807,19 @@ private struct LocalFileRow: View {
                     .foregroundStyle(isSelected ? LitterTheme.accent : LitterTheme.textMuted)
                     .frame(width: 24)
             }
-            Image(systemName: entry.iconName)
-                .font(.system(size: 21, weight: .semibold))
-                .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : (entry.isBrokenLink ? LitterTheme.warning : LitterTheme.textSecondary))
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 5) {
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: entry.iconName)
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : (entry.isBrokenLink ? LitterTheme.warning : LitterTheme.textSecondary))
+                    .frame(width: 34, height: 34)
+                if entry.isRecentlyModified {
+                    Circle()
+                        .fill(LitterTheme.success)
+                        .frame(width: 7, height: 7)
+                }
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
                     Text(entry.name)
                         .litterFont(.subheadline, weight: .medium)
                         .foregroundStyle(LitterTheme.textPrimary)
@@ -1326,14 +1829,30 @@ private struct LocalFileRow: View {
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.yellow)
                     }
+                    if let badge = entry.badgeText {
+                        LocalFileBadge(text: badge)
+                    }
                 }
-                Text(entry.detailText)
+                Text(entry.compactMetaText)
                     .litterMonoFont(size: 11, weight: .regular)
                     .foregroundStyle(LitterTheme.textMuted)
                     .lineLimit(1)
+                if !entry.permissions.isEmpty {
+                    Text(entry.permissions)
+                        .litterMonoFont(size: 10, weight: .regular)
+                        .foregroundStyle(LitterTheme.textMuted.opacity(0.8))
+                        .lineLimit(1)
+                }
             }
             Spacer()
-            Image(systemName: entry.kind == .directory ? "chevron.right" : entry.iconName)
+            Button(action: onInspect) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(LitterTheme.textMuted)
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(.plain)
+            Image(systemName: entry.kind == .directory ? "chevron.right" : "ellipsis")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(LitterTheme.textMuted)
         }
@@ -1347,13 +1866,14 @@ private struct LocalFileGridItem: View {
     let isSelected: Bool
     let isFavorite: Bool
     let showsSelection: Bool
+    let onInspect: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(LitterTheme.surface.opacity(0.62))
-                    .frame(height: 78)
+                    .frame(height: 82)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .stroke(LitterTheme.border.opacity(0.35), lineWidth: 1)
@@ -1362,35 +1882,60 @@ private struct LocalFileGridItem: View {
                     .font(.system(size: 30, weight: .semibold))
                     .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : (entry.isBrokenLink ? LitterTheme.warning : LitterTheme.textSecondary))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                HStack(spacing: 4) {
-                    if isFavorite {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.yellow)
+                VStack(alignment: .trailing, spacing: 5) {
+                    HStack(spacing: 4) {
+                        if isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.yellow)
+                        }
+                        if showsSelection {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(isSelected ? LitterTheme.accent : LitterTheme.textMuted)
+                        }
                     }
-                    if showsSelection {
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(isSelected ? LitterTheme.accent : LitterTheme.textMuted)
+                    if let badge = entry.badgeText {
+                        LocalFileBadge(text: badge)
                     }
                 }
                 .padding(7)
             }
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(entry.name)
                     .litterFont(.caption, weight: .semibold)
                     .foregroundStyle(LitterTheme.textPrimary)
                     .lineLimit(2)
                     .frame(minHeight: 32, alignment: .topLeading)
-                Text(entry.kind == .directory ? "Folder" : entry.kindLabel)
+                Text(entry.kind == .directory ? "Folder" : ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file))
                     .litterMonoFont(size: 10, weight: .regular)
                     .foregroundStyle(LitterTheme.textMuted)
                     .lineLimit(1)
+                Button(action: onInspect) {
+                    Label("Info", systemImage: "info.circle")
+                        .litterMonoFont(size: 10, weight: .medium)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(LitterTheme.accent)
             }
         }
         .padding(8)
         .background(LitterTheme.surfaceLight.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct LocalFileBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .litterMonoFont(size: 9, weight: .semibold)
+            .foregroundStyle(LitterTheme.accent)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(LitterTheme.accent.opacity(0.14), in: Capsule())
+            .lineLimit(1)
     }
 }
 
@@ -1663,6 +2208,285 @@ private struct LocalFileInfoPanel: View {
                 .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct LocalFileInspectorSheet: View {
+    let file: LocalFileEntry
+    let onPreview: () -> Void
+    let onEdit: () -> Void
+    let onCopyPath: () -> Void
+    let onCopyBotMention: () -> Void
+    let onOpenTerminal: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                LitterTheme.backgroundGradient.ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(spacing: 12) {
+                            Image(systemName: file.iconName)
+                                .font(.system(size: 30, weight: .semibold))
+                                .foregroundStyle(file.kind == .directory ? LitterTheme.accent : LitterTheme.textSecondary)
+                                .frame(width: 46, height: 46)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(file.name)
+                                    .litterFont(.headline, weight: .semibold)
+                                    .foregroundStyle(LitterTheme.textPrimary)
+                                    .lineLimit(2)
+                                Text(file.compactMetaText)
+                                    .litterMonoFont(size: 11, weight: .regular)
+                                    .foregroundStyle(LitterTheme.textMuted)
+                            }
+                        }
+                        LocalFileInfoPanel(file: file)
+                        VStack(alignment: .leading, spacing: 10) {
+                            LocalFileInspectorButton(title: "Preview", systemImage: "doc.text.magnifyingglass", action: { perform(onPreview) })
+                            if file.isTextPreviewable {
+                                LocalFileInspectorButton(title: "Edit", systemImage: "pencil", action: { perform(onEdit) })
+                            }
+                            LocalFileInspectorButton(title: "Copy Path", systemImage: "doc.on.doc", action: onCopyPath)
+                            LocalFileInspectorButton(title: "Copy for Bot", systemImage: "bubble.left.and.text.bubble.right", action: onCopyBotMention)
+                            LocalFileInspectorButton(title: "Open Terminal Here", systemImage: "terminal", action: { perform(onOpenTerminal) })
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+            .navigationTitle("Inspector")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func perform(_ action: @escaping () -> Void) {
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { action() }
+    }
+}
+
+private struct LocalFileInspectorButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Label(title, systemImage: systemImage)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(LitterTheme.textMuted)
+            }
+            .litterFont(.subheadline, weight: .semibold)
+            .foregroundStyle(LitterTheme.textPrimary)
+            .padding(12)
+            .background(LitterTheme.surface.opacity(0.52), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct LocalTerminalEntry: Identifiable, Hashable {
+    let id = UUID()
+    let command: String
+    let directory: String
+    let output: String
+    let exitCode: Int32
+    let date = Date()
+}
+
+private struct LocalTerminalPanel: View {
+    let browserPath: String
+    let requestedDirectory: String
+    let searchQuery: String
+    let onBrowse: (String) -> Void
+    let onCopy: (String) -> Void
+
+    @State private var cwd = HomeAnchor.path
+    @State private var command = ""
+    @State private var history: [LocalTerminalEntry] = []
+    @State private var isRunning = false
+
+    var visibleHistory: [LocalTerminalEntry] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return history }
+        return history.filter {
+            $0.command.localizedCaseInsensitiveContains(query) ||
+                $0.output.localizedCaseInsensitiveContains(query) ||
+                $0.directory.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            terminalHeader
+            Divider().overlay(LitterTheme.surfaceLight.opacity(0.35))
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        if visibleHistory.isEmpty {
+                            LocalFileEmptyState(
+                                systemImage: "terminal",
+                                title: "Terminal Ready",
+                                message: "Commands run in the same iSH runtime used by bots.",
+                                actionTitle: "Run pwd",
+                                action: { Task { await run("pwd") } }
+                            )
+                            .frame(minHeight: 260)
+                        } else {
+                            ForEach(visibleHistory) { item in
+                                terminalEntry(item)
+                                    .id(item.id)
+                            }
+                        }
+                    }
+                    .padding(14)
+                }
+                .onChange(of: history.count) { _, _ in
+                    if let last = history.last {
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
+                }
+            }
+            terminalInput
+        }
+        .task {
+            cwd = requestedDirectory.isEmpty ? browserPath : requestedDirectory
+        }
+        .onChange(of: requestedDirectory) { _, newValue in
+            if !newValue.isEmpty { cwd = newValue }
+        }
+    }
+
+    private var terminalHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Label("Shared iSH Terminal", systemImage: "terminal")
+                    .litterFont(.subheadline, weight: .semibold)
+                    .foregroundStyle(LitterTheme.textPrimary)
+                Spacer()
+                Button { onBrowse(cwd) } label: { Image(systemName: "folder") }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Browse terminal directory")
+                Button { onCopy(history.map { "$ \($0.command)\n\($0.output)" }.joined(separator: "\n\n")) } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Copy terminal output")
+                Button { history.removeAll() } label: { Image(systemName: "trash") }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear terminal")
+            }
+            Text(cwd)
+                .litterMonoFont(size: 11, weight: .regular)
+                .foregroundStyle(LitterTheme.textMuted)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private var terminalInput: some View {
+        HStack(spacing: 10) {
+            Text("$")
+                .litterMonoFont(size: 14, weight: .bold)
+                .foregroundStyle(LitterTheme.accent)
+            TextField("command", text: $command, axis: .vertical)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(.body, design: .monospaced))
+                .lineLimit(1...3)
+                .submitLabel(.return)
+                .onSubmit {
+                    let pending = command
+                    command = ""
+                    Task { await run(pending) }
+                }
+            Button {
+                let pending = command
+                command = ""
+                Task { await run(pending) }
+            } label: {
+                if isRunning {
+                    ProgressView().scaleEffect(0.8)
+                } else {
+                    Image(systemName: "paperplane.fill")
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(isRunning || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding(12)
+        .background(LitterTheme.surface.opacity(0.72))
+    }
+
+    private func terminalEntry(_ item: LocalTerminalEntry) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(item.directory)
+                    .litterMonoFont(size: 10, weight: .regular)
+                    .foregroundStyle(LitterTheme.textMuted)
+                    .lineLimit(1)
+                Spacer()
+                Text("exit \(item.exitCode)")
+                    .litterMonoFont(size: 10, weight: .semibold)
+                    .foregroundStyle(item.exitCode == 0 ? LitterTheme.success : LitterTheme.warning)
+            }
+            Text("$ \(item.command)")
+                .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                .foregroundStyle(LitterTheme.textPrimary)
+                .textSelection(.enabled)
+            Text(item.output.isEmpty ? " " : item.output)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(LitterTheme.textSecondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .background(LitterTheme.codeBackground.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func run(_ raw: String) async {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isRunning else { return }
+        isRunning = true
+        if trimmed == "clear" {
+            history.removeAll()
+            isRunning = false
+            return
+        }
+        if trimmed == "pwd" {
+            history.append(LocalTerminalEntry(command: trimmed, directory: cwd, output: cwd, exitCode: 0))
+            isRunning = false
+            return
+        }
+        if trimmed.hasPrefix("cd") {
+            await runCd(trimmed)
+            isRunning = false
+            return
+        }
+        let result = await IshFS.run(trimmed, cwd: cwd)
+        history.append(LocalTerminalEntry(command: trimmed, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
+        isRunning = false
+    }
+
+    private func runCd(_ command: String) async {
+        let target = command.dropFirst(2).trimmingCharacters(in: .whitespacesAndNewlines)
+        let destination = target.isEmpty ? HomeAnchor.path : PathDisplay.expand(target, isLocal: true)
+        let result = await IshFS.run("cd \(IshFS.shellQuote(destination)) && pwd", cwd: cwd)
+        if result.exitCode == 0 {
+            let next = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            cwd = next.isEmpty ? destination : next
+            history.append(LocalTerminalEntry(command: command, directory: cwd, output: cwd, exitCode: 0))
+        } else {
+            history.append(LocalTerminalEntry(command: command, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
+        }
     }
 }
 
