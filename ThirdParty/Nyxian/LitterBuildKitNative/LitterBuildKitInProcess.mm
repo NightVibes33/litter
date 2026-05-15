@@ -457,6 +457,8 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
         NSString *command = LBIString(request, @"command");
         NSString *args = LBIString(request, @"args");
         NSString *buildDir = LBIString(request, @"buildDir");
+        NSString *fakefsBuildDir = LBIString(request, @"fakefsBuildDir");
+        if(fakefsBuildDir.length == 0) { fakefsBuildDir = buildDir; }
         NSString *cwd = LBIString(request, @"cwd");
         NSString *sdkRoot = LBIString(request, @"sdkRoot");
         NSString *hostInputPath = LBIString(request, @"hostInputPath");
@@ -544,7 +546,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
                 {
                     return LBICopyResponse(73, @"ipa-package-failed", log);
                 }
-                NSString *fakefsArtifactPath = LBIFakefsIPAOutputPath(manifest, request, cwd, buildDir, ipaPath.lastPathComponent);
+                NSString *fakefsArtifactPath = LBIFakefsIPAOutputPath(manifest, request, cwd, fakefsBuildDir, ipaPath.lastPathComponent);
                 [log appendFormat:@"Unsigned IPA artifact: %@\n", ipaPath];
                 [log appendFormat:@"Fakefs artifact path: %@\n", fakefsArtifactPath];
                 NSArray *artifacts = @[@{@"hostPath": ipaPath, @"fakefsPath": fakefsArtifactPath}];

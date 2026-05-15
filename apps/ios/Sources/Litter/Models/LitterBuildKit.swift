@@ -769,7 +769,14 @@ actor LitterBuildKit {
         var log = "\nArtifact export:\n"
         for artifact in artifacts {
             let hostURL = URL(fileURLWithPath: artifact.hostPath)
-            let fakefsPath = artifact.fakefsPath?.isEmpty == false ? artifact.fakefsPath! : "\(buildDir)/\(hostURL.lastPathComponent)"
+            let reportedFakefsPath = artifact.fakefsPath?.isEmpty == false ? artifact.fakefsPath! : ""
+            let fakefsPath: String
+            if reportedFakefsPath.isEmpty || Self.isNativeHostPath(reportedFakefsPath) {
+                let fallbackName = reportedFakefsPath.isEmpty ? hostURL.lastPathComponent : (reportedFakefsPath as NSString).lastPathComponent
+                fakefsPath = "\(buildDir)/\(fallbackName)"
+            } else {
+                fakefsPath = reportedFakefsPath
+            }
             let fakefsParent = (fakefsPath as NSString).deletingLastPathComponent
             if !fakefsParent.isEmpty && fakefsParent != fakefsPath {
                 _ = await IshFS.run("mkdir -p \(IshFS.shellQuote(fakefsParent))")
@@ -788,17 +795,17 @@ actor LitterBuildKit {
         guard ["litter-swift-build", "litter-swift-test", "litter-ipa-build", "litter-ipa-package"].contains(command) else {
             return BuildKitHostStaging(log: "", hostWorkDir: nil, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: nil)
         }
+        let hostRoot = Self.hostJobRoot(buildDir: buildDir)
         guard let first = Self.shellWords(args).first else {
-            return BuildKitHostStaging(log: "BuildKit project preflight: missing LitterBuild.json path.\n", hostWorkDir: nil, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: nil)
+            return BuildKitHostStaging(log: "BuildKit project preflight: missing LitterBuild.json path.\n", hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: nil)
         }
         let projectPath = first.hasPrefix("/") ? first : "\(cwd)/\(first)"
         var log = "BuildKit project preflight\nProject: \(projectPath)\n"
         guard let manifestText = try? await IshFS.readTextFile(path: projectPath, maxBytes: 256_000), let data = manifestText.data(using: .utf8), let manifest = try? JSONDecoder().decode(LitterBuildProjectManifest.self, from: data) else {
             log += "- Could not read or decode LitterBuild.json. Native driver will receive the original request only.\n"
-            return BuildKitHostStaging(log: log, hostWorkDir: nil, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: projectPath)
+            return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: projectPath)
         }
 
-        let hostRoot = Self.hostJobRoot(buildDir: buildDir)
         let fakefsProjectDir = Self.normalizedFakefsPath((projectPath as NSString).deletingLastPathComponent)
         let hostProjectPath = hostRoot.appendingPathComponent("LitterBuild.json")
         let stagedManifest = Self.stagedProjectManifestForNativeDriver(manifest, fakefsProjectDir: fakefsProjectDir)
@@ -925,6 +932,10 @@ actor LitterBuildKit {
 
     private static var documentsRoot: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSHomeDirectory())
+    }
+
+    private static func isNativeHostPath(_ path: String) -> Bool {
+        path.hasPrefix(documentsRoot.path + "/") || path.hasPrefix(buildKitRoot.path + "/")
     }
 
     private static var buildKitRoot: URL {
@@ -1488,18 +1499,20 @@ actor LitterBuildKit {
         guard let handle = driver.handle, let symbol = dlsym(handle, "litter_buildkit_run_json") else { return nil }
         typealias RunFn = @convention(c) (UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
         let run = unsafeBitCast(symbol, to: RunFn.self)
+        let nativeBuildDir = staging.hostWorkDir ?? buildDir
         let payload = NativeDriverRequest(
             command: command,
             args: args,
             cwd: cwd,
-            buildDir: buildDir,
+            buildDir: nativeBuildDir,
             buildKitRoot: buildKitRoot.path,
             toolchainRoot: toolchainRoot.path,
             sdkRoot: sdkRoot.path,
             hostWorkDir: staging.hostWorkDir,
             hostProjectPath: staging.hostProjectPath,
             hostInputPath: staging.hostInputPath,
-            fakefsProjectPath: staging.fakefsProjectPath
+            fakefsProjectPath: staging.fakefsProjectPath,
+            fakefsBuildDir: buildDir
         )
         guard let data = try? JSONEncoder().encode(payload), let json = String(data: data, encoding: .utf8) else {
             return BuildKitCommandResult(exitCode: 70, status: "request-encode-failed", log: "Could not encode native BuildKit request.\n")
@@ -1855,6 +1868,7 @@ private struct NativeDriverRequest: Encodable, Sendable {
     var hostProjectPath: String?
     var hostInputPath: String?
     var fakefsProjectPath: String?
+    var fakefsBuildDir: String?
 }
 
 private struct NativeDriverArtifact: Decodable, Sendable {
