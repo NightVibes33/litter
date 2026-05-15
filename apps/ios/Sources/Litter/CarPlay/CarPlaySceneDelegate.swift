@@ -27,8 +27,14 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         let placeholder = CPGridTemplate(title: "Litter", gridButtons: [Self.placeholderButton()])
         placeholder.tabImage = UIImage(systemName: "waveform")
         placeholder.tabTitle = "Voice"
-        interfaceController.setRootTemplate(placeholder, animated: false, completion: nil)
-        Self.log.info("CarPlay placeholder root set")
+        interfaceController.setRootTemplate(placeholder, animated: false) { success, error in
+            if success {
+                Self.log.info("CarPlay placeholder root set")
+            } else {
+                let message = error?.localizedDescription ?? "unknown error"
+                Self.log.error("CarPlay failed to set placeholder root: \(message, privacy: .public)")
+            }
+        }
 
         // Build the real templates asynchronously so any slow init in
         // AppModel.shared / VoiceRuntimeController.shared can't block the
@@ -47,9 +53,15 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
                     vm.buildVoiceTab(),
                     vm.buildSessionsTab()
                 ])
-                ic.setRootTemplate(tabBar, animated: false, completion: nil)
+                ic.setRootTemplate(tabBar, animated: false) { success, error in
+                    if success {
+                        Self.log.info("CarPlay tab bar root installed")
+                    } else {
+                        let message = error?.localizedDescription ?? "unknown error"
+                        Self.log.error("CarPlay failed to set tab bar root: \(message, privacy: .public)")
+                    }
+                }
                 vm.startObserving()
-                Self.log.info("CarPlay tab bar root installed")
             } catch {
                 Self.log.error("CarPlay setup threw: \(String(describing: error), privacy: .public)")
             }

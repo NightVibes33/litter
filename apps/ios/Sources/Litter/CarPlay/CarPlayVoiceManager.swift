@@ -1,9 +1,12 @@
 import CarPlay
 import MediaPlayer
+import os
 import UIKit
 
 @MainActor
 final class CarPlayVoiceManager {
+    private static let log = Logger(subsystem: "com.sigkitten.litter", category: "CarPlay")
+
     private let voiceActions: VoiceActions
     private let appModel: AppModel
     private weak var interfaceController: CPInterfaceController?
@@ -22,6 +25,7 @@ final class CarPlayVoiceManager {
     private var lastSessionsSignature: String?
     private var isShowingNowPlaying = false
     private var isShowingTranscript = false
+    private var lastNowPlayingPushFailureAt: Date?
 
     init(voiceActions: VoiceActions, appModel: AppModel, interfaceController: CPInterfaceController) {
         self.voiceActions = voiceActions
@@ -204,7 +208,12 @@ final class CarPlayVoiceManager {
         sessionTranscriptTemplate = template
         sessionTranscriptKey = summary.key
         lastSessionTranscriptSig = transcriptSignature(for: summary.key)
-        interfaceController?.pushTemplate(template, animated: true, completion: nil)
+        pushTemplate(template, context: "session transcript") { [weak self] success in
+            guard !success else { return }
+            self?.sessionTranscriptTemplate = nil
+            self?.sessionTranscriptKey = nil
+            self?.lastSessionTranscriptSig = nil
+        }
     }
 
     private func transcriptSignature(for key: ThreadKey) -> String {
@@ -511,20 +520,34 @@ final class CarPlayVoiceManager {
             || interfaceController.templates.contains(where: { $0 === nowPlaying })
         configureNowPlayingTemplate(session)
         updateNowPlayingInfo(session)
-        isShowingNowPlaying = true
         lastPhase = session.phase
         lastTranscriptHistoryID = session.transcriptHistory.last?.id
         lastTranscriptLive = session.transcriptText
-        guard !isAlreadyShowingNowPlaying else { return }
-        interfaceController.pushTemplate(nowPlaying, animated: true, completion: nil)
+        if isAlreadyShowingNowPlaying {
+            isShowingNowPlaying = true
+            lastNowPlayingPushFailureAt = nil
+            return
+        }
+        if let lastNowPlayingPushFailureAt,
+           Date().timeIntervalSince(lastNowPlayingPushFailureAt) < 5 {
+            return
+        }
+        pushTemplate(nowPlaying, context: "now playing") { [weak self] success in
+            self?.isShowingNowPlaying = success
+            self?.lastNowPlayingPushFailureAt = success ? nil : Date()
+        }
     }
 
     private func openTranscript() {
         guard let session = voiceActions.activeVoiceSession, !isShowingTranscript else { return }
         let template = buildTranscriptTemplate(session)
         transcriptTemplate = template
-        isShowingTranscript = true
-        interfaceController?.pushTemplate(template, animated: true, completion: nil)
+        pushTemplate(template, context: "active transcript") { [weak self] success in
+            self?.isShowingTranscript = success
+            if !success {
+                self?.transcriptTemplate = nil
+            }
+        }
     }
 
     private func updateActiveSession(_ session: VoiceSessionState) {
@@ -640,10 +663,43 @@ final class CarPlayVoiceManager {
             titleVariants: [message],
             actions: [action]
         )
-        interfaceController?.presentTemplate(alert, animated: true, completion: nil)
+        presentTemplate(alert, context: "error alert")
     }
 
     // MARK: - Utilities
+
+    private func pushTemplate(
+        _ template: CPTemplate,
+        context: String,
+        completion: ((Bool) -> Void)? = nil
+    ) {
+        guard let interfaceController else {
+            Self.log.error("CarPlay cannot push \(context, privacy: .public): missing interface controller")
+            completion?(false)
+            return
+        }
+        interfaceController.pushTemplate(template, animated: true) { success, error in
+            if !success {
+                let message = error?.localizedDescription ?? "unknown error"
+                Self.log.error("CarPlay failed to push \(context, privacy: .public): \(message, privacy: .public)")
+            }
+            Task { @MainActor in
+                completion?(success)
+            }
+        }
+    }
+
+    private func presentTemplate(_ template: CPTemplate, context: String) {
+        guard let interfaceController else {
+            Self.log.error("CarPlay cannot present \(context, privacy: .public): missing interface controller")
+            return
+        }
+        interfaceController.presentTemplate(template, animated: true) { success, error in
+            guard !success else { return }
+            let message = error?.localizedDescription ?? "unknown error"
+            Self.log.error("CarPlay failed to present \(context, privacy: .public): \(message, privacy: .public)")
+        }
+    }
 
     private func truncate(_ s: String, max: Int) -> String {
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)

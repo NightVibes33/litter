@@ -406,6 +406,7 @@ private struct SplashCarouselText: View {
         CarouselProvider(kind: "droid"),
         CarouselProvider(kind: "hermes"),
         CarouselProvider(kind: "devin"),
+        CarouselProvider(kind: "grok"),
     ]
 
     var body: some View {
