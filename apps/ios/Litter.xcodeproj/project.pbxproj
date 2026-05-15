@@ -134,6 +134,8 @@
 		3323CEC8ECD1A91494C76101 /* StreamingAssistantRenderCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8148E90D1A219FEE664EB9A1 /* StreamingAssistantRenderCache.swift */; };
 		333B502373DE386E9BDCE871 /* PathDisplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119E33CEA4127BD72EADC968 /* PathDisplayTests.swift */; };
 		33F382D1EE69512F4466A59F /* CrossServerTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F39212507F7334160D127E8 /* CrossServerTools.swift */; };
+		3B9AB0C5A616D403984B7919 /* CustomStreamingEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5450598A1BDC6247A9854ABE /* CustomStreamingEffects.swift */; };
+		C605BFEB7BAD4AD6D7C8DEBA /* CustomStreamingEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5450598A1BDC6247A9854ABE /* CustomStreamingEffects.swift */; };
 		34346375DB55CC63EA36DFFF /* vesper.json in Resources */ = {isa = PBXBuildFile; fileRef = A10240CEA11F064EBD138D97 /* vesper.json */; };
 		3499ED2135896AA74FB1B91B /* vitesse-dark.json in Resources */ = {isa = PBXBuildFile; fileRef = 43A18135FA93A4608A16C98F /* vitesse-dark.json */; };
 		351947D2FEA33D97932BC35B /* HairballUI in Frameworks */ = {isa = PBXBuildFile; productRef = 310C6E0E8E6A97ED615759F1 /* HairballUI */; };
@@ -812,6 +814,7 @@
 		69EC5386769902646C245936 /* github-dark-dimmed.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "github-dark-dimmed.json"; sourceTree = "<group>"; };
 		6A12222458304DD9CA8D4593 /* HomeComposerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeComposerView.swift; sourceTree = "<group>"; };
 		6A485EF4E929239E297A46F5 /* DebugSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSettings.swift; sourceTree = "<group>"; };
+		5450598A1BDC6247A9854ABE /* CustomStreamingEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomStreamingEffects.swift; sourceTree = "<group>"; };
 		6A9876F2929290D47ED57D77 /* SSHLoginSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHLoginSheet.swift; sourceTree = "<group>"; };
 		6AE2C5F6A9589EF98EF22485 /* VoiceSessionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSessionModels.swift; sourceTree = "<group>"; };
 		6C2A455B0E2E7C8B6EE59A93 /* HomeBottomBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeBottomBar.swift; sourceTree = "<group>"; };
@@ -1401,6 +1404,7 @@
 				FF5635331A74B2D510911B8E /* ConversationItem.swift */,
 				CD02327C52F16587C973B70F /* ConversationWarmupCoordinator.swift */,
 				9F39212507F7334160D127E8 /* CrossServerTools.swift */,
+				5450598A1BDC6247A9854ABE /* CustomStreamingEffects.swift */,
 				6A485EF4E929239E297A46F5 /* DebugSettings.swift */,
 				7779BD02F3B304F9C3AD32A1 /* DiscoveredServer.swift */,
 				56597C90314B4DF5587C3949 /* ExperimentalFeatures.swift */,
@@ -2140,6 +2144,7 @@
 				F64EB92413EE8FA1EAA77BC8 /* ConversationWarmupView.swift in Sources */,
 				5A66F52BBAB0439DB07A21C4 /* CrossServerToolResultView.swift in Sources */,
 				19B4F5707625A7336C99DC88 /* CrossServerTools.swift in Sources */,
+				C605BFEB7BAD4AD6D7C8DEBA /* CustomStreamingEffects.swift in Sources */,
 				8181782DFED3DEC99DC63030 /* DebugBuildLabel.swift in Sources */,
 				ECDF3FB523E8728522E50B26 /* DebugSettings.swift in Sources */,
 				DECB9D0F729B54CDD4DF1DA8 /* DiffRendering.swift in Sources */,
@@ -2326,6 +2331,7 @@
 				69CD7E945F5E2F84A69A556C /* ConversationWarmupView.swift in Sources */,
 				C93588F488F685B4777132FE /* CrossServerToolResultView.swift in Sources */,
 				33F382D1EE69512F4466A59F /* CrossServerTools.swift in Sources */,
+				3B9AB0C5A616D403984B7919 /* CustomStreamingEffects.swift in Sources */,
 				43DAA3EC91CD24E1B32E907B /* DebugBuildLabel.swift in Sources */,
 				AF137CE1A948A9DB6ED381E4 /* DebugSettings.swift in Sources */,
 				746139312C6BC04FE029B672 /* DiffRendering.swift in Sources */,
