@@ -367,7 +367,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: apps/ios/Sources/Litter/Resources/BuildKitAssets
-          key: ios-buildkit-assets-v3-${{ runner.os }}-${{ env.LITTER_BUILDKIT_ASSET_SHA256 }}-${{ hashFiles('ThirdParty/Nyxian/LitterBuildKitNative/**', 'tools/scripts/build-litter-buildkit-native.sh', 'apps/ios/scripts/prepare-buildkit-assets.sh') }}
+          key: ios-buildkit-assets-v2-${{ runner.os }}-${{ env.LITTER_BUILDKIT_ASSET_SHA256 }}
 
       - name: Prepare private BuildKit assets
         if: steps.buildkit_assets_cache.outputs.cache-hit != 'true'
