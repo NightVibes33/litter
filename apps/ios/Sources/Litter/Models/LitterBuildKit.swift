@@ -267,9 +267,10 @@ struct LitterBuildKitStatus: Equatable, Sendable {
 actor LitterBuildKit {
     static let shared = LitterBuildKit()
 
-    private static let requestRoot = "/root/.litter-buildkit/requests"
-    private static let buildRoot = "/root/builds"
-    private static let shimInstallMarker = "/root/.litter-buildkit/shims-installed-v3"
+    private static let stateRoot = "/root/.litter/buildkit"
+    private static let requestRoot = "\(stateRoot)/requests"
+    private static let buildRoot = "/root/.litter/builds"
+    private static let shimInstallMarker = "\(stateRoot)/shims-installed-v4"
     private static let commandNames = [
         "litter-buildkit",
         "litter-nyxian-status",
@@ -516,7 +517,8 @@ actor LitterBuildKit {
             check "/dev/urandom char device" "[ -c /dev/urandom ]"
             check "/tmp writable" 't=$(mktemp /tmp/litter.XXXXXX) && rm -f "$t"'
             check "/usr/local/bin writable" "[ -w /usr/local/bin ]"
-            check "/root/builds writable" "[ -w /root/builds ]"
+            check "/root/.litter/builds writable" "[ -w /root/.litter/builds ]"
+            check "/root/litter visible" "[ -d /root/litter ] && cd /root/litter"
             for tool in git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm clang swift swiftc cc c++ make jq; do
               if command -v "$tool" >/dev/null 2>&1; then echo "ok  command:$tool $(command -v "$tool")"; else echo "miss command:$tool"; fi
             done
@@ -571,7 +573,7 @@ actor LitterBuildKit {
         let bootstrap = await IshFS.run(
             """
             set -eu
-            mkdir -p /root/bin /root/builds /root/projects /root/.cache/litter /tmp
+            mkdir -p /root/bin /root/litter /root/projects /root/.cache/litter /root/.litter/buildkit/requests /root/.litter/builds /tmp
             chmod 1777 /tmp /var/tmp 2>/dev/null || true
             if command -v apk >/dev/null 2>&1; then
               apk update || true
@@ -581,7 +583,7 @@ actor LitterBuildKit {
             git config --global advice.detachedHead false 2>/dev/null || true
             cat > /root/.litter-fakefs-version <<'EOF'
             litter-fakefs-dev-bootstrap=1
-            layout=/root,/root/projects,/root/builds,/root/.cache/litter,/usr/local/bin
+            layout=/root,/root/litter,/root/projects,/root/.litter/builds,/root/.cache/litter,/usr/local/bin
             EOF
             echo "Bootstrap complete."
             """
@@ -1747,9 +1749,9 @@ actor LitterBuildKit {
         """
         #!/bin/sh
         set -eu
-        root=/root/.litter-buildkit
+        root=${LITTER_BUILDKIT_ROOT:-/root/.litter/buildkit}
         requests="$root/requests"
-        builds=/root/builds
+        builds=${LITTER_BUILDKIT_BUILDS:-/root/.litter/builds}
         mkdir -p "$requests" "$builds"
         cmd="${0##*/}"
         quote_arg() {
@@ -1809,7 +1811,7 @@ actor LitterBuildKit {
         if [ "$wait_for_result" -eq 0 ]; then
           echo "Queued Litter BuildKit request: $id"
           echo "Status: litter-build-status $id"
-          echo "Log: /root/builds/$id/log.txt"
+          echo "Log: $builds/$id/log.txt"
           exit 0
         fi
 

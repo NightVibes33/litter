@@ -866,7 +866,10 @@ private final class LocalFileWorkspaceModel {
     var quickLocations: [LocalFileShortcut] {
         [
             LocalFileShortcut(source: .quick, path: HomeAnchor.path, title: "Home", subtitle: "~", systemImage: "house.fill", kind: .directory),
-            LocalFileShortcut(source: .quick, path: "/root/builds", title: "Builds", subtitle: "~/builds", systemImage: "hammer.fill", kind: .directory),
+            LocalFileShortcut(source: .quick, path: "/root/litter", title: "Litter", subtitle: "/root/litter", systemImage: "shippingbox.fill", kind: .directory),
+            LocalFileShortcut(source: .quick, path: "/root/.litter/builds", title: "Builds", subtitle: "~/.litter/builds", systemImage: "hammer.fill", kind: .directory),
+            LocalFileShortcut(source: .quick, path: "/mnt/apps", title: "App Files", subtitle: "/mnt/apps", systemImage: "externaldrive.fill", kind: .directory),
+            LocalFileShortcut(source: .quick, path: "/mnt/codex", title: "Codex Home", subtitle: "/mnt/codex", systemImage: "folder.badge.gearshape", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/tmp", title: "Temp", subtitle: "/tmp", systemImage: "tray.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/usr/local/bin", title: "Commands", subtitle: "/usr/local/bin", systemImage: "terminal.fill", kind: .directory)
         ]

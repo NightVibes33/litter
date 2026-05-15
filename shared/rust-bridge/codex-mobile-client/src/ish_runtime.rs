@@ -74,6 +74,7 @@ pub fn bootstrap(
 
     let dest = application_support_dir.join("fs");
     extract_rootfs_if_needed(bundle_fs_path, &dest)?;
+    sanitize_root_home_volatiles(&dest)?;
 
     let meta_db = dest.join("meta.db");
     if meta_db.exists() {
@@ -174,7 +175,18 @@ where
 // codex_ish_mount_apps_dir from IshBridge.m. They call run() internally; the
 // ish crate's own lock serializes the actual dispatches.
 
-const RUNTIME_SETUP_SCRIPT: &str = "mkdir -p /tmp ; chmod 1777 /tmp";
+const RUNTIME_SETUP_SCRIPT: &str = concat!(
+    "mkdir -p /dev /tmp /var/tmp /usr/local/bin /root/litter ",
+    "/root/.litter/buildkit/requests /root/.litter/builds ;",
+    "chmod 1777 /tmp /var/tmp 2>/dev/null || true ;",
+    "ensure_char_device() { path=\"$1\"; major=\"$2\"; minor=\"$3\"; mode=\"$4\"; ",
+    "if [ -c \"$path\" ]; then chmod \"$mode\" \"$path\" || true; return; fi; ",
+    "if [ -e \"$path\" ]; then rm -f \"$path\"; fi; ",
+    "mknod -m \"$mode\" \"$path\" c \"$major\" \"$minor\" 2>/dev/null || true; };",
+    "ensure_char_device /dev/null 1 3 666 ;",
+    "ensure_char_device /dev/random 1 8 666 ;",
+    "ensure_char_device /dev/urandom 1 9 666"
+);
 
 fn runtime_env() -> HashMap<String, String> {
     HashMap::from([
@@ -416,7 +428,39 @@ fn preserve_root_home(old_root: &Path, new_root: &Path) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     copy_dir_recursive(&old_home, &new_home)?;
+    quarantine_root_home_volatiles(&new_home)?;
     eprintln!("[ish] preserved /root across rootfs replacement");
+    Ok(())
+}
+
+
+fn sanitize_root_home_volatiles(rootfs: &Path) -> io::Result<()> {
+    let home = rootfs.join(ROOTFS_ROOT_HOME_DIR);
+    if home.is_dir() {
+        quarantine_root_home_volatiles(&home)?;
+    }
+    Ok(())
+}
+
+fn quarantine_root_home_volatiles(home: &Path) -> io::Result<()> {
+    let quarantine = home.join(".litter").join("preserved-root");
+    for volatile in [".litter-buildkit", "builds", "litter"] {
+        let path = home.join(volatile);
+        if fs::symlink_metadata(&path).is_err() {
+            continue;
+        }
+        fs::create_dir_all(&quarantine)?;
+        let mut target = quarantine.join(volatile);
+        if target.exists() {
+            target = quarantine.join(format!("{}-{}", volatile, std::process::id()));
+        }
+        if let Err(err) = fs::rename(&path, &target) {
+            eprintln!("[ish] failed to quarantine /root/{volatile}: {err}; removing");
+            remove_path_if_exists(&path)?;
+        } else {
+            eprintln!("[ish] quarantined /root/{volatile} before fakefs boot");
+        }
+    }
     Ok(())
 }
 

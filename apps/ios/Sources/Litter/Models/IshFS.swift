@@ -262,7 +262,8 @@ enum IshFS {
         await run(
             """
             set -eu
-            mkdir -p /dev /tmp /var/tmp /usr/local/bin /root/builds
+            mkdir -p /dev /tmp /var/tmp /usr/local/bin
+            mkdir -p /root/litter /root/.litter/buildkit/requests /root/.litter/builds 2>/dev/null || true
             chmod 1777 /tmp /var/tmp 2>/dev/null || true
             ensure_char_device() {
               path="$1"
