@@ -73,6 +73,7 @@ if [[ "$MODE" = "inprocess" ]]; then
     "$NYXIAN_ROOT/MobileDevelopmentKit/Support/MDKJob.m"
     "$NYXIAN_ROOT/MobileDevelopmentKit/Tools/MDKDriver.m"
     "$NYXIAN_ROOT/MobileDevelopmentKit/Tools/MDKSDK.m"
+    "$NYXIAN_ROOT/MobileDevelopmentKit/Tools/Linker/MDKLinker.m"
   )
 fi
 

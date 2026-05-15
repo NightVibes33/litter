@@ -3,6 +3,7 @@
 #import <MobileDevelopmentKit/MDKDriver.h>
 #import <MobileDevelopmentKit/MDKJob.h>
 #import <MobileDevelopmentKit/MDKDiagnostic.h>
+#import <MobileDevelopmentKit/MDKLinker.h>
 
 #include <zlib.h>
 #include <stdlib.h>
@@ -99,6 +100,30 @@ static NSString *LBIDiagnosticText(NSArray<MDKDiagnostic *> *diagnostics)
     return text;
 }
 
+static NSString *LBIJobTypeName(CCJobType type)
+{
+    switch(type)
+    {
+        case CCJobTypeCompiler: return @"compiler";
+        case CCJobTypeSwiftCompiler: return @"swift-compiler";
+        case CCJobTypeLinker: return @"linker";
+        case CCJobTypeDriver: return @"driver";
+        case CCJobTypeSwiftDriver: return @"swift-driver";
+        case CCJobTypeUnknown: return @"unknown";
+        default: return [NSString stringWithFormat:@"unknown-%u", type];
+    }
+}
+
+static BOOL LBIExecuteJob(MDKJob *job, NSArray<MDKDiagnostic *> **diagnostics, NSString **mainSource)
+{
+    if(job.type == CCJobTypeLinker)
+    {
+        if(mainSource != nil) { *mainSource = nil; }
+        return [MDKLinker executeJob:job outDiagnostics:diagnostics];
+    }
+    return [job executeJobWithOutDiagnostics:diagnostics withOutMainSource:mainSource];
+}
+
 static NSString *LBIOutputPath(NSArray<NSString *> *words, NSString *fallbackName)
 {
     for(NSUInteger idx = 0; idx + 1 < words.count; idx++)
@@ -180,8 +205,9 @@ static int LBIRunSwiftDriver(NSArray<NSString *> *arguments, NSMutableString *lo
     {
         NSArray<MDKDiagnostic *> *diagnostics = nil;
         NSString *mainSource = nil;
-        BOOL ok = [job executeJobWithOutDiagnostics:&diagnostics withOutMainSource:&mainSource];
-        [log appendFormat:@"job type=%u source=%@ ok=%@\n", job.type, mainSource ?: @"", ok ? @"yes" : @"no"];
+        BOOL ok = LBIExecuteJob(job, &diagnostics, &mainSource);
+        [log appendFormat:@"job type=%@(%u) source=%@ ok=%@\n", LBIJobTypeName(job.type), job.type, mainSource ?: @"", ok ? @"yes" : @"no"];
+        [log appendFormat:@"job args: %@\n", [job.arguments componentsJoinedByString:@" "]];
         if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
         if(!ok) { exitCode = 1; }
     }
