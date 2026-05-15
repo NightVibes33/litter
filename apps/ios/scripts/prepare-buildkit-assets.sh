@@ -61,5 +61,60 @@ fi
 rm -rf "$DEST"
 mkdir -p "$(dirname "$DEST")"
 cp -R -L "$ASSET_DIR" "$DEST"
+
+if [[ "${LITTER_BUILDKIT_REBUILD_NATIVE_DRIVER:-1}" != "0" ]]; then
+  CORE_FRAMEWORK="$DEST/Toolchains/Nyxian/CoreCompiler.framework"
+  REBUILT_DRIVER="$TMP_DIR/LitterBuildKitNative.framework"
+  if [[ ! -d "$CORE_FRAMEWORK" ]]; then
+    echo "error: cannot rebuild LitterBuildKitNative.framework because CoreCompiler.framework is missing: $CORE_FRAMEWORK" >&2
+    exit 1
+  fi
+  echo "==> Rebuilding LitterBuildKitNative.framework from current repo source"
+  LITTER_BUILDKIT_NATIVE_MODE="${LITTER_BUILDKIT_NATIVE_MODE:-inprocess}" \
+    CORECOMPILER_FRAMEWORK="$CORE_FRAMEWORK" \
+    LITTER_BUILDKIT_NATIVE_OUT_DIR="$REBUILT_DRIVER" \
+    "$ROOT_DIR/tools/scripts/build-litter-buildkit-native.sh"
+  if command -v codesign >/dev/null 2>&1; then
+    codesign --force --sign - --timestamp=none "$REBUILT_DRIVER/LitterBuildKitNative"
+  fi
+  rm -rf "$DEST/Toolchains/Nyxian/LitterBuildKitNative.framework"
+  cp -R "$REBUILT_DRIVER" "$DEST/Toolchains/Nyxian/LitterBuildKitNative.framework"
+  python3 - "$DEST" <<'PYHASH'
+import datetime
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+manifest_path = root / "manifest.json"
+manifest = json.loads(manifest_path.read_text())
+sha = manifest.setdefault("sha256", {})
+prefix = "Toolchains/Nyxian/LitterBuildKitNative.framework/"
+for key in list(sha):
+    if key.startswith(prefix):
+        del sha[key]
+framework_root = root / prefix
+for path in sorted(framework_root.rglob("*")):
+    if path.is_file() and path.stat().st_size <= 64 * 1024 * 1024:
+        rel = path.relative_to(root).as_posix()
+        h = hashlib.sha256()
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                h.update(chunk)
+        sha[rel] = h.hexdigest()
+manifest["createdAt"] = datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+toolchain = manifest.setdefault("toolchain", {})
+toolchain["nativeDriverMode"] = "inprocess"
+capabilities = list(manifest.get("capabilities") or [])
+if "in-process-native-driver" not in capabilities:
+    capabilities.append("in-process-native-driver")
+if "in-process-ipa-packager" not in capabilities:
+    capabilities.append("in-process-ipa-packager")
+manifest["capabilities"] = capabilities
+manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+PYHASH
+fi
+
 "$ROOT_DIR/tools/scripts/verify-nyxian-buildkit-assets.sh" "$DEST"
 echo "==> Private BuildKit assets prepared at $DEST"
