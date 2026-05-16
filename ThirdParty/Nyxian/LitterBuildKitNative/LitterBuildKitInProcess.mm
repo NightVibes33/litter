@@ -124,16 +124,28 @@ static BOOL LBIExecuteJob(MDKJob *job, NSArray<MDKDiagnostic *> **diagnostics, N
     return [job executeJobWithOutDiagnostics:diagnostics withOutMainSource:mainSource];
 }
 
-static NSArray<NSString *> *LBIUnwrappedLinkerArguments(NSArray<NSString *> *arguments)
+static NSArray<NSString *> *LBINormalizedLinkerArguments(NSArray<NSString *> *arguments, BOOL *didNormalize)
 {
     NSMutableArray<NSString *> *linkerArguments = [NSMutableArray array];
-    BOOL sawWrappedLinkerArgs = NO;
+    BOOL normalized = NO;
 
     for(NSString *argument in arguments ?: @[])
     {
+        if([argument hasPrefix:@"-fuse-ld="])
+        {
+            normalized = YES;
+            continue;
+        }
+
+        if([argument isEqualToString:@"-Wl"] || [argument isEqualToString:@"-Xlinker"])
+        {
+            normalized = YES;
+            continue;
+        }
+
         if([argument hasPrefix:@"-Wl,"])
         {
-            sawWrappedLinkerArgs = YES;
+            normalized = YES;
             NSString *payload = [argument substringFromIndex:4];
             for(NSString *part in [payload componentsSeparatedByString:@","])
             {
@@ -147,7 +159,8 @@ static NSArray<NSString *> *LBIUnwrappedLinkerArguments(NSArray<NSString *> *arg
         }
     }
 
-    return sawWrappedLinkerArgs ? [linkerArguments copy] : @[];
+    if(didNormalize != nil) { *didNormalize = normalized; }
+    return [linkerArguments copy];
 }
 
 static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInteger depth)
@@ -163,16 +176,17 @@ static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInte
     {
         NSArray<NSString *> *jobArguments = job.arguments ?: @[];
 
-        NSArray<NSString *> *unwrappedLinkerArguments = LBIUnwrappedLinkerArguments(jobArguments);
-        if(unwrappedLinkerArguments.count > 0 && [LBIJobTypeName(job.type) isEqualToString:@"driver"])
+        BOOL didNormalizeLinkerArguments = NO;
+        NSArray<NSString *> *normalizedLinkerArguments = LBINormalizedLinkerArguments(jobArguments, &didNormalizeLinkerArguments);
+        if(didNormalizeLinkerArguments && job.type == CCJobTypeDriver)
         {
-            [log appendFormat:@"job type=%@(%u) unwrapping swift linker driver=yes\n", LBIJobTypeName(job.type), job.type];
+            [log appendFormat:@"job type=%@(%u) normalizing swift linker driver=yes\n", LBIJobTypeName(job.type), job.type];
             [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
-            [log appendFormat:@"linker args: %@\n", [unwrappedLinkerArguments componentsJoinedByString:@" "]];
+            [log appendFormat:@"linker args: %@\n", [normalizedLinkerArguments componentsJoinedByString:@" "]];
 
             NSArray<MDKDiagnostic *> *diagnostics = nil;
             NSString *mainSource = nil;
-            MDKJob *linkerJob = [MDKJob jobWithType:CCJobTypeLinker withArguments:unwrappedLinkerArguments];
+            MDKJob *linkerJob = [MDKJob jobWithType:CCJobTypeLinker withArguments:normalizedLinkerArguments];
             BOOL ok = LBIExecuteJob(linkerJob, &diagnostics, &mainSource);
             [log appendFormat:@"job type=linker(%u) source=%@ ok=%@\n", linkerJob.type, mainSource ?: @"", ok ? @"yes" : @"no"];
             if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
@@ -205,6 +219,15 @@ static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInte
             [log appendFormat:@"job type=%@(%u) expanded ok=%@\n", LBIJobTypeName(job.type), job.type, nestedExitCode == 0 ? @"yes" : @"no"];
             if(nestedExitCode != 0) { exitCode = nestedExitCode; }
             continue;
+        }
+
+        if(job.type == CCJobTypeLinker && didNormalizeLinkerArguments)
+        {
+            [log appendFormat:@"job type=%@(%u) normalizing linker args=yes\n", LBIJobTypeName(job.type), job.type];
+            [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
+            [log appendFormat:@"linker args: %@\n", [normalizedLinkerArguments componentsJoinedByString:@" "]];
+            jobArguments = normalizedLinkerArguments;
+            job = [MDKJob jobWithType:CCJobTypeLinker withArguments:normalizedLinkerArguments];
         }
 
         NSArray<MDKDiagnostic *> *diagnostics = nil;
