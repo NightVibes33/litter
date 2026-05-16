@@ -221,20 +221,22 @@ static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInte
             continue;
         }
 
+        MDKJob *jobToExecute = job;
+        NSArray<NSString *> *argumentsToExecute = jobArguments;
         if(job.type == CCJobTypeLinker && didNormalizeLinkerArguments)
         {
             [log appendFormat:@"job type=%@(%u) normalizing linker args=yes\n", LBIJobTypeName(job.type), job.type];
             [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
             [log appendFormat:@"linker args: %@\n", [normalizedLinkerArguments componentsJoinedByString:@" "]];
-            jobArguments = normalizedLinkerArguments;
-            job = [MDKJob jobWithType:CCJobTypeLinker withArguments:normalizedLinkerArguments];
+            argumentsToExecute = normalizedLinkerArguments;
+            jobToExecute = [MDKJob jobWithType:CCJobTypeLinker withArguments:normalizedLinkerArguments];
         }
 
         NSArray<MDKDiagnostic *> *diagnostics = nil;
         NSString *mainSource = nil;
-        BOOL ok = LBIExecuteJob(job, &diagnostics, &mainSource);
-        [log appendFormat:@"job type=%@(%u) source=%@ ok=%@\n", LBIJobTypeName(job.type), job.type, mainSource ?: @"", ok ? @"yes" : @"no"];
-        [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
+        BOOL ok = LBIExecuteJob(jobToExecute, &diagnostics, &mainSource);
+        [log appendFormat:@"job type=%@(%u) source=%@ ok=%@\n", LBIJobTypeName(jobToExecute.type), jobToExecute.type, mainSource ?: @"", ok ? @"yes" : @"no"];
+        [log appendFormat:@"job args: %@\n", [argumentsToExecute componentsJoinedByString:@" "]];
         if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
         if(!ok && exitCode == 0) { exitCode = 1; }
     }
