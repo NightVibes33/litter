@@ -246,7 +246,7 @@ jobs:
           else
             echo "Generated Swift UniFFI binding/header files are missing or stale."
             echo "Regenerating Swift binding only; this does not rebuild the iOS Rust staticlib."
-            rm -f .build-stamps/bindings-swift
+            rm -f .build-stamps/bindings-swift .build-stamps/sync
             time make bindings-swift
           fi
 
