@@ -205,7 +205,8 @@ enum LitterDownloadSupport {
             text = String(first)
         }
         text = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return text.count == 64 && text.unicodeScalars.allSatisfy { CharacterSet.hexadecimalDigits.contains($0) } ? text : nil
+        let hexDigits = CharacterSet(charactersIn: "0123456789abcdef")
+        return text.count == 64 && text.unicodeScalars.allSatisfy { hexDigits.contains($0) } ? text : nil
     }
 
     static func formatBytes(_ bytes: Int64) -> String {
