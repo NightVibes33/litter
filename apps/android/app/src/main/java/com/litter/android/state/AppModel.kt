@@ -129,6 +129,7 @@ class AppModel private constructor(context: android.content.Context) {
         // The show_widget auto-save hook on the Rust side persists to this
         // directory. Without setting it at launch the hook is a silent no-op.
         client.setSavedAppsDirectory(SavedAppsDirectory.path(context))
+        client.setSlingshotCredentialsDirectory(MobilePreferencesDirectory.path(context))
         discovery = DiscoveryBridge()
         serverBridge = ServerBridge()
         ssh = SshBridge()
@@ -137,6 +138,9 @@ class AppModel private constructor(context: android.content.Context) {
         reconnectController = ReconnectController()
         reconnectController.setCredentialProvider(
             KotlinSshCredentialProvider(SshCredentialStore(context))
+        )
+        reconnectController.setSlingshotCredentialProvider(
+            KotlinSlingshotCredentialProvider(ChatGPTOAuthTokenStore(context))
         )
         reconnectController.setMultiClankerAndQuicEnabled(true)
         launchState = AppLaunchState(context)

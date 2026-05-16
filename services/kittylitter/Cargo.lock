@@ -67,7 +67,7 @@ dependencies = [
 [[package]]
 name = "alleycat"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-acp-bridge",
  "alleycat-amp-bridge",
@@ -75,6 +75,7 @@ dependencies = [
  "alleycat-claude-bridge",
  "alleycat-devin-bridge",
  "alleycat-droid-bridge",
+ "alleycat-grok-bridge",
  "alleycat-hermes-bridge",
  "alleycat-opencode-bridge",
  "alleycat-pi-bridge",
@@ -107,7 +108,7 @@ dependencies = [
 [[package]]
 name = "alleycat-acp-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -130,7 +131,7 @@ dependencies = [
 [[package]]
 name = "alleycat-amp-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-claude-bridge",
@@ -153,7 +154,7 @@ dependencies = [
 [[package]]
 name = "alleycat-bridge-core"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-codex-proto",
  "anyhow",
@@ -172,7 +173,7 @@ dependencies = [
 [[package]]
 name = "alleycat-claude-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -196,7 +197,7 @@ dependencies = [
 [[package]]
 name = "alleycat-codex-proto"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "chrono",
  "serde",
@@ -207,7 +208,7 @@ dependencies = [
 [[package]]
 name = "alleycat-devin-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-acp-bridge",
  "alleycat-bridge-core",
@@ -222,7 +223,7 @@ dependencies = [
 [[package]]
 name = "alleycat-droid-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -239,9 +240,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "alleycat-grok-bridge"
+version = "0.1.0"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
+dependencies = [
+ "alleycat-acp-bridge",
+ "alleycat-bridge-core",
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "rusqlite",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "alleycat-hermes-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -266,7 +283,7 @@ dependencies = [
 [[package]]
 name = "alleycat-opencode-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-bridge-core",
  "anyhow",
@@ -290,7 +307,7 @@ dependencies = [
 [[package]]
 name = "alleycat-pi-bridge"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/alleycat.git?branch=main#5a1114134c7f830c1fb18ab2aa17efd38e704988"
+source = "git+https://github.com/dnakov/alleycat.git?branch=main#8d65ed006cdefb3467865e6ed0b49b6919edb7c5"
 dependencies = [
  "alleycat-bridge-core",
  "alleycat-codex-proto",
@@ -2240,7 +2257,7 @@ dependencies = [
 
 [[package]]
 name = "kittylitter"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "alleycat",
  "anyhow",

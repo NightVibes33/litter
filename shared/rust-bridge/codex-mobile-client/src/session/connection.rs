@@ -44,6 +44,12 @@ pub(crate) struct SshReconnectTransport {
 }
 
 #[derive(Clone)]
+pub(crate) struct SlingshotReconnectTransport {
+    pub(crate) api: codex_slingshot::SlingshotApi,
+    pub(crate) environment_id: String,
+}
+
+#[derive(Clone)]
 pub(crate) enum SshReconnectMode {
     AppServerProxy {
         codex_path: String,
@@ -1219,6 +1225,16 @@ pub(crate) async fn connect_remote_client_over_app_server_proxy(
     ))
 }
 
+pub(crate) async fn connect_remote_client_over_slingshot(
+    api: codex_slingshot::SlingshotApi,
+    environment_id: String,
+    args: &RemoteAppServerConnectArgs,
+) -> Result<AppServerClient, TransportError> {
+    codex_slingshot::connect_app_server_client(api, environment_id, args.clone())
+        .await
+        .map_err(|e| TransportError::ConnectionFailed(e.to_string()))
+}
+
 async fn reconnect_remote_client(
     client: &mut AppServerClient,
     keepalive: &mut Option<Arc<dyn SessionKeepalive>>,
@@ -1551,6 +1567,22 @@ impl RemoteTransport for SshReconnectTransport {
                 }
             }
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl RemoteTransport for SlingshotReconnectTransport {
+    async fn reconnect(
+        &self,
+        args: &RemoteAppServerConnectArgs,
+        _websocket_url: &str,
+    ) -> Result<Reconnected, TransportError> {
+        connect_remote_client_over_slingshot(self.api.clone(), self.environment_id.clone(), args)
+            .await
+            .map(|client| Reconnected {
+                client,
+                keepalive: None,
+            })
     }
 }
 

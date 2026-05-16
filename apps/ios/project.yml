@@ -50,6 +50,9 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
     exactVersion: "0.9.20"
+  Nuke:
+    url: https://github.com/kean/Nuke.git
+    from: "12.8.0"
 targets:
   Litter:
     type: application
@@ -105,6 +108,10 @@ targets:
       - package: ZIPFoundation
         product: ZIPFoundation
       - framework: Frameworks/llama.xcframework
+      - package: Nuke
+        product: Nuke
+      - package: Nuke
+        product: NukeUI
       - target: LitterLiveActivity
         embed: true
       - target: LitterWatch
@@ -390,6 +397,10 @@ targets:
         product: HairballUI
       - package: ZIPFoundation
         product: ZIPFoundation
+      - package: Nuke
+        product: Nuke
+      - package: Nuke
+        product: NukeUI
     settings:
       base:
         PRODUCT_NAME: Litter

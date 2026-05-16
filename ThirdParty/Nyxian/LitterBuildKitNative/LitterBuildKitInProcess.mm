@@ -124,6 +124,32 @@ static BOOL LBIExecuteJob(MDKJob *job, NSArray<MDKDiagnostic *> **diagnostics, N
     return [job executeJobWithOutDiagnostics:diagnostics withOutMainSource:mainSource];
 }
 
+static NSArray<NSString *> *LBIUnwrappedLinkerArguments(NSArray<NSString *> *arguments)
+{
+    NSMutableArray<NSString *> *linkerArguments = [NSMutableArray array];
+    BOOL sawWrappedLinkerArgs = NO;
+
+    for(NSString *argument in arguments ?: @[])
+    {
+        if([argument hasPrefix:@"-Wl,"])
+        {
+            sawWrappedLinkerArgs = YES;
+            NSString *payload = [argument substringFromIndex:4];
+            for(NSString *part in [payload componentsSeparatedByString:@","])
+            {
+                if(part.length == 0 || [part isEqualToString:@"-Wl"]) { continue; }
+                [linkerArguments addObject:part];
+            }
+        }
+        else
+        {
+            [linkerArguments addObject:argument];
+        }
+    }
+
+    return sawWrappedLinkerArgs ? [linkerArguments copy] : @[];
+}
+
 static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInteger depth)
 {
     if(depth > 8)
@@ -136,6 +162,23 @@ static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInte
     for(MDKJob *job in jobs)
     {
         NSArray<NSString *> *jobArguments = job.arguments ?: @[];
+
+        NSArray<NSString *> *unwrappedLinkerArguments = LBIUnwrappedLinkerArguments(jobArguments);
+        if(unwrappedLinkerArguments.count > 0 && [LBIJobTypeName(job.type) isEqualToString:@"driver"])
+        {
+            [log appendFormat:@"job type=%@(%u) unwrapping swift linker driver=yes\n", LBIJobTypeName(job.type), job.type];
+            [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
+            [log appendFormat:@"linker args: %@\n", [unwrappedLinkerArguments componentsJoinedByString:@" "]];
+
+            NSArray<MDKDiagnostic *> *diagnostics = nil;
+            NSString *mainSource = nil;
+            MDKJob *linkerJob = [MDKJob jobWithType:CCJobTypeLinker withArguments:unwrappedLinkerArguments];
+            BOOL ok = LBIExecuteJob(linkerJob, &diagnostics, &mainSource);
+            [log appendFormat:@"job type=linker(%u) source=%@ ok=%@\n", linkerJob.type, mainSource ?: @"", ok ? @"yes" : @"no"];
+            if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
+            if(!ok && exitCode == 0) { exitCode = 1; }
+            continue;
+        }
 
         if(job.type == CCJobTypeDriver)
         {

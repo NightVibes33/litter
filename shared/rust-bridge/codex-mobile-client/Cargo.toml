@@ -15,6 +15,7 @@ iroh = "0.98.1"
 codex-app-server = { workspace = true }
 codex-app-server-client = { workspace = true }
 codex-app-server-protocol = { workspace = true }
+codex-slingshot = { path = "../codex-slingshot" }
 codex-protocol = { workspace = true }
 codex-core = { workspace = true }
 codex-rollout = { workspace = true }

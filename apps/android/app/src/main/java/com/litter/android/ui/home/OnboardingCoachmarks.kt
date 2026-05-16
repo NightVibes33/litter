@@ -226,7 +226,11 @@ private fun CoachmarkLabel(
                 CoachmarkLabelAlignment.Trailing -> Alignment.End
             },
         ) {
-            val shadow = Shadow(color = Color.Black.copy(alpha = 0.7f), offset = Offset(0f, 1f), blurRadius = 4f)
+            val shadow = if (LitterTheme.isDark) {
+                Shadow(color = Color.Black.copy(alpha = 0.7f), offset = Offset(0f, 1f), blurRadius = 4f)
+            } else {
+                null
+            }
             Text(
                 text = item.primary,
                 color = LitterTheme.accent,

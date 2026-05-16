@@ -172,6 +172,61 @@ enum ChatGPTOAuth {
         return tokens
     }
 
+    static func remoteControlEnrollmentStepUpToken() async throws -> String {
+        let state = UUID().uuidString
+        let codeVerifier = generatePKCECodeVerifier()
+        let codeChallenge = generatePKCECodeChallenge(codeVerifier)
+        LLog.info("slingshot", "remote-control step-up auth starting", fields: [
+            "state": state
+        ])
+        let authSession = try await ChatGPTOAuthSessionRunner.shared.authenticate(
+            timeout: callbackTimeout,
+            label: "remote-control-step-up",
+            prefersEphemeralWebBrowserSession: false
+        ) { redirectURI in
+            try buildRemoteControlStepUpAuthorizeURL(
+                state: state,
+                codeChallenge: codeChallenge,
+                redirectURI: redirectURI
+            )
+        }
+        LLog.info("slingshot", "remote-control step-up auth callback received", fields: [
+            "redirectURI": authSession.redirectURI
+        ])
+        let token = try await completeAuthorizationForAccessToken(
+            callbackURL: authSession.callbackURL,
+            expectedState: state,
+            codeVerifier: codeVerifier,
+            redirectURI: authSession.redirectURI
+        )
+        LLog.info("slingshot", "remote-control step-up token received", fields: [
+            "tokenLength": token.count
+        ])
+        return token
+    }
+
+    static func isRemoteControlAuthorizationRequired(_ error: Error) -> Bool {
+        let message = "\(error.localizedDescription) \(String(describing: error))".lowercased()
+        return message.contains("missing slingshot remote-control authorization token")
+            || message.contains("missing slingshot client session token")
+            || message.contains("remote-control authorization")
+    }
+
+    static func loadStoredOrRefreshedTokens() async throws -> ChatGPTOAuthTokenBundle {
+        let stored = try ChatGPTOAuthTokenStore.shared.load()
+        do {
+            return try await refreshStoredTokens(
+                previousAccountID: stored?.accountID,
+                storedTokens: stored
+            )
+        } catch {
+            if let stored {
+                return stored
+            }
+            throw error
+        }
+    }
+
     static func refreshStoredTokens(
         previousAccountID: String?,
         storedTokens: ChatGPTOAuthTokenBundle? = nil
@@ -222,6 +277,31 @@ enum ChatGPTOAuth {
         return url
     }
 
+    static func buildRemoteControlStepUpAuthorizeURL(
+        state: String,
+        codeChallenge: String,
+        redirectURI: String
+    ) throws -> URL {
+        var components = URLComponents(string: "\(authIssuer)/oauth/authorize")
+        components?.queryItems = [
+            URLQueryItem(name: "response_type", value: "code"),
+            URLQueryItem(name: "client_id", value: clientID),
+            URLQueryItem(name: "redirect_uri", value: redirectURI),
+            URLQueryItem(name: "scope", value: "codex.remote_control.enroll"),
+            URLQueryItem(name: "code_challenge", value: codeChallenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "state", value: state),
+            URLQueryItem(name: "originator", value: "Codex Desktop"),
+            URLQueryItem(name: "reauth", value: "remote_control"),
+            URLQueryItem(name: "max_age", value: "0"),
+            URLQueryItem(name: "codex_cli_simplified_flow", value: "true")
+        ]
+        guard let url = components?.url else {
+            throw ChatGPTOAuthError.invalidAuthorizeURL
+        }
+        return url
+    }
+
     static func completeAuthorization(
         callbackURL: URL,
         expectedState: String,
@@ -245,6 +325,35 @@ enum ChatGPTOAuth {
         }
 
         return try await exchangeAuthorizationCode(
+            code: code,
+            codeVerifier: codeVerifier,
+            redirectURI: redirectURI
+        )
+    }
+
+    static func completeAuthorizationForAccessToken(
+        callbackURL: URL,
+        expectedState: String,
+        codeVerifier: String,
+        redirectURI: String
+    ) async throws -> String {
+        let components = try validateCallbackURL(callbackURL)
+
+        let queryItems = Dictionary(
+            uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") }
+        )
+        if let error = queryItems["error"], !error.isEmpty {
+            let description = queryItems["error_description"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw ChatGPTOAuthError.oauthError(description?.isEmpty == false ? description! : error)
+        }
+        guard queryItems["state"] == expectedState else {
+            throw ChatGPTOAuthError.stateMismatch
+        }
+        guard let code = queryItems["code"], !code.isEmpty else {
+            throw ChatGPTOAuthError.missingAuthorizationCode
+        }
+
+        return try await exchangeAuthorizationCodeForAccessToken(
             code: code,
             codeVerifier: codeVerifier,
             redirectURI: redirectURI
@@ -281,6 +390,21 @@ enum ChatGPTOAuth {
         return try await exchangeToken(body: body)
     }
 
+    private static func exchangeAuthorizationCodeForAccessToken(
+        code: String,
+        codeVerifier: String,
+        redirectURI: String
+    ) async throws -> String {
+        let body = [
+            "grant_type=authorization_code",
+            "code=\(urlEncode(code))",
+            "redirect_uri=\(urlEncode(redirectURI))",
+            "client_id=\(urlEncode(clientID))",
+            "code_verifier=\(urlEncode(codeVerifier))"
+        ].joined(separator: "&")
+        return try await exchangeAccessToken(body: body)
+    }
+
     private static func exchangeRefreshToken(
         _ refreshToken: String,
         fallbackRefreshToken: String? = nil
@@ -309,12 +433,24 @@ enum ChatGPTOAuth {
         request.timeoutInterval = 20
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
 
+        LLog.info("auth", "ChatGPT token exchange request", fields: [
+            "url": url.absoluteString,
+            "grantType": formValue("grant_type", in: body) ?? "<unknown>"
+        ])
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw ChatGPTOAuthError.tokenExchangeFailed(status: -1, message: "missing HTTP response")
         }
         let responseText = String(decoding: data, as: UTF8.self)
+        LLog.info("auth", "ChatGPT token exchange response", fields: [
+            "status": http.statusCode,
+            "keys": jsonObjectKeys(data).joined(separator: ",")
+        ])
         guard (200...299).contains(http.statusCode) else {
+            LLog.warn("auth", "ChatGPT token exchange failed", fields: [
+                "status": http.statusCode,
+                "body": redactedOAuthResponsePreview(responseText)
+            ])
             throw ChatGPTOAuthError.tokenExchangeFailed(
                 status: http.statusCode,
                 message: String(responseText.prefix(300))
@@ -327,6 +463,51 @@ enum ChatGPTOAuth {
             statusCode: http.statusCode,
             fallbackRefreshToken: fallbackRefreshToken
         )
+    }
+
+    private static func exchangeAccessToken(body: String) async throws -> String {
+        guard let url = URL(string: "\(authIssuer)/oauth/token") else {
+            throw ChatGPTOAuthError.invalidAuthorizeURL
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = body.data(using: .utf8)
+        request.timeoutInterval = 20
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        LLog.info("auth", "ChatGPT access-token exchange request", fields: [
+            "url": url.absoluteString,
+            "grantType": formValue("grant_type", in: body) ?? "<unknown>"
+        ])
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ChatGPTOAuthError.tokenExchangeFailed(status: -1, message: "missing HTTP response")
+        }
+        let responseText = String(decoding: data, as: UTF8.self)
+        LLog.info("auth", "ChatGPT access-token exchange response", fields: [
+            "status": http.statusCode,
+            "keys": jsonObjectKeys(data).joined(separator: ",")
+        ])
+        guard (200...299).contains(http.statusCode) else {
+            LLog.warn("auth", "ChatGPT access-token exchange failed", fields: [
+                "status": http.statusCode,
+                "body": redactedOAuthResponsePreview(responseText)
+            ])
+            throw ChatGPTOAuthError.tokenExchangeFailed(
+                status: http.statusCode,
+                message: String(responseText.prefix(300))
+            )
+        }
+
+        let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let accessToken = (payload?["access_token"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !accessToken.isEmpty else {
+            throw ChatGPTOAuthError.tokenExchangeFailed(
+                status: http.statusCode,
+                message: "missing access_token"
+            )
+        }
+        return accessToken
     }
 
     static func tokenBundle(
@@ -363,6 +544,43 @@ enum ChatGPTOAuth {
             accountID: accountID,
             planType: planType
         )
+    }
+
+    private static func formValue(_ name: String, in body: String) -> String? {
+        var components = URLComponents()
+        components.query = body
+        return components.queryItems?.first(where: { $0.name == name })?.value
+    }
+
+    private static func jsonObjectKeys(_ data: Data) -> [String] {
+        guard let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return []
+        }
+        return payload.keys.sorted()
+    }
+
+    private static func redactedOAuthResponsePreview(_ text: String) -> String {
+        guard
+            let data = text.data(using: .utf8),
+            var payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return String(text.prefix(300))
+        }
+        for key in payload.keys where isSensitiveOAuthKey(key) {
+            payload[key] = "<redacted>"
+        }
+        guard
+            let redacted = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+            let rendered = String(data: redacted, encoding: .utf8)
+        else {
+            return String(text.prefix(300))
+        }
+        return String(rendered.prefix(300))
+    }
+
+    private static func isSensitiveOAuthKey(_ key: String) -> Bool {
+        let normalized = key.replacingOccurrences(of: "_", with: "").lowercased()
+        return normalized.contains("token") || normalized.contains("authorization")
     }
 
     private static func resolveAccountID(
@@ -455,6 +673,8 @@ private final class ChatGPTOAuthSessionRunner: NSObject, ASWebAuthenticationPres
 
     func authenticate(
         timeout: Duration,
+        label: String = "login",
+        prefersEphemeralWebBrowserSession: Bool = true,
         buildAuthorizeURL: @escaping (String) throws -> URL
     ) async throws -> ChatGPTOAuthSessionResult {
         try await cancelActiveAttempt()
@@ -466,13 +686,28 @@ private final class ChatGPTOAuthSessionRunner: NSObject, ASWebAuthenticationPres
             path: ChatGPTOAuth.callbackPath,
             timeout: timeout
         )
+        LLog.info("auth", "ChatGPT auth callback listener starting", fields: [
+            "label": label,
+            "bindHost": ChatGPTOAuth.callbackBindHost,
+            "publicHost": ChatGPTOAuth.callbackPublicHost,
+            "port": ChatGPTOAuth.callbackPort,
+            "path": ChatGPTOAuth.callbackPath
+        ])
         let redirectURI = try await callbackServer.start()
         let authorizeURL = try buildAuthorizeURL(redirectURI)
+        LLog.info("auth", "ChatGPT auth session prepared", fields: [
+            "label": label,
+            "redirectURI": redirectURI,
+            "authorize": sanitizedAuthorizeURL(authorizeURL),
+            "ephemeral": prefersEphemeralWebBrowserSession
+        ])
 
         return try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
             self.didResolve = false
             self.activeCallbackServer = callbackServer
+            self.activeRedirectURI = redirectURI
+            self.activeLabel = label
             self.callbackTask = Task { [weak self] in
                 do {
                     let callbackURL = try await callbackServer.waitForCallback()
@@ -492,36 +727,68 @@ private final class ChatGPTOAuthSessionRunner: NSObject, ASWebAuthenticationPres
             let session = ASWebAuthenticationSession(
                 url: authorizeURL,
                 callbackURLScheme: nil
-            ) { [weak self] _, error in
+            ) { [weak self] callbackURL, error in
                 Task { @MainActor in
-                    self?.handleSessionCompletion(error)
+                    self?.handleSessionCompletion(callbackURL: callbackURL, error: error)
                 }
             }
             // Start from a clean web auth session to avoid stale provider state
             // carrying over after failed attempts and tripping invalid_state.
-            session.prefersEphemeralWebBrowserSession = true
+            session.prefersEphemeralWebBrowserSession = prefersEphemeralWebBrowserSession
             session.presentationContextProvider = self
             activeSession = session
             guard session.start() else {
                 finishFailure(ChatGPTOAuthError.unableToStartSession)
                 return
             }
+            LLog.info("auth", "ChatGPT auth session started", fields: [
+                "label": label,
+                "ephemeral": prefersEphemeralWebBrowserSession
+            ])
         }
     }
 
-    private func handleSessionCompletion(_ error: Error?) {
+    private var activeRedirectURI: String?
+    private var activeLabel: String?
+
+    private func handleSessionCompletion(callbackURL: URL?, error: Error?) {
+        let label = activeLabel ?? "unknown"
+        if let callbackURL {
+            LLog.info("auth", "ChatGPT auth session returned callback URL", fields: [
+                "label": label,
+                "scheme": callbackURL.scheme ?? "",
+                "host": callbackURL.host ?? "",
+                "path": callbackURL.path
+            ])
+            finishSuccess(
+                callbackURL: callbackURL,
+                redirectURI: activeRedirectURI ?? "http://\(ChatGPTOAuth.callbackPublicHost):\(ChatGPTOAuth.callbackPort)\(ChatGPTOAuth.callbackPath)"
+            )
+            return
+        }
+
         activeSession = nil
         guard !didResolve else { return }
 
         if let authError = error as? ASWebAuthenticationSessionError,
            authError.code == .canceledLogin {
+            LLog.warn("auth", "ChatGPT auth session cancelled", fields: [
+                "label": label
+            ])
             finishFailure(ChatGPTOAuthError.cancelled)
             return
         }
         if let error {
+            LLog.warn("auth", "ChatGPT auth session failed", fields: [
+                "label": label,
+                "error": error.localizedDescription
+            ])
             finishFailure(error)
             return
         }
+        LLog.warn("auth", "ChatGPT auth session completed without callback", fields: [
+            "label": label
+        ])
         finishFailure(ChatGPTOAuthError.cancelled)
     }
 
@@ -561,6 +828,8 @@ private final class ChatGPTOAuthSessionRunner: NSObject, ASWebAuthenticationPres
         activeCallbackServer?.stop()
         activeCallbackServer = nil
         continuation = nil
+        activeRedirectURI = nil
+        activeLabel = nil
     }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
@@ -571,6 +840,21 @@ private final class ChatGPTOAuthSessionRunner: NSObject, ASWebAuthenticationPres
             return window
         }
         return ASPresentationAnchor()
+    }
+
+    private func sanitizedAuthorizeURL(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return url.absoluteString
+        }
+        components.queryItems = components.queryItems?.map { item in
+            switch item.name {
+            case "code_challenge":
+                return URLQueryItem(name: item.name, value: "<redacted>")
+            default:
+                return item
+            }
+        }
+        return components.url?.absoluteString ?? url.absoluteString
     }
 }
 
@@ -619,14 +903,31 @@ private final class ChatGPTOAuthLoopbackServer: @unchecked Sendable {
                 guard let self else { return }
                 switch state {
                 case .ready:
+                    LLog.info("auth", "ChatGPT auth callback listener ready", fields: [
+                        "bindHost": self.bindHost,
+                        "publicHost": self.publicHost,
+                        "port": self.port,
+                        "path": self.path
+                    ])
                     self.timeoutTask = Task { [weak self] in
-                        try? await Task.sleep(for: self?.timeout ?? .seconds(0))
+                        do {
+                            try await Task.sleep(for: self?.timeout ?? .seconds(0))
+                        } catch {
+                            return
+                        }
+                        guard !Task.isCancelled else { return }
+                        LLog.warn("auth", "ChatGPT auth callback listener timed out", fields: [
+                            "port": self?.port ?? 0
+                        ])
                         self?.resumeCallback(with: .failure(ChatGPTOAuthError.callbackTimedOut))
                     }
                     self.resumeStart(
                         with: .success("http://\(self.publicHost):\(self.port)\(self.path)")
                     )
                 case .failed(let error):
+                    LLog.warn("auth", "ChatGPT auth callback listener failed", fields: [
+                        "error": error.localizedDescription
+                    ])
                     self.resumeStart(with: .failure(error))
                     self.resumeCallback(with: .failure(error))
                 default:
@@ -675,6 +976,7 @@ private final class ChatGPTOAuthLoopbackServer: @unchecked Sendable {
     }
 
     private func handle(_ connection: NWConnection) {
+        LLog.info("auth", "ChatGPT auth callback connection accepted")
         connection.start(queue: queue)
         receiveRequest(on: connection, buffer: Data())
     }
@@ -709,6 +1011,9 @@ private final class ChatGPTOAuthLoopbackServer: @unchecked Sendable {
     private func processRequestData(_ data: Data, on connection: NWConnection) {
         let requestText = String(decoding: data, as: UTF8.self)
         let requestLine = requestText.components(separatedBy: "\r\n").first ?? ""
+        LLog.info("auth", "ChatGPT auth callback request received", fields: [
+            "requestLine": requestLine
+        ])
         let pathWithQuery = requestLine
             .split(separator: " ", omittingEmptySubsequences: true)
             .dropFirst()
@@ -719,6 +1024,10 @@ private final class ChatGPTOAuthLoopbackServer: @unchecked Sendable {
               let callbackURL = URL(string: "http://\(publicHost):\(port)\(pathWithQuery)"),
               let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
               components.path == path else {
+            LLog.warn("auth", "ChatGPT auth callback rejected", fields: [
+                "requestLine": requestLine,
+                "pathWithQuery": pathWithQuery
+            ])
             sendResponse(
                 statusLine: "HTTP/1.1 404 Not Found",
                 body: "<html><body><h3>Not found</h3></body></html>",
@@ -732,6 +1041,15 @@ private final class ChatGPTOAuthLoopbackServer: @unchecked Sendable {
             body: "<html><body><h3>Login complete</h3><p>You can return to Litter.</p></body></html>",
             on: connection
         )
+        LLog.info("auth", "ChatGPT auth callback accepted", fields: [
+            "path": path,
+            "hasCode": URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .contains(where: { $0.name == "code" }) ?? false,
+            "hasError": URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .contains(where: { $0.name == "error" }) ?? false
+        ])
         resumeCallback(with: .success(callbackURL))
     }
 

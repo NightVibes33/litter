@@ -424,6 +424,22 @@ impl AppClient {
         };
     }
 
+    /// Register the directory where Slingshot controller enrollment
+    /// credentials are persisted. Platforms should pass their private
+    /// preferences/application-support directory at launch.
+    pub fn set_slingshot_credentials_directory(&self, directory: String) {
+        let mut guard = self
+            .inner
+            .slingshot_credentials_directory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard = if directory.is_empty() {
+            None
+        } else {
+            Some(directory)
+        };
+    }
+
     /// Pre-load the persisted iroh device secret key bytes (32 bytes).
     /// Call from the platform at app launch BEFORE any alleycat
     /// operation so the shared `Endpoint` reuses the same `EndpointId`
@@ -1416,7 +1432,7 @@ impl AppClient {
                 // `dir /b /ad` in cwd — avoids path quoting issues
                 (vec!["cmd.exe", "/c", "dir", "/b", "/ad"], &normalized)
             } else {
-                (vec!["/bin/ls", "-1ap", &normalized], &normalized)
+                (vec!["/usr/bin/env", "ls", "-1ap", &normalized], &normalized)
             };
 
             let resp = exec_command_simple(c.as_ref(), &server_id, &command, Some(cwd)).await?;
@@ -1471,7 +1487,7 @@ impl AppClient {
                     &normalized,
                 ]
             } else {
-                vec!["/bin/mkdir", "-p", &normalized]
+                vec!["/usr/bin/env", "mkdir", "-p", &normalized]
             };
 
             let resp = exec_command_simple(c.as_ref(), &server_id, &command, None).await?;

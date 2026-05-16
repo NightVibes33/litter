@@ -158,6 +158,14 @@ jobs:
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
+      - name: Prime sccache
+        run: |
+          export SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-shared-prep.log"
+          echo "SCCACHE_ERROR_LOG=$SCCACHE_ERROR_LOG" >> "$GITHUB_ENV"
+          sccache --stop-server || true
+          sccache --start-server
+          sccache --show-stats || true
+
       - name: Sync codex submodule
         run: ./apps/ios/scripts/sync-codex.sh --preserve-current
 
@@ -175,8 +183,12 @@ jobs:
           RUSTC_WRAPPER: sccache
           CARGO_INCREMENTAL: "0"
         run: |
+          trap 'status=$?; echo "==> sccache stats"; sccache --show-stats || true; if [ -f "$SCCACHE_ERROR_LOG" ]; then echo "==> sccache error log"; tail -200 "$SCCACHE_ERROR_LOG" || true; fi; exit $status' EXIT
+          sccache --zero-stats || true
           cd shared/rust-bridge
           ./generate-bindings.sh
+          echo "==> sccache stats after shared binding generation"
+          sccache --show-stats || true
 
       - name: Package shared mobile sources
         run: |

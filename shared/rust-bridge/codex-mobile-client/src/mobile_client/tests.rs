@@ -107,6 +107,18 @@ mod mobile_client_tests {
     }
 
     #[test]
+    fn detects_slingshot_initialize_timeout_for_retry() {
+        let error = TransportError::ConnectionFailed(
+            "slingshot app-server handshake failed: timed out waiting for initialize response from `slingshot://env_123`"
+                .to_string(),
+        );
+        assert!(is_slingshot_initialize_timeout(&error));
+
+        let other = TransportError::ConnectionFailed("remote websocket closed".to_string());
+        assert!(!is_slingshot_initialize_timeout(&other));
+    }
+
+    #[test]
     fn normalize_pending_user_input_wraps_freeform_answers_as_notes() {
         let request = make_user_input_request(PendingUserInputQuestion {
             id: "q-1".to_string(),

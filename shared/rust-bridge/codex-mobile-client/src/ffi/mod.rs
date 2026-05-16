@@ -23,7 +23,9 @@ pub use alleycat::{
 };
 pub use app_store::{AppStore, AppStoreSubscription};
 pub use client::AppClient;
-pub use discovery::{DiscoveryBridge, DiscoveryScanSubscription, ServerBridge};
+pub use discovery::{
+    AppSlingshotEnvironment, DiscoveryBridge, DiscoveryScanSubscription, ServerBridge,
+};
 pub use errors::ClientError;
 pub use parser::MessageParser;
 pub use reconnect::ReconnectController;
@@ -32,6 +34,6 @@ pub use ssh::{AppSshBridgeConnectResult, AppSshConnectionResult, AppSshSessionRe
 
 // Re-export reconnect boundary types so UniFFI can discover them.
 pub use crate::reconnect::{
-    ReconnectResult, SavedServerRecord, SshAuthMethodRecord, SshCredentialProvider,
-    SshCredentialRecord,
+    ReconnectResult, SavedServerRecord, SlingshotCredentialProvider, SlingshotCredentialRecord,
+    SshAuthMethodRecord, SshCredentialProvider, SshCredentialRecord,
 };

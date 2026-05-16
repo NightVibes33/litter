@@ -1,5 +1,7 @@
 package com.litter.android.ui.settings
 
+import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -534,7 +536,18 @@ private enum class ServerConnectionMode(val label: String, val formHeader: Strin
     SSH("SSH", "SSH Host"),
     DIRECT_CODEX("Codex", "Codex Server"),
     WEBSOCKET("WebSocket", "Codex URL"),
+    SLINGSHOT("Slingshot", "Slingshot"),
 }
+
+private fun isSettingsSlingshotUrl(rawUrl: String): Boolean =
+    runCatching { Uri.parse(rawUrl).scheme?.equals("slingshot", ignoreCase = true) == true }
+        .getOrDefault(false)
+
+private suspend fun loadSettingsSlingshotTokens(context: Context) =
+    ChatGPTOAuth.requireStoredOrRefreshedTokens(
+        context,
+        "Sign in with ChatGPT before connecting with Slingshot.",
+    )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -556,12 +569,12 @@ private fun ServerEditSheet(
     val resolvedMode = remember(originalSaved, server.isLocal) {
         when {
             server.isLocal -> ServerConnectionMode.LOCAL
+            originalSaved?.websocketURL?.let(::isSettingsSlingshotUrl) == true -> ServerConnectionMode.SLINGSHOT
             originalSaved?.websocketURL != null -> ServerConnectionMode.WEBSOCKET
             originalSaved?.preferredConnectionMode == "ssh" || (originalSaved?.sshPort != null && originalSaved?.hasCodexServer == false) -> ServerConnectionMode.SSH
             else -> ServerConnectionMode.DIRECT_CODEX
         }
     }
-
     var displayName by remember { mutableStateOf(originalSaved?.name?.trim()?.takeIf { it.isNotEmpty() } ?: server.displayName) }
     var connectionMode by remember { mutableStateOf(resolvedMode) }
     var host by remember { mutableStateOf(originalSaved?.hostname?.trim()?.takeIf { it.isNotEmpty() } ?: server.host) }
@@ -571,6 +584,7 @@ private fun ServerEditSheet(
     var wakeMAC by remember { mutableStateOf(originalSaved?.wakeMAC ?: "") }
     var validationError by remember { mutableStateOf<String?>(null) }
     var isReconnecting by remember { mutableStateOf(false) }
+    var pendingSlingshotReconnect by remember { mutableStateOf<SavedServer?>(null) }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -696,6 +710,16 @@ private fun ServerEditSheet(
                     rememberedByUser = true,
                 )
             }
+            ServerConnectionMode.SLINGSHOT -> {
+                val saved = originalSaved ?: run {
+                    validationError = "Remove and add this connected computer again."
+                    return null
+                }
+                saved.copy(
+                    name = name,
+                    rememberedByUser = true,
+                )
+            }
         }
     }
 
@@ -721,6 +745,80 @@ private fun ServerEditSheet(
             runCatching { appModel.refreshSessions(listOf(result.serverId)) }
         }
         appModel.refreshSnapshot()
+    }
+
+    suspend fun connectSlingshotSaved(saved: SavedServer, stepUpToken: String) {
+        val websocketURL = saved.websocketURL?.takeIf(::isSettingsSlingshotUrl)
+            ?: throw IllegalStateException("Saved server is not a Slingshot connection.")
+
+        val tokens = loadSettingsSlingshotTokens(context)
+        appModel.serverBridge.connectRemoteSlingshotUrlServer(
+            saved.id,
+            saved.name,
+            websocketURL,
+            tokens.accessToken,
+            tokens.accountId,
+            stepUpToken,
+        )
+        appModel.refreshSnapshot()
+    }
+
+    suspend fun reconnectSaved(saved: SavedServer) {
+        if (saved.websocketURL?.let(::isSettingsSlingshotUrl) != true) {
+            reconnect(saved.id)
+            return
+        }
+
+        connectSlingshotSaved(saved, "")
+    }
+
+    val slingshotStepUpLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val saved = pendingSlingshotReconnect
+        pendingSlingshotReconnect = null
+        if (saved == null) {
+            return@rememberLauncherForActivityResult
+        }
+        if (result.resultCode != android.app.Activity.RESULT_OK) {
+            validationError = result.data?.getStringExtra(ChatGPTOAuthActivity.EXTRA_ERROR)
+                ?: "Remote-control authorization was cancelled."
+            isReconnecting = false
+            return@rememberLauncherForActivityResult
+        }
+        val stepUpToken = ChatGPTOAuthActivity.parseRemoteControlStepUpToken(result.data)
+        if (stepUpToken == null) {
+            validationError = "Remote-control authorization returned incomplete credentials."
+            isReconnecting = false
+            return@rememberLauncherForActivityResult
+        }
+
+        scope.launch {
+            isReconnecting = true
+            try {
+                connectSlingshotSaved(saved, stepUpToken)
+                onSave()
+            } catch (e: Exception) {
+                validationError = e.message
+            } finally {
+                isReconnecting = false
+            }
+        }
+    }
+
+    fun launchSlingshotStepUp(saved: SavedServer) {
+        try {
+            pendingSlingshotReconnect = saved
+            slingshotStepUpLauncher.launch(
+                ChatGPTOAuthActivity.createIntent(
+                    context,
+                    ChatGPTOAuth.createRemoteControlEnrollmentAttempt(),
+                ),
+            )
+        } catch (e: Exception) {
+            pendingSlingshotReconnect = null
+            validationError = e.localizedMessage ?: e.message ?: "Unable to authorize remote control."
+        }
     }
 
     ModalBottomSheet(
@@ -771,6 +869,12 @@ private fun ServerEditSheet(
                             color = LitterTheme.textSecondary,
                             fontSize = 12.sp,
                         )
+                    } else if (connectionMode == ServerConnectionMode.SLINGSHOT) {
+                        Text(
+                            "This connected computer comes from ChatGPT using your signed-in account. Edit its display name here, or remove and add it again to change the computer.",
+                            color = LitterTheme.textSecondary,
+                            fontSize = 12.sp,
+                        )
                     } else {
                         // Mode selector
                         Row(
@@ -780,7 +884,11 @@ private fun ServerEditSheet(
                                 .padding(4.dp),
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            val modes = listOf(ServerConnectionMode.SSH, ServerConnectionMode.DIRECT_CODEX, ServerConnectionMode.WEBSOCKET)
+                            val modes = listOf(
+                                ServerConnectionMode.SSH,
+                                ServerConnectionMode.DIRECT_CODEX,
+                                ServerConnectionMode.WEBSOCKET,
+                            )
                             modes.forEach { mode ->
                                 val selected = mode == connectionMode
                                 Box(
@@ -910,12 +1018,22 @@ private fun ServerEditSheet(
                                             scope.launch {
                                                 isReconnecting = true
                                                 try {
-                                                    reconnect(saved.id)
+                                                    reconnectSaved(saved)
                                                     onSave()
                                                 } catch (e: Exception) {
-                                                    validationError = e.message
-                                                } finally {
                                                     isReconnecting = false
+                                                    if (
+                                                        connectionMode == ServerConnectionMode.SLINGSHOT &&
+                                                        ChatGPTOAuth.isRemoteControlAuthorizationRequired(e)
+                                                    ) {
+                                                        launchSlingshotStepUp(saved)
+                                                    } else {
+                                                        validationError = e.message
+                                                    }
+                                                } finally {
+                                                    if (pendingSlingshotReconnect == null) {
+                                                        isReconnecting = false
+                                                    }
                                                 }
                                             }
                                         }

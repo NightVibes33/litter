@@ -68,6 +68,7 @@ final class AppModel {
 
         let rc = ReconnectController()
         rc.setCredentialProvider(provider: SwiftSshCredentialProvider())
+        rc.setSlingshotCredentialProvider(provider: SwiftSlingshotCredentialProvider())
         rc.setMultiClankerAndQuicEnabled(enabled: true)
         return RustBridges(
             store: AppStore(),
@@ -145,6 +146,7 @@ final class AppModel {
         // dynamic-tool finalize hook can auto-upsert on `show_widget` calls.
         // Without this, auto-save silently no-ops.
         self.client.setSavedAppsDirectory(directory: SavedAppsDirectory.path)
+        self.client.setSlingshotCredentialsDirectory(directory: MobilePreferencesDirectory.path)
 
         // Route Swift presentation lookups through the Rust-owned
         // `AgentMetadataStore`. Any view rendering an agent label /

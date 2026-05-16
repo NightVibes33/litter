@@ -3,6 +3,7 @@ members = [
     "codex-bridge",
     "codex-debug-cli",
     "codex-ipc",
+    "codex-slingshot",
     "codex-mobile-client",
     "uniffi-bindgen",
     "codex-tui",
@@ -34,7 +35,7 @@ alleycat-opencode-bridge = { git = "https://github.com/dnakov/alleycat.git", bra
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
-tokio-tungstenite = "0.26"
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 thiserror = "2"
 tracing = "0.1"
 async-trait = "0.1"
@@ -42,12 +43,15 @@ lru = "0.12"
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 base64 = "0.22"
+sha2 = "0.10"
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
 russh = "0.60.1"
 russh-keys = "0.49.2"
 futures = "0.3"
 url = "2.5"
 uuid = { version = "1", features = ["v4", "serde"] }
-reqwest = { version = "0.12", default-features = false, features = ["http2", "json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["http2", "json", "rustls-tls", "stream"] }
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
 shlex = "1"
 

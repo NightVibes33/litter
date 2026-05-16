@@ -452,6 +452,14 @@ final class AppLifecycleController {
             await appModel.restoreStoredLocalAuthState(serverId: result.serverId)
         }
         await appModel.restoreMissingLocalAuthStateIfNeeded()
+
+        if needsInitialReconnect {
+            let retryResults = await appModel.reconnectController.reconnectSavedServers()
+            for result in retryResults where result.needsLocalAuthRestore {
+                await appModel.restoreStoredLocalAuthState(serverId: result.serverId)
+            }
+            await appModel.refreshSnapshot()
+        }
         guard !Task.isCancelled else { return }
 
         let trustedLiveKeys = Set(keysToRefresh.filter {

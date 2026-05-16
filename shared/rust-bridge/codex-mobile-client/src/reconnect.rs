@@ -6,6 +6,8 @@
 use crate::alleycat::{AgentWire as AlleycatAgentWire, ParsedPairPayload as AlleycatPairPayload};
 use crate::mobile_client::MobileClient;
 use crate::session::connection::{InProcessConfig, ServerConfig};
+use crate::slingshot_url::is_slingshot_connection_url;
+use crate::slingshot_url::parse_slingshot_connection_url;
 use crate::ssh::{SshAuth, SshClient, SshCredentials};
 use crate::types::AgentRuntimeKind;
 use std::path::PathBuf;
@@ -61,6 +63,13 @@ pub struct SshCredentialRecord {
     pub unlock_macos_keychain: bool,
 }
 
+/// ChatGPT credentials supplied by the platform keychain/token store.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SlingshotCredentialRecord {
+    pub access_token: String,
+    pub account_id: String,
+}
+
 /// Result of a single server reconnection attempt.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct ReconnectResult {
@@ -74,6 +83,12 @@ pub struct ReconnectResult {
 #[uniffi::export(callback_interface)]
 pub trait SshCredentialProvider: Send + Sync {
     fn load_credential(&self, host: String, port: u16) -> Option<SshCredentialRecord>;
+}
+
+/// Callback interface for platform-side ChatGPT credential storage.
+#[uniffi::export(callback_interface)]
+pub trait SlingshotCredentialProvider: Send + Sync {
+    fn load_credential(&self) -> Option<SlingshotCredentialRecord>;
 }
 
 // ── Internal reconnect plan ─────────────────────────────────────────────
@@ -109,6 +124,13 @@ pub(crate) enum ReconnectPlan {
         server_id: String,
         display_name: String,
         websocket_url: String,
+    },
+    Slingshot {
+        server_id: String,
+        display_name: String,
+        base_url: String,
+        environment_id: String,
+        credential: SlingshotCredentialRecord,
     },
     Alleycat {
         server_id: String,
@@ -246,9 +268,26 @@ pub(crate) fn direct_codex_port(server: &SavedServerRecord) -> Option<u16> {
 ///
 /// Consolidates iOS `reconnectPlan(for:)` and Android
 /// `reconnectSavedServer` into a single decision tree.
-pub(crate) fn compute_reconnect_plan(
+#[cfg(test)]
+fn compute_reconnect_plan(
     server: &SavedServerRecord,
     credential: Option<&SshCredentialRecord>,
+    is_connected: bool,
+    multi_clanker_and_quic_enabled: bool,
+) -> Option<ReconnectPlan> {
+    compute_reconnect_plan_with_slingshot(
+        server,
+        credential,
+        None,
+        is_connected,
+        multi_clanker_and_quic_enabled,
+    )
+}
+
+pub(crate) fn compute_reconnect_plan_with_slingshot(
+    server: &SavedServerRecord,
+    credential: Option<&SshCredentialRecord>,
+    slingshot_credential: Option<&SlingshotCredentialRecord>,
     is_connected: bool,
     multi_clanker_and_quic_enabled: bool,
 ) -> Option<ReconnectPlan> {
@@ -305,6 +344,20 @@ pub(crate) fn compute_reconnect_plan(
 
     // 4. WebSocket URL override → RemoteUrl
     if let Some(ref ws_url) = server.websocket_url {
+        // Slingshot URLs are saved-server markers. They require the
+        // ChatGPT-token-aware Slingshot connector, not the generic websocket
+        // transport.
+        if is_slingshot_connection_url(ws_url) {
+            let slingshot = parse_slingshot_connection_url(ws_url)?;
+            let credential = slingshot_credential?;
+            return Some(ReconnectPlan::Slingshot {
+                server_id: server.id.clone(),
+                display_name: server.name.clone(),
+                base_url: slingshot.base_url,
+                environment_id: slingshot.environment_id,
+                credential: credential.clone(),
+            });
+        }
         return Some(ReconnectPlan::RemoteUrl {
             server_id: server.id.clone(),
             display_name: server.name.clone(),
@@ -631,6 +684,49 @@ pub(crate) async fn execute_reconnect_plan(
                 Err(e) => {
                     warn!(
                         "reconnect: RemoteUrl plan failed server_id={} error={}",
+                        server_id, e
+                    );
+                    ReconnectResult {
+                        server_id: server_id.clone(),
+                        success: false,
+                        needs_local_auth_restore: false,
+                        error_message: Some(e.to_string()),
+                    }
+                }
+            }
+        }
+        ReconnectPlan::Slingshot {
+            server_id,
+            display_name,
+            base_url,
+            environment_id,
+            credential,
+        } => {
+            info!(
+                "reconnect: executing Slingshot plan server_id={} environment_id={}",
+                server_id, environment_id
+            );
+            match client
+                .connect_remote_over_slingshot(
+                    server_id.clone(),
+                    display_name.clone(),
+                    base_url.clone(),
+                    credential.access_token.clone(),
+                    credential.account_id.clone(),
+                    environment_id.clone(),
+                    String::new(),
+                )
+                .await
+            {
+                Ok(_) => ReconnectResult {
+                    server_id: server_id.clone(),
+                    success: true,
+                    needs_local_auth_restore: false,
+                    error_message: None,
+                },
+                Err(e) => {
+                    warn!(
+                        "reconnect: Slingshot plan failed server_id={} error={}",
                         server_id, e
                     );
                     ReconnectResult {
@@ -981,6 +1077,45 @@ mod tests {
         s.websocket_url = Some("wss://example.com/ws".into());
         let plan = compute_reconnect_plan(&s, None, false, false);
         assert!(matches!(plan, Some(ReconnectPlan::RemoteUrl { .. })));
+    }
+
+    #[test]
+    fn plan_skips_slingshot_marker_url() {
+        let mut s = base_server();
+        s.websocket_url =
+            Some("slingshot://env_123?baseUrl=https://chatgpt.com/backend-api".into());
+        let plan = compute_reconnect_plan(&s, None, false, false);
+        assert!(plan.is_none());
+    }
+
+    #[test]
+    fn plan_slingshot_when_marker_url_and_credential_available() {
+        let mut s = base_server();
+        s.websocket_url = Some("slingshot://env_123?baseUrl=https://chatgpt.com".into());
+        let credential = SlingshotCredentialRecord {
+            access_token: "access-token".into(),
+            account_id: "acct".into(),
+        };
+
+        let plan = compute_reconnect_plan_with_slingshot(&s, None, Some(&credential), false, false);
+
+        match plan {
+            Some(ReconnectPlan::Slingshot {
+                server_id,
+                display_name,
+                base_url,
+                environment_id,
+                credential,
+            }) => {
+                assert_eq!(server_id, "srv-1");
+                assert_eq!(display_name, "Test Server");
+                assert_eq!(base_url, "https://chatgpt.com/backend-api");
+                assert_eq!(environment_id, "env_123");
+                assert_eq!(credential.account_id, "acct");
+                assert_eq!(credential.access_token, "access-token");
+            }
+            other => panic!("expected slingshot reconnect plan, got {other:?}"),
+        }
     }
 
     #[test]

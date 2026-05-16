@@ -5,8 +5,8 @@ use crate::ffi::shared::{shared_mobile_client, shared_runtime};
 use crate::mobile_client::MobileClient;
 use crate::next_request_id;
 use crate::reconnect::{
-    ReconnectResult, SavedServerRecord, SshCredentialProvider, compute_reconnect_plan,
-    execute_reconnect_plan,
+    ReconnectResult, SavedServerRecord, SlingshotCredentialProvider, SshCredentialProvider,
+    compute_reconnect_plan_with_slingshot, execute_reconnect_plan,
 };
 use crate::session::connection::{InProcessConfig, ServerConfig};
 use crate::store::ServerHealthSnapshot;
@@ -67,6 +67,8 @@ pub struct ReconnectController {
     rt: Arc<Runtime>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
     credential_provider: Arc<tokio::sync::Mutex<Option<Arc<dyn SshCredentialProvider>>>>,
+    slingshot_credential_provider:
+        Arc<tokio::sync::Mutex<Option<Arc<dyn SlingshotCredentialProvider>>>>,
     multi_clanker_and_quic_enabled: Arc<std::sync::Mutex<bool>>,
     reconnect_guard: Arc<tokio::sync::Mutex<()>>,
 }
@@ -80,6 +82,7 @@ impl ReconnectController {
             rt: shared_runtime(),
             saved_servers: Arc::new(RwLock::new(Vec::new())),
             credential_provider: Arc::new(tokio::sync::Mutex::new(None)),
+            slingshot_credential_provider: Arc::new(tokio::sync::Mutex::new(None)),
             multi_clanker_and_quic_enabled: Arc::new(std::sync::Mutex::new(false)),
             reconnect_guard: Arc::new(tokio::sync::Mutex::new(())),
         }
@@ -96,6 +99,25 @@ impl ReconnectController {
         };
         if fast.is_none() {
             let cp = Arc::clone(&self.credential_provider);
+            self.rt.spawn(async move {
+                *cp.lock().await = Some(provider);
+            });
+        }
+    }
+
+    pub fn set_slingshot_credential_provider(
+        &self,
+        provider: Box<dyn SlingshotCredentialProvider>,
+    ) {
+        let provider: Arc<dyn SlingshotCredentialProvider> = Arc::from(provider);
+        let fast = {
+            let cp = Arc::clone(&self.slingshot_credential_provider);
+            cp.try_lock().ok().map(|mut g| {
+                *g = Some(Arc::clone(&provider));
+            })
+        };
+        if fast.is_none() {
+            let cp = Arc::clone(&self.slingshot_credential_provider);
             self.rt.spawn(async move {
                 *cp.lock().await = Some(provider);
             });
@@ -120,6 +142,7 @@ impl ReconnectController {
         let inner = Arc::clone(&self.inner);
         let saved_servers = Arc::clone(&self.saved_servers);
         let credential_provider = Arc::clone(&self.credential_provider);
+        let slingshot_credential_provider = Arc::clone(&self.slingshot_credential_provider);
         let multi_clanker_and_quic_enabled = match self.multi_clanker_and_quic_enabled.lock() {
             Ok(guard) => *guard,
             Err(e) => *e.into_inner(),
@@ -135,6 +158,7 @@ impl ReconnectController {
                     inner,
                     saved_servers,
                     credential_provider,
+                    slingshot_credential_provider,
                     multi_clanker_and_quic_enabled,
                     reconnect_guard,
                 )
@@ -151,6 +175,7 @@ impl ReconnectController {
         let inner = Arc::clone(&self.inner);
         let saved_servers = Arc::clone(&self.saved_servers);
         let credential_provider = Arc::clone(&self.credential_provider);
+        let slingshot_credential_provider = Arc::clone(&self.slingshot_credential_provider);
         let multi_clanker_and_quic_enabled = match self.multi_clanker_and_quic_enabled.lock() {
             Ok(guard) => *guard,
             Err(e) => *e.into_inner(),
@@ -165,6 +190,7 @@ impl ReconnectController {
                     Arc::clone(&inner),
                     saved_servers,
                     credential_provider,
+                    slingshot_credential_provider,
                     multi_clanker_and_quic_enabled,
                     server_id,
                 )
@@ -315,6 +341,9 @@ async fn reconnect_saved_servers_inner(
     inner: Arc<MobileClient>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
     credential_provider: Arc<tokio::sync::Mutex<Option<Arc<dyn SshCredentialProvider>>>>,
+    slingshot_credential_provider: Arc<
+        tokio::sync::Mutex<Option<Arc<dyn SlingshotCredentialProvider>>>,
+    >,
     multi_clanker_and_quic_enabled: bool,
     reconnect_guard: Arc<tokio::sync::Mutex<()>>,
 ) -> Vec<ReconnectResult> {
@@ -376,6 +405,10 @@ async fn reconnect_saved_servers_inner(
     }
 
     let credential_provider = credential_provider.lock().await;
+    let slingshot_credential_provider = slingshot_credential_provider.lock().await;
+    let slingshot_credential = slingshot_credential_provider
+        .as_ref()
+        .and_then(|provider| provider.load_credential());
 
     let mut plans = Vec::new();
     for server in &servers {
@@ -387,15 +420,17 @@ async fn reconnect_saved_servers_inner(
             let ssh_port = crate::reconnect::resolved_ssh_port(server);
             p.load_credential(server.hostname.clone(), ssh_port)
         });
-        if let Some(plan) = compute_reconnect_plan(
+        if let Some(plan) = compute_reconnect_plan_with_slingshot(
             server,
             credential.as_ref(),
+            slingshot_credential.as_ref(),
             is_connected,
             multi_clanker_and_quic_enabled,
         ) {
             plans.push(plan);
         }
     }
+    drop(slingshot_credential_provider);
     drop(credential_provider);
 
     let mut join_set = JoinSet::new();
@@ -423,6 +458,9 @@ async fn reconnect_server_inner(
     inner: Arc<MobileClient>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
     credential_provider: Arc<tokio::sync::Mutex<Option<Arc<dyn SshCredentialProvider>>>>,
+    slingshot_credential_provider: Arc<
+        tokio::sync::Mutex<Option<Arc<dyn SlingshotCredentialProvider>>>,
+    >,
     multi_clanker_and_quic_enabled: bool,
     server_id: String,
 ) -> ReconnectResult {
@@ -479,15 +517,21 @@ async fn reconnect_server_inner(
 
     if let Some(server) = saved_server {
         let credential_provider = credential_provider.lock().await;
+        let slingshot_credential_provider = slingshot_credential_provider.lock().await;
         let credential = credential_provider.as_ref().and_then(|p| {
             let ssh_port = crate::reconnect::resolved_ssh_port(&server);
             p.load_credential(server.hostname.clone(), ssh_port)
         });
+        let slingshot_credential = slingshot_credential_provider
+            .as_ref()
+            .and_then(|provider| provider.load_credential());
+        drop(slingshot_credential_provider);
         drop(credential_provider);
 
-        if let Some(plan) = compute_reconnect_plan(
+        if let Some(plan) = compute_reconnect_plan_with_slingshot(
             &server,
             credential.as_ref(),
+            slingshot_credential.as_ref(),
             false,
             multi_clanker_and_quic_enabled,
         ) {

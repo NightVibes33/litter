@@ -1,6 +1,8 @@
 import SwiftUI
 import Hairball
 import HairballUI
+import Nuke
+import NukeUI
 import UIKit
 
 extension View {
@@ -114,18 +116,30 @@ struct UserBubble: View {
             Spacer(minLength: compact ? 30 : 60)
             VStack(alignment: .trailing, spacing: compact ? 4 : 8) {
                 ForEach(images) { img in
-                    if let uiImage = UserBubble.decodeImage(img) {
-                        Image(uiImage: uiImage)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 200, maxHeight: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                            .draggable(Image(uiImage: uiImage)) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 120)
+                    if let request = UserBubble.imageRequest(for: img) {
+                        LazyImage(request: request) { state in
+                            if let image = state.image {
+                                if let ui = state.imageContainer?.image {
+                                    image
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(maxWidth: 200, maxHeight: 200)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .draggable(Image(uiImage: ui)) {
+                                            Image(uiImage: ui)
+                                                .resizable()
+                                                .scaledToFit()
+                                                .frame(width: 120)
+                                        }
+                                } else {
+                                    image
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(maxWidth: 200, maxHeight: 200)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
                             }
+                        }
                     }
                 }
                 if !text.isEmpty {
@@ -161,8 +175,6 @@ struct UserBubble: View {
         }
     }
 
-    private static let imageCache = NSCache<NSString, UIImage>()
-
     private var visibleText: String {
         guard shouldLimitText, !expandedLongText else {
             return text
@@ -174,26 +186,36 @@ struct UserBubble: View {
         text.count > maxVisibleCharacters
     }
 
-    private static func decodeImage(_ image: ChatImage) -> UIImage? {
-        let key = image.cacheKey as NSString
-        if let cached = imageCache.object(forKey: key) { return cached }
-        guard let data = imageData(for: image) else { return nil }
-        guard let image = UIImage(data: data) else { return nil }
-        imageCache.setObject(image, forKey: key)
-        return image
-    }
-
-    private static func imageData(for image: ChatImage) -> Data? {
+    fileprivate static func imageRequest(for image: ChatImage) -> ImageRequest? {
         let source = image.source
         guard source.hasPrefix("data:") || source.hasPrefix("file://") else {
             return nil
         }
+        let cacheKey = image.cacheKey
+        let processors: [any ImageProcessing] = [
+            ImageProcessors.Resize(
+                size: CGSize(width: 200, height: 200),
+                unit: .points,
+                contentMode: .aspectFit
+            )
+        ]
+        return ImageRequest(
+            id: cacheKey,
+            data: { @Sendable in
+                guard let data = imageData(forSource: source) else {
+                    throw URLError(.fileDoesNotExist)
+                }
+                return data
+            },
+            processors: processors
+        )
+    }
 
+    private static func imageData(forSource source: String) -> Data? {
         if source.hasPrefix("file://") {
             let path = String(source.dropFirst("file://".count))
             return FileManager.default.contents(atPath: path)
         }
-
         guard let commaIndex = source.firstIndex(of: ",") else { return nil }
         let base64 = String(source[source.index(after: commaIndex)...])
         return Data(base64Encoded: base64, options: .ignoreUnknownCharacters)
@@ -346,18 +368,42 @@ struct AssistantBlocksBubble: View {
                 )
                 .id(identity)
             }
-        case .image(let uiImage):
-            Image(uiImage: uiImage)
-                .resizable()
-                .scaledToFit()
-                .frame(maxHeight: 300)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .draggable(Image(uiImage: uiImage)) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 120)
+        case .image(let data, let cacheKey):
+            LazyImage(
+                request: ImageRequest(
+                    id: cacheKey,
+                    data: { data },
+                    processors: [
+                        ImageProcessors.Resize(
+                            size: CGSize(width: 1200, height: 300),
+                            unit: .points,
+                            contentMode: .aspectFit
+                        )
+                    ]
+                )
+            ) { state in
+                if let image = state.image {
+                    if let ui = state.imageContainer?.image {
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxHeight: 300)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .draggable(Image(uiImage: ui)) {
+                                Image(uiImage: ui)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 120)
+                            }
+                    } else {
+                        image
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxHeight: 300)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
                 }
+            }
         }
     }
 

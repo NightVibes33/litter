@@ -7,6 +7,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -301,18 +303,18 @@ private fun UserMessageRow(
                 LimitedUserMessageText(data.text)
                 // Inline images from data URIs
                 for (uri in data.imageDataUris) {
-                    val bitmap = remember(uri) {
+                    val bytes = remember(uri) {
                         try {
                             val base64Part = uri.substringAfter("base64,", "")
-                            if (base64Part.isNotEmpty()) {
-                                val bytes = Base64.decode(base64Part, Base64.DEFAULT)
-                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            } else null
+                            if (base64Part.isNotEmpty()) Base64.decode(base64Part, Base64.DEFAULT) else null
                         } catch (_: Exception) { null }
                     }
-                    bitmap?.let {
-                        Image(
-                            bitmap = it.asImageBitmap(),
+                    bytes?.let {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(it)
+                                .crossfade(false)
+                                .build(),
                             contentDescription = "Attached image",
                             modifier = Modifier
                                 .padding(top = 4.dp)
@@ -491,6 +493,7 @@ private fun AssistantRenderBlocks(
         return
     }
 
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         blocks.forEachIndexed { index, block ->
             when (block) {
@@ -506,19 +509,17 @@ private fun AssistantRenderBlocks(
                     }
                 }
                 is AppMessageRenderBlock.InlineImage -> {
-                    val bitmap = remember(block.data) {
-                        BitmapFactory.decodeByteArray(block.data, 0, block.data.size)
-                    }
-                    bitmap?.let {
-                        Image(
-                            bitmap = it.asImageBitmap(),
-                            contentDescription = "Assistant image ${index + 1}",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 300.dp)
-                                .clip(RoundedCornerShape(10.dp)),
-                        )
-                    }
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(block.data)
+                            .crossfade(false)
+                            .build(),
+                        contentDescription = "Assistant image ${index + 1}",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp)
+                            .clip(RoundedCornerShape(10.dp)),
+                    )
                 }
             }
         }
@@ -972,17 +973,7 @@ private fun ComputerUseToolCallRow(
 
 @Composable
 private fun ScreenshotPreview(bytes: ByteArray) {
-    val bitmap = remember(bytes) {
-        try {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        } catch (_: Throwable) {
-            null
-        }
-    }
-    if (bitmap == null) {
-        InlineTextSection("Screenshot", "Unavailable", tone = LitterTheme.textMuted)
-        return
-    }
+    val context = LocalContext.current
     Column {
         Text(
             text = "SCREENSHOT",
@@ -991,8 +982,11 @@ private fun ScreenshotPreview(bytes: ByteArray) {
             fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.height(4.dp))
-        Image(
-            bitmap = bitmap,
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(bytes)
+                .crossfade(false)
+                .build(),
             contentDescription = "Computer Use screenshot",
             contentScale = ContentScale.Fit,
             modifier = Modifier
@@ -1150,14 +1144,8 @@ private fun ImageGenerationRow(
 private fun GeneratedImageSection(
     data: uniffi.codex_mobile_client.HydratedImageGenerationData,
 ) {
-    val bitmap = remember(data.imagePng) {
-        val bytes = data.imagePng ?: return@remember null
-        try {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        } catch (_: Throwable) {
-            null
-        }
-    }
+    val context = LocalContext.current
+    val pngBytes = data.imagePng
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionLabel("Image")
@@ -1169,9 +1157,12 @@ private fun GeneratedImageSection(
             contentAlignment = Alignment.Center,
         ) {
             when {
-                bitmap != null -> {
-                    Image(
-                        bitmap = bitmap,
+                pngBytes != null -> {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(pngBytes)
+                            .crossfade(false)
+                            .build(),
                         contentDescription = "Generated image",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier

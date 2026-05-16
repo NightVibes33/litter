@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var appModel
@@ -8,11 +9,14 @@ struct SettingsView: View {
     @AppStorage("fontFamily") private var fontFamily = FontFamilyOption.mono.rawValue
     @AppStorage("collapseTurns") private var collapseTurns = false
     @AppStorage("developerToolsEnabled") private var developerToolsEnabled = false
+    @AppStorage("litterSettingsRequestedRoute") private var requestedSettingsRoute = ""
+    @AppStorage("litterTerminalInitialDirectory") private var terminalInitialDirectory = HomeAnchor.path
     @AppStorage(ConversationDisplayPreferenceKey.reasoning) private var reasoningDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
     @AppStorage(ConversationDisplayPreferenceKey.commands) private var commandDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
     @AppStorage(ConversationDisplayPreferenceKey.tools) private var toolDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
     @State private var activeServerSheet: SettingsServerSheet?
     @State private var serverEditError: String?
+    @State private var navigationPath: [SettingsRoute] = []
 
     @StateObject private var taskBag = ViewTaskBag()
     private var localServer: AppServerSnapshot? {
@@ -31,7 +35,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 LitterTheme.backgroundGradient.ignoresSafeArea()
                 Form {
@@ -39,6 +43,7 @@ struct SettingsView: View {
                     appearanceSection
                     fontSection
                     conversationSection
+                    localToolsSection
                     petSection
                     experimentalSection
                     aiProvidersSection
@@ -59,6 +64,14 @@ struct SettingsView: View {
                         .foregroundColor(LitterTheme.accent)
                 }
             }
+            .navigationDestination(for: SettingsRoute.self) { route in
+                switch route {
+                case .terminal:
+                    SettingsTerminalView(initialDirectory: terminalInitialDirectory)
+                }
+            }
+            .onAppear { consumeRequestedSettingsRoute() }
+            .onChange(of: requestedSettingsRoute) { _, _ in consumeRequestedSettingsRoute() }
             .sheet(item: $activeServerSheet) { sheet in
                 switch sheet {
                 case .add:
@@ -128,6 +141,82 @@ struct SettingsView: View {
             Text("Theme")
                 .foregroundColor(LitterTheme.textSecondary)
         }
+    }
+
+    // MARK: - Local Tools Section
+
+    private var localToolsSection: some View {
+        Section {
+            NavigationLink(value: SettingsRoute.terminal) {
+                HStack(spacing: 10) {
+                    Image(systemName: "terminal")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Terminal")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Run commands in the same local iSH runtime used by bots")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                startActivePiP()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: StreamingPiPController.shared.isActive ? "pip.fill" : "pip")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Picture in Picture")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text(pipDetailText)
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                    Spacer()
+                }
+            }
+            .disabled(!canStartPiP)
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("Local Tools")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
+    private var activeThreadKey: ThreadKey? {
+        appModel.snapshot?.activeThread
+    }
+
+    private var canStartPiP: Bool {
+        StreamingPiPController.shared.isSupported && activeThreadKey != nil
+    }
+
+    private var pipDetailText: String {
+        if !StreamingPiPController.shared.isSupported {
+            return "Not supported on this device"
+        }
+        if activeThreadKey == nil {
+            return "Open a chat first, then start PiP from Settings or Home"
+        }
+        return StreamingPiPController.shared.isActive ? "PiP is currently active" : "Float the active chat card over iOS"
+    }
+
+    private func startActivePiP() {
+        guard let activeThreadKey else { return }
+        StreamingPiPController.shared.start(for: activeThreadKey)
+    }
+
+    private func consumeRequestedSettingsRoute() {
+        guard requestedSettingsRoute == SettingsRoute.terminal.rawValue else { return }
+        requestedSettingsRoute = ""
+        navigationPath = [.terminal]
     }
 
     // MARK: - Conversation Section
@@ -559,11 +648,38 @@ struct SettingsView: View {
                     guard let websocketURL = server.websocketURL else {
                         throw SettingsServerConnectionError.invalidWebsocketURL
                     }
-                    _ = try await appModel.serverBridge.connectRemoteUrlServer(
-                        serverId: server.id,
-                        displayName: server.name,
-                        websocketUrl: websocketURL
-                    )
+                    if isSettingsSlingshotURL(websocketURL) {
+                        let tokens = try await ChatGPTOAuth.loadStoredOrRefreshedTokens()
+                        do {
+                            _ = try await appModel.serverBridge.connectRemoteSlingshotUrlServer(
+                                serverId: server.id,
+                                displayName: server.name,
+                                connectionUrl: websocketURL,
+                                accessToken: tokens.accessToken,
+                                accountId: tokens.accountID,
+                                stepUpToken: ""
+                            )
+                        } catch {
+                            guard ChatGPTOAuth.isRemoteControlAuthorizationRequired(error) else {
+                                throw error
+                            }
+                            let stepUpToken = try await ChatGPTOAuth.remoteControlEnrollmentStepUpToken()
+                            _ = try await appModel.serverBridge.connectRemoteSlingshotUrlServer(
+                                serverId: server.id,
+                                displayName: server.name,
+                                connectionUrl: websocketURL,
+                                accessToken: tokens.accessToken,
+                                accountId: tokens.accountID,
+                                stepUpToken: stepUpToken
+                            )
+                        }
+                    } else {
+                        _ = try await appModel.serverBridge.connectRemoteUrlServer(
+                            serverId: server.id,
+                            displayName: server.name,
+                            websocketUrl: websocketURL
+                        )
+                    }
                     await appModel.refreshSnapshot()
                 case .ssh:
                     break
@@ -635,6 +751,41 @@ struct SettingsView: View {
         }
     }
 
+}
+
+private enum SettingsRoute: String, Hashable {
+    case terminal
+}
+
+private struct SettingsTerminalView: View {
+    let initialDirectory: String
+    @State private var copiedOutput = false
+
+    var body: some View {
+        ZStack {
+            LitterTheme.backgroundGradient.ignoresSafeArea()
+            LitterTerminalPanel(
+                browserPath: HomeAnchor.path,
+                requestedDirectory: initialDirectory,
+                searchQuery: "",
+                onBrowse: nil,
+                onCopy: { text in
+                    UIPasteboard.general.string = text
+                    copiedOutput = true
+                }
+            )
+            .background(LitterTheme.surface.opacity(0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(12)
+        }
+        .navigationTitle("Terminal")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Terminal", isPresented: $copiedOutput) {
+            Button("OK", role: .cancel) { copiedOutput = false }
+        } message: {
+            Text("Copied terminal output.")
+        }
+    }
 }
 
 private enum SettingsServerSheet: Identifiable {
@@ -786,7 +937,7 @@ private struct SettingsServerConnectionEditor: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 LitterTheme.backgroundGradient.ignoresSafeArea()
                 Form {
@@ -1451,6 +1602,10 @@ private struct SettingsDisconnectedAccountSection: View {
                 .foregroundColor(LitterTheme.textSecondary)
         }
     }
+}
+
+private func isSettingsSlingshotURL(_ rawURL: String) -> Bool {
+    URL(string: rawURL)?.scheme?.lowercased() == "slingshot"
 }
 
 #if DEBUG

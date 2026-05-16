@@ -263,7 +263,7 @@ fun AlleycatAddServerSheet(
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .background(LitterTheme.background)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 18.dp),

@@ -59,6 +59,7 @@ class ChatGPTOAuthActivity : ComponentActivity() {
     private var authJob: Job? = null
     private var loopbackServer: ChatGPTOAuthLoopbackServer? = null
     private var pendingTokens: ChatGPTOAuthTokenBundle? = null
+    private var pendingStepUpToken: String? = null
     private var pageError by mutableStateOf<String?>(null)
     private var isLaunchingBrowser by mutableStateOf(false)
     private var browserOpened by mutableStateOf(false)
@@ -161,11 +162,18 @@ class ChatGPTOAuthActivity : ComponentActivity() {
 
                 if (isCompleting) return@launch
                 isCompleting = true
-                pendingTokens = ChatGPTOAuth.completeAuthorization(
-                    context = applicationContext,
-                    callbackUri = callbackUri,
-                    attempt = attempt,
-                )
+                if (attempt.mode == ChatGPTOAuth.MODE_REMOTE_CONTROL_ENROLL) {
+                    pendingStepUpToken = ChatGPTOAuth.completeRemoteControlEnrollmentAuthorization(
+                        callbackUri = callbackUri,
+                        attempt = attempt,
+                    )
+                } else {
+                    pendingTokens = ChatGPTOAuth.completeAuthorization(
+                        context = applicationContext,
+                        callbackUri = callbackUri,
+                        attempt = attempt,
+                    )
+                }
                 LLog.i("ChatGPTOAuth", "token exchange completed")
                 finishIfReady()
             } catch (_: CancellationException) {
@@ -183,7 +191,9 @@ class ChatGPTOAuthActivity : ComponentActivity() {
     }
 
     private fun finishIfReady() {
-        val tokens = pendingTokens ?: return
+        val tokens = pendingTokens
+        val stepUpToken = pendingStepUpToken
+        if (tokens == null && stepUpToken == null) return
         if (!didReceiveBrowserReturn && ChatGPTOAuthAppReturnSignal.snapshot() > browserReturnGeneration) {
             didReceiveBrowserReturn = true
             browserOpened = false
@@ -191,7 +201,10 @@ class ChatGPTOAuthActivity : ComponentActivity() {
         }
         if (!didReceiveBrowserReturn) return
         LLog.i("ChatGPTOAuth", "finishing auth activity with tokens")
-        setResult(Activity.RESULT_OK, resultIntent(tokens))
+        setResult(
+            Activity.RESULT_OK,
+            if (stepUpToken != null) stepUpResultIntent(stepUpToken) else resultIntent(tokens!!),
+        )
         finish()
     }
 
@@ -231,11 +244,13 @@ class ChatGPTOAuthActivity : ComponentActivity() {
         val codeVerifier = intent.getStringExtra(EXTRA_CODE_VERIFIER) ?: return null
         val redirectUri = intent.getStringExtra(EXTRA_REDIRECT_URI) ?: return null
         val authorizeUrl = intent.getStringExtra(EXTRA_AUTHORIZE_URL) ?: return null
+        val mode = intent.getStringExtra(EXTRA_MODE) ?: ChatGPTOAuth.MODE_LOGIN
         return ChatGPTOAuth.AuthAttempt(
             state = state,
             codeVerifier = codeVerifier,
             redirectUri = redirectUri,
             authorizeUrl = authorizeUrl,
+            mode = mode,
         )
     }
 
@@ -250,7 +265,9 @@ class ChatGPTOAuthActivity : ComponentActivity() {
         private const val EXTRA_CODE_VERIFIER = "chatgpt_auth_code_verifier"
         private const val EXTRA_REDIRECT_URI = "chatgpt_auth_redirect_uri"
         private const val EXTRA_AUTHORIZE_URL = "chatgpt_auth_authorize_url"
+        private const val EXTRA_MODE = "chatgpt_auth_mode"
         private const val EXTRA_ACCESS_TOKEN = "chatgpt_auth_access_token"
+        private const val EXTRA_STEP_UP_TOKEN = "chatgpt_auth_step_up_token"
         private const val EXTRA_ACCOUNT_ID = "chatgpt_auth_account_id"
         private const val EXTRA_PLAN_TYPE = "chatgpt_auth_plan_type"
         const val EXTRA_ERROR = "chatgpt_auth_error"
@@ -261,6 +278,7 @@ class ChatGPTOAuthActivity : ComponentActivity() {
                 .putExtra(EXTRA_CODE_VERIFIER, attempt.codeVerifier)
                 .putExtra(EXTRA_REDIRECT_URI, attempt.redirectUri)
                 .putExtra(EXTRA_AUTHORIZE_URL, attempt.authorizeUrl)
+                .putExtra(EXTRA_MODE, attempt.mode)
 
         fun parseResult(intent: Intent?): ChatGPTOAuthTokenBundle? {
             intent ?: return null
@@ -275,11 +293,17 @@ class ChatGPTOAuthActivity : ComponentActivity() {
             )
         }
 
+        fun parseRemoteControlStepUpToken(intent: Intent?): String? =
+            intent?.getStringExtra(EXTRA_STEP_UP_TOKEN)?.trim()?.takeIf { it.isNotEmpty() }
+
         private fun resultIntent(tokens: ChatGPTOAuthTokenBundle): Intent =
             Intent()
                 .putExtra(EXTRA_ACCESS_TOKEN, tokens.accessToken)
                 .putExtra(EXTRA_ACCOUNT_ID, tokens.accountId)
                 .putExtra(EXTRA_PLAN_TYPE, tokens.planType)
+
+        private fun stepUpResultIntent(token: String): Intent =
+            Intent().putExtra(EXTRA_STEP_UP_TOKEN, token)
     }
 }
 

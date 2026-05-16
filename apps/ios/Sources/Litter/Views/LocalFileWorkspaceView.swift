@@ -4,6 +4,10 @@ import UniformTypeIdentifiers
 import UIKit
 
 struct LocalFileWorkspaceView: View {
+    @Environment(AppState.self) private var appState
+    @AppStorage("litterSettingsRequestedRoute") private var settingsRequestedRoute = ""
+    @AppStorage("litterTerminalInitialDirectory") private var terminalInitialDirectory = HomeAnchor.path
+
     @State private var model = LocalFileWorkspaceModel()
     @State private var showImporter = false
     @State private var showNewFile = false
@@ -20,8 +24,6 @@ struct LocalFileWorkspaceView: View {
     @State private var inspectorTarget: LocalFileEntry?
     @State private var sharePayload: LocalFileSharePayload?
     @State private var commandOutput: LocalCommandOutput?
-    @State private var selectedTab: LocalWorkspaceTab = .files
-    @State private var terminalRequestedPath = HomeAnchor.path
 
     @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
@@ -134,9 +136,9 @@ struct LocalFileWorkspaceView: View {
 
     private var chromeLayer: some View {
         rootLayer
-            .navigationTitle(model.isSelecting ? "\(model.selectedPaths.count) Selected" : selectedTab.title)
+            .navigationTitle(model.isSelecting ? "\(model.selectedPaths.count) Selected" : "Files")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: selectedTab == .files ? "Search Files" : "Search command history")
+            .searchable(text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search Files")
             .toolbar { toolbarContent }
             .task { await model.loadInitial() }
             .onChange(of: model.showHidden) { _, _ in taskBag.run { await model.reload() } }
@@ -148,24 +150,12 @@ struct LocalFileWorkspaceView: View {
             LitterTheme.backgroundGradient.ignoresSafeArea()
             VStack(spacing: 0) {
                 pathBar
-                workspaceTabs
                 Divider().overlay(LitterTheme.surfaceLight.opacity(0.4))
                 content
             }
         }
     }
 
-
-    private var workspaceTabs: some View {
-        Picker("Workspace", selection: $selectedTab) {
-            ForEach(LocalWorkspaceTab.allCases) { tab in
-                Label(tab.title, systemImage: tab.systemImage).tag(tab)
-            }
-        }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 14)
-        .padding(.bottom, 10)
-    }
 
     private func previewSheet(for file: LocalFileEntry) -> some View {
         LocalFilePreviewSheet(
@@ -313,23 +303,7 @@ struct LocalFileWorkspaceView: View {
 
     @ViewBuilder
     private var content: some View {
-        if selectedTab == .terminal {
-            LocalTerminalPanel(
-                browserPath: model.currentPath,
-                requestedDirectory: terminalRequestedPath,
-                searchQuery: model.searchQuery,
-                onBrowse: { path in
-                    selectedTab = .files
-                    taskBag.run { await model.navigate(to: path) }
-                },
-                onCopy: { text in
-                    UIPasteboard.general.string = text
-                    alertMessage = "Copied terminal output."
-                }
-            )
-        } else {
-            fileContent
-        }
+        fileContent
     }
 
     @ViewBuilder
@@ -619,8 +593,10 @@ struct LocalFileWorkspaceView: View {
     }
 
     private func openTerminal(at path: String) {
-        terminalRequestedPath = path
-        selectedTab = .terminal
+        terminalInitialDirectory = path
+        settingsRequestedRoute = "terminal"
+        appState.showSettings = true
+        alertMessage = "Opening Settings Terminal."
     }
 
     private func terminalPath(for entry: LocalFileEntry) -> String {
@@ -925,26 +901,6 @@ struct LocalFileWorkspaceView: View {
     }
 }
 
-private enum LocalWorkspaceTab: String, CaseIterable, Identifiable {
-    case files
-    case terminal
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .files: return "Files"
-        case .terminal: return "Terminal"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .files: return "folder"
-        case .terminal: return "terminal"
-        }
-    }
-}
 
 private enum LocalFileFilter: String, CaseIterable, Identifiable {
     case all
@@ -2294,7 +2250,7 @@ private struct LocalFileInspectorButton: View {
     }
 }
 
-private struct LocalTerminalEntry: Identifiable, Hashable {
+struct LitterTerminalEntry: Identifiable, Hashable {
     let id = UUID()
     let command: String
     let directory: String
@@ -2303,19 +2259,19 @@ private struct LocalTerminalEntry: Identifiable, Hashable {
     let date = Date()
 }
 
-private struct LocalTerminalPanel: View {
+struct LitterTerminalPanel: View {
     let browserPath: String
     let requestedDirectory: String
     let searchQuery: String
-    let onBrowse: (String) -> Void
+    let onBrowse: ((String) -> Void)?
     let onCopy: (String) -> Void
 
     @State private var cwd = HomeAnchor.path
     @State private var command = ""
-    @State private var history: [LocalTerminalEntry] = []
+    @State private var history: [LitterTerminalEntry] = []
     @State private var isRunning = false
 
-    var visibleHistory: [LocalTerminalEntry] {
+    var visibleHistory: [LitterTerminalEntry] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return history }
         return history.filter {
@@ -2373,9 +2329,11 @@ private struct LocalTerminalPanel: View {
                     .litterFont(.subheadline, weight: .semibold)
                     .foregroundStyle(LitterTheme.textPrimary)
                 Spacer()
-                Button { onBrowse(cwd) } label: { Image(systemName: "folder") }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Browse terminal directory")
+                if let onBrowse {
+                    Button { onBrowse(cwd) } label: { Image(systemName: "folder") }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Browse terminal directory")
+                }
                 Button { onCopy(history.map { "$ \($0.command)\n\($0.output)" }.joined(separator: "\n\n")) } label: { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Copy terminal output")
@@ -2426,7 +2384,7 @@ private struct LocalTerminalPanel: View {
         .background(LitterTheme.surface.opacity(0.72))
     }
 
-    private func terminalEntry(_ item: LocalTerminalEntry) -> some View {
+    private func terminalEntry(_ item: LitterTerminalEntry) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text(item.directory)
@@ -2462,7 +2420,7 @@ private struct LocalTerminalPanel: View {
             return
         }
         if trimmed == "pwd" {
-            history.append(LocalTerminalEntry(command: trimmed, directory: cwd, output: cwd, exitCode: 0))
+            history.append(LitterTerminalEntry(command: trimmed, directory: cwd, output: cwd, exitCode: 0))
             isRunning = false
             return
         }
@@ -2472,7 +2430,7 @@ private struct LocalTerminalPanel: View {
             return
         }
         let result = await IshFS.run(trimmed, cwd: cwd)
-        history.append(LocalTerminalEntry(command: trimmed, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
+        history.append(LitterTerminalEntry(command: trimmed, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
         isRunning = false
     }
 
@@ -2483,9 +2441,9 @@ private struct LocalTerminalPanel: View {
         if result.exitCode == 0 {
             let next = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
             cwd = next.isEmpty ? destination : next
-            history.append(LocalTerminalEntry(command: command, directory: cwd, output: cwd, exitCode: 0))
+            history.append(LitterTerminalEntry(command: command, directory: cwd, output: cwd, exitCode: 0))
         } else {
-            history.append(LocalTerminalEntry(command: command, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
+            history.append(LitterTerminalEntry(command: command, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
         }
     }
 }

@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
@@ -989,6 +991,7 @@ fun HomeDashboardScreen(
         }
 
         if (showOnboardingCoachmarks) {
+            EmptyHomeFatCat(modifier = Modifier.matchParentSize())
             OnboardingCoachmarks(
                 targets = relativeCoachmarkTargets,
                 modifier = Modifier.matchParentSize(),
@@ -1169,6 +1172,72 @@ private fun HomeCatFooter(
 }
 
 private const val HOME_CAT_ENTRANCE_DURATION_MS = 11_100L
+
+@Composable
+private fun EmptyHomeFatCat(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var showingLoop by remember { mutableStateOf(false) }
+    val resourceId = if (showingLoop) R.drawable.home_cat else R.drawable.home_cat_entrance
+    val drawable = remember(context, resourceId) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            ImageDecoder.decodeDrawable(
+                ImageDecoder.createSource(context.resources, resourceId),
+            )
+        } else {
+            ContextCompat.getDrawable(context, resourceId)
+        }
+    }
+
+    LaunchedEffect(showingLoop) {
+        if (!showingLoop) {
+            kotlinx.coroutines.delay(HOME_CAT_ENTRANCE_DURATION_MS)
+            showingLoop = true
+        }
+    }
+
+    DisposableEffect(drawable) {
+        (drawable as? Animatable)?.start()
+        onDispose {
+            (drawable as? Animatable)?.stop()
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier) {
+        val w = maxWidth
+        val h = maxHeight
+        val catWidth = (w * 0.55f).coerceIn(180.dp, 260.dp)
+        val catHeight = catWidth * (202f / 360f)
+        val offsetX = (w - catWidth) / 2f
+        val offsetY = (h * 0.42f) - (catHeight / 2f)
+        Box(
+            modifier = Modifier
+                .offset(x = offsetX, y = offsetY)
+                .size(width = catWidth, height = catHeight),
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    ImageView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                        )
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        isClickable = false
+                        isFocusable = false
+                        setImageDrawable(drawable)
+                        (drawable as? Animatable)?.start()
+                    }
+                },
+                update = { view ->
+                    view.setImageDrawable(drawable)
+                    (drawable as? Animatable)?.start()
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
 
 /**
  * Merge rule:

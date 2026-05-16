@@ -53,6 +53,8 @@ class AppLifecycleController {
         appModel.reconnectController.notifyNetworkChange()
         val results = appModel.reconnectController.reconnectSavedServers()
         restoreLocalStateAfterReconnect(appModel, results)
+        val retryResults = appModel.reconnectController.reconnectSavedServers()
+        restoreLocalStateAfterReconnect(appModel, retryResults)
         appModel.refreshSnapshot()
         // If reconnecting saved alleycat servers triggered the iroh
         // endpoint bind, persist any freshly-generated device key.
@@ -109,6 +111,8 @@ class AppLifecycleController {
 
         val results = appModel.reconnectController.onAppBecameActive()
         restoreLocalStateAfterReconnect(appModel, results)
+        val retryResults = appModel.reconnectController.reconnectSavedServers()
+        restoreLocalStateAfterReconnect(appModel, retryResults)
         backgroundedTurnKeys.clear()
         keysToRefresh.forEach { key ->
             // Force-authoritative: a turn that completed during a long
