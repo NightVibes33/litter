@@ -643,6 +643,12 @@ private struct HomeNavigationView: View {
     @Environment(ConversationWarmupCoordinator.self) private var conversationWarmup
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("workDir") private var workDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "/"
+    @AppStorage(LitterOnboardingState.completedVersionKey) private var onboardingCompletedVersion = 0
+    @AppStorage(LitterOnboardingState.replayRequestedKey) private var onboardingReplayRequested = false
+    @AppStorage(LitterOnboardingState.fileWorkspaceInitialDirectoryKey) private var fileWorkspaceInitialDirectory = HomeAnchor.path
+    @AppStorage("litterSettingsRequestedRoute") private var requestedSettingsRoute = ""
+    @AppStorage("litterTerminalInitialDirectory") private var terminalInitialDirectory = HomeAnchor.path
+    @AppStorage("developerToolsEnabled") private var developerToolsEnabled = false
     @State private var experimentalFeatures = ExperimentalFeatures.shared
     @State private var homeDashboardModel = HomeDashboardModel()
     @State private var savedAppsStore = SavedAppsStore.shared
@@ -659,6 +665,8 @@ private struct HomeNavigationView: View {
     @State private var hasSeededInitialConversationRoute = false
     @State private var pendingWallpaperConfig: WallpaperConfig?
     @State private var pendingWallpaperImage: UIImage?
+    @State private var showOnboarding = false
+    @State private var onboardingPresentationMode: LitterOnboardingPresentationMode = .firstRun
     let topInset: CGFloat
     let bottomInset: CGFloat
 
@@ -920,6 +928,7 @@ private struct HomeNavigationView: View {
             updateHomeDashboardActivity()
             hydratePinnedThreadsIfNeeded()
             seedInitialConversationIfNeeded(activeKey: appModel.snapshot?.activeThread)
+            presentFirstRunOnboardingIfNeeded()
         }
         .onChange(of: appModel.snapshot?.activeThread) { _, newKey in
             seedInitialConversationIfNeeded(activeKey: newKey)
@@ -935,6 +944,10 @@ private struct HomeNavigationView: View {
                 appState.pendingThreadNavigation = nil
                 replaceTopConversation(with: newKey)
             }
+        }
+        .onChange(of: onboardingReplayRequested) { _, requested in
+            guard requested else { return }
+            presentOnboardingReplay()
         }
         .onChange(of: SavedAppsNavigation.shared.pendingConversationThreadId) { _, newThreadId in
             guard let newThreadId else { return }
@@ -1026,6 +1039,64 @@ private struct HomeNavigationView: View {
         } message: {
             Text(actionErrorMessage ?? "Unknown error")
         }
+        .sheet(isPresented: $showOnboarding, onDismiss: {
+            onboardingReplayRequested = false
+        }) {
+            OnboardingView(
+                mode: onboardingPresentationMode,
+                onFinish: completeOnboarding,
+                onOpenFiles: openOnboardingFiles,
+                onOpenTerminal: openOnboardingTerminal,
+                onOpenServerPicker: openOnboardingServerPicker,
+                onOpenSettingsRoute: openOnboardingSettingsRoute
+            )
+            .environment(appModel)
+            .environment(appState)
+        }
+    }
+
+    private func presentFirstRunOnboardingIfNeeded() {
+        guard onboardingCompletedVersion < LitterOnboardingState.currentVersion,
+              !showOnboarding,
+              !onboardingReplayRequested else { return }
+        onboardingPresentationMode = .firstRun
+        showOnboarding = true
+    }
+
+    private func presentOnboardingReplay() {
+        onboardingPresentationMode = .replay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            showOnboarding = true
+        }
+    }
+
+    private func completeOnboarding() {
+        onboardingCompletedVersion = max(onboardingCompletedVersion, LitterOnboardingState.currentVersion)
+        onboardingReplayRequested = false
+        showOnboarding = false
+    }
+
+    private func openOnboardingFiles(path: String) {
+        fileWorkspaceInitialDirectory = path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? HomeAnchor.path : path
+        openFilesWorkspace()
+    }
+
+    private func openOnboardingTerminal(path: String) {
+        terminalInitialDirectory = path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? HomeAnchor.path : path
+        requestedSettingsRoute = SettingsRoute.terminal.rawValue
+        appState.showSettings = true
+    }
+
+    private func openOnboardingServerPicker() {
+        appState.showServerPicker = true
+    }
+
+    private func openOnboardingSettingsRoute(_ route: String) {
+        if route == SettingsRoute.buildKit.rawValue {
+            developerToolsEnabled = true
+        }
+        requestedSettingsRoute = route
+        appState.showSettings = true
     }
 
     private func defaultNewSessionServerId(preferredServerId: String? = nil) -> String? {

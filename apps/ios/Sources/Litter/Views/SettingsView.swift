@@ -40,6 +40,7 @@ struct SettingsView: View {
                 LitterTheme.backgroundGradient.ignoresSafeArea()
                 Form {
                     supportSection
+                    gettingStartedSection
                     appearanceSection
                     fontSection
                     conversationSection
@@ -68,6 +69,14 @@ struct SettingsView: View {
                 switch route {
                 case .terminal:
                     SettingsTerminalView(initialDirectory: terminalInitialDirectory)
+                case .appearance:
+                    AppearanceSettingsView()
+                case .conversation:
+                    ConversationSettingsRouteView()
+                case .aiProviders:
+                    AIProviderSettingsView()
+                case .buildKit:
+                    BuildKitSettingsView()
                 }
             }
             .onAppear { consumeRequestedSettingsRoute() }
@@ -120,6 +129,35 @@ struct SettingsView: View {
         .onDisappear { taskBag.cancelAll() }
     }
 
+    // MARK: - Getting Started Section
+
+    private var gettingStartedSection: some View {
+        Section {
+            Button {
+                UserDefaults.standard.set(true, forKey: LitterOnboardingState.replayRequestedKey)
+                dismiss()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Replay Onboarding")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Review setup, files, terminal, runtimes, and BuildKit")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("Getting Started")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
     // MARK: - Appearance Section
 
     private var appearanceSection: some View {
@@ -170,9 +208,13 @@ struct SettingsView: View {
     }
 
     private func consumeRequestedSettingsRoute() {
-        guard requestedSettingsRoute == SettingsRoute.terminal.rawValue else { return }
+        let raw = requestedSettingsRoute
+        guard let route = SettingsRoute(rawValue: raw) else { return }
         requestedSettingsRoute = ""
-        navigationPath = [.terminal]
+        if route == .buildKit {
+            developerToolsEnabled = true
+        }
+        navigationPath = [route]
     }
 
     // MARK: - Conversation Section
@@ -709,8 +751,54 @@ struct SettingsView: View {
 
 }
 
-private enum SettingsRoute: String, Hashable {
+enum SettingsRoute: String, Hashable {
     case terminal
+    case appearance
+    case conversation
+    case aiProviders
+    case buildKit
+}
+
+private struct ConversationSettingsRouteView: View {
+    @AppStorage("collapseTurns") private var collapseTurns = false
+    @AppStorage(ConversationDisplayPreferenceKey.reasoning) private var reasoningDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
+    @AppStorage(ConversationDisplayPreferenceKey.commands) private var commandDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
+    @AppStorage(ConversationDisplayPreferenceKey.tools) private var toolDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
+
+    var body: some View {
+        ZStack {
+            LitterTheme.backgroundGradient.ignoresSafeArea()
+            Form {
+                Toggle("Collapse Turns", isOn: $collapseTurns)
+                    .tint(LitterTheme.accent)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                Picker("Internal Thinking", selection: $reasoningDisplayMode) {
+                    ForEach(ConversationDetailDisplayMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                Picker("Commands", selection: $commandDisplayMode) {
+                    ForEach(ConversationDetailDisplayMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                Picker("Tools", selection: $toolDisplayMode) {
+                    ForEach(ConversationDetailDisplayMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+            .scrollContentBackground(.hidden)
+        }
+        .navigationTitle("Conversation")
+        .navigationBarTitleDisplayMode(.inline)
+    }
 }
 
 private struct SettingsTerminalView: View {

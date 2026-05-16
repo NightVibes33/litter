@@ -7,6 +7,7 @@ struct LocalFileWorkspaceView: View {
     @Environment(AppState.self) private var appState
     @AppStorage("litterSettingsRequestedRoute") private var settingsRequestedRoute = ""
     @AppStorage("litterTerminalInitialDirectory") private var terminalInitialDirectory = HomeAnchor.path
+    @AppStorage(LitterOnboardingState.fileWorkspaceInitialDirectoryKey) private var fileWorkspaceInitialDirectory = HomeAnchor.path
 
     @State private var model = LocalFileWorkspaceModel()
     @State private var showImporter = false
@@ -140,7 +141,11 @@ struct LocalFileWorkspaceView: View {
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search Files")
             .toolbar { toolbarContent }
-            .task { await model.loadInitial() }
+            .task {
+                let initialPath = fileWorkspaceInitialDirectory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? HomeAnchor.path : fileWorkspaceInitialDirectory
+                fileWorkspaceInitialDirectory = HomeAnchor.path
+                await model.loadInitial(path: initialPath)
+            }
             .onChange(of: model.showHidden) { _, _ in taskBag.run { await model.reload() } }
             .onDisappear { taskBag.cancelAll() }
     }
@@ -1193,9 +1198,10 @@ private final class LocalFileWorkspaceModel {
         }
     }
 
-    func loadInitial() async {
+    func loadInitial(path: String? = nil) async {
         loadStoredShortcuts()
-        await reload(path: currentPath)
+        let target = path?.trimmingCharacters(in: .whitespacesAndNewlines)
+        await reload(path: target?.isEmpty == false ? target! : currentPath)
     }
 
     func reload() async {
