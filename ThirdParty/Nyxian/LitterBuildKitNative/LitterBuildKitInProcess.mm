@@ -124,6 +124,57 @@ static BOOL LBIExecuteJob(MDKJob *job, NSArray<MDKDiagnostic *> **diagnostics, N
     return [job executeJobWithOutDiagnostics:diagnostics withOutMainSource:mainSource];
 }
 
+static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInteger depth)
+{
+    if(depth > 8)
+    {
+        [log appendString:@"Nested driver expansion exceeded the safety limit.\n"];
+        return 70;
+    }
+
+    int exitCode = 0;
+    for(MDKJob *job in jobs)
+    {
+        NSArray<NSString *> *jobArguments = job.arguments ?: @[];
+
+        if(job.type == CCJobTypeDriver)
+        {
+            [log appendFormat:@"job type=%@(%u) expanding=yes\n", LBIJobTypeName(job.type), job.type];
+            [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
+
+            MDKDriver *driver = [MDKDriver driverWithArguments:jobArguments withType:CCDriverTypeClang];
+            if(driver == nil)
+            {
+                [log appendString:@"Could not create Nyxian Clang driver for nested driver job.\n"];
+                exitCode = exitCode == 0 ? 70 : exitCode;
+                continue;
+            }
+
+            NSArray<MDKJob *> *nestedJobs = [driver generateJobs];
+            if(nestedJobs.count == 0)
+            {
+                [log appendString:@"Nested Nyxian Clang driver produced no jobs.\n"];
+                exitCode = exitCode == 0 ? 70 : exitCode;
+                continue;
+            }
+
+            int nestedExitCode = LBIExecuteJobs(nestedJobs, log, depth + 1);
+            [log appendFormat:@"job type=%@(%u) expanded ok=%@\n", LBIJobTypeName(job.type), job.type, nestedExitCode == 0 ? @"yes" : @"no"];
+            if(nestedExitCode != 0) { exitCode = nestedExitCode; }
+            continue;
+        }
+
+        NSArray<MDKDiagnostic *> *diagnostics = nil;
+        NSString *mainSource = nil;
+        BOOL ok = LBIExecuteJob(job, &diagnostics, &mainSource);
+        [log appendFormat:@"job type=%@(%u) source=%@ ok=%@\n", LBIJobTypeName(job.type), job.type, mainSource ?: @"", ok ? @"yes" : @"no"];
+        [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
+        if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
+        if(!ok && exitCode == 0) { exitCode = 1; }
+    }
+    return exitCode;
+}
+
 static NSString *LBIOutputPath(NSArray<NSString *> *words, NSString *fallbackName)
 {
     for(NSUInteger idx = 0; idx + 1 < words.count; idx++)
@@ -200,18 +251,7 @@ static int LBIRunSwiftDriver(NSArray<NSString *> *arguments, NSMutableString *lo
         [log appendString:@"Nyxian Swift driver produced no jobs.\n"];
         return 70;
     }
-    int exitCode = 0;
-    for(MDKJob *job in jobs)
-    {
-        NSArray<MDKDiagnostic *> *diagnostics = nil;
-        NSString *mainSource = nil;
-        BOOL ok = LBIExecuteJob(job, &diagnostics, &mainSource);
-        [log appendFormat:@"job type=%@(%u) source=%@ ok=%@\n", LBIJobTypeName(job.type), job.type, mainSource ?: @"", ok ? @"yes" : @"no"];
-        [log appendFormat:@"job args: %@\n", [job.arguments componentsJoinedByString:@" "]];
-        if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
-        if(!ok) { exitCode = 1; }
-    }
-    return exitCode;
+    return LBIExecuteJobs(jobs, log, 0);
 }
 
 static NSDictionary *LBIProjectManifest(NSString *hostProjectPath, NSMutableString *log)
