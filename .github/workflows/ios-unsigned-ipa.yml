@@ -478,7 +478,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
 
       - name: Verify archived BuildKit asset payload
         run: |
@@ -730,31 +731,56 @@ jobs:
             exit 1
           fi
 
+          rm -rf Payload
           mkdir -p Payload build/unsigned-ipa
           cp -R "$APP_PATH" Payload/
           rm -rf Payload/*.app/_CodeSignature Payload/*.app/embedded.mobileprovision
-
-          IPA_NAME="Litter-iOS26-Unsigned-SideStore-AltStore.ipa"
-          /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
 
           INFO_PLIST="Payload/$(basename "$APP_PATH")/Info.plist"
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST" 2>/dev/null || true)"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST" 2>/dev/null || true)"
           BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST" 2>/dev/null || true)"
-          cat > build/unsigned-ipa/build-metadata.json <<JSON
-          {
-            "name": "Litter",
-            "bundleIdentifier": "$BUNDLE_ID",
-            "version": "$VERSION",
-            "build": "$BUILD",
-            "commit": "${GITHUB_SHA}",
-            "buildMode": "${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}",
-            "minimumIOSFamily": "26",
-            "xcode": "26.3",
-            "artifact": "$IPA_NAME",
-            "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing"
+
+          python3 - "$VERSION" "$BUILD" <<'PY'
+          import re
+          import sys
+          version, build = sys.argv[1], sys.argv[2]
+          if not re.fullmatch(r"\d+\.\d+\.\d+(?:\.\d+)?", version):
+              raise SystemExit(f"::error::MARKETING_VERSION must be numeric SemVer, got {version!r}")
+          if not re.fullmatch(r"\d+", build):
+              raise SystemExit(f"::error::CURRENT_PROJECT_VERSION must be a numeric build, got {build!r}")
+          PY
+
+          IPA_NAME="Litter-v${VERSION}-build.${BUILD}-iOS26-Unsigned.ipa"
+          /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
+          IPA_PATH="build/unsigned-ipa/$IPA_NAME"
+          IPA_SHA256="$(shasum -a 256 "$IPA_PATH" | awk '{print $1}')"
+          IPA_SIZE="$(stat -f%z "$IPA_PATH")"
+          printf '%s  %s\n' "$IPA_SHA256" "$IPA_NAME" > "${IPA_PATH}.sha256"
+
+          export BUNDLE_ID VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE
+          export BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          metadata = {
+              "name": "Litter",
+              "bundleIdentifier": os.environ["BUNDLE_ID"],
+              "version": os.environ["VERSION"],
+              "build": os.environ["BUILD"],
+              "commit": os.environ["GITHUB_SHA"],
+              "buildMode": os.environ["BUILD_MODE"],
+              "minimumIOSVersion": "18.0",
+              "sdkFamily": "iOS26",
+              "xcode": "26.3",
+              "artifact": os.environ["IPA_NAME"],
+              "sha256": os.environ["IPA_SHA256"],
+              "size": int(os.environ["IPA_SIZE"]),
+              "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing",
           }
-          JSON
+          Path("build/unsigned-ipa/build-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          PY
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
@@ -767,37 +793,142 @@ jobs:
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: unsigned-ipa-${{ github.run_id }}-${{ github.run_attempt }}
           BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
         run: |
           set -euo pipefail
-          IPA_PATH="build/unsigned-ipa/Litter-iOS26-Unsigned-SideStore-AltStore.ipa"
           METADATA_PATH="build/unsigned-ipa/build-metadata.json"
           NOTES_PATH="build/unsigned-ipa/release-notes.md"
+          UPDATE_PATH="build/unsigned-ipa/litter-update.json"
+          SOURCE_PATH="build/unsigned-ipa/litter-altstore-source.json"
+
+          VERSION="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["version"])')"
+          BUILD="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["build"])')"
+          IPA_NAME="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["artifact"])')"
+          IPA_SHA256="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["sha256"])')"
+          IPA_SIZE="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["size"])')"
+          BUNDLE_ID="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["bundleIdentifier"])')"
+          IPA_PATH="build/unsigned-ipa/$IPA_NAME"
+          SHA_PATH="${IPA_PATH}.sha256"
+          RELEASE_TAG="ios-v${VERSION}-build.${BUILD}"
+          RELEASE_TITLE="Litter ${VERSION} (build ${BUILD})"
+          RELEASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
+          IPA_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
+          SOURCE_TAG="app-source"
+          SOURCE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${SOURCE_TAG}/litter-altstore-source.json"
+          PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           if [ ! -s "$IPA_PATH" ]; then
             echo "::error::Missing unsigned IPA at $IPA_PATH" >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $RELEASE_TAG already exists. Bump MARKETING_VERSION or use a newer numeric build." >&2
             exit 1
           fi
 
           cat > "$NOTES_PATH" <<EOF
           Unsigned Litter IPA for SideStore/AltStore re-signing.
 
+          - Version: ${VERSION}
+          - Build: ${BUILD}
           - Commit: ${GITHUB_SHA}
           - Branch: ${GITHUB_REF_NAME}
           - Build mode: ${BUILD_MODE}
+          - SHA-256: ${IPA_SHA256}
           - Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-          This IPA is unsigned and must be signed by SideStore, AltStore, or another signing tool before installation.
+          This IPA is unsigned and must be signed by SideStore, AltStore, Feather, or another signing tool before installation.
           EOF
+
+          export VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE BUNDLE_ID RELEASE_URL IPA_DOWNLOAD_URL SOURCE_URL PUBLISHED_AT BUILD_MODE
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          notes = Path("build/unsigned-ipa/release-notes.md").read_text()
+          update = {
+              "schemaVersion": 1,
+              "name": "Litter",
+              "bundleIdentifier": os.environ["BUNDLE_ID"],
+              "version": os.environ["VERSION"],
+              "build": os.environ["BUILD"],
+              "commit": os.environ["GITHUB_SHA"],
+              "buildMode": os.environ["BUILD_MODE"],
+              "minimumIOSVersion": "18.0",
+              "ipaAssetName": os.environ["IPA_NAME"],
+              "ipaDownloadURL": os.environ["IPA_DOWNLOAD_URL"],
+              "sha256": os.environ["IPA_SHA256"],
+              "size": int(os.environ["IPA_SIZE"]),
+              "publishedAt": os.environ["PUBLISHED_AT"],
+              "releaseNotes": notes,
+              "releaseURL": os.environ["RELEASE_URL"],
+              "sideStoreSourceURL": os.environ["SOURCE_URL"],
+              "altStoreSourceURL": os.environ["SOURCE_URL"],
+          }
+          source = {
+              "name": "Litter",
+              "identifier": "com.sigkitten.litter.source",
+              "sourceURL": os.environ["SOURCE_URL"],
+              "apps": [
+                  {
+                      "name": "Litter",
+                      "bundleIdentifier": os.environ["BUNDLE_ID"],
+                      "developerName": "NightVibes33",
+                      "subtitle": "On-device Codex runtime for iPhone",
+                      "localizedDescription": "Litter for sideloaded iOS installs.",
+                      "category": "developer",
+                      "tintColor": "06B6D4",
+                      "versions": [
+                          {
+                              "version": os.environ["VERSION"],
+                              "buildVersion": os.environ["BUILD"],
+                              "date": os.environ["PUBLISHED_AT"],
+                              "localizedDescription": notes,
+                              "downloadURL": os.environ["IPA_DOWNLOAD_URL"],
+                              "size": int(os.environ["IPA_SIZE"]),
+                              "minOSVersion": "18.0",
+                          }
+                      ],
+                      "appPermissions": {
+                          "entitlements": [
+                              "aps-environment",
+                              "com.apple.developer.carplay-voice-based-conversation",
+                              "com.apple.security.application-groups"
+                          ],
+                          "privacy": {}
+                      }
+                  }
+              ]
+          }
+          Path("build/unsigned-ipa/litter-update.json").write_text(json.dumps(update, indent=2) + "\n")
+          Path("build/unsigned-ipa/litter-altstore-source.json").write_text(json.dumps(source, indent=2) + "\n")
+          PY
 
           gh release create "$RELEASE_TAG" \
             "$IPA_PATH" \
+            "$SHA_PATH" \
             "$METADATA_PATH" \
+            "$UPDATE_PATH" \
+            "$SOURCE_PATH" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Litter unsigned iOS IPA ${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}" \
-            --notes-file "$NOTES_PATH" \
-            --prerelease
+            --title "$RELEASE_TITLE" \
+            --notes-file "$NOTES_PATH"
 
-          echo "Release download page: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
+          if gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable SideStore/AltStore source metadata for the latest Litter sideload build." --prerelease
+          else
+            gh release create "$SOURCE_TAG" \
+              "$UPDATE_PATH" \
+              "$SOURCE_PATH" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Litter app source" \
+              --notes "Stable SideStore/AltStore source metadata for the latest Litter sideload build." \
+              --prerelease
+          fi
+
+          echo "Release download page: ${RELEASE_URL}"
+          echo "Stable app source: ${SOURCE_URL}"

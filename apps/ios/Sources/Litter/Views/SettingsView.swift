@@ -41,6 +41,7 @@ struct SettingsView: View {
                 Form {
                     supportSection
                     gettingStartedSection
+                    updatesSection
                     appearanceSection
                     fontSection
                     conversationSection
@@ -73,6 +74,8 @@ struct SettingsView: View {
                     AppearanceSettingsView()
                 case .conversation:
                     ConversationSettingsRouteView()
+                case .updates:
+                    AppUpdateSettingsView()
                 case .aiProviders:
                     AIProviderSettingsView()
                 case .buildKit:
@@ -154,6 +157,32 @@ struct SettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Getting Started")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
+    // MARK: - Updates Section
+
+    private var updatesSection: some View {
+        Section {
+            NavigationLink(value: SettingsRoute.updates) {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Updates")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Check app versions, sideload IPAs, and runtime assets")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("Updates")
                 .foregroundColor(LitterTheme.textSecondary)
         }
     }
@@ -755,6 +784,7 @@ enum SettingsRoute: String, Hashable {
     case terminal
     case appearance
     case conversation
+    case updates
     case aiProviders
     case buildKit
 }
