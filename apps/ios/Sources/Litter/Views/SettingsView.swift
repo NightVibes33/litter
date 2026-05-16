@@ -163,54 +163,10 @@ struct SettingsView: View {
                 }
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            Button {
-                startActivePiP()
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: StreamingPiPController.shared.isActive ? "pip.fill" : "pip")
-                        .foregroundColor(LitterTheme.accent)
-                        .frame(width: 20)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Picture in Picture")
-                            .litterFont(.subheadline)
-                            .foregroundColor(LitterTheme.textPrimary)
-                        Text(pipDetailText)
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textSecondary)
-                    }
-                    Spacer()
-                }
-            }
-            .disabled(!canStartPiP)
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Local Tools")
                 .foregroundColor(LitterTheme.textSecondary)
         }
-    }
-
-    private var activeThreadKey: ThreadKey? {
-        appModel.snapshot?.activeThread
-    }
-
-    private var canStartPiP: Bool {
-        StreamingPiPController.shared.isSupported && activeThreadKey != nil
-    }
-
-    private var pipDetailText: String {
-        if !StreamingPiPController.shared.isSupported {
-            return "Not supported on this device"
-        }
-        if activeThreadKey == nil {
-            return "Open a chat first, then start PiP from Settings or Home"
-        }
-        return StreamingPiPController.shared.isActive ? "PiP is currently active" : "Float the active chat card over iOS"
-    }
-
-    private func startActivePiP() {
-        guard let activeThreadKey else { return }
-        StreamingPiPController.shared.start(for: activeThreadKey)
     }
 
     private func consumeRequestedSettingsRoute() {
