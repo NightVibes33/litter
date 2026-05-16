@@ -165,7 +165,24 @@ const SLINGSHOT_INITIALIZE_TIMEOUT_RETRY_ATTEMPTS: usize = 3;
 const SLINGSHOT_INITIALIZE_TIMEOUT_RETRY_DELAY_SECS: u64 = 5;
 
 pub(crate) fn slingshot_user_agent() -> String {
-    "Codex Desktop/26.513.20950 (Macintosh; Intel Mac OS X; arm64)".to_string()
+    let arch = slingshot_user_agent_arch();
+    if cfg!(target_os = "android") {
+        format!("Codex Desktop/26.513.20950 (Android; {arch})")
+    } else if cfg!(target_os = "ios") {
+        format!("Codex Desktop/26.513.20950 (iOS; {arch})")
+    } else {
+        format!("Codex Desktop/26.513.20950 (Macintosh; Intel Mac OS X; {arch})")
+    }
+}
+
+fn slingshot_user_agent_arch() -> &'static str {
+    if cfg!(all(target_os = "android", target_arch = "aarch64")) {
+        "arm64-v8a"
+    } else if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        std::env::consts::ARCH
+    }
 }
 
 fn slingshot_api_cache_key(base_url: &Url, account_id: &str) -> String {

@@ -92,6 +92,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.URI
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -254,6 +255,9 @@ fun DiscoveryScreen(
         SavedServerStore.remember(context, server.normalizedForPersistence())
         reloadSavedServers()
         appModel.refreshSnapshot()
+    }
+
+    fun finishSuccessfulSlingshotConnect() {
         showSlingshotComputers = false
         onDismiss()
     }
@@ -264,9 +268,11 @@ fun DiscoveryScreen(
             return
         }
         scope.launch {
+            var needsAuthorization = false
             try {
                 connectSlingshotEnvironmentOrThrow(environment, "")
-                return@launch
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (!ChatGPTOAuth.isRemoteControlAuthorizationRequired(e)) {
                     LLog.e(
@@ -278,6 +284,12 @@ fun DiscoveryScreen(
                     connectError = e.message ?: "Unable to connect to this computer."
                     return@launch
                 }
+                needsAuthorization = true
+            }
+
+            if (!needsAuthorization) {
+                finishSuccessfulSlingshotConnect()
+                return@launch
             }
 
             try {
@@ -298,6 +310,8 @@ fun DiscoveryScreen(
     suspend fun connectSlingshotEnvironment(environment: AppSlingshotEnvironment, stepUpToken: String) {
         try {
             connectSlingshotEnvironmentOrThrow(environment, stepUpToken)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             LLog.e(
                 logTag,
@@ -306,7 +320,9 @@ fun DiscoveryScreen(
                 fields = mapOf("environmentId" to environment.id),
             )
             connectError = e.message ?: "Unable to connect to this computer."
+            return
         }
+        finishSuccessfulSlingshotConnect()
     }
 
     LaunchedEffect(authorizedSlingshotConnect) {

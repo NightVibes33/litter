@@ -1,9 +1,7 @@
 package com.litter.android.ui.conversation
 
-import android.graphics.BitmapFactory
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -21,8 +19,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -122,20 +122,19 @@ private fun StreamingRenderBlocks(
                 }
             }
             is AppMessageRenderBlock.InlineImage -> {
-                val bitmap = remember(block.data) {
-                    BitmapFactory.decodeByteArray(block.data, 0, block.data.size)
-                }
-                bitmap?.let {
-                    Image(
-                        bitmap = it.asImageBitmap(),
-                        contentDescription = "Assistant image",
-                        modifier = Modifier
-                            .alpha(alpha)
-                            .fillMaxWidth()
-                            .heightIn(max = 300.dp)
-                            .clip(RoundedCornerShape(10.dp)),
-                    )
-                }
+                val context = LocalContext.current
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(block.data)
+                        .crossfade(false)
+                        .build(),
+                    contentDescription = "Assistant image",
+                    modifier = Modifier
+                        .alpha(alpha)
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                )
             }
         }
     }

@@ -46,6 +46,9 @@ packages:
   WebRTC:
     url: https://github.com/stasel/WebRTC.git
     exactVersion: "147.0.0"
+  Nuke:
+    url: https://github.com/kean/Nuke.git
+    from: "12.8.0"
 targets:
   Litter:
     type: application
@@ -93,6 +96,10 @@ targets:
         product: HairballUI
       - package: WebRTC
         product: WebRTC
+      - package: Nuke
+        product: Nuke
+      - package: Nuke
+        product: NukeUI
       - target: LitterLiveActivity
         embed: true
       # Gated out for App Store submission — re-enable once a Watch
@@ -184,6 +191,10 @@ targets:
       - sdk: Network.framework
       - package: Hairball
         product: HairballUI
+      - package: Nuke
+        product: Nuke
+      - package: Nuke
+        product: NukeUI
     settings:
       base:
         PRODUCT_NAME: Litter

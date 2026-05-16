@@ -39,6 +39,7 @@ object ChatGPTOAuth {
     private const val callbackBindHost = "127.0.0.1"
     private const val callbackPort = 1455
     private const val callbackPath = "/auth/callback"
+    private const val tokenExchangeMaxAttempts = 5
 
     data class AuthAttempt(
         val state: String,
@@ -234,31 +235,11 @@ object ChatGPTOAuth {
     }
 
     private suspend fun exchangeToken(body: String): ChatGPTOAuthTokenBundle = withContext(Dispatchers.IO) {
-        var networkFailure: IOException? = null
-        repeat(3) { attemptIndex ->
-            try {
-                return@withContext exchangeTokenOnce(body)
-            } catch (error: UnknownHostException) {
-                networkFailure = error
-                if (attemptIndex == 2) {
-                    throw ChatGPTOAuthException(
-                        "ChatGPT token exchange could not reach auth.openai.com. Check the device connection and try again.",
-                    )
-                }
-                delay(500L * (attemptIndex + 1))
-            } catch (error: IOException) {
-                networkFailure = error
-                if (attemptIndex == 2) {
-                    throw error
-                }
-                delay(500L * (attemptIndex + 1))
-            }
-        }
-        throw networkFailure ?: ChatGPTOAuthException("ChatGPT token exchange failed before it could start.")
+        tokenBundleFromPayload(exchangeTokenPayloadWithRetries(body))
     }
 
     private suspend fun exchangeAccessToken(body: String): String = withContext(Dispatchers.IO) {
-        val payload = exchangeTokenPayload(body)
+        val payload = exchangeTokenPayloadWithRetries(body)
         val accessToken = payload.optString("access_token").trim()
         if (accessToken.isEmpty()) {
             throw ChatGPTOAuthException("ChatGPT token exchange failed: missing access_token.")
@@ -266,8 +247,7 @@ object ChatGPTOAuth {
         accessToken
     }
 
-    private fun exchangeTokenOnce(body: String): ChatGPTOAuthTokenBundle {
-        val payload = exchangeTokenPayload(body)
+    private fun tokenBundleFromPayload(payload: JSONObject): ChatGPTOAuthTokenBundle {
         val accessToken = payload.optString("access_token").trim()
         val idToken = payload.optString("id_token").trim()
         val refreshToken = payload.optString("refresh_token").trim().ifEmpty { null }
@@ -288,6 +268,56 @@ object ChatGPTOAuth {
             refreshToken = refreshToken,
             accountId = accountId,
             planType = resolvePlanType(idClaims, accessClaims),
+        )
+    }
+
+    private suspend fun exchangeTokenPayloadWithRetries(body: String): JSONObject {
+        var networkFailure: IOException? = null
+        repeat(tokenExchangeMaxAttempts) { attemptIndex ->
+            try {
+                return exchangeTokenPayload(body)
+            } catch (error: UnknownHostException) {
+                networkFailure = error
+                if (attemptIndex == tokenExchangeMaxAttempts - 1) {
+                    throw ChatGPTOAuthException(
+                        "ChatGPT token exchange could not reach auth.openai.com. Check the device connection and try again.",
+                    )
+                }
+                logTokenExchangeRetry(error, attemptIndex)
+                delay(tokenExchangeRetryDelayMs(attemptIndex))
+            } catch (error: IOException) {
+                networkFailure = error
+                if (attemptIndex == tokenExchangeMaxAttempts - 1) {
+                    throw ChatGPTOAuthException(
+                        "ChatGPT token exchange failed: ${error.localizedMessage ?: error.message ?: error.javaClass.simpleName}",
+                    )
+                }
+                logTokenExchangeRetry(error, attemptIndex)
+                delay(tokenExchangeRetryDelayMs(attemptIndex))
+            }
+        }
+        throw networkFailure ?: ChatGPTOAuthException("ChatGPT token exchange failed before it could start.")
+    }
+
+    private fun tokenExchangeRetryDelayMs(attemptIndex: Int): Long =
+        when (attemptIndex) {
+            0 -> 500L
+            1 -> 1_000L
+            2 -> 2_000L
+            else -> 4_000L
+        }
+
+    private fun logTokenExchangeRetry(error: IOException, attemptIndex: Int) {
+        LLog.w(
+            "ChatGPTOAuth",
+            "ChatGPT token exchange network failure; retrying",
+            fields = mapOf(
+                "attempt" to (attemptIndex + 1),
+                "maxAttempts" to tokenExchangeMaxAttempts,
+                "errorType" to error.javaClass.simpleName,
+                "message" to (error.localizedMessage ?: error.message).orEmpty().take(160),
+                "nextDelayMs" to tokenExchangeRetryDelayMs(attemptIndex),
+            ),
         )
     }
 

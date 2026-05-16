@@ -1,3 +1,5 @@
+import Nuke
+import NukeUI
 import SwiftUI
 import UIKit
 
@@ -99,37 +101,54 @@ struct ImageGenerationToolCallView: View {
 
     @ViewBuilder
     private var imagePreview: some View {
-        if let bytes = data.imagePNG, let image = UIImage(data: bytes) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(LitterTheme.border.opacity(0.4), lineWidth: 0.5)
+        if let bytes = data.imagePNG {
+            let cacheKey = "image-gen-\(bytes.count)-\(bytes.hashValue)"
+            LazyImage(
+                request: ImageRequest(
+                    id: cacheKey,
+                    data: { bytes },
+                    processors: [
+                        ImageProcessors.Resize(
+                            size: CGSize(width: 1200, height: 1200),
+                            unit: .points,
+                            contentMode: .aspectFit
+                        )
+                    ]
                 )
-                .draggable(Image(uiImage: image)) {
-                    Image(uiImage: image)
+            ) { state in
+                if let image = state.image, let ui = state.imageContainer?.image {
+                    image
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 120)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(LitterTheme.border.opacity(0.4), lineWidth: 0.5)
+                        )
+                        .draggable(Image(uiImage: ui)) {
+                            Image(uiImage: ui)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 120)
+                        }
+                        .contextMenu {
+                            Button {
+                                UIPasteboard.general.image = ui
+                            } label: {
+                                Label("Copy Image", systemImage: "doc.on.doc")
+                            }
+                            Button {
+                                showShareSheet = true
+                            } label: {
+                                Label("Share…", systemImage: "square.and.arrow.up")
+                            }
+                        }
+                        .sheet(isPresented: $showShareSheet) {
+                            ShareSheet(items: [ui])
+                        }
                 }
-                .contextMenu {
-                    Button {
-                        UIPasteboard.general.image = image
-                    } label: {
-                        Label("Copy Image", systemImage: "doc.on.doc")
-                    }
-                    Button {
-                        showShareSheet = true
-                    } label: {
-                        Label("Share…", systemImage: "square.and.arrow.up")
-                    }
-                }
-                .sheet(isPresented: $showShareSheet) {
-                    ShareSheet(items: [image])
-                }
+            }
         } else if data.isInProgress {
             ImageGenerationLoadingTile()
         } else if data.status == .failed {

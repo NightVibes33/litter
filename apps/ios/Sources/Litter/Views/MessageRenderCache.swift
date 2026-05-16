@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 @MainActor
 final class MessageRenderCache {
@@ -7,7 +6,7 @@ final class MessageRenderCache {
         enum Kind {
             case markdown(String, Int)
             case codeBlock(language: String?, code: String, Int)
-            case image(UIImage)
+            case image(data: Data, cacheKey: String)
         }
 
         let id: String
@@ -22,8 +21,6 @@ final class MessageRenderCache {
     }
 
     static let shared = MessageRenderCache()
-
-    private static let decodedImageCache = NSCache<NSString, UIImage>()
 
     private let maxEntries = 1024
     private let trimTarget = 768
@@ -201,17 +198,14 @@ final class MessageRenderCache {
                     )
                 )
             case .inlineImage(let data):
-                if let image = Self.decodedImage(
-                    from: data,
-                    cacheKey: "assistant-\(messageId)-segment-\(index)"
-                ) {
-                    segments.append(
-                        AssistantSegment(
-                            id: "image-\(index)-\(data.count)",
-                            kind: .image(image)
-                        )
+                let contentHash = data.hashValue
+                let cacheKey = "assistant-\(messageId)-segment-\(index)-\(data.count)-\(contentHash)"
+                segments.append(
+                    AssistantSegment(
+                        id: "image-\(index)-\(data.count)-\(contentHash)",
+                        kind: .image(data: data, cacheKey: cacheKey)
                     )
-                }
+                )
             }
         }
 
@@ -228,17 +222,5 @@ final class MessageRenderCache {
         hasher.combine(key)
         hasher.combine(fragmentId)
         return hasher.finalize()
-    }
-
-    private static func decodedImage(from data: Data, cacheKey: String) -> UIImage? {
-        let key = cacheKey as NSString
-        if let cached = decodedImageCache.object(forKey: key) {
-            return cached
-        }
-        guard let image = UIImage(data: data) else {
-            return nil
-        }
-        decodedImageCache.setObject(image, forKey: key)
-        return image
     }
 }

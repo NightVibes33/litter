@@ -247,6 +247,7 @@
 		633B85E7273FBF0D1D142139 /* ProximityPairView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6C41CA257D0C3F206C36F81 /* ProximityPairView.swift */; };
 		63557B51D8BF09912B0FA35A /* rose-pine-x.json in Resources */ = {isa = PBXBuildFile; fileRef = 20B1DCDDBE304CA813E3FCD0 /* rose-pine-x.json */; };
 		639D2B07C3B23A955BB69F61 /* HomeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67647EBF442015361DA818CE /* HomeScreen.swift */; };
+		64A3798AEBDCF0373C2A2697 /* Nuke in Frameworks */ = {isa = PBXBuildFile; productRef = D3C5FD0BDB468EC8BA03BBE6 /* Nuke */; };
 		64D67574F100F742D59FEC18 /* gruvbox-light-hard.json in Resources */ = {isa = PBXBuildFile; fileRef = 9AF7E00FF3D6A3D37B161855 /* gruvbox-light-hard.json */; };
 		64DD1C238AE89596C13A4438 /* SavedProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E052E9EFBC98D003637D417E /* SavedProjectStore.swift */; };
 		65023FCDB8DC6F4A4617F3CB /* HomeBottomBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C2A455B0E2E7C8B6EE59A93 /* HomeBottomBar.swift */; };
@@ -261,6 +262,7 @@
 		6A0C312B5A565E7D8194F224 /* PairBLEAdvertiser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9985C47F86DE72FA41043EE3 /* PairBLEAdvertiser.swift */; };
 		6B6DEAECC59EF7CB0B9500B9 /* brand_logo.svg in Resources */ = {isa = PBXBuildFile; fileRef = 74E5DF89D0937E6C17F2BB94 /* brand_logo.svg */; };
 		6B931A02489EA216156F0063 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 2FB04F90D08EE57F92DD7F58 /* AppIcon.icon */; };
+		6BBF52F233815A7CE387ADAF /* NukeUI in Frameworks */ = {isa = PBXBuildFile; productRef = B56375FA643BC7109985264C /* NukeUI */; };
 		6BF33005224565522DE1D533 /* ConversationComposerExpandedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AB3A174A5148143DFE1BFA /* ConversationComposerExpandedView.swift */; };
 		6BF63183ECD96F34922779D9 /* everforest-light.json in Resources */ = {isa = PBXBuildFile; fileRef = 88B886829FDF299DFFCC1A86 /* everforest-light.json */; };
 		6CCF5EA627DE6F2B495365EB /* AppServerHealth+UI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71FEC9FF70E821482C5960FD /* AppServerHealth+UI.swift */; };
@@ -491,6 +493,7 @@
 		D07B503DB96496A43AE6FC20 /* VideoWallpaperProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 554F4A83699FF91F38D1E4CE /* VideoWallpaperProcessor.swift */; };
 		D11EFBC1C0D250134F354DC5 /* AlleycatCredentialStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4658068D198E8F82A23FF04 /* AlleycatCredentialStore.swift */; };
 		D14830D3F4040B9E9895A46D /* TranscriptScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24E08E63A195E01B3163642D /* TranscriptScreen.swift */; };
+		D1C2C119E9801D3921F44146 /* Nuke in Frameworks */ = {isa = PBXBuildFile; productRef = 87C57BE485A2C3DCC39C7368 /* Nuke */; };
 		D230118353DCF0324E51CF5B /* WidgetWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF1C08AB8EA89D69A67AA7B2 /* WidgetWebView.swift */; };
 		D234433555A6C07996A0E850 /* monokai.json in Resources */ = {isa = PBXBuildFile; fileRef = 75448098987C0B15698C8456 /* monokai.json */; };
 		D24451D266FD2443C0D7CBC4 /* AppSnapshotRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49496FAE8491262D2C8CC657 /* AppSnapshotRuntimeTests.swift */; };
@@ -574,6 +577,7 @@
 		F1535DE46C8E5A530A8C131E /* ConversationScreenModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66383694E80CDCBCF582C67 /* ConversationScreenModelTests.swift */; };
 		F28082C2B5339F1BC57764F4 /* oscurange-C.json in Resources */ = {isa = PBXBuildFile; fileRef = 51C3C78C013D314F7F09AB6F /* oscurange-C.json */; };
 		F2A99B16F6AB41896865CD11 /* BerkeleyMono-Bold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 3BD63CCD80D9E1F66879EF97 /* BerkeleyMono-Bold.otf */; };
+		F2C3C5EAE36C0F3CA25AEF74 /* NukeUI in Frameworks */ = {isa = PBXBuildFile; productRef = 4AC4417F86EE5D3B0C661C70 /* NukeUI */; };
 		F2F450A57A455A52BD8604C3 /* AgentRuntimePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C66EB395895F19874D3B933 /* AgentRuntimePresentation.swift */; };
 		F320C894D7E17636EE4B5535 /* ConversationScreenModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C91A1B7B1207FAD81D940DA8 /* ConversationScreenModel.swift */; };
 		F3481466D6CAEB76225E5B1F /* SessionReplySwipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0BEC32BA18EED58DFB1D9D7 /* SessionReplySwipe.swift */; };
@@ -1034,6 +1038,8 @@
 				49EE86930AE61F174F3E0E97 /* Network.framework in Frameworks */,
 				72158718B1E67C9A80C407CC /* HairballUI in Frameworks */,
 				092994BBC35FD41C78FDBAF5 /* WebRTC in Frameworks */,
+				D1C2C119E9801D3921F44146 /* Nuke in Frameworks */,
+				6BBF52F233815A7CE387ADAF /* NukeUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1045,6 +1051,8 @@
 				C415132F8B96D71B59710DBE /* SystemConfiguration.framework in Frameworks */,
 				B43EE7B581C0F03C3D26BAB9 /* Network.framework in Frameworks */,
 				351947D2FEA33D97932BC35B /* HairballUI in Frameworks */,
+				64A3798AEBDCF0373C2A2697 /* Nuke in Frameworks */,
+				F2C3C5EAE36C0F3CA25AEF74 /* NukeUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1632,6 +1640,8 @@
 			name = LitterMac;
 			packageProductDependencies = (
 				310C6E0E8E6A97ED615759F1 /* HairballUI */,
+				D3C5FD0BDB468EC8BA03BBE6 /* Nuke */,
+				4AC4417F86EE5D3B0C661C70 /* NukeUI */,
 			);
 			productName = LitterMac;
 			productReference = 47E701E793853BDF418C763F /* LitterMac.app */;
@@ -1673,6 +1683,8 @@
 			packageProductDependencies = (
 				7326ADC3586B9A9CE7E3B749 /* HairballUI */,
 				0B05150C0802816460624D7B /* WebRTC */,
+				87C57BE485A2C3DCC39C7368 /* Nuke */,
+				B56375FA643BC7109985264C /* NukeUI */,
 			);
 			productName = Litter;
 			productReference = 55A7968182C0B25044D38C00 /* Litter.app */;
@@ -1759,6 +1771,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				2637AB7F02FE6433FA74E212 /* XCRemoteSwiftPackageReference "hairball" */,
+				8E55C22EC22D2DC374D1EC2F /* XCRemoteSwiftPackageReference "Nuke" */,
 				B8F3FFD4D0396998B4DB084E /* XCRemoteSwiftPackageReference "WebRTC" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -3290,6 +3303,14 @@
 				kind = branch;
 			};
 		};
+		8E55C22EC22D2DC374D1EC2F /* XCRemoteSwiftPackageReference "Nuke" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/kean/Nuke.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.8.0;
+			};
+		};
 		B8F3FFD4D0396998B4DB084E /* XCRemoteSwiftPackageReference "WebRTC" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/stasel/WebRTC.git";
@@ -3311,10 +3332,30 @@
 			package = 2637AB7F02FE6433FA74E212 /* XCRemoteSwiftPackageReference "hairball" */;
 			productName = HairballUI;
 		};
+		4AC4417F86EE5D3B0C661C70 /* NukeUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8E55C22EC22D2DC374D1EC2F /* XCRemoteSwiftPackageReference "Nuke" */;
+			productName = NukeUI;
+		};
 		7326ADC3586B9A9CE7E3B749 /* HairballUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 2637AB7F02FE6433FA74E212 /* XCRemoteSwiftPackageReference "hairball" */;
 			productName = HairballUI;
+		};
+		87C57BE485A2C3DCC39C7368 /* Nuke */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8E55C22EC22D2DC374D1EC2F /* XCRemoteSwiftPackageReference "Nuke" */;
+			productName = Nuke;
+		};
+		B56375FA643BC7109985264C /* NukeUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8E55C22EC22D2DC374D1EC2F /* XCRemoteSwiftPackageReference "Nuke" */;
+			productName = NukeUI;
+		};
+		D3C5FD0BDB468EC8BA03BBE6 /* Nuke */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8E55C22EC22D2DC374D1EC2F /* XCRemoteSwiftPackageReference "Nuke" */;
+			productName = Nuke;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
