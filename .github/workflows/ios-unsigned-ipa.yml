@@ -126,7 +126,7 @@ jobs:
           path: |
             apps/ios/GeneratedRust
             apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
-          key: ios-rust-generated-v3-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          key: ios-rust-generated-v3-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**') }}
           restore-keys: |
             ios-rust-generated-v3-${{ runner.os }}-
 
@@ -141,7 +141,7 @@ jobs:
             apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
             apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
             apps/ios/GeneratedRust/Headers/module.modulemap
-          key: ios-swift-uniffi-bindings-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/uniffi-bindgen/**', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          key: ios-swift-uniffi-bindings-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/uniffi-bindgen/**', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**') }}
           restore-keys: |
             ios-swift-uniffi-bindings-v2-${{ runner.os }}-
 
@@ -219,8 +219,24 @@ jobs:
               echo "::warning::Swift UniFFI binding is stale: missing AppThreadGoal."
               stale=1
             fi
+            if ! grep -q "SlingshotCredentialProvider" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing SlingshotCredentialProvider."
+              stale=1
+            fi
+            if ! grep -q "SlingshotCredentialRecord" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing SlingshotCredentialRecord."
+              stale=1
+            fi
+            if ! grep -q "connectRemoteSlingshotUrlServer" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing connectRemoteSlingshotUrlServer()."
+              stale=1
+            fi
             if ! grep -q "ish_runtime_preflight" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
               echo "::warning::Swift UniFFI C header is stale: missing ish_runtime_preflight."
+              stale=1
+            fi
+            if ! grep -q "connect_remote_slingshot_url_server" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
+              echo "::warning::Swift UniFFI C header is stale: missing connect_remote_slingshot_url_server."
               stale=1
             fi
           fi

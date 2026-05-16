@@ -893,7 +893,7 @@ private struct SettingsServerConnectionEditor: View {
     }
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
+        NavigationStack {
             ZStack {
                 LitterTheme.backgroundGradient.ignoresSafeArea()
                 Form {

@@ -1347,20 +1347,26 @@ struct DiscoveryView: View {
 
     private func slingshotSubtitle(for environment: AppSlingshotEnvironment) -> String {
         var parts: [String] = []
-        if let hostName = environment.hostName?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if let hostName = environment.hostName?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
            !hostName.isEmpty {
             parts.append(hostName)
         }
-        let platform = [environment.operatingSystem, environment.architecture]
-            .compactMap { value -> String? in
-                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
-                return trimmed?.isEmpty == false ? trimmed : nil
-            }
-            .joined(separator: " ")
+
+        var platformParts: [String] = []
+        let operatingSystem = environment.operatingSystem.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        if !operatingSystem.isEmpty {
+            platformParts.append(operatingSystem)
+        }
+        if let architecture = environment.architecture?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+           !architecture.isEmpty {
+            platformParts.append(architecture)
+        }
+        let platform = platformParts.joined(separator: " ")
         if !platform.isEmpty {
             parts.append(platform)
         }
-        if let version = environment.appServerVersion?.trimmingCharacters(in: .whitespacesAndNewlines),
+
+        if let version = environment.appServerVersion?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
            !version.isEmpty {
             parts.append("Codex \(version)")
         }
