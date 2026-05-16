@@ -192,7 +192,7 @@ manifest = {
         "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
         "sdkPath": f"SDK/iPhoneOS{sdk_version}.sdk",
     },
-    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package"] + (["nyxian-runner"] if runner_rel else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
+    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package", "clang-ios-build", "ld-ios-link", "xcrun-compat", "plutil-compat"] + (["nyxian-runner"] if runner_rel else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
     "requiredPaths": required,
     "sha256": hashes,
 }

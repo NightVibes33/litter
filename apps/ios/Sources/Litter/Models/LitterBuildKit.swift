@@ -270,8 +270,8 @@ actor LitterBuildKit {
     private static let stateRoot = "/root/.litter/buildkit"
     private static let requestRoot = "\(stateRoot)/requests"
     private static let buildRoot = "/root/.litter/builds"
-    private static let shimInstallMarker = "\(stateRoot)/shims-installed-v4"
-    private static let commandNames = [
+    private static let shimInstallMarker = "\(stateRoot)/shims-installed-v5"
+    private static let canonicalCommandNames = [
         "litter-buildkit",
         "litter-nyxian-status",
         "litter-buildkit-install-assets",
@@ -285,13 +285,41 @@ actor LitterBuildKit {
         "litter-swift-test",
         "litter-ipa-build",
         "litter-ipa-package",
+        "litter-clang",
+        "litter-ld",
         "litter-build-status",
-        "litter-build-cancel",
+        "litter-build-cancel"
+    ]
+    private static let nativeCompatibilityCommandNames = [
         "swift",
         "swiftc",
+        "clang",
+        "clang++",
+        "cc",
+        "c++",
+        "ld",
+        "ld64",
         "xcodebuild",
+        "xcrun",
+        "plutil",
         "code"
     ]
+    private static let passThroughCommandNames = [
+        "ar",
+        "llvm-ar",
+        "ranlib",
+        "llvm-ranlib",
+        "nm",
+        "llvm-nm",
+        "objdump",
+        "llvm-objdump",
+        "strip",
+        "strings",
+        "lipo"
+    ]
+    private static let commandNames = canonicalCommandNames + nativeCompatibilityCommandNames + passThroughCommandNames
+    private static let cFamilySourceExtensions: Set<String> = ["c", "cc", "cpp", "cxx", "m", "mm"]
+    private static let linkInputExtensions: Set<String> = ["o", "a", "dylib", "tbd"]
 
     private var monitorTask: Task<Void, Never>?
     private var activeJobs: [String: Task<BuildKitCommandResult, Never>] = [:]
@@ -477,14 +505,28 @@ actor LitterBuildKit {
             return await swiftcCompile(args: args, cwd: cwd, buildDir: buildDir, compatibilityName: "litter-swiftc")
         case "litter-swift-build", "litter-swift-test", "litter-ipa-build", "litter-ipa-package":
             return await nativeBuildCommand(command: command, args: args, cwd: cwd, buildDir: buildDir)
+        case "litter-clang":
+            return await clangCompatibility(command: "clang", args: args, cwd: cwd, buildDir: buildDir)
+        case "litter-ld":
+            return await ldCompatibility(command: "ld", args: args, cwd: cwd, buildDir: buildDir)
         case "swift":
             return await swiftCompatibility(args: args, cwd: cwd, buildDir: buildDir)
         case "swiftc":
             return await swiftcCompile(args: args, cwd: cwd, buildDir: buildDir, compatibilityName: "swiftc")
+        case "clang", "clang++", "cc", "c++":
+            return await clangCompatibility(command: command, args: args, cwd: cwd, buildDir: buildDir)
+        case "ld", "ld64":
+            return await ldCompatibility(command: command, args: args, cwd: cwd, buildDir: buildDir)
         case "xcodebuild":
             return await xcodebuildCompatibility(args: args, cwd: cwd, buildDir: buildDir)
+        case "xcrun":
+            return await xcrunCompatibility(args: args)
+        case "plutil":
+            return await plutilCompatibility(args: args, cwd: cwd)
         case "code":
             return codeCompatibility(args: args, cwd: cwd)
+        case "ar", "llvm-ar", "ranlib", "llvm-ranlib", "nm", "llvm-nm", "objdump", "llvm-objdump", "strip", "strings", "lipo":
+            return await passThroughTool(command: command, args: args)
         case "litter-build-cancel":
             return cancelCommand(args: args)
         default:
@@ -519,7 +561,7 @@ actor LitterBuildKit {
             check "/usr/local/bin writable" "[ -w /usr/local/bin ]"
             check "/root/.litter/builds writable" "[ -w /root/.litter/builds ]"
             check "/root/litter visible" "[ -d /root/litter ] && cd /root/litter"
-            for tool in git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm clang swift swiftc cc c++ make jq; do
+            for tool in \(Self.commandNames.joined(separator: " ")) git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm make jq; do
               if command -v "$tool" >/dev/null 2>&1; then echo "ok  command:$tool $(command -v "$tool")"; else echo "miss command:$tool"; fi
             done
             if command -v git >/dev/null 2>&1; then
@@ -555,7 +597,7 @@ actor LitterBuildKit {
             if command -v apk >/dev/null 2>&1; then apk info | sort | sed -n '1,120p'; else echo "apk missing"; fi
             echo
             echo "Tool versions:"
-            for tool in git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm clang swift swiftc cc c++ make jq; do
+            for tool in \(Self.commandNames.joined(separator: " ")) git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm make jq; do
               if command -v "$tool" >/dev/null 2>&1; then
                 printf '%s: ' "$tool"
                 "$tool" --version 2>&1 | head -n 1
@@ -577,7 +619,7 @@ actor LitterBuildKit {
             chmod 1777 /tmp /var/tmp 2>/dev/null || true
             if command -v apk >/dev/null 2>&1; then
               apk update || true
-              apk add --no-cache git openssh-client curl tar gzip xz unzip zip python3 py3-pip nodejs npm ca-certificates coreutils findutils grep sed gawk make clang llvm lld build-base jq || true
+              apk add --no-cache git openssh-client curl tar gzip xz unzip zip python3 py3-pip nodejs npm ca-certificates coreutils findutils grep sed gawk make clang llvm lld binutils build-base jq || true
             fi
             git config --global init.defaultBranch main 2>/dev/null || true
             git config --global advice.detachedHead false 2>/dev/null || true
@@ -678,10 +720,17 @@ actor LitterBuildKit {
         if first == "test" {
             return await nativeBuildCommand(command: "litter-swift-test", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir)
         }
+        if first == "run" {
+            let prelude = "Litter swift run compatibility: building an iOS artifact. iSH cannot execute iOS Mach-O binaries.\n"
+            return await nativeBuildCommand(command: "litter-swift-build", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir, prelude: prelude)
+        }
+        if first == "package" {
+            return BuildKitCommandResult(exitCode: 64, status: "swift-package-unsupported", log: "Litter does not embed full SwiftPM yet. Use swift build/test with LitterBuild.json or litter-swift-build/litter-swift-test.\n")
+        }
         if first.hasSuffix(".swift") {
             return await swiftCheck(args: args, cwd: cwd, buildDir: buildDir)
         }
-        return BuildKitCommandResult(exitCode: 64, status: "swift-unsupported", log: "Litter's swift compatibility shim supports: --version, --help, swift <file.swift>, swift build, and swift test.\nUse litter-swift-check, litter-swift-build, or litter-swift-test for the canonical bot API.\n")
+        return BuildKitCommandResult(exitCode: 64, status: "swift-unsupported", log: "Litter's swift compatibility shim supports: --version, --help, swift <file.swift>, swift build, swift test, and swift run as build-only.\nUse litter-swift-check, litter-swift-build, or litter-swift-test for the canonical bot API.\n")
     }
 
     private func swiftcCompile(args: String, cwd: String, buildDir: String, compatibilityName: String) async -> BuildKitCommandResult {
@@ -705,6 +754,134 @@ actor LitterBuildKit {
         let staging = Self.stageSwiftSourceForNativeDriver(fakefsPath: sourcePath, source: source, buildDir: buildDir)
         log += staging.log
         return await nativeBuildCommand(command: "litter-swiftc", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
+    }
+
+    private func clangCompatibility(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("--version") || tokens.contains("-version") || tokens.contains("-v") {
+            let status = await status()
+            return BuildKitCommandResult(exitCode: 0, status: "clang-version", log: Self.compatibilityVersionLog(tool: command, status: status))
+        }
+        if tokens.contains("--help") || tokens.contains("-help") || tokens.isEmpty {
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "clang-help", log: Self.clangCompatibilityUsage(tool: command))
+        }
+        guard let sourceToken = Self.firstInputToken(in: tokens, extensions: Self.cFamilySourceExtensions) else {
+            return BuildKitCommandResult(exitCode: 64, status: "clang-missing-input", log: "Usage: \(command) path/to/File.c [-c] [-o output]\n")
+        }
+        let sourcePath = Self.resolveFakefsPath(sourceToken, cwd: cwd)
+        let staging = await Self.stageFakefsFileForNativeDriver(fakefsPath: sourcePath, buildDir: buildDir, preferredName: "Input.\(URL(fileURLWithPath: sourcePath).pathExtension)")
+        var log = "\(command) compatibility shim\n"
+        log += "Input: \(sourcePath)\n"
+        log += "Backend: Litter BuildKit Nyxian Clang driver\n\n"
+        log += staging.log
+        return await nativeBuildCommand(command: "litter-clang", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
+    }
+
+    private func ldCompatibility(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("--version") || tokens.contains("-version") || tokens.contains("-v") {
+            let status = await status()
+            return BuildKitCommandResult(exitCode: 0, status: "ld-version", log: Self.compatibilityVersionLog(tool: command, status: status))
+        }
+        if tokens.contains("--help") || tokens.contains("-help") || tokens.isEmpty {
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "ld-help", log: Self.ldCompatibilityUsage(tool: command))
+        }
+        guard let inputToken = Self.firstInputToken(in: tokens, extensions: Self.linkInputExtensions) else {
+            return BuildKitCommandResult(exitCode: 64, status: "ld-missing-input", log: "Usage: \(command) input.o -o output\n")
+        }
+        let inputPath = Self.resolveFakefsPath(inputToken, cwd: cwd)
+        let staging = await Self.stageFakefsFileForNativeDriver(fakefsPath: inputPath, buildDir: buildDir, preferredName: URL(fileURLWithPath: inputPath).lastPathComponent)
+        var log = "\(command) compatibility shim\n"
+        log += "Input: \(inputPath)\n"
+        log += "Backend: Litter BuildKit Nyxian linker path\n\n"
+        log += staging.log
+        return await nativeBuildCommand(command: "litter-ld", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
+    }
+
+    private func xcrunCompatibility(args: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "xcrun-help", log: Self.xcrunCompatibilityUsage())
+        }
+        if tokens.contains("--version") || tokens.contains("-version") {
+            let current = await status()
+            return BuildKitCommandResult(exitCode: 0, status: "xcrun-version", log: Self.compatibilityVersionLog(tool: "xcrun", status: current))
+        }
+        if tokens.contains("--show-sdk-path") {
+            return BuildKitCommandResult(exitCode: 0, status: "xcrun-sdk-path", log: "\(Self.sdkRoot.path)\n")
+        }
+        if let index = tokens.firstIndex(of: "--find"), index + 1 < tokens.count {
+            let tool = tokens[index + 1]
+            if Self.commandNames.contains(tool) {
+                return BuildKitCommandResult(exitCode: 0, status: "xcrun-find-ok", log: "/usr/local/bin/\(tool)\n")
+            }
+            if let path = await Self.firstFakefsExecutablePath(tool) {
+                return BuildKitCommandResult(exitCode: 0, status: "xcrun-find-ok", log: "\(path)\n")
+            }
+            return BuildKitCommandResult(exitCode: 72, status: "xcrun-find-missing", log: "xcrun: could not find tool \(tool) in Litter BuildKit or fakefs.\n")
+        }
+        return BuildKitCommandResult(exitCode: 64, status: "xcrun-unsupported", log: Self.xcrunCompatibilityUsage())
+    }
+
+    private func plutilCompatibility(args: String, cwd: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "plutil-help", log: Self.plutilCompatibilityUsage())
+        }
+        guard let inputToken = Self.plutilInputToken(tokens) else {
+            return BuildKitCommandResult(exitCode: 64, status: "plutil-missing-input", log: "Usage: plutil -lint Info.plist | plutil -convert xml1|json [-o output] Info.plist\n")
+        }
+        let inputPath = Self.resolveFakefsPath(inputToken, cwd: cwd)
+        do {
+            let data = try await IshFS.readFileData(path: inputPath, maxBytes: 16_000_000)
+            var format = PropertyListSerialization.PropertyListFormat.xml
+            let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: &format)
+            if tokens.contains("-lint") {
+                return BuildKitCommandResult(exitCode: 0, status: "plutil-lint-ok", log: "\(inputPath): OK\n")
+            }
+            guard let convertIndex = tokens.firstIndex(of: "-convert"), convertIndex + 1 < tokens.count else {
+                return BuildKitCommandResult(exitCode: 64, status: "plutil-unsupported", log: Self.plutilCompatibilityUsage())
+            }
+            let outputData: Data
+            switch tokens[convertIndex + 1] {
+            case "xml1":
+                outputData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            case "json":
+                guard JSONSerialization.isValidJSONObject(plist) else {
+                    return BuildKitCommandResult(exitCode: 65, status: "plutil-json-unsupported", log: "\(inputPath): plist root cannot be represented as JSON.\n")
+                }
+                outputData = try JSONSerialization.data(withJSONObject: plist, options: [.prettyPrinted, .sortedKeys])
+            default:
+                return BuildKitCommandResult(exitCode: 64, status: "plutil-format-unsupported", log: "Supported plutil conversion formats: xml1, json.\n")
+            }
+            let outputPath = Self.plutilOutputPath(tokens, inputPath: inputPath, cwd: cwd)
+            if outputPath == "-" {
+                return BuildKitCommandResult(exitCode: 0, status: "plutil-convert-ok", log: String(data: outputData, encoding: .utf8) ?? "")
+            }
+            try await IshFS.writeFile(path: outputPath, data: outputData, replaceExisting: true)
+            return BuildKitCommandResult(exitCode: 0, status: "plutil-convert-ok", log: "Wrote \(outputPath)\n")
+        } catch {
+            return BuildKitCommandResult(exitCode: 65, status: "plutil-failed", log: "\(inputPath): \(error.localizedDescription)\n")
+        }
+    }
+
+    private func passThroughTool(command: String, args: String) async -> BuildKitCommandResult {
+        let quotedArgs = Self.shellWords(args).map(IshFS.shellQuote).joined(separator: " ")
+        let candidates = Self.passThroughCandidates(for: command).map(IshFS.shellQuote).joined(separator: " ")
+        let result = await IshFS.run(
+            """
+            set -u
+            for candidate in \(candidates); do
+              if [ -x "$candidate" ]; then
+                exec "$candidate" \(quotedArgs)
+              fi
+            done
+            echo "\(command) is not available in fakefs. Run litter-dev-bootstrap to install iSH utility packages, or use the BuildKit native compiler commands for iOS artifacts."
+            exit 127
+            """
+        )
+        let status = result.exitCode == 0 ? "\(command)-ok" : "\(command)-unavailable"
+        return BuildKitCommandResult(exitCode: Int(result.exitCode), status: status, log: result.output)
     }
 
     private func xcodebuildCompatibility(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
@@ -857,6 +1034,32 @@ actor LitterBuildKit {
             log += "Native staging failed: \(error.localizedDescription)\n"
         }
         return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: hostInput.path, fakefsProjectPath: fakefsPath)
+    }
+
+    private static func stageFakefsFileForNativeDriver(fakefsPath: String, buildDir: String, preferredName: String) async -> BuildKitHostStaging {
+        let hostRoot = hostJobRoot(buildDir: buildDir)
+        let safeName = sanitizedHostFileName(preferredName.isEmpty ? URL(fileURLWithPath: fakefsPath).lastPathComponent : preferredName)
+        let hostInput = hostRoot.appendingPathComponent(safeName)
+        var log = ""
+        do {
+            let data = try await IshFS.readFileData(path: fakefsPath, maxBytes: 64_000_000)
+            try FileManager.default.createDirectory(at: hostRoot, withIntermediateDirectories: true, attributes: nil)
+            try data.write(to: hostInput, options: .atomic)
+            log += "Native staging: \(fakefsPath) -> \(hostInput.path)\n"
+        } catch {
+            log += "Native staging failed: \(error.localizedDescription)\n"
+        }
+        return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: hostInput.path, fakefsProjectPath: fakefsPath)
+    }
+
+    private static func sanitizedHostFileName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = trimmed.isEmpty ? "Input" : trimmed
+        let cleaned = fallback
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: "\\", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        return cleaned == "." || cleaned == ".." ? "Input" : cleaned
     }
 
     private static func hostJobRoot(buildDir: String) -> URL {
@@ -1531,6 +1734,74 @@ actor LitterBuildKit {
         return BuildKitCommandResult(exitCode: response.exitCode, status: response.status, log: response.log, artifacts: response.artifacts ?? [])
     }
 
+    private static func firstInputToken(in tokens: [String], extensions: Set<String>) -> String? {
+        var skipNext = false
+        for token in tokens {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if ["-o", "-I", "-F", "-L", "-isysroot", "--sysroot", "-target", "-arch", "-x", "-include", "-isystem", "-iquote", "-idirafter", "-framework", "-Xlinker"].contains(token) {
+                skipNext = true
+                continue
+            }
+            if token.hasPrefix("-") { continue }
+            let ext = URL(fileURLWithPath: token).pathExtension.lowercased()
+            if extensions.contains(ext) { return token }
+        }
+        return nil
+    }
+
+    private static func resolveFakefsPath(_ token: String, cwd: String) -> String {
+        if token.hasPrefix("/") { return normalizedFakefsPath(token) }
+        return normalizedFakefsPath((cwd as NSString).appendingPathComponent(token))
+    }
+
+    private static func plutilInputToken(_ tokens: [String]) -> String? {
+        var values: [String] = []
+        var skipNext = false
+        for token in tokens {
+            if skipNext {
+                skipNext = false
+                continue
+            }
+            if token == "-o" || token == "-convert" {
+                skipNext = true
+                continue
+            }
+            if token.hasPrefix("-") { continue }
+            values.append(token)
+        }
+        return values.last
+    }
+
+    private static func plutilOutputPath(_ tokens: [String], inputPath: String, cwd: String) -> String {
+        guard let outputIndex = tokens.firstIndex(of: "-o"), outputIndex + 1 < tokens.count else { return inputPath }
+        let token = tokens[outputIndex + 1]
+        if token == "-" { return token }
+        return resolveFakefsPath(token, cwd: cwd)
+    }
+
+    private static func passThroughCandidates(for command: String) -> [String] {
+        let aliases: [String]
+        switch command {
+        case "llvm-ar": aliases = ["llvm-ar", "ar"]
+        case "llvm-ranlib": aliases = ["llvm-ranlib", "ranlib"]
+        case "llvm-nm": aliases = ["llvm-nm", "nm"]
+        case "llvm-objdump": aliases = ["llvm-objdump", "objdump"]
+        default: aliases = [command]
+        }
+        let roots = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        return aliases.flatMap { alias in roots.map { "\($0)/\(alias)" } }
+    }
+
+    private static func firstFakefsExecutablePath(_ command: String) async -> String? {
+        for path in passThroughCandidates(for: command) {
+            if await IshFS.run("[ -x \(IshFS.shellQuote(path)) ]").exitCode == 0 { return path }
+        }
+        return nil
+    }
+
     private static func parseRequest(_ text: String) -> [String: String] {
         var output: [String: String] = [:]
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -1628,7 +1899,7 @@ actor LitterBuildKit {
             output += "Native driver diagnostics:\n"
             output += status.nativeDriverDiagnostics.prefix(8).map { "- \($0)" }.joined(separator: "\n") + "\n"
         }
-        output += "Canonical commands: litter-swift-selftest, litter-swift-check, litter-swift-build, litter-swift-test, litter-ipa-build\n"
+        output += "Canonical commands: litter-swift-selftest, litter-swift-check, litter-swift-build, litter-swift-test, litter-ipa-build, litter-clang, litter-ld\n"
         return output
     }
 
@@ -1640,6 +1911,7 @@ actor LitterBuildKit {
           swift path/to/File.swift
           swift build [LitterBuild.json]
           swift test [LitterBuild.json]
+          swift run [LitterBuild.json]  # build-only; iSH cannot execute iOS Mach-O output
 
         Canonical bot commands:
           litter-swift-selftest
@@ -1664,6 +1936,50 @@ actor LitterBuildKit {
         """
     }
 
+    private static func clangCompatibilityUsage(tool: String) -> String {
+        """
+        Litter \(tool) compatibility shim
+        Supported:
+          \(tool) --version
+          \(tool) -c path/to/File.c -o File.o
+          \(tool) path/to/File.c -o output
+
+        Backend: Nyxian MDKDriver with the installed iPhoneOS SDK and arm64 iOS target.
+        """
+    }
+
+    private static func ldCompatibilityUsage(tool: String) -> String {
+        """
+        Litter \(tool) compatibility shim
+        Supported:
+          \(tool) --version
+          \(tool) input.o -o output
+
+        Backend: Nyxian linker path. For most builds prefer clang or swiftc as the linker driver.
+        """
+    }
+
+    private static func xcrunCompatibilityUsage() -> String {
+        """
+        Litter xcrun compatibility shim
+        Supported:
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --find swiftc
+          xcrun --find clang
+          xcrun --version
+        """
+    }
+
+    private static func plutilCompatibilityUsage() -> String {
+        """
+        Litter plutil compatibility shim
+        Supported:
+          plutil -lint Info.plist
+          plutil -convert xml1 [-o output] Info.plist
+          plutil -convert json [-o output] Info.plist
+        """
+    }
+
     private static func xcodebuildCompatibilityUsage() -> String {
         """
         Litter xcodebuild compatibility shim
@@ -1674,7 +1990,7 @@ actor LitterBuildKit {
           xcodebuild archive [LitterBuild.json]
           xcodebuild clean
 
-        This is an iOS-only BuildKit bridge, not full Xcode. Use litter-swift-build, litter-swift-test, or litter-ipa-build for reliable bot builds.
+        This is an iOS-only BuildKit bridge, not full Xcode. Use litter-swift-build, litter-swift-test, litter-ipa-build, clang, swiftc, xcrun, and plutil for reliable bot builds.
         """
     }
 
@@ -1699,6 +2015,7 @@ actor LitterBuildKit {
         Swift direct build: \(status.canRunSwiftDirectly ? "ready" : "blocked")
         Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
+        Command modes: native Swift/Clang/link: swift, swiftc, clang, clang++, cc, c++, ld, ld64; compatibility: xcodebuild, xcrun, plutil, code; fakefs pass-through: ar, ranlib, nm, objdump, strip, strings, lipo.
         """
         if let sourceManifest = status.sourceImportManifest {
             output += "\nSource manifest: \(sourceManifest.name) (\(sourceManifest.importedFileCount) files)\n"

@@ -191,12 +191,106 @@ static BOOL LBIFlagTakesValue(NSString *word)
     dispatch_once(&onceToken, ^{
         valueFlags = [NSSet setWithArray:@[
             @"-D", @"-I", @"-F", @"-L", @"-l", @"-framework",
+            @"-include", @"-isystem", @"-iquote", @"-idirafter",
+            @"-isysroot", @"--sysroot", @"-target", @"-arch", @"-x",
+            @"-std", @"-stdlib", @"-mllvm",
             @"-module-name", @"-package-name", @"-emit-module-path",
             @"-emit-dependencies-path", @"-emit-reference-dependencies-path",
             @"-Xcc", @"-Xlinker", @"-Xfrontend"
         ]];
     });
     return [valueFlags containsObject:word];
+}
+
+static BOOL LBIWordsContain(NSArray<NSString *> *words, NSString *value);
+
+static BOOL LBIIsInputWithExtensions(NSString *word, NSSet<NSString *> *extensions)
+{
+    if(word.length == 0 || [word hasPrefix:@"-"]) { return NO; }
+    NSString *ext = word.pathExtension.lowercaseString;
+    return ext.length > 0 && [extensions containsObject:ext];
+}
+
+static NSString *LBIFirstInputWithExtensions(NSArray<NSString *> *words, NSSet<NSString *> *extensions)
+{
+    BOOL skipNext = NO;
+    for(NSString *word in words)
+    {
+        if(skipNext) { skipNext = NO; continue; }
+        if(LBIFlagTakesValue(word) || [word isEqualToString:@"-o"])
+        {
+            skipNext = YES;
+            continue;
+        }
+        if(LBIIsInputWithExtensions(word, extensions)) { return word; }
+    }
+    return nil;
+}
+
+static NSArray<NSString *> *LBIClangUserFlags(NSArray<NSString *> *words, NSSet<NSString *> *inputExtensions)
+{
+    NSMutableArray<NSString *> *flags = [NSMutableArray array];
+    BOOL skipNext = NO;
+    BOOL preserveNext = NO;
+    for(NSUInteger idx = 0; idx < words.count; idx++)
+    {
+        NSString *word = words[idx];
+        if(skipNext) { skipNext = NO; continue; }
+        if([word isEqualToString:@"-o"] || [word isEqualToString:@"-isysroot"] || [word isEqualToString:@"--sysroot"] || [word isEqualToString:@"-target"] || [word isEqualToString:@"-arch"])
+        {
+            skipNext = YES;
+            preserveNext = NO;
+            continue;
+        }
+        if(preserveNext)
+        {
+            [flags addObject:word];
+            preserveNext = NO;
+            continue;
+        }
+        if(LBIIsInputWithExtensions(word, inputExtensions)) { continue; }
+        if([word hasPrefix:@"-isysroot"] || [word hasPrefix:@"--sysroot="] || [word hasPrefix:@"-target="] || [word hasPrefix:@"-arch"]) { continue; }
+        if([word hasPrefix:@"-"])
+        {
+            [flags addObject:word];
+            preserveNext = LBIFlagTakesValue(word);
+        }
+    }
+    return flags;
+}
+
+static NSString *LBIClangFallbackOutput(NSString *source, NSArray<NSString *> *words)
+{
+    NSString *base = source.lastPathComponent.stringByDeletingPathExtension;
+    if(base.length == 0) { base = @"a"; }
+    if(LBIWordsContain(words, @"-c")) { return [base stringByAppendingPathExtension:@"o"]; }
+    if(LBIWordsContain(words, @"-S")) { return [base stringByAppendingPathExtension:@"s"]; }
+    if(LBIWordsContain(words, @"-E")) { return [base stringByAppendingPathExtension:@"i"]; }
+    return @"a.out";
+}
+
+static NSString *LBIFakefsOutputPath(NSString *requestedOutput, NSString *cwd)
+{
+    if([requestedOutput hasPrefix:@"/"]) { return requestedOutput; }
+    return [(cwd.length > 0 ? cwd : @"/root") stringByAppendingPathComponent:requestedOutput];
+}
+
+static int LBIRunClangDriver(NSArray<NSString *> *arguments, NSMutableString *log)
+{
+    [log appendFormat:@"clang driver args: %@\n", [arguments componentsJoinedByString:@" "]];
+    MDKDriver *driver = [MDKDriver driverWithArguments:arguments withType:CCDriverTypeClang];
+    if(driver == nil)
+    {
+        [log appendString:@"Could not create Nyxian Clang driver.\n"];
+        return 70;
+    }
+    NSArray<MDKJob *> *jobs = [driver generateJobs];
+    if(jobs.count == 0)
+    {
+        [log appendString:@"Nyxian Clang driver produced no jobs.\n"];
+        return 70;
+    }
+    return LBIExecuteJobs(jobs, log, 0);
 }
 
 static NSArray<NSString *> *LBISwiftcUserFlags(NSArray<NSString *> *words)
@@ -579,6 +673,65 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             [log appendFormat:@"Fakefs output path: %@\n", fakefsPath];
             NSArray *artifacts = @[@{@"hostPath": hostOutput, @"fakefsPath": fakefsPath}];
             return LBICopyResponseWithArtifacts(0, @"swiftc-ok", log, artifacts);
+        }
+
+
+        if([command isEqualToString:@"litter-clang"])
+        {
+            NSArray<NSString *> *words = LBIWords(args);
+            NSSet<NSString *> *sourceExtensions = [NSSet setWithArray:@[@"c", @"cc", @"cpp", @"cxx", @"m", @"mm"]];
+            NSString *source = hostInputPath.length > 0 ? hostInputPath : LBIFirstInputWithExtensions(words, sourceExtensions);
+            if(source.length == 0) { return LBICopyResponse(64, @"clang-missing-input", @"No C, C++, Objective-C, or Objective-C++ input was supplied.\n"); }
+
+            NSString *requestedOutput = LBIOutputPath(words, LBIClangFallbackOutput(source, words));
+            NSString *artifactDir = [hostWorkDir stringByAppendingPathComponent:@"Artifacts"];
+            [NSFileManager.defaultManager createDirectoryAtPath:artifactDir withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *hostOutput = [artifactDir stringByAppendingPathComponent:requestedOutput.lastPathComponent];
+            NSMutableArray<NSString *> *driverArgs = [NSMutableArray array];
+            [driverArgs addObjectsFromArray:LBIClangUserFlags(words, sourceExtensions)];
+            [driverArgs addObjectsFromArray:@[@"-isysroot", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-miphoneos-version-min=18.0", @"-o", hostOutput, source]];
+            int code = LBIRunClangDriver(driverArgs, log);
+            if(code != 0) { return LBICopyResponse(code, @"clang-failed", log); }
+            if(![NSFileManager.defaultManager fileExistsAtPath:hostOutput])
+            {
+                [log appendFormat:@"Clang completed without producing an artifact at %@.\n", hostOutput];
+                return LBICopyResponse(0, @"clang-ok", log);
+            }
+            chmod(hostOutput.fileSystemRepresentation, 0755);
+            NSString *fakefsPath = LBIFakefsOutputPath(requestedOutput, cwd);
+            [log appendFormat:@"Clang output: %@\n", hostOutput];
+            [log appendFormat:@"Fakefs output path: %@\n", fakefsPath];
+            NSArray *artifacts = @[@{@"hostPath": hostOutput, @"fakefsPath": fakefsPath}];
+            return LBICopyResponseWithArtifacts(0, @"clang-ok", log, artifacts);
+        }
+
+        if([command isEqualToString:@"litter-ld"])
+        {
+            NSArray<NSString *> *words = LBIWords(args);
+            NSSet<NSString *> *inputExtensions = [NSSet setWithArray:@[@"o", @"a", @"dylib", @"tbd"]];
+            NSString *input = hostInputPath.length > 0 ? hostInputPath : LBIFirstInputWithExtensions(words, inputExtensions);
+            if(input.length == 0) { return LBICopyResponse(64, @"ld-missing-input", @"No object, archive, dylib, or tbd input was supplied.\n"); }
+
+            NSString *requestedOutput = LBIOutputPath(words, @"a.out");
+            NSString *artifactDir = [hostWorkDir stringByAppendingPathComponent:@"Artifacts"];
+            [NSFileManager.defaultManager createDirectoryAtPath:artifactDir withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *hostOutput = [artifactDir stringByAppendingPathComponent:requestedOutput.lastPathComponent];
+            NSMutableArray<NSString *> *driverArgs = [NSMutableArray array];
+            [driverArgs addObjectsFromArray:LBIClangUserFlags(words, inputExtensions)];
+            [driverArgs addObjectsFromArray:@[@"-isysroot", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-miphoneos-version-min=18.0", @"-o", hostOutput, input]];
+            int code = LBIRunClangDriver(driverArgs, log);
+            if(code != 0) { return LBICopyResponse(code, @"ld-failed", log); }
+            if(![NSFileManager.defaultManager fileExistsAtPath:hostOutput])
+            {
+                [log appendFormat:@"Link completed without producing an artifact at %@.\n", hostOutput];
+                return LBICopyResponse(0, @"ld-ok", log);
+            }
+            chmod(hostOutput.fileSystemRepresentation, 0755);
+            NSString *fakefsPath = LBIFakefsOutputPath(requestedOutput, cwd);
+            [log appendFormat:@"Linker output: %@\n", hostOutput];
+            [log appendFormat:@"Fakefs output path: %@\n", fakefsPath];
+            NSArray *artifacts = @[@{@"hostPath": hostOutput, @"fakefsPath": fakefsPath}];
+            return LBICopyResponseWithArtifacts(0, @"ld-ok", log, artifacts);
         }
 
         if([command isEqualToString:@"litter-swift-build"] || [command isEqualToString:@"litter-swift-test"] || [command isEqualToString:@"litter-ipa-build"] || [command isEqualToString:@"litter-ipa-package"])
