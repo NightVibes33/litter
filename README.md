@@ -157,9 +157,9 @@ The Rust bridge advertises `features.goals` and includes UniFFI methods for gett
 
 ## On-device Swift BuildKit
 
-Litter includes a focused Nyxian/CoreCompiler/LLVM-On-iOS source import plus a native BuildKit bridge. The public repo contains source and scripts; full on-device Swift/iOS compilation requires a private `LitterBuildKitAssets` bundle because Apple SDK files and compiled private frameworks are not committed.
+Litter vendors Nyxian source as the foundation for its on-device iOS toolchain, then layers a Litter-specific native BuildKit bridge on top. The public repo contains source and reproducible vendor/build scripts; full on-device Swift/iOS compilation still requires a private `LitterBuildKitAssets` bundle because Apple SDK files and compiled private frameworks are not committed.
 
-The private asset bundle must include:
+The vendored Nyxian source is pinned in `ThirdParty/Nyxian/LITTER_NYXIAN_IMPORT.json` and verified by `tools/scripts/verify-nyxian-source-import.sh`. The private asset bundle must include:
 
 - `Toolchains/Nyxian/CoreCompiler.framework`
 - `Toolchains/Nyxian/CoreCompilerSupportLibs`
@@ -259,4 +259,4 @@ Litter is under active development. Small, focused PRs are easier to review than
 
 ## License
 
-Litter is licensed under GPLv3 with an additional GPLv3 section 7 permission for Apple App Store and iOS distribution. See `LICENSE` and `THIRD_PARTY_NOTICES.md`.
+Litter is licensed under GPLv3 with an additional GPLv3 section 7 permission for Apple App Store and iOS distribution. Vendored Nyxian source is AGPL-3.0-or-later; see `ThirdParty/Nyxian/LICENSE` and `THIRD_PARTY_NOTICES.md`.

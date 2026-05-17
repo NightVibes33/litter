@@ -25,7 +25,7 @@
 #import <LindChain/ProcEnvironment/Object/ArchiveObject.h>
 #import <LindChain/Utils/Zip.h>
 #import <LindChain/ProcEnvironment/Process/PELaunchServiceRegistry.h>
-#import <Nyxian-Swift.h>
+#import <emexDE-Swift.h>
 
 @interface LDEApplicationWorkspace ()
 
@@ -61,11 +61,11 @@
     {
         return YES;
     }
-
+    
     __weak typeof(self) weakSelf = self;
     _connection = nil;
     PELaunchServiceRegistry *serviceRegistry = [PELaunchServiceRegistry shared];
-
+    
     if(serviceRegistry != nil)
     {
         _connection = [serviceRegistry connectToService:@"com.cr4zy.installd" protocol:@protocol(LDEApplicationWorkspaceProxyProtocol) observer:self observerProtocol:@protocol(LDEApplicationWorkspaceProtocol)];
@@ -74,33 +74,33 @@
             if(!strongSelf) return;
             strongSelf.connection = nil;
         };
-
+        
         return _connection != nil;
     }
-
+    
     return NO;
 }
 
 - (void)ping
 {
     [self connect];
-
+    
     [_connection.remoteObjectProxy ping];
 }
 
 - (BOOL)installApplicationAtBundlePath:(NSString*)bundlePath
 {
     [self connect];
-
+    
     __block BOOL result = NO;
     ArchiveObject *archiveObject = [ArchiveObject objectForDirectoryAtPath:bundlePath];
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-
+    
     id proxy = [_connection remoteObjectProxyWithErrorHandler:^(NSError *error) {
         /* semaphores remember the signal, it doesnt have to catch them in time */
         dispatch_semaphore_signal(sema);
     }];
-
+    
     if(proxy == NULL)
     {
         /* semaphores remember the signal, it doesnt have to catch them in time */
@@ -113,7 +113,7 @@
             dispatch_semaphore_signal(sema);
         }];
     }
-
+    
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
     return result;
 }
@@ -121,16 +121,16 @@
 - (BOOL)installApplicationAtPackagePath:(NSString*)packagePath
 {
     [self connect];
-
+    
     __block BOOL result = NO;
     ArchiveObject *archiveObject = [ArchiveObject objectForFileAtPath:packagePath];
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-
+    
     id proxy = [_connection remoteObjectProxyWithErrorHandler:^(NSError *error) {
         /* semaphores remember the signal, it doesnt have to catch them in time */
         dispatch_semaphore_signal(sema);
     }];
-
+    
     if(proxy == NULL)
     {
         /* semaphores remember the signal, it doesnt have to catch them in time */
@@ -143,7 +143,7 @@
             dispatch_semaphore_signal(sema);
         }];
     }
-
+    
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
     return result;
 }
@@ -151,15 +151,15 @@
 - (BOOL)deleteApplicationWithBundleID:(NSString *)bundleID
 {
     [self connect];
-
+    
     __block BOOL result = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-
+    
     id proxy = [_connection remoteObjectProxyWithErrorHandler:^(NSError *error) {
         /* semaphores remember the signal, it doesnt have to catch them in time */
         dispatch_semaphore_signal(sema);
     }];
-
+    
     if(proxy == NULL)
     {
         /* semaphores remember the signal, it doesnt have to catch them in time */
@@ -172,7 +172,7 @@
             dispatch_semaphore_signal(sema);
         }];
     }
-
+    
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
     return result;
 }
@@ -180,15 +180,15 @@
 - (BOOL)applicationInstalledWithBundleID:(NSString *)bundleID
 {
     [self connect];
-
+    
     __block BOOL result = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-
+    
     id proxy = [_connection remoteObjectProxyWithErrorHandler:^(NSError *error) {
         /* semaphores remember the signal, it doesnt have to catch them in time */
         dispatch_semaphore_signal(sema);
     }];
-
+    
     if(proxy == NULL)
     {
         /* semaphores remember the signal, it doesnt have to catch them in time */
@@ -201,7 +201,7 @@
             dispatch_semaphore_signal(sema);
         }];
     }
-
+    
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
     return result;
 }
@@ -209,15 +209,15 @@
 - (LDEApplicationObject*)applicationObjectForBundleID:(NSString*)bundleID
 {
     [self connect];
-
+    
     __block LDEApplicationObject *result = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-
+    
     id proxy = [_connection remoteObjectProxyWithErrorHandler:^(NSError *error) {
         /* semaphores remember the signal, it doesnt have to catch them in time */
         dispatch_semaphore_signal(sema);
     }];
-
+    
     if(proxy == NULL)
     {
         /* semaphores remember the signal, it doesnt have to catch them in time */
@@ -230,7 +230,7 @@
             dispatch_semaphore_signal(sema);
         }];
     }
-
+    
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
     return result;
 }
@@ -238,22 +238,22 @@
 - (NSArray<LDEApplicationObject*>*)allApplicationObjects
 {
     [self connect];
-
+    
     return _apps;
 }
 
 - (BOOL)clearContainerForBundleID:(NSString *)bundleID
 {
     [self connect];
-
+    
     __block BOOL result = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-
+    
     id proxy = [_connection remoteObjectProxyWithErrorHandler:^(NSError *error) {
         /* semaphores remember the signal, it doesnt have to catch them in time */
         dispatch_semaphore_signal(sema);
     }];
-
+    
     if(proxy == NULL)
     {
         /* semaphores remember the signal, it doesnt have to catch them in time */
@@ -266,7 +266,7 @@
             dispatch_semaphore_signal(sema);
         }];
     }
-
+    
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
     return result;
 }
@@ -274,15 +274,15 @@
 - (NSString*)fastpathUtility:(NSString*)utilityPath
 {
     [self connect];
-
+    
     __block NSString *fastpath = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-
+    
     id proxy = [_connection remoteObjectProxyWithErrorHandler:^(NSError *error) {
         /* semaphores remember the signal, it doesnt have to catch them in time */
         dispatch_semaphore_signal(sema);
     }];
-
+    
     if(proxy == NULL)
     {
         /* semaphores remember the signal, it doesnt have to catch them in time */
@@ -295,7 +295,7 @@
             dispatch_semaphore_signal(sema);
         }];
     }
-
+    
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
     return fastpath;
 }
@@ -303,15 +303,15 @@
 - (LDEApplicationObject*)applicationObjectForExecutablePath:(NSString*)executablePath
 {
     [self connect];
-
+    
     __block LDEApplicationObject *application = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-
+    
     id proxy = [_connection remoteObjectProxyWithErrorHandler:^(NSError *error) {
         /* semaphores remember the signal, it doesnt have to catch them in time */
         dispatch_semaphore_signal(sema);
     }];
-
+    
     if(proxy == NULL)
     {
         /* semaphores remember the signal, it doesnt have to catch them in time */
@@ -324,7 +324,7 @@
             dispatch_semaphore_signal(sema);
         }];
     }
-
+    
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
     return application;
 }
@@ -332,15 +332,15 @@
 - (NSString*)utilityHomePath
 {
     [self connect];
-
+    
     __block NSString *utilityHomePath = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-
+    
     id proxy = [_connection remoteObjectProxyWithErrorHandler:^(NSError *error) {
         /* semaphores remember the signal, it doesnt have to catch them in time */
         dispatch_semaphore_signal(sema);
     }];
-
+    
     if(proxy == NULL)
     {
         /* semaphores remember the signal, it doesnt have to catch them in time */
@@ -353,7 +353,7 @@
             dispatch_semaphore_signal(sema);
         }];
     }
-
+    
     dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)));
     return utilityHomePath;
 }

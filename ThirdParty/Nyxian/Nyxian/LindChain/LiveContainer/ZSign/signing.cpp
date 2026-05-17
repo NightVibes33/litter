@@ -514,7 +514,7 @@ bool ZSign::SlotBuildCodeDirectory(bool bAlternate,
 				ZSHA::SHA1(pCodeBase + uPageSize * i, uPageSize, strSHASum);
 			} else  {
 				ZSHA::SHA256(pCodeBase + uPageSize * i, uPageSize, strSHASum);
-			}
+			} 
 			strOutput.append(strSHASum.data(), strSHASum.size());
 		}
 		if (uRemain > 0) {

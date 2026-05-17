@@ -87,13 +87,13 @@ CCDependencyScannerRef CCDependencyScannerCreate(CFAllocatorRef allocator,
                                                  CFArrayRef arguments)
 {
     assert(arguments != nullptr);
-
+    
     CCDependencyScannerRef dependencyScanner = (CCDependencyScannerRef)_CFRuntimeCreateInstance(allocator, CCDependencyScannerGetTypeID(), sizeof(struct opaque_ccdependencyscanner) - sizeof(CFRuntimeBase), NULL);
     if(dependencyScanner == nullptr)
     {
         return nullptr;
     }
-
+    
     dependencyScanner->BaseArgs.push_back("clang");
     CFIndex count = CFArrayGetCount(arguments);
     for(CFIndex i = 0; i < count; i++)
@@ -111,7 +111,7 @@ CCDependencyScannerRef CCDependencyScannerCreate(CFAllocatorRef allocator,
             dependencyScanner->BaseArgs.push_back(buf);
         }
     }
-
+    
     for(size_t i = 0; i < dependencyScanner->BaseArgs.size(); i++)
     {
         if(dependencyScanner->BaseArgs[i] == "-isysroot" && i + 1 < dependencyScanner->BaseArgs.size())
@@ -133,7 +133,7 @@ CCDependencyScannerRef CCDependencyScannerCreate(CFAllocatorRef allocator,
             dependencyScanner->resourceDir = dependencyScanner->BaseArgs[i].substr(strlen("-resource-dir="));
         }
     }
-
+    
     return dependencyScanner;
 }
 
@@ -141,39 +141,39 @@ CFArrayRef CCDependencyScannerCopyDependencyFilesForFile(CCDependencyScannerRef 
                                                          CCFileRef file)
 {
     assert(file != nullptr);
-
+    
     CFURLRef fileURL = CCFileGetFileURL(file);
     if(fileURL == nullptr)  /* MARK: might be guranteed */
     {
         return nullptr;
     }
-
+    
     CFStringRef filePath = CFURLCopyFileSystemPath(fileURL, kCFURLPOSIXPathStyle);
     if(filePath == nullptr)
     {
         return nullptr;
     }
-
+    
     const char *filePathCStr = CFStringGetCStringPtr(filePath, kCFStringEncodingUTF8);
     if(filePathCStr == nullptr)
     {
         CFRelease(filePath);
         return nullptr;
     }
-
+    
     DependencyScanningTool tool(dependencyScanner->service);
-
+    
     std::vector<std::string> Args = dependencyScanner->BaseArgs;
     Args.push_back(filePathCStr);
     CFRelease(filePath);
-
+    
     llvm::Expected<std::string> depsOrErr = tool.getDependencyFile(Args, "/");
     if(!depsOrErr)
     {
         /* failed */
         return nullptr;
     }
-
+    
     std::string depStr = *depsOrErr;
     size_t colonPos = depStr.find(':');
     if(colonPos == std::string::npos)
@@ -181,17 +181,17 @@ CFArrayRef CCDependencyScannerCopyDependencyFilesForFile(CCDependencyScannerRef 
         /* no scan output */
         return nullptr;
     }
-
+    
     CFMutableArrayRef headers = CFArrayCreateMutable(CFGetAllocator(dependencyScanner), 0, &kCFTypeArrayCallBacks);
     if(headers == nullptr)
     {
         return nullptr;
     }
-
+    
     llvm::StringRef remaining(depStr.c_str() + colonPos + 1);
     llvm::SmallVector<llvm::StringRef, 32> tokens;
     remaining.split(tokens, ' ', -1, false);
-
+    
     CFAllocatorRef allocator = CFGetAllocator(dependencyScanner);
     bool first = true;
     for(llvm::StringRef token : tokens)
@@ -201,21 +201,21 @@ CFArrayRef CCDependencyScannerCopyDependencyFilesForFile(CCDependencyScannerRef 
         if(first) { first = false; continue; }
         if(!dependencyScanner->sysroot.empty() && token.starts_with(dependencyScanner->sysroot)) continue;
         if(!dependencyScanner->resourceDir.empty() && token.starts_with(dependencyScanner->resourceDir)) continue;
-
+        
         std::string tokenStr = token.str();
         CCFileRef file = CCFileCreateWithCString(allocator, tokenStr.c_str(), kCFStringEncodingUTF8);
         if(file == nullptr)
         {
             continue;
         }
-
+        
         CFArrayAppendValue(headers, file);
-
+        
         if(file != nullptr)
         {
             CFRelease(file);
         }
     }
-
+    
     return headers;
 }

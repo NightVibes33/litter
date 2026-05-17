@@ -315,6 +315,13 @@ static BOOL LBIFlagTakesValue(NSString *word)
 
 static BOOL LBIWordsContain(NSArray<NSString *> *words, NSString *value);
 
+static void LBIAppendSwiftSDKCompatibilityFlags(NSMutableArray<NSString *> *arguments)
+{
+    if([arguments containsObject:@"-disable-sdk-module-interface-validation"]) { return; }
+    [arguments addObject:@"-Xfrontend"];
+    [arguments addObject:@"-disable-sdk-module-interface-validation"];
+}
+
 static BOOL LBIIsInputWithExtensions(NSString *word, NSSet<NSString *> *extensions)
 {
     if(word.length == 0 || [word hasPrefix:@"-"]) { return NO; }
@@ -741,7 +748,9 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
         {
             NSString *source = hostInputPath.length > 0 ? hostInputPath : LBIWords(args).firstObject;
             if(source.length == 0) { return LBICopyResponse(64, @"missing-input", @"No Swift input was supplied.\n"); }
-            NSArray<NSString *> *driverArgs = @[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", source];
+            NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
+            LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+            [driverArgs addObject:source];
             int code = LBIRunSwiftDriver(driverArgs, log);
             return LBICopyResponse(code, code == 0 ? @"swift-check-ok" : @"swift-check-failed", log);
         }
@@ -762,7 +771,9 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
 
             if(LBIWordsContain(words, @"-typecheck") || LBIWordsContain(words, @"-parse"))
             {
-                NSArray<NSString *> *driverArgs = @[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", source];
+                NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
+            LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+            [driverArgs addObject:source];
                 int code = LBIRunSwiftDriver(driverArgs, log);
                 return LBICopyResponse(code, code == 0 ? @"swiftc-check-ok" : @"swiftc-check-failed", log);
             }
@@ -776,6 +787,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray array];
             [driverArgs addObjectsFromArray:LBISwiftcUserFlags(words)];
             [driverArgs addObjectsFromArray:@[@"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-o", hostOutput, source]];
+            LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
             int code = LBIRunSwiftDriver(driverArgs, log);
             if(code != 0) { return LBICopyResponse(code, @"swiftc-failed", log); }
             chmod(hostOutput.fileSystemRepresentation, 0755);
@@ -859,6 +871,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             [NSFileManager.defaultManager removeItemAtPath:appDir error:nil];
             [NSFileManager.defaultManager createDirectoryAtPath:appDir withIntermediateDirectories:YES attributes:nil error:nil];
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-sdk", sdkRoot, @"-target", [@"arm64-apple-ios" stringByAppendingString:deployment], @"-o", executable]];
+            LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
             [driverArgs addObjectsFromArray:sources];
             int code = LBIRunSwiftDriver(driverArgs, log);
             if(code != 0) { return LBICopyResponse(code, @"swift-build-failed", log); }

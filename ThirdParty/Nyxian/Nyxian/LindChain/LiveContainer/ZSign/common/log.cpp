@@ -31,7 +31,7 @@ void ZLog::_Print(const char* szLog, int nColor)
 		case 10:
 			szColor = "\033[32m";
 			break;
-		case 12:
+		case 12: 
 			szColor = "\033[31m";
 			break;
 		default:
@@ -46,7 +46,7 @@ void ZLog::_Print(const char* szLog, int nColor)
 		write(STDOUT_FILENO, "\033[0m", 4);
 	}
     writeToLogFile(szLog);
-
+	
 #endif
 }
 

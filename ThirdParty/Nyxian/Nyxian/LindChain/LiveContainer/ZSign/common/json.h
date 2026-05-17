@@ -481,7 +481,7 @@ public:
 	void			write(const jvalue& pval, string& strdoc);
 	void			write_to_binary(const jvalue& pval, string& strdoc);
 	const string&	style_write(const jvalue& pval);
-
+	
 private:
 	struct bplist_object
 	{

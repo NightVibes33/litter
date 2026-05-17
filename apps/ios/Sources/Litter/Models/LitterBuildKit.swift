@@ -270,7 +270,7 @@ actor LitterBuildKit {
     private static let stateRoot = "/root/.litter/buildkit"
     private static let requestRoot = "\(stateRoot)/requests"
     private static let buildRoot = "/root/.litter/builds"
-    private static let shimInstallMarker = "\(stateRoot)/shims-installed-v5"
+    private static let shimInstallMarker = "\(stateRoot)/shims-installed-v6"
     private static let canonicalCommandNames = [
         "litter-buildkit",
         "litter-nyxian-status",
@@ -300,6 +300,7 @@ actor LitterBuildKit {
         "ld",
         "ld64",
         "xcodebuild",
+        "xcode-select",
         "xcrun",
         "plutil",
         "code"
@@ -519,8 +520,10 @@ actor LitterBuildKit {
             return await ldCompatibility(command: command, args: args, cwd: cwd, buildDir: buildDir)
         case "xcodebuild":
             return await xcodebuildCompatibility(args: args, cwd: cwd, buildDir: buildDir)
+        case "xcode-select":
+            return await xcodeSelectCompatibility(args: args)
         case "xcrun":
-            return await xcrunCompatibility(args: args)
+            return await xcrunCompatibility(args: args, cwd: cwd, buildDir: buildDir)
         case "plutil":
             return await plutilCompatibility(args: args, cwd: cwd)
         case "code":
@@ -619,7 +622,7 @@ actor LitterBuildKit {
             chmod 1777 /tmp /var/tmp 2>/dev/null || true
             if command -v apk >/dev/null 2>&1; then
               apk update || true
-              apk add --no-cache git openssh-client curl tar gzip xz unzip zip python3 py3-pip nodejs npm ca-certificates coreutils findutils grep sed gawk make clang llvm lld binutils build-base jq || true
+              apk add --no-cache git openssh-client curl tar gzip xz unzip zip python3 py3-pip nodejs npm ca-certificates coreutils findutils grep sed gawk ripgrep make clang llvm lld binutils build-base jq || true
             fi
             git config --global init.defaultBranch main 2>/dev/null || true
             git config --global advice.detachedHead false 2>/dev/null || true
@@ -798,7 +801,7 @@ actor LitterBuildKit {
         return await nativeBuildCommand(command: "litter-ld", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
     }
 
-    private func xcrunCompatibility(args: String) async -> BuildKitCommandResult {
+    private func xcrunCompatibility(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
             return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "xcrun-help", log: Self.xcrunCompatibilityUsage())
@@ -807,10 +810,10 @@ actor LitterBuildKit {
             let current = await status()
             return BuildKitCommandResult(exitCode: 0, status: "xcrun-version", log: Self.compatibilityVersionLog(tool: "xcrun", status: current))
         }
-        if tokens.contains("--show-sdk-path") {
+        if tokens.contains("--show-sdk-path") || tokens.contains("-show-sdk-path") {
             return BuildKitCommandResult(exitCode: 0, status: "xcrun-sdk-path", log: "\(Self.sdkRoot.path)\n")
         }
-        if let index = tokens.firstIndex(of: "--find"), index + 1 < tokens.count {
+        if let index = tokens.firstIndex(where: { $0 == "--find" || $0 == "-find" }), index + 1 < tokens.count {
             let tool = tokens[index + 1]
             if Self.commandNames.contains(tool) {
                 return BuildKitCommandResult(exitCode: 0, status: "xcrun-find-ok", log: "/usr/local/bin/\(tool)\n")
@@ -819,6 +822,10 @@ actor LitterBuildKit {
                 return BuildKitCommandResult(exitCode: 0, status: "xcrun-find-ok", log: "\(path)\n")
             }
             return BuildKitCommandResult(exitCode: 72, status: "xcrun-find-missing", log: "xcrun: could not find tool \(tool) in Litter BuildKit or fakefs.\n")
+        }
+        if let invocation = Self.xcrunToolInvocation(tokens: tokens) {
+            let forwardedArgs = invocation.args.map(IshFS.shellQuote).joined(separator: " ")
+            return await handle(command: invocation.tool, args: forwardedArgs, cwd: cwd, buildDir: buildDir)
         }
         return BuildKitCommandResult(exitCode: 64, status: "xcrun-unsupported", log: Self.xcrunCompatibilityUsage())
     }
@@ -893,6 +900,18 @@ actor LitterBuildKit {
         if tokens.contains("-help") || tokens.contains("--help") {
             return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-help", log: Self.xcodebuildCompatibilityUsage())
         }
+        if tokens.contains("-showsdks") {
+            return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-sdks", log: Self.xcodebuildSDKList())
+        }
+        if Self.tokensRequestSimulator(tokens) {
+            return BuildKitCommandResult(exitCode: 64, status: "simulator-unsupported", log: "Litter BuildKit is iOS-device only. Use -sdk iphoneos and an arm64 iOS deployment target; simulator destinations are not available on device.\n")
+        }
+        if tokens.contains("-list") {
+            return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-list", log: Self.xcodebuildListLog(projectArgs: Self.compatibilityProjectArgs(tokens: tokens)))
+        }
+        if tokens.contains("-showBuildSettings") {
+            return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-settings", log: Self.xcodebuildSettingsLog(projectArgs: Self.compatibilityProjectArgs(tokens: tokens)))
+        }
         let projectArgs = Self.compatibilityProjectArgs(tokens: tokens)
         if tokens.contains("archive") {
             return await nativeBuildCommand(command: "litter-ipa-build", args: projectArgs, cwd: cwd, buildDir: buildDir)
@@ -904,6 +923,20 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-clean-ok", log: "Litter xcodebuild compatibility shim: clean is a no-op for staged BuildKit jobs.\n")
         }
         return await nativeBuildCommand(command: "litter-swift-build", args: projectArgs, cwd: cwd, buildDir: buildDir)
+    }
+
+    private func xcodeSelectCompatibility(args: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.isEmpty || tokens.contains("-p") || tokens.contains("--print-path") {
+            return BuildKitCommandResult(exitCode: 0, status: "xcode-select-path", log: "\(Self.toolchainRoot.path)\n")
+        }
+        if tokens.contains("--version") || tokens.contains("-version") {
+            return BuildKitCommandResult(exitCode: 0, status: "xcode-select-version", log: "xcode-select compatibility shim for Litter BuildKit\n")
+        }
+        if tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: 0, status: "xcode-select-help", log: "Supported: xcode-select -p, xcode-select --print-path, xcode-select --version\n")
+        }
+        return BuildKitCommandResult(exitCode: 64, status: "xcode-select-unsupported", log: "Litter's xcode-select shim only reports the on-device BuildKit developer path.\n")
     }
 
     private func codeCompatibility(args: String, cwd: String) -> BuildKitCommandResult {
@@ -1886,7 +1919,101 @@ actor LitterBuildKit {
         if let explicit = tokens.first(where: { $0.hasSuffix(".json") }) {
             return explicit
         }
+        for flag in ["-project", "-workspace"] {
+            if let index = tokens.firstIndex(of: flag), index + 1 < tokens.count {
+                let projectPath = tokens[index + 1]
+                if let inferred = inferredManifestPath(fromXcodeContainer: projectPath) {
+                    return inferred
+                }
+            }
+        }
+        if let projectPath = tokens.first(where: { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }),
+           let inferred = inferredManifestPath(fromXcodeContainer: projectPath) {
+            return inferred
+        }
         return "LitterBuild.json"
+    }
+
+    private static func inferredManifestPath(fromXcodeContainer path: String) -> String? {
+        guard path.hasSuffix(".xcodeproj") || path.hasSuffix(".xcworkspace") else { return nil }
+        let parent = (path as NSString).deletingLastPathComponent
+        if parent.isEmpty || parent == "." { return "LitterBuild.json" }
+        return (parent as NSString).appendingPathComponent("LitterBuild.json")
+    }
+
+    private static func xcrunToolInvocation(tokens: [String]) -> (tool: String, args: [String])? {
+        var index = 0
+        while index < tokens.count {
+            let token = tokens[index]
+            if ["--sdk", "-sdk", "--toolchain", "-toolchain", "--log", "--kill-cache"].contains(token) {
+                index += 2
+                continue
+            }
+            if token.hasPrefix("--sdk=") || token.hasPrefix("-sdk=") || token.hasPrefix("--toolchain=") || token.hasPrefix("-toolchain=") {
+                index += 1
+                continue
+            }
+            if token == "--run" {
+                index += 1
+                continue
+            }
+            if token.hasPrefix("-") {
+                index += 1
+                continue
+            }
+            let tool = token
+            guard Self.commandNames.contains(tool), tool != "xcrun" else { return nil }
+            return (tool, Array(tokens.dropFirst(index + 1)))
+        }
+        return nil
+    }
+
+    private static func tokensRequestSimulator(_ tokens: [String]) -> Bool {
+        tokens.contains { token in
+            let lower = token.lowercased()
+            return lower.contains("iphonesimulator") || lower.contains("ios simulator") || lower.contains("platform=ios simulator")
+        }
+    }
+
+    private static func xcodebuildSDKList() -> String {
+        let sdk = installedManifest?.sdkVersion ?? "installed"
+        return """
+        iOS SDKs:
+          iOS \(sdk)  -sdk iphoneos
+
+        Litter BuildKit runs on device only. Simulator SDKs are intentionally unavailable.
+        """
+    }
+
+    private static func xcodebuildListLog(projectArgs: String) -> String {
+        """
+        Information about project "LitterBuild":
+            Targets:
+                LitterBuild
+
+            Build Configurations:
+                Debug
+                Release
+
+            Schemes:
+                LitterBuild
+
+        Manifest: \(projectArgs)
+        """
+    }
+
+    private static func xcodebuildSettingsLog(projectArgs: String) -> String {
+        """
+        Build settings for action build and target LitterBuild:
+            ACTION = build
+            ARCHS = arm64
+            EFFECTIVE_PLATFORM_NAME = -iphoneos
+            PLATFORM_NAME = iphoneos
+            SDKROOT = \(sdkRoot.path)
+            SUPPORTED_PLATFORMS = iphoneos
+            TOOLCHAIN_DIR = \(toolchainRoot.path)
+            LITTER_BUILD_MANIFEST = \(projectArgs)
+        """
     }
 
     private static func compatibilityVersionLog(tool: String, status: LitterBuildKitStatus) -> String {
@@ -1966,6 +2093,8 @@ actor LitterBuildKit {
           xcrun --sdk iphoneos --show-sdk-path
           xcrun --find swiftc
           xcrun --find clang
+          xcrun --sdk iphoneos swiftc path/to/File.swift -o output
+          xcrun --sdk iphoneos clang -c path/to/File.c -o File.o
           xcrun --version
         """
     }
@@ -1985,12 +2114,16 @@ actor LitterBuildKit {
         Litter xcodebuild compatibility shim
         Supported:
           xcodebuild -version
+          xcodebuild -showsdks
+          xcodebuild -list
+          xcodebuild -showBuildSettings
           xcodebuild [build] [LitterBuild.json]
+          xcodebuild -project App.xcodeproj build
           xcodebuild test [LitterBuild.json]
           xcodebuild archive [LitterBuild.json]
           xcodebuild clean
 
-        This is an iOS-only BuildKit bridge, not full Xcode. Use litter-swift-build, litter-swift-test, litter-ipa-build, clang, swiftc, xcrun, and plutil for reliable bot builds.
+        This is an iOS-device BuildKit bridge. It supports common Xcode-style discovery and routes builds through LitterBuild.json; simulator, Interface Builder, SwiftPM package resolution, and desktop signing workflows are intentionally unavailable on device.
         """
     }
 
@@ -2015,7 +2148,7 @@ actor LitterBuildKit {
         Swift direct build: \(status.canRunSwiftDirectly ? "ready" : "blocked")
         Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
-        Command modes: native Swift/Clang/link: swift, swiftc, clang, clang++, cc, c++, ld, ld64; compatibility: xcodebuild, xcrun, plutil, code; fakefs pass-through: ar, ranlib, nm, objdump, strip, strings, lipo.
+        Command modes: native Swift/Clang/link: swift, swiftc, clang, clang++, cc, c++, ld, ld64; compatibility: xcodebuild, xcode-select, xcrun, plutil, code; fakefs pass-through: ar, ranlib, nm, objdump, strip, strings, lipo.
         """
         if let sourceManifest = status.sourceImportManifest {
             output += "\nSource manifest: \(sourceManifest.name) (\(sourceManifest.importedFileCount) files)\n"

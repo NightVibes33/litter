@@ -7,7 +7,7 @@ public:
 	ZSignAsset();
 
 public:
-	bool Init(const string& strCertFile,
+	bool Init(const string& strCertFile, 
 				const string& strPKeyFile,
 				const string& strProvFile,
 				const string& strEntitleFile,
@@ -18,19 +18,19 @@ public:
     bool InitSimple(const void* strSignerPKeyData, int strSignerPKeyDataSize, const void* strProvisionData, int strProvisionDataSize, const string &strPassword);
     bool InitAdhoc(const void* strEntitlementData, int strEntitlementDataSize);
     bool GetCMSContent2(const void* strCMSDataInput, int size, string &strContentOutput);
-	bool GenerateCMS(const string& strCDHashData,
-						const string& strCDHashesPlist,
-						const string& strCodeDirectorySlotSHA1,
-						const string& strAltnateCodeDirectorySlot256,
+	bool GenerateCMS(const string& strCDHashData, 
+						const string& strCDHashesPlist, 
+						const string& strCodeDirectorySlotSHA1, 
+						const string& strAltnateCodeDirectorySlot256, 
 						string& strCMSOutput);
 
 private:
-	bool GenerateCMS(void* pscert,
-						void* pspkey,
-						const string& strCDHashData,
-						const string& strCDHashesPlist,
-						const string& strCodeDirectorySlotSHA1,
-						const string& strAltnateCodeDirectorySlot256,
+	bool GenerateCMS(void* pscert, 
+						void* pspkey, 
+						const string& strCDHashData, 
+						const string& strCDHashesPlist, 
+						const string& strCodeDirectorySlotSHA1, 
+						const string& strAltnateCodeDirectorySlot256, 
 						string& strCMSOutput);
 
 	bool GetCertSubjectCN(void* cert, string& strSubjectCN);
@@ -58,7 +58,7 @@ public:
 
 	void*	m_evpPKey;
 	void*	m_x509Cert;
-
+    
 	static const char* s_szAppleRootCACert;
 	static const char* s_szAppleDevCACertG3;
 

@@ -86,7 +86,7 @@ void initDead10ccFix(void)
     if (pidinfo_size >= 8) {
         uint64_t count = pidinfo_size / sizeof(struct proc_fdinfo);
         struct proc_fdinfo *fdinfo = (struct proc_fdinfo *)pidinfo;
-
+        
         while (count--) {
             if (fdinfo->proc_fdtype == PROX_FDTYPE_VNODE) {
                 struct vnode_fdinfowithpath vnodeinfo;
@@ -170,7 +170,7 @@ void initDead10ccFix(void)
             // _rbs_process_log with %{public}@ Found locked SQLite database: %{public}@
 //            NSLog(@"Found locked SQLite database: %@", path);
             [lockedFilePaths addObject:path];
-
+            
         } else {
             int fd = open(path_c, O_RDONLY | O_NOCTTY);
             if (fd <= 1) {

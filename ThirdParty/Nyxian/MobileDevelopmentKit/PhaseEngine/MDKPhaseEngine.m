@@ -54,7 +54,7 @@ static void MDKPhaseGenerationEndHelper(MDKPhaseEngine *engine,
         default:
             break;
     }
-
+    
     /* resetting generation flags and arrays to sentinel */
     [jobs removeAllObjects];
     *type = CCJobTypeUnknown;
@@ -88,13 +88,13 @@ static void MDKPhaseGenerationAppendHelper(MDKPhaseEngine *engine,
         case CCJobTypeDriver:
         {
             MDKPhaseGenerationEndHelper(engine, type, phases, jobs);
-
+            
             MDKPhaseEngine *subPhaseEngine = [MDKPhaseEngine engineWithClangFlags:[job.arguments arrayByAddingObjectsFromArray:engine.otherClangFlags] withOtherLinkerFlags:engine.otherLinkerFlags];
             subPhaseEngine.delegate = engine.delegate;
             [phases addObject:subPhaseEngine];
-
+            
             MDKPhaseGenerationEndHelper(engine, type, phases, jobs);
-
+            
             break;
         }
         case CCJobTypeSwiftCompiler:
@@ -218,10 +218,10 @@ static void MDKPhaseGenerationAppendHelper(MDKPhaseEngine *engine,
 - (NSArray*)generatePhases
 {
     NSMutableArray *phases = [NSMutableArray array];
-
+    
     CCJobType currentPhasesType = CCJobTypeUnknown;
     NSMutableArray<MDKJob*> *currentPhasesJobs = [NSMutableArray array];
-
+    
     NSArray<MDKJob*> *mainDriverJobs = [_driver generateJobs];
     if(mainDriverJobs == nil)
     {
@@ -233,7 +233,7 @@ static void MDKPhaseGenerationAppendHelper(MDKPhaseEngine *engine,
         MDKPhaseGenerationAppendHelper(self, &currentPhasesType, phases, currentPhasesJobs, job);
     }
     MDKPhaseGenerationEndHelper(self, &currentPhasesType, phases, currentPhasesJobs);
-
+    
     return phases;
 }
 

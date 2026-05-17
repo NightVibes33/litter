@@ -53,7 +53,7 @@
     CFArrayRef array = nil;
     CFStringRef string = nil;
     BOOL success = CCJobExecuteJob((__bridge CCJobRef)self, &array, &string);
-
+    
     if(array != nil)
     {
         if(outDiagnostic != nil)
@@ -65,7 +65,7 @@
             CFRelease(array);
         }
     }
-
+    
     if(string != nil)
     {
         if(outMainSource != nil)
@@ -77,7 +77,7 @@
             CFRelease(string);
         }
     }
-
+    
     return success;
 }
 

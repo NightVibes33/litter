@@ -32,7 +32,7 @@
 {
     CFArrayRef array = nil;
     BOOL success = CCLinkerJobExecute((__bridge CCJobRef)job, &array);
-
+    
     if(array != nil)
     {
         if(outDiagnostic != nil)
@@ -44,7 +44,7 @@
             CFRelease(array);
         }
     }
-
+    
     return success;
 }
 

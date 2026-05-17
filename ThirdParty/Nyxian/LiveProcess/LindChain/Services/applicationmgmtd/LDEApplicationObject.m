@@ -34,9 +34,9 @@
     return nil;
 #else
     self = [super init];
-
+    
     self.bundleIdentifier = bundle.bundleIdentifier;
-
+    
     NSString *localizedDisplayName = [bundle objectForInfoDictionaryKey:@"CFBundleDisplayName"];
     if(!localizedDisplayName)
     {
@@ -50,13 +50,13 @@
         self.executablePath = [[bundle executableURL] path];
         self.containerPath = [[[LDEApplicationWorkspaceInternal shared] applicationContainerForBundleID:bundle.bundleIdentifier] path];
     }
-
+    
     ISBundleIcon *bundleIcon = [[PrivClass(ISBundleIcon) alloc] initWithBundleURL:bundle.bundleURL type:nil];
     if(bundleIcon)
     {
         ISResourceProvider *provider = [bundleIcon _makeAppResourceProvider];
         if(provider.isGenericProvider) return self;
-
+        
         ISAssetCatalogResource *resources = [provider iconResource];
         if ([resources isKindOfClass:NSClassFromString(@"IFImageBag")])
         {
@@ -65,7 +65,7 @@
             self.icon = [UIImage imageWithCGImage:image.CGImage scale:3.0 orientation:UIImageOrientationUp];
             return self;
         }
-
+        
         IFImage *image = [resources imageForSize:CGSizeMake(1024, 1024) scale:3.0];
         self.icon = [UIImage imageWithCGImage:image.CGImage scale:3.0 orientation:UIImageOrientationUp];
     }

@@ -85,7 +85,7 @@
                                                   error:(NSError **)error
 {
     [self connect];
-
+    
     __block NSArray<NSURL *> *contents = nil;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -112,7 +112,7 @@
                                                       error:(NSError **)error
 {
     [self connect];
-
+    
     __block NSArray<NSString *> *contents = nil;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -139,7 +139,7 @@
                        error:(NSError **)error
 {
     [self connect];
-
+    
     __block BOOL success = NO;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -167,7 +167,7 @@
               attributes:(nullable NSDictionary<NSFileAttributeKey, id> *)attr
 {
     [self connect];
-
+    
     __block BOOL success = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -192,7 +192,7 @@
                           error:(NSError **)error
 {
     [self connect];
-
+    
     __block BOOL success = NO;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -218,7 +218,7 @@
                                                  error:(NSError **)error
 {
     [self connect];
-
+    
     __block NSString *destination = nil;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -243,7 +243,7 @@
                                                                     error:(NSError **)error
 {
     [self connect];
-
+    
     __block NSDictionary<NSFileAttributeKey, id> *attrs = nil;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -269,7 +269,7 @@
                 error:(NSError **)error
 {
     [self connect];
-
+    
     __block BOOL success = NO;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -296,7 +296,7 @@
                 error:(NSError **)error
 {
     [self connect];
-
+    
     __block BOOL success = NO;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -323,7 +323,7 @@
                 error:(NSError **)error
 {
     [self connect];
-
+    
     __block BOOL success = NO;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -350,7 +350,7 @@
                 error:(NSError **)error
 {
     [self connect];
-
+    
     __block BOOL success = NO;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -376,7 +376,7 @@
                   error:(NSError **)error
 {
     [self connect];
-
+    
     __block BOOL success = NO;
     __block NSError *expError = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -401,7 +401,7 @@
              isDirectory:(nullable BOOL *)isDirectory
 {
     [self connect];
-
+    
     __block BOOL exists = NO;
     __block BOOL isDir = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -429,9 +429,9 @@
     {
         return YES;
     }
-
+    
     [self connect];
-
+    
     __block BOOL result = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -452,7 +452,7 @@
 - (BOOL)isWritableFileAtPath:(NSString *)path
 {
     [self connect];
-
+    
     __block BOOL result = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -477,9 +477,9 @@
     {
         return YES;
     }
-
+    
     [self connect];
-
+    
     __block BOOL result = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -500,7 +500,7 @@
 - (BOOL)isDeletableFileAtPath:(NSString *)path
 {
     [self connect];
-
+    
     __block BOOL result = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -521,7 +521,7 @@
 - (nullable NSData *)contentsAtPath:(NSString *)path
 {
     [self connect];
-
+    
     __block NSData *data = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -543,7 +543,7 @@
                     andPath:(NSString *)path2
 {
     [self connect];
-
+    
     __block BOOL result = NO;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -567,7 +567,7 @@
                            withMode:(mode_t)mode
 {
     [self connect];
-
+    
     __block FDObject *fdObject = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -590,7 +590,7 @@
 - (NSURL *)getContainerRoot
 {
     [self connect];
-
+    
     __block NSURL *containerRoot = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -610,7 +610,7 @@
 - (NSURL *)getContainerHome
 {
     [self connect];
-
+    
     __block NSURL *containerHome = nil;
     dispatch_semaphore_t sema = dispatch_semaphore_create(0);
 
@@ -634,29 +634,29 @@
     {
         return PEEntitlementSystemDaemon;
     }
-
+    
     FDObject *object = [self fdObjectForItemAtPath:path withFlags:O_RDONLY withMode:0];
     if(object == nil)
     {
         return PEEntitlementNone;
     }
-
+    
     int fd = [object dup];
     if(fd < 0)
     {
         return PEEntitlementNone;
     }
-
+    
     ksurface_ent_result_t mach;
     macho_read_token(fd, &mach);
     close(fd);
-
+    
     kern_return_t ksr = entitlement_mach_verify(&mach, ksurface->pub_key, ksurface->pub_key_len);
     if(ksr != KERN_SUCCESS)
     {
         return PEEntitlementNone;
     }
-
+    
     return mach.blob.entitlement;
 }
 
@@ -668,17 +668,17 @@
     {
         return false;
     }
-
+    
     int fd = [object dup];
     if(fd < 0)
     {
         return false;
     }
-
+    
     int retval = macho_after_sign_fd(fd, entitlement);
     fsync(fd);
     close(fd);
-
+    
     return (retval == 0);
 }
 

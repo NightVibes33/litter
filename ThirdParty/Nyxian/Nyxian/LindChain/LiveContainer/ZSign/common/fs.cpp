@@ -49,13 +49,13 @@ void* ZFile::MapFile(const char* path, size_t offset, size_t size, size_t* psize
         if(chmod(path, 0755) == 0) {
             fd = open(path, ro ? O_RDONLY : O_RDWR);
         }
-
+        
         if (fd <= 0)
         {
             return NULL;
         }
     }
-
+    
 	if (fd > 0) {
 		if (size <= 0) {
 			struct stat st = { 0 };
@@ -343,7 +343,7 @@ bool ZFile::CopyFile(const char* szSrcFile, const char* szDestFile)
 {
 #ifdef _WIN32
 	return ::CopyFileA(szSrcFile, szDestFile, FALSE) ? true : false;
-#else
+#else 
 
 	int src_id = -1;
 	int dest_fd = -1;
@@ -526,7 +526,7 @@ bool ZFile::EnumFolder(const char* szFolder, bool bRecursive, enum_folder_callba
 	if (NULL == dir) {
 		return false;
 	}
-
+	
 	dirent* ptr = readdir(dir);
 	while (NULL != ptr) {
 		if (0 == strcmp(ptr->d_name, ".") || 0 == strcmp(ptr->d_name, "..")) {

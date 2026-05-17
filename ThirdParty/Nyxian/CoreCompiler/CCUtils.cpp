@@ -39,7 +39,7 @@ llvm::SmallVector<std::string, 64> CCArrayToStringVector(CFArrayRef array)
     llvm::SmallVector<std::string, 64> result;
     CFIndex count = CFArrayGetCount(array);
     result.reserve(count);
-
+    
     for(CFIndex i = 0; i < count; i++)
     {
         CFStringRef str = (CFStringRef)CFArrayGetValueAtIndex(array, i);
@@ -47,14 +47,14 @@ llvm::SmallVector<std::string, 64> CCArrayToStringVector(CFArrayRef array)
         {
             continue;
         }
-
+        
         CFIndex len = CFStringGetMaximumSizeForEncoding(CFStringGetLength(str), kCFStringEncodingUTF8) + 1;
         std::string s(len, '\0');
         CFStringGetCString(str, s.data(), len, kCFStringEncodingUTF8);
         s.resize(strlen(s.c_str()));
         result.push_back(std::move(s));
     }
-
+    
     return result;
 }
 

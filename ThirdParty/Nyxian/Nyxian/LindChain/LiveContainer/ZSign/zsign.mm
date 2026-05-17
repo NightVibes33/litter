@@ -28,18 +28,18 @@ extern "C" {
 
 NSError* makeErrorFromLog(const std::vector<std::string>& vec) {
     NSMutableString *result = [NSMutableString string];
-
+    
     for (size_t i = 0; i < vec.size(); ++i) {
         // Convert each std::string to NSString
         NSString *str = [NSString stringWithUTF8String:vec[i].c_str()];
         [result appendString:str];
-
+        
         // Append newline if it's not the last element
         if (i != vec.size() - 1) {
             [result appendString:@"\n"];
         }
     }
-
+    
     NSDictionary* userInfo = @{
         NSLocalizedDescriptionKey : result
     };
@@ -59,11 +59,11 @@ void zsign(NSString *appPath,
     ZTimer gtimer;
     ZTimer timer;
     timer.Reset();
-
+    
 	bool bForce = false;
 	bool bWeakInject = false;
 	bool bDontGenerateEmbeddedMobileProvision = YES;
-
+	
 	string strPassword;
 
 	string strDyLibFile;
@@ -74,23 +74,23 @@ void zsign(NSString *appPath,
     const char* strPKeyFileData = (const char*)[key bytes];
     const char* strProvFileData = (const char*)[prov bytes];
 	strPassword = [pass cStringUsingEncoding:NSUTF8StringEncoding];
-
-
+	
+	
 	string strPath = [appPath cStringUsingEncoding:NSUTF8StringEncoding];
-
+    
     ZLog::logs.clear();
 
 	__block ZSignAsset zSignAsset;
-
+	
     if (!zSignAsset.InitSimple(strPKeyFileData, (int)[key length], strProvFileData, (int)[prov length], strPassword)) {
         completionHandler(NO, makeErrorFromLog(ZLog::logs));
         ZLog::logs.clear();
 		return;
 	}
-
+    
 	bool bEnableCache = true;
 	string strFolder = strPath;
-
+	
 	__block ZBundle bundle;
 	bool success = bundle.ConfigureFolderSign(&zSignAsset, strFolder, "", "", "", strDyLibFile, bForce, bWeakInject, bEnableCache, bDontGenerateEmbeddedMobileProvision);
 
@@ -99,7 +99,7 @@ void zsign(NSString *appPath,
         ZLog::logs.clear();
         return;
     }
-
+    
     int filesNeedToSign = bundle.GetSignCount();
     [progress setTotalUnitCount:filesNeedToSign];
     bundle.progressHandler = [&progress] {
@@ -117,10 +117,10 @@ void zsign(NSString *appPath,
         };
         signError = [NSError errorWithDomain:@"Failed to Sign" code:-1 userInfo:userInfo];
     }
-
+    
     completionHandler(YES, signError);
     ZLog::logs.clear();
-
+    
 	return;
 }
 
@@ -139,9 +139,9 @@ bool zsignMachO(NSString *machoPath,
     strPassword = [pass cStringUsingEncoding:NSUTF8StringEncoding];
 
     ZLog::logs.clear();
-
+    
     __block ZSignAsset zSignAsset;
-
+    
     if (!zSignAsset.InitSimple(strPKeyFileData, (int)[key length], strProvFileData, (int)[prov length], strPassword)) {
         ZLog::logs.clear();
         return NO;
@@ -153,7 +153,7 @@ bool zsignMachO(NSString *machoPath,
         ZLog::logs.clear();
         return NO;
     }
-
+    
     string strInfoSHA1;
     string strInfoSHA256;
     string strCodeResourcesData;
@@ -181,7 +181,7 @@ bool zsignMachO(NSString *machoPath,
 bool adhocSignMachO(NSString *machoPath, NSString *bundleId, NSData* entitlementData) {
     ZSignAsset zSignAsset;
     zSignAsset.InitAdhoc([entitlementData bytes], (int)[entitlementData length]);
-
+    
     ZMachO* macho = new ZMachO();
     if (!macho->Init(machoPath.UTF8String)) {
         ZLog::ErrorV(">>> Invalid mach-o file! %s\n", machoPath.UTF8String);
@@ -204,11 +204,11 @@ NSString* getTeamId(NSData *prov,
     const char* strPKeyFileData = (const char*)[key bytes];
     const char* strProvFileData = (const char*)[prov bytes];
     strPassword = [pass cStringUsingEncoding:NSUTF8StringEncoding];
-
+    
     ZLog::logs.clear();
 
     __block ZSignAsset zSignAsset;
-
+    
     if (!zSignAsset.InitSimple(strPKeyFileData, (int)[key length], strProvFileData, (int)[prov length], strPassword)) {
         ZLog::logs.clear();
         return nil;
@@ -223,24 +223,24 @@ int checkCert(NSData *prov,
               void(^completionHandler)(int status, NSDate* expirationDate, NSString *error)) {
     const char* strPKeyFileData = (const char*)[key bytes];
     const char* strProvFileData = (const char*)[prov bytes];
-
+    
     if(pass == nil)
     {
         pass = @"";
     }
-
+    
     string strPassword = [pass cStringUsingEncoding:NSUTF8StringEncoding];
-
+    
     ZLog::logs.clear();
 
     __block ZSignAsset zSignAsset;
-
+    
     if (!zSignAsset.InitSimple(strPKeyFileData, (int)[key length], strProvFileData, (int)[prov length], strPassword)) {
         ZLog::logs.clear();
         completionHandler(2, nil, @"Unable to initialize certificate. Please check your password.");
         return -1;
     }
-
+    
     X509* cert = (X509*)zSignAsset.m_x509Cert;
     BIO *brother1;
     unsigned long issuerHash = X509_issuer_name_hash((X509*)cert);
@@ -250,40 +250,40 @@ int checkCert(NSData *prov,
         completionHandler(2, nil, @"Unable to determine issuer of the certificate. It is signed by Apple Developer?");
         return -2;
     }
-
+    
     if (!brother1)
     {
         completionHandler(2, nil, @"Unable to initialize issuer certificate.");
         return -3;
     }
-
+    
     X509 *issuer = PEM_read_bio_X509(brother1, NULL, 0, NULL);
-
+    
     if (!cert || !issuer) {
         completionHandler(2, nil, @"Error loading cert or issuer");
         return -4;
     }
 
-
+    
     // Extract OCSP URL from cert
     STACK_OF(ACCESS_DESCRIPTION)* aia = (STACK_OF(ACCESS_DESCRIPTION)*)X509_get_ext_d2i((X509*)cert, NID_info_access, 0, 0);
     if (!aia) {
         completionHandler(2, nil, @"No AIA (OCSP) extension found in certificate");
         return -5;
     }
-
+    
     ASN1_IA5STRING* uri = nullptr;
     for (int i = 0; i < sk_ACCESS_DESCRIPTION_num(aia); i++) {
         ACCESS_DESCRIPTION* ad = sk_ACCESS_DESCRIPTION_value(aia, i);
         if (OBJ_obj2nid(ad->method) == NID_ad_OCSP &&
             ad->location->type == GEN_URI) {
             uri = ad->location->d.uniformResourceIdentifier;
-
+            
             break;
         }
     }
 
-
+    
     if (!uri) {
         completionHandler(2, nil, @"No OCSP URI found in certificate.");
         return -6;
@@ -301,7 +301,7 @@ int checkCert(NSData *prov,
     [request setHTTPBody:[NSData dataWithBytes:der length:len]];
     [request setValue:@"application/ocsp-request" forHTTPHeaderField:@"Content-Type"];
     [request setValue:@"application/ocsp-response" forHTTPHeaderField:@"Accept"];
-
+    
     OPENSSL_free(der);
     if (aia) {
         sk_ACCESS_DESCRIPTION_pop_free(aia, ACCESS_DESCRIPTION_free);
@@ -346,12 +346,12 @@ int checkCert(NSData *prov,
             } else {
                 completionHandler(2, expirationDate, nil);
             }
-
+            
             OCSP_CERTID_free(cert_id);
             OCSP_BASICRESP_free(basic);
             OCSP_RESPONSE_free(resp);
-
-
+            
+            
         } else {
             completionHandler(2, nil, @"Invalid response or no data");
             return;

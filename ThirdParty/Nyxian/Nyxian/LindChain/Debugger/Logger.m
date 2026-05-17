@@ -54,14 +54,14 @@ static const CGFloat kAutoScrollThreshold = 20.0;
     self.delegate = (id<UITextViewDelegate>)self;
 
     [_pipe.fileHandleForReading readInBackgroundAndNotify];
-
+    
     return self;
 }
 
 - (void)willMoveToWindow:(UIWindow *)newWindow
 {
     [super willMoveToWindow:newWindow];
-
+    
     if(newWindow == nil)
     {
         [[NSNotificationCenter defaultCenter] removeObserver:self];
@@ -106,7 +106,7 @@ static const CGFloat kAutoScrollThreshold = 20.0;
 - (void)appendOutput:(NSString *)output
 {
     _isAppendingOutput = YES;
-
+    
     NSString *currentInput = @"";
     if(_inputStartLocation < self.text.length)
     {
@@ -114,16 +114,16 @@ static const CGFloat kAutoScrollThreshold = 20.0;
         NSRange inputRange = NSMakeRange(_inputStartLocation, self.text.length - _inputStartLocation);
         [self.textStorage deleteCharactersInRange:inputRange];
     }
-
+    
     NSDictionary *outputAttributes = @{
         NSFontAttributeName: [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightRegular],
         NSForegroundColorAttributeName: [UIColor labelColor]
     };
     NSAttributedString *outputAttr = [[NSAttributedString alloc] initWithString:output attributes:outputAttributes];
     [self.textStorage appendAttributedString:outputAttr];
-
+    
     _inputStartLocation = self.text.length;
-
+    
     if(currentInput.length > 0)
     {
         NSDictionary *inputAttributes = @{
@@ -133,12 +133,12 @@ static const CGFloat kAutoScrollThreshold = 20.0;
         NSAttributedString *inputAttr = [[NSAttributedString alloc] initWithString:currentInput attributes:inputAttributes];
         [self.textStorage appendAttributedString:inputAttr];
     }
-
+    
     [self.layoutManager ensureLayoutForTextContainer:self.textContainer];
     self.selectedRange = NSMakeRange(self.text.length, 0);
-
+    
     _isAppendingOutput = NO;
-
+    
     if(_followTail)
     {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -169,7 +169,7 @@ static const CGFloat kAutoScrollThreshold = 20.0;
     {
         return NO;
     }
-
+    
     if(range.location < _inputStartLocation)
     {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -177,7 +177,7 @@ static const CGFloat kAutoScrollThreshold = 20.0;
         });
         return NO;
     }
-
+    
     if([text isEqualToString:@"\n"])
     {
         NSString *command = @"";
@@ -185,7 +185,7 @@ static const CGFloat kAutoScrollThreshold = 20.0;
         {
             command = [self.text substringFromIndex:_inputStartLocation];
         }
-
+        
         if(_inputStartLocation < self.text.length)
         {
             NSRange inputRange = NSMakeRange(_inputStartLocation, self.text.length - _inputStartLocation);
@@ -195,9 +195,9 @@ static const CGFloat kAutoScrollThreshold = 20.0;
             };
             [self.textStorage setAttributes:outputAttributes range:inputRange];
         }
-
+        
         _inputStartLocation = self.text.length;
-
+        
         NSString *commandWithNewline = [command stringByAppendingString:@"\n"];
         NSData *data = [commandWithNewline dataUsingEncoding:NSUTF8StringEncoding];
         @try {
@@ -205,10 +205,10 @@ static const CGFloat kAutoScrollThreshold = 20.0;
         } @catch (NSException *exception) {
             NSLog(@"Failed to write to stdin: %@", exception);
         }
-
+        
         return NO;
     }
-
+    
     return YES;
 }
 
@@ -243,22 +243,22 @@ static const CGFloat kAutoScrollThreshold = 20.0;
     self.text = @"";
     _inputStartLocation = 0;
     _followTail = YES;
-
+    
     /* remove old notification observer for pipe */
     [[NSNotificationCenter defaultCenter] removeObserver:self name:NSFileHandleReadCompletionNotification object:_pipe.fileHandleForReading];
-
+    
     @try {
         [_pipe.fileHandleForReading closeFile];
         [_stdinPipe.fileHandleForWriting closeFile];
     } @catch (NSException *ex) { /* ignore */ }
-
+    
     /* creating new pipes */
     _pipe = [NSPipe pipe];
     _stdinPipe = [NSPipe pipe];
-
+    
     /* readding pipe */
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleNotification:) name:NSFileHandleReadCompletionNotification object:_pipe.fileHandleForReading];
-
+    
     /* starting reading from new pipe */
     [_pipe.fileHandleForReading readInBackgroundAndNotify];
 }

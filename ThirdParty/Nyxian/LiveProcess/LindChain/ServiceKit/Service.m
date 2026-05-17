@@ -41,16 +41,16 @@ static ServiceServer *singletonServiceServer = nil;
          withObserverProtocol:(Protocol *)observerProtocol
 {
     self = [super init];
-
+    
     _serverProtocol = serverProtocol;
     _observerProtocol = observerProtocol;
     _instanceClass = instanceClass;
     _listener = [[NSXPCListener alloc] init];
     _clients = [[NSMutableArray alloc] init];
     _instance = [[_instanceClass alloc] init];
-
+    
     singletonServiceServer = self;
-
+    
     return self;
 }
 
@@ -89,27 +89,27 @@ int PEServiceMain(int argc,
     NSString *serviceIdentifier = [serviceClass servcieIdentifier];
     Protocol *serviceProtocol = [serviceClass serviceProtocol];
     Protocol *clientProtocol = [serviceClass observerProtocol];
-
+    
     if(serviceIdentifier != nil &&
        serviceProtocol != nil)
     {
         ServiceServer *serviceServer = [[ServiceServer alloc] initWithClass:serviceClass withServerProtocol:serviceProtocol withObserverProtocol:clientProtocol];
-
+        
         NSXPCListenerEndpoint *endpoint = [serviceServer getEndpointForConnection];
         mach_port_t port = xpc_endpoint_copy_listener_port_4sim(endpoint._endpoint);
-
+        
         kern_return_t kr = mach_port_mod_refs(mach_task_self(), port, MACH_PORT_RIGHT_SEND, 1);
         if(kr != KERN_SUCCESS)
         {
             return -1;
         }
-
+        
         if(port != MACH_PORT_NULL)
         {
             environment_syscall(SYS_pectl, PECTL_LS_SET_ENDPOINT, [serviceIdentifier UTF8String], port);
         }
         CFRunLoopRun();
     }
-
+    
     return 1;
 }

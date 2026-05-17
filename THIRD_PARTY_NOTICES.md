@@ -1,18 +1,23 @@
-# Third Party Notices
+# Third-Party Notices
 
-## Nyxian / LLVM-On-iOS
+## Nyxian / emexDE
 
-Litter includes direct source imports from ProjectNyxian/Nyxian and ProjectNyxian/LLVM-On-iOS under `ThirdParty/Nyxian` and `ThirdParty/LLVM-On-iOS` for on-device BuildKit development. Nyxian is licensed under AGPL-3.0. Imported files retain original headers where present; the copied AGPL license is stored at `ThirdParty/Nyxian/LICENSE`.
+Litter vendors source from ProjectNyxian/Nyxian as the foundation for its on-device iOS toolchain and BuildKit work.
 
-Source repositories:
+- Upstream: https://github.com/ProjectNyxian/Nyxian
+- Vendored path: `ThirdParty/Nyxian`
+- Pinned commit: `d955607acf4e8112c28d1db01837fc3e11631de3`
+- License: GNU Affero General Public License v3.0 or later
 
-- https://github.com/ProjectNyxian/Nyxian
-- https://github.com/ProjectNyxian/LLVM-On-iOS
+The vendored source intentionally excludes generated/private build outputs such as Apple SDK files, compiled frameworks, compiler ZIP payloads, app artwork/image payloads, IPA files, certificates, provisioning profiles, and signing identities. Those artifacts are produced or supplied through the private BuildKit asset pipeline.
 
+## LLVM-On-iOS
 
-## Litter BuildKit Private Assets
+Nyxian references ProjectNyxian/LLVM-On-iOS for compiler support libraries used by CoreCompiler. Litter's private BuildKit asset workflow fetches this dependency during asset packaging instead of committing generated compiler assets into the public app repo.
 
-The public repository includes only the BuildKit manifest contract, command bridge,
-the native ABI wrapper source, and Nyxian source references. Apple iPhoneOS SDK
-files are intentionally excluded and must be supplied by the user/private build
-environment under Apple's Xcode and SDK license terms.
+- Upstream: https://github.com/ProjectNyxian/LLVM-On-iOS
+- Runtime/build artifact path: `ThirdParty/Nyxian/LLVM-On-iOS` during private asset builds
+
+## Apple SDK Assets
+
+Apple iPhoneOS SDK files are not committed to this repository. They are resolved from Xcode on the private macOS build runner and packaged only into the private `LitterBuildKitAssets.zip` used by sideload builds.

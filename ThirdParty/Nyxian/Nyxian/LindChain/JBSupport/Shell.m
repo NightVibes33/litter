@@ -21,7 +21,7 @@
 
 #import <LindChain/JBSupport/Shell.h>
 #import <Foundation/Foundation.h>
-#import <Nyxian-Swift.h>
+#import <emexDE-Swift.h>
 #include <spawn.h>
 
 extern int posix_spawnattr_set_persona_np(posix_spawnattr_t *attr, uid_t persona_id, uint32_t flags);
@@ -37,10 +37,10 @@ void createArgv(NSArray<NSString *> *arguments,
         *argc = 0;
         return;
     }
-
+    
     NSInteger count = arguments.count;
     *argc = (int)count;
-
+    
     *argv = calloc(count + 1, sizeof(char *));
     for(NSInteger i = 0; i < arguments.count; i++)
     {
@@ -81,9 +81,9 @@ static int runCommand(NSArray<NSString *> *args,
 
     int argc = 0;
     char **argv = NULL;
-
+    
     createArgv(args, &argc, &argv);
-
+    
     static NSString *path;
     static dispatch_once_t onceToken;
     static NSArray *baseEnv;
@@ -104,16 +104,16 @@ static int runCommand(NSArray<NSString *> *args,
     int envc = 0;
     char **envp = NULL;
     createEnvp(envStrings, &envc, &envp);
-
+    
     int outPipe[2];
     pipe(outPipe);
-
+    
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
     posix_spawn_file_actions_adddup2(&actions, outPipe[1], STDOUT_FILENO);
     posix_spawn_file_actions_adddup2(&actions, outPipe[1], STDERR_FILENO);
     posix_spawn_file_actions_addclose(&actions, outPipe[0]);
-
+    
     posix_spawnattr_t attr;
     posix_spawnattr_init(&attr);
 
@@ -125,7 +125,7 @@ static int runCommand(NSArray<NSString *> *args,
 
     posix_spawnattr_destroy(&attr);
     posix_spawn_file_actions_destroy(&actions);
-
+    
     int status = 0;
 
     if(result != 0)
@@ -138,23 +138,23 @@ static int runCommand(NSArray<NSString *> *args,
 
 cleanup:
     close(outPipe[1]);
-
+    
     NSMutableData *outputData = [NSMutableData data];
     char buffer[1024];
     ssize_t bytesRead;
-
+    
     while((bytesRead = read(outPipe[0], buffer, sizeof(buffer))) > 0)
     {
         [outputData appendBytes:buffer length:bytesRead];
     }
-
+    
     close(outPipe[0]);
-
+    
     if(output != nil)
     {
         *output = [[NSString alloc] initWithData:outputData encoding:NSUTF8StringEncoding];
     }
-
+    
     for(int i = 0; i < argc; i++)
     {
         free(argv[i]);
@@ -169,6 +169,7 @@ cleanup:
 
 int shell(NSArray *command, uid_t uid, NSArray<NSString *> *env, NSString **output)
 {
-
+    
     return runCommand(command, uid ?: 0, env ?: @[], output);
 }
+

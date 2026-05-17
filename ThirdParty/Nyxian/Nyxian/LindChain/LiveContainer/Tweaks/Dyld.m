@@ -93,7 +93,7 @@ DEFINE_HOOK(dlsym, void*, (void * __handle,
         }
         return ans;
     }
-
+    
     __attribute__((musttail)) return ORIG_FUNC(dlsym)(__handle, __symbol);
 }
 
@@ -120,7 +120,7 @@ DEFINE_HOOK(dlopen, void *, (const char * __path,
             refreshFile(__path);
         }
     }
-
+    
     /* continue with opening */
     return ORIG_FUNC(dlopen)(__path, __mode);
 }
@@ -146,7 +146,7 @@ uint32_t hook_dyld_get_program_sdk_version(void* dyldApiInstancePtr)
 }
 
 bool performHookDyldApi(const char* functionName, uint32_t adrpOffset, void** origFunction, void* hookFunction) {
-
+    
     uint32_t* baseAddr = dlsym(RTLD_DEFAULT, functionName);
     assert(baseAddr != 0);
     /*
@@ -183,11 +183,11 @@ bool performHookDyldApi(const char* functionName, uint32_t adrpOffset, void** or
     }
     assert ((*adrpInstPtr & 0x9f000000) == 0x90000000);
     void* gdyldPtr = (void*)aarch64_emulate_adrp_ldr(*adrpInstPtr, *(baseAddr + adrpOffset + 1), (uint64_t)(baseAddr + adrpOffset));
-
+    
     assert(gdyldPtr != 0);
     assert(*(void**)gdyldPtr != 0);
     void* vtablePtr = **(void***)gdyldPtr;
-
+    
     void* vtableFunctionPtr = 0;
     uint32_t* movInstPtr = baseAddr + adrpOffset + 6;
 
@@ -213,15 +213,15 @@ bool performHookDyldApi(const char* functionName, uint32_t adrpOffset, void** or
         vtableFunctionPtr = vtablePtr + (imm12_2 << size2);
     }
 
-
+    
     kern_return_t ret = builtin_vm_protect(mach_task_self(), (mach_vm_address_t)vtableFunctionPtr, sizeof(uintptr_t), false, PROT_READ | PROT_WRITE | VM_PROT_COPY);
     assert(ret == KERN_SUCCESS);
-
+    
     if(origFunction != NULL)
     {
         *origFunction = (void*)*(void**)vtableFunctionPtr;
     }
-
+    
     *(uint64_t*)vtableFunctionPtr = (uint64_t)hookFunction;
     builtin_vm_protect(mach_task_self(), (mach_vm_address_t)vtableFunctionPtr, sizeof(uintptr_t), false, PROT_READ);
     return true;
@@ -247,7 +247,7 @@ static dyld_build_version_t getDyldImageBuildVersion(const struct mach_header *m
     dyld_build_version_t result = { .platform = 0xffffffff, .version = 0 };
 
     assert(mh != NULL);
-
+    
     const uint8_t *ptr = ((const uint8_t *)mh) + sizeof(struct mach_header_64);
     uint32_t ncmds = mh->ncmds;
 
@@ -302,7 +302,7 @@ bool initGuestSDKVersionInfo(void)
     const char* dyldPath = "/usr/lib/dyld";
     uint64_t offset = LCFindSymbolOffset(dyldPath, "__ZN5dyld3L11sVersionMapE");
     uint32_t *versionMapPtr = dyldBase + offset;
-
+    
     assert(versionMapPtr);
     /*
      * however sVersionMap's struct size is also unknown, but we can figure it out
@@ -322,7 +322,7 @@ bool initGuestSDKVersionInfo(void)
         }
     }
     assert(size);
-
+    
     NSOperatingSystemVersion currentVersion = [[NSProcessInfo processInfo] operatingSystemVersion];
     uint32_t maxVersion = ((uint32_t)currentVersion.majorVersion << 16) | ((uint32_t)currentVersion.minorVersion << 8);
     uint32_t candidateVersion = 0;
@@ -342,14 +342,14 @@ bool initGuestSDKVersionInfo(void)
             break;
         }
     }
-
+    
     if(newVersionSetVersion == 0xffffffff && candidateVersion == 0)
     {
         candidateVersionEquivalent = newVersionSetVersion;
     }
 
     guestAppSdkVersionSet = candidateVersionEquivalent;
-
+    
     return true;
 }
 
@@ -370,7 +370,7 @@ void DyldHooksInit(void)
                     break;
                 }
             }
-
+            
             DO_HOOK_GLOBAL(dlsym);
             DO_HOOK_GLOBAL(_dyld_image_count);
             DO_HOOK_GLOBAL(_dyld_get_image_header);
@@ -378,7 +378,7 @@ void DyldHooksInit(void)
             DO_HOOK_GLOBAL(_dyld_get_image_name);
             DO_HOOK_GLOBAL(dlopen);
         }
-
+        
         guestAppSdkVersion = getDyldImageBuildVersion(getGuestAppHeader()).version;
         if(!initGuestSDKVersionInfo() ||
            !performHookDyldApi("dyld_program_sdk_at_least", 1, NULL, hook_dyld_program_sdk_at_least) ||

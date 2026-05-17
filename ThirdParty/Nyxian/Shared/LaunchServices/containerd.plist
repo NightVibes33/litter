@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PEServiceIdentifier</key>
+	<string>com.cr4zy.containerd</string>
+	<key>PEShouldAutorestart</key>
+	<true/>
+	<key>PEExecutablePath</key>
+	<string>/usr/libexec/containerd</string>
+	<key>PEUserIdentifier</key>
+	<integer>0</integer>
+	<key>PEGroupIdentifier</key>
+	<integer>0</integer>
+	<key>PEIntegratedServiceClass</key>
+	<string>PEContainerService</string>
+</dict>
+</plist>

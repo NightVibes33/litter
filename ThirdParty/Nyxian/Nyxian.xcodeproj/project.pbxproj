@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		791C96052F8726B0006AF674 /* Runestone in Frameworks */ = {isa = PBXBuildFile; productRef = 791C96042F8726B0006AF674 /* Runestone */; };
-		791C99502F87687C006AF674 /* Runestone in Frameworks */ = {isa = PBXBuildFile; productRef = 791C994F2F87687C006AF674 /* Runestone */; };
 		793A4E3B2F84FE1D003B609A /* Runestone in Frameworks */ = {isa = PBXBuildFile; productRef = 793A4E3A2F84FE1D003B609A /* Runestone */; };
 		793A7E502EB5996A0044418E /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 793A7E4F2EB5996A0044418E /* SwiftTerm */; };
 		793FCD242E6730740011B3F5 /* libarchive.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 79BF9A8E2E62BA7D00C60D4C /* libarchive.tbd */; };
@@ -27,8 +26,6 @@
 		79B70C1F2F732364000F38E7 /* Runestone in Frameworks */ = {isa = PBXBuildFile; productRef = 79B70C1E2F732364000F38E7 /* Runestone */; };
 		79BF9A8F2E62BA8700C60D4C /* libarchive.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 79BF9A8E2E62BA7D00C60D4C /* libarchive.tbd */; };
 		79D1DA672F92A6CE0020518A /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 79D1DA662F92A6CE0020518A /* TreeSitterSwift */; };
-		79D1DA6A2F92A98C0020518A /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 79D1DA692F92A98C0020518A /* TreeSitterSwift */; };
-		79D1DA6C2F92B4CA0020518A /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 79D1DA6B2F92B4CA0020518A /* TreeSitterSwift */; };
 		860D917D2FAE1F95000D321B /* MobileDevelopmentKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 860D91752FAE1F95000D321B /* MobileDevelopmentKit.framework */; };
 		860D917E2FAE1F95000D321B /* MobileDevelopmentKit.framework in Embed Libraries */ = {isa = PBXBuildFile; fileRef = 860D91752FAE1F95000D321B /* MobileDevelopmentKit.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		860D91832FAE1F9C000D321B /* CoreCompiler.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 86DCC25A2FA5209600973169 /* CoreCompiler.framework */; platformFilter = ios; };
@@ -41,6 +38,9 @@
 		8630CBB52FABE19200C6EE6D /* UIOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = 8630CBB42FABE19200C6EE6D /* UIOnboarding */; };
 		8630CBB72FABE19E00C6EE6D /* UIOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = 8630CBB62FABE19E00C6EE6D /* UIOnboarding */; };
 		86DCC30A2FA521A600973169 /* libz.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 86DCC3082FA5219900973169 /* libz.tbd */; };
+		86E4D4F42FB8CF32008BFE4D /* Runestone in Frameworks */ = {isa = PBXBuildFile; productRef = 86E4D4F32FB8CF32008BFE4D /* Runestone */; };
+		86E4D4F72FB8CF63008BFE4D /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 86E4D4F62FB8CF63008BFE4D /* TreeSitterSwift */; };
+		86E4D4F92FB8CF70008BFE4D /* TreeSitterSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 86E4D4F82FB8CF70008BFE4D /* TreeSitterSwift */; };
 		AF9919582DC9175A00DDF895 /* TreeSitterObjc in Frameworks */ = {isa = PBXBuildFile; productRef = AF9919572DC9175A00DDF895 /* TreeSitterObjc */; };
 		AF99195B2DC9176900DDF895 /* TreeSitterC in Frameworks */ = {isa = PBXBuildFile; productRef = AF99195A2DC9176900DDF895 /* TreeSitterC */; };
 		AFF4D5D92DC9390B00B1B5F9 /* Shared in Resources */ = {isa = PBXBuildFile; fileRef = AF99171F2DC8EA3C00DDF895 /* Shared */; };
@@ -153,12 +153,12 @@
 		79277DC02EE8752800F18B30 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		79277DC62EE8761000F18B30 /* version.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = version.sh; sourceTree = "<group>"; };
 		79281CBF2E3A44CA00E983C9 /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
-		7944B5652DEC74EA00834134 /* Nyxian.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nyxian.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7944B5652DEC74EA00834134 /* emexDE.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = emexDE.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7944B5672DEC74FC00834134 /* MobileCoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MobileCoreServices.framework; path = System/Library/Frameworks/MobileCoreServices.framework; sourceTree = SDKROOT; };
 		79AA11BC2F7FFE24002FEAF2 /* nxtool */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = nxtool; sourceTree = BUILT_PRODUCTS_DIR; };
 		79AA11C32F7FFEE4002FEAF2 /* libarchive.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libarchive.tbd; path = Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.0.sdk/usr/lib/libarchive.tbd; sourceTree = DEVELOPER_DIR; };
 		79AA11C42F7FFEFF002FEAF2 /* libarchive.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libarchive.tbd; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/usr/lib/libarchive.tbd; sourceTree = DEVELOPER_DIR; };
-		79AF512B2F1CBD110055004A /* NyxianForJB.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NyxianForJB.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		79AF512B2F1CBD110055004A /* emexDEForJB.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = emexDEForJB.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		79BF97F72E6291EE00C60D4C /* LiveProcess.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LiveProcess.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		79BF9A8E2E62BA7D00C60D4C /* libarchive.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libarchive.tbd; path = usr/lib/libarchive.tbd; sourceTree = SDKROOT; };
 		860D91752FAE1F95000D321B /* MobileDevelopmentKit.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MobileDevelopmentKit.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -169,7 +169,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		798BBD332F1D265200CBB23F /* Exceptions for "Nyxian" folder in "Nyxian" target */ = {
+		798BBD332F1D265200CBB23F /* Exceptions for "Nyxian" folder in "emexDE" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				LindChain/JBSupport/Shell.m,
@@ -192,7 +192,7 @@
 				LindChain/ProcEnvironment/tfp.c,
 				LindChain/ProcEnvironment/vfork.c,
 			);
-			target = AF9916D82DC8C42200DDF895 /* Nyxian */;
+			target = AF9916D82DC8C42200DDF895 /* emexDE */;
 		};
 		79AA11C62F7FFF12002FEAF2 /* Exceptions for "Nyxian" folder in "nxtool" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -201,7 +201,7 @@
 			);
 			target = 79AA11BB2F7FFE24002FEAF2 /* nxtool */;
 		};
-		79AF512C2F1CBD110055004A /* Exceptions for "Nyxian" folder in "NyxianForJB" target */ = {
+		79AF512C2F1CBD110055004A /* Exceptions for "Nyxian" folder in "emexDEForJB" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				LindChain/Debugger/Utils.c,
@@ -293,7 +293,7 @@
 				UI/Settings/KernelLogViewController.swift,
 				UI/Settings/MachOPatcherViewController.swift,
 			);
-			target = 79AF51072F1CBD110055004A /* NyxianForJB */;
+			target = 79AF51072F1CBD110055004A /* emexDEForJB */;
 		};
 		79BF983D2E62930600C60D4C /* Exceptions for "LiveProcess" folder in "LiveProcess" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -307,14 +307,14 @@
 			);
 			target = 79BF97F62E6291EE00C60D4C /* LiveProcess */;
 		};
-		79BF98402E62931E00C60D4C /* Exceptions for "LiveProcess" folder in "Nyxian" target */ = {
+		79BF98402E62931E00C60D4C /* Exceptions for "LiveProcess" folder in "emexDE" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				LindChain/Services/applicationmgmtd/LDEApplicationObject.m,
 				LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m,
 				LindChain/Services/containerd/PEContainer.m,
 			);
-			target = AF9916D82DC8C42200DDF895 /* Nyxian */;
+			target = AF9916D82DC8C42200DDF895 /* emexDE */;
 		};
 		79BF9A972E62BB6900C60D4C /* Exceptions for "Nyxian" folder in "LiveProcess" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -431,7 +431,7 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
-		7960686E2F3F357400CE34D7 /* Exceptions for "Nyxian" folder in "Embed Frameworks" phase from "NyxianForJB" target */ = {
+		7960686E2F3F357400CE34D7 /* Exceptions for "Nyxian" folder in "Embed Frameworks" phase from "emexDEForJB" target */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			attributesByRelativePath = {
 				LindChain/OpenSSL.xcframework = (CodeSignOnCopy, RemoveHeadersOnCopy, );
@@ -475,7 +475,7 @@
 				CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxMacros.dylib,
 			);
 		};
-		AFF4DBDB2DCA5DEA00B1B5F9 /* Exceptions for "Nyxian" folder in "Embed Libraries" phase from "Nyxian" target */ = {
+		AFF4DBDB2DCA5DEA00B1B5F9 /* Exceptions for "Nyxian" folder in "Embed Libraries" phase from "emexDE" target */ = {
 			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
 			attributesByRelativePath = {
 				LindChain/OpenSSL.xcframework = (CodeSignOnCopy, RemoveHeadersOnCopy, );
@@ -491,7 +491,7 @@
 		798692F02E627A3B00390D7E /* LiveProcess */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				79BF98402E62931E00C60D4C /* Exceptions for "LiveProcess" folder in "Nyxian" target */,
+				79BF98402E62931E00C60D4C /* Exceptions for "LiveProcess" folder in "emexDE" target */,
 				79BF983D2E62930600C60D4C /* Exceptions for "LiveProcess" folder in "LiveProcess" target */,
 			);
 			path = LiveProcess;
@@ -522,10 +522,10 @@
 		AF9916DB2DC8C42200DDF895 /* Nyxian */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				798BBD332F1D265200CBB23F /* Exceptions for "Nyxian" folder in "Nyxian" target */,
-				AFF4DBDB2DCA5DEA00B1B5F9 /* Exceptions for "Nyxian" folder in "Embed Libraries" phase from "Nyxian" target */,
-				79AF512C2F1CBD110055004A /* Exceptions for "Nyxian" folder in "NyxianForJB" target */,
-				7960686E2F3F357400CE34D7 /* Exceptions for "Nyxian" folder in "Embed Frameworks" phase from "NyxianForJB" target */,
+				798BBD332F1D265200CBB23F /* Exceptions for "Nyxian" folder in "emexDE" target */,
+				AFF4DBDB2DCA5DEA00B1B5F9 /* Exceptions for "Nyxian" folder in "Embed Libraries" phase from "emexDE" target */,
+				79AF512C2F1CBD110055004A /* Exceptions for "Nyxian" folder in "emexDEForJB" target */,
+				7960686E2F3F357400CE34D7 /* Exceptions for "Nyxian" folder in "Embed Frameworks" phase from "emexDEForJB" target */,
 				79BF9A972E62BB6900C60D4C /* Exceptions for "Nyxian" folder in "LiveProcess" target */,
 				79AA11C62F7FFF12002FEAF2 /* Exceptions for "Nyxian" folder in "nxtool" target */,
 			);
@@ -554,8 +554,8 @@
 				8630CBB72FABE19E00C6EE6D /* UIOnboarding in Frameworks */,
 				79AF511B2F1CBD110055004A /* libarchive.tbd in Frameworks */,
 				79AF511C2F1CBD110055004A /* TreeSitterC in Frameworks */,
+				86E4D4F92FB8CF70008BFE4D /* TreeSitterSwift in Frameworks */,
 				79B708BE2F731590000F38E7 /* TreeSitterCPP in Frameworks */,
-				79D1DA6C2F92B4CA0020518A /* TreeSitterSwift in Frameworks */,
 				79AF511D2F1CBD110055004A /* TreeSitterXML in Frameworks */,
 				79AF511E2F1CBD110055004A /* SwiftTerm in Frameworks */,
 			);
@@ -589,11 +589,12 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				86E4D4F72FB8CF63008BFE4D /* TreeSitterSwift in Frameworks */,
 				860D917D2FAE1F95000D321B /* MobileDevelopmentKit.framework in Frameworks */,
 				79B708BC2F73157F000F38E7 /* TreeSitterCPP in Frameworks */,
 				79B70C1C2F73223A000F38E7 /* Runestone in Frameworks */,
-				79D1DA6A2F92A98C0020518A /* TreeSitterSwift in Frameworks */,
 				79B70C1F2F732364000F38E7 /* Runestone in Frameworks */,
+				86E4D4F42FB8CF32008BFE4D /* Runestone in Frameworks */,
 				AF9919582DC9175A00DDF895 /* TreeSitterObjc in Frameworks */,
 				793A4E3B2F84FE1D003B609A /* Runestone in Frameworks */,
 				791C96052F8726B0006AF674 /* Runestone in Frameworks */,
@@ -604,7 +605,6 @@
 				AFF4E3492DCCCE0F00B1B5F9 /* TreeSitterXML in Frameworks */,
 				8630CBB52FABE19200C6EE6D /* UIOnboarding in Frameworks */,
 				793A7E502EB5996A0044418E /* SwiftTerm in Frameworks */,
-				791C99502F87687C006AF674 /* Runestone in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -638,8 +638,8 @@
 				860D91762FAE1F95000D321B /* MobileDevelopmentKit */,
 				7944B5662DEC74FC00834134 /* Frameworks */,
 				79BF97F72E6291EE00C60D4C /* LiveProcess.appex */,
-				7944B5652DEC74EA00834134 /* Nyxian.app */,
-				79AF512B2F1CBD110055004A /* NyxianForJB.app */,
+				7944B5652DEC74EA00834134 /* emexDE.app */,
+				79AF512B2F1CBD110055004A /* emexDEForJB.app */,
 				79AA11BC2F7FFE24002FEAF2 /* nxtool */,
 				86DCC25A2FA5209600973169 /* CoreCompiler.framework */,
 				860D91752FAE1F95000D321B /* MobileDevelopmentKit.framework */,
@@ -688,9 +688,9 @@
 			productReference = 79AA11BC2F7FFE24002FEAF2 /* nxtool */;
 			productType = "com.apple.product-type.tool";
 		};
-		79AF51072F1CBD110055004A /* NyxianForJB */ = {
+		79AF51072F1CBD110055004A /* emexDEForJB */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 79AF51282F1CBD110055004A /* Build configuration list for PBXNativeTarget "NyxianForJB" */;
+			buildConfigurationList = 79AF51282F1CBD110055004A /* Build configuration list for PBXNativeTarget "emexDEForJB" */;
 			buildPhases = (
 				79AF51162F1CBD110055004A /* Sources */,
 				79AF51172F1CBD110055004A /* Frameworks */,
@@ -706,7 +706,7 @@
 			fileSystemSynchronizedGroups = (
 				AF9916DB2DC8C42200DDF895 /* Nyxian */,
 			);
-			name = NyxianForJB;
+			name = emexDEForJB;
 			packageProductDependencies = (
 				79AF510C2F1CBD110055004A /* TreeSitterObjc */,
 				79AF510E2F1CBD110055004A /* TreeSitterC */,
@@ -714,11 +714,11 @@
 				79AF51122F1CBD110055004A /* TreeSitterXML */,
 				79AF51142F1CBD110055004A /* SwiftTerm */,
 				79B708BD2F731590000F38E7 /* TreeSitterCPP */,
-				79D1DA6B2F92B4CA0020518A /* TreeSitterSwift */,
 				8630CBB62FABE19E00C6EE6D /* UIOnboarding */,
+				86E4D4F82FB8CF70008BFE4D /* TreeSitterSwift */,
 			);
 			productName = LindDE;
-			productReference = 79AF512B2F1CBD110055004A /* NyxianForJB.app */;
+			productReference = 79AF512B2F1CBD110055004A /* emexDEForJB.app */;
 			productType = "com.apple.product-type.application";
 		};
 		79BF97F62E6291EE00C60D4C /* LiveProcess */ = {
@@ -788,9 +788,9 @@
 			productReference = 86DCC25A2FA5209600973169 /* CoreCompiler.framework */;
 			productType = "com.apple.product-type.framework";
 		};
-		AF9916D82DC8C42200DDF895 /* Nyxian */ = {
+		AF9916D82DC8C42200DDF895 /* emexDE */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = AF9916E72DC8C42400DDF895 /* Build configuration list for PBXNativeTarget "Nyxian" */;
+			buildConfigurationList = AF9916E72DC8C42400DDF895 /* Build configuration list for PBXNativeTarget "emexDE" */;
 			buildPhases = (
 				AF9916D52DC8C42200DDF895 /* Sources */,
 				AF9916D62DC8C42200DDF895 /* Frameworks */,
@@ -808,7 +808,7 @@
 			fileSystemSynchronizedGroups = (
 				AF9916DB2DC8C42200DDF895 /* Nyxian */,
 			);
-			name = Nyxian;
+			name = emexDE;
 			packageProductDependencies = (
 				AF9919572DC9175A00DDF895 /* TreeSitterObjc */,
 				AF99195A2DC9176900DDF895 /* TreeSitterC */,
@@ -819,13 +819,13 @@
 				79B70C1E2F732364000F38E7 /* Runestone */,
 				793A4E3A2F84FE1D003B609A /* Runestone */,
 				791C96042F8726B0006AF674 /* Runestone */,
-				791C994F2F87687C006AF674 /* Runestone */,
 				79D1DA662F92A6CE0020518A /* TreeSitterSwift */,
-				79D1DA692F92A98C0020518A /* TreeSitterSwift */,
 				8630CBB42FABE19200C6EE6D /* UIOnboarding */,
+				86E4D4F32FB8CF32008BFE4D /* Runestone */,
+				86E4D4F62FB8CF63008BFE4D /* TreeSitterSwift */,
 			);
 			productName = LindDE;
-			productReference = 7944B5652DEC74EA00834134 /* Nyxian.app */;
+			productReference = 7944B5652DEC74EA00834134 /* emexDE.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -872,17 +872,17 @@
 				AFF4E3472DCCCE0F00B1B5F9 /* XCRemoteSwiftPackageReference "tree-sitter-xml" */,
 				793A7E4E2EB599690044418E /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				79B708BA2F73157F000F38E7 /* XCRemoteSwiftPackageReference "tree-sitter-cpp" */,
-				791C994E2F87687C006AF674 /* XCRemoteSwiftPackageReference "Runestone" */,
-				79D1DA682F92A98B0020518A /* XCRemoteSwiftPackageReference "tree-sitter-swift" */,
 				8630CBB32FABE19200C6EE6D /* XCRemoteSwiftPackageReference "UIOnboarding" */,
+				86E4D4F22FB8CF32008BFE4D /* XCRemoteSwiftPackageReference "Runestone" */,
+				86E4D4F52FB8CF63008BFE4D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = AF9916D02DC8C42200DDF895;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AF9916D82DC8C42200DDF895 /* Nyxian */,
-				79AF51072F1CBD110055004A /* NyxianForJB */,
+				AF9916D82DC8C42200DDF895 /* emexDE */,
+				79AF51072F1CBD110055004A /* emexDEForJB */,
 				79BF97F62E6291EE00C60D4C /* LiveProcess */,
 				860D91742FAE1F95000D321B /* MobileDevelopmentKit */,
 				86DCC2592FA5209600973169 /* CoreCompiler */,
@@ -1039,7 +1039,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 79277DC02EE8752800F18B30 /* Config.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon Drawn Nyxcat Nyxcat2 Nyxcat3 SillyCoder";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon Legacy Drawn Nyxcat Nyxcat2 Nyxcat3";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Nyxian/Nyxian.entitlements;
@@ -1057,7 +1057,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = Nyxian/;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Nyxian;
+				INFOPLIST_KEY_CFBundleDisplayName = emexDE;
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = NO;
 				INFOPLIST_KEY_GCSupportsGameMode = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -1148,7 +1148,7 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Nyxian/bridge-jb.h";
-				SWIFT_OBJC_INTERFACE_HEADER_NAME = "Nyxian-Swift.h";
+				SWIFT_OBJC_INTERFACE_HEADER_NAME = "emexDE-Swift.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -1158,7 +1158,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 79277DC02EE8752800F18B30 /* Config.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon Drawn Nyxcat Nyxcat2 Nyxcat3 SillyCoder";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon Legacy Drawn Nyxcat Nyxcat2 Nyxcat3";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Nyxian/Nyxian.entitlements;
@@ -1177,7 +1177,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = Nyxian/;
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Nyxian;
+				INFOPLIST_KEY_CFBundleDisplayName = emexDE;
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = NO;
 				INFOPLIST_KEY_GCSupportsGameMode = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -1268,7 +1268,7 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "Nyxian/bridge-jb.h";
-				SWIFT_OBJC_INTERFACE_HEADER_NAME = "Nyxian-Swift.h";
+				SWIFT_OBJC_INTERFACE_HEADER_NAME = "emexDE-Swift.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -1663,7 +1663,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 79277DC02EE8752800F18B30 /* Config.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon Drawn Nyxcat Nyxcat2 Nyxcat3";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon Nyxian Drawn Nyxcat Nyxcat2 Nyxcat3";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "$(NYXIAN_CODE_SIGN_ENTITLEMENTS)";
@@ -1686,7 +1686,7 @@
 					LiveProcess/,
 				);
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Nyxian;
+				INFOPLIST_KEY_CFBundleDisplayName = emexDE;
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = NO;
 				INFOPLIST_KEY_GCSupportsGameMode = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -1781,7 +1781,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 79277DC02EE8752800F18B30 /* Config.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon Drawn Nyxcat Nyxcat2 Nyxcat3";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon Nyxian Drawn Nyxcat Nyxcat2 Nyxcat3";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "$(NYXIAN_CODE_SIGN_ENTITLEMENTS)";
@@ -1805,7 +1805,7 @@
 					LiveProcess/,
 				);
 				INFOPLIST_FILE = Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Nyxian;
+				INFOPLIST_KEY_CFBundleDisplayName = emexDE;
 				INFOPLIST_KEY_GCSupportsControllerUserInteraction = NO;
 				INFOPLIST_KEY_GCSupportsGameMode = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -1910,7 +1910,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		79AF51282F1CBD110055004A /* Build configuration list for PBXNativeTarget "NyxianForJB" */ = {
+		79AF51282F1CBD110055004A /* Build configuration list for PBXNativeTarget "emexDEForJB" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				79AF51292F1CBD110055004A /* Debug */,
@@ -1955,7 +1955,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		AF9916E72DC8C42400DDF895 /* Build configuration list for PBXNativeTarget "Nyxian" */ = {
+		AF9916E72DC8C42400DDF895 /* Build configuration list for PBXNativeTarget "emexDE" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				AF9916E82DC8C42400DDF895 /* Debug */,
@@ -1967,14 +1967,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		791C994E2F87687C006AF674 /* XCRemoteSwiftPackageReference "Runestone" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ProjectNyxian/Runestone.git";
-			requirement = {
-				kind = exactVersion;
-				version = 0.0.2;
-			};
-		};
 		793A7E4E2EB599690044418E /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
@@ -2031,20 +2023,28 @@
 				version = 0.23.4;
 			};
 		};
-		79D1DA682F92A98B0020518A /* XCRemoteSwiftPackageReference "tree-sitter-swift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ProjectNyxian/tree-sitter-swift";
-			requirement = {
-				branch = main;
-				kind = branch;
-			};
-		};
 		8630CBB32FABE19200C6EE6D /* XCRemoteSwiftPackageReference "UIOnboarding" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/lascic/UIOnboarding.git";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.0.5;
+			};
+		};
+		86E4D4F22FB8CF32008BFE4D /* XCRemoteSwiftPackageReference "Runestone" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/emexlab/Runestone";
+			requirement = {
+				kind = exactVersion;
+				version = 0.0.2;
+			};
+		};
+		86E4D4F52FB8CF63008BFE4D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/emexlab/tree-sitter-swift";
+			requirement = {
+				branch = main;
+				kind = branch;
 			};
 		};
 		AF9919562DC9175A00DDF895 /* XCRemoteSwiftPackageReference "tree-sitter-objc" */ = {
@@ -2076,11 +2076,6 @@
 /* Begin XCSwiftPackageProductDependency section */
 		791C96042F8726B0006AF674 /* Runestone */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = Runestone;
-		};
-		791C994F2F87687C006AF674 /* Runestone */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 791C994E2F87687C006AF674 /* XCRemoteSwiftPackageReference "Runestone" */;
 			productName = Runestone;
 		};
 		793A4E3A2F84FE1D003B609A /* Runestone */ = {
@@ -2139,16 +2134,6 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = TreeSitterSwift;
 		};
-		79D1DA692F92A98C0020518A /* TreeSitterSwift */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 79D1DA682F92A98B0020518A /* XCRemoteSwiftPackageReference "tree-sitter-swift" */;
-			productName = TreeSitterSwift;
-		};
-		79D1DA6B2F92B4CA0020518A /* TreeSitterSwift */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 79D1DA682F92A98B0020518A /* XCRemoteSwiftPackageReference "tree-sitter-swift" */;
-			productName = TreeSitterSwift;
-		};
 		8630CBB42FABE19200C6EE6D /* UIOnboarding */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8630CBB32FABE19200C6EE6D /* XCRemoteSwiftPackageReference "UIOnboarding" */;
@@ -2158,6 +2143,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8630CBB32FABE19200C6EE6D /* XCRemoteSwiftPackageReference "UIOnboarding" */;
 			productName = UIOnboarding;
+		};
+		86E4D4F32FB8CF32008BFE4D /* Runestone */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 86E4D4F22FB8CF32008BFE4D /* XCRemoteSwiftPackageReference "Runestone" */;
+			productName = Runestone;
+		};
+		86E4D4F62FB8CF63008BFE4D /* TreeSitterSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 86E4D4F52FB8CF63008BFE4D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */;
+			productName = TreeSitterSwift;
+		};
+		86E4D4F82FB8CF70008BFE4D /* TreeSitterSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 86E4D4F52FB8CF63008BFE4D /* XCRemoteSwiftPackageReference "tree-sitter-swift" */;
+			productName = TreeSitterSwift;
 		};
 		AF9919572DC9175A00DDF895 /* TreeSitterObjc */ = {
 			isa = XCSwiftPackageProductDependency;

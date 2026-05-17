@@ -13,10 +13,10 @@ public:
 	bool Free();
 	void PrintInfo();
 	bool Sign(ZSignAsset* pSignAsset,
-				bool bForce,
-				string strBundleId,
-				string strInfoSHA1,
-				string strInfoSHA256,
+				bool bForce, 
+				string strBundleId, 
+				string strInfoSHA1, 
+				string strInfoSHA256, 
 				const string& strCodeResourcesData);
 	bool InjectDylib(bool bWeakInject, const char* szDylibFile);
 

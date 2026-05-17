@@ -38,30 +38,30 @@ void NUDGuestHooksInit(void)
         {
             appContainerPath = [NSString stringWithCString:home encoding:NSUTF8StringEncoding];
         }
-
+        
         swizzle_objc_method(@selector(initWithDomain:user:byHost:containerPath:containingPreferences:),
                             NSClassFromString(@"CFPrefsPlistSource"),
                             @selector(hook_initWithDomain:user:byHost:containerPath:containingPreferences:),
                             [CFPrefsPlistSource2 class]);
-
+        
         Class CFXPreferencesClass = NSClassFromString(@"_CFXPreferences");
         NSMutableDictionary* sources = object_getIvar([CFXPreferencesClass copyDefaultPreferences], class_getInstanceVariable(CFXPreferencesClass, "_sources"));
-
+        
         [sources removeObjectForKey:@"C/A//B/L"];
         [sources removeObjectForKey:@"C/C//*/L"];
-
+        
         const char* coreFoundationPath = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
-
+        
         CFStringRef* _CFPrefsCurrentAppIdentifierCache = litehook_find_dsc_symbol(coreFoundationPath, "__CFPrefsCurrentAppIdentifierCache");
         *_CFPrefsCurrentAppIdentifierCache = (__bridge CFStringRef)[[NSBundle mainBundle] bundleIdentifier];
-
+        
         NSUserDefaults* newStandardUserDefaults = [[NSUserDefaults alloc] initWithSuiteName:@"whatever"];
         if(newStandardUserDefaults != nil)
         {
             [newStandardUserDefaults _setIdentifier:[[NSBundle mainBundle] bundleIdentifier]];
             NSUserDefaults.standardUserDefaults = newStandardUserDefaults;
         }
-
+        
         NSFileManager* fm = NSFileManager.defaultManager;
         NSURL* libraryPath = [fm URLsForDirectory:NSLibraryDirectory inDomains:NSUserDomainMask].lastObject;
         NSURL* preferenceFolderPath = [libraryPath URLByAppendingPathComponent:@"Preferences"];

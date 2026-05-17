@@ -1,0 +1,47 @@
+/*
+ SPDX-License-Identifier: AGPL-3.0-or-later
+
+ Copyright (C) 2025 - 2026 mach-port-t
+
+ This file is part of Nyxian.
+
+ Nyxian is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ Nyxian is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Affero General Public License for more details.
+
+ You should have received a copy of the GNU Affero General Public License
+ along with Nyxian. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#ifndef PROCENVIRONMENT_SERVER_SERVERPROTOCOL_H
+#define PROCENVIRONMENT_SERVER_SERVERPROTOCOL_H
+
+#import <Foundation/Foundation.h>
+#import <LindChain/Private/UIKitPrivate.h>
+#import <LindChain/ProcEnvironment/Process/PEProcessManager.h>
+#import <LindChain/ProcEnvironment/Object/PEMachPort.h>
+#import <LindChain/ProcEnvironment/Object/MachOObject.h>
+#import <LindChain/ProcEnvironment/posix_spawn.h>
+#import <LindChain/ProcEnvironment/Surface/surface.h>
+
+@protocol ServerProtocol
+
+/*
+ posix_spawn
+ */
+- (void)spawnProcessWithPath:(NSString*)path withArguments:(NSArray<NSObject<NSSecureCoding,NSCopying>*>*)arguments withEnvironmentVariables:(NSDictionary *)environment withMapObject:(FDMapObject*)mapObject withWorkingDirectory:(NSString*)workingDirectory withReply:(void (^)(int64_t))reply;
+
+/*
+ App Switcher Services
+ */
+- (void)setSnapshot:(UIImage*)image;
+
+@end
+
+#endif /* PROCENVIRONMENT_SERVER_SERVERPROTOCOL_H */

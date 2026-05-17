@@ -114,7 +114,7 @@ Boolean _CCASTUnitRefillDiagnosticArray(CCMutableASTUnitRef mutableUnit)
     {
         return false;
     }
-
+    
     CFURLRef fileURL = CCFileGetFileURL(mutableUnit->file);
     CFStringRef filePath = CFURLCopyFileSystemPath(fileURL, kCFURLPOSIXPathStyle);
 
@@ -214,7 +214,7 @@ Boolean _CCASTUnitRefillDiagnosticArray(CCMutableASTUnitRef mutableUnit)
         CFArrayAppendValue(diagnostics, result);
         CFRelease(result); /* array owns now a reference */
     }
-
+    
     CFRelease(filePath);
 
     mutableUnit->diagnostics = diagnostics;
@@ -238,24 +238,24 @@ CCASTUnitRef CCASTUnitCreateWithASTUnit(CFAllocatorRef allocator,
     {
         return nullptr;
     }
-
+    
     const char *originalInputFileNameCStr = originalInputFileName.c_str();
     file = CCFileCreateWithCString(allocator, originalInputFileNameCStr, kCFStringEncodingUTF8);
     if(file == nullptr)
     {
         return nullptr;
     }
-
+    
     CCMutableASTUnitRef unit = (CCMutableASTUnitRef)_CFRuntimeCreateInstance(allocator, CCASTUnitGetTypeID(), sizeof(opaque_ccastunit) - sizeof(CFRuntimeBase), nullptr);
     if(unit == nullptr)
     {
         CFRelease(file);
         return nullptr;
     }
-
+    
     unit->file = file;
     unit->unit = std::move(astUnit);
-
+    
     _CCASTUnitRefillDiagnosticArray(unit);
 
     /* marking immutable, since not a live AST object */

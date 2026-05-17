@@ -536,9 +536,9 @@ ZSignAsset::ZSignAsset()
 
 bool ZSignAsset::Init(
 	const string& strCertFile,
-	const string& strPKeyFile,
-	const string& strProvFile,
-	const string& strEntitleFile,
+	const string& strPKeyFile, 
+	const string& strProvFile, 
+	const string& strEntitleFile, 
 	const string& strPassword,
 	bool bAdhoc,
 	bool bSHA256Only,
@@ -701,7 +701,7 @@ bool ZSignAsset::GetCMSContent2(const void* strCMSDataInput, int size, string &s
 
     strContentOutput.clear();
     strContentOutput.append((const char *)(*pos)->data, (*pos)->length);
-
+    
     CMS_ContentInfo_free(cms);
     BIO_free(in);
     return (!strContentOutput.empty());
@@ -844,7 +844,7 @@ bool ZSignAsset::InitAdhoc(const void* strEntitlementData, int strEntitlementDat
     m_bSHA256Only = false;
     m_bSingleBinary = true;
     m_strEntitleData = std::string((char*)strEntitlementData, strEntitlementDataSize);
-
+    
     return true;
-
+    
 }

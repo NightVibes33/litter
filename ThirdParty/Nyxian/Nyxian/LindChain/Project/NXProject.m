@@ -24,7 +24,7 @@
 #import <LindChain/Project/NXCodeTemplate.h>
 #import <LindChain/Project/NXUser.h>
 #import <LindChain/Project/NXUtils.h>
-#import <Nyxian-Swift.h>
+#import <emexDE-Swift.h>
 
 @implementation NXProjectConfig
 
@@ -46,80 +46,88 @@
     if(reloaded)
     {
         /* MARK: projectFormat */
-        _formatKind = NXProjectFormatKindFromFormat([self objectForKey:@"NXProjectFormat" withDefaultObject:NXProjectFormatKate]);
-
-        if(_formatKind != NXProjectFormatKindAvisR1)
+        _formatKind = NXProjectFormatKindFromFormat([self.dictionary objectForKey:@"NXProjectFormat" withDefaultObject:NXProjectFormatKate]);
+        if(_formatKind <= NXProjectFormatKindAvisR1)
         {
-            [self remapKey:@"LDEMinimumVersion" toKey:@"NXDeploymentTarget"];
-            [self remapKey:@"LDEProjectType" toKey:@"NXProjectScheme" withRemapHandler:(id)^(id oldObj){
+            [self.dictionary remapKey:@"LDEMinimumVersion" toKey:@"NXDeploymentTarget"];
+            [self.dictionary remapKey:@"LDEProjectType" toKey:@"NXProjectScheme" withRemapHandler:(id)^(id oldObj){
                 if([oldObj isKindOfClass:[NSNumber class]])
                 {
                     return NXProjectSchemeFromSchemeKind([(NSNumber*)oldObj integerValue]);
                 }
                 return NXProjectSchemeUnknown;
             }];
-            [self remapKey:@"LDEExecutable" toKey:@"NXExecutable"];
-            [self remapKey:@"LDEDisplayName" toKey:@"NXDisplayName"];
-            [self remapKey:@"LDEOrganizationPrefix" toKey:@"NXOrganizationPrefix"];
-            [self remapKey:@"LDEBundleIdentifier" toKey:@"NXBundleIdentifier"];
-            [self remapKey:@"LDEBundleVersion" toKey:@"NXBundleVersion"];
-            [self remapKey:@"LDEBundleShortVersion" toKey:@"NXBundleShortVersion"];
-            [self remapKey:@"LDEBundleInfo" toKey:@"NXBundleInfo"];
-            [self remapKey:@"LDEOutputPath" toKey:@"NXOutputPath"];
-            [self remapKey:@"LDESignMachOWithNyxianEntitlements" toKey:@"NXSignMachOWithNyxianEntitlements"];
-            [self remapKey:@"LDECompilerFlags" toKey:@"NXClangFlags"];
-            [self remapKey:@"LDELinkerFlags" toKey:@"NXLinkerFlags"];
+            [self.dictionary remapKey:@"LDEExecutable" toKey:@"NXExecutable"];
+            [self.dictionary remapKey:@"LDEDisplayName" toKey:@"NXDisplayName"];
+            [self.dictionary remapKey:@"LDEOrganizationPrefix" toKey:@"NXOrganizationPrefix"];
+            [self.dictionary remapKey:@"LDEBundleIdentifier" toKey:@"NXBundleIdentifier"];
+            [self.dictionary remapKey:@"LDEBundleVersion" toKey:@"NXBundleVersion"];
+            [self.dictionary remapKey:@"LDEBundleShortVersion" toKey:@"NXBundleShortVersion"];
+            [self.dictionary remapKey:@"LDEBundleInfo" toKey:@"NXBundleInfo"];
+            [self.dictionary remapKey:@"LDEOutputPath" toKey:@"NXOutputPath"];
+            [self.dictionary remapKey:@"LDESignMachOWithNyxianEntitlements" toKey:@"NXSignMachOWithNyxianEntitlements"];
+            [self.dictionary remapKey:@"LDECompilerFlags" toKey:@"NXClangFlags"];
+            [self.dictionary remapKey:@"LDELinkerFlags" toKey:@"NXLinkerFlags"];
         }
-
-        _schemeKind = NXProjectSchemeKindFromScheme([self objectForKey:@"NXProjectScheme" withClass:[NSString class]]);
-
+        
+        _schemeKind = NXProjectSchemeKindFromScheme([self.dictionary objectForKey:@"NXProjectScheme" withClass:[NSString class]]);
+        
         /* MARK: keys */
-        _executable = [self objectForKey:@"NXExecutable" withDefaultObject:@"Unknown"];
-        _displayName = [self objectForKey:@"NXDisplayName" withDefaultObject:[self executable]];
-        _organizationPrefix = [self objectForKey:@"NXOrganizationPrefix" withDefaultObject:@"com.example"];
-        _bundleid = [self objectForKey:@"NXBundleIdentifier" withDefaultObject:[NSString stringWithFormat:@"app.nyxian.%@.%@", [[NXUser shared] username], [self executable]]];
-        _version = [self objectForKey:@"NXBundleVersion" withDefaultObject:@"1.0"];
-        _shortVersion = [self objectForKey:@"NXBundleShortVersion" withDefaultObject:[self version]];
-        _infoDictionary = [self objectForKey:@"NXBundleInfo" withDefaultObject:@{}];
-        _deploymentTarget = [self objectForKey:@"NXDeploymentTarget" withDefaultObject:NXOSVersion.maximumBuildVersion.pickerVersionString];
-        _outputPath = [self objectForKey:@"NXOutputPath"];
-        _signMachOWithNyxianEntitlements = [self booleanForKey:@"NXSignMachOWithNyxianEntitlements" withDefaultValue:true];
-
-        /* MARK: compiler flags */
-        NSArray *compilerFlags = [self objectForKey:@"NXClangFlags" withDefaultObject:@[]];
-
-        if(_formatKind == NXProjectFormatKindFalcon ||
-           _formatKind == NXProjectFormatKindAvis ||
-           _formatKind == NXProjectFormatKindAvisR1)
+        _executable = [self.dictionary objectForKey:@"NXExecutable" withDefaultObject:@"Unknown"];
+        _displayName = [self.dictionary objectForKey:@"NXDisplayName" withDefaultObject:[self executable]];
+        _organizationPrefix = [self.dictionary objectForKey:@"NXOrganizationPrefix" withDefaultObject:@"com.example"];
+        _bundleid = [self.dictionary objectForKey:@"NXBundleIdentifier" withDefaultObject:[NSString stringWithFormat:@"app.nyxian.%@.%@", [[NXUser shared] username], [self executable]]];
+        _deploymentTarget = [self.dictionary objectForKey:@"NXDeploymentTarget" withDefaultObject:NXOSVersion.maximumBuildVersion.pickerVersionString];
+        _outputPath = [self.dictionary varObjectForKey:@"NXOutputPath"];
+        _signMachOWithNyxianEntitlements = [self.dictionary booleanForKey:@"NXSignMachOWithNyxianEntitlements" withDefaultValue:true];
+        
+        /* MARK: info plist data */
+        NSMutableDictionary *mutableInfoDictionary = [[self.dictionary objectForKey:@"NXBundleInfo" withDefaultObject:@{}] mutableCopy];
+        if(_formatKind < NXProjectFormatKindAvisR2)
         {
-            _compilerFlags = compilerFlags;
+            NSString *bundleVersion = [self.dictionary objectForKey:@"NXBundleVersion" withDefaultObject:@"1.0"];
+            NSString *bundleShortVersion = [self.dictionary objectForKey:@"NXBundleShortVersion" withDefaultObject:bundleVersion];
+            
+            [mutableInfoDictionary addEntriesFromDictionary:@{
+                @"CFBundleExecutable": _executable,
+                @"CFBundleIdentifier": _bundleid,
+                @"CFBundleName": _displayName,
+                @"CFBundleVersion": bundleVersion,
+                @"CFBundleShortVersionString": bundleShortVersion,
+                @"MinimumOSVersion": _deploymentTarget,
+                @"UIDeviceFamily": @[@(0), @(1)],
+                @"UIRequiresFullScreen": @(NO),
+                @"UISupportedInterfaceOrientations~ipad": @[
+                    @"UIInterfaceOrientationPortrait",
+                    @"UIInterfaceOrientationPortraitUpsideDown",
+                    @"UIInterfaceOrientationLandscapeLeft",
+                    @"UIInterfaceOrientationLandscapeRight"
+                ]
+            }];
         }
-        else if(_formatKind == NXProjectFormatKindKate)
+        _infoDictionary = mutableInfoDictionary;
+        
+        /* MARK: compiler flags */
+        NSMutableArray *mutableCompilerFlags = [[self.dictionary arrayForKey:@"NXClangFlags" allowedTypes:[NSSet setWithArray:@[[NSString class]]]] mutableCopy];
+        if(_formatKind <= NXProjectFormatKindKate)
         {
-            NSMutableArray *array = [compilerFlags mutableCopy];
-
-            [array addObjectsFromArray:@[
+            [mutableCompilerFlags addObjectsFromArray:@[
                 @"-target",
-                [self objectForKey:@"LDEOverwriteTriple" withDefaultObject:[NSString stringWithFormat:@"apple-arm64-ios%@", [self deploymentTarget]]],
+                [self.dictionary objectForKey:@"LDEOverwriteTriple" withDefaultObject:[NSString stringWithFormat:@"apple-arm64-ios%@", [self deploymentTarget]]],
                 @"-isysroot",
                 NXBootstrap.shared.sdkURL.path,
                 [@"-L" stringByAppendingString:[NXBootstrap.shared.rootURL URLByAppendingPathComponent:@"lib"].path],
                 @"-resource-dir",
                 [NXBootstrap.shared.rootURL URLByAppendingPathComponent:@"Include"].path
             ]];
-
-            _compilerFlags = array;
         }
-        else
-        {
-            _compilerFlags = @[];
-        }
-
+        _compilerFlags = mutableCompilerFlags;
+        
         /* MARK: linker flags */
-        _linkerFlags = [self objectForKey:@"NXLinkerFlags" withDefaultObject:@[]];
-
+        _linkerFlags = [self.dictionary arrayForKey:@"NXLinkerFlags" allowedTypes:[NSSet setWithArray:@[[NSString class]]]];
+        
         /* MARK: swift flags */
-        _swiftFlags = [self objectForKey:@"NXSwiftFlags" withDefaultObject:@[]];
+        _swiftFlags = [self.dictionary arrayForKey:@"NXSwiftFlags" allowedTypes:[NSSet setWithArray:@[[NSString class]]]];
     }
     return reloaded;
 }
@@ -134,25 +142,25 @@
     if(reloaded)
     {
         _entitlement = PEEntitlementNone;
-        if([self booleanForKey:@"com.nyxian.pe.get_task_allowed" withDefaultValue:YES]) _entitlement |= PEEntitlementGetTaskAllowed;
-        if([self booleanForKey:@"com.nyxian.pe.task_for_pid" withDefaultValue:NO]) _entitlement |= PEEntitlementTaskForPid;
-        if([self booleanForKey:@"com.nyxian.pe.process_enumeration" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessEnumeration;
-        if([self booleanForKey:@"com.nyxian.pe.process_kill" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessKill;
-        if([self booleanForKey:@"com.nyxian.pe.process_spawn" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessSpawn;
-        if([self booleanForKey:@"com.nyxian.pe.process_spawn_signed_only" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessSpawnSignedOnly;
-        if([self booleanForKey:@"com.nyxian.pe.process_elevate" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessElevate;
-        if([self booleanForKey:@"com.nyxian.pe.host_manager" withDefaultValue:NO]) _entitlement |= PEEntitlementHostManager;
-        if([self booleanForKey:@"com.nyxian.pe.credentials_manager" withDefaultValue:NO]) _entitlement |= PEEntitlementCredentialsManager;
-        if([self booleanForKey:@"com.nyxian.pe.launch_services_start" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesStart;
-        if([self booleanForKey:@"com.nyxian.pe.launch_services_stop" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesStop;
-        if([self booleanForKey:@"com.nyxian.pe.launch_services_toggle" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesToggle;
-        if([self booleanForKey:@"com.nyxian.pe.launch_services_get_endpoint" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesGetEndpoint;
-        if([self booleanForKey:@"com.nyxian.pe.launch_services_set_endpoint" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesSetEndpoint;
-        if([self booleanForKey:@"com.nyxian.pe.launch_services_manager" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesManager;
-        if([self booleanForKey:@"com.nyxian.pe.dyld_hide_liveprocess" withDefaultValue:NO]) _entitlement |= PEEntitlementDyldHideLiveProcess;
-        if([self booleanForKey:@"com.nyxian.pe.process_spawn_inherite_entitlements" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessSpawnInheriteEntitlements;
-        if([self booleanForKey:@"com.nyxian.pe.platform" withDefaultValue:NO]) _entitlement |= PEEntitlementPlatform;
-        if([self booleanForKey:@"com.nyxian.pe.platform_root" withDefaultValue:NO]) _entitlement |= PEEntitlementPlatformRoot;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.get_task_allowed" withDefaultValue:YES]) _entitlement |= PEEntitlementGetTaskAllowed;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.task_for_pid" withDefaultValue:NO]) _entitlement |= PEEntitlementTaskForPid;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.process_enumeration" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessEnumeration;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.process_kill" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessKill;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.process_spawn" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessSpawn;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.process_spawn_signed_only" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessSpawnSignedOnly;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.process_elevate" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessElevate;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.host_manager" withDefaultValue:NO]) _entitlement |= PEEntitlementHostManager;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.credentials_manager" withDefaultValue:NO]) _entitlement |= PEEntitlementCredentialsManager;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.launch_services_start" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesStart;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.launch_services_stop" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesStop;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.launch_services_toggle" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesToggle;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.launch_services_get_endpoint" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesGetEndpoint;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.launch_services_set_endpoint" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesSetEndpoint;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.launch_services_manager" withDefaultValue:NO]) _entitlement |= PEEntitlementLaunchServicesManager;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.dyld_hide_liveprocess" withDefaultValue:NO]) _entitlement |= PEEntitlementDyldHideLiveProcess;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.process_spawn_inherite_entitlements" withDefaultValue:NO]) _entitlement |= PEEntitlementProcessSpawnInheriteEntitlements;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.platform" withDefaultValue:NO]) _entitlement |= PEEntitlementPlatform;
+        if([self.dictionary booleanForKey:@"com.nyxian.pe.platform_root" withDefaultValue:NO]) _entitlement |= PEEntitlementPlatformRoot;
     }
     return reloaded;
 }
@@ -191,7 +199,7 @@
 {
     /* must always be valid */
     assert(NXProjectConfigurationIsValid(schemeKind, interfaceKind, languageKind));
-
+    
     NSURL *projectURL = [url URLByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
     NSFileManager *defaultFileManager = [NSFileManager defaultManager];
     NSString *organizationIdentifierValue = organizationIdentifier ?: @"";
@@ -213,7 +221,23 @@
         }
     }
 
-    NSDictionary *appBundleInfo = @{};
+    NSMutableDictionary *appBundleInfo = [@{
+        @"CFBundleExecutable": @"$(NXExecutable)",
+        @"CFBundleIdentifier": @"$(NXBundleIdentifier)",
+        @"CFBundleName": @"$(NXDisplayName)",
+        @"CFBundleVersion": @"$(NXBundleVersion)",
+        @"CFBundleShortVersionString": @"$(NXBundleShortVersion)",
+        @"MinimumOSVersion": @"$(NXDeploymentTarget)",
+        @"UIDeviceFamily": @[@(1), @(2)],
+        @"UIRequiresFullScreen": @(NO),
+        @"UISupportedInterfaceOrientations~ipad": @[
+            @"UIInterfaceOrientationPortrait",
+            @"UIInterfaceOrientationPortraitUpsideDown",
+            @"UIInterfaceOrientationLandscapeLeft",
+            @"UIInterfaceOrientationLandscapeRight",
+        ],
+    } mutableCopy];
+    
     if(interfaceKind == NXProjectInterfaceKindUIKit)
     {
         NSString *sceneDelegateClassName = @"SceneDelegate";
@@ -221,8 +245,8 @@
         {
             sceneDelegateClassName = [@"$(NXExecutable)." stringByAppendingString:sceneDelegateClassName];
         }
-
-        appBundleInfo = @{
+        
+        [appBundleInfo addEntriesFromDictionary:@{
             @"UIApplicationSceneManifest": @{
                 @"UIApplicationSupportsMultipleScenes": @(NO),
                 @"UISceneConfigurations": @{
@@ -234,11 +258,11 @@
                     ]
                 }
             }
-        };
+        }];
     }
-
+    
     NSMutableDictionary *projConfigPlist = [NSMutableDictionary dictionaryWithDictionary:@{
-        @"NXProjectFormat": NXProjectFormatAvisR1,
+        @"NXProjectFormat": NXProjectFormatAvisR2,
         @"NXProjectScheme": NXProjectSchemeFromSchemeKind(schemeKind),
         @"NXExecutable": name,
         @"NXDisplayName": name,
@@ -250,7 +274,7 @@
         @"NXSwiftFlags": NXSwiftFlagsForCodeTemplateLanguage(schemeKind, languageKind),
         @"NXSignMachOWithNyxianEntitlements": @(YES) /* FIXME: when enabled certain signers outside of zsign may fail to sign the MachO although its usually allowed to have trailing bits after the MachO ended, ldid has a weird non standard check that even is not inside of apples code sign cuz i tried to sign a MachO in strict mode and it passed including the trailing bits. */
     }];
-
+    
     switch(schemeKind)
     {
         case NXProjectSchemeKindApp:
@@ -270,7 +294,7 @@
             [defaultFileManager removeItemAtURL:projectURL error:nil];
             return nil;
     }
-
+    
     NSDictionary *plistList = @{
         @"/Config/Project.plist": projConfigPlist,
         @"/Config/Entitlements.plist": @{
@@ -294,57 +318,57 @@
 #endif // !JAILBREAK_ENV
         }
     };
-
+    
     for(NSString *key in plistList)
     {
         NSError *error;
         NSDictionary *plistItem = plistList[key];
         NSData *plistData = [NSPropertyListSerialization dataWithPropertyList:plistItem format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
         [plistData writeToURL:[projectURL URLByAppendingPathComponent:key] atomically:YES];
-
+        
         if(error)
         {
             [defaultFileManager removeItemAtURL:projectURL error:nil];
             return nil;
         }
     }
-
+    
     NXProjectScheme scheme = NXProjectSchemeFromSchemeKind(schemeKind);
     NXProjectLanguage language = NXProjectLanguageFromLanguageKind(languageKind);
     NXProjectInterface interface = NXProjectInterfaceFromInterfaceKind(interfaceKind);
-
+    
     if(!NXCodeTemplateMakeProjectStructure(scheme, language, interface, name, projectURL))
     {
         [[NSFileManager defaultManager] removeItemAtURL:projectURL error:nil];
         return nil;
     }
-
+    
     return [NXProject projectWithURL:projectURL];
 }
 
 + (NSMutableDictionary<NSString*,NSMutableArray<NXProject*>*>*)listProjectsAtURL:(NSURL*)url
 {
     NSMutableDictionary<NSString*,NSMutableArray<NXProject*>*> *projectList = [[NSMutableDictionary alloc] init];
-
+    
     NSMutableArray<NXProject*> *applicationProjects = [[NSMutableArray alloc] init];
     NSMutableArray<NXProject*> *utilityProjects = [[NSMutableArray alloc] init];
     NSMutableArray<NXProject*> *unknownProjects = [[NSMutableArray alloc] init];
-
+    
     projectList[@"applications"] = applicationProjects;
     projectList[@"utilities"] = utilityProjects;
     projectList[@"unknown"] = unknownProjects;
-
+    
     NSError *error;
     NSArray<NSURL*> *urlEntries = [[NSFileManager defaultManager] contentsOfDirectoryAtURL:url includingPropertiesForKeys:nil options:0 error:&error];
     if(error)
     {
         return projectList;
     }
-
+    
     for(NSURL *entry in urlEntries)
     {
         NXProject *project = [NXProject projectWithURL:entry];
-
+        
         if(project.projectConfig.schemeKind == NXProjectSchemeKindApp)
         {
             [applicationProjects addObject:project];
@@ -358,30 +382,30 @@
             [unknownProjects addObject:project];
         }
     }
-
+    
     return projectList;
 }
 
 - (BOOL)syncFolderStructureToCache
 {
     NSFileManager *defaultManager = [NSFileManager defaultManager];
-
+    
     BOOL(^directoryEnumeratorErrorHandler)(NSURL *url, NSError *error) = ^BOOL(NSURL *url, NSError *error){
         NSLog(@"skip %@: %@", url.path, error);
         return YES;
     };
-
+    
     NSDirectoryEnumerator *sourceDirectoryEnumerator = [defaultManager enumeratorAtURL:self.url includingPropertiesForKeys:nil options:0 errorHandler:directoryEnumeratorErrorHandler];
     NSDirectoryEnumerator *destinationDirectoryEnumerator = [defaultManager enumeratorAtURL:self.cacheURL includingPropertiesForKeys:nil options:0 errorHandler:directoryEnumeratorErrorHandler];
-
+    
     if(sourceDirectoryEnumerator == nil || destinationDirectoryEnumerator == nil)
     {
         return NO;
     }
-
+    
     NSMutableSet<NSString*> *relativesShallExist = [NSMutableSet set];
     NSMutableSet<NSString*> *relativeObjectShallExist = [NSMutableSet set];
-
+    
     /* capturing synchronisation */
     for(NSURL *url in sourceDirectoryEnumerator)
     {
@@ -398,7 +422,7 @@
             [relativeObjectShallExist addObject:objectFileURL.path];
         }
     }
-
+    
     /* applying synchronisation */
     for(NSURL *url in destinationDirectoryEnumerator)
     {
@@ -417,7 +441,7 @@
             }
         }
     }
-
+    
     /* completing synchronisation */
     for(NSString *relative in relativesShallExist)
     {
@@ -476,11 +500,11 @@
         {
             [[NSFileManager defaultManager] removeItemAtURL:_cacheURL error:nil];
         }
-
+        
         [[NSFileManager defaultManager] createDirectoryAtURL:_cacheURL withIntermediateDirectories:YES attributes:nil error:nil];
-
+        
     }
-
+    
     return [[self entitlementsConfig] reloadIfNeeded] | [[self projectConfig] reloadIfNeeded];
 }
 

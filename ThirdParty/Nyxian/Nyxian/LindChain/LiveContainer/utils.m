@@ -56,7 +56,7 @@ uint64_t aarch64_emulate_adrp(uint32_t instruction, uint64_t pc) {
     if ((instruction & 0x9F000000) != 0x90000000) {
         return 0;
     }
-
+    
     // Calculate imm from hi and lo
     int32_t imm_hi_lo = (instruction & 0xFFFFE0) >> 3;
     imm_hi_lo |= (instruction & 0x60000000) >> 29;
@@ -64,10 +64,10 @@ uint64_t aarch64_emulate_adrp(uint32_t instruction, uint64_t pc) {
         // Sign extend
         imm_hi_lo |= 0xFFE00000;
     }
-
+    
     // Build real imm
     int64_t imm = ((int64_t) imm_hi_lo << 12);
-
+    
     // Emulate
     return (pc & ~(0xFFFULL)) + imm;
 }
@@ -82,17 +82,17 @@ uint64_t aarch64_emulate_adrp_ldr(uint32_t instruction, uint32_t ldrInstruction,
     if (!adrp_target) {
         return 0;
     }
-
+    
     if ((instruction & 0x1F) != ((ldrInstruction >> 5) & 0x1F)) {
         return 0;
     }
-
+    
     if ((ldrInstruction & 0xFFC00000) != 0xF9400000) {
         return 0;
     }
-
+    
     uint32_t imm12 = ((ldrInstruction >> 10) & 0xFFF) << 3;
-
+    
     // Emulate
     return adrp_target + (uint64_t) imm12;
 }
