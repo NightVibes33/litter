@@ -482,6 +482,7 @@ jobs:
           PY
           )"
           MARKETING_VERSION="$(python3 - "$BASE_MARKETING_VERSION" <<'PY'
+          import base64
           import json
           import os
           import re
@@ -495,25 +496,28 @@ jobs:
 
           major, minor, patch = match.groups()
           latest_patch = int(patch)
-          pattern = re.compile(rf"^litter-v{major}\.{minor}\.(\d+)$")
+          repo = os.environ["GITHUB_REPOSITORY"]
 
           try:
-              releases = subprocess.check_output(
+              response = subprocess.check_output(
                   [
-                      "gh", "release", "list",
-                      "--repo", os.environ["GITHUB_REPOSITORY"],
-                      "--limit", "200",
-                      "--json", "tagName",
+                      "gh", "api",
+                      "--method", "GET",
+                      f"repos/{repo}/contents/litter-update.json",
+                      "-f", "ref=app-source-live",
                   ],
                   text=True,
               )
-              for release in json.loads(releases):
-                  tag = str(release.get("tagName", "")).strip()
-                  tag_match = pattern.fullmatch(tag)
-                  if tag_match:
-                      latest_patch = max(latest_patch, int(tag_match.group(1)))
+              content = json.loads(response).get("content", "")
+              stable = json.loads(base64.b64decode(content).decode("utf-8"))
+              stable_version = str(stable.get("version", "")).strip()
+              stable_match = re.fullmatch(rf"{major}\.{minor}\.(\d+)", stable_version)
+              if stable_match:
+                  latest_patch = max(latest_patch, int(stable_match.group(1)))
+              elif stable_version:
+                  print(f"::warning::Stable update feed is on {stable_version}; using {base} as the {major}.{minor}.x base", file=sys.stderr)
           except Exception as error:
-              print(f"::warning::Could not inspect existing Litter releases ({error}); using {base} as the version base", file=sys.stderr)
+              print(f"::warning::Could not inspect stable Litter app source ({error}); using {base} as the version base", file=sys.stderr)
 
           print(f"{major}.{minor}.{latest_patch + 1}")
           PY
@@ -820,7 +824,7 @@ jobs:
               raise SystemExit(f"::error::CURRENT_PROJECT_VERSION must be a numeric build, got {build!r}")
           PY
 
-          IPA_NAME="Litter-v${VERSION}.ipa"
+          IPA_NAME="Litter-${VERSION}.ipa"
           /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
           IPA_PATH="build/unsigned-ipa/$IPA_NAME"
           IPA_SHA256="$(shasum -a 256 "$IPA_PATH" | awk '{print $1}')"
@@ -880,7 +884,7 @@ jobs:
           IPA_PATH="build/unsigned-ipa/$IPA_NAME"
           SHA_PATH="${IPA_PATH}.sha256"
           RELEASE_TAG="litter-v${VERSION}"
-          RELEASE_TITLE="Litter v${VERSION}"
+          RELEASE_TITLE="Litter ${VERSION}"
           RELEASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
           IPA_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
           SOURCE_TAG="app-source"
@@ -905,7 +909,7 @@ jobs:
           cat > "$NOTES_PATH" <<EOF
           Unsigned Litter IPA for SideStore/AltStore re-signing.
 
-          - Public update: Litter v${VERSION}
+          - Public update: Litter ${VERSION}
           - App version: ${VERSION}
           - Commit: ${GITHUB_SHA}
           - Branch: ${GITHUB_REF_NAME}
@@ -1035,14 +1039,14 @@ jobs:
           Stable SideStore/AltStore source feed for the latest Litter sideload build.
 
           Source URL: ${SOURCE_URL}
-          Latest version: Litter v${VERSION}
+          Latest version: Litter ${VERSION}
           EOF
           git -C "$STABLE_SOURCE_DIR" init
           git -C "$STABLE_SOURCE_DIR" checkout -B "$SOURCE_BRANCH"
           git -C "$STABLE_SOURCE_DIR" config user.name "github-actions[bot]"
           git -C "$STABLE_SOURCE_DIR" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "$STABLE_SOURCE_DIR" add README.md litter-update.json litter-altstore-source.json ZYN-source-icon.heic
-          git -C "$STABLE_SOURCE_DIR" commit -m "Update stable app source for Litter v${VERSION}"
+          git -C "$STABLE_SOURCE_DIR" commit -m "Update stable app source for Litter ${VERSION}"
           ASKPASS_SCRIPT="$(mktemp)"
           cat > "$ASKPASS_SCRIPT" <<'EOF_ASKPASS'
           #!/bin/sh

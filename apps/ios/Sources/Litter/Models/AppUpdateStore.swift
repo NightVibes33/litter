@@ -347,7 +347,6 @@ final class AppUpdateStore: ObservableObject {
         var firstIncomparable: Candidate?
 
         for release in releases where !release.draft {
-            guard publicBuildNumber(from: release) != nil else { continue }
             guard let manifestAsset = release.asset(named: manifestAssetName), let manifestURL = URL(string: manifestAsset.browserDownloadURL) else {
                 continue
             }
@@ -373,19 +372,6 @@ final class AppUpdateStore: ObservableObject {
         return best ?? firstIncomparable
     }
 
-    private func publicBuildNumber(from release: GitHubRelease) -> Int? {
-        let values = [release.tagName, release.name ?? ""]
-        for rawValue in values {
-            let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            for prefix in ["litter-v", "litter v", "litter-"] {
-                guard value.hasPrefix(prefix) else { continue }
-                let suffix = value.dropFirst(prefix.count)
-                let digits = suffix.prefix { $0.isNumber }
-                if let number = Int(digits), number > 0 { return number }
-            }
-        }
-        return nil
-    }
 
     private func enrich(_ manifest: inout AppUpdateManifest, using release: GitHubRelease) {
         if manifest.releaseURL?.isEmpty != false {
