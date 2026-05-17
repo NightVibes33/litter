@@ -104,18 +104,34 @@ Litter is under active development and a lot of features are in flight. PRs are 
 
 ## Credits And Contributors
 
-Litter started in Daniel Nakov's original `dnakov/litter` repository and this fork continues that work under `NightVibes33/litter`. The detailed per-contributor credit list is maintained in [CONTRIBUTORS.md](CONTRIBUTORS.md), including the accepted upstream contributors whose work was merged into Daniel's original repository and the fork-side contributors who added BuildKit, local model, unsigned IPA, and distribution work here.
+Litter began in Daniel Nakov's original upstream repository, `dnakov/litter`, and this fork continues that work under `NightVibes33/litter`. Credits are maintained in detail in [CONTRIBUTORS.md](CONTRIBUTORS.md), including upstream PRs accepted into Daniel's original repo, direct upstream commit authors, and fork-only contributors.
 
-High-level credits:
-
-| Contributor | Main areas credited |
+| Contributor | Main credited work |
 |---|---|
-| Daniel Nakov (`dnakov`) | Original creator/upstream maintainer; iOS and Android app architecture, Rust/Codex bridge, SSH/local runtime, mobile UI, releases, and `kittylitter`/Alleycat work. |
-| NightVibes33 | Fork maintenance and distribution work; BuildKit asset CI/downloads, focused Nyxian import work, local model workflow polish, model import/download UX, and file workspace fixes. |
-| Zyn | Unsigned IPA path, iOS skills bridge, local model runtime and UI, native llama/TurboQuant integration, fakefs workspace work, and on-device Swift BuildKit integration. |
-| Codex | AI-assisted implementation commits for local model tooling, BuildKit hardening, diagnostics, local file browser/runtime UX, CI, and xcodebuild/Swift toolchain compatibility. |
-
-The full accepted contributor list includes Maky, Franklin, sigkitten, tabrobotics, Kaynan Sampaio de Camargo, Dixith-dev, eagle.one/onegaop, kkellyoffical, Coy Geek, researchoor, Sina Rabiei, Paul Pincente, Jason Penilla, Thomas Zarebczan, frixa/frixaco, ryanchen01, shuv, zulfaza, Benjamin Western, and sliced-paraiba, with their specific contributions documented in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+| Daniel Nakov (`dnakov`) | Original creator/upstream maintainer; iOS and Android app architecture, Rust/Codex bridge, SSH/local runtime, iSH/Alpine work, mobile UI, releases, and `kittylitter`/Alleycat. |
+| NightVibes33 | Fork maintainer; BuildKit asset CI/downloads, focused Nyxian import work, BuildKit IPA wiring, local model workflow polish, model import/download UX, file workspace fixes, and distribution repo maintenance. |
+| Zyn | Unsigned IPA path, iOS skills bridge, AI provider/local model foundation, fakefs file workspace, native llama/TurboQuant work, local agent workspace, main-chat local model routing, and on-device Swift BuildKit integration. |
+| Codex | AI-assisted implementation commits for local model tooling, BuildKit hardening, diagnostics, local file browser/runtime UX, CI, xcodebuild compatibility, and Swift toolchain support. |
+| Maky (`makyinmars`) | Android/iOS session UX, composer/session cleanup, iOS Codex RPC bridge coverage, workspace/sidebar UX, skills/edit/rename/fork flows, tool-calling/picker UX, agent identity/collaboration flows, iOS 18 support, search themes, server pill polish, SSH credential entry, theme mode, and AMP support. |
+| D-DRUMROLL / Dixith-dev (`Dixith-dev`) | Android keyboard fixes, OpenCode mobile shell support, Android home/discovery/settings polish, Settings popover title alignment, dropdown positioning, and session deletion fixes. |
+| Kaynan Sampaio de Camargo (`kaynansc`) | Editable saved server connections, Android SSH credential prompt parity, reconnect/edit sheet behavior, Input Required modal dismissal, OpenAI base URL setting, thread-scoped prompts/rate limits, and runtime-channel response routing. |
+| Franklin | iOS/Android file search and commands, Android picker fixes, identifier/signing cleanup, session search, fonts/UX, model-list exposure, iOS exec hook work, iOS 18 support work, search themes, and iOS CI/CD fixes. |
+| sigkitten | Mobile IPC/runtime work, session loading, transcript/thread reuse, permissions, native math parsing, iOS tests, Android runtime/UI fixes, generative UI Rust migration, Rust bridge cleanup, signing/provisioning, reconnect/notification behavior, and pets overlay. |
+| tabrobotics | Android OpenCode/mobile shell work, bundled Codex server and Node proxy support, discovery/local bridge fixes, CI archive fallback, Gradle/lint fixes, Android image upload fixes, and input/model selector polish. |
+| eagle.one / onegaop | Folder grouping for sessions in the sidebar plus related screenshot/homepage documentation. |
+| kkellyoffical | Android conversation text selection, message selection preservation, markdown callback stabilization, user bubble styling restoration, and Android JVM test stabilization. |
+| Coy Geek (`coygeek`) | iOS transcript display controls and UI test coverage. |
+| researchoor | Live Activity timer cleanup and completed-session idle indicator. |
+| Sina Rabiei (`nssina`) | Mac SSH setup documentation for exposing Codex sessions in Litter. |
+| Paul Pincente (`pincente`) | Android large-screen discovery modal and TV focus navigation improvements. |
+| frixa / frixaco | SSH bootstrap compatibility for Macs using Fish as the default shell. |
+| ryanchen01 | Expanded resolver SSH probe behavior. |
+| Jason Penilla (`jpenilla`) | SSH detection for Codex installed through Bun. |
+| Thomas Zarebczan (`tzarebczan`) | Windows npm publishing support for `kittylitter`. |
+| shuv (`shuv1337`) | iOS theme JSON decoding fixes for null/non-string values and `#RRGGBBAA` colors. |
+| zulfaza | `~/.opencode/bin` PATH probing in SSH profile initialization. |
+| Benjamin Western | Pi over Alleycat transport baseline improvements. |
+| sliced-paraiba | POSIX command portability using `/usr/bin/env`. |
 
 ## License
 
