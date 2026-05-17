@@ -9,9 +9,9 @@ on:
         default: "26.4"
         type: string
       swift_branch:
-        description: "Swift source tag/branch for LLVM-On-iOS"
+        description: "Swift source release tag for the iOS toolchain build"
         required: true
-        default: "swift"
+        default: "swift-6.3.1-RELEASE"
         type: string
       upload_private_release:
         description: "Upload LitterBuildKitAssets.zip to the private asset release"
