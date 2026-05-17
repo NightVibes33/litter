@@ -127,42 +127,6 @@ Litter is open source, but it is not MIT licensed. The project is licensed under
 
 Litter began in Daniel Nakov's original upstream repository, `dnakov/litter`, and this fork continues that work under `NightVibes33/litter`. Full evidence-backed credits are maintained in [CONTRIBUTORS.md](CONTRIBUTORS.md), including upstream PRs accepted into Daniel's original repo, direct upstream commit authors, and fork-only contributors.
 
-GitHub's generated contributor widget can lag while its stats cache rebuilds, so the GitHub-linked contributor avatars are pinned here as part of the README.
-
-<table>
-  <tbody>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/dnakov"><img src="https://avatars.githubusercontent.com/u/3777433?v=4" width="72" alt="Daniel Nakov"/><br /><sub><b>Daniel Nakov</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/NightVibes33"><img src="https://avatars.githubusercontent.com/u/214680657?v=4" width="72" alt="NightVibes33 / Zyn"/><br /><sub><b>NightVibes33 / Zyn</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/codex"><img src="https://avatars.githubusercontent.com/u/267193182?v=4" width="72" alt="Codex"/><br /><sub><b>Codex</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/makyinmars"><img src="https://avatars.githubusercontent.com/u/65879341?v=4" width="72" alt="Maky"/><br /><sub><b>Maky</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Dixith-dev"><img src="https://avatars.githubusercontent.com/u/103019867?v=4" width="72" alt="D-DRUMROLL / Dixith-dev"/><br /><sub><b>Dixith-dev</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/kaynansc"><img src="https://avatars.githubusercontent.com/u/33468632?v=4" width="72" alt="Kaynan Sampaio de Camargo"/><br /><sub><b>kaynansc</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/kkellyoffical"><img src="https://avatars.githubusercontent.com/u/196036180?v=4" width="72" alt="kkellyoffical"/><br /><sub><b>kkellyoffical</b></sub></a></td>
-    </tr>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/coygeek"><img src="https://avatars.githubusercontent.com/u/65363919?v=4" width="72" alt="Coy Geek"/><br /><sub><b>Coy Geek</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/researchoor"><img src="https://avatars.githubusercontent.com/u/72546100?v=4" width="72" alt="researchoor"/><br /><sub><b>researchoor</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/nssina"><img src="https://avatars.githubusercontent.com/u/26684902?v=4" width="72" alt="Sina Rabiei"/><br /><sub><b>nssina</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/pincente"><img src="https://avatars.githubusercontent.com/u/101599379?v=4" width="72" alt="Paul Pincente"/><br /><sub><b>pincente</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/frixaco"><img src="https://avatars.githubusercontent.com/u/37442533?v=4" width="72" alt="frixa / frixaco"/><br /><sub><b>frixaco</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/ryanchen01"><img src="https://avatars.githubusercontent.com/u/31496323?v=4" width="72" alt="ryanchen01"/><br /><sub><b>ryanchen01</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/jpenilla"><img src="https://avatars.githubusercontent.com/u/11360596?v=4" width="72" alt="Jason Penilla"/><br /><sub><b>jpenilla</b></sub></a></td>
-    </tr>
-    <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/tzarebczan"><img src="https://avatars.githubusercontent.com/u/8120721?v=4" width="72" alt="Thomas Zarebczan"/><br /><sub><b>tzarebczan</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/shuv1337"><img src="https://avatars.githubusercontent.com/u/523952?v=4" width="72" alt="shuv"/><br /><sub><b>shuv</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/zulfaza"><img src="https://avatars.githubusercontent.com/u/32305083?v=4" width="72" alt="zulfaza"/><br /><sub><b>zulfaza</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/benjaminwestern"><img src="https://avatars.githubusercontent.com/u/72841840?v=4" width="72" alt="Benjamin Western"/><br /><sub><b>benjaminwestern</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/sliced-paraiba"><img src="https://avatars.githubusercontent.com/u/263493145?v=4" width="72" alt="sliced-paraiba"/><br /><sub><b>sliced-paraiba</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/onegaop"><img src="https://avatars.githubusercontent.com/u/13845910?v=4" width="72" alt="eagle.one / onegaop"/><br /><sub><b>onegaop</b></sub></a></td>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/SIGKITTEN"><img src="https://avatars.githubusercontent.com/u/217126414?v=4" width="72" alt="sigkitten"/><br /><sub><b>sigkitten</b></sub></a></td>
-    </tr>
-  </tbody>
-</table>
-
-Direct accepted authors without a verified GitHub avatar in this audit are still credited below and in [CONTRIBUTORS.md](CONTRIBUTORS.md), including Franklin and tabrobotics.
-
 | Contributor | Main credited work |
 |---|---|
 | Daniel Nakov (`dnakov`) | Original creator/upstream maintainer; iOS and Android app architecture, Rust/Codex bridge, SSH/local runtime, iSH/Alpine work, mobile UI, releases, and `kittylitter`/Alleycat. |
