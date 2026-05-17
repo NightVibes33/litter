@@ -191,7 +191,7 @@ $(shell mkdir -p $(STAMPS))
 	bindings bindings-swift bindings-kotlin \
 	sync patch unpatch xcgen alpine-fs \
 	ios-build ios-build-sim ios-build-sim-fast ios-build-device ios-build-device-fast \
-	watch watch-sim watch-sim-run watch-device watch-typecheck \
+	watch watch-sim watch-sim-run watch-device watch-typecheck watch-register \
 	test test-rust test-ios test-android \
 	ios-release-prep mac-release-prep testflight mac-testflight mac-direct-dist appstore-release play-upload play-release \
 	clean clean-rust clean-ios clean-android \
@@ -459,6 +459,7 @@ help:
 		'make ios-device         full iOS package lane + device build' \
 		'make ios-device-fast    fast device lane using raw staticlib outputs' \
 		'make ios-device-run     fast device build + install + launch on connected device; saves console log and Time Profiler trace for the whole run under artifacts/ios-device-run (override IOS_DEVICE_PROFILE=0, IOS_DEVICE_PROFILE_TEMPLATE, IOS_DEVICE_PROFILE_TIME_LIMIT=30s to cap capture)' \
+		'make watch-register     register a newly paired Apple Watch with the developer portal (one-shot; idempotent via stamp file). Override discovery with WATCH_UDID=...' \
 		'make rust-ios-package   full Rust iOS package lane (bindings + xcframework)' \
 		'make rust-ios-sim-fast  fast Rust iOS simulator lane (raw staticlib only)' \
 		'make rust-ios-device-fast fast Rust iOS device lane (raw staticlib only)' \
@@ -612,6 +613,30 @@ watch-device: verify-ios-project
 		-destination 'generic/platform=watchOS' \
 		-allowProvisioningUpdates \
 		build
+
+# Add a newly paired Apple Watch's UDID to the developer portal so device
+# installs stop failing with "App could not be installed at this time".
+# The script discovers the watch via `xcrun devicectl list devices`
+# (override with WATCH_UDID=...) and runs the one-shot xcodebuild
+# invocation that triggers Xcode's provisioning device-registration
+# flow. The stamp file is keyed on the UDID, so re-running this target
+# is a no-op after the first success — pairing a new watch produces a
+# new UDID and re-triggers registration automatically.
+watch-register: xcgen
+	@watch_udid="$$($(IOS_SCRIPTS)/register-paired-watch.sh --print-udid)" || { \
+		echo "==> watch-register: no paired Apple Watch found (set WATCH_UDID=... to override)" >&2; \
+		exit 1; \
+	}; \
+	stamp="$(STAMPS)/watch-register-$$watch_udid.stamp"; \
+	if [ -f "$$stamp" ]; then \
+		echo "==> Apple Watch $$watch_udid already registered (stamp: $$stamp)"; \
+		echo "    Remove the stamp file to force re-registration."; \
+		exit 0; \
+	fi; \
+	WATCH_UDID="$$watch_udid" XCODE_CONFIG="$(XCODE_CONFIG)" WATCH_SCHEME="$(WATCH_SCHEME)" \
+		$(IOS_SCRIPTS)/register-paired-watch.sh && \
+	touch "$$stamp" && \
+	echo "==> Wrote stamp $$stamp"
 
 # Boot a matching watch simulator, build, install the .app and launch.
 watch-sim-run: watch-sim

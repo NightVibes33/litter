@@ -33,6 +33,22 @@ make ios-sim-fast      # fast simulator build
 make android-emulator-fast  # fast Android emulator build
 ```
 
+### Fresh Checkout Prerequisites
+
+After pairing a **new Apple Watch** with Xcode (Window → Devices and Simulators),
+run this once so CLI builds can install LitterWatch on it:
+
+```bash
+make watch-register
+```
+
+This registers the watch UDID with Apple's developer portal and refreshes the
+provisioning profile. Without it, `xcodebuild` succeeds but `devicectl ...
+install app` fails with "App could not be installed at this time". The target
+is idempotent (stamped per-UDID under `.build-stamps/`), so re-runs are no-ops
+until a new watch is paired. Override discovery with `WATCH_UDID=<udid>` if
+auto-detection fails.
+
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for prerequisites, full build options, TestFlight/App Store release, and SSH setup.
 
 ## Repository Layout
@@ -73,4 +89,5 @@ Litter is licensed under the GNU General Public License version 3 with an additi
 | `make rust-test` | Host `cargo test` for shared Rust crates |
 | `make bindings` | Regenerate UniFFI Swift + Kotlin bindings |
 | `make xcgen` | Regenerate Xcode project from `project.yml` |
+| `make watch-register` | Register a newly paired Apple Watch with the developer portal (idempotent) |
 | `make clean` | Remove all build artifacts |
