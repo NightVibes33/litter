@@ -12,11 +12,7 @@ struct HomeScreen: View {
     var body: some View {
         Group {
             if !store.hasData {
-                WatchEmptyState(
-                    icon: "iphone.gen3",
-                    title: store.isReachable ? "syncing…" : "open litter on iphone",
-                    subtitle: store.isReachable ? nil : "the watch shows what the phone knows."
-                )
+                skeletonPages
             } else if store.tasks.isEmpty {
                 WatchEmptyState(
                     icon: "sparkles",
@@ -28,6 +24,22 @@ struct HomeScreen: View {
             }
         }
         .containerBackground(theme.backgroundGradient, for: .navigation)
+    }
+
+    /// Cold-launch placeholder: three pulsing skeleton pages plus a final
+    /// hint page so the user knows the watch is waiting on iPhone.
+    private var skeletonPages: some View {
+        TabView {
+            ForEach(0..<3, id: \.self) { _ in
+                SkeletonTaskPlaceholder()
+            }
+            WatchEmptyState(
+                icon: store.isReachable ? "iphone.gen3" : "iphone.slash",
+                title: store.isReachable ? "syncing…" : "open litter on iphone",
+                subtitle: store.isReachable ? nil : "the watch shows what the phone knows."
+            )
+        }
+        .tabViewStyle(.verticalPage)
     }
 
     private var pagedTasks: some View {
