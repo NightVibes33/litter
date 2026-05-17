@@ -52,14 +52,17 @@ struct LitterMarkdownView: View {
     @State private var debugSettings = DebugSettings.shared
 
     var body: some View {
-        if debugSettings.enabled && debugSettings.disableMarkdown {
-            Text(markdown)
-                .font(.system(size: bodySize, design: .monospaced))
-                .foregroundColor(style == .system ? LitterTheme.textSecondary : LitterTheme.textPrimary)
-                .textSelection(.enabled)
-        } else {
-            renderedMarkdown(selectionEnabled: selectionEnabled)
+        Group {
+            if debugSettings.enabled && debugSettings.disableMarkdown {
+                Text(markdown)
+                    .font(.system(size: bodySize, design: .monospaced))
+                    .foregroundColor(style == .system ? LitterTheme.textSecondary : LitterTheme.textPrimary)
+                    .textSelection(.enabled)
+            } else {
+                renderedMarkdown(selectionEnabled: selectionEnabled)
+            }
         }
+        .modifier(LocalMarkdownFileLinkModifier())
     }
 
     @ViewBuilder
@@ -78,6 +81,175 @@ struct LitterMarkdownView: View {
             )
         }
     }
+}
+
+private struct LocalMarkdownFileLinkModifier: ViewModifier {
+    @State private var sharePayload: LocalMarkdownFileSharePayload?
+    @State private var alertMessage: String?
+    @State private var preparingPath: String?
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.openURL, OpenURLAction { url in
+                guard let path = LocalMarkdownFileLink.path(from: url) else {
+                    return .systemAction
+                }
+                open(path: path)
+                return .handled
+            })
+            .sheet(item: $sharePayload) { payload in
+                LocalMarkdownFileActivitySheet(urls: payload.urls)
+            }
+            .alert("File Link", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
+                Button("OK", role: .cancel) { alertMessage = nil }
+            } message: {
+                Text(alertMessage ?? "")
+            }
+            .overlay(alignment: .bottomLeading) {
+                if let preparingPath {
+                    Label("Preparing \(URL(fileURLWithPath: preparingPath).lastPathComponent)", systemImage: "doc")
+                        .litterFont(.caption, weight: .semibold)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(LitterTheme.surface.opacity(0.94), in: Capsule())
+                        .overlay(Capsule().stroke(LitterTheme.border.opacity(0.55), lineWidth: 0.8))
+                        .padding(.top, 8)
+                }
+            }
+    }
+
+    private func open(path: String) {
+        preparingPath = path
+        Task {
+            do {
+                let payload = try await LocalMarkdownFileLinkExporter.export(path: path)
+                await MainActor.run {
+                    preparingPath = nil
+                    sharePayload = payload
+                }
+            } catch {
+                await MainActor.run {
+                    preparingPath = nil
+                    alertMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+}
+
+private enum LocalMarkdownFileLink {
+    static func path(from url: URL) -> String? {
+        let scheme = url.scheme?.lowercased()
+        if let scheme, scheme != "file", scheme != "litter-file", scheme != "ish-file" {
+            return nil
+        }
+
+        let rawPath: String
+        if scheme == "litter-file" || scheme == "ish-file" {
+            rawPath = pathForCustomScheme(url)
+        } else if scheme == "file" {
+            rawPath = url.path
+        } else {
+            rawPath = url.absoluteString
+        }
+
+        return normalize(rawPath.removingPercentEncoding ?? rawPath)
+    }
+
+    private static func pathForCustomScheme(_ url: URL) -> String {
+        let path = url.path
+        guard let host = url.host, !host.isEmpty else { return path }
+        if path.isEmpty || path == "/" { return "/\(host)" }
+        return "/\(host)\(path)"
+    }
+
+    private static func normalize(_ raw: String) -> String? {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.hasPrefix("file://") {
+            value = URL(string: value)?.path ?? value
+        }
+        if value == "~" {
+            value = HomeAnchor.path
+        } else if value.hasPrefix("~/") {
+            value = HomeAnchor.path + String(value.dropFirst())
+        }
+        guard value.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: value).standardizedFileURL.path
+    }
+}
+
+private enum LocalMarkdownFileLinkExporter {
+    static func export(path: String) async throws -> LocalMarkdownFileSharePayload {
+        if let hostFile = hostFileURLIfAvailable(path: path) {
+            return LocalMarkdownFileSharePayload(urls: [hostFile])
+        }
+
+        let kind = try await fakefsKind(path: path)
+        if kind == "directory" {
+            let archivePath = "/tmp/litter-chat-link-\(UUID().uuidString).tar.gz"
+            let result = await IshFS.compress(path: path, destination: archivePath)
+            guard result.exitCode == 0 else {
+                throw NSError(domain: "LocalMarkdownFileLink", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not prepare \(path) for sharing: \(result.output)"])
+            }
+            defer { Task { _ = await IshFS.run("rm -f \(IshFS.shellQuote(archivePath))") } }
+            let name = URL(fileURLWithPath: path).lastPathComponent
+            let url = try await IshFS.copyFileToTemporaryURL(path: archivePath, suggestedFileName: "\(name.isEmpty ? "folder" : name).tar.gz")
+            return LocalMarkdownFileSharePayload(urls: [url])
+        }
+
+        guard kind == "file" else {
+            throw NSError(domain: "LocalMarkdownFileLink", code: 3, userInfo: [NSLocalizedDescriptionKey: "Only regular files and folders can be shared from chat."])
+        }
+
+        let url = try await IshFS.copyFileToTemporaryURL(
+            path: path,
+            suggestedFileName: URL(fileURLWithPath: path).lastPathComponent
+        )
+        return LocalMarkdownFileSharePayload(urls: [url])
+    }
+
+    private static func hostFileURLIfAvailable(path: String) -> URL? {
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return nil
+        }
+        return URL(fileURLWithPath: path)
+    }
+
+    private static func fakefsKind(path: String) async throws -> String {
+        let result = await IshFS.run("""
+        p=\(IshFS.shellQuote(path))
+        if [ -d "$p" ]; then
+          printf directory
+        elif [ -f "$p" ]; then
+          printf file
+        elif [ -e "$p" ]; then
+          printf special
+        else
+          exit 2
+        fi
+        """)
+        guard result.exitCode == 0 else {
+            throw NSError(domain: "LocalMarkdownFileLink", code: 1, userInfo: [NSLocalizedDescriptionKey: "No file exists at \(path)."])
+        }
+        return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct LocalMarkdownFileSharePayload: Identifiable {
+    let id = UUID()
+    let urls: [URL]
+}
+
+private struct LocalMarkdownFileActivitySheet: UIViewControllerRepresentable {
+    let urls: [URL]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: urls.map { $0 as Any }, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 struct InlineSelectableMarkdownMessage<Content: View>: View {
@@ -483,6 +655,7 @@ struct StreamingAssistantBubble: View {
                             selectionEnabled: !isStreaming
                         )
                         .transaction { $0.animation = nil }
+                        .modifier(LocalMarkdownFileLinkModifier())
                 } else {
                     LitterMarkdownView(
                         markdown: text,

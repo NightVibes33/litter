@@ -230,7 +230,7 @@ struct ConversationView: View {
                     activeThreadKey.threadId,
                     text.count
                 )
-                let payload = try makeComposerPayload(
+                let payload = try await makeComposerPayload(
                     text: text,
                     attachments: attachments,
                     skillMentions: skillMentions,
@@ -259,7 +259,7 @@ struct ConversationView: View {
         localSendScrollToken &+= 1
         taskBag.run {
             do {
-                let payload = try makeComposerPayload(
+                let payload = try await makeComposerPayload(
                     text: text,
                     attachments: [],
                     skillMentions: [],
@@ -363,7 +363,7 @@ struct ConversationView: View {
         attachments: [ConversationAttachment],
         skillMentions: [SkillMentionSelection],
         pluginMentions: [PluginMentionSelection]
-    ) throws -> AppComposerPayload {
+    ) async throws -> AppComposerPayload {
         var additionalInputs = skillMentions.map { mention in
             AppUserInput.skill(name: mention.name, path: AbsolutePath(value: mention.path))
         }
@@ -373,6 +373,7 @@ struct ConversationView: View {
             )
         }
         additionalInputs.append(contentsOf: ConversationAttachmentSupport.buildTurnInputs(attachments: attachments))
+        additionalInputs.append(contentsOf: await ConversationAttachmentSupport.buildLinkedTurnInputs(text: text))
         return AppComposerPayload(
             text: text,
             additionalInputs: additionalInputs,

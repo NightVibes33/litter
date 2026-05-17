@@ -96,6 +96,107 @@ enum ConversationAttachmentSupport {
         }
     }
 
+    static func buildLinkedTurnInputs(text: String) async -> [AppUserInput] {
+        var inputs: [AppUserInput] = []
+        for path in linkedFakefsPaths(in: text) {
+            if isLikelyImagePath(path), let imageInput = await linkedImageInput(path: path) {
+                inputs.append(imageInput)
+            } else {
+                inputs.append(.mention(name: displayName(for: path), path: path))
+            }
+        }
+        return inputs
+    }
+
+    static func linkedFakefsPaths(in text: String) -> [String] {
+        var paths: [String] = []
+        var seen = Set<String>()
+
+        func appendCandidate(_ raw: String) {
+            guard let path = normalizeLinkedFakefsPath(raw), !seen.contains(path) else { return }
+            seen.insert(path)
+            paths.append(path)
+        }
+
+        regexMatches(in: text, pattern: #"\[[^\]\n]{0,180}\]\(([^)\n]+)\)"#, captureGroup: 1)
+            .forEach(appendCandidate)
+        regexMatches(in: text, pattern: #"(?:litter-file|ish-file|file)://[^\s<>)\]]+"#, captureGroup: 0)
+            .forEach(appendCandidate)
+        regexMatches(in: text, pattern: #"(^|[\s(])((?:~/[^\s<>)\]]+)|/(?:root|mnt|tmp|etc|usr/local/bin)(?:/[^\s<>)\]]*)?)"#, captureGroup: 2)
+            .forEach(appendCandidate)
+
+        return paths
+    }
+
+    static func normalizeLinkedFakefsPath(_ raw: String) -> String? {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
+        while let last = value.last, ".,;:".contains(last) {
+            value.removeLast()
+        }
+
+        if let url = URL(string: value), let scheme = url.scheme?.lowercased() {
+            switch scheme {
+            case "litter-file", "ish-file":
+                value = pathForCustomFileScheme(url)
+            case "file":
+                value = url.path
+            default:
+                return nil
+            }
+        } else if value.hasPrefix("file://") {
+            value = String(value.dropFirst("file://".count))
+        }
+
+        value = value.removingPercentEncoding ?? value
+        if value == "~" {
+            value = HomeAnchor.path
+        } else if value.hasPrefix("~/") {
+            value = HomeAnchor.path + String(value.dropFirst())
+        }
+        guard value.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: value).standardizedFileURL.path
+    }
+
+    private static func linkedImageInput(path: String) async -> AppUserInput? {
+        let data: Data?
+        if FileManager.default.fileExists(atPath: path) {
+            data = try? Data(contentsOf: URL(fileURLWithPath: path))
+        } else {
+            data = try? await IshFS.readFileData(path: path, maxBytes: 32_000_000)
+        }
+        guard let data,
+              let image = loadImageData(data),
+              let prepared = prepareImage(image) else { return nil }
+        return prepared.userInput
+    }
+
+    private static func isLikelyImagePath(_ path: String) -> Bool {
+        isLikelyImage(URL(fileURLWithPath: path))
+    }
+
+    private static func displayName(for path: String) -> String {
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        return name.isEmpty ? path : name
+    }
+
+    private static func pathForCustomFileScheme(_ url: URL) -> String {
+        let path = url.path
+        guard let host = url.host, !host.isEmpty else { return path }
+        if path.isEmpty || path == "/" { return "/\(host)" }
+        return "/\(host)\(path)"
+    }
+
+    private static func regexMatches(in text: String, pattern: String, captureGroup: Int) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, range: range).compactMap { match in
+            guard match.numberOfRanges > captureGroup,
+                  let matchRange = Range(match.range(at: captureGroup), in: text) else { return nil }
+            return String(text[matchRange])
+        }
+    }
+
     static func prepareImage(_ image: UIImage) -> PreparedImageAttachment? {
         let imageForUpload = resizedImageIfNeeded(image, maxPixelSize: attachmentMaxPixelSize) ?? image
         guard let encodedImage = encodedImageData(for: imageForUpload) else { return nil }

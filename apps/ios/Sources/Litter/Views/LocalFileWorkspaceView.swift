@@ -469,6 +469,7 @@ struct LocalFileWorkspaceView: View {
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button("Copy Path", systemImage: "doc.on.doc") { copyPath(shortcut.path) }
+                            Button("Copy Chat Link", systemImage: "link") { copyChatLink(title: shortcut.title, path: shortcut.path) }
                             Button("Copy for Bot", systemImage: "bubble.left.and.text.bubble.right") { copyBotPath(shortcut.path) }
                             Button("Open Terminal Here", systemImage: "terminal") { openTerminal(at: shortcut.path) }
                             if shortcut.canRemove {
@@ -510,6 +511,7 @@ struct LocalFileWorkspaceView: View {
         Button("Preview", systemImage: "doc.text.magnifyingglass") { previewTarget = entry }
         Button("Inspector", systemImage: "info.circle") { inspectorTarget = entry }
         Button("Copy Path", systemImage: "doc.on.doc") { copyPath(entry.path) }
+        Button("Copy Chat Link", systemImage: "link") { copyChatLink(title: entry.name, path: entry.path) }
         Button("Copy for Bot", systemImage: "bubble.left.and.text.bubble.right") { copyBotMention(entry) }
         if let linkTarget = entry.linkTarget {
             Button("Copy Link Target", systemImage: "link") { copyPath(linkTarget) }
@@ -585,6 +587,22 @@ struct LocalFileWorkspaceView: View {
     private func copyBotPath(_ path: String) {
         UIPasteboard.general.string = "Use the file browser path \(path) as context."
         alertMessage = "Copied bot context."
+    }
+
+    private func copyChatLink(title: String, path: String) {
+        let escapedTitle = title
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "[", with: "\\[")
+            .replacingOccurrences(of: "]", with: "\\]")
+        UIPasteboard.general.string = "[\(escapedTitle)](\(chatFileLink(for: path)))"
+        alertMessage = "Copied chat file link."
+    }
+
+    private func chatFileLink(for path: String) -> String {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "#%[]()")
+        let encodedPath = path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
+        return "litter-file://\(encodedPath)"
     }
 
     private func copyBotMention(_ entry: LocalFileEntry) {
