@@ -26,6 +26,7 @@ on:
       - 'tools/scripts/load-sccache-aws-creds.sh'
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
+      - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
       - 'tools/scripts/verify-nyxian-source-import.sh'
@@ -394,6 +395,7 @@ jobs:
       - name: Verify private BuildKit assets are prepared
         run: |
           set -euo pipefail
+          export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="$(tools/scripts/buildkit-native-source-fingerprint.sh)"
           tools/scripts/verify-nyxian-buildkit-assets.sh apps/ios/Sources/Litter/Resources/BuildKitAssets
           python3 - <<'PY'
           import json
@@ -484,6 +486,7 @@ jobs:
       - name: Verify archived BuildKit asset payload
         run: |
           set -euo pipefail
+          export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="$(tools/scripts/buildkit-native-source-fingerprint.sh)"
           APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
           if [ -z "$APP_PATH" ]; then
             echo "::error::No .app found in archive" >&2
@@ -672,6 +675,7 @@ jobs:
 
           python3 - "$ASSET_ZIP" <<'PY'
           import json
+          import os
           import pathlib
           import sys
           import zipfile
@@ -695,6 +699,22 @@ jobs:
                   value = toolchain.get(key)
                   if value:
                       required.append(value)
+
+              expected_native_fingerprint = os.environ.get("LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT") or ""
+              actual_native_fingerprint = (
+                  manifest.get("nativeDriverSourceFingerprint")
+                  or (manifest.get("source") or {}).get("nativeDriverSourceFingerprint")
+                  or ""
+              )
+              if expected_native_fingerprint:
+                  if not actual_native_fingerprint:
+                      print("::error::LitterBuildKitAssets.zip manifest is missing nativeDriverSourceFingerprint")
+                      sys.exit(1)
+                  if actual_native_fingerprint != expected_native_fingerprint:
+                      print("::error::LitterBuildKitAssets.zip native driver source fingerprint mismatch")
+                      print(f"expected={expected_native_fingerprint}")
+                      print(f"actual={actual_native_fingerprint}")
+                      sys.exit(1)
 
               def has_entry(relative):
                   relative = relative.strip("/")

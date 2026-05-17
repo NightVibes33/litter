@@ -6,6 +6,10 @@ INPUT="${1:-${LITTER_BUILDKIT_ZIP:-${ROOT_DIR}/artifacts/buildkit/LitterBuildKit
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+if [[ -z "${LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT:-}" && -x "$ROOT_DIR/tools/scripts/buildkit-native-source-fingerprint.sh" ]]; then
+  export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="$("$ROOT_DIR/tools/scripts/buildkit-native-source-fingerprint.sh" 2>/dev/null || true)"
+fi
+
 if [[ ! -e "$INPUT" ]]; then
   echo "error: BuildKit asset input does not exist: $INPUT" >&2
   exit 1
@@ -45,7 +49,7 @@ if find "$ASSET_ROOT" -type l -print -quit | grep -q .; then
 fi
 
 python3 - "$ASSET_ROOT" <<'PYVERIFY'
-import hashlib, json, pathlib, sys
+import hashlib, json, os, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 manifest_path = root / "manifest.json"
 manifest = json.loads(manifest_path.read_text())
@@ -79,8 +83,25 @@ for rel, expected in (manifest.get("sha256") or {}).items():
         print(f"expected={expected}")
         print(f"actual={actual}")
         raise SystemExit(1)
+expected_native_fingerprint = os.environ.get("LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT") or ""
+actual_native_fingerprint = (
+    manifest.get("nativeDriverSourceFingerprint")
+    or (manifest.get("source") or {}).get("nativeDriverSourceFingerprint")
+    or ""
+)
+if expected_native_fingerprint:
+    if not actual_native_fingerprint:
+        print("error: BuildKit asset manifest is missing nativeDriverSourceFingerprint")
+        print("Rebuild and upload the private BuildKit asset pack from the current source.")
+        raise SystemExit(1)
+    if actual_native_fingerprint != expected_native_fingerprint:
+        print("error: BuildKit native driver source fingerprint mismatch")
+        print(f"expected={expected_native_fingerprint}")
+        print(f"actual={actual_native_fingerprint}")
+        raise SystemExit(1)
 print("BuildKit asset manifest is valid")
 print(f"bundle={manifest.get('bundleIdentifier')} sdk={manifest.get('sdkVersion')} swift={manifest.get('swiftVersion')}")
+print(f"nativeDriverSourceFingerprint={actual_native_fingerprint or 'missing'}")
 print("capabilities=" + ", ".join(manifest.get("capabilities", [])))
 PYVERIFY
 

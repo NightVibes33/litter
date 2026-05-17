@@ -12,6 +12,8 @@ SUPPORT_LIBS="${CORECOMPILER_SUPPORT_LIBS:-}"
 IPHONEOS_SDK_PATH="${IPHONEOS_SDK_PATH:-}"
 SDK_VERSION="${LITTER_BUILDKIT_SDK_VERSION:-}"
 SWIFT_VERSION="${LITTER_BUILDKIT_SWIFT_VERSION:-6.x}"
+SOURCE_COMMIT="${LITTER_BUILDKIT_SOURCE_COMMIT:-}"
+NATIVE_SOURCE_FINGERPRINT="${LITTER_BUILDKIT_NATIVE_SOURCE_FINGERPRINT:-}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: package-buildkit-assets.sh must run on macOS with Xcode available" >&2
@@ -23,6 +25,13 @@ if [[ -z "${IPHONEOS_SDK_PATH}" ]]; then
 fi
 if [[ -z "$SDK_VERSION" ]]; then
   SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+fi
+
+if [[ -z "$SOURCE_COMMIT" ]]; then
+  SOURCE_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || true)"
+fi
+if [[ -z "$NATIVE_SOURCE_FINGERPRINT" ]]; then
+  NATIVE_SOURCE_FINGERPRINT="$("$ROOT_DIR/tools/scripts/buildkit-native-source-fingerprint.sh")"
 fi
 
 require_path() {
@@ -150,13 +159,15 @@ normalize_buildkit_payload_symlinks
 prune_sdk_compiler_dylibs
 sign_buildkit_payload
 
-python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" <<'PY'
+python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" "$SOURCE_COMMIT" "$NATIVE_SOURCE_FINGERPRINT" <<'PY'
 import datetime, hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 sdk_version = sys.argv[2]
 swift_version = sys.argv[3]
 runner_rel = sys.argv[4]
 native_mode = sys.argv[5]
+source_commit = sys.argv[6]
+native_source_fingerprint = sys.argv[7]
 required = [
     "Toolchains/Nyxian/CoreCompiler.framework",
     "Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler",
@@ -182,6 +193,12 @@ manifest = {
     "createdAt": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
     "sdkVersion": sdk_version,
     "swiftVersion": swift_version,
+    "sourceCommit": source_commit or None,
+    "nativeDriverSourceFingerprint": native_source_fingerprint,
+    "source": {
+        "repositoryCommit": source_commit or None,
+        "nativeDriverSourceFingerprint": native_source_fingerprint,
+    },
     "minimumIOS": "18.0",
     "toolchain": {
         "name": "Nyxian/CoreCompiler",
