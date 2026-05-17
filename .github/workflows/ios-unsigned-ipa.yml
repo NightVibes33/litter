@@ -817,6 +817,7 @@ jobs:
           SOURCE_TAG="app-source"
           SOURCE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${SOURCE_TAG}/litter-altstore-source.json"
           APP_ICON_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png"
+          SOURCE_ICON_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${SOURCE_TAG}/ZYN-source-icon.heic"
           PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           if [ ! -s "$IPA_PATH" ]; then
@@ -842,7 +843,7 @@ jobs:
           This IPA is unsigned and must be signed by SideStore, AltStore, Feather, or another signing tool before installation.
           EOF
 
-          export VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE BUNDLE_ID RELEASE_URL IPA_DOWNLOAD_URL SOURCE_URL APP_ICON_URL PUBLISHED_AT BUILD_MODE
+          export VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE BUNDLE_ID RELEASE_URL IPA_DOWNLOAD_URL SOURCE_URL APP_ICON_URL SOURCE_ICON_URL PUBLISHED_AT BUILD_MODE
           python3 - <<'PY'
           import json
           import os
@@ -870,10 +871,10 @@ jobs:
               "altStoreSourceURL": os.environ["SOURCE_URL"],
           }
           source = {
-              "name": "Litter",
-              "identifier": "com.sigkitten.litter.source",
+              "name": "ZYN",
+              "identifier": "com.nightvibes33.zyn.source",
               "sourceURL": os.environ["SOURCE_URL"],
-              "iconURL": os.environ["APP_ICON_URL"],
+              "iconURL": os.environ["SOURCE_ICON_URL"],
               "developerName": "NightVibes33",
               "apps": [
                   {
