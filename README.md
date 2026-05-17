@@ -20,6 +20,8 @@ Litter is a native SwiftUI iOS app that talks to Codex through a shared Rust cli
 
 The repository also contains CI release lanes for iOS, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline for on-device Swift/iOS builds.
 
+Developer: [NightVibes33](https://github.com/NightVibes33).
+
 ## Screenshots
 
 <p align="center">

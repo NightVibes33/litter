@@ -751,7 +751,7 @@ jobs:
               raise SystemExit(f"::error::CURRENT_PROJECT_VERSION must be a numeric build, got {build!r}")
           PY
 
-          IPA_NAME="Litter-v${VERSION}-build.${BUILD}-iOS26-Unsigned.ipa"
+          IPA_NAME="Litter-v${BUILD}.ipa"
           /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
           IPA_PATH="build/unsigned-ipa/$IPA_NAME"
           IPA_SHA256="$(shasum -a 256 "$IPA_PATH" | awk '{print $1}')"
@@ -769,6 +769,7 @@ jobs:
               "bundleIdentifier": os.environ["BUNDLE_ID"],
               "version": os.environ["VERSION"],
               "build": os.environ["BUILD"],
+              "publicVersion": f"v{os.environ['BUILD']}",
               "commit": os.environ["GITHUB_SHA"],
               "buildMode": os.environ["BUILD_MODE"],
               "minimumIOSVersion": "18.0",
@@ -785,7 +786,7 @@ jobs:
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Litter-Unsigned-iOS26-SideStore-AltStore
+          name: Litter-v${{ github.run_number }}
           path: build/unsigned-ipa
           if-no-files-found: error
 
@@ -809,8 +810,8 @@ jobs:
           BUNDLE_ID="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["bundleIdentifier"])')"
           IPA_PATH="build/unsigned-ipa/$IPA_NAME"
           SHA_PATH="${IPA_PATH}.sha256"
-          RELEASE_TAG="ios-v${VERSION}-build.${BUILD}"
-          RELEASE_TITLE="Litter ${VERSION} (build ${BUILD})"
+          RELEASE_TAG="litter-v${BUILD}"
+          RELEASE_TITLE="Litter v${BUILD}"
           RELEASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
           IPA_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
           SOURCE_TAG="app-source"
@@ -823,15 +824,15 @@ jobs:
             exit 1
           fi
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $RELEASE_TAG already exists. Bump MARKETING_VERSION or use a newer numeric build." >&2
+            echo "::error::Release $RELEASE_TAG already exists. Re-run after GitHub assigns a newer numeric build." >&2
             exit 1
           fi
 
           cat > "$NOTES_PATH" <<EOF
           Unsigned Litter IPA for SideStore/AltStore re-signing.
 
-          - Version: ${VERSION}
-          - Build: ${BUILD}
+          - Public update: Litter v${BUILD}
+          - App version: ${VERSION}
           - Commit: ${GITHUB_SHA}
           - Branch: ${GITHUB_REF_NAME}
           - Build mode: ${BUILD_MODE}
@@ -873,6 +874,7 @@ jobs:
               "identifier": "com.sigkitten.litter.source",
               "sourceURL": os.environ["SOURCE_URL"],
               "iconURL": os.environ["APP_ICON_URL"],
+              "developerName": "NightVibes33",
               "apps": [
                   {
                       "name": "Litter",
@@ -885,7 +887,7 @@ jobs:
                       "tintColor": "06B6D4",
                       "versions": [
                           {
-                              "version": os.environ["VERSION"],
+                              "version": f"v{os.environ['BUILD']}",
                               "buildVersion": os.environ["BUILD"],
                               "date": os.environ["PUBLISHED_AT"],
                               "localizedDescription": notes,

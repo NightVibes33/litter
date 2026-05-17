@@ -29,17 +29,18 @@ struct AppVersion: Comparable, Equatable, Sendable {
     }
 
     var displayString: String {
-        "\(versionString) (build \(build))"
+        "v\(build)"
     }
 
     static func < (lhs: AppVersion, rhs: AppVersion) -> Bool {
+        if lhs.build != rhs.build { return lhs.build < rhs.build }
         let count = max(lhs.components.count, rhs.components.count)
         for index in 0..<count {
             let left = index < lhs.components.count ? lhs.components[index] : 0
             let right = index < rhs.components.count ? rhs.components[index] : 0
             if left != right { return left < right }
         }
-        return lhs.build < rhs.build
+        return false
     }
 
     private init(components: [Int], build: Int) {
@@ -54,6 +55,7 @@ struct AppUpdateManifest: Codable, Equatable, Sendable {
     var bundleIdentifier: String
     var version: String
     var build: String
+    var publicVersion: String?
     var commit: String?
     var buildMode: String?
     var minimumIOSVersion: String?
@@ -72,7 +74,8 @@ struct AppUpdateManifest: Codable, Equatable, Sendable {
     }
 
     var displayVersion: String {
-        appVersion?.displayString ?? "\(version) (build \(build))"
+        if let publicVersion, !publicVersion.isEmpty { return publicVersion }
+        return appVersion?.displayString ?? "v\(build)"
     }
 
     var normalizedSHA256: String? {
@@ -322,6 +325,7 @@ final class AppUpdateStore: ObservableObject {
         var firstIncomparable: Candidate?
 
         for release in releases where !release.draft {
+            guard publicBuildNumber(from: release) != nil else { continue }
             guard let manifestAsset = release.asset(named: manifestAssetName), let manifestURL = URL(string: manifestAsset.browserDownloadURL) else {
                 continue
             }
@@ -345,6 +349,20 @@ final class AppUpdateStore: ObservableObject {
         }
 
         return best ?? firstIncomparable
+    }
+
+    private func publicBuildNumber(from release: GitHubRelease) -> Int? {
+        let values = [release.tagName, release.name ?? ""]
+        for rawValue in values {
+            let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            for prefix in ["litter-v", "litter v", "litter-"] {
+                guard value.hasPrefix(prefix) else { continue }
+                let suffix = value.dropFirst(prefix.count)
+                let digits = suffix.prefix { $0.isNumber }
+                if let number = Int(digits), number > 0 { return number }
+            }
+        }
+        return nil
     }
 
     private func enrich(_ manifest: inout AppUpdateManifest, using release: GitHubRelease) {
