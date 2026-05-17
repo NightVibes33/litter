@@ -862,7 +862,7 @@ jobs:
       - name: Publish unsigned IPA release asset
         if: success()
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
         run: |
           set -euo pipefail
@@ -902,11 +902,6 @@ jobs:
             exit 1
           fi
           cp "$SOURCE_ICON_PATH" "$SOURCE_ICON_DEST"
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $RELEASE_TAG already exists. Re-run after GitHub assigns a newer release version." >&2
-            exit 1
-          fi
-
           cat > "$NOTES_PATH" <<EOF
           Unsigned Litter IPA for SideStore/AltStore re-signing.
 
@@ -991,16 +986,31 @@ jobs:
           Path("build/unsigned-ipa/litter-altstore-source.json").write_text(json.dumps(source, indent=2) + "\n")
           PY
 
-          gh release create "$RELEASE_TAG" \
-            "$IPA_PATH" \
-            "$SHA_PATH" \
-            "$METADATA_PATH" \
-            "$UPDATE_PATH" \
-            "$SOURCE_PATH" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "$RELEASE_TITLE" \
-            --notes-file "$NOTES_PATH"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              "$IPA_PATH" \
+              "$SHA_PATH" \
+              "$METADATA_PATH" \
+              "$UPDATE_PATH" \
+              "$SOURCE_PATH" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$NOTES_PATH"
+          else
+            gh release create "$RELEASE_TAG" \
+              "$IPA_PATH" \
+              "$SHA_PATH" \
+              "$METADATA_PATH" \
+              "$UPDATE_PATH" \
+              "$SOURCE_PATH" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$NOTES_PATH"
+          fi
 
           if gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" --repo "$GITHUB_REPOSITORY" --clobber
