@@ -1,0 +1,38 @@
+{
+  "name": "ZYN",
+  "identifier": "com.nightvibes33.zyn.source",
+  "sourceURL": "https://raw.githubusercontent.com/NightVibes33/litter/app-source-live/litter-altstore-source.json",
+  "iconURL": "https://raw.githubusercontent.com/NightVibes33/litter/app-source-live/ZYN-source-icon.heic",
+  "developerName": "NightVibes33",
+  "apps": [
+    {
+      "name": "Litter",
+      "bundleIdentifier": "com.sigkitten.litter",
+      "developerName": "NightVibes33",
+      "iconURL": "https://raw.githubusercontent.com/NightVibes33/litter/79ac499dc9402c33cd5fce4f978b893908dfe05d/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png",
+      "subtitle": "On-device Codex runtime for iPhone",
+      "localizedDescription": "Litter for sideloaded iOS installs.",
+      "category": "developer",
+      "tintColor": "06B6D4",
+      "versions": [
+        {
+          "version": "v118",
+          "buildVersion": "118",
+          "date": "2026-05-17T05:51:21Z",
+          "localizedDescription": "Unsigned Litter IPA for SideStore/AltStore re-signing.\n\n- Public update: Litter v118\n- App version: 1.5.0\n- Commit: 79ac499dc9402c33cd5fce4f978b893908dfe05d\n- Branch: merge/upstream-20260513\n- Build mode: fast-device\n- SHA-256: 60e7abc8f3b01ec69be2fc69adc9d551cec0529bbb0a5b9afe98b1811dc73254\n- Workflow run: https://github.com/NightVibes33/litter/actions/runs/25982167949\n\nThis IPA is unsigned and must be signed by SideStore, AltStore, Feather, or another signing tool before installation.\n",
+          "downloadURL": "https://github.com/NightVibes33/litter/releases/download/litter-v118/Litter-v118.ipa",
+          "size": 418429695,
+          "minOSVersion": "18.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [
+          "aps-environment",
+          "com.apple.developer.carplay-voice-based-conversation",
+          "com.apple.security.application-groups"
+        ],
+        "privacy": {}
+      }
+    }
+  ]
+}

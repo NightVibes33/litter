@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "Litter",
+  "bundleIdentifier": "com.sigkitten.litter",
+  "version": "1.5.0",
+  "build": "118",
+  "commit": "79ac499dc9402c33cd5fce4f978b893908dfe05d",
+  "buildMode": "fast-device",
+  "minimumIOSVersion": "18.0",
+  "ipaAssetName": "Litter-v118.ipa",
+  "ipaDownloadURL": "https://github.com/NightVibes33/litter/releases/download/litter-v118/Litter-v118.ipa",
+  "sha256": "60e7abc8f3b01ec69be2fc69adc9d551cec0529bbb0a5b9afe98b1811dc73254",
+  "size": 418429695,
+  "publishedAt": "2026-05-17T05:51:21Z",
+  "releaseNotes": "Unsigned Litter IPA for SideStore/AltStore re-signing.\n\n- Public update: Litter v118\n- App version: 1.5.0\n- Commit: 79ac499dc9402c33cd5fce4f978b893908dfe05d\n- Branch: merge/upstream-20260513\n- Build mode: fast-device\n- SHA-256: 60e7abc8f3b01ec69be2fc69adc9d551cec0529bbb0a5b9afe98b1811dc73254\n- Workflow run: https://github.com/NightVibes33/litter/actions/runs/25982167949\n\nThis IPA is unsigned and must be signed by SideStore, AltStore, Feather, or another signing tool before installation.\n",
+  "releaseURL": "https://github.com/NightVibes33/litter/releases/tag/litter-v118",
+  "iconURL": "https://raw.githubusercontent.com/NightVibes33/litter/79ac499dc9402c33cd5fce4f978b893908dfe05d/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png",
+  "sideStoreSourceURL": "https://raw.githubusercontent.com/NightVibes33/litter/app-source-live/litter-altstore-source.json",
+  "altStoreSourceURL": "https://raw.githubusercontent.com/NightVibes33/litter/app-source-live/litter-altstore-source.json"
+}
