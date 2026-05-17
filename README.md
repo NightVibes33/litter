@@ -102,9 +102,30 @@ The workflow at `.github/workflows/ios-unsigned-ipa.yml` builds a real-device un
 
 Litter is under active development and a lot of features are in flight. PRs are welcome but will likely only be merged if they're small and target a specific problem — sweeping refactors and new features tend to collide with work already underway. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening one.
 
-## Credits And Contributors
+## License
 
-Litter began in Daniel Nakov's original upstream repository, `dnakov/litter`, and this fork continues that work under `NightVibes33/litter`. Credits are maintained in detail in [CONTRIBUTORS.md](CONTRIBUTORS.md), including upstream PRs accepted into Daniel's original repo, direct upstream commit authors, and fork-only contributors.
+Litter is open source, but it is not MIT licensed. The project is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and Google Play distribution. See [LICENSE](LICENSE). Third-party source imports and submodules keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Make Targets
+
+| Target | Description |
+|---|---|
+| `make ios-device-fast` | Fast device build (raw staticlib) |
+| `make ios-sim-fast` | Fast simulator build |
+| `make ios` | Full package lane (device + sim + xcframework) |
+| `make rust-check` | Host `cargo check` for shared Rust crates |
+| `make rust-test` | Host `cargo test` for shared Rust crates |
+| `make bindings` | Regenerate UniFFI Swift bindings |
+| `make xcgen` | Regenerate Xcode project from `project.yml` |
+| `make nyxian-vendor` | Refresh the focused upstream Nyxian/LLVM-On-iOS BuildKit source import while preserving Litter's bridge |
+| `make nyxian-source-verify` | Verify committed Nyxian/LiveContainer/ZSign/OpenSSL source import readiness |
+| `make nyxian-buildkit-assets` | Build and package private Nyxian BuildKit assets on macOS |
+| `make nyxian-buildkit-assets-verify` | Validate the private BuildKit asset ZIP or folder |
+| `make clean` | Remove all build artifacts |
+
+## Contributors
+
+Litter began in Daniel Nakov's original upstream repository, `dnakov/litter`, and this fork continues that work under `NightVibes33/litter`. Full evidence-backed credits are maintained in [CONTRIBUTORS.md](CONTRIBUTORS.md), including upstream PRs accepted into Daniel's original repo, direct upstream commit authors, and fork-only contributors.
 
 | Contributor | Main credited work |
 |---|---|
@@ -132,24 +153,3 @@ Litter began in Daniel Nakov's original upstream repository, `dnakov/litter`, an
 | zulfaza | `~/.opencode/bin` PATH probing in SSH profile initialization. |
 | Benjamin Western | Pi over Alleycat transport baseline improvements. |
 | sliced-paraiba | POSIX command portability using `/usr/bin/env`. |
-
-## License
-
-Litter is open source, but it is not MIT licensed. The project is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and Google Play distribution. See [LICENSE](LICENSE). Third-party source imports and submodules keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-## Make Targets
-
-| Target | Description |
-|---|---|
-| `make ios-device-fast` | Fast device build (raw staticlib) |
-| `make ios-sim-fast` | Fast simulator build |
-| `make ios` | Full package lane (device + sim + xcframework) |
-| `make rust-check` | Host `cargo check` for shared Rust crates |
-| `make rust-test` | Host `cargo test` for shared Rust crates |
-| `make bindings` | Regenerate UniFFI Swift bindings |
-| `make xcgen` | Regenerate Xcode project from `project.yml` |
-| `make nyxian-vendor` | Refresh the focused upstream Nyxian/LLVM-On-iOS BuildKit source import while preserving Litter's bridge |
-| `make nyxian-source-verify` | Verify committed Nyxian/LiveContainer/ZSign/OpenSSL source import readiness |
-| `make nyxian-buildkit-assets` | Build and package private Nyxian BuildKit assets on macOS |
-| `make nyxian-buildkit-assets-verify` | Validate the private BuildKit asset ZIP or folder |
-| `make clean` | Remove all build artifacts |
