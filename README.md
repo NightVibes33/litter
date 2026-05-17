@@ -102,9 +102,24 @@ The workflow at `.github/workflows/ios-unsigned-ipa.yml` builds a real-device un
 
 Litter is under active development and a lot of features are in flight. PRs are welcome but will likely only be merged if they're small and target a specific problem — sweeping refactors and new features tend to collide with work already underway. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening one.
 
+## Credits And Contributors
+
+Litter started in Daniel Nakov's original `dnakov/litter` repository and this fork continues that work under `NightVibes33/litter`. The detailed per-contributor credit list is maintained in [CONTRIBUTORS.md](CONTRIBUTORS.md), including the accepted upstream contributors whose work was merged into Daniel's original repository and the fork-side contributors who added BuildKit, local model, unsigned IPA, and distribution work here.
+
+High-level credits:
+
+| Contributor | Main areas credited |
+|---|---|
+| Daniel Nakov (`dnakov`) | Original creator/upstream maintainer; iOS and Android app architecture, Rust/Codex bridge, SSH/local runtime, mobile UI, releases, and `kittylitter`/Alleycat work. |
+| NightVibes33 | Fork maintenance and distribution work; BuildKit asset CI/downloads, focused Nyxian import work, local model workflow polish, model import/download UX, and file workspace fixes. |
+| Zyn | Unsigned IPA path, iOS skills bridge, local model runtime and UI, native llama/TurboQuant integration, fakefs workspace work, and on-device Swift BuildKit integration. |
+| Codex | AI-assisted implementation commits for local model tooling, BuildKit hardening, diagnostics, local file browser/runtime UX, CI, and xcodebuild/Swift toolchain compatibility. |
+
+The full accepted contributor list includes Maky, Franklin, sigkitten, tabrobotics, Kaynan Sampaio de Camargo, Dixith-dev, eagle.one/onegaop, kkellyoffical, Coy Geek, researchoor, Sina Rabiei, Paul Pincente, Jason Penilla, Thomas Zarebczan, frixa/frixaco, ryanchen01, shuv, zulfaza, Benjamin Western, and sliced-paraiba, with their specific contributions documented in [CONTRIBUTORS.md](CONTRIBUTORS.md).
+
 ## License
 
-Litter is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and iOS distribution. See [LICENSE](LICENSE).
+Litter is open source, but it is not MIT licensed. The project is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and Google Play distribution. See [LICENSE](LICENSE). Third-party source imports and submodules keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Make Targets
 
