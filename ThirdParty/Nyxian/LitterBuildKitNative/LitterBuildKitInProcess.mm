@@ -128,12 +128,36 @@ static NSArray<NSString *> *LBINormalizedLinkerArguments(NSArray<NSString *> *ar
 {
     NSMutableArray<NSString *> *linkerArguments = [NSMutableArray array];
     BOOL normalized = NO;
+    BOOL rewriteSysrootValue = NO;
 
     for(NSString *argument in arguments ?: @[])
     {
+        if(rewriteSysrootValue)
+        {
+            [linkerArguments addObject:argument];
+            rewriteSysrootValue = NO;
+            continue;
+        }
+
         if([argument hasPrefix:@"-fuse-ld="])
         {
             normalized = YES;
+            continue;
+        }
+
+        if([argument isEqualToString:@"-isysroot"] || [argument isEqualToString:@"--sysroot"])
+        {
+            normalized = YES;
+            [linkerArguments addObject:@"-syslibroot"];
+            rewriteSysrootValue = YES;
+            continue;
+        }
+
+        if([argument hasPrefix:@"--sysroot="])
+        {
+            normalized = YES;
+            [linkerArguments addObject:@"-syslibroot"];
+            [linkerArguments addObject:[argument substringFromIndex:10]];
             continue;
         }
 
@@ -147,9 +171,28 @@ static NSArray<NSString *> *LBINormalizedLinkerArguments(NSArray<NSString *> *ar
         {
             normalized = YES;
             NSString *payload = [argument substringFromIndex:4];
+            BOOL rewritePayloadSysrootValue = NO;
             for(NSString *part in [payload componentsSeparatedByString:@","])
             {
                 if(part.length == 0 || [part isEqualToString:@"-Wl"]) { continue; }
+                if(rewritePayloadSysrootValue)
+                {
+                    [linkerArguments addObject:part];
+                    rewritePayloadSysrootValue = NO;
+                    continue;
+                }
+                if([part isEqualToString:@"-isysroot"] || [part isEqualToString:@"--sysroot"])
+                {
+                    [linkerArguments addObject:@"-syslibroot"];
+                    rewritePayloadSysrootValue = YES;
+                    continue;
+                }
+                if([part hasPrefix:@"--sysroot="])
+                {
+                    [linkerArguments addObject:@"-syslibroot"];
+                    [linkerArguments addObject:[part substringFromIndex:10]];
+                    continue;
+                }
                 [linkerArguments addObject:part];
             }
         }
