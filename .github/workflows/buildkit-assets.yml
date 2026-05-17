@@ -130,7 +130,7 @@ jobs:
           brew list ninja >/dev/null 2>&1 || brew install ninja
 
       - name: Restore finished BuildKit asset cache
-        if: steps.existing_assets.outputs.available != 'true'
+        if: steps.existing_assets.outputs.available != 'true' && inputs.force_rebuild != true
         id: buildkit_cache
         uses: actions/cache@v4
         with:
