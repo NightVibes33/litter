@@ -12,6 +12,8 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
         var nativeDriverMode: String?
         var supportLibraries: String
         var sdkPath: String
+        var clangResourceDir: String?
+        var cxxStandardLibraryIncludeDir: String?
 
         enum CodingKeys: String, CodingKey {
             case name
@@ -21,6 +23,8 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             case nativeDriverMode
             case supportLibraries
             case sdkPath
+            case clangResourceDir
+            case cxxStandardLibraryIncludeDir
         }
 
         init(
@@ -30,7 +34,9 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             nativeRunner: String?,
             nativeDriverMode: String? = "runner",
             supportLibraries: String,
-            sdkPath: String
+            sdkPath: String,
+            clangResourceDir: String? = nil,
+            cxxStandardLibraryIncludeDir: String? = nil
         ) {
             self.name = name
             self.coreCompilerFramework = coreCompilerFramework
@@ -39,6 +45,8 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             self.nativeDriverMode = nativeDriverMode
             self.supportLibraries = supportLibraries
             self.sdkPath = sdkPath
+            self.clangResourceDir = clangResourceDir
+            self.cxxStandardLibraryIncludeDir = cxxStandardLibraryIncludeDir
         }
 
         init(from decoder: Decoder) throws {
@@ -50,6 +58,8 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             nativeDriverMode = try container.decodeIfPresent(String.self, forKey: .nativeDriverMode) ?? "runner"
             supportLibraries = try container.decode(String.self, forKey: .supportLibraries)
             sdkPath = try container.decode(String.self, forKey: .sdkPath)
+            clangResourceDir = try container.decodeIfPresent(String.self, forKey: .clangResourceDir)
+            cxxStandardLibraryIncludeDir = try container.decodeIfPresent(String.self, forKey: .cxxStandardLibraryIncludeDir)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -61,6 +71,8 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             try container.encodeIfPresent(nativeDriverMode, forKey: .nativeDriverMode)
             try container.encode(supportLibraries, forKey: .supportLibraries)
             try container.encode(sdkPath, forKey: .sdkPath)
+            try container.encodeIfPresent(clangResourceDir, forKey: .clangResourceDir)
+            try container.encodeIfPresent(cxxStandardLibraryIncludeDir, forKey: .cxxStandardLibraryIncludeDir)
         }
     }
 
@@ -69,6 +81,8 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
     var createdAt: String?
     var sdkVersion: String
     var swiftVersion: String?
+    var swiftCompatibilityVersion: String?
+    var sdkSwiftVersion: String?
     var minimumIOS: String?
     var toolchain: Toolchain
     var capabilities: [String]
@@ -199,6 +213,8 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var nativeRunnerInstalled: Bool
     var supportLibrariesInstalled: Bool
     var sdkInstalled: Bool
+    var clangResourceDirInstalled: Bool
+    var cxxStandardLibraryHeadersInstalled: Bool
     var commandShimsInstalled: Bool
     var requestMonitorRunning: Bool
     var toolchainRoot: String
@@ -228,12 +244,14 @@ struct LitterBuildKitStatus: Equatable, Sendable {
         if nativeDriverInstalled && !nativeDriverLoadable { lines.append("loadable native driver with litter_buildkit_run_json") }
         if !nativeRunnerInstalled { lines.append("Nyxian BuildKit runner declared by the asset manifest") }
         if !supportLibrariesInstalled { lines.append("CoreCompilerSupportLibs") }
-        if !sdkInstalled { lines.append("iPhoneOS26.4.sdk/SDKSettings.plist") }
+        if !sdkInstalled { lines.append("iPhoneOS SDKSettings.plist") }
+        if !clangResourceDirInstalled { lines.append("Clang resource directory with builtin headers") }
+        if !cxxStandardLibraryHeadersInstalled { lines.append("libc++ standard library headers") }
         return lines
     }
 
     var isReadyForNativeBuilds: Bool {
-        nativeCompilerAssetsInstalled && nativeDriverLoadable && nativeRunnerInstalled && supportLibrariesInstalled && sdkInstalled
+        nativeCompilerAssetsInstalled && nativeDriverLoadable && nativeRunnerInstalled && supportLibrariesInstalled && sdkInstalled && clangResourceDirInstalled && cxxStandardLibraryHeadersInstalled
     }
 
     var readinessTitle: String {
@@ -430,6 +448,8 @@ actor LitterBuildKit {
             nativeRunnerInstalled: Self.nativeRunnerInstalled,
             supportLibrariesInstalled: Self.supportLibrariesInstalled,
             sdkInstalled: Self.sdkInstalled,
+            clangResourceDirInstalled: Self.clangResourceDirInstalled,
+            cxxStandardLibraryHeadersInstalled: Self.cxxStandardLibraryHeadersInstalled,
             commandShimsInstalled: shimsInstalled,
             requestMonitorRunning: monitorTask != nil,
             toolchainRoot: Self.toolchainRoot.path,
@@ -662,47 +682,184 @@ actor LitterBuildKit {
     }
 
     private func swiftSelfTest(cwd: String, buildDir: String) async -> BuildKitCommandResult {
-        let sourcePath = "\(buildDir)/litter-swift-selftest.swift"
-        let outputPath = "\(buildDir)/litter-swift-selftest"
-        let source = """
-        print("Swift is running on device")
-        """
+        let root = "\(buildDir)/toolchain-selftest"
+        let swiftPath = "\(root)/hello.swift"
+        let swiftOutputPath = "\(root)/hello-swift"
+        let uiSwiftPath = "\(root)/UIKitSmoke.swift"
+        let cPath = "\(root)/hello.c"
+        let cxxPath = "\(root)/hello.cpp"
+        let objcPath = "\(root)/hello.m"
+        let objcxxPath = "\(root)/hello.mm"
+        let projectDir = "\(root)/HelloUIKit"
+        let projectSources = "\(projectDir)/Sources"
+        let projectManifest = "\(projectDir)/LitterBuild.json"
+        var artifacts: [NativeDriverArtifact] = []
         var log = """
-        Litter Swift toolchain self-test
-        Source: \(sourcePath)
-        Output: \(outputPath)
-        Checks: native driver loadability, CoreCompiler typecheck, iOS Swift compile, fakefs artifact export.
+        Litter full iOS toolchain self-test
+        Root: \(root)
+        Checks: Swift typecheck, Swift compile, UIKit import, C, C++, Objective-C, Objective-C++, unsigned UIKit IPA packaging.
 
         """
+
+        func record(_ label: String, _ result: BuildKitCommandResult) -> Bool {
+            log += "\n== \(label) ==\n"
+            log += "status=\(result.status) exitCode=\(result.exitCode)\n"
+            log += result.log
+            artifacts.append(contentsOf: result.artifacts)
+            return result.exitCode == 0
+        }
 
         do {
-            try await IshFS.writeTextFile(path: sourcePath, text: source)
-        } catch {
-            log += "Could not write self-test source into fakefs: \(error.localizedDescription)\n"
-            return BuildKitCommandResult(exitCode: 73, status: "swift-selftest-setup-failed", log: log)
-        }
+            _ = await IshFS.run("rm -rf \(IshFS.shellQuote(root)) && mkdir -p \(IshFS.shellQuote(root)) \(IshFS.shellQuote(projectSources))")
+            try await IshFS.writeTextFile(path: swiftPath, text: """
+            print("Swift is running on device")
+            """)
+            try await IshFS.writeTextFile(path: uiSwiftPath, text: """
+            import UIKit
 
-        let check = await swiftCheck(args: sourcePath, cwd: cwd, buildDir: buildDir)
-        log += "Typecheck result: \(check.status) exitCode=\(check.exitCode)\n\n"
-        log += check.log
-        guard check.exitCode == 0 else {
-            log += "\nSelf-test failed before compile; native Swift typecheck did not complete.\n"
-            return BuildKitCommandResult(exitCode: check.exitCode, status: "swift-selftest-failed", log: log, artifacts: check.artifacts)
-        }
-
-        let compile = await swiftcCompile(args: "\(sourcePath) -o \(outputPath)", cwd: cwd, buildDir: buildDir, compatibilityName: "litter-swift-selftest")
-        log += "\nCompile result: \(compile.status) exitCode=\(compile.exitCode)\n\n"
-        log += compile.log
-        if compile.exitCode == 0 {
-            guard await IshFS.exists(path: outputPath) else {
-                log += "\nSelf-test failed after native Swift compile: compiled artifact was not exported back into fakefs at \(outputPath).\n"
-                return BuildKitCommandResult(exitCode: 74, status: "swift-selftest-export-failed", log: log, artifacts: compile.artifacts)
+            final class LitterUIKitSmokeViewController: UIViewController {
+                override func viewDidLoad() {
+                    super.viewDidLoad()
+                    view.backgroundColor = .systemBackground
+                }
             }
-            log += "\nSelf-test passed: native Swift typecheck, iOS compile, and fakefs artifact export completed. The produced binary is an iOS artifact and is not meant to execute inside iSH.\n"
-            return BuildKitCommandResult(exitCode: 0, status: "swift-selftest-ok", log: log, artifacts: compile.artifacts)
+            """)
+            try await IshFS.writeTextFile(path: cPath, text: """
+            #include <stdint.h>
+            int litter_c_add(int a, int b) { return a + b; }
+            """)
+            try await IshFS.writeTextFile(path: cxxPath, text: """
+            #include <vector>
+            int litter_cxx_sum(void) {
+                std::vector<int> values = {1, 2, 3};
+                int total = 0;
+                for (int value : values) { total += value; }
+                return total;
+            }
+            """)
+            try await IshFS.writeTextFile(path: objcPath, text: """
+            #import <Foundation/Foundation.h>
+            @interface LitterObjCSmoke : NSObject
+            @end
+            @implementation LitterObjCSmoke
+            @end
+            int litter_objc_smoke(void) {
+                @autoreleasepool { return (int)NSStringFromClass([LitterObjCSmoke class]).length; }
+            }
+            """)
+            try await IshFS.writeTextFile(path: objcxxPath, text: """
+            #import <Foundation/Foundation.h>
+            #include <vector>
+            int litter_objcxx_smoke(void) {
+                std::vector<int> values = {1, 2, 3};
+                @autoreleasepool { return (int)(values.size() + @"ok".length); }
+            }
+            """)
+            try await IshFS.writeTextFile(path: "\(projectSources)/App.swift", text: """
+            import UIKit
+
+            @main
+            final class AppDelegate: UIResponder, UIApplicationDelegate {
+                var window: UIWindow?
+
+                func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+                    let window = UIWindow(frame: UIScreen.main.bounds)
+                    let viewController = UIViewController()
+                    viewController.view.backgroundColor = .systemBackground
+                    let label = UILabel()
+                    label.text = "Hello from Litter"
+                    label.font = .systemFont(ofSize: 28, weight: .semibold)
+                    label.textAlignment = .center
+                    label.translatesAutoresizingMaskIntoConstraints = false
+                    viewController.view.addSubview(label)
+                    NSLayoutConstraint.activate([
+                        label.centerXAnchor.constraint(equalTo: viewController.view.centerXAnchor),
+                        label.centerYAnchor.constraint(equalTo: viewController.view.centerYAnchor)
+                    ])
+                    window.rootViewController = viewController
+                    self.window = window
+                    window.makeKeyAndVisible()
+                    return true
+                }
+            }
+            """)
+            try await IshFS.writeTextFile(path: projectManifest, text: """
+            {
+              "schemaVersion": 1,
+              "name": "HelloUIKit",
+              "bundleIdentifier": "com.sigkitten.litter.selftest.hellouikit",
+              "deploymentTarget": "18.0",
+              "sdk": "iphoneos",
+              "product": "app",
+              "entrypoint": "Sources/App.swift",
+              "sources": ["Sources"],
+              "resources": [],
+              "output": "HelloUIKit.ipa"
+            }
+            """)
+        } catch {
+            log += "Could not write self-test sources into fakefs: \(error.localizedDescription)\n"
+            return BuildKitCommandResult(exitCode: 73, status: "toolchain-selftest-setup-failed", log: log, artifacts: artifacts)
         }
-        log += "\nSelf-test failed during native Swift compile.\n"
-        return BuildKitCommandResult(exitCode: compile.exitCode, status: "swift-selftest-failed", log: log, artifacts: compile.artifacts)
+
+        let current = await status()
+        guard current.isReadyForNativeBuilds else {
+            log += "Blocked: BuildKit is not ready for native iOS builds.\n"
+            log += Self.missingAssetSummary(current)
+            return BuildKitCommandResult(exitCode: 78, status: "toolchain-missing", log: log, artifacts: artifacts)
+        }
+
+        let swiftCheckResult = await swiftCheck(args: swiftPath, cwd: cwd, buildDir: buildDir)
+        guard record("Swift typecheck", swiftCheckResult) else {
+            return BuildKitCommandResult(exitCode: swiftCheckResult.exitCode, status: "toolchain-selftest-failed", log: log, artifacts: artifacts)
+        }
+
+        let swiftCompileResult = await swiftcCompile(args: "\(swiftPath) -o \(swiftOutputPath)", cwd: cwd, buildDir: buildDir, compatibilityName: "litter-swift-selftest")
+        guard record("Swift compile", swiftCompileResult) else {
+            return BuildKitCommandResult(exitCode: swiftCompileResult.exitCode, status: "toolchain-selftest-failed", log: log, artifacts: artifacts)
+        }
+        guard await IshFS.exists(path: swiftOutputPath) else {
+            log += "\nSwift compile did not export the fakefs artifact at \(swiftOutputPath).\n"
+            return BuildKitCommandResult(exitCode: 74, status: "toolchain-selftest-export-failed", log: log, artifacts: artifacts)
+        }
+
+        let uiCheckResult = await swiftCheck(args: uiSwiftPath, cwd: cwd, buildDir: buildDir)
+        guard record("Swift UIKit import", uiCheckResult) else {
+            return BuildKitCommandResult(exitCode: uiCheckResult.exitCode, status: "toolchain-selftest-failed", log: log, artifacts: artifacts)
+        }
+
+        let cResult = await clangCompatibility(command: "clang", args: "\(cPath) -c -o \(root)/hello-c.o", cwd: cwd, buildDir: buildDir)
+        guard record("C compile", cResult) else {
+            return BuildKitCommandResult(exitCode: cResult.exitCode, status: "toolchain-selftest-failed", log: log, artifacts: artifacts)
+        }
+
+        let cxxResult = await clangCompatibility(command: "clang++", args: "\(cxxPath) -std=c++17 -c -o \(root)/hello-cxx.o", cwd: cwd, buildDir: buildDir)
+        guard record("C++ compile", cxxResult) else {
+            return BuildKitCommandResult(exitCode: cxxResult.exitCode, status: "toolchain-selftest-failed", log: log, artifacts: artifacts)
+        }
+
+        let objcResult = await clangCompatibility(command: "clang", args: "\(objcPath) -fobjc-arc -c -o \(root)/hello-objc.o", cwd: cwd, buildDir: buildDir)
+        guard record("Objective-C compile", objcResult) else {
+            return BuildKitCommandResult(exitCode: objcResult.exitCode, status: "toolchain-selftest-failed", log: log, artifacts: artifacts)
+        }
+
+        let objcxxResult = await clangCompatibility(command: "clang++", args: "\(objcxxPath) -std=c++17 -fobjc-arc -c -o \(root)/hello-objcxx.o", cwd: cwd, buildDir: buildDir)
+        guard record("Objective-C++ compile", objcxxResult) else {
+            return BuildKitCommandResult(exitCode: objcxxResult.exitCode, status: "toolchain-selftest-failed", log: log, artifacts: artifacts)
+        }
+
+        let ipaResult = await nativeBuildCommand(command: "litter-ipa-build", args: projectManifest, cwd: cwd, buildDir: buildDir)
+        guard record("UIKit unsigned IPA package", ipaResult) else {
+            return BuildKitCommandResult(exitCode: ipaResult.exitCode, status: "toolchain-selftest-failed", log: log, artifacts: artifacts)
+        }
+        let ipaPath = "\(projectDir)/HelloUIKit.ipa"
+        guard await IshFS.exists(path: ipaPath) else {
+            log += "\nIPA build completed but did not export \(ipaPath).\n"
+            return BuildKitCommandResult(exitCode: 74, status: "toolchain-selftest-ipa-export-failed", log: log, artifacts: artifacts)
+        }
+
+        log += "\nSelf-test passed: Swift, UIKit imports, C, C++, Objective-C, Objective-C++, and unsigned IPA packaging all completed. Produced iOS Mach-O artifacts are not meant to execute inside iSH; install the IPA through a signer to run it.\n"
+        return BuildKitCommandResult(exitCode: 0, status: "toolchain-selftest-ok", log: log, artifacts: artifacts)
     }
 
     private func swiftCompatibility(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
@@ -1209,6 +1366,8 @@ actor LitterBuildKit {
               nativeDriverLoadable,
               supportLibrariesInstalled,
               sdkInstalled,
+              clangResourceDirInstalled,
+              cxxStandardLibraryHeadersInstalled,
               nativeRunnerInstalled else {
             return false
         }
@@ -1246,6 +1405,28 @@ actor LitterBuildKit {
 
     private static var sdkInstalled: Bool {
         fileExists(sdkRoot.appendingPathComponent("SDKSettings.plist"))
+    }
+
+    private static var clangResourceRoot: URL {
+        if let path = installedManifest?.toolchain.clangResourceDir, !path.isEmpty {
+            return buildKitRoot.appendingPathComponent(path, isDirectory: true)
+        }
+        return toolchainRoot.appendingPathComponent("ClangResourceDir", isDirectory: true)
+    }
+
+    private static var cxxStandardLibraryIncludeRoot: URL {
+        if let path = installedManifest?.toolchain.cxxStandardLibraryIncludeDir, !path.isEmpty {
+            return buildKitRoot.appendingPathComponent(path, isDirectory: true)
+        }
+        return toolchainRoot.appendingPathComponent("CxxStandardLibrary/include/c++/v1", isDirectory: true)
+    }
+
+    private static var clangResourceDirInstalled: Bool {
+        fileExists(clangResourceRoot.appendingPathComponent("include/stdarg.h")) && fileExists(clangResourceRoot.appendingPathComponent("include/stdbool.h")) && fileExists(clangResourceRoot.appendingPathComponent("include/stddef.h"))
+    }
+
+    private static var cxxStandardLibraryHeadersInstalled: Bool {
+        fileExists(cxxStandardLibraryIncludeRoot.appendingPathComponent("vector"))
     }
 
     private static var nativeDriverURL: URL {
@@ -1542,6 +1723,29 @@ actor LitterBuildKit {
         required.append(manifest.toolchain.coreCompilerFramework)
         required.append(manifest.toolchain.supportLibraries)
         required.append(manifest.toolchain.sdkPath)
+        guard let clangResourceDir = manifest.toolchain.clangResourceDir, !clangResourceDir.isEmpty else {
+            throw NSError(domain: "LitterBuildKit", code: 13, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing toolchain.clangResourceDir"])
+        }
+        guard let cxxIncludeDir = manifest.toolchain.cxxStandardLibraryIncludeDir, !cxxIncludeDir.isEmpty else {
+            throw NSError(domain: "LitterBuildKit", code: 14, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing toolchain.cxxStandardLibraryIncludeDir"])
+        }
+        guard manifest.swiftCompatibilityVersion?.isEmpty == false else {
+            throw NSError(domain: "LitterBuildKit", code: 15, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing swiftCompatibilityVersion"])
+        }
+        guard manifest.sdkSwiftVersion?.isEmpty == false else {
+            throw NSError(domain: "LitterBuildKit", code: 16, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing sdkSwiftVersion"])
+        }
+        let requiredCapabilities: Set<String> = ["clang-resource-dir", "cxx-stdlib-headers", "ui-framework-imports"]
+        let missingCapabilities = requiredCapabilities.subtracting(Set(manifest.capabilities)).sorted()
+        guard missingCapabilities.isEmpty else {
+            throw NSError(domain: "LitterBuildKit", code: 17, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing capabilities: \(missingCapabilities.joined(separator: ", "))"])
+        }
+        required.append(clangResourceDir)
+        required.append("\(clangResourceDir)/include/stdarg.h")
+        required.append("\(clangResourceDir)/include/stdbool.h")
+        required.append("\(clangResourceDir)/include/stddef.h")
+        required.append(cxxIncludeDir)
+        required.append("\(cxxIncludeDir)/vector")
         if let driver = manifest.toolchain.nativeDriverFramework { required.append(driver) }
         if let runner = manifest.toolchain.nativeRunner { required.append(runner) }
         for relative in Set(required) {
@@ -1744,6 +1948,10 @@ actor LitterBuildKit {
             buildKitRoot: buildKitRoot.path,
             toolchainRoot: toolchainRoot.path,
             sdkRoot: sdkRoot.path,
+            clangResourceDir: clangResourceRoot.path,
+            cxxStandardLibraryIncludeDir: cxxStandardLibraryIncludeRoot.path,
+            sdkVersion: installedManifest?.sdkVersion,
+            swiftCompatibilityVersion: installedManifest?.swiftCompatibilityVersion,
             hostWorkDir: staging.hostWorkDir,
             hostProjectPath: staging.hostProjectPath,
             hostInputPath: staging.hostInputPath,
@@ -1774,7 +1982,7 @@ actor LitterBuildKit {
                 skipNext = false
                 continue
             }
-            if ["-o", "-I", "-F", "-L", "-isysroot", "--sysroot", "-target", "-arch", "-x", "-include", "-isystem", "-iquote", "-idirafter", "-framework", "-Xlinker"].contains(token) {
+            if ["-o", "-I", "-F", "-L", "-isysroot", "--sysroot", "-target", "-arch", "-x", "-include", "-isystem", "-iquote", "-idirafter", "-framework", "-resource-dir", "-Xlinker"].contains(token) {
                 skipNext = true
                 continue
             }
@@ -2012,6 +2220,8 @@ actor LitterBuildKit {
             SDKROOT = \(sdkRoot.path)
             SUPPORTED_PLATFORMS = iphoneos
             TOOLCHAIN_DIR = \(toolchainRoot.path)
+            CLANG_RESOURCE_DIR = \(clangResourceRoot.path)
+            CXX_STANDARD_LIBRARY_INCLUDE_DIR = \(cxxStandardLibraryIncludeRoot.path)
             LITTER_BUILD_MANIFEST = \(projectArgs)
         """
     }
@@ -2020,7 +2230,11 @@ actor LitterBuildKit {
         var output = "\(tool) compatibility shim for Litter BuildKit\n"
         output += "Swift: \(status.assetManifest?.swiftVersion ?? "unknown")\n"
         output += "SDK: \(status.assetManifest?.sdkVersion ?? "missing")\n"
+        output += "Swift compatibility: \(status.assetManifest?.swiftCompatibilityVersion ?? "unknown")\n"
+        output += "SDK Swift: \(status.assetManifest?.sdkSwiftVersion ?? "unknown")\n"
         output += "iPhoneOS SDK installed: \(status.sdkInstalled ? "yes" : "no")\n"
+        output += "Clang resource dir installed: \(status.clangResourceDirInstalled ? "yes" : "no")\n"
+        output += "libc++ headers installed: \(status.cxxStandardLibraryHeadersInstalled ? "yes" : "no")\n"
         output += "Native driver loadable: \(status.nativeDriverLoadable ? "yes" : "no")\n"
         if !status.nativeDriverLoadable && !status.nativeDriverDiagnostics.isEmpty {
             output += "Native driver diagnostics:\n"
@@ -2140,11 +2354,15 @@ actor LitterBuildKit {
         Native runner: \(status.nativeRunnerInstalled ? "installed" : "missing")
         Swift support libraries: \(status.supportLibrariesInstalled ? "installed" : "missing")
         iPhoneOS SDK: \(status.sdkInstalled ? "installed" : "missing")
+        Clang resource dir: \(status.clangResourceDirInstalled ? "installed" : "missing")
+        libc++ headers: \(status.cxxStandardLibraryHeadersInstalled ? "installed" : "missing")
         Fakefs command shims: \(status.commandShimsInstalled ? "installed" : "missing")
         Request monitor: \(status.requestMonitorRunning ? "running" : "stopped")
         BuildKit root: \(status.buildKitRoot)
         Toolchain root: \(status.toolchainRoot)
         SDK root: \(status.sdkRoot)
+        Clang resource root: \(clangResourceRoot.path)
+        libc++ include root: \(cxxStandardLibraryIncludeRoot.path)
         Swift direct build: \(status.canRunSwiftDirectly ? "ready" : "blocked")
         Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
@@ -2162,6 +2380,10 @@ actor LitterBuildKit {
         if let manifest = status.assetManifest {
             output += "\nManifest: \(manifest.bundleIdentifier) SDK \(manifest.sdkVersion) Swift \(manifest.swiftVersion ?? "unknown")\n"
             output += "Native mode: \(manifest.toolchain.nativeDriverMode ?? "runner")\n"
+            output += "Swift compatibility: \(manifest.swiftCompatibilityVersion ?? "unknown")\n"
+            output += "SDK Swift: \(manifest.sdkSwiftVersion ?? "unknown")\n"
+            output += "Clang resource dir: \(manifest.toolchain.clangResourceDir ?? "missing")\n"
+            output += "libc++ include dir: \(manifest.toolchain.cxxStandardLibraryIncludeDir ?? "missing")\n"
             output += "Capabilities: \(manifest.capabilities.joined(separator: ", "))\n"
         }
         if !status.nativeDriverLoadable && !status.nativeDriverDiagnostics.isEmpty {
@@ -2314,6 +2536,10 @@ private struct NativeDriverRequest: Encodable, Sendable {
     var buildKitRoot: String
     var toolchainRoot: String
     var sdkRoot: String
+    var clangResourceDir: String
+    var cxxStandardLibraryIncludeDir: String
+    var sdkVersion: String?
+    var swiftCompatibilityVersion: String?
     var hostWorkDir: String?
     var hostProjectPath: String?
     var hostInputPath: String?

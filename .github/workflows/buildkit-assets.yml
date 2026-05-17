@@ -6,12 +6,12 @@ on:
       xcode_version:
         description: "Xcode version on the macOS runner"
         required: true
-        default: "26.3"
+        default: "26.4"
         type: string
       swift_branch:
         description: "Swift source tag/branch for LLVM-On-iOS"
         required: true
-        default: "swift-6.3.1-RELEASE"
+        default: "swift"
         type: string
       upload_private_release:
         description: "Upload LitterBuildKitAssets.zip to the private asset release"

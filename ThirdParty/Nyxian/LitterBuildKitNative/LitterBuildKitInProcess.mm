@@ -304,7 +304,7 @@ static BOOL LBIFlagTakesValue(NSString *word)
             @"-D", @"-I", @"-F", @"-L", @"-l", @"-framework",
             @"-include", @"-isystem", @"-iquote", @"-idirafter",
             @"-isysroot", @"--sysroot", @"-target", @"-arch", @"-x",
-            @"-std", @"-stdlib", @"-mllvm",
+            @"-std", @"-stdlib", @"-mllvm", @"-resource-dir",
             @"-module-name", @"-package-name", @"-emit-module-path",
             @"-emit-dependencies-path", @"-emit-reference-dependencies-path",
             @"-Xcc", @"-Xlinker", @"-Xfrontend"
@@ -320,6 +320,84 @@ static void LBIAppendSwiftSDKCompatibilityFlags(NSMutableArray<NSString *> *argu
     if([arguments containsObject:@"-disable-sdk-module-interface-validation"]) { return; }
     [arguments addObject:@"-Xfrontend"];
     [arguments addObject:@"-disable-sdk-module-interface-validation"];
+}
+
+static BOOL LBIArgumentsContainResourceDir(NSArray<NSString *> *arguments)
+{
+    for(NSUInteger idx = 0; idx < arguments.count; idx++)
+    {
+        NSString *argument = arguments[idx];
+        if([argument isEqualToString:@"-resource-dir"] || [argument hasPrefix:@"-resource-dir="]) { return YES; }
+        if([argument isEqualToString:@"-Xcc"] && idx + 1 < arguments.count)
+        {
+            NSString *next = arguments[idx + 1];
+            if([next isEqualToString:@"-resource-dir"] || [next hasPrefix:@"-resource-dir="]) { return YES; }
+        }
+    }
+    return NO;
+}
+
+static BOOL LBIHeaderExists(NSString *root, NSString *relative)
+{
+    if(root.length == 0) { return NO; }
+    return [NSFileManager.defaultManager fileExistsAtPath:[root stringByAppendingPathComponent:relative]];
+}
+
+static void LBIAppendClangResourceDir(NSMutableArray<NSString *> *arguments, NSString *resourceDir, NSMutableString *log)
+{
+    if(resourceDir.length == 0)
+    {
+        [log appendString:@"warning: request did not include clangResourceDir; UIKit/Foundation C-family imports may fail.\n"];
+        return;
+    }
+    if(!LBIHeaderExists(resourceDir, @"include/stdarg.h"))
+    {
+        [log appendFormat:@"warning: clang resource dir is missing include/stdarg.h: %@\n", resourceDir];
+    }
+    if(LBIArgumentsContainResourceDir(arguments)) { return; }
+    [arguments addObject:@"-resource-dir"];
+    [arguments addObject:resourceDir];
+}
+
+static void LBIAppendSwiftClangResourceDir(NSMutableArray<NSString *> *arguments, NSString *resourceDir, NSMutableString *log)
+{
+    if(resourceDir.length == 0)
+    {
+        [log appendString:@"warning: request did not include clangResourceDir; Swift SDK module imports may fail.\n"];
+        return;
+    }
+    if(!LBIHeaderExists(resourceDir, @"include/stdarg.h"))
+    {
+        [log appendFormat:@"warning: clang resource dir is missing include/stdarg.h: %@\n", resourceDir];
+    }
+    if(LBIArgumentsContainResourceDir(arguments)) { return; }
+    [arguments addObject:@"-Xcc"];
+    [arguments addObject:@"-resource-dir"];
+    [arguments addObject:@"-Xcc"];
+    [arguments addObject:resourceDir];
+}
+
+static BOOL LBISourceIsCXX(NSString *source)
+{
+    NSString *ext = source.pathExtension.lowercaseString;
+    return [ext isEqualToString:@"cc"] || [ext isEqualToString:@"cpp"] || [ext isEqualToString:@"cxx"] || [ext isEqualToString:@"mm"];
+}
+
+static void LBIAppendCXXStandardLibraryHeaders(NSMutableArray<NSString *> *arguments, NSString *includeDir, NSString *source, NSMutableString *log)
+{
+    if(!LBISourceIsCXX(source) || [arguments containsObject:@"-nostdinc++"]) { return; }
+    if(includeDir.length == 0)
+    {
+        [log appendString:@"warning: request did not include cxxStandardLibraryIncludeDir; C++ standard library imports may fail.\n"];
+        return;
+    }
+    if(!LBIHeaderExists(includeDir, @"vector"))
+    {
+        [log appendFormat:@"warning: libc++ include dir is missing vector: %@\n", includeDir];
+    }
+    [arguments addObject:@"-stdlib=libc++"];
+    [arguments addObject:@"-isystem"];
+    [arguments addObject:includeDir];
 }
 
 static BOOL LBIIsInputWithExtensions(NSString *word, NSSet<NSString *> *extensions)
@@ -354,7 +432,7 @@ static NSArray<NSString *> *LBIClangUserFlags(NSArray<NSString *> *words, NSSet<
     {
         NSString *word = words[idx];
         if(skipNext) { skipNext = NO; continue; }
-        if([word isEqualToString:@"-o"] || [word isEqualToString:@"-isysroot"] || [word isEqualToString:@"--sysroot"] || [word isEqualToString:@"-target"] || [word isEqualToString:@"-arch"])
+        if([word isEqualToString:@"-o"] || [word isEqualToString:@"-isysroot"] || [word isEqualToString:@"--sysroot"] || [word isEqualToString:@"-target"] || [word isEqualToString:@"-arch"] || [word isEqualToString:@"-resource-dir"])
         {
             skipNext = YES;
             preserveNext = NO;
@@ -367,7 +445,7 @@ static NSArray<NSString *> *LBIClangUserFlags(NSArray<NSString *> *words, NSSet<
             continue;
         }
         if(LBIIsInputWithExtensions(word, inputExtensions)) { continue; }
-        if([word hasPrefix:@"-isysroot"] || [word hasPrefix:@"--sysroot="] || [word hasPrefix:@"-target="] || [word hasPrefix:@"-arch"]) { continue; }
+        if([word hasPrefix:@"-isysroot"] || [word hasPrefix:@"--sysroot="] || [word hasPrefix:@"-target="] || [word hasPrefix:@"-arch"] || [word hasPrefix:@"-resource-dir="]) { continue; }
         if([word hasPrefix:@"-"])
         {
             [flags addObject:word];
@@ -739,6 +817,8 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
         if(fakefsBuildDir.length == 0) { fakefsBuildDir = buildDir; }
         NSString *cwd = LBIString(request, @"cwd");
         NSString *sdkRoot = LBIString(request, @"sdkRoot");
+        NSString *clangResourceDir = LBIString(request, @"clangResourceDir");
+        NSString *cxxStandardLibraryIncludeDir = LBIString(request, @"cxxStandardLibraryIncludeDir");
         NSString *hostInputPath = LBIString(request, @"hostInputPath");
         NSString *hostProjectPath = LBIString(request, @"hostProjectPath");
         NSString *hostWorkDir = LBIString(request, @"hostWorkDir");
@@ -750,6 +830,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             if(source.length == 0) { return LBICopyResponse(64, @"missing-input", @"No Swift input was supplied.\n"); }
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
             LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+            LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
             [driverArgs addObject:source];
             int code = LBIRunSwiftDriver(driverArgs, log);
             return LBICopyResponse(code, code == 0 ? @"swift-check-ok" : @"swift-check-failed", log);
@@ -773,6 +854,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             {
                 NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
             LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+            LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
             [driverArgs addObject:source];
                 int code = LBIRunSwiftDriver(driverArgs, log);
                 return LBICopyResponse(code, code == 0 ? @"swiftc-check-ok" : @"swiftc-check-failed", log);
@@ -788,6 +870,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             [driverArgs addObjectsFromArray:LBISwiftcUserFlags(words)];
             [driverArgs addObjectsFromArray:@[@"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-o", hostOutput, source]];
             LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+            LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
             int code = LBIRunSwiftDriver(driverArgs, log);
             if(code != 0) { return LBICopyResponse(code, @"swiftc-failed", log); }
             chmod(hostOutput.fileSystemRepresentation, 0755);
@@ -812,6 +895,8 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             NSString *hostOutput = [artifactDir stringByAppendingPathComponent:requestedOutput.lastPathComponent];
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray array];
             [driverArgs addObjectsFromArray:LBIClangUserFlags(words, sourceExtensions)];
+            LBIAppendClangResourceDir(driverArgs, clangResourceDir, log);
+            LBIAppendCXXStandardLibraryHeaders(driverArgs, cxxStandardLibraryIncludeDir, source, log);
             [driverArgs addObjectsFromArray:@[@"-isysroot", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-miphoneos-version-min=18.0", @"-o", hostOutput, source]];
             int code = LBIRunClangDriver(driverArgs, log);
             if(code != 0) { return LBICopyResponse(code, @"clang-failed", log); }
@@ -841,6 +926,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             NSString *hostOutput = [artifactDir stringByAppendingPathComponent:requestedOutput.lastPathComponent];
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray array];
             [driverArgs addObjectsFromArray:LBIClangUserFlags(words, inputExtensions)];
+            LBIAppendClangResourceDir(driverArgs, clangResourceDir, log);
             [driverArgs addObjectsFromArray:@[@"-isysroot", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-miphoneos-version-min=18.0", @"-o", hostOutput, input]];
             int code = LBIRunClangDriver(driverArgs, log);
             if(code != 0) { return LBICopyResponse(code, @"ld-failed", log); }
@@ -872,6 +958,8 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             [NSFileManager.defaultManager createDirectoryAtPath:appDir withIntermediateDirectories:YES attributes:nil error:nil];
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-sdk", sdkRoot, @"-target", [@"arm64-apple-ios" stringByAppendingString:deployment], @"-o", executable]];
             LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+            LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
+            [driverArgs addObjectsFromArray:@[@"-framework", @"UIKit", @"-framework", @"Foundation"]];
             [driverArgs addObjectsFromArray:sources];
             int code = LBIRunSwiftDriver(driverArgs, log);
             if(code != 0) { return LBICopyResponse(code, @"swift-build-failed", log); }

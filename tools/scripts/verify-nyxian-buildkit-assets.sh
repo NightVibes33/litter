@@ -55,10 +55,20 @@ manifest_path = root / "manifest.json"
 manifest = json.loads(manifest_path.read_text())
 toolchain = manifest.get("toolchain", {})
 required = list(manifest.get("requiredPaths", []))
-for key in ("coreCompilerFramework", "nativeDriverFramework", "nativeRunner", "supportLibraries", "sdkPath"):
+for key in ("coreCompilerFramework", "nativeDriverFramework", "nativeRunner", "supportLibraries", "sdkPath", "clangResourceDir", "cxxStandardLibraryIncludeDir"):
     value = toolchain.get(key)
     if value:
         required.append(value)
+clang_resource_dir = toolchain.get("clangResourceDir") or ""
+cxx_include_dir = toolchain.get("cxxStandardLibraryIncludeDir") or ""
+if clang_resource_dir:
+    required.extend([
+        f"{clang_resource_dir}/include/stdarg.h",
+        f"{clang_resource_dir}/include/stdbool.h",
+        f"{clang_resource_dir}/include/stddef.h",
+    ])
+if cxx_include_dir:
+    required.append(f"{cxx_include_dir}/vector")
 missing = []
 for rel in sorted(set(required)):
     if not (root / rel).exists():
@@ -67,6 +77,26 @@ if missing:
     print("error: missing required BuildKit paths:")
     for rel in missing:
         print(f"- {rel}")
+    raise SystemExit(1)
+capabilities = set(manifest.get("capabilities") or [])
+required_capabilities = {"clang-resource-dir", "cxx-stdlib-headers", "ui-framework-imports"}
+missing_capabilities = sorted(required_capabilities - capabilities)
+if missing_capabilities:
+    print("error: BuildKit asset manifest is missing toolchain capability declarations:")
+    for capability in missing_capabilities:
+        print(f"- {capability}")
+    raise SystemExit(1)
+if not clang_resource_dir:
+    print("error: BuildKit asset manifest is missing toolchain.clangResourceDir")
+    raise SystemExit(1)
+if not cxx_include_dir:
+    print("error: BuildKit asset manifest is missing toolchain.cxxStandardLibraryIncludeDir")
+    raise SystemExit(1)
+if not manifest.get("swiftCompatibilityVersion"):
+    print("error: BuildKit asset manifest is missing swiftCompatibilityVersion")
+    raise SystemExit(1)
+if not manifest.get("sdkSwiftVersion"):
+    print("error: BuildKit asset manifest is missing sdkSwiftVersion")
     raise SystemExit(1)
 for rel, expected in (manifest.get("sha256") or {}).items():
     path = root / rel
@@ -101,6 +131,9 @@ if expected_native_fingerprint:
         raise SystemExit(1)
 print("BuildKit asset manifest is valid")
 print(f"bundle={manifest.get('bundleIdentifier')} sdk={manifest.get('sdkVersion')} swift={manifest.get('swiftVersion')}")
+print(f"swiftCompatibilityVersion={manifest.get('swiftCompatibilityVersion')} sdkSwiftVersion={manifest.get('sdkSwiftVersion')}")
+print(f"clangResourceDir={clang_resource_dir}")
+print(f"cxxStandardLibraryIncludeDir={cxx_include_dir}")
 print(f"nativeDriverSourceFingerprint={actual_native_fingerprint or 'missing'}")
 print("capabilities=" + ", ".join(manifest.get("capabilities", [])))
 PYVERIFY
