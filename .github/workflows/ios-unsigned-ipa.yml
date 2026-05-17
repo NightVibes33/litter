@@ -815,6 +815,7 @@ jobs:
           IPA_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
           SOURCE_TAG="app-source"
           SOURCE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${SOURCE_TAG}/litter-altstore-source.json"
+          APP_ICON_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png"
           PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           if [ ! -s "$IPA_PATH" ]; then
@@ -840,7 +841,7 @@ jobs:
           This IPA is unsigned and must be signed by SideStore, AltStore, Feather, or another signing tool before installation.
           EOF
 
-          export VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE BUNDLE_ID RELEASE_URL IPA_DOWNLOAD_URL SOURCE_URL PUBLISHED_AT BUILD_MODE
+          export VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE BUNDLE_ID RELEASE_URL IPA_DOWNLOAD_URL SOURCE_URL APP_ICON_URL PUBLISHED_AT BUILD_MODE
           python3 - <<'PY'
           import json
           import os
@@ -863,6 +864,7 @@ jobs:
               "publishedAt": os.environ["PUBLISHED_AT"],
               "releaseNotes": notes,
               "releaseURL": os.environ["RELEASE_URL"],
+              "iconURL": os.environ["APP_ICON_URL"],
               "sideStoreSourceURL": os.environ["SOURCE_URL"],
               "altStoreSourceURL": os.environ["SOURCE_URL"],
           }
@@ -870,11 +872,13 @@ jobs:
               "name": "Litter",
               "identifier": "com.sigkitten.litter.source",
               "sourceURL": os.environ["SOURCE_URL"],
+              "iconURL": os.environ["APP_ICON_URL"],
               "apps": [
                   {
                       "name": "Litter",
                       "bundleIdentifier": os.environ["BUNDLE_ID"],
                       "developerName": "NightVibes33",
+                      "iconURL": os.environ["APP_ICON_URL"],
                       "subtitle": "On-device Codex runtime for iPhone",
                       "localizedDescription": "Litter for sideloaded iOS installs.",
                       "category": "developer",
