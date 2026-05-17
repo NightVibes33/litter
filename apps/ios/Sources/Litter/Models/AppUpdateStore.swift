@@ -29,7 +29,7 @@ struct AppVersion: Comparable, Equatable, Sendable {
     }
 
     var displayString: String {
-        "v\(build)"
+        versionString
     }
 
     static func < (lhs: AppVersion, rhs: AppVersion) -> Bool {
@@ -75,7 +75,7 @@ struct AppUpdateManifest: Codable, Equatable, Sendable {
 
     var displayVersion: String {
         if let publicVersion, !publicVersion.isEmpty { return publicVersion }
-        return appVersion?.displayString ?? "v\(build)"
+        return appVersion?.displayString ?? version
     }
 
     var normalizedSHA256: String? {
@@ -410,7 +410,7 @@ final class AppUpdateStore: ObservableObject {
 
     private func enrichStable(_ manifest: inout AppUpdateManifest) {
         if manifest.releaseURL?.isEmpty != false {
-            manifest.releaseURL = "https://github.com/\(owner)/\(repo)/releases/tag/litter-v\(manifest.build)"
+            manifest.releaseURL = "https://github.com/\(owner)/\(repo)/releases/tag/litter-v\(manifest.version)"
         }
         if manifest.sideStoreSourceURL?.isEmpty != false {
             manifest.sideStoreSourceURL = stableSourceURL

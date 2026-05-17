@@ -471,6 +471,27 @@ jobs:
           set -euo pipefail
           ARCHIVE_PATH="$PWD/build/Litter.xcarchive"
           rm -rf "$ARCHIVE_PATH" build/unsigned-ipa Payload
+          BASE_MARKETING_VERSION="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          match = re.search(r'^\s*MARKETING_VERSION:\s*"?([^"\s]+)"?', Path("apps/ios/project.yml").read_text(), re.M)
+          print(match.group(1) if match else "1.5.0")
+          PY
+          )"
+          MARKETING_VERSION="$(python3 - "$BASE_MARKETING_VERSION" "$GITHUB_RUN_NUMBER" <<'PY'
+          import re
+          import sys
+
+          base, build = sys.argv[1].strip(), sys.argv[2].strip()
+          if not re.fullmatch(r"\d+\.\d+\.\d+", base):
+              raise SystemExit(f"::error::Base MARKETING_VERSION must be major.minor.patch, got {base!r}")
+          if not re.fullmatch(r"\d+", build):
+              raise SystemExit(f"::error::GITHUB_RUN_NUMBER must be numeric, got {build!r}")
+          major, minor, _patch = base.split(".")
+          print(f"{major}.{minor}.{build}")
+          PY
+          )"
           xcodebuild archive \
             -project apps/ios/Litter.xcodeproj \
             -scheme Litter \
@@ -482,6 +503,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
 
       - name: Verify archived BuildKit asset payload
@@ -772,7 +794,7 @@ jobs:
               raise SystemExit(f"::error::CURRENT_PROJECT_VERSION must be a numeric build, got {build!r}")
           PY
 
-          IPA_NAME="Litter-v${BUILD}.ipa"
+          IPA_NAME="Litter-v${VERSION}.ipa"
           /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
           IPA_PATH="build/unsigned-ipa/$IPA_NAME"
           IPA_SHA256="$(shasum -a 256 "$IPA_PATH" | awk '{print $1}')"
@@ -790,7 +812,7 @@ jobs:
               "bundleIdentifier": os.environ["BUNDLE_ID"],
               "version": os.environ["VERSION"],
               "build": os.environ["BUILD"],
-              "publicVersion": f"v{os.environ['BUILD']}",
+              "publicVersion": os.environ["VERSION"],
               "commit": os.environ["GITHUB_SHA"],
               "buildMode": os.environ["BUILD_MODE"],
               "minimumIOSVersion": "18.0",
@@ -807,7 +829,7 @@ jobs:
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Litter-v${{ github.run_number }}
+          name: Litter-unsigned-ipa
           path: build/unsigned-ipa
           if-no-files-found: error
 
@@ -831,8 +853,8 @@ jobs:
           BUNDLE_ID="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["bundleIdentifier"])')"
           IPA_PATH="build/unsigned-ipa/$IPA_NAME"
           SHA_PATH="${IPA_PATH}.sha256"
-          RELEASE_TAG="litter-v${BUILD}"
-          RELEASE_TITLE="Litter v${BUILD}"
+          RELEASE_TAG="litter-v${VERSION}"
+          RELEASE_TITLE="Litter v${VERSION}"
           RELEASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
           IPA_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
           SOURCE_TAG="app-source"
@@ -855,14 +877,14 @@ jobs:
           fi
           cp "$SOURCE_ICON_PATH" "$SOURCE_ICON_DEST"
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $RELEASE_TAG already exists. Re-run after GitHub assigns a newer numeric build." >&2
+            echo "::error::Release $RELEASE_TAG already exists. Re-run after GitHub assigns a newer release version." >&2
             exit 1
           fi
 
           cat > "$NOTES_PATH" <<EOF
           Unsigned Litter IPA for SideStore/AltStore re-signing.
 
-          - Public update: Litter v${BUILD}
+          - Public update: Litter v${VERSION}
           - App version: ${VERSION}
           - Commit: ${GITHUB_SHA}
           - Branch: ${GITHUB_REF_NAME}
@@ -886,6 +908,7 @@ jobs:
               "bundleIdentifier": os.environ["BUNDLE_ID"],
               "version": os.environ["VERSION"],
               "build": os.environ["BUILD"],
+              "publicVersion": os.environ["VERSION"],
               "commit": os.environ["GITHUB_SHA"],
               "buildMode": os.environ["BUILD_MODE"],
               "minimumIOSVersion": "18.0",
@@ -918,7 +941,7 @@ jobs:
                       "tintColor": "06B6D4",
                       "versions": [
                           {
-                              "version": f"v{os.environ['BUILD']}",
+                              "version": os.environ["VERSION"],
                               "buildVersion": os.environ["BUILD"],
                               "date": os.environ["PUBLISHED_AT"],
                               "localizedDescription": notes,
@@ -976,14 +999,14 @@ jobs:
           Stable SideStore/AltStore source feed for the latest Litter sideload build.
 
           Source URL: ${SOURCE_URL}
-          Latest build: Litter v${BUILD}
+          Latest version: Litter v${VERSION}
           EOF
           git -C "$STABLE_SOURCE_DIR" init
           git -C "$STABLE_SOURCE_DIR" checkout -B "$SOURCE_BRANCH"
           git -C "$STABLE_SOURCE_DIR" config user.name "github-actions[bot]"
           git -C "$STABLE_SOURCE_DIR" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "$STABLE_SOURCE_DIR" add README.md litter-update.json litter-altstore-source.json ZYN-source-icon.heic
-          git -C "$STABLE_SOURCE_DIR" commit -m "Update stable app source for Litter v${BUILD}"
+          git -C "$STABLE_SOURCE_DIR" commit -m "Update stable app source for Litter v${VERSION}"
           ASKPASS_SCRIPT="$(mktemp)"
           cat > "$ASKPASS_SCRIPT" <<'EOF_ASKPASS'
           #!/bin/sh
