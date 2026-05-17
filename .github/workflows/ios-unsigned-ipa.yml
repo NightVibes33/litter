@@ -23,6 +23,7 @@ on:
       - 'shared/third_party/codex/**'
       - 'ThirdParty/Nyxian/**'
       - 'ThirdParty/LLVM-On-iOS/**'
+      - 'tools/assets/**'
       - 'tools/scripts/load-sccache-aws-creds.sh'
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
@@ -835,15 +836,24 @@ jobs:
           RELEASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
           IPA_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
           SOURCE_TAG="app-source"
-          SOURCE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${SOURCE_TAG}/litter-altstore-source.json"
+          SOURCE_BRANCH="app-source-live"
+          SOURCE_BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${SOURCE_BRANCH}"
+          SOURCE_URL="${SOURCE_BASE_URL}/litter-altstore-source.json"
           APP_ICON_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png"
-          SOURCE_ICON_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${SOURCE_TAG}/ZYN-source-icon.heic"
+          SOURCE_ICON_PATH="tools/assets/ZYN-source-icon.heic"
+          SOURCE_ICON_DEST="build/unsigned-ipa/ZYN-source-icon.heic"
+          SOURCE_ICON_URL="${SOURCE_BASE_URL}/ZYN-source-icon.heic"
           PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           if [ ! -s "$IPA_PATH" ]; then
             echo "::error::Missing unsigned IPA at $IPA_PATH" >&2
             exit 1
           fi
+          if [ ! -s "$SOURCE_ICON_PATH" ]; then
+            echo "::error::Missing stable source icon at $SOURCE_ICON_PATH" >&2
+            exit 1
+          fi
+          cp "$SOURCE_ICON_PATH" "$SOURCE_ICON_DEST"
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $RELEASE_TAG already exists. Re-run after GitHub assigns a newer numeric build." >&2
             exit 1
@@ -944,18 +954,49 @@ jobs:
             --notes-file "$NOTES_PATH"
 
           if gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" --repo "$GITHUB_REPOSITORY" --clobber
             gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable SideStore/AltStore source metadata for the latest Litter sideload build." --prerelease
           else
             gh release create "$SOURCE_TAG" \
               "$UPDATE_PATH" \
               "$SOURCE_PATH" \
+              "$SOURCE_ICON_DEST" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "Litter app source" \
               --notes "Stable SideStore/AltStore source metadata for the latest Litter sideload build." \
               --prerelease
           fi
+
+          STABLE_SOURCE_DIR="$(mktemp -d)"
+          cp "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" "$STABLE_SOURCE_DIR/"
+          cat > "$STABLE_SOURCE_DIR/README.md" <<EOF
+          # ZYN Litter App Source
+
+          Stable SideStore/AltStore source feed for the latest Litter sideload build.
+
+          Source URL: ${SOURCE_URL}
+          Latest build: Litter v${BUILD}
+          EOF
+          git -C "$STABLE_SOURCE_DIR" init
+          git -C "$STABLE_SOURCE_DIR" checkout -B "$SOURCE_BRANCH"
+          git -C "$STABLE_SOURCE_DIR" config user.name "github-actions[bot]"
+          git -C "$STABLE_SOURCE_DIR" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$STABLE_SOURCE_DIR" add README.md litter-update.json litter-altstore-source.json ZYN-source-icon.heic
+          git -C "$STABLE_SOURCE_DIR" commit -m "Update stable app source for Litter v${BUILD}"
+          ASKPASS_SCRIPT="$(mktemp)"
+          cat > "$ASKPASS_SCRIPT" <<'EOF_ASKPASS'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$GH_PUSH_TOKEN" ;;
+            *) printf '\n' ;;
+          esac
+          EOF_ASKPASS
+          chmod 700 "$ASKPASS_SCRIPT"
+          GH_PUSH_TOKEN="$GH_TOKEN" GIT_ASKPASS="$ASKPASS_SCRIPT" GIT_TERMINAL_PROMPT=0 \
+            git -C "$STABLE_SOURCE_DIR" push --force "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${SOURCE_BRANCH}"
+          rm -f "$ASKPASS_SCRIPT"
 
           echo "Release download page: ${RELEASE_URL}"
           echo "Stable app source: ${SOURCE_URL}"

@@ -146,8 +146,8 @@ final class AppUpdateStore: ObservableObject {
     let owner = "NightVibes33"
     let repo = "litter"
     let manifestAssetName = "litter-update.json"
-    let stableUpdateURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-update.json"
-    let stableSourceURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json"
+    let stableUpdateURL = "https://raw.githubusercontent.com/NightVibes33/litter/app-source-live/litter-update.json"
+    let stableSourceURL = "https://raw.githubusercontent.com/NightVibes33/litter/app-source-live/litter-altstore-source.json"
 
     private var activeDriver: FileDownloadDriver?
     private var activeTask: Task<Void, Never>?
