@@ -20,7 +20,7 @@ Litter is a native SwiftUI iOS app that talks to Codex through a shared Rust cli
 
 The repository also contains CI release lanes for iOS, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline for on-device Swift/iOS builds.
 
-Developer: [NightVibes33](https://github.com/NightVibes33).
+Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com/dnakov). Current fork maintainer/developer: [NightVibes33 / Zyn](https://github.com/NightVibes33). See [AUTHORS.md](AUTHORS.md) for accepted upstream contributors and fork attribution.
 
 ## Screenshots
 
@@ -253,10 +253,16 @@ Use this flow when BuildKit source or private framework behavior changes:
 | `make nyxian-buildkit-assets-verify` | Validate a BuildKit asset ZIP or folder. |
 | `make clean` | Remove build artifacts. |
 
+## Credits and Attribution
+
+Litter is a fork of the original [dnakov/litter](https://github.com/dnakov/litter) project created and maintained upstream by Daniel Nakov. This fork is maintained by NightVibes33 / Zyn and includes additional iOS sideloading, update, local runtime, BuildKit, and UI work.
+
+Accepted upstream contributors from Daniel's original repository are listed in [AUTHORS.md](AUTHORS.md), generated from `upstream/main` commit history. Third-party code and vendored toolchain sources are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Contributing
 
 Litter is under active development. Small, focused PRs are easier to review than broad rewrites because the app, Rust bridge, and private BuildKit pipeline are tightly coupled. See `CONTRIBUTING.md` for contributor expectations.
 
 ## License
 
-Litter is licensed under GPLv3 with an additional GPLv3 section 7 permission for Apple App Store and iOS distribution. Vendored Nyxian source is AGPL-3.0-or-later; see `ThirdParty/Nyxian/LICENSE` and `THIRD_PARTY_NOTICES.md`.
+Litter is open source, but it is not MIT licensed. The project is licensed under GPLv3 with an additional GPLv3 section 7 permission for Apple App Store and iOS distribution; see [LICENSE](LICENSE). Vendored Nyxian/emexDE source is AGPL-3.0-or-later; see `ThirdParty/Nyxian/LICENSE`. OpenAI Codex source is Apache-2.0 with its own notice file under `shared/third_party/codex`. Third-party components keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
