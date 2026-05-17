@@ -141,11 +141,12 @@ final class AppUpdateStore: ObservableObject {
     @Published private(set) var checksumText = "Not verified"
     @Published private(set) var downloadedIPAURL: URL?
     @Published private(set) var lastError: String?
-    @Published private(set) var statusMessage = "Check GitHub Releases for a newer sideload build."
+    @Published private(set) var statusMessage = "Check the app source for a newer sideload build."
 
     let owner = "NightVibes33"
     let repo = "litter"
     let manifestAssetName = "litter-update.json"
+    let stableUpdateURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-update.json"
     let stableSourceURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json"
 
     private var activeDriver: FileDownloadDriver?
@@ -204,28 +205,40 @@ final class AppUpdateStore: ObservableObject {
         progressText = "No download running"
         speedText = ""
         lastError = nil
-        statusMessage = "Checking GitHub Releases"
+        statusMessage = "Checking app source"
 
         do {
-            let releases = try await GitHubReleaseAPI.releases(owner: owner, repo: repo, perPage: 30)
-            let candidate = try await selectBestCandidate(from: releases)
-            guard let candidate else {
-                availability = .noCompatibleRelease
-                statusMessage = "No release with \(manifestAssetName) was found."
-                phase = .ready
-                return
-            }
-
+            let candidate = try await stableCandidate()
             latestManifest = candidate.manifest
             latestRelease = candidate.release
             availability = evaluate(candidate.manifest)
             statusMessage = statusMessage(for: availability, manifest: candidate.manifest)
             phase = .ready
         } catch {
-            phase = .failed
-            availability = .unknown
-            lastError = error.localizedDescription
-            statusMessage = "Update check failed."
+            let stableError = error
+            do {
+                statusMessage = "Checking GitHub Releases fallback"
+                let releases = try await GitHubReleaseAPI.releases(owner: owner, repo: repo, perPage: 30)
+                let candidate = try await selectBestCandidate(from: releases)
+                guard let candidate else {
+                    availability = .noCompatibleRelease
+                    statusMessage = "No release with \(manifestAssetName) was found."
+                    lastError = "Stable app source failed: \(stableError.localizedDescription)"
+                    phase = .ready
+                    return
+                }
+
+                latestManifest = candidate.manifest
+                latestRelease = candidate.release
+                availability = evaluate(candidate.manifest)
+                statusMessage = statusMessage(for: availability, manifest: candidate.manifest)
+                phase = .ready
+            } catch {
+                phase = .failed
+                availability = .unknown
+                lastError = "Stable app source failed: \(stableError.localizedDescription)\nGitHub Releases fallback failed: \(error.localizedDescription)"
+                statusMessage = "Update check failed."
+            }
         }
     }
 
@@ -315,9 +328,19 @@ final class AppUpdateStore: ObservableObject {
     }
 
     private struct Candidate {
-        var release: GitHubRelease
+        var release: GitHubRelease?
         var manifest: AppUpdateManifest
         var version: AppVersion?
+    }
+
+    private func stableCandidate() async throws -> Candidate {
+        guard let manifestURL = URL(string: stableUpdateURL) else {
+            throw NSError(domain: "AppUpdateStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid stable update feed URL."])
+        }
+        let data = try await GitHubReleaseAPI.data(url: manifestURL)
+        var manifest = try JSONDecoder().decode(AppUpdateManifest.self, from: data)
+        enrichStable(&manifest)
+        return Candidate(release: nil, manifest: manifest, version: manifest.appVersion)
     }
 
     private func selectBestCandidate(from releases: [GitHubRelease]) async throws -> Candidate? {
@@ -382,6 +405,13 @@ final class AppUpdateStore: ObservableObject {
                 manifest.sha256 = digest
             }
         }
+        enrichStable(&manifest)
+    }
+
+    private func enrichStable(_ manifest: inout AppUpdateManifest) {
+        if manifest.releaseURL?.isEmpty != false {
+            manifest.releaseURL = "https://github.com/\(owner)/\(repo)/releases/tag/litter-v\(manifest.build)"
+        }
         if manifest.sideStoreSourceURL?.isEmpty != false {
             manifest.sideStoreSourceURL = stableSourceURL
         }
@@ -408,13 +438,13 @@ final class AppUpdateStore: ObservableObject {
     private func statusMessage(for availability: AppUpdateAvailability, manifest: AppUpdateManifest) -> String {
         switch availability {
         case .unknown:
-            return "Check GitHub Releases for a newer sideload build."
+            return "Check the app source for a newer sideload build."
         case .available:
             return "Litter \(manifest.displayVersion) is available."
         case .upToDate:
-            return "This install matches the latest release."
+            return "This install matches the latest app source release."
         case .remoteOlder:
-            return "This install is newer than the latest published release."
+            return "This install is newer than the latest app source release."
         case .incompatibleIOS(let version):
             return "The latest release requires iOS \(version) or newer."
         case .incomparable(let reason):
