@@ -33,14 +33,13 @@ struct AppVersion: Comparable, Equatable, Sendable {
     }
 
     static func < (lhs: AppVersion, rhs: AppVersion) -> Bool {
-        if lhs.build != rhs.build { return lhs.build < rhs.build }
         let count = max(lhs.components.count, rhs.components.count)
         for index in 0..<count {
             let left = index < lhs.components.count ? lhs.components[index] : 0
             let right = index < rhs.components.count ? rhs.components[index] : 0
             if left != right { return left < right }
         }
-        return false
+        return lhs.build < rhs.build
     }
 
     private init(components: [Int], build: Int) {

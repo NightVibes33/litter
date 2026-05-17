@@ -467,6 +467,8 @@ jobs:
           time make xcgen
 
       - name: Build unsigned archive
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ARCHIVE_PATH="$PWD/build/Litter.xcarchive"
@@ -479,17 +481,41 @@ jobs:
           print(match.group(1) if match else "1.5.0")
           PY
           )"
-          MARKETING_VERSION="$(python3 - "$BASE_MARKETING_VERSION" "$GITHUB_RUN_NUMBER" <<'PY'
+          MARKETING_VERSION="$(python3 - "$BASE_MARKETING_VERSION" <<'PY'
+          import json
+          import os
           import re
+          import subprocess
           import sys
 
-          base, build = sys.argv[1].strip(), sys.argv[2].strip()
-          if not re.fullmatch(r"\d+\.\d+\.\d+", base):
+          base = sys.argv[1].strip()
+          match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", base)
+          if not match:
               raise SystemExit(f"::error::Base MARKETING_VERSION must be major.minor.patch, got {base!r}")
-          if not re.fullmatch(r"\d+", build):
-              raise SystemExit(f"::error::GITHUB_RUN_NUMBER must be numeric, got {build!r}")
-          major, minor, _patch = base.split(".")
-          print(f"{major}.{minor}.{build}")
+
+          major, minor, patch = match.groups()
+          latest_patch = int(patch)
+          pattern = re.compile(rf"^litter-v{major}\.{minor}\.(\d+)$")
+
+          try:
+              releases = subprocess.check_output(
+                  [
+                      "gh", "release", "list",
+                      "--repo", os.environ["GITHUB_REPOSITORY"],
+                      "--limit", "200",
+                      "--json", "tagName",
+                  ],
+                  text=True,
+              )
+              for release in json.loads(releases):
+                  tag = str(release.get("tagName", "")).strip()
+                  tag_match = pattern.fullmatch(tag)
+                  if tag_match:
+                      latest_patch = max(latest_patch, int(tag_match.group(1)))
+          except Exception as error:
+              print(f"::warning::Could not inspect existing Litter releases ({error}); using {base} as the version base", file=sys.stderr)
+
+          print(f"{major}.{minor}.{latest_patch + 1}")
           PY
           )"
           xcodebuild archive \
