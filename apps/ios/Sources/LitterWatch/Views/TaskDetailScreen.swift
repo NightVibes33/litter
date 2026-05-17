@@ -6,6 +6,7 @@ import SwiftUI
 struct TaskDetailScreen: View {
     @EnvironmentObject var store: WatchAppStore
     @EnvironmentObject var theme: WatchThemeStore
+    @Environment(\.isLuminanceReduced) private var isAOD
     let task: WatchTask
 
     var body: some View {
@@ -19,70 +20,72 @@ struct TaskDetailScreen: View {
 
                 Text(current.title)
                     .font(WatchTheme.mono(13, weight: .bold))
-                    .foregroundStyle(theme.textPrimary)
+                    .foregroundStyle(isAOD ? theme.textSecondary : theme.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let subtitle = current.subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(WatchTheme.mono(10))
-                        .foregroundStyle(theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                if !isAOD {
+                    if let subtitle = current.subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(WatchTheme.mono(10))
+                            .foregroundStyle(theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
-                if current.status == .needsApproval,
-                   let approval = store.pendingApproval,
-                   current.pendingApprovalId == approval.id {
-                    NavigationLink {
-                        ApprovalScreen()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundStyle(theme.warning)
-                            Text("review approval")
-                                .font(WatchTheme.mono(11, weight: .bold))
-                                .foregroundStyle(theme.textPrimary)
-                            Spacer()
+                    if current.status == .needsApproval,
+                       let approval = store.pendingApproval,
+                       current.pendingApprovalId == approval.id {
+                        NavigationLink {
+                            ApprovalScreen()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.circle.fill")
+                                    .foregroundStyle(theme.warning)
+                                Text("review approval")
+                                    .font(WatchTheme.mono(11, weight: .bold))
+                                    .foregroundStyle(theme.textPrimary)
+                                Spacer()
+                            }
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(theme.warning.opacity(0.12))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(theme.warning.opacity(0.4), lineWidth: 1)
+                                    )
+                            )
                         }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(theme.warning.opacity(0.12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .stroke(theme.warning.opacity(0.4), lineWidth: 1)
-                                )
-                        )
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-                }
 
-                if !current.steps.isEmpty {
-                    WatchEyebrow(text: "recent", size: 9)
-                        .padding(.top, 4)
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(current.steps) { step in
-                            StepRow(step: step)
+                    if !current.steps.isEmpty {
+                        WatchEyebrow(text: "recent", size: 9)
+                            .padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(current.steps) { step in
+                                StepRow(step: step)
+                            }
                         }
                     }
-                }
 
-                HStack(spacing: 4) {
-                    NavigationLink {
-                        TranscriptScreen()
-                    } label: {
-                        actionLabel("transcript", icon: "text.bubble")
-                    }
-                    .buttonStyle(.plain)
+                    HStack(spacing: 4) {
+                        NavigationLink {
+                            TranscriptScreen()
+                        } label: {
+                            actionLabel("transcript", icon: "text.bubble")
+                        }
+                        .buttonStyle(.plain)
 
-                    NavigationLink {
-                        VoiceScreen()
-                    } label: {
-                        actionLabel("reply", icon: "mic.fill", accent: true)
+                        NavigationLink {
+                            VoiceScreen()
+                        } label: {
+                            actionLabel("reply", icon: "mic.fill", accent: true)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                    .padding(.top, 6)
                 }
-                .padding(.top, 6)
             }
             .padding(.horizontal, 4)
             .padding(.vertical, 4)
@@ -97,34 +100,40 @@ struct TaskDetailScreen: View {
         HStack(spacing: 6) {
             switch task.status {
             case .running:
-                PulsingDot(color: theme.accent, size: 7)
+                if isAOD {
+                    Circle().fill(theme.textSecondary).frame(width: 6, height: 6)
+                } else {
+                    PulsingDot(color: theme.accent, size: 7)
+                }
                 Text("running")
                     .font(WatchTheme.mono(10, weight: .bold))
-                    .foregroundStyle(theme.accent)
+                    .foregroundStyle(isAOD ? theme.textSecondary : theme.accent)
             case .needsApproval:
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(theme.warning)
+                    .foregroundStyle(isAOD ? theme.textSecondary : theme.warning)
                 Text("needs approval")
                     .font(WatchTheme.mono(10, weight: .bold))
-                    .foregroundStyle(theme.warning)
+                    .foregroundStyle(isAOD ? theme.textSecondary : theme.warning)
             case .idle:
                 Circle().fill(theme.textSecondary).frame(width: 6, height: 6)
                 Text("idle")
                     .font(WatchTheme.mono(10, weight: .bold))
                     .foregroundStyle(theme.textSecondary)
             case .error:
-                Circle().fill(theme.danger).frame(width: 6, height: 6)
+                Circle().fill(isAOD ? theme.textSecondary : theme.danger).frame(width: 6, height: 6)
                 Text("error")
                     .font(WatchTheme.mono(10, weight: .bold))
-                    .foregroundStyle(theme.danger)
+                    .foregroundStyle(isAOD ? theme.textSecondary : theme.danger)
             }
             Spacer()
-            Text(task.serverName)
-                .font(WatchTheme.mono(9))
-                .foregroundStyle(theme.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            if !isAOD {
+                Text(task.serverName)
+                    .font(WatchTheme.mono(9))
+                    .foregroundStyle(theme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
             if !task.relativeTime.isEmpty {
                 Text(task.relativeTime)
                     .font(WatchTheme.mono(9))
@@ -248,6 +257,15 @@ private struct StepBullet: View {
         TaskDetailScreen(task: WatchPreviewFixtures.tasks[1])
             .environmentObject(WatchAppStore.previewStore())
             .environmentObject(WatchThemeStore.shared)
+    }
+}
+
+#Preview("aod") {
+    NavigationStack {
+        TaskDetailScreen(task: WatchPreviewFixtures.tasks[0])
+            .environmentObject(WatchAppStore.previewStore())
+            .environmentObject(WatchThemeStore.shared)
+            .environment(\.isLuminanceReduced, true)
     }
 }
 #endif

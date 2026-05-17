@@ -91,19 +91,22 @@ struct HomeScreen: View {
 private struct TaskPage: View {
     @EnvironmentObject var store: WatchAppStore
     @EnvironmentObject var theme: WatchThemeStore
+    @Environment(\.isLuminanceReduced) private var isAOD
     let task: WatchTask
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                StatusChip(status: task.status)
+                StatusChip(status: task.status, isAOD: isAOD)
                 Spacer(minLength: 4)
-                if store.lastSyncIsStale && !store.isReachable {
+                if !isAOD, store.lastSyncIsStale && !store.isReachable {
                     Image(systemName: "iphone.slash")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(theme.textMuted)
                 }
-                HeaderBadges()
+                if !isAOD {
+                    HeaderBadges()
+                }
                 if !task.relativeTime.isEmpty {
                     Text(task.relativeTime)
                         .font(WatchTheme.mono(10))
@@ -114,36 +117,45 @@ private struct TaskPage: View {
 
             Text(task.title)
                 .font(WatchTheme.mono(15, weight: .bold))
-                .foregroundStyle(task.status == .running ? theme.accent : theme.textPrimary)
+                .foregroundStyle(titleColor)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
 
-            identityStrip
+            if !isAOD {
+                identityStrip
 
-            if let subtitle = task.subtitle, !subtitle.isEmpty {
-                Text(subtitle)
-                    .font(WatchTheme.mono(11))
-                    .foregroundStyle(subtitleColor)
-                    .lineLimit(3)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                if let subtitle = task.subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(WatchTheme.mono(11))
+                        .foregroundStyle(subtitleColor)
+                        .lineLimit(3)
+                        .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
-            if task.status == .running, let line = telemetryLine {
-                Text(line)
-                    .font(WatchTheme.mono(10))
-                    .foregroundStyle(theme.textMuted)
-                    .lineLimit(1)
+                if task.status == .running, let line = telemetryLine {
+                    Text(line)
+                        .font(WatchTheme.mono(10))
+                        .foregroundStyle(theme.textMuted)
+                        .lineLimit(1)
+                }
             }
 
             Spacer(minLength: 4)
 
-            ctaRow
+            if !isAOD {
+                ctaRow
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(.horizontal, 4)
         .padding(.vertical, 2)
+    }
+
+    private var titleColor: Color {
+        if isAOD { return theme.textSecondary }
+        return task.status == .running ? theme.accent : theme.textPrimary
     }
 
     // MARK: - Pieces
@@ -287,28 +299,33 @@ private struct NewTaskPage: View {
 private struct StatusChip: View {
     @EnvironmentObject var theme: WatchThemeStore
     let status: WatchTask.Status
+    var isAOD: Bool = false
 
     var body: some View {
         HStack(spacing: 4) {
             bullet
             Text(label)
                 .font(WatchTheme.mono(10, weight: .bold))
-                .foregroundStyle(color)
+                .foregroundStyle(isAOD ? theme.textSecondary : color)
         }
     }
 
     @ViewBuilder private var bullet: some View {
         switch status {
         case .running:
-            PulsingDot(color: theme.accent, size: 6)
+            if isAOD {
+                Circle().fill(theme.textSecondary).frame(width: 5, height: 5)
+            } else {
+                PulsingDot(color: theme.accent, size: 6)
+            }
         case .needsApproval:
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.system(size: 9, weight: .heavy))
-                .foregroundStyle(theme.warning)
+                .foregroundStyle(isAOD ? theme.textSecondary : theme.warning)
         case .idle:
             Circle().fill(theme.textSecondary).frame(width: 5, height: 5)
         case .error:
-            Circle().fill(theme.danger).frame(width: 5, height: 5)
+            Circle().fill(isAOD ? theme.textSecondary : theme.danger).frame(width: 5, height: 5)
         }
     }
 
@@ -376,6 +393,15 @@ private struct Badge: View {
         HomeScreen()
             .environmentObject(WatchAppStore())
             .environmentObject(WatchThemeStore.shared)
+    }
+}
+
+#Preview("aod") {
+    NavigationStack {
+        HomeScreen()
+            .environmentObject(WatchAppStore.previewStore())
+            .environmentObject(WatchThemeStore.shared)
+            .environment(\.isLuminanceReduced, true)
     }
 }
 #endif
