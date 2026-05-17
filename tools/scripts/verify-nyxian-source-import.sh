@@ -8,8 +8,9 @@ missing=0
 require_path() {
   label="$1"
   path="$2"
-  if [ ! -e "$path" ]; then
-    echo "error: missing $label: ${path#$ROOT_DIR/}" >&2
+  rel="${path#$ROOT_DIR/}"
+  if [ ! -e "$path" ] && ! git -C "$ROOT_DIR" cat-file -e "HEAD:$rel" 2>/dev/null; then
+    echo "error: missing $label: $rel" >&2
     missing=1
   fi
 }
@@ -26,6 +27,8 @@ require_path "Shared Swift UIKit template" "$NYXIAN_ROOT/Shared/Templates/Applic
 require_path "LiveProcess source" "$NYXIAN_ROOT/LiveProcess/main.m"
 require_path "LindChain source" "$NYXIAN_ROOT/Nyxian/LindChain/Core/Builder.swift"
 require_path "ZSign source" "$NYXIAN_ROOT/Nyxian/LindChain/LiveContainer/ZSign/zsign.mm"
+require_path "Nyxian OpenSSL xcframework" "$NYXIAN_ROOT/Nyxian/LindChain/OpenSSL.xcframework/Info.plist"
+require_path "Nyxian OpenSSL framework binary" "$NYXIAN_ROOT/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/OpenSSL"
 require_path "nxtool source" "$NYXIAN_ROOT/nxtool/main.m"
 require_path "Litter native BuildKit bridge" "$NYXIAN_ROOT/LitterBuildKitNative/LitterBuildKitNative.h"
 require_path "Litter in-process BuildKit bridge" "$NYXIAN_ROOT/LitterBuildKitNative/LitterBuildKitInProcess.mm"
@@ -34,8 +37,12 @@ if find "$NYXIAN_ROOT" -path '*/.git' -type d -print -quit | grep -q .; then
   echo "error: vendored Nyxian tree contains nested .git directories" >&2
   missing=1
 fi
-if find "$NYXIAN_ROOT" -type d \( -name '*.framework' -o -name '*.xcframework' \) -print -quit | grep -q .; then
-  echo "error: vendored Nyxian source contains compiled framework directories; keep compiled assets private" >&2
+unexpected_framework="$(find "$NYXIAN_ROOT" -type d \( -name '*.framework' -o -name '*.xcframework' \) \
+  ! -path "$NYXIAN_ROOT/Nyxian/LindChain/OpenSSL.xcframework" \
+  ! -path "$NYXIAN_ROOT/Nyxian/LindChain/OpenSSL.xcframework/*" \
+  -print -quit)"
+if [ -n "$unexpected_framework" ]; then
+  echo "error: vendored Nyxian source contains unexpected compiled framework directory: ${unexpected_framework#$ROOT_DIR/}" >&2
   missing=1
 fi
 if find "$NYXIAN_ROOT" -type f \( -name '*.ipa' -o -name '*.mobileprovision' -o -name '*.p12' -o -name '*.cer' \) -print -quit | grep -q .; then
