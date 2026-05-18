@@ -1300,7 +1300,8 @@ private struct SettingsConnectionAccountSection: View {
     @State private var authError: String?
     @State private var hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
     @State private var hasStoredBaseURL = OpenAIApiKeyStore.shared.hasStoredBaseURL
-    @State private var hasStoredChatGPTTokens = false
+    @State private var storedChatGPTAccounts: [StoredChatGPTAccountSummary] = []
+    @State private var selectedChatGPTAccountID = ""
 
     @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
@@ -1344,7 +1345,7 @@ private struct SettingsConnectionAccountSection: View {
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
 
-            if server.isLocal, !isChatGPTAccount {
+            if server.isLocal {
                 Button {
                     taskBag.run {
                         isAuthWorking = true
@@ -1357,12 +1358,63 @@ private struct SettingsConnectionAccountSection: View {
                             ProgressView().tint(LitterTheme.textPrimary).scaleEffect(0.8)
                         }
                         Image(systemName: "person.crop.circle.badge.checkmark")
-                        Text("Login with ChatGPT")
+                        Text(hasStoredChatGPTTokens ? "Add ChatGPT Account" : "Login with ChatGPT")
                             .litterFont(.subheadline)
                     }
                     .foregroundColor(LitterTheme.accent)
                 }
                 .disabled(isAuthWorking)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+
+            if server.isLocal, hasStoredChatGPTTokens {
+                Picker(selection: $selectedChatGPTAccountID) {
+                    ForEach(storedChatGPTAccounts) { account in
+                        Text(account.displayName).tag(account.accountID)
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "person.2.crop.square.stack")
+                            .foregroundColor(LitterTheme.accent)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Active ChatGPT Account")
+                                .litterFont(.subheadline)
+                                .foregroundColor(LitterTheme.textPrimary)
+                            Text("Choose which saved account the local runtime uses")
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(LitterTheme.accent)
+                .disabled(isAuthWorking)
+                .onChange(of: selectedChatGPTAccountID) { _, newValue in
+                    guard !newValue.isEmpty, newValue != activeStoredChatGPTAccountID else { return }
+                    taskBag.run {
+                        isAuthWorking = true
+                        defer { isAuthWorking = false }
+                        await switchToChatGPTAccount(newValue)
+                    }
+                }
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Litter restores the selected account automatically. It will not auto-rotate accounts to bypass provider limits or exhausted credits.")
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textSecondary)
+                    Button("Remove Selected ChatGPT Account") {
+                        taskBag.run {
+                            isAuthWorking = true
+                            defer { isAuthWorking = false }
+                            await removeSelectedChatGPTAccount()
+                        }
+                    }
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.danger)
+                    .disabled(isAuthWorking || selectedChatGPTAccountID.isEmpty)
+                }
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
 
@@ -1476,6 +1528,21 @@ private struct SettingsConnectionAccountSection: View {
         return false
     }
 
+    private var hasStoredChatGPTTokens: Bool {
+        !storedChatGPTAccounts.isEmpty
+    }
+
+    private var activeStoredChatGPTAccountID: String? {
+        storedChatGPTAccounts.first(where: \.isActive)?.accountID
+    }
+
+    private var activeStoredChatGPTAccount: StoredChatGPTAccountSummary? {
+        if let activeStoredChatGPTAccountID {
+            return storedChatGPTAccounts.first(where: { $0.accountID == activeStoredChatGPTAccountID })
+        }
+        return storedChatGPTAccounts.first
+    }
+
     private var hasStoredLocalCredentials: Bool {
         hasStoredApiKey || hasStoredChatGPTTokens
     }
@@ -1502,7 +1569,7 @@ private struct SettingsConnectionAccountSection: View {
         case .apiKey?:
             return "API Key"
         case nil where server.isLocal && hasStoredChatGPTTokens:
-            return "ChatGPT"
+            return activeStoredChatGPTAccount?.displayName ?? "ChatGPT"
         case nil where server.isLocal && hasStoredApiKey:
             return "API Key"
         case nil:
@@ -1533,6 +1600,7 @@ private struct SettingsConnectionAccountSection: View {
         do {
             authError = nil
             try await appModel.loginLocalChatGPTAccount(serverId: server.serverId)
+            refreshStoredCredentialFlags()
         } catch ChatGPTOAuthError.cancelled {
             return
         } catch {
@@ -1544,11 +1612,46 @@ private struct SettingsConnectionAccountSection: View {
         hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
         hasStoredBaseURL = OpenAIApiKeyStore.shared.hasStoredBaseURL
         do {
-            hasStoredChatGPTTokens = try ChatGPTOAuthTokenStore.shared.load() != nil
+            storedChatGPTAccounts = try ChatGPTOAuthTokenStore.shared.storedAccounts()
+            selectedChatGPTAccountID = activeStoredChatGPTAccount?.accountID ?? ""
         } catch let error as ChatGPTOAuthError where error.isTransientKeychainAvailabilityFailure {
-            hasStoredChatGPTTokens = false
+            storedChatGPTAccounts = []
+            selectedChatGPTAccountID = ""
         } catch {
-            hasStoredChatGPTTokens = false
+            storedChatGPTAccounts = []
+            selectedChatGPTAccountID = ""
+        }
+    }
+
+    private func switchToChatGPTAccount(_ accountID: String) async {
+        guard server.isLocal else {
+            authError = "Settings account switching is only available for the local server."
+            return
+        }
+        do {
+            authError = nil
+            try await appModel.activateStoredLocalChatGPTAccount(serverId: server.serverId, accountID: accountID)
+            refreshStoredCredentialFlags()
+        } catch {
+            authError = error.localizedDescription
+            refreshStoredCredentialFlags()
+        }
+    }
+
+    private func removeSelectedChatGPTAccount() async {
+        guard server.isLocal else {
+            authError = "Settings account removal is only available for the local server."
+            return
+        }
+        let accountID = selectedChatGPTAccountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountID.isEmpty else { return }
+        do {
+            authError = nil
+            try await appModel.removeStoredLocalChatGPTAccount(serverId: server.serverId, accountID: accountID)
+            refreshStoredCredentialFlags()
+        } catch {
+            authError = error.localizedDescription
+            refreshStoredCredentialFlags()
         }
     }
 
@@ -1652,8 +1755,11 @@ private struct SettingsConnectionAccountSection: View {
             return
         }
         do {
-            try? ChatGPTOAuthTokenStore.shared.clear()
-            try? OpenAIApiKeyStore.shared.clear()
+            if isChatGPTAccount {
+                try? ChatGPTOAuthTokenStore.shared.clearActiveAccount()
+            } else if case .apiKey? = server.account {
+                try? OpenAIApiKeyStore.shared.clear()
+            }
             _ = try await appModel.client.logoutAccount(serverId: server.serverId)
             try await appModel.restartLocalServer()
             refreshStoredCredentialFlags()

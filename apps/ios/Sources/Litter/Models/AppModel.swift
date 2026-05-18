@@ -472,6 +472,40 @@ final class AppModel {
         await refreshSnapshot()
     }
 
+    func activateStoredLocalChatGPTAccount(serverId: String, accountID: String) async throws {
+        guard let server = snapshot?.serverSnapshot(for: serverId) else {
+            throw LocalAccountLoginFlowError.localServerUnavailable
+        }
+        guard server.isLocal else {
+            throw LocalAccountLoginFlowError.remoteServer
+        }
+
+        try ChatGPTOAuthTokenStore.shared.setActiveAccountID(accountID)
+        if server.account != nil {
+            _ = try? await client.logoutAccount(serverId: serverId)
+        }
+        await restoreStoredLocalAuthState(serverId: serverId)
+        guard snapshot?.serverSnapshot(for: serverId)?.account != nil else {
+            throw LocalAccountLoginFlowError.loginDidNotAttach
+        }
+    }
+
+    func removeStoredLocalChatGPTAccount(serverId: String, accountID: String) async throws {
+        guard let server = snapshot?.serverSnapshot(for: serverId) else {
+            throw LocalAccountLoginFlowError.localServerUnavailable
+        }
+        guard server.isLocal else {
+            throw LocalAccountLoginFlowError.remoteServer
+        }
+
+        try ChatGPTOAuthTokenStore.shared.clear(accountID: accountID)
+        if server.account != nil {
+            _ = try? await client.logoutAccount(serverId: serverId)
+        }
+        await restoreStoredLocalAuthState(serverId: serverId)
+        await refreshSnapshot()
+    }
+
     func ensureLocalAuthForThreadStart(serverId: String) async throws -> Bool {
         guard let server = snapshot?.serverSnapshot(for: serverId) else {
             return true
@@ -673,7 +707,7 @@ final class AppModel {
         storedTokens: ChatGPTOAuthTokenBundle
     ) async -> Bool {
         let refreshedTokens = try? await ChatGPTOAuth.refreshStoredTokens(
-            previousAccountID: nil,
+            previousAccountID: storedTokens.accountID,
             storedTokens: storedTokens
         )
         if let refreshedTokens,
@@ -691,7 +725,7 @@ final class AppModel {
 
         try? await Task.sleep(for: .seconds(2))
         if let retriedRefresh = try? await ChatGPTOAuth.refreshStoredTokens(
-            previousAccountID: nil,
+            previousAccountID: storedTokens.accountID,
             storedTokens: storedTokens
         ) {
             return await loginStoredLocalChatGPTAuth(serverId: serverId, tokens: retriedRefresh)

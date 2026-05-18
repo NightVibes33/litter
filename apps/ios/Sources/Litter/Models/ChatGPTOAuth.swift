@@ -11,6 +11,30 @@ struct ChatGPTOAuthTokenBundle: Codable, Equatable {
     let refreshToken: String?
     let accountID: String
     let planType: String?
+    let email: String?
+}
+
+struct StoredChatGPTAccountSummary: Identifiable, Equatable {
+    let accountID: String
+    let email: String?
+    let planType: String?
+    let isActive: Bool
+
+    var id: String { accountID }
+
+    var displayName: String {
+        let trimmedEmail = email?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedEmail.isEmpty {
+            return trimmedEmail
+        }
+        let suffix = String(accountID.suffix(6))
+        return suffix.isEmpty ? "ChatGPT Account" : "ChatGPT ...\(suffix)"
+    }
+
+    var detailText: String {
+        let plan = planType?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return plan.isEmpty ? accountID : "\(plan) - \(accountID)"
+    }
 }
 
 enum ChatGPTOAuthError: LocalizedError {
@@ -72,13 +96,142 @@ final class ChatGPTOAuthTokenStore {
     static let shared = ChatGPTOAuthTokenStore()
 
     private let service = "com.sigkitten.litter.chatgpt.tokens"
-    private let account = "default"
+    private let legacyAccount = "default"
+    private let accountPrefix = "chatgpt:"
+    private let activeAccountKey = "litter.chatgpt.activeAccountID"
     private let accessibility = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
     private init() {}
 
     func load() throws -> ChatGPTOAuthTokenBundle? {
-        let query = baseQuery().merging([
+        if let activeID = activeAccountID,
+           let activeTokens = try load(accountID: activeID) {
+            return activeTokens
+        }
+
+        guard let first = try storedTokenBundles().first else {
+            return nil
+        }
+        activeAccountID = first.accountID
+        return first
+    }
+
+    func load(accountID: String) throws -> ChatGPTOAuthTokenBundle? {
+        if let tokens = try loadKeychainToken(accountName: keychainAccountName(for: accountID)) {
+            return tokens
+        }
+        guard let legacy = try loadKeychainToken(accountName: legacyAccount),
+              legacy.accountID == accountID else {
+            return nil
+        }
+        try saveKeychainToken(legacy, accountName: keychainAccountName(for: legacy.accountID))
+        return legacy
+    }
+
+    func save(_ tokens: ChatGPTOAuthTokenBundle) throws {
+        try saveKeychainToken(tokens, accountName: keychainAccountName(for: tokens.accountID))
+        activeAccountID = tokens.accountID
+    }
+
+    func storedAccounts() throws -> [StoredChatGPTAccountSummary] {
+        let tokens = try storedTokenBundles()
+        let activeID = activeAccountID ?? tokens.first?.accountID
+        if activeAccountID == nil, let activeID {
+            activeAccountID = activeID
+        }
+        return tokens
+            .sorted { lhs, rhs in
+                let lhsName = lhs.email?.lowercased() ?? lhs.accountID.lowercased()
+                let rhsName = rhs.email?.lowercased() ?? rhs.accountID.lowercased()
+                return lhsName < rhsName
+            }
+            .map { tokens in
+                StoredChatGPTAccountSummary(
+                    accountID: tokens.accountID,
+                    email: tokens.email,
+                    planType: tokens.planType,
+                    isActive: tokens.accountID == activeID
+                )
+            }
+    }
+
+    func setActiveAccountID(_ accountID: String) throws {
+        guard try load(accountID: accountID) != nil else {
+            throw ChatGPTOAuthError.missingStoredTokens
+        }
+        activeAccountID = accountID
+    }
+
+    func clearActiveAccount() throws {
+        if let activeID = activeAccountID ?? storedTokenBundles().first?.accountID {
+            try clear(accountID: activeID)
+            return
+        }
+        try clear()
+    }
+
+    func clear(accountID: String) throws {
+        try deleteKeychainToken(accountName: keychainAccountName(for: accountID))
+        if let legacy = try loadKeychainToken(accountName: legacyAccount),
+           legacy.accountID == accountID {
+            try deleteKeychainToken(accountName: legacyAccount)
+        }
+        if activeAccountID == accountID {
+            activeAccountID = try storedTokenBundles().first?.accountID
+        }
+    }
+
+    func clear() throws {
+        let query = serviceQuery()
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw ChatGPTOAuthError.keychain(status)
+        }
+        activeAccountID = nil
+    }
+
+    var hasStoredTokens: Bool {
+        (try? load()) != nil
+    }
+
+    private var activeAccountID: String? {
+        get {
+            let raw = UserDefaults.standard.string(forKey: activeAccountKey) ?? ""
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        set {
+            let trimmed = newValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if trimmed.isEmpty {
+                UserDefaults.standard.removeObject(forKey: activeAccountKey)
+            } else {
+                UserDefaults.standard.set(trimmed, forKey: activeAccountKey)
+            }
+        }
+    }
+
+    private func storedTokenBundles() throws -> [ChatGPTOAuthTokenBundle] {
+        var seen: Set<String> = []
+        var tokens: [ChatGPTOAuthTokenBundle] = []
+
+        for bundle in try loadAllKeychainTokens() {
+            guard !bundle.accountID.isEmpty, !seen.contains(bundle.accountID) else { continue }
+            seen.insert(bundle.accountID)
+            tokens.append(bundle)
+        }
+
+        if let legacy = try loadKeychainToken(accountName: legacyAccount),
+           !seen.contains(legacy.accountID) {
+            try saveKeychainToken(legacy, accountName: keychainAccountName(for: legacy.accountID))
+            seen.insert(legacy.accountID)
+            tokens.append(legacy)
+        }
+
+        return tokens
+    }
+
+    private func loadKeychainToken(accountName: String) throws -> ChatGPTOAuthTokenBundle? {
+        let query = itemQuery(accountName: accountName).merging([
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]) { _, new in new }
@@ -98,9 +251,38 @@ final class ChatGPTOAuthTokenStore {
         }
     }
 
-    func save(_ tokens: ChatGPTOAuthTokenBundle) throws {
+    private func loadAllKeychainTokens() throws -> [ChatGPTOAuthTokenBundle] {
+        let query = serviceQuery().merging([
+            kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]) { _, new in new }
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        switch status {
+        case errSecSuccess:
+            break
+        case errSecItemNotFound:
+            return []
+        default:
+            throw ChatGPTOAuthError.keychain(status)
+        }
+
+        guard let rows = item as? [[String: Any]] else {
+            return []
+        }
+        return rows.compactMap { row in
+            let accountName = row[kSecAttrAccount as String] as? String ?? ""
+            guard accountName.hasPrefix(accountPrefix) else { return nil }
+            guard let data = row[kSecValueData as String] as? Data else { return nil }
+            return try? JSONDecoder().decode(ChatGPTOAuthTokenBundle.self, from: data)
+        }
+    }
+
+    private func saveKeychainToken(_ tokens: ChatGPTOAuthTokenBundle, accountName: String) throws {
         let data = try JSONEncoder().encode(tokens)
-        let attributes: [String: Any] = baseQuery().merging([
+        let attributes: [String: Any] = itemQuery(accountName: accountName).merging([
             kSecAttrAccessible as String: accessibility,
             kSecValueData as String: data
         ]) { _, new in new }
@@ -111,7 +293,7 @@ final class ChatGPTOAuthTokenStore {
                 kSecAttrAccessible as String: accessibility,
                 kSecValueData as String: data
             ]
-            let updateStatus = SecItemUpdate(baseQuery() as CFDictionary, updates as CFDictionary)
+            let updateStatus = SecItemUpdate(itemQuery(accountName: accountName) as CFDictionary, updates as CFDictionary)
             guard updateStatus == errSecSuccess else {
                 throw ChatGPTOAuthError.keychain(updateStatus)
             }
@@ -123,19 +305,28 @@ final class ChatGPTOAuthTokenStore {
         }
     }
 
-    func clear() throws {
-        let status = SecItemDelete(baseQuery() as CFDictionary)
+    private func deleteKeychainToken(accountName: String) throws {
+        let status = SecItemDelete(itemQuery(accountName: accountName) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw ChatGPTOAuthError.keychain(status)
         }
     }
 
-    private func baseQuery() -> [String: Any] {
+    private func keychainAccountName(for accountID: String) -> String {
+        accountPrefix + accountID
+    }
+
+    private func serviceQuery() -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrService as String: service
         ]
+    }
+
+    private func itemQuery(accountName: String) -> [String: Any] {
+        serviceQuery().merging([
+            kSecAttrAccount as String: accountName
+        ]) { _, new in new }
     }
 }
 
@@ -243,8 +434,7 @@ enum ChatGPTOAuth {
             fallbackRefreshToken: refreshToken
         )
         if let previousAccountID, !previousAccountID.isEmpty,
-           refreshed.accountID != previousAccountID,
-           stored.accountID != previousAccountID {
+           refreshed.accountID != previousAccountID {
             throw ChatGPTOAuthError.refreshAccountMismatch
         }
         try ChatGPTOAuthTokenStore.shared.save(refreshed)
@@ -542,7 +732,8 @@ enum ChatGPTOAuth {
             idToken: idToken,
             refreshToken: refreshToken,
             accountID: accountID,
-            planType: planType
+            planType: planType,
+            email: resolveEmail(idClaims: idClaims, accessClaims: accessClaims)
         )
     }
 
@@ -608,6 +799,25 @@ enum ChatGPTOAuth {
         let candidates: [String?] = [
             accessClaims["chatgpt_plan_type"] as? String,
             idClaims["chatgpt_plan_type"] as? String
+        ]
+        return candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })
+    }
+
+    private static func resolveEmail(
+        idClaims: [String: Any],
+        accessClaims: [String: Any]
+    ) -> String? {
+        let idProfile = idClaims["https://api.openai.com/profile"] as? [String: Any]
+        let accessProfile = accessClaims["https://api.openai.com/profile"] as? [String: Any]
+        let candidates: [String?] = [
+            idClaims["email"] as? String,
+            accessClaims["email"] as? String,
+            idProfile?["email"] as? String,
+            accessProfile?["email"] as? String,
+            idClaims["https://api.openai.com/profile"] as? String,
+            accessClaims["https://api.openai.com/profile"] as? String
         ]
         return candidates
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
