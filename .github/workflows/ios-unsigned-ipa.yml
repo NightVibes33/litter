@@ -482,12 +482,13 @@ jobs:
           PY
           )"
           MARKETING_VERSION="$(python3 - "$BASE_MARKETING_VERSION" <<'PY'
-          import base64
           import json
           import os
           import re
           import subprocess
           import sys
+          import tempfile
+          from pathlib import Path
 
           base = sys.argv[1].strip()
           match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", base)
@@ -499,17 +500,20 @@ jobs:
           repo = os.environ["GITHUB_REPOSITORY"]
 
           try:
-              response = subprocess.check_output(
-                  [
-                      "gh", "api",
-                      "--method", "GET",
-                      f"repos/{repo}/contents/litter-update.json",
-                      "-f", "ref=app-source-live",
-                  ],
-                  text=True,
-              )
-              content = json.loads(response).get("content", "")
-              stable = json.loads(base64.b64decode(content).decode("utf-8"))
+              with tempfile.TemporaryDirectory() as temp_dir:
+                  subprocess.run(
+                      [
+                          "gh", "release", "download", "app-source",
+                          "--pattern", "litter-update.json",
+                          "--dir", temp_dir,
+                          "--clobber",
+                          "--repo", repo,
+                      ],
+                      check=True,
+                      capture_output=True,
+                      text=True,
+                  )
+                  stable = json.loads((Path(temp_dir) / "litter-update.json").read_text())
               stable_version = str(stable.get("version", "")).strip()
               stable_match = re.fullmatch(rf"{major}\.{minor}\.(\d+)", stable_version)
               if stable_match:
@@ -517,7 +521,7 @@ jobs:
               elif stable_version:
                   print(f"::warning::Stable update feed is on {stable_version}; using {base} as the {major}.{minor}.x base", file=sys.stderr)
           except Exception as error:
-              print(f"::warning::Could not inspect stable Litter app source ({error}); using {base} as the version base", file=sys.stderr)
+              print(f"::warning::Could not inspect stable Litter app-source release ({error}); using {base} as the version base", file=sys.stderr)
 
           print(f"{major}.{minor}.{latest_patch + 1}")
           PY
