@@ -11,6 +11,14 @@ on:
         options:
           - fast-device
           - release-device
+      ipa_delivery:
+        description: "BuildKit delivery"
+        required: true
+        default: "slim"
+        type: choice
+        options:
+          - slim
+          - full-offline
   push:
     branches:
       - main
@@ -526,6 +534,13 @@ jobs:
           print(f"{major}.{minor}.{latest_patch + 1}")
           PY
           )"
+          IPA_DELIVERY="${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'slim' }}"
+          case "$IPA_DELIVERY" in
+            full-offline) export LITTER_EMBED_BUILDKIT_ASSET_ZIP=YES ;;
+            slim) export LITTER_EMBED_BUILDKIT_ASSET_ZIP=NO ;;
+            *) echo "::error::Unsupported ipa_delivery: $IPA_DELIVERY" >&2; exit 1 ;;
+          esac
+          echo "BuildKit delivery: $IPA_DELIVERY (embed asset zip: $LITTER_EMBED_BUILDKIT_ASSET_ZIP)"
           xcodebuild archive \
             -project apps/ios/Litter.xcodeproj \
             -scheme Litter \
@@ -550,10 +565,16 @@ jobs:
             exit 1
           fi
 
+          IPA_DELIVERY="${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'slim' }}"
           ASSET_ZIP="$APP_PATH/LitterBuildKitAssets.zip"
-          if [ ! -s "$ASSET_ZIP" ]; then
-            echo "::error::Archived app is missing LitterBuildKitAssets.zip" >&2
+          if [ "$IPA_DELIVERY" = "full-offline" ] && [ ! -s "$ASSET_ZIP" ]; then
+            echo "::error::Full-offline delivery requires bundled LitterBuildKitAssets.zip" >&2
             find "$APP_PATH" -maxdepth 2 -name '*BuildKit*' -print >&2 || true
+            exit 1
+          fi
+          if [ "$IPA_DELIVERY" = "slim" ] && [ -e "$ASSET_ZIP" ]; then
+            echo "::error::Slim delivery must not embed LitterBuildKitAssets.zip" >&2
+            ls -lh "$ASSET_ZIP" >&2 || true
             exit 1
           fi
           if [ -d "$APP_PATH/BuildKitAssets" ]; then
@@ -730,7 +751,8 @@ jobs:
             check_buildkit_rpath "$library" '@loader_path'
           done
 
-          python3 - "$ASSET_ZIP" <<'PY'
+          if [ -s "$ASSET_ZIP" ]; then
+            python3 - "$ASSET_ZIP" <<'PY'
           import json
           import os
           import pathlib
@@ -797,6 +819,9 @@ jobs:
 
               print(f"Archived BuildKit assets verified: {manifest.get('bundleIdentifier', 'unknown')} SDK {manifest.get('sdkVersion', 'unknown')}")
           PY
+          else
+            echo "Slim IPA verified: LitterBuildKitAssets.zip is omitted from the app bundle and will be published as a toolchain pack."
+          fi
 
       - name: Package SideStore/AltStore IPA artifact
         run: |
@@ -835,12 +860,67 @@ jobs:
           IPA_SIZE="$(stat -f%z "$IPA_PATH")"
           printf '%s  %s\n' "$IPA_SHA256" "$IPA_NAME" > "${IPA_PATH}.sha256"
 
-          export BUNDLE_ID VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE
+          TOOLCHAIN_PACK_SOURCE="apps/ios/Sources/Litter/Resources/BuildKitAssets"
+          TOOLCHAIN_PACK_NAME=""
+          TOOLCHAIN_PACK_PATH=""
+          TOOLCHAIN_PACK_SHA256=""
+          TOOLCHAIN_PACK_SIZE=""
+          if [ -f "$TOOLCHAIN_PACK_SOURCE/manifest.json" ]; then
+            TOOLCHAIN_PACK_NAME="LitterBuildKitAssets-${VERSION}.zip"
+            TOOLCHAIN_PACK_PATH="build/unsigned-ipa/$TOOLCHAIN_PACK_NAME"
+            rm -f "$TOOLCHAIN_PACK_PATH" "${TOOLCHAIN_PACK_PATH}.sha256" build/unsigned-ipa/toolchain-pack-metadata.json
+            TOOLCHAIN_TMP="$(mktemp -d)"
+            cp -R -L "$TOOLCHAIN_PACK_SOURCE" "$TOOLCHAIN_TMP/BuildKitAssets"
+            PACK_ABS="$PWD/$TOOLCHAIN_PACK_PATH"
+            (cd "$TOOLCHAIN_TMP" && /usr/bin/zip -qry "$PACK_ABS" BuildKitAssets)
+            rm -rf "$TOOLCHAIN_TMP"
+            TOOLCHAIN_PACK_SHA256="$(shasum -a 256 "$TOOLCHAIN_PACK_PATH" | awk '{print $1}')"
+            TOOLCHAIN_PACK_SIZE="$(stat -f%z "$TOOLCHAIN_PACK_PATH")"
+            printf '%s  %s\n' "$TOOLCHAIN_PACK_SHA256" "$TOOLCHAIN_PACK_NAME" > "${TOOLCHAIN_PACK_PATH}.sha256"
+            python3 - "$TOOLCHAIN_PACK_SOURCE/manifest.json" "$TOOLCHAIN_PACK_NAME" "$TOOLCHAIN_PACK_SHA256" "$TOOLCHAIN_PACK_SIZE" <<'PYTOOLCHAIN'
+          import json
+          import sys
+          from pathlib import Path
+          manifest = json.loads(Path(sys.argv[1]).read_text())
+          metadata = {
+              "schemaVersion": 1,
+              "name": "Litter BuildKit Toolchain Pack",
+              "assetName": sys.argv[2],
+              "sha256": sys.argv[3],
+              "size": int(sys.argv[4]),
+              "bundleIdentifier": manifest.get("bundleIdentifier"),
+              "sdkVersion": manifest.get("sdkVersion"),
+              "swiftVersion": manifest.get("swiftVersion"),
+              "swiftCompatibilityVersion": manifest.get("swiftCompatibilityVersion"),
+              "sdkSwiftVersion": manifest.get("sdkSwiftVersion"),
+              "capabilities": manifest.get("capabilities", []),
+              "minimumIOS": manifest.get("minimumIOS"),
+              "nativeDriverMode": (manifest.get("toolchain") or {}).get("nativeDriverMode"),
+              "nativeDriverSourceFingerprint": manifest.get("nativeDriverSourceFingerprint") or (manifest.get("source") or {}).get("nativeDriverSourceFingerprint"),
+          }
+          Path("build/unsigned-ipa/toolchain-pack-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          PYTOOLCHAIN
+            ls -lh "$TOOLCHAIN_PACK_PATH"
+          fi
+
+          echo "==> IPA size report"
+          du -sh "$IPA_PATH" Payload/*.app Payload/*.app/Frameworks 2>/dev/null || true
+          if [ -n "$TOOLCHAIN_PACK_PATH" ]; then
+            du -sh "$TOOLCHAIN_PACK_PATH" 2>/dev/null || true
+          fi
+          find Payload/*.app -type f -size +10M -exec ls -lh {} \; 2>/dev/null | sort -k5 -r | sed -n '1,40p' || true
+
+          export BUNDLE_ID VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE TOOLCHAIN_PACK_NAME TOOLCHAIN_PACK_PATH TOOLCHAIN_PACK_SHA256 TOOLCHAIN_PACK_SIZE
           export BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
+          export IPA_DELIVERY="${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'slim' }}"
           python3 - <<'PY'
           import json
           import os
           from pathlib import Path
+          toolchain_pack = None
+          metadata_path = Path("build/unsigned-ipa/toolchain-pack-metadata.json")
+          if metadata_path.is_file():
+              toolchain_pack = json.loads(metadata_path.read_text())
           metadata = {
               "name": "Litter",
               "bundleIdentifier": os.environ["BUNDLE_ID"],
@@ -849,12 +929,14 @@ jobs:
               "publicVersion": os.environ["VERSION"],
               "commit": os.environ["GITHUB_SHA"],
               "buildMode": os.environ["BUILD_MODE"],
+              "ipaDelivery": os.environ["IPA_DELIVERY"],
               "minimumIOSVersion": "18.0",
               "sdkFamily": "iOS26",
               "xcode": "26.3",
               "artifact": os.environ["IPA_NAME"],
               "sha256": os.environ["IPA_SHA256"],
               "size": int(os.environ["IPA_SIZE"]),
+              "toolchainPack": toolchain_pack,
               "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing",
           }
           Path("build/unsigned-ipa/build-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
@@ -872,12 +954,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
+          IPA_DELIVERY: ${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'slim' }}
         run: |
           set -euo pipefail
           METADATA_PATH="build/unsigned-ipa/build-metadata.json"
           NOTES_PATH="build/unsigned-ipa/release-notes.md"
           UPDATE_PATH="build/unsigned-ipa/litter-update.json"
           SOURCE_PATH="build/unsigned-ipa/litter-altstore-source.json"
+          TOOLCHAIN_METADATA_PATH="build/unsigned-ipa/toolchain-pack-metadata.json"
 
           VERSION="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["version"])')"
           BUILD="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["build"])')"
@@ -898,6 +982,16 @@ jobs:
           SOURCE_ICON_PATH="tools/assets/ZYN-source-icon.heic"
           SOURCE_ICON_DEST="build/unsigned-ipa/ZYN-source-icon.heic"
           SOURCE_ICON_URL="${SOURCE_BASE_URL}/ZYN-source-icon.heic"
+          TOOLCHAIN_PACK_NAME=""
+          TOOLCHAIN_PACK_PATH=""
+          TOOLCHAIN_PACK_SHA_PATH=""
+          TOOLCHAIN_PACK_DOWNLOAD_URL=""
+          if [ -f "$TOOLCHAIN_METADATA_PATH" ]; then
+            TOOLCHAIN_PACK_NAME="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/toolchain-pack-metadata.json"))["assetName"])')"
+            TOOLCHAIN_PACK_PATH="build/unsigned-ipa/$TOOLCHAIN_PACK_NAME"
+            TOOLCHAIN_PACK_SHA_PATH="${TOOLCHAIN_PACK_PATH}.sha256"
+            TOOLCHAIN_PACK_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${TOOLCHAIN_PACK_NAME}"
+          fi
           PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           if [ ! -s "$IPA_PATH" ]; then
@@ -917,19 +1011,27 @@ jobs:
           - Commit: ${GITHUB_SHA}
           - Branch: ${GITHUB_REF_NAME}
           - Build mode: ${BUILD_MODE}
+          - IPA delivery: ${IPA_DELIVERY}
           - SHA-256: ${IPA_SHA256}
           - Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
           This IPA is unsigned and must be signed by SideStore, AltStore, Feather, or another signing tool before installation.
           EOF
 
-          export VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE BUNDLE_ID RELEASE_URL IPA_DOWNLOAD_URL SOURCE_URL APP_ICON_URL SOURCE_ICON_URL PUBLISHED_AT BUILD_MODE
+          export VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE BUNDLE_ID RELEASE_URL IPA_DOWNLOAD_URL SOURCE_URL APP_ICON_URL SOURCE_ICON_URL PUBLISHED_AT BUILD_MODE IPA_DELIVERY TOOLCHAIN_METADATA_PATH TOOLCHAIN_PACK_NAME TOOLCHAIN_PACK_DOWNLOAD_URL RELEASE_TAG
           python3 - <<'PY'
           import json
           import os
           from pathlib import Path
 
           notes = Path("build/unsigned-ipa/release-notes.md").read_text()
+          toolchain_pack = None
+          metadata_path = Path(os.environ["TOOLCHAIN_METADATA_PATH"])
+          if metadata_path.is_file() and os.environ.get("TOOLCHAIN_PACK_NAME"):
+              toolchain_pack = json.loads(metadata_path.read_text())
+              toolchain_pack["releaseTag"] = os.environ["RELEASE_TAG"]
+              toolchain_pack["downloadURL"] = os.environ["TOOLCHAIN_PACK_DOWNLOAD_URL"]
+              toolchain_pack["repository"] = os.environ["GITHUB_REPOSITORY"]
           update = {
               "schemaVersion": 1,
               "name": "Litter",
@@ -939,6 +1041,7 @@ jobs:
               "publicVersion": os.environ["VERSION"],
               "commit": os.environ["GITHUB_SHA"],
               "buildMode": os.environ["BUILD_MODE"],
+              "ipaDelivery": os.environ["IPA_DELIVERY"],
               "minimumIOSVersion": "18.0",
               "ipaAssetName": os.environ["IPA_NAME"],
               "ipaDownloadURL": os.environ["IPA_DOWNLOAD_URL"],
@@ -950,6 +1053,7 @@ jobs:
               "iconURL": os.environ["APP_ICON_URL"],
               "sideStoreSourceURL": os.environ["SOURCE_URL"],
               "altStoreSourceURL": os.environ["SOURCE_URL"],
+              "toolchainPack": toolchain_pack,
           }
           source = {
               "name": "ZYN",
@@ -993,26 +1097,24 @@ jobs:
           Path("build/unsigned-ipa/litter-altstore-source.json").write_text(json.dumps(source, indent=2) + "\n")
           PY
 
+          release_assets=("$IPA_PATH" "$SHA_PATH" "$METADATA_PATH" "$UPDATE_PATH" "$SOURCE_PATH")
+          if [ -n "$TOOLCHAIN_PACK_NAME" ]; then
+            if [ ! -s "$TOOLCHAIN_PACK_PATH" ] || [ ! -s "$TOOLCHAIN_PACK_SHA_PATH" ]; then
+              echo "::error::Toolchain pack metadata exists, but the ZIP or SHA sidecar is missing" >&2
+              exit 1
+            fi
+            release_assets+=("$TOOLCHAIN_PACK_PATH" "$TOOLCHAIN_PACK_SHA_PATH" "$TOOLCHAIN_METADATA_PATH")
+          fi
+
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" \
-              "$IPA_PATH" \
-              "$SHA_PATH" \
-              "$METADATA_PATH" \
-              "$UPDATE_PATH" \
-              "$SOURCE_PATH" \
-              --repo "$GITHUB_REPOSITORY" \
-              --clobber
+            gh release upload "$RELEASE_TAG" "${release_assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
             gh release edit "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$RELEASE_TITLE" \
               --notes-file "$NOTES_PATH"
           else
             gh release create "$RELEASE_TAG" \
-              "$IPA_PATH" \
-              "$SHA_PATH" \
-              "$METADATA_PATH" \
-              "$UPDATE_PATH" \
-              "$SOURCE_PATH" \
+              "${release_assets[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "$RELEASE_TITLE" \

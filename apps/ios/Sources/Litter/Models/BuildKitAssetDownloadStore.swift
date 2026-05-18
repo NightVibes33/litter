@@ -7,6 +7,7 @@ struct BuildKitAssetDownloadConfig: Codable, Equatable, Sendable {
     var tag: String = "buildkit-ios26.4-v1"
     var assetName: String = "LitterBuildKitAssets.zip"
     var sha256: String = ""
+    var directDownloadURL: String?
 
     var normalizedSHA256: String? {
         let trimmed = sha256.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -19,6 +20,8 @@ struct BuildKitAssetDownloadConfig: Codable, Equatable, Sendable {
         tag = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         assetName = assetName.trimmingCharacters(in: .whitespacesAndNewlines)
         sha256 = sha256.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        directDownloadURL = directDownloadURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if directDownloadURL?.isEmpty == true { directDownloadURL = nil }
     }
 }
 
@@ -178,6 +181,24 @@ final class BuildKitAssetDownloadStore: NSObject, ObservableObject, URLSessionDo
         }
     }
 
+    func configure(from pack: AppUpdateToolchainPack) {
+        var updated = config
+        if let repository = pack.repository, let slash = repository.firstIndex(of: "/") {
+            updated.owner = String(repository[..<slash])
+            updated.repo = String(repository[repository.index(after: slash)...])
+        }
+        if let releaseTag = pack.releaseTag, !releaseTag.isEmpty {
+            updated.tag = releaseTag
+        }
+        updated.assetName = pack.assetName
+        updated.sha256 = pack.sha256
+        updated.directDownloadURL = pack.downloadURL
+        updated.normalize()
+        config = updated
+        saveConfig()
+        lastOutput = "Selected toolchain pack: \(pack.displayName)"
+    }
+
     func downloadAndInstall() {
         guard !phase.isBusy else { return }
         var normalized = config
@@ -213,13 +234,31 @@ final class BuildKitAssetDownloadStore: NSObject, ObservableObject, URLSessionDo
         do {
             try validateConfig(config)
             phase = .resolving
-            let token = try BuildKitAssetTokenStore.shared.load()
-            let release = try await Self.fetchRelease(config: config, token: token)
-            guard let asset = release.assets.first(where: { $0.name == config.assetName }) else {
-                throw BuildKitAssetDownloadError.assetNotFound(config.assetName)
+            let asset: BuildKitGitHubReleaseAsset
+            let expectedSHA: String
+            let downloadToken: String?
+            if let directDownloadURL = config.directDownloadURL, !directDownloadURL.isEmpty {
+                guard let url = URL(string: directDownloadURL) else {
+                    throw BuildKitAssetDownloadError.invalidConfig("direct download URL")
+                }
+                guard let configured = config.normalizedSHA256 else {
+                    throw BuildKitAssetDownloadError.invalidSHA256(config.sha256)
+                }
+                guard Self.isValidSHA256(configured) else { throw BuildKitAssetDownloadError.invalidSHA256(configured) }
+                asset = BuildKitGitHubReleaseAsset(name: config.assetName, url: url, browserDownloadURL: url, size: nil)
+                expectedSHA = configured
+                downloadToken = nil
+            } else {
+                let requiredToken = try BuildKitAssetTokenStore.shared.load()
+                let release = try await Self.fetchRelease(config: config, token: requiredToken)
+                guard let releaseAsset = release.assets.first(where: { $0.name == config.assetName }) else {
+                    throw BuildKitAssetDownloadError.assetNotFound(config.assetName)
+                }
+                asset = releaseAsset
+                expectedSHA = try await expectedSHA256(config: config, release: release, token: requiredToken)
+                downloadToken = requiredToken
             }
-            let expectedSHA = try await expectedSHA256(config: config, release: release, token: token)
-            let zipURL = try await download(asset: asset, token: token)
+            let zipURL = try await download(asset: asset, token: downloadToken)
 
             phase = .verifying
             let actualSHA = try LitterBuildKit.fileSHA256Hex(zipURL)
@@ -294,6 +333,12 @@ final class BuildKitAssetDownloadStore: NSObject, ObservableObject, URLSessionDo
     }
 
     private func validateConfig(_ config: BuildKitAssetDownloadConfig) throws {
+        if let directDownloadURL = config.directDownloadURL, !directDownloadURL.isEmpty {
+            if URL(string: directDownloadURL) == nil { throw BuildKitAssetDownloadError.invalidConfig("direct download URL") }
+            if config.assetName.isEmpty { throw BuildKitAssetDownloadError.invalidConfig("asset name") }
+            if config.normalizedSHA256 == nil { throw BuildKitAssetDownloadError.invalidConfig("SHA256") }
+            return
+        }
         if config.owner.isEmpty { throw BuildKitAssetDownloadError.invalidConfig("owner") }
         if config.repo.isEmpty { throw BuildKitAssetDownloadError.invalidConfig("repo") }
         if config.tag.isEmpty { throw BuildKitAssetDownloadError.invalidConfig("tag") }

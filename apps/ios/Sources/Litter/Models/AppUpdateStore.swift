@@ -48,6 +48,35 @@ struct AppVersion: Comparable, Equatable, Sendable {
     }
 }
 
+struct AppUpdateToolchainPack: Codable, Equatable, Sendable {
+    var schemaVersion: Int?
+    var name: String?
+    var repository: String?
+    var releaseTag: String?
+    var assetName: String
+    var downloadURL: String?
+    var sha256: String
+    var size: Int64?
+    var bundleIdentifier: String?
+    var sdkVersion: String?
+    var swiftVersion: String?
+    var swiftCompatibilityVersion: String?
+    var sdkSwiftVersion: String?
+    var capabilities: [String]?
+    var minimumIOS: String?
+    var nativeDriverMode: String?
+    var nativeDriverSourceFingerprint: String?
+
+    var normalizedSHA256: String? {
+        LitterDownloadSupport.normalizedSHA256(sha256)
+    }
+
+    var displayName: String {
+        if let name, !name.isEmpty { return name }
+        return assetName
+    }
+}
+
 struct AppUpdateManifest: Codable, Equatable, Sendable {
     var schemaVersion: Int?
     var name: String?
@@ -57,6 +86,7 @@ struct AppUpdateManifest: Codable, Equatable, Sendable {
     var publicVersion: String?
     var commit: String?
     var buildMode: String?
+    var ipaDelivery: String?
     var minimumIOSVersion: String?
     var ipaAssetName: String
     var ipaDownloadURL: String
@@ -67,6 +97,7 @@ struct AppUpdateManifest: Codable, Equatable, Sendable {
     var releaseURL: String?
     var sideStoreSourceURL: String?
     var altStoreSourceURL: String?
+    var toolchainPack: AppUpdateToolchainPack?
 
     var appVersion: AppVersion? {
         AppVersion(version: version, build: build)

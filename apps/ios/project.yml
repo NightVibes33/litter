@@ -120,6 +120,12 @@ targets:
       - name: Package Private BuildKit Assets
         script: |
           set -eu
+          if [ "${LITTER_EMBED_BUILDKIT_ASSET_ZIP:-NO}" != "YES" ]; then
+            RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+            rm -rf "$RESOURCES_DIR/BuildKitAssets" "$RESOURCES_DIR/LitterBuildKitAssets.zip"
+            echo "Skipping bundled LitterBuildKitAssets.zip for slim IPA delivery"
+            exit 0
+          fi
           ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
           if [ ! -d "$ASSET_ROOT" ]; then
             exit 0
