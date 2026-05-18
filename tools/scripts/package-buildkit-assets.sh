@@ -34,16 +34,52 @@ CLANG_BIN="$(xcrun --sdk iphoneos --find clang)"
 if [[ -z "$CLANG_RESOURCE_DIR" ]]; then
   CLANG_RESOURCE_DIR="$("$CLANG_BIN" -print-resource-dir)"
 fi
-if [[ -z "$CXX_STANDARD_LIBRARY_INCLUDE_DIR" ]]; then
-  TOOLCHAIN_USR_DIR="$(cd "$(dirname "$CLANG_BIN")/.." && pwd -P)"
+find_cxx_standard_library_include_dir() {
+  local toolchain_usr_dir
+  toolchain_usr_dir="$(cd "$(dirname "$CLANG_BIN")/.." && pwd -P)"
+  local developer_dir
+  developer_dir="$(xcode-select -p)"
+  local candidate
   for candidate in \
-    "$TOOLCHAIN_USR_DIR/include/c++/v1" \
-    "$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1"; do
-    if [[ -d "$candidate" ]]; then
-      CXX_STANDARD_LIBRARY_INCLUDE_DIR="$candidate"
-      break
+    "$toolchain_usr_dir/include/c++/v1" \
+    "$toolchain_usr_dir/lib/c++/v1" \
+    "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1" \
+    "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib/c++/v1" \
+    "$IPHONEOS_SDK_PATH/usr/include/c++/v1"; do
+    if [[ -f "$candidate/vector" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
     fi
   done
+
+  # Xcode occasionally moves libc++ headers. Ask clang for the active C++
+  # search paths and choose the first directory containing the vector header.
+  local search_log
+  search_log="$(mktemp)"
+  printf '#include <vector>\n' | "$CLANG_BIN" \
+    -target "arm64-apple-ios${IOS_DEPLOYMENT_TARGET:-18.0}" \
+    -isysroot "$IPHONEOS_SDK_PATH" \
+    -x c++ \
+    -std=c++17 \
+    -E \
+    -v \
+    - >/dev/null 2>"$search_log" || true
+  while IFS= read -r candidate; do
+    candidate="${candidate#"${candidate%%[![:space:]]*}"}"
+    candidate="${candidate% (framework directory)}"
+    if [[ -f "$candidate/vector" ]]; then
+      rm -f "$search_log"
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(awk '/#include <...> search starts here:/{capture=1; next} /End of search list./{capture=0} capture {print}' "$search_log")
+  echo "warning: unable to locate libc++ headers from clang search paths:" >&2
+  sed 's/^/  /' "$search_log" >&2
+  rm -f "$search_log"
+  return 1
+}
+if [[ -z "$CXX_STANDARD_LIBRARY_INCLUDE_DIR" ]]; then
+  CXX_STANDARD_LIBRARY_INCLUDE_DIR="$(find_cxx_standard_library_include_dir || true)"
 fi
 if [[ -z "$SDK_SWIFT_VERSION" ]]; then
   SDK_SWIFT_VERSION="$(xcrun --find swift >/dev/null 2>&1 && swift --version | head -n 1 || true)"

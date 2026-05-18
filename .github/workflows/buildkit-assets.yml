@@ -153,6 +153,26 @@ jobs:
             buildkit-assets-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
             buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
 
+      - name: Restore partial BuildKit compiler cache
+        if: steps.existing_assets.outputs.available != 'true' && inputs.force_rebuild == true
+        id: buildkit_partial_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ThirdParty/LLVM-On-iOS/SwiftToolchain-iphoneos
+            ThirdParty/LLVM-On-iOS/SwiftToolchain.zip
+            ThirdParty/LLVM-On-iOS/CoreCompilerSupportLibs
+            ThirdParty/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain-iphoneos
+            ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain.zip
+            ThirdParty/Nyxian/LLVM-On-iOS/CoreCompilerSupportLibs
+            ThirdParty/Nyxian/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/Nyxian/CoreCompiler/CoreCompilerSupportLibs
+            artifacts/buildkit/DerivedData-Nyxian
+          key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}
+          restore-keys: |
+            buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
+
       - name: Check cached asset pack
         id: cached_assets
         if: steps.existing_assets.outputs.available != 'true' && inputs.force_rebuild != true
