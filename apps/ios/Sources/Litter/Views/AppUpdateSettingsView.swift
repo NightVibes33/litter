@@ -130,7 +130,7 @@ struct AppUpdateSettingsView: View {
                         .litterFont(.subheadline, weight: .semibold)
                         .foregroundStyle(LitterTheme.textPrimary)
                     Spacer(minLength: 12)
-                    Text(updater.speedText.isEmpty ? updater.phaseLabel : updater.speedText)
+                    Text(updater.speedText.isEmpty ? updater.phase.phaseLabel : updater.speedText)
                         .litterMonoFont(size: 11, weight: .regular)
                         .foregroundStyle(LitterTheme.textSecondary)
                         .lineLimit(1)

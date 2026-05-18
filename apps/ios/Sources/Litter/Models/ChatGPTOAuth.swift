@@ -163,7 +163,8 @@ final class ChatGPTOAuthTokenStore {
     }
 
     func clearActiveAccount() throws {
-        if let activeID = activeAccountID ?? storedTokenBundles().first?.accountID {
+        let fallbackAccountID = try storedTokenBundles().first?.accountID
+        if let activeID = activeAccountID ?? fallbackAccountID {
             try clear(accountID: activeID)
             return
         }
