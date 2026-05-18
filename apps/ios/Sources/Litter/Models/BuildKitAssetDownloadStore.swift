@@ -311,6 +311,7 @@ final class BuildKitAssetDownloadStore: NSObject, ObservableObject, URLSessionDo
 
     private func download(asset: BuildKitGitHubReleaseAsset, token: String?) async throws -> URL {
         let destination = Self.temporaryDownloadURL(assetName: asset.name)
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
         downloadDestination = destination
         totalBytes = asset.size
         downloadStartedAt = Date()
@@ -327,6 +328,7 @@ final class BuildKitAssetDownloadStore: NSObject, ObservableObject, URLSessionDo
             let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
             self.session = session
             let task = session.downloadTask(with: request)
+            task.taskDescription = destination.path
             self.downloadTask = task
             task.resume()
         }
@@ -375,27 +377,19 @@ final class BuildKitAssetDownloadStore: NSObject, ObservableObject, URLSessionDo
         downloadStartedAt = nil
     }
 
-    private func completeDownload(task: URLSessionDownloadTask, location: URL) {
+    private func completeDownload(_ result: Result<URL, Error>) {
         guard let continuation else { return }
         self.continuation = nil
-        do {
-            if let response = task.response as? HTTPURLResponse, !(200..<300).contains(response.statusCode) {
-                throw BuildKitAssetDownloadError.assetHTTPStatus(response.statusCode)
-            }
-            guard let destination = downloadDestination else { throw BuildKitAssetDownloadError.noDownloadDestination }
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try FileManager.default.moveItem(at: location, to: destination)
-            continuation.resume(returning: destination)
-        } catch {
+        switch result {
+        case .success(let url):
+            continuation.resume(returning: url)
+        case .failure(let error):
             continuation.resume(throwing: error)
         }
     }
 
     private func completeDownload(error: Error) {
-        guard let continuation else { return }
-        self.continuation = nil
-        continuation.resume(throwing: error)
+        completeDownload(.failure(error))
     }
 
     private func updateProgress(written: Int64, totalWritten: Int64, expected: Int64) {
@@ -411,8 +405,28 @@ final class BuildKitAssetDownloadStore: NSObject, ObservableObject, URLSessionDo
     }
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        let result: Result<URL, Error>
+        do {
+            if let response = downloadTask.response as? HTTPURLResponse, !(200..<300).contains(response.statusCode) {
+                throw BuildKitAssetDownloadError.assetHTTPStatus(response.statusCode)
+            }
+            guard let destinationPath = downloadTask.taskDescription, !destinationPath.isEmpty else {
+                throw BuildKitAssetDownloadError.noDownloadDestination
+            }
+            let destination = URL(fileURLWithPath: destinationPath)
+            let manager = FileManager.default
+            try manager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if manager.fileExists(atPath: destination.path) {
+                try manager.removeItem(at: destination)
+            }
+            // URLSession's temporary file is only guaranteed to exist during this delegate callback.
+            try manager.moveItem(at: location, to: destination)
+            result = .success(destination)
+        } catch {
+            result = .failure(error)
+        }
         Task { @MainActor [weak self] in
-            self?.completeDownload(task: downloadTask, location: location)
+            self?.completeDownload(result)
         }
     }
 
