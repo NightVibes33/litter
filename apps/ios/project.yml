@@ -144,13 +144,6 @@ targets:
           if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
             exit 0
           fi
-          if [ "${LITTER_EMBED_BUILDKIT_NATIVE:-YES}" != "YES" ]; then
-            rm -rf "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/CoreCompiler.framework" \
-              "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/LitterBuildKitNative.framework"
-            find "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -delete 2>/dev/null || true
-            echo "Skipping embedded BuildKit native frameworks for core IPA delivery"
-            exit 0
-          fi
           ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/Toolchains/Nyxian"
           if [ ! -d "$ASSET_ROOT" ]; then
             exit 0

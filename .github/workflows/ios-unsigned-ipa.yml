@@ -14,10 +14,9 @@ on:
       ipa_delivery:
         description: "BuildKit delivery"
         required: true
-        default: "core"
+        default: "slim"
         type: choice
         options:
-          - core
           - slim
           - full-offline
   push:
@@ -535,23 +534,13 @@ jobs:
           print(f"{major}.{minor}.{latest_patch + 1}")
           PY
           )"
-          IPA_DELIVERY="${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'core' }}"
+          IPA_DELIVERY="${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'slim' }}"
           case "$IPA_DELIVERY" in
-            core)
-              export LITTER_EMBED_BUILDKIT_ASSET_ZIP=NO
-              export LITTER_EMBED_BUILDKIT_NATIVE=NO
-              ;;
-            slim)
-              export LITTER_EMBED_BUILDKIT_ASSET_ZIP=NO
-              export LITTER_EMBED_BUILDKIT_NATIVE=YES
-              ;;
-            full-offline)
-              export LITTER_EMBED_BUILDKIT_ASSET_ZIP=YES
-              export LITTER_EMBED_BUILDKIT_NATIVE=YES
-              ;;
+            full-offline) export LITTER_EMBED_BUILDKIT_ASSET_ZIP=YES ;;
+            slim) export LITTER_EMBED_BUILDKIT_ASSET_ZIP=NO ;;
             *) echo "::error::Unsupported ipa_delivery: $IPA_DELIVERY" >&2; exit 1 ;;
           esac
-          echo "BuildKit delivery: $IPA_DELIVERY (embed asset zip: $LITTER_EMBED_BUILDKIT_ASSET_ZIP, embed native: $LITTER_EMBED_BUILDKIT_NATIVE)"
+          echo "BuildKit delivery: $IPA_DELIVERY (embed asset zip: $LITTER_EMBED_BUILDKIT_ASSET_ZIP)"
           xcodebuild archive \
             -project apps/ios/Litter.xcodeproj \
             -scheme Litter \
@@ -576,15 +565,15 @@ jobs:
             exit 1
           fi
 
-          IPA_DELIVERY="${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'core' }}"
+          IPA_DELIVERY="${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'slim' }}"
           ASSET_ZIP="$APP_PATH/LitterBuildKitAssets.zip"
           if [ "$IPA_DELIVERY" = "full-offline" ] && [ ! -s "$ASSET_ZIP" ]; then
             echo "::error::Full-offline delivery requires bundled LitterBuildKitAssets.zip" >&2
             find "$APP_PATH" -maxdepth 2 -name '*BuildKit*' -print >&2 || true
             exit 1
           fi
-          if [ "$IPA_DELIVERY" != "full-offline" ] && [ -e "$ASSET_ZIP" ]; then
-            echo "::error::$IPA_DELIVERY delivery must not embed LitterBuildKitAssets.zip" >&2
+          if [ "$IPA_DELIVERY" = "slim" ] && [ -e "$ASSET_ZIP" ]; then
+            echo "::error::Slim delivery must not embed LitterBuildKitAssets.zip" >&2
             ls -lh "$ASSET_ZIP" >&2 || true
             exit 1
           fi
@@ -595,23 +584,6 @@ jobs:
           if find "$APP_PATH" -path "$APP_PATH/Frameworks" -prune -o -path '*/BuildKitAssets/SDK/*' -print -quit | grep -q .; then
             echo "::error::Archived app contains expanded BuildKit SDK payload outside LitterBuildKitAssets.zip" >&2
             exit 1
-          fi
-
-          if [ "$IPA_DELIVERY" = "core" ]; then
-            if [ -d "$APP_PATH/Frameworks/CoreCompiler.framework" ]; then
-              echo "::error::Core delivery must not embed CoreCompiler.framework" >&2
-              exit 1
-            fi
-            if [ -d "$APP_PATH/Frameworks/LitterBuildKitNative.framework" ]; then
-              echo "::error::Core delivery must not embed LitterBuildKitNative.framework" >&2
-              exit 1
-            fi
-            if find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print -quit | grep -q .; then
-              echo "::error::Core delivery must not embed CoreCompiler support dylibs" >&2
-              exit 1
-            fi
-            echo "Core IPA verified: BuildKit native compiler payload is omitted from the app bundle and will be installed from the toolchain pack."
-            exit 0
           fi
 
           if [ ! -d "$APP_PATH/Frameworks/CoreCompiler.framework" ]; then
@@ -940,7 +912,7 @@ jobs:
 
           export BUNDLE_ID VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE TOOLCHAIN_PACK_NAME TOOLCHAIN_PACK_PATH TOOLCHAIN_PACK_SHA256 TOOLCHAIN_PACK_SIZE
           export BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
-          export IPA_DELIVERY="${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'core' }}"
+          export IPA_DELIVERY="${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'slim' }}"
           python3 - <<'PY'
           import json
           import os
@@ -982,7 +954,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
-          IPA_DELIVERY: ${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'core' }}
+          IPA_DELIVERY: ${{ github.event_name == 'workflow_dispatch' && inputs.ipa_delivery || 'slim' }}
         run: |
           set -euo pipefail
           METADATA_PATH="build/unsigned-ipa/build-metadata.json"
