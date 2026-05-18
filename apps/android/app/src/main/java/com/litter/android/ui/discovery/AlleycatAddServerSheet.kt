@@ -49,6 +49,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -67,6 +68,7 @@ import com.litter.android.core.bridge.UniffiInit
 import com.litter.android.state.AlleycatCredentialStore
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.LocalAppModel
+import com.litter.android.ui.common.AgentIconView
 import com.litter.android.ui.common.BetaBadge
 import com.litter.android.ui.common.isBetaAgentName
 import com.sigkitten.litter.android.BuildConfig
@@ -488,6 +490,12 @@ private fun AgentRow(
             )
             .padding(horizontal = 12.dp, vertical = 4.dp),
     ) {
+        AgentIconView(
+            kind = agent.name,
+            sizeDp = 22,
+            modifier = Modifier.alpha(if (agent.available) 1f else 0.45f),
+        )
+        Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

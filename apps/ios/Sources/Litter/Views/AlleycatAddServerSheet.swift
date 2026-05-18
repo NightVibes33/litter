@@ -282,7 +282,9 @@ struct AlleycatAddServerSheet: View {
                         guard agent.available else { return }
                         toggleAgentSelection(agent)
                     } label: {
-                        HStack {
+                        HStack(spacing: 10) {
+                            AgentIconView(kind: agent.name.lowercased(), size: 22)
+                                .opacity(agent.available ? 1 : 0.45)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(agent.displayName)

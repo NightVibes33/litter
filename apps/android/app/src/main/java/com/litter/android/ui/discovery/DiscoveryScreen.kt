@@ -61,6 +61,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -82,6 +83,7 @@ import com.litter.android.state.statusLabel
 import com.litter.android.auth.ChatGPTOAuthActivity
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.LocalAppModel
+import com.litter.android.ui.common.AgentIconView
 import com.litter.android.ui.common.BetaBadge
 import com.litter.android.ui.common.isBeta
 import com.litter.android.util.LLog
@@ -1795,6 +1797,14 @@ private fun SSHAgentPickerDialog(
                             }
                             .padding(vertical = 4.dp),
                     ) {
+                        AgentIconView(
+                            kind = agent.kind,
+                            sizeDp = 22,
+                            modifier = Modifier.alpha(
+                                if (agent.status == AgentAvailabilityStatus.AVAILABLE) 1f else 0.45f,
+                            ),
+                        )
+                        Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(

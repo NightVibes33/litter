@@ -598,7 +598,7 @@ fn merge_paged_turns(
                 )
         });
         if let Some(id) = group_turn_id.as_deref() {
-            if existing_turn_ids.contains(&id) {
+            if existing_turn_ids.contains(id) {
                 // A reconnect repair page is authoritative for completed turn
                 // text. Drop stale streaming assistant/reasoning placeholders
                 // absent from the replay, while preserving the historical
