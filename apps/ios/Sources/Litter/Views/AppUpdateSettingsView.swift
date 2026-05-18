@@ -4,7 +4,6 @@ import UIKit
 struct AppUpdateSettingsView: View {
     @Environment(\.openURL) private var openURL
     @StateObject private var updater = AppUpdateStore()
-    @StateObject private var toolchainDownloader = BuildKitAssetDownloadStore()
     @StateObject private var taskBag = ViewTaskBag()
     @State private var buildKitStatus: LitterBuildKitStatus?
     @State private var copiedMessage: String?
@@ -45,14 +44,10 @@ struct AppUpdateSettingsView: View {
         .sheet(item: $shareItem) { item in
             ActivityView(activityItems: [item.url])
         }
-        .onChange(of: toolchainDownloader.installRevision) { _, _ in
-            taskBag.run { await refreshRuntimeAssets() }
-        }
         .task { await refreshAll() }
         .onDisappear {
             taskBag.cancelAll()
             if updater.phase.isBusy { updater.cancelDownload() }
-            if toolchainDownloader.phase.isBusy { toolchainDownloader.cancel() }
         }
     }
 
@@ -285,57 +280,6 @@ struct AppUpdateSettingsView: View {
                     emptyState("Runtime status has not been scanned yet.")
                 }
 
-                if let pack = updater.latestManifest?.toolchainPack {
-                    Divider().overlay(LitterTheme.border.opacity(0.6))
-                    metricGrid {
-                        metricItem("Toolchain", pack.sdkVersion ?? pack.assetName)
-                        if let swiftVersion = pack.swiftCompatibilityVersion ?? pack.swiftVersion, !swiftVersion.isEmpty {
-                            metricItem("Swift", swiftVersion)
-                        }
-                        if let size = pack.size, size > 0 {
-                            metricItem("Pack size", LitterDownloadSupport.formatBytes(size))
-                        }
-                        if let mode = pack.nativeDriverMode, !mode.isEmpty {
-                            metricItem("Driver", mode)
-                        }
-                    }
-
-                    if toolchainDownloader.phase.isBusy || toolchainDownloader.progress > 0 {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(toolchainDownloader.phase.title)
-                                    .litterFont(.caption, weight: .semibold)
-                                    .foregroundStyle(LitterTheme.textPrimary)
-                                Spacer()
-                                Text(toolchainDownloader.speedText)
-                                    .litterMonoFont(size: 11, weight: .regular)
-                                    .foregroundStyle(LitterTheme.textSecondary)
-                            }
-                            ProgressView(value: toolchainDownloader.progress)
-                            Text(toolchainDownloader.progressText)
-                                .litterMonoFont(size: 11, weight: .regular)
-                                .foregroundStyle(LitterTheme.textSecondary)
-                        }
-                    }
-
-                    if let output = toolchainDownloader.lastOutput, !output.isEmpty {
-                        Text(output)
-                            .litterMonoFont(size: 11, weight: .regular)
-                            .foregroundStyle(LitterTheme.textSecondary)
-                            .textSelection(.enabled)
-                            .lineLimit(6)
-                    }
-
-                    actionRow(
-                        "Download toolchain pack",
-                        detail: toolchainPackDetail(pack),
-                        icon: "arrow.down.circle",
-                        enabled: !toolchainDownloader.phase.isBusy && pack.downloadURL?.isEmpty == false && pack.normalizedSHA256 != nil
-                    ) {
-                        installToolchainPack(pack)
-                    }
-                }
-
                 actionRow("Install bundled runtime assets", detail: "Repair compiler assets packaged inside the app", icon: "shippingbox") {
                     taskBag.run {
                         await LitterBuildKit.shared.installBundledAssetsIfAvailable()
@@ -472,20 +416,6 @@ struct AppUpdateSettingsView: View {
         case .remoteOlder: return LitterTheme.textSecondary
         case .unknown: return LitterTheme.textSecondary
         }
-    }
-
-    private func installToolchainPack(_ pack: AppUpdateToolchainPack) {
-        toolchainDownloader.configure(from: pack)
-        toolchainDownloader.downloadAndInstall()
-    }
-
-    private func toolchainPackDetail(_ pack: AppUpdateToolchainPack) -> String {
-        var parts: [String] = []
-        if let sdkVersion = pack.sdkVersion, !sdkVersion.isEmpty { parts.append("SDK \(sdkVersion)") }
-        if let size = pack.size, size > 0 { parts.append(LitterDownloadSupport.formatBytes(size)) }
-        if pack.normalizedSHA256 != nil { parts.append("SHA verified") }
-        if parts.isEmpty { return "Install compiler SDK assets into Documents/BuildKit" }
-        return parts.joined(separator: " / ")
     }
 
     private func refreshAll() async {

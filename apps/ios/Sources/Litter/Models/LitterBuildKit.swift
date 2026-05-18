@@ -1378,13 +1378,11 @@ actor LitterBuildKit {
     }
 
     private static var nativeCompilerAssetsInstalled: Bool {
-        fileExists(embeddedFrameworkURL(named: "CoreCompiler")) ||
-            fileExists(toolchainRoot.appendingPathComponent("CoreCompiler.framework/CoreCompiler"))
+        fileExists(embeddedFrameworkURL(named: "CoreCompiler"))
     }
 
     private static var nativeDriverInstalled: Bool {
-        fileExists(embeddedFrameworkURL(named: "LitterBuildKitNative")) ||
-            fileExists(nativeDriverURL)
+        fileExists(embeddedFrameworkURL(named: "LitterBuildKitNative"))
     }
 
     private static var nativeDriverLoadable: Bool {
@@ -1397,7 +1395,7 @@ actor LitterBuildKit {
     }
 
     private static var supportLibrariesInstalled: Bool {
-        (embeddedSupportLibraryRoots() + installedSupportLibraryRoots()).contains { root in
+        embeddedSupportLibraryRoots().contains { root in
             guard let contents = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
                 return false
             }
