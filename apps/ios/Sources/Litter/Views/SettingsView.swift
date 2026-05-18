@@ -1401,9 +1401,19 @@ private struct SettingsConnectionAccountSection: View {
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Litter restores the selected account automatically. It will not auto-rotate accounts to bypass provider limits or exhausted credits.")
+                    Text("Litter keeps saved accounts separate. If a turn fails because the active account is out of credits or temporarily limited, chat can offer Switch & Retry.")
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.textSecondary)
+                    Button("Switch to Next Account") {
+                        taskBag.run {
+                            isAuthWorking = true
+                            defer { isAuthWorking = false }
+                            await switchToNextChatGPTAccount()
+                        }
+                    }
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.accent)
+                    .disabled(isAuthWorking || storedChatGPTAccounts.count < 2)
                     Button("Remove Selected ChatGPT Account") {
                         taskBag.run {
                             isAuthWorking = true
@@ -1631,6 +1641,21 @@ private struct SettingsConnectionAccountSection: View {
         do {
             authError = nil
             try await appModel.activateStoredLocalChatGPTAccount(serverId: server.serverId, accountID: accountID)
+            refreshStoredCredentialFlags()
+        } catch {
+            authError = error.localizedDescription
+            refreshStoredCredentialFlags()
+        }
+    }
+
+    private func switchToNextChatGPTAccount() async {
+        guard server.isLocal else {
+            authError = "Settings account switching is only available for the local server."
+            return
+        }
+        do {
+            authError = nil
+            _ = try await appModel.switchToNextStoredLocalChatGPTAccount(serverId: server.serverId)
             refreshStoredCredentialFlags()
         } catch {
             authError = error.localizedDescription

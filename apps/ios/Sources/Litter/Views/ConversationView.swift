@@ -9,6 +9,16 @@ private let conversationViewSignpostLog = OSLog(
     category: "ConversationView"
 )
 
+private struct PendingChatGPTAccountSwitchRetry: Identifiable {
+    let id = UUID()
+    let failureMessage: String
+    let nextAccountName: String
+    let text: String
+    let attachments: [ConversationAttachment]
+    let skillMentions: [SkillMentionSelection]
+    let pluginMentions: [PluginMentionSelection]
+}
+
 enum ConversationStreamingViewportPolicy {
     static func shouldMaintainBottomAnchor(
         isStreaming: Bool,
@@ -54,6 +64,7 @@ struct ConversationView: View {
     @AppStorage("conversationTextSizeStep") private var conversationTextSizeStep = ConversationTextSize.large.rawValue
     @AppStorage("fastMode") private var fastMode = false
     @State private var messageActionError: String?
+    @State private var pendingChatGPTAccountRetry: PendingChatGPTAccountSwitchRetry?
     @State private var hasLoggedFirstRender = false
     @State private var localSendScrollToken = 0
 
@@ -172,13 +183,30 @@ struct ConversationView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .alert("Conversation Action Error", isPresented: Binding(
-            get: { messageActionError != nil },
-            set: { if !$0 { messageActionError = nil } }
+        .alert(pendingChatGPTAccountRetry == nil ? "Conversation Action Error" : "Switch ChatGPT Account?", isPresented: Binding(
+            get: { messageActionError != nil || pendingChatGPTAccountRetry != nil },
+            set: {
+                if !$0 {
+                    messageActionError = nil
+                    pendingChatGPTAccountRetry = nil
+                }
+            }
         )) {
-            Button("OK", role: .cancel) { messageActionError = nil }
+            if let retry = pendingChatGPTAccountRetry {
+                Button("Switch & Retry") {
+                    pendingChatGPTAccountRetry = nil
+                    retryMessageWithNextChatGPTAccount(retry)
+                }
+                Button("Cancel", role: .cancel) { pendingChatGPTAccountRetry = nil }
+            } else {
+                Button("OK", role: .cancel) { messageActionError = nil }
+            }
         } message: {
-            Text(messageActionError ?? "Unknown error")
+            if let retry = pendingChatGPTAccountRetry {
+                Text("\(retry.failureMessage)\n\nSwitch to \(retry.nextAccountName) and retry this message?")
+            } else {
+                Text(messageActionError ?? "Unknown error")
+            }
         }
         .sheet(item: Binding<LocalModelAgentApprovalState?>(
             get: { appModel.localConversationPendingApproval },
@@ -249,7 +277,13 @@ struct ConversationView: View {
                     activeThreadKey.threadId,
                     error.localizedDescription
                 )
-                messageActionError = error.localizedDescription
+                handleTurnStartError(
+                    error,
+                    text: text,
+                    attachments: attachments,
+                    skillMentions: skillMentions,
+                    pluginMentions: pluginMentions
+                )
             }
         }
     }
@@ -264,6 +298,51 @@ struct ConversationView: View {
                     attachments: [],
                     skillMentions: [],
                     pluginMentions: []
+                )
+                try await appModel.startTurn(key: activeThreadKey, payload: payload)
+            } catch {
+                handleTurnStartError(
+                    error,
+                    text: text,
+                    attachments: [],
+                    skillMentions: [],
+                    pluginMentions: []
+                )
+            }
+        }
+    }
+
+    private func handleTurnStartError(
+        _ error: Error,
+        text: String,
+        attachments: [ConversationAttachment],
+        skillMentions: [SkillMentionSelection],
+        pluginMentions: [PluginMentionSelection]
+    ) {
+        if let suggestion = appModel.chatGPTAccountSwitchSuggestion(for: error, serverId: activeThreadKey.serverId) {
+            pendingChatGPTAccountRetry = PendingChatGPTAccountSwitchRetry(
+                failureMessage: error.localizedDescription,
+                nextAccountName: suggestion.displayName,
+                text: text,
+                attachments: attachments,
+                skillMentions: skillMentions,
+                pluginMentions: pluginMentions
+            )
+            return
+        }
+        messageActionError = error.localizedDescription
+    }
+
+    private func retryMessageWithNextChatGPTAccount(_ retry: PendingChatGPTAccountSwitchRetry) {
+        localSendScrollToken &+= 1
+        taskBag.run {
+            do {
+                _ = try await appModel.switchToNextStoredLocalChatGPTAccount(serverId: activeThreadKey.serverId)
+                let payload = try await makeComposerPayload(
+                    text: retry.text,
+                    attachments: retry.attachments,
+                    skillMentions: retry.skillMentions,
+                    pluginMentions: retry.pluginMentions
                 )
                 try await appModel.startTurn(key: activeThreadKey, payload: payload)
             } catch {

@@ -506,6 +506,63 @@ final class AppModel {
         await refreshSnapshot()
     }
 
+    func nextStoredLocalChatGPTAccount(serverId: String) throws -> StoredChatGPTAccountSummary? {
+        guard let server = snapshot?.serverSnapshot(for: serverId), server.isLocal else {
+            return nil
+        }
+        let accounts = try ChatGPTOAuthTokenStore.shared.storedAccounts()
+        return nextStoredChatGPTAccount(in: accounts)
+    }
+
+    func chatGPTAccountSwitchSuggestion(for error: Error, serverId: String) -> StoredChatGPTAccountSummary? {
+        guard isChatGPTAccountLimitError(error) else { return nil }
+        guard let server = snapshot?.serverSnapshot(for: serverId), server.isLocal else { return nil }
+        guard case .chatgpt? = server.account else { return nil }
+        let accounts = (try? ChatGPTOAuthTokenStore.shared.storedAccounts()) ?? []
+        return nextStoredChatGPTAccount(in: accounts)
+    }
+
+    @discardableResult
+    func switchToNextStoredLocalChatGPTAccount(serverId: String) async throws -> StoredChatGPTAccountSummary {
+        guard let server = snapshot?.serverSnapshot(for: serverId) else {
+            throw LocalAccountLoginFlowError.localServerUnavailable
+        }
+        guard server.isLocal else {
+            throw LocalAccountLoginFlowError.remoteServer
+        }
+        let accounts = try ChatGPTOAuthTokenStore.shared.storedAccounts()
+        guard let nextAccount = nextStoredChatGPTAccount(in: accounts) else {
+            throw ChatGPTOAuthError.missingStoredTokens
+        }
+        try await activateStoredLocalChatGPTAccount(serverId: serverId, accountID: nextAccount.accountID)
+        return nextAccount
+    }
+
+    private func nextStoredChatGPTAccount(in accounts: [StoredChatGPTAccountSummary]) -> StoredChatGPTAccountSummary? {
+        guard accounts.count > 1 else { return nil }
+        let activeIndex = accounts.firstIndex(where: \.isActive) ?? 0
+        return accounts[(activeIndex + 1) % accounts.count]
+    }
+
+    private func isChatGPTAccountLimitError(_ error: Error) -> Bool {
+        let message = "\(error.localizedDescription) \(String(describing: error))".lowercased()
+        let markers = [
+            "insufficient_quota",
+            "quota",
+            "credit",
+            "credits",
+            "usage limit",
+            "limit reached",
+            "rate_limit",
+            "rate limit",
+            "too many requests",
+            "429",
+            "exhausted",
+            "billing"
+        ]
+        return markers.contains { message.contains($0) }
+    }
+
     func ensureLocalAuthForThreadStart(serverId: String) async throws -> Bool {
         guard let server = snapshot?.serverSnapshot(for: serverId) else {
             return true
