@@ -888,8 +888,7 @@ jobs:
           RELEASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
           IPA_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
           SOURCE_TAG="app-source"
-          SOURCE_BRANCH="app-source-live"
-          SOURCE_BASE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${SOURCE_BRANCH}"
+          SOURCE_BASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${SOURCE_TAG}"
           SOURCE_URL="${SOURCE_BASE_URL}/litter-altstore-source.json"
           APP_ICON_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png"
           SOURCE_ICON_PATH="tools/assets/ZYN-source-icon.heic"
@@ -1030,36 +1029,6 @@ jobs:
               --notes "Stable SideStore/AltStore source metadata for the latest Litter sideload build." \
               --prerelease
           fi
-
-          STABLE_SOURCE_DIR="$(mktemp -d)"
-          cp "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" "$STABLE_SOURCE_DIR/"
-          cat > "$STABLE_SOURCE_DIR/README.md" <<EOF
-          # ZYN Litter App Source
-
-          Stable SideStore/AltStore source feed for the latest Litter sideload build.
-
-          Source URL: ${SOURCE_URL}
-          Latest version: Litter ${VERSION}
-          EOF
-          git -C "$STABLE_SOURCE_DIR" init
-          git -C "$STABLE_SOURCE_DIR" checkout -B "$SOURCE_BRANCH"
-          git -C "$STABLE_SOURCE_DIR" config user.name "github-actions[bot]"
-          git -C "$STABLE_SOURCE_DIR" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C "$STABLE_SOURCE_DIR" add README.md litter-update.json litter-altstore-source.json ZYN-source-icon.heic
-          git -C "$STABLE_SOURCE_DIR" commit -m "Update stable app source for Litter ${VERSION}"
-          ASKPASS_SCRIPT="$(mktemp)"
-          cat > "$ASKPASS_SCRIPT" <<'EOF_ASKPASS'
-          #!/bin/sh
-          case "$1" in
-            *Username*) printf '%s\n' x-access-token ;;
-            *Password*) printf '%s\n' "$GH_PUSH_TOKEN" ;;
-            *) printf '\n' ;;
-          esac
-          EOF_ASKPASS
-          chmod 700 "$ASKPASS_SCRIPT"
-          GH_PUSH_TOKEN="$GH_TOKEN" GIT_ASKPASS="$ASKPASS_SCRIPT" GIT_TERMINAL_PROMPT=0 \
-            git -C "$STABLE_SOURCE_DIR" push --force "https://github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${SOURCE_BRANCH}"
-          rm -f "$ASKPASS_SCRIPT"
 
           echo "Release download page: ${RELEASE_URL}"
           echo "Stable app source: ${SOURCE_URL}"
