@@ -52,6 +52,10 @@ fi
 mkdir -p "$INCLUDE_DIR" "$STAGING_DIR"
 cp "$GHOSTTY_DIR/include/ghostty.h" "$INCLUDE_DIR/ghostty.h"
 
+ZIG_CACHE_DIR="${GHOSTTY_ANDROID_ZIG_CACHE_DIR:-$STAGING_DIR/zig-cache}"
+rm -rf "$ZIG_CACHE_DIR"
+mkdir -p "$ZIG_CACHE_DIR/global" "$ZIG_CACHE_DIR/local"
+
 target_for_abi() {
     case "$1" in
         arm64-v8a) echo "aarch64-linux-android.26" ;;
@@ -85,6 +89,10 @@ for abi in $ANDROID_ABIS; do
     if [ -n "$HOST_SDKROOT" ]; then
         env_args+=(SDKROOT="$HOST_SDKROOT")
     fi
+    env_args+=(
+        ZIG_GLOBAL_CACHE_DIR="$ZIG_CACHE_DIR/global"
+        ZIG_LOCAL_CACHE_DIR="$ZIG_CACHE_DIR/local"
+    )
 
     echo "==> Building Ghostty Android renderer for $abi ($target)..."
     (

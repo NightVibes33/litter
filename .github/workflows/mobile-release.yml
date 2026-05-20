@@ -14,8 +14,11 @@ on:
       - docs/releases/testflight-whats-new.md
       - shared/rust-bridge/**
       - shared/third_party/codex
+      - shared/third_party/ghostty
       - patches/codex/**
+      - patches/ghostty/**
       - tools/scripts/build-android-rust.sh
+      - tools/scripts/build-ghostty-android.sh
 
 permissions:
   contents: write
@@ -51,11 +54,15 @@ jobs:
               - '.github/workflows/mobile-release.yml'
               - '.github/workflows/android-play-release.yml'
               - 'apps/android/**'
+              - 'apps/ios/scripts/sync-ghostty.sh'
               - 'apps/ios/scripts/sync-codex.sh'
               - 'shared/rust-bridge/**'
               - 'shared/third_party/codex'
+              - 'shared/third_party/ghostty'
               - 'patches/codex/**'
+              - 'patches/ghostty/**'
               - 'tools/scripts/build-android-rust.sh'
+              - 'tools/scripts/build-ghostty-android.sh'
             release_ios:
               - 'Makefile'
               - '.github/workflows/mobile-release.yml'
@@ -65,46 +72,58 @@ jobs:
               - 'apps/ios/Sources/**'
               - 'apps/ios/Tests/**'
               - 'apps/ios/scripts/app-store-release.sh'
+              - 'apps/ios/scripts/build-ghostty.sh'
               - 'apps/ios/scripts/build-rust.sh'
               - 'apps/ios/scripts/download-alpine-fs.sh'
               - 'apps/ios/scripts/regenerate-project.sh'
               - 'apps/ios/scripts/release-common.sh'
               - 'apps/ios/scripts/sanitize-ios-frameworks.sh'
               - 'apps/ios/scripts/sync-codex.sh'
+              - 'apps/ios/scripts/sync-ghostty.sh'
               - 'apps/ios/scripts/testflight-upload.sh'
               - 'docs/releases/testflight-whats-new.md'
               - 'shared/rust-bridge/**'
               - 'shared/third_party/codex'
+              - 'shared/third_party/ghostty'
               - 'patches/codex/**'
+              - 'patches/ghostty/**'
             release_mac_testflight:
               - 'Makefile'
               - '.github/workflows/mobile-release.yml'
               - '.github/workflows/mac-testflight.yml'
               - 'apps/ios/project.yml'
               - 'apps/ios/Sources/**'
+              - 'apps/ios/scripts/build-ghostty.sh'
               - 'apps/ios/scripts/build-rust.sh'
               - 'apps/ios/scripts/regenerate-project.sh'
               - 'apps/ios/scripts/release-common.sh'
               - 'apps/ios/scripts/sync-codex.sh'
+              - 'apps/ios/scripts/sync-ghostty.sh'
               - 'apps/ios/scripts/testflight-upload-mac.sh'
               - 'docs/releases/testflight-whats-new.md'
               - 'shared/rust-bridge/**'
               - 'shared/third_party/codex'
+              - 'shared/third_party/ghostty'
               - 'patches/codex/**'
+              - 'patches/ghostty/**'
             release_mac_direct:
               - 'Makefile'
               - '.github/workflows/mobile-release.yml'
               - '.github/workflows/mac-direct-dist.yml'
               - 'apps/ios/project.yml'
               - 'apps/ios/Sources/**'
+              - 'apps/ios/scripts/build-ghostty.sh'
               - 'apps/ios/scripts/build-rust.sh'
               - 'apps/ios/scripts/direct-dist-mac.sh'
               - 'apps/ios/scripts/regenerate-project.sh'
               - 'apps/ios/scripts/release-common.sh'
               - 'apps/ios/scripts/sync-codex.sh'
+              - 'apps/ios/scripts/sync-ghostty.sh'
               - 'shared/rust-bridge/**'
               - 'shared/third_party/codex'
+              - 'shared/third_party/ghostty'
               - 'patches/codex/**'
+              - 'patches/ghostty/**'
 
       - name: Resolve release matrix
         id: resolve
@@ -346,9 +365,7 @@ jobs:
           touch .build-stamps/sync .build-stamps/bindings-kotlin
 
       - name: Install cargo-ndk
-        env:
-          RUSTC_WRAPPER: sccache
-        run: cargo install cargo-ndk --locked
+        run: env -u RUSTC_WRAPPER cargo install cargo-ndk --locked
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4

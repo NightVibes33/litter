@@ -216,9 +216,7 @@ jobs:
           touch .build-stamps/sync .build-stamps/bindings-kotlin
 
       - name: Install cargo-ndk
-        env:
-          RUSTC_WRAPPER: sccache
-        run: cargo install cargo-ndk --locked
+        run: env -u RUSTC_WRAPPER cargo install cargo-ndk --locked
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4

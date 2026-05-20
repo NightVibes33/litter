@@ -41,7 +41,11 @@ if ! grep -q 'GHOSTTY_PLATFORM_IOS' "$GHOSTTY_DIR/include/ghostty.h"; then
     exit 1
 fi
 
+ZIG_CACHE_DIR="${GHOSTTY_ZIG_CACHE_DIR:-$STAGING_DIR/zig-cache}"
+
 mkdir -p "$GENERATED_DIR/Headers" "$GENERATED_DIR/ios-device" "$GENERATED_DIR/ios-sim" "$STAGING_DIR/bin"
+rm -rf "$ZIG_CACHE_DIR"
+mkdir -p "$ZIG_CACHE_DIR/global" "$ZIG_CACHE_DIR/local"
 
 if [ ! -d "$XCODE_DEVELOPER_DIR/Platforms/iPhoneOS.platform" ]; then
     echo "error: Xcode developer dir does not contain iPhoneOS SDKs: $XCODE_DEVELOPER_DIR" >&2
@@ -112,7 +116,12 @@ build_slice() {
         zig_args+=(\
             -Doptimize=ReleaseFast \
             --prefix "$prefix")
-        env PATH="$STAGING_DIR/bin:$PATH" DEVELOPER_DIR="$XCODE_DEVELOPER_DIR" "${zig_args[@]}"
+        env \
+            PATH="$STAGING_DIR/bin:$PATH" \
+            DEVELOPER_DIR="$XCODE_DEVELOPER_DIR" \
+            ZIG_GLOBAL_CACHE_DIR="$ZIG_CACHE_DIR/global" \
+            ZIG_LOCAL_CACHE_DIR="$ZIG_CACHE_DIR/local" \
+            "${zig_args[@]}"
     )
 
     if [ ! -f "$prefix/lib/ghostty-internal.a" ]; then

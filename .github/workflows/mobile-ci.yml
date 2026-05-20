@@ -8,8 +8,10 @@ on:
       - 'apps/android/**'
       - 'apps/ios/**'
       - 'patches/codex/**'
+      - 'patches/ghostty/**'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
+      - 'shared/third_party/ghostty'
       - 'tools/scripts/**'
       - '.github/workflows/mobile-ci.yml'
   push:
@@ -20,8 +22,10 @@ on:
       - 'apps/android/**'
       - 'apps/ios/**'
       - 'patches/codex/**'
+      - 'patches/ghostty/**'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
+      - 'shared/third_party/ghostty'
       - 'tools/scripts/**'
       - '.github/workflows/mobile-ci.yml'
 
@@ -206,7 +210,7 @@ jobs:
           touch .build-stamps/sync .build-stamps/bindings-kotlin
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
+        run: env -u RUSTC_WRAPPER cargo install cargo-ndk --locked
 
       - name: Build Rust JNI libs
         env:
