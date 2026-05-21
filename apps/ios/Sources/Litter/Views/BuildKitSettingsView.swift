@@ -273,6 +273,7 @@ struct BuildKitSettingsView: View {
             statusRow("Driver loadable", status?.nativeDriverLoadable == true ? "Ready" : "Not ready")
             statusRow("Nyxian runner", status?.nativeRunnerInstalled == true ? "Installed" : "Missing")
             statusRow("Swift support libs", status?.supportLibrariesInstalled == true ? "Installed" : "Missing")
+            statusRow("Swift resource dir", status?.swiftResourceDirInstalled == true ? "Installed" : "Missing")
             statusRow("iPhoneOS SDK", status?.sdkInstalled == true ? "Installed" : "Missing")
             if let status {
                 pathRow("BuildKit", status.buildKitRoot)

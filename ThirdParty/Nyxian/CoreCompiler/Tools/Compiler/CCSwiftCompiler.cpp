@@ -166,7 +166,7 @@ CC_EXPORT Boolean CCSwiftCompilerJobExecute(CCJobRef job,
     
     MyObserver obs;
     llvm::remove_fatal_error_handler();
-    int status = swift::performFrontend(args, "swift-frontend", nullptr, &obs);
+    int status = swift::performFrontend(args, "swift-frontend", reinterpret_cast<void *>(CCSwiftCompilerJobExecute), &obs);
     CCInstallLLVMFatalErrorHandler();
     
     if(outDiagnostics == nullptr)
@@ -235,7 +235,7 @@ CC_EXPORT Boolean CCSwiftCompilerJobExecute(CCJobRef job,
         
         CCDiagnosticRef diagnostic = CCDiagnosticCreate(kCFAllocatorSystemDefault, CCDiagnosticTypeFile, level, mainSource, fileSourceLocation, messageStr);
         CFRelease(messageStr);
-        CFRelease(fileSourceLocation);
+        if(fileSourceLocation != nullptr) { CFRelease(fileSourceLocation); }
         if(diagnostic == nullptr)
         {
             continue;

@@ -163,6 +163,7 @@ The vendored Nyxian source is pinned in `ThirdParty/Nyxian/LITTER_NYXIAN_IMPORT.
 
 - `Toolchains/Nyxian/CoreCompiler.framework`
 - `Toolchains/Nyxian/CoreCompilerSupportLibs`
+- `Toolchains/Nyxian/SwiftResourceDir`
 - `Toolchains/Nyxian/LitterBuildKitNative.framework`
 - `SDK/iPhoneOS<version>.sdk`
 - optional `Toolchains/Nyxian/bin/litter-buildkit-runner` for runner mode

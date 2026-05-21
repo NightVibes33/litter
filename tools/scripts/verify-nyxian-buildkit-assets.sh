@@ -55,12 +55,13 @@ manifest_path = root / "manifest.json"
 manifest = json.loads(manifest_path.read_text())
 toolchain = manifest.get("toolchain", {})
 required = list(manifest.get("requiredPaths", []))
-for key in ("coreCompilerFramework", "nativeDriverFramework", "nativeRunner", "supportLibraries", "sdkPath", "clangResourceDir", "cxxStandardLibraryIncludeDir"):
+for key in ("coreCompilerFramework", "nativeDriverFramework", "nativeRunner", "supportLibraries", "sdkPath", "clangResourceDir", "cxxStandardLibraryIncludeDir", "swiftResourceDir"):
     value = toolchain.get(key)
     if value:
         required.append(value)
 clang_resource_dir = toolchain.get("clangResourceDir") or ""
 cxx_include_dir = toolchain.get("cxxStandardLibraryIncludeDir") or ""
+swift_resource_dir = toolchain.get("swiftResourceDir") or ""
 if clang_resource_dir:
     required.extend([
         f"{clang_resource_dir}/include/stdarg.h",
@@ -69,6 +70,8 @@ if clang_resource_dir:
     ])
 if cxx_include_dir:
     required.append(f"{cxx_include_dir}/vector")
+if swift_resource_dir:
+    required.append(f"{swift_resource_dir}/iphoneos")
 missing = []
 for rel in sorted(set(required)):
     if not (root / rel).exists():
@@ -79,7 +82,7 @@ if missing:
         print(f"- {rel}")
     raise SystemExit(1)
 capabilities = set(manifest.get("capabilities") or [])
-required_capabilities = {"clang-resource-dir", "cxx-stdlib-headers", "ui-framework-imports"}
+required_capabilities = {"clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports"}
 missing_capabilities = sorted(required_capabilities - capabilities)
 if missing_capabilities:
     print("error: BuildKit asset manifest is missing toolchain capability declarations:")
@@ -88,6 +91,9 @@ if missing_capabilities:
     raise SystemExit(1)
 if not clang_resource_dir:
     print("error: BuildKit asset manifest is missing toolchain.clangResourceDir")
+    raise SystemExit(1)
+if not swift_resource_dir:
+    print("error: BuildKit asset manifest is missing toolchain.swiftResourceDir")
     raise SystemExit(1)
 if not cxx_include_dir:
     print("error: BuildKit asset manifest is missing toolchain.cxxStandardLibraryIncludeDir")
@@ -134,6 +140,7 @@ print(f"bundle={manifest.get('bundleIdentifier')} sdk={manifest.get('sdkVersion'
 print(f"swiftCompatibilityVersion={manifest.get('swiftCompatibilityVersion')} sdkSwiftVersion={manifest.get('sdkSwiftVersion')}")
 print(f"clangResourceDir={clang_resource_dir}")
 print(f"cxxStandardLibraryIncludeDir={cxx_include_dir}")
+print(f"swiftResourceDir={swift_resource_dir}")
 print(f"nativeDriverSourceFingerprint={actual_native_fingerprint or 'missing'}")
 print("capabilities=" + ", ".join(manifest.get("capabilities", [])))
 PYVERIFY

@@ -11,7 +11,7 @@ Last verified public build:
 Current BuildKit state:
 
 - Public repo contains the app-side BuildKit bridge, focused Nyxian/LLVM BuildKit source import, LiveContainer/ZSign source with a trimmed iOS arm64 OpenSSL.xcframework slice, fakefs command shims, fakefs doctor, native ABI wrapper source, private asset manifest contract, private GitHub Release downloader, and authenticated CI asset injection.
-- Full on-device Swift/IPA building requires a private `LitterBuildKitAssets` bundle with CoreCompiler, Swift support libraries, `LitterBuildKitNative.framework`, and a user-owned `iPhoneOS26.4.sdk`. Runner mode additionally requires a packaged Nyxian runner; in-process mode now handles Swift jobs and minimal unsigned IPA packaging inside `LitterBuildKitNative.framework`.
+- Full on-device Swift/IPA building requires a private `LitterBuildKitAssets` bundle with CoreCompiler, Swift support libraries, Swift resource files, `LitterBuildKitNative.framework`, and a user-owned `iPhoneOS26.4.sdk`. Runner mode additionally requires a packaged Nyxian runner; in-process mode now handles Swift jobs and minimal unsigned IPA packaging inside `LitterBuildKitNative.framework`.
 - Apple SDK assets must not be committed to this public repository.
 
 Latest implementation note:

@@ -412,7 +412,7 @@ jobs:
           manifest = json.loads(manifest_path.read_text())
           toolchain = manifest.get("toolchain", {})
           required = list(manifest.get("requiredPaths", []))
-          for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner"):
+          for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner", "swiftResourceDir"):
               value = toolchain.get(key)
               if value:
                   required.append(value)
@@ -431,6 +431,9 @@ jobs:
               missing.append("symlinks are not allowed in BuildKitAssets")
 
           sdk_path = toolchain.get("sdkPath") or "SDK/iPhoneOS26.4.sdk"
+          swift_resource_dir = toolchain.get("swiftResourceDir") or "Toolchains/Nyxian/SwiftResourceDir"
+          if not (root / swift_resource_dir / "iphoneos").is_dir():
+              missing.append(str(pathlib.Path(swift_resource_dir) / "iphoneos"))
           sdk_settings = pathlib.Path(sdk_path) / "SDKSettings.plist"
           if not (root / sdk_settings).is_file():
               missing.append(str(sdk_settings))
@@ -752,10 +755,12 @@ jobs:
               manifest = json.loads(archive.read(manifest_name).decode("utf-8"))
               toolchain = manifest.get("toolchain", {})
               required = list(manifest.get("requiredPaths", []))
-              for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner"):
+              for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner", "swiftResourceDir"):
                   value = toolchain.get(key)
                   if value:
                       required.append(value)
+              swift_resource_dir = toolchain.get("swiftResourceDir") or "Toolchains/Nyxian/SwiftResourceDir"
+              required.append(str(pathlib.Path(swift_resource_dir) / "iphoneos"))
 
               expected_native_fingerprint = os.environ.get("LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT") or ""
               actual_native_fingerprint = (

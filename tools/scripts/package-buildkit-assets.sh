@@ -12,6 +12,7 @@ SUPPORT_LIBS="${CORECOMPILER_SUPPORT_LIBS:-}"
 IPHONEOS_SDK_PATH="${IPHONEOS_SDK_PATH:-}"
 CLANG_RESOURCE_DIR="${LITTER_BUILDKIT_CLANG_RESOURCE_DIR:-${CLANG_RESOURCE_DIR:-}}"
 CXX_STANDARD_LIBRARY_INCLUDE_DIR="${LITTER_BUILDKIT_CXX_STANDARD_LIBRARY_INCLUDE_DIR:-${CXX_STANDARD_LIBRARY_INCLUDE_DIR:-}}"
+SWIFT_RESOURCE_DIR="${LITTER_BUILDKIT_SWIFT_RESOURCE_DIR:-${SWIFT_RESOURCE_DIR:-}}"
 SDK_VERSION="${LITTER_BUILDKIT_SDK_VERSION:-}"
 SWIFT_VERSION="${LITTER_BUILDKIT_SWIFT_VERSION:-6.x}"
 SWIFT_COMPATIBILITY_VERSION="${LITTER_BUILDKIT_SWIFT_COMPATIBILITY_VERSION:-$SWIFT_VERSION}"
@@ -30,9 +31,32 @@ fi
 if [[ -z "$SDK_VERSION" ]]; then
   SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
 fi
+SWIFT_BIN="$(xcrun --sdk iphoneos --find swiftc 2>/dev/null || xcrun --find swiftc)"
 CLANG_BIN="$(xcrun --sdk iphoneos --find clang)"
 if [[ -z "$CLANG_RESOURCE_DIR" ]]; then
   CLANG_RESOURCE_DIR="$("$CLANG_BIN" -print-resource-dir)"
+fi
+find_swift_resource_dir() {
+  local candidate
+  if [[ -x "$SWIFT_BIN" ]]; then
+    candidate="$("$SWIFT_BIN" -print-target-info 2>/dev/null | python3 -c 'import json,sys; print((json.load(sys.stdin).get("paths") or {}).get("runtimeResourcePath") or "")' 2>/dev/null || true)"
+    if [[ -d "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+  local swift_usr_dir
+  swift_usr_dir="$(cd "$(dirname "$SWIFT_BIN")/.." && pwd -P)"
+  for candidate in "$swift_usr_dir/lib/swift" "$IPHONEOS_SDK_PATH/usr/lib/swift"; do
+    if [[ -d "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+if [[ -z "$SWIFT_RESOURCE_DIR" ]]; then
+  SWIFT_RESOURCE_DIR="$(find_swift_resource_dir || true)"
 fi
 find_cxx_standard_library_include_dir() {
   local toolchain_usr_dir
@@ -138,6 +162,11 @@ if [[ -d "$CXX_STANDARD_LIBRARY_INCLUDE_DIR" ]]; then
 fi
 require_path "libc++ standard library headers" "$CXX_STANDARD_LIBRARY_INCLUDE_DIR"
 require_path "libc++ vector header" "$CXX_STANDARD_LIBRARY_INCLUDE_DIR/vector"
+if [[ -d "$SWIFT_RESOURCE_DIR" ]]; then
+  SWIFT_RESOURCE_DIR="$(cd "$SWIFT_RESOURCE_DIR" && pwd -P)"
+fi
+require_path "Swift resource directory" "$SWIFT_RESOURCE_DIR"
+require_path "Swift iphoneos resource directory" "$SWIFT_RESOURCE_DIR/iphoneos"
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR/Toolchains/Nyxian" "$OUT_DIR/SDK" "$(dirname "$ZIP_PATH")"
@@ -153,6 +182,10 @@ CXX_INCLUDE_DEST="$OUT_DIR/$CXX_INCLUDE_REL"
 rm -rf "$OUT_DIR/Toolchains/Nyxian/CxxStandardLibrary"
 mkdir -p "$(dirname "$CXX_INCLUDE_DEST")"
 /usr/bin/ditto "$CXX_STANDARD_LIBRARY_INCLUDE_DIR" "$CXX_INCLUDE_DEST"
+SWIFT_RESOURCE_REL="Toolchains/Nyxian/SwiftResourceDir"
+SWIFT_RESOURCE_DEST="$OUT_DIR/$SWIFT_RESOURCE_REL"
+rm -rf "$SWIFT_RESOURCE_DEST"
+/usr/bin/ditto "$SWIFT_RESOURCE_DIR" "$SWIFT_RESOURCE_DEST"
 SDK_DEST="$OUT_DIR/SDK/iPhoneOS${SDK_VERSION}.sdk"
 rm -rf "$SDK_DEST"
 /usr/bin/ditto "$IPHONEOS_SDK_PATH" "$SDK_DEST"
@@ -238,7 +271,7 @@ normalize_buildkit_payload_symlinks
 prune_sdk_compiler_dylibs
 sign_buildkit_payload
 
-python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$SWIFT_COMPATIBILITY_VERSION" "$SDK_SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" "$SOURCE_COMMIT" "$NATIVE_SOURCE_FINGERPRINT" "$CLANG_RESOURCE_REL" "$CXX_INCLUDE_REL" <<'PY'
+python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$SWIFT_COMPATIBILITY_VERSION" "$SDK_SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" "$SOURCE_COMMIT" "$NATIVE_SOURCE_FINGERPRINT" "$CLANG_RESOURCE_REL" "$CXX_INCLUDE_REL" "$SWIFT_RESOURCE_REL" <<'PY'
 import datetime, hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 sdk_version = sys.argv[2]
@@ -251,6 +284,7 @@ source_commit = sys.argv[8]
 native_source_fingerprint = sys.argv[9]
 clang_resource_rel = sys.argv[10]
 cxx_include_rel = sys.argv[11]
+swift_resource_rel = sys.argv[12]
 required = [
     "Toolchains/Nyxian/CoreCompiler.framework",
     "Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler",
@@ -262,6 +296,8 @@ required = [
     f"{clang_resource_rel}/include/stdbool.h",
     f"{clang_resource_rel}/include/stddef.h",
     cxx_include_rel,
+    swift_resource_rel,
+    f"{swift_resource_rel}/iphoneos",
     f"{cxx_include_rel}/vector",
     f"SDK/iPhoneOS{sdk_version}.sdk/SDKSettings.plist",
 ]
@@ -298,11 +334,12 @@ manifest = {
         "nativeRunner": runner_rel or None,
         "nativeDriverMode": native_mode,
         "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
+        "swiftResourceDir": swift_resource_rel,
         "sdkPath": f"SDK/iPhoneOS{sdk_version}.sdk",
         "clangResourceDir": clang_resource_rel,
         "cxxStandardLibraryIncludeDir": cxx_include_rel,
     },
-    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package", "clang-ios-build", "objc-ios-build", "cxx-ios-build", "objcxx-ios-build", "ld-ios-link", "xcrun-compat", "plutil-compat", "clang-resource-dir", "cxx-stdlib-headers", "ui-framework-imports"] + (["nyxian-runner"] if runner_rel else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
+    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package", "clang-ios-build", "objc-ios-build", "cxx-ios-build", "objcxx-ios-build", "ld-ios-link", "xcrun-compat", "plutil-compat", "clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports"] + (["nyxian-runner"] if runner_rel else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
     "requiredPaths": required,
     "sha256": hashes,
 }
