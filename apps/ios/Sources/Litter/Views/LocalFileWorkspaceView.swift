@@ -2299,6 +2299,9 @@ struct LitterTerminalPanel: View {
     let searchQuery: String
     let onBrowse: ((String) -> Void)?
     let onCopy: (String) -> Void
+    var hostTitle: String = "litter.local"
+    var isLocalFilesystem: Bool = true
+    var runCommand: ((String, String) async -> IshFS.Result)? = nil
 
     @AppStorage("litterTerminalCommandHistory") private var storedCommandHistory = ""
     @AppStorage("litterTerminalFontSize") private var terminalFontSize = 13.0
@@ -2397,7 +2400,7 @@ struct LitterTerminalPanel: View {
                     Circle().fill(LitterTheme.success).frame(width: 10, height: 10)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("litter.local")
+                    Text(hostTitle)
                         .litterMonoFont(size: 12, weight: .semibold)
                         .foregroundStyle(LitterTheme.textPrimary)
                     Text(statusLine)
@@ -2552,7 +2555,7 @@ struct LitterTerminalPanel: View {
             return
         }
         let started = Date()
-        let result = await IshFS.run(terminalShellCommand(trimmed), cwd: cwd)
+        let result = await executeTerminalCommand(terminalShellCommand(trimmed), cwd: cwd)
         history.append(LitterTerminalEntry(
             command: trimmed,
             directory: cwd,
@@ -2566,7 +2569,7 @@ struct LitterTerminalPanel: View {
         let startCwd = cwd
         let started = Date()
         let target = command.dropFirst(2).trimmingCharacters(in: .whitespacesAndNewlines)
-        let cdTarget: String
+        let shellCommand: String
         if target == "-" {
             guard let previousCwd else {
                 history.append(LitterTerminalEntry(
@@ -2578,22 +2581,23 @@ struct LitterTerminalPanel: View {
                 ))
                 return
             }
-            cdTarget = IshFS.shellQuote(previousCwd)
+            shellCommand = "cd \(IshFS.shellQuote(previousCwd)) && pwd"
         } else if target.isEmpty {
-            cdTarget = IshFS.shellQuote(HomeAnchor.path)
+            shellCommand = "cd && pwd"
         } else {
-            cdTarget = IshFS.shellQuote(cdDestination(from: target))
+            shellCommand = "cd \(target) && pwd"
         }
 
-        let result = await IshFS.run("cd \(cdTarget) && pwd", cwd: startCwd)
+        let result = await executeTerminalCommand(shellCommand, cwd: startCwd)
+        let output = cleanTerminalOutput(result.output)
         if result.exitCode == 0 {
-            let next = cleanTerminalOutput(result.output)
+            let next = output.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
             previousCwd = startCwd
             cwd = next.isEmpty ? startCwd : next
             history.append(LitterTerminalEntry(
                 command: command,
                 directory: startCwd,
-                output: cwd,
+                output: output.isEmpty ? cwd : output,
                 exitCode: 0,
                 duration: Date().timeIntervalSince(started)
             ))
@@ -2601,13 +2605,12 @@ struct LitterTerminalPanel: View {
             history.append(LitterTerminalEntry(
                 command: command,
                 directory: startCwd,
-                output: cleanTerminalOutput(result.output),
+                output: output,
                 exitCode: result.exitCode,
                 duration: Date().timeIntervalSince(started)
             ))
         }
     }
-
     private var terminalBackground: some View {
         LinearGradient(
             colors: [
@@ -2655,11 +2658,16 @@ struct LitterTerminalPanel: View {
         }
         let last = history.last
         let exit = last.map { "exit \($0.exitCode)" } ?? "ready"
-        return "\(PathDisplay.display(cwd, isLocal: true)) - \(exit)"
+        return "\(PathDisplay.display(cwd, isLocal: isLocalFilesystem)) - \(exit)"
     }
 
     private var promptText: String {
         prompt(for: cwd)
+    }
+
+    private var promptHost: String {
+        let sanitized = hostTitle.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: " ", with: "-").lowercased()
+        return sanitized.isEmpty ? "litter" : sanitized
     }
 
     private var canSubmit: Bool {
@@ -2671,7 +2679,7 @@ struct LitterTerminalPanel: View {
     }
 
     private func prompt(for directory: String) -> String {
-        "root@litter:\(PathDisplay.display(directory, isLocal: true))#"
+        "root@\(promptHost):\(PathDisplay.display(directory, isLocal: isLocalFilesystem))#"
     }
 
     private func entryTranscript(_ item: LitterTerminalEntry) -> String {
@@ -2699,6 +2707,13 @@ struct LitterTerminalPanel: View {
 
     private func terminalShellCommand(_ raw: String) -> String {
         "export TERM=xterm-256color COLORTERM=truecolor CLICOLOR=1 CLICOLOR_FORCE=1; \(raw)"
+    }
+
+    private func executeTerminalCommand(_ command: String, cwd: String) async -> IshFS.Result {
+        if let runCommand {
+            return await runCommand(command, cwd)
+        }
+        return await IshFS.run(command, cwd: cwd)
     }
 
     private func recallPreviousCommand() {
