@@ -837,7 +837,7 @@ private struct SettingsTerminalView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            LitterTheme.codeBackground.ignoresSafeArea()
             LitterTerminalPanel(
                 browserPath: HomeAnchor.path,
                 requestedDirectory: initialDirectory,
@@ -848,12 +848,11 @@ private struct SettingsTerminalView: View {
                     copiedOutput = true
                 }
             )
-            .background(LitterTheme.surface.opacity(0.4))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .padding(12)
         }
         .navigationTitle("Terminal")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(LitterTheme.codeBackground, for: .navigationBar)
         .alert("Terminal", isPresented: $copiedOutput) {
             Button("OK", role: .cancel) { copiedOutput = false }
         } message: {
