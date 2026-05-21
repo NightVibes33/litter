@@ -2301,6 +2301,7 @@ struct LitterTerminalPanel: View {
     let onCopy: (String) -> Void
 
     @AppStorage("litterTerminalCommandHistory") private var storedCommandHistory = ""
+    @AppStorage("litterTerminalFontSize") private var terminalFontSize = 13.0
     @State private var cwd = HomeAnchor.path
     @State private var previousCwd: String?
     @State private var command = ""
@@ -2377,6 +2378,7 @@ struct LitterTerminalPanel: View {
                 Button("~") { insertTerminalText("~") }
                 Button("/") { insertTerminalText("/") }
                 Button("|") { insertTerminalText(" | ") }
+                Button { pasteCommandFromClipboard() } label: { Image(systemName: "doc.on.clipboard") }
                 Spacer()
                 Button { recallPreviousCommand() } label: { Image(systemName: "arrow.up") }
                     .disabled(commandHistory.isEmpty)
@@ -2409,6 +2411,15 @@ struct LitterTerminalPanel: View {
                         onBrowse(cwd)
                     }
                 }
+                terminalIconButton(systemImage: "textformat.size.smaller", accessibilityLabel: "Decrease terminal font size") {
+                    terminalFontSize = max(10, terminalFontSize - 1)
+                }
+                terminalIconButton(systemImage: "textformat.size.larger", accessibilityLabel: "Increase terminal font size") {
+                    terminalFontSize = min(20, terminalFontSize + 1)
+                }
+                terminalIconButton(systemImage: "doc.on.clipboard", accessibilityLabel: "Paste command") {
+                    pasteCommandFromClipboard()
+                }
                 terminalIconButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy terminal output") {
                     onCopy(transcriptText)
                 }
@@ -2437,7 +2448,7 @@ struct LitterTerminalPanel: View {
                 TextField("sh command", text: $command, axis: .vertical)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(size: CGFloat(terminalFontSize + 1), weight: .regular, design: .monospaced))
                     .lineLimit(1...5)
                     .submitLabel(.return)
                     .focused($inputFocused)
@@ -2477,6 +2488,7 @@ struct LitterTerminalPanel: View {
                     .disabled(commandHistory.isEmpty)
                 terminalShortcutButton(title: "Down", systemImage: "arrow.down") { recallNextCommand() }
                     .disabled(commandHistory.isEmpty)
+                terminalShortcutButton(title: "Paste", systemImage: "doc.on.clipboard") { pasteCommandFromClipboard() }
                 terminalCommandChip("pwd")
                 terminalCommandChip("ls -la")
                 terminalCommandChip("git status")
@@ -2497,7 +2509,7 @@ struct LitterTerminalPanel: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 Text(item.command)
-                    .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                    .font(.system(size: CGFloat(terminalFontSize), weight: .semibold, design: .monospaced))
                     .foregroundStyle(LitterTheme.textPrimary)
                     .textSelection(.enabled)
                 Spacer()
@@ -2513,7 +2525,7 @@ struct LitterTerminalPanel: View {
                 }
             }
             Text(terminalAttributedOutput(item.output.isEmpty ? " " : item.output))
-                .font(.system(.footnote, design: .monospaced))
+                .font(.system(size: CGFloat(terminalFontSize), weight: .regular, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -2540,7 +2552,7 @@ struct LitterTerminalPanel: View {
             return
         }
         let started = Date()
-        let result = await IshFS.run(trimmed, cwd: cwd)
+        let result = await IshFS.run(terminalShellCommand(trimmed), cwd: cwd)
         history.append(LitterTerminalEntry(
             command: trimmed,
             directory: cwd,
@@ -2621,7 +2633,7 @@ struct LitterTerminalPanel: View {
                     .foregroundStyle(LitterTheme.textPrimary)
             }
         }
-        .font(.system(.footnote, design: .monospaced))
+        .font(.system(size: CGFloat(terminalFontSize), weight: .regular, design: .monospaced))
         .textSelection(.enabled)
         .padding(.top, 6)
     }
@@ -2677,6 +2689,16 @@ struct LitterTerminalPanel: View {
     private func insertTerminalText(_ text: String) {
         command += text
         inputFocused = true
+    }
+
+    private func pasteCommandFromClipboard() {
+        guard let pasted = UIPasteboard.general.string, !pasted.isEmpty else { return }
+        command += pasted
+        inputFocused = true
+    }
+
+    private func terminalShellCommand(_ raw: String) -> String {
+        "export TERM=xterm-256color COLORTERM=truecolor CLICOLOR=1 CLICOLOR_FORCE=1; \(raw)"
     }
 
     private func recallPreviousCommand() {
@@ -2760,7 +2782,13 @@ struct LitterTerminalPanel: View {
         } else {
             unquoted = trimmed
         }
-        return PathDisplay.expand(unquoted, isLocal: true)
+        if unquoted == "~" {
+            return HomeAnchor.path
+        }
+        if unquoted.hasPrefix("~/") {
+            return HomeAnchor.path + "/" + String(unquoted.dropFirst(2))
+        }
+        return unquoted
     }
 
     private func isCdCommand(_ raw: String) -> Bool {
