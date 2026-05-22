@@ -12,7 +12,6 @@ PATCH_FILES=(
     "$REPO_DIR/patches/codex/mobile-shell-snapshot-timeout.patch"
     "$REPO_DIR/patches/codex/remote-app-server-websocket-cap.patch"
     "$REPO_DIR/patches/codex/absolute-path-cross-platform.patch"
-    "$REPO_DIR/patches/codex/android-installation-id-lock.patch"
     "$REPO_DIR/patches/codex/dynamic-tool-call-arguments-delta.patch"
     "$REPO_DIR/patches/codex/approval-timestamps-serde-default.patch"
     "$REPO_DIR/patches/codex/realtime-webrtc-env-apikey.patch"
