@@ -27,6 +27,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     @Binding var renameCurrentThreadTitle: String
     @Binding var renameDraft: String
     @Binding var slashErrorMessage: String?
+    @Binding var slashAlertTitle: String
     @Binding var showMicPermissionAlert: Bool
     let onOpenSettings: () -> Void
     let onLoadSelectedPhoto: (PhotosPickerItem) async -> Void
@@ -230,11 +231,11 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
             } message: {
                 Text("Current thread title:\n\(renameCurrentThreadTitle)")
             }
-            .alert("Slash Command Error", isPresented: Binding(
+            .alert(slashAlertTitle, isPresented: Binding(
                 get: { slashErrorMessage != nil },
-                set: { if !$0 { slashErrorMessage = nil } }
+                set: { if !$0 { slashErrorMessage = nil; slashAlertTitle = "Slash Command Error" } }
             )) {
-                Button("OK", role: .cancel) { slashErrorMessage = nil }
+                Button("OK", role: .cancel) { slashErrorMessage = nil; slashAlertTitle = "Slash Command Error" }
             } message: {
                 Text(slashErrorMessage ?? "Unknown error")
             }
