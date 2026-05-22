@@ -164,6 +164,50 @@ ensure_host_llvm_on_path() {
 
 ensure_host_llvm_on_path
 
+patch_litter_ish_darwin_vdso_probe() {
+  if [ "$(uname -s)" != "Darwin" ]; then
+    return
+  fi
+  local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+  local checkouts_dir="$cargo_home/git/checkouts"
+  if [ ! -d "$checkouts_dir" ] || ! command -v python3 >/dev/null 2>&1; then
+    return
+  fi
+
+  python3 - "$checkouts_dir" <<'PYVDSPATCH'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+marker = "# Litter iOS CI: use Meson VDSO stub on Darwin."
+needle = 'CLANG="$1"\n'
+patch = """CLANG="$1"
+
+# Litter iOS CI: use Meson VDSO stub on Darwin.
+# The iSH ARM64 VDSO is optional, and both Apple clang and current Homebrew
+# LLVM clang reject the upstream hard-coded `-fuse-ld=lld` invocation on macOS.
+# Returning a probe failure lets litter-ish use its supported stub target.
+if [ "$(uname -s)" = "Darwin" ]; then
+    echo "ARM64 VDSO disabled on Darwin; using Meson stub fallback"
+    exit 1
+fi
+"""
+patched = 0
+for path in root.glob("litter-ish-*/**/vdso/arm64/check-cc-arm64.sh"):
+    text = path.read_text()
+    if marker in text:
+        continue
+    if needle not in text:
+        print(f"warning: unexpected litter-ish VDSO probe shape: {path}")
+        continue
+    path.write_text(text.replace(needle, patch, 1))
+    patched += 1
+    print(f"==> Patched litter-ish Darwin VDSO probe: {path}")
+if patched == 0:
+    print("==> No unpatched litter-ish Darwin VDSO probe found")
+PYVDSPATCH
+}
+
 export CXX_aarch64_apple_ios="$IOS_CLANGXX_WRAPPER"
 export CXX_aarch64_apple_ios_sim="$IOS_CLANGXX_WRAPPER"
 export CXX_aarch64_apple_ios_macabi="$IOS_CLANGXX_WRAPPER"
@@ -289,6 +333,7 @@ fi
 # releases used i686, current releases use AArch64; keep both targets available
 # so the git-tracked dependency can move without breaking iOS/Catalyst builds.
 rustup target add i686-unknown-linux-musl aarch64-unknown-linux-musl
+patch_litter_ish_darwin_vdso_probe
 
 if [ "$DEVICE_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios ($PROFILE)..."
