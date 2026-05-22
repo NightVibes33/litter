@@ -629,10 +629,14 @@ actor LitterBuildKit {
             if command -v apk >/dev/null 2>&1; then apk info | sort | sed -n '1,120p'; else echo "apk missing"; fi
             echo
             echo "Tool versions:"
+            buildkit_shims=" \(Self.commandNames.joined(separator: " ")) "
             for tool in \(Self.commandNames.joined(separator: " ")) git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm make jq; do
               if command -v "$tool" >/dev/null 2>&1; then
-                printf '%s: ' "$tool"
-                "$tool" --version 2>&1 | head -n 1
+                tool_path="$(command -v "$tool")"
+                case "$buildkit_shims" in
+                  *" $tool "*) echo "$tool: $tool_path (Litter BuildKit shim; version check skipped inside env-report)" ;;
+                  *) printf '%s: ' "$tool"; "$tool" --version 2>&1 | head -n 1 ;;
+                esac
               else
                 echo "$tool: missing"
               fi
