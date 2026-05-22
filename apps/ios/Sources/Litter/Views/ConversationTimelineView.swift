@@ -235,8 +235,8 @@ private enum ConversationTimelineRowDescriptor: Identifiable, Equatable {
 
         func flushSubagentBuffer() {
             guard !subagentBuffer.isEmpty else { return }
-            if subagentBuffer.count == 1 {
-                rows.append(.item(subagentBuffer[0].item))
+            if subagentBuffer.count == 1, let onlySubagent = subagentBuffer.first {
+                rows.append(.item(onlySubagent.item))
             } else {
                 let seed = subagentBuffer.first?.item.id ?? UUID().uuidString
                 // Merge all targets, threadIds, states, pick the latest status

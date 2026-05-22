@@ -141,7 +141,11 @@ final class RecentDirectoryStore {
         do {
             let data = try JSONEncoder().encode(entries)
             userDefaults.set(data, forKey: storageKey)
-        } catch {}
+        } catch {
+            LLog.warn("recents", "failed to save recent directories", fields: [
+                "error": error.localizedDescription
+            ])
+        }
     }
 
     private func trimEntries(_ entries: [RecentDirectoryEntry]) -> [RecentDirectoryEntry] {

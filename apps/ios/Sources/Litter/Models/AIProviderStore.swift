@@ -770,7 +770,10 @@ final class AIProviderStore: ObservableObject {
         ]) { _, new in new }
         let status = SecItemAdd(attrs as CFDictionary, nil)
         if status == errSecDuplicateItem {
-            let update = [kSecValueData as String: data]
+            let update: [String: Any] = [
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                kSecValueData as String: data
+            ]
             let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
             guard updateStatus == errSecSuccess else { throw keychainError(updateStatus) }
             return

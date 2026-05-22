@@ -2727,10 +2727,9 @@ private struct ConversationInputBar: View {
                 mentionSkillPathsByName.removeValue(forKey: normalizedName)
             }
 
-            guard let candidates = skillsByName[normalizedName], candidates.count == 1 else {
+            guard let candidates = skillsByName[normalizedName], candidates.count == 1, let match = candidates.first else {
                 continue
             }
-            let match = candidates[0]
             guard seenPaths.insert(match.path.value).inserted else { continue }
             resolved.append(SkillMentionSelection(name: match.name, path: match.path.value))
         }

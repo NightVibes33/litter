@@ -827,7 +827,12 @@ final class VoiceRuntimeController: VoiceActions {
                     attributes: attributes,
                     content: .init(state: session.activityContentState, staleDate: nil)
                 )
-            } catch {}
+            } catch {
+                LLog.warn("voice", "failed to start voice call live activity", fields: [
+                    "threadId": session.threadKey.threadId,
+                    "error": error.localizedDescription
+                ])
+            }
             return
         }
         guard let activity = voiceCallActivity else { return }

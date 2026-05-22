@@ -461,7 +461,13 @@ private struct SubagentDetailSheet: View {
                 cwdOverride: nil
             )
             await appModel.refreshThreadSnapshot(key: threadKey)
-        } catch {}
+        } catch {
+            LLog.warn("subagent", "failed to load subagent thread", fields: [
+                "serverId": threadKey.serverId,
+                "threadId": threadKey.threadId,
+                "error": error.localizedDescription
+            ])
+        }
     }
 }
 

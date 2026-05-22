@@ -472,7 +472,12 @@ struct ConversationToolbarControls: View {
                     remoteAuthSession = RemoteAuthSession(url: url)
                 }
             }
-        } catch {}
+        } catch {
+            LLog.warn("header", "failed to start remote login", fields: [
+                "serverId": server.serverId,
+                "error": error.localizedDescription
+            ])
+        }
         return true
     }
 }
@@ -1224,7 +1229,9 @@ private struct ModelRuntimeIcon: View {
 #Preview("Header") {
     let appModel = LitterPreviewData.makeConversationAppModel()
     LitterPreviewScene(appModel: appModel) {
-        HeaderView(thread: appModel.snapshot!.threads[0])
+        if let thread = appModel.snapshot?.threads.first {
+            HeaderView(thread: thread)
+        }
     }
 }
 #endif
