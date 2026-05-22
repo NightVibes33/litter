@@ -173,6 +173,9 @@ jobs:
             ThirdParty/Nyxian/LLVM-On-iOS/build
             ThirdParty/Nyxian/CoreCompiler/CoreCompilerSupportLibs
             artifacts/buildkit/DerivedData-Nyxian
+            artifacts/buildkit/LitterBuildKitNative.framework
+            artifacts/buildkit/LitterBuildKitAssets
+            artifacts/buildkit/LitterBuildKitAssets.zip
           key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}
           restore-keys: |
             buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
