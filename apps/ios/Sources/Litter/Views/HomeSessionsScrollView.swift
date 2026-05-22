@@ -1069,12 +1069,10 @@ struct AlphaAnimatedImageView: UIViewRepresentable {
         let duration: TimeInterval
     }
 
-    /// Our iOS APNGs were authored at 10fps (100ms per frame), but the
-    /// equivalent Android WebPs render at 15fps (67ms per frame) — so
-    /// the same 165-frame entrance runs 16.5s on iOS vs 11.055s on
-    /// Android. Force playback at the Android cadence by overriding
-    /// the encoded delays. The source frames are uniform in both
-    /// files, so a flat per-frame duration here is exact, not a
+    /// These entrance APNGs were authored at 10fps (100ms per frame), but
+    /// the intended motion cadence is 15fps (67ms per frame). Force playback
+    /// at that cadence by overriding the encoded delays. The source frames
+    /// are uniform, so a flat per-frame duration here is exact, not a
     /// resampling approximation.
     private static let playbackFrameDuration: TimeInterval = 1.0 / 15.0
 
