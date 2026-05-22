@@ -162,7 +162,7 @@ final class WatchSessionBridge: NSObject, WCSessionDelegate {
             WatchAppStore.shared.isReachable = reachable
             guard state == .activated else {
                 if let error {
-                    print("[watch] WCSession activation failed: \(error.localizedDescription)")
+                    NSLog("[watch] WCSession activation failed: %@", error.localizedDescription)
                 }
                 return
             }
