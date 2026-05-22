@@ -210,7 +210,7 @@ jobs:
           time tools/scripts/build-nyxian-buildkit-assets.sh
 
       - name: Save partial BuildKit compiler cache
-        if: always() && inputs.force_rebuild == true && steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true'
+        if: always() && !cancelled() && inputs.force_rebuild == true && steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
