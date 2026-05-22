@@ -199,18 +199,42 @@ fi
 
 normalize_buildkit_payload_symlinks() {
   echo "==> Normalizing BuildKit asset symlinks"
-  local normalized_dir
-  normalized_dir="$(mktemp -d)"
-  cp -R -L "$OUT_DIR" "$normalized_dir/$(basename "$OUT_DIR")"
-  if find "$normalized_dir/$(basename "$OUT_DIR")" -type l -print -quit | grep -q .; then
-    echo "error: normalized BuildKit asset output still contains symlinks" >&2
-    find "$normalized_dir/$(basename "$OUT_DIR")" -type l -print | sed -n '1,200p' >&2
-    rm -rf "$normalized_dir"
-    exit 1
-  fi
-  rm -rf "$OUT_DIR"
-  mv "$normalized_dir/$(basename "$OUT_DIR")" "$OUT_DIR"
-  rm -rf "$normalized_dir"
+  local link_list link_path link_target resolved_target pass rel_path
+  pass=0
+  while find "$OUT_DIR" -type l -print -quit | grep -q .; do
+    pass=$((pass + 1))
+    if [[ "$pass" -gt 20 ]]; then
+      echo "error: BuildKit asset symlink normalization did not converge" >&2
+      find "$OUT_DIR" -type l -print | sed -n '1,200p' >&2
+      exit 1
+    fi
+    link_list="$(mktemp)"
+    find "$OUT_DIR" -type l -print | sort -r > "$link_list"
+    while IFS= read -r link_path; do
+      rel_path="${link_path#$OUT_DIR/}"
+      if [[ "$rel_path" = "$SWIFT_RESOURCE_REL/clang" ]]; then
+        echo "replaced Swift clang resource link with packaged ClangResourceDir: $rel_path"
+        rm -f "$link_path"
+        /usr/bin/ditto "$CLANG_RESOURCE_DEST" "$link_path"
+        continue
+      fi
+
+      link_target="$(readlink "$link_path")"
+      if [[ "$link_target" = /* ]]; then
+        resolved_target="$link_target"
+      else
+        resolved_target="$(dirname "$link_path")/$link_target"
+      fi
+      if [[ ! -e "$resolved_target" ]]; then
+        echo "error: BuildKit asset symlink target is missing: $rel_path -> $link_target" >&2
+        rm -f "$link_list"
+        exit 1
+      fi
+      rm -f "$link_path"
+      /usr/bin/ditto "$resolved_target" "$link_path"
+    done < "$link_list"
+    rm -f "$link_list"
+  done
 }
 
 prune_sdk_compiler_dylibs() {
