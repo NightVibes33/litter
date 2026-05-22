@@ -93,7 +93,7 @@ jobs:
         with:
           path: |
             ~/Library/Caches/Homebrew
-          key: homebrew-ios-${{ runner.os }}-xcodegen-cmake-meson-ninja-v3
+          key: homebrew-ios-${{ runner.os }}-xcodegen-cmake-meson-ninja-llvm-v4
 
       - name: Install Xcode project dependency
         run: |
@@ -101,6 +101,7 @@ jobs:
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           brew list meson >/dev/null 2>&1 || brew install meson
           brew list ninja >/dev/null 2>&1 || brew install ninja
+          brew list llvm >/dev/null 2>&1 || brew install llvm
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
