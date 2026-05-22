@@ -832,14 +832,8 @@ private struct ConversationSettingsRouteView: View {
 }
 
 private struct SettingsTerminalView: View {
-    private enum TerminalSource: String {
-        case bot
-        case ish
-    }
-
     let initialDirectory: String
     @Environment(AppModel.self) private var appModel
-    @AppStorage("litterSettingsTerminalSource") private var terminalSourceRaw = TerminalSource.bot.rawValue
     @AppStorage("litterSettingsTerminalServerId") private var selectedServerId = ""
     @State private var copiedOutput = false
 
@@ -859,10 +853,6 @@ private struct SettingsTerminalView: View {
         return servers.first
     }
 
-    private var usesBotTerminal: Bool {
-        terminalSourceRaw == TerminalSource.bot.rawValue && selectedBotServer != nil
-    }
-
     private var activeBotCwd: String? {
         guard let server = selectedBotServer,
               let active = appModel.snapshot?.activeThread,
@@ -875,20 +865,19 @@ private struct SettingsTerminalView: View {
     }
 
     private var terminalPanelInitialDirectory: String {
-        usesBotTerminal ? (activeBotCwd ?? "") : initialDirectory
+        activeBotCwd ?? ""
     }
 
     private var terminalHostTitle: String {
-        usesBotTerminal ? (selectedBotServer?.displayName ?? "bot.local") : "litter.local"
+        selectedBotServer?.displayName ?? "bot.local"
     }
 
     private var terminalIdentity: String {
-        "\(terminalSourceRaw)::\(selectedBotServer?.serverId ?? "ish")::\(terminalPanelInitialDirectory)"
+        "bot::\(selectedBotServer?.serverId ?? "none")::\(terminalPanelInitialDirectory)"
     }
 
-    private var terminalRunner: ((String, String) async -> IshFS.Result)? {
-        guard usesBotTerminal else { return nil }
-        return { command, cwd in
+    private var terminalRunner: ((String, String) async -> IshFS.Result) {
+        { command, cwd in
             await runBotTerminal(command: command, cwd: cwd)
         }
     }
@@ -908,7 +897,7 @@ private struct SettingsTerminalView: View {
                         copiedOutput = true
                     },
                     hostTitle: terminalHostTitle,
-                    isLocalFilesystem: !usesBotTerminal,
+                    isLocalFilesystem: false,
                     runCommand: terminalRunner
                 )
                 .id(terminalIdentity)
@@ -927,27 +916,17 @@ private struct SettingsTerminalView: View {
 
     private var terminalConnectionBar: some View {
         HStack(spacing: 10) {
-            Picker("Terminal source", selection: $terminalSourceRaw) {
-                Text("Bot").tag(TerminalSource.bot.rawValue)
-                Text("iSH").tag(TerminalSource.ish.rawValue)
-            }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 180)
-
-            if terminalSourceRaw == TerminalSource.bot.rawValue {
-                Menu {
-                    ForEach(connectedServers, id: \.serverId) { server in
-                        Button(server.displayName) {
-                            selectedServerId = server.serverId
-                            terminalSourceRaw = TerminalSource.bot.rawValue
-                        }
+            Menu {
+                ForEach(connectedServers, id: \.serverId) { server in
+                    Button(server.displayName) {
+                        selectedServerId = server.serverId
                     }
-                } label: {
-                    Label(selectedBotServer?.displayName ?? "No bot", systemImage: "server.rack")
-                        .lineLimit(1)
                 }
-                .disabled(connectedServers.isEmpty)
+            } label: {
+                Label(selectedBotServer?.displayName ?? "No bot", systemImage: "server.rack")
+                    .lineLimit(1)
             }
+            .disabled(connectedServers.isEmpty)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12)
