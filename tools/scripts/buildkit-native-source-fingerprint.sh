@@ -61,3 +61,4 @@ for rel in files:
     digest.update(b"\n")
 
 print(digest.hexdigest())
+PY

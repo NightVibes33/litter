@@ -347,8 +347,15 @@ static BOOL LBIArgumentsContainResourceDir(NSArray<NSString *> *arguments)
 
 static BOOL LBIArgumentsContainSwiftResourceDir(NSArray<NSString *> *arguments)
 {
-    for(NSString *argument in arguments ?: @[])
+    NSArray<NSString *> *words = arguments ?: @[];
+    for(NSUInteger idx = 0; idx < words.count; idx++)
     {
+        NSString *argument = words[idx];
+        if([argument isEqualToString:@"-Xcc"])
+        {
+            idx++;
+            continue;
+        }
         if([argument isEqualToString:@"-resource-dir"] || [argument hasPrefix:@"-resource-dir="]) { return YES; }
     }
     return NO;
