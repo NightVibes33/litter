@@ -60,7 +60,7 @@ permissions:
 jobs:
   build-private-assets:
     name: Build private BuildKit asset pack
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 360
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
