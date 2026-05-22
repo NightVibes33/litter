@@ -107,6 +107,7 @@
 	<array>
 		<string>audio</string>
 		<string>fetch</string>
+		<string>picture-in-picture</string>
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>
