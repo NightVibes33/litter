@@ -439,11 +439,11 @@ actor LitterBuildKit {
         try? await IshFS.writeTextFile(path: Self.shimInstallMarker, text: Date().description)
     }
 
-    func status() async -> LitterBuildKitStatus {
+    func status(probeNativeDriver: Bool = false) async -> LitterBuildKitStatus {
         let shimsInstalled = await IshFS.exists(path: Self.shimInstallMarker)
         let manifest = Self.installedManifest
         let sourceManifest = Self.sourceImportManifest
-        let nativeDriverLoad = Self.loadNativeDriver()
+        let nativeDriverLoad = probeNativeDriver ? Self.loadNativeDriver() : nil
         return LitterBuildKitStatus(
             sourceImportAvailable: Self.sourceImportAvailable,
             liveContainerSourceAvailable: sourceManifest?.liveContainer?.sourceIncluded ?? false,
@@ -451,8 +451,8 @@ actor LitterBuildKit {
             privateAssetsInstalled: manifest != nil,
             nativeCompilerAssetsInstalled: Self.nativeCompilerAssetsInstalled,
             nativeDriverInstalled: Self.nativeDriverInstalled,
-            nativeDriverLoadable: nativeDriverLoad.handle != nil,
-            nativeDriverDiagnostics: nativeDriverLoad.diagnostics,
+            nativeDriverLoadable: probeNativeDriver ? nativeDriverLoad?.handle != nil : Self.nativeDriverInstalled,
+            nativeDriverDiagnostics: probeNativeDriver ? (nativeDriverLoad?.diagnostics ?? []) : ["Native driver load skipped during passive status."],
             nativeRunnerInstalled: Self.nativeRunnerInstalled,
             supportLibrariesInstalled: Self.supportLibrariesInstalled,
             sdkInstalled: Self.sdkInstalled,
@@ -685,7 +685,8 @@ actor LitterBuildKit {
         let staging = Self.stageSwiftSourceForNativeDriver(fakefsPath: path, source: source, buildDir: buildDir)
         log += staging.log
 
-        let status = await status()
+        await installBundledAssetsIfAvailable()
+        let status = await status(probeNativeDriver: true)
         guard status.isReadyForNativeBuilds else {
             log += "\nBlocked: BuildKit is not ready for native Swift builds.\n"
             log += Self.missingAssetSummary(status)
@@ -815,7 +816,8 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 73, status: "toolchain-selftest-setup-failed", log: log, artifacts: artifacts)
         }
 
-        let current = await status()
+        await installBundledAssetsIfAvailable()
+        let current = await status(probeNativeDriver: true)
         guard current.isReadyForNativeBuilds else {
             log += "Blocked: BuildKit is not ready for native iOS builds.\n"
             log += Self.missingAssetSummary(current)
@@ -1125,7 +1127,8 @@ actor LitterBuildKit {
         if providedStaging == nil {
             fullPrelude += staging.log
         }
-        let current = await status()
+        await installBundledAssetsIfAvailable()
+        let current = await status(probeNativeDriver: true)
         guard current.isReadyForNativeBuilds else {
             fullPrelude += "\(command) is routed through Litter BuildKit.\n"
             fullPrelude += Self.missingAssetSummary(current)
@@ -1945,6 +1948,10 @@ actor LitterBuildKit {
         if let processHandle = processSymbolHandle, dlsym(processHandle, symbolName) != nil {
             diagnostics.append("found \(symbolName) in process symbol table")
             return NativeDriverLoadResult(handle: processHandle, diagnostics: diagnostics)
+        }
+        guard installedManifest != nil else {
+            diagnostics.append("private BuildKit assets are not installed; skipped native driver load")
+            return NativeDriverLoadResult(handle: nil, diagnostics: diagnostics)
         }
 
         if installedManifest?.toolchain.nativeDriverMode == "inprocess" {
