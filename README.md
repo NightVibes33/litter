@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Native iOS Codex client with a Rust bridge, local iSH runtime, remote computer connections, and an experimental on-device Swift BuildKit.
+  Native iOS Codex client with a Rust bridge, an embedded iSH runtime, remote computer connections, and an experimental Nyxian-based Swift BuildKit.
 </p>
 
 <p align="center">
@@ -16,11 +16,13 @@
 
 ## Current Scope
 
-Litter is a native SwiftUI iOS app that talks to Codex through a shared Rust client. It can run a local Codex runtime inside an embedded iSH Alpine Linux fakefs, connect to remote Codex app servers, pair with connected computers through Slingshot, and route conversations through hosted ChatGPT or OpenAI-compatible computer/LAN endpoints.
+Litter is a SwiftUI iOS app that talks to Codex through `shared/rust-bridge`. It can run Codex commands inside an embedded iSH Alpine Linux fakefs, connect to Codex app servers on other computers, pair through Slingshot, and route chat through a signed-in ChatGPT account or OpenAI-compatible servers such as Ollama or LM Studio running on a computer.
 
-The repository also contains CI release lanes for iOS, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline for on-device Swift/iOS builds.
+On-device GGUF model download and iPhone-local llama.cpp inference are intentionally disabled. The iOS app no longer builds, links, downloads, or exposes the llama.cpp path. Private or local models should run on a computer and be added through the AI Providers screen as an OpenAI-compatible `/v1` endpoint.
 
-Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com/dnakov). Current fork maintainer/developer: [NightVibes33 / Zyn](https://github.com/NightVibes33). See [AUTHORS.md](AUTHORS.md) for accepted upstream contributors and fork attribution.
+The repository also contains CI lanes for unsigned sideload IPAs, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline. Public source contains the Nyxian and BuildKit integration code, but the Apple SDK payload and compiled private BuildKit frameworks are not committed.
+
+Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com/dnakov). Current fork maintainer/developer: [NightVibes33 / Zyn](https://github.com/NightVibes33). Accepted upstream contributors and third-party attribution are tracked in [AUTHORS.md](AUTHORS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Screenshots
 
@@ -34,139 +36,103 @@ Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com
 ## Repository Layout
 
 ```text
-apps/ios/                  Primary SwiftUI app. project.yml is the XcodeGen source of truth.
-shared/rust-bridge/        Shared Rust mobile client, UniFFI surface, iSH runtime, SSH, Slingshot, app-server transport.
-shared/third_party/codex/  Upstream Codex submodule used by the Rust bridge.
+apps/ios/                  SwiftUI app. project.yml is the XcodeGen source of truth.
+shared/rust-bridge/        Rust mobile bridge, UniFFI API, iSH runtime, SSH, Slingshot, and app-server transport.
+shared/third_party/codex/  Upstream Codex submodule used by the bridge.
 patches/codex/             Local Codex patches applied during sync/build.
-ThirdParty/Nyxian/         Focused Nyxian/CoreCompiler/LLVM-On-iOS source import for BuildKit.
-tools/scripts/             Build, packaging, BuildKit asset, release, and verification scripts.
-docs/                      Development, release, architecture, badge, and screenshot docs.
-.github/workflows/         CI for unsigned IPA, BuildKit assets, mobile release, TestFlight, and Mac.
+ThirdParty/Nyxian/         Nyxian/CoreCompiler/LLVM-On-iOS source used by BuildKit.
+tools/scripts/             Build, release, BuildKit asset, and verification scripts.
+docs/                      Development notes, screenshots, badges, and release docs.
+.github/workflows/         Unsigned IPA, BuildKit asset, mobile release, TestFlight, and Mac CI.
 ```
 
-Tracked source currently includes Swift, Rust, Objective-C/C/C++, shell scripts, XcodeGen config, GitHub Actions workflows, and vendored third-party source needed by the iOS runtime.
+Tracked source includes Swift, Rust, Objective-C/C/C++, shell scripts, XcodeGen config, GitHub Actions workflows, and vendored source needed by the mobile runtime.
 
 ## Quick Start
 
-On macOS with Xcode, Rust, XcodeGen, and the expected mobile toolchains installed:
+On macOS, install Xcode, Rust, XcodeGen, and the expected mobile toolchains, then use the Make targets:
 
 ```bash
 make ios-device-fast   # fast iOS device build
-make ios-sim-fast      # fast iOS simulator build
+make ios-sim-fast      # fast simulator build
 make rust-check        # host cargo check for shared Rust crates
 make rust-test         # host cargo test for shared Rust crates
 ```
 
-`apps/ios/project.yml` is the source of truth for `apps/ios/Litter.xcodeproj`:
+`apps/ios/project.yml` drives the checked-in Xcode project:
 
 ```bash
 make xcgen
 ```
 
-The iOS app target deploys to iOS 18.0 and is built by CI with the iOS 26 SDK lane on `macos-26` / Xcode 26.3. The Swift package manifest exists for package consumers, but normal app builds should use XcodeGen and the Make targets.
+The iOS app target deploys to iOS 18.0. The unsigned IPA workflow runs on `macos-26` with Xcode 26.3. The private BuildKit asset workflow defaults to Xcode 26.4 and Swift `swift-6.3.1-RELEASE`.
 
 ## Architecture
 
-Litter's iOS UI is SwiftUI. The app shell owns platform UI, settings, file import/export, local previews, Keychain-facing credential flows, PiP, CarPlay, Watch surfaces, and native frameworks. The shared Rust crate `codex-mobile-client` owns the Codex app-server protocol, session hydration, Slingshot pairing, SSH bridge logic, remote path handling, saved apps/widgets, permission state, iSH exec integration, and the UniFFI API consumed by Swift.
+The SwiftUI app owns the native interface: home, conversations, settings, file workspace, terminal panel, account and Keychain flows, PiP, CarPlay, Watch surfaces, and BuildKit controls. The Rust bridge owns Codex app-server communication, session hydration, Slingshot pairing, SSH bridge behavior, remote path handling, saved apps/widgets, permission state, iSH command execution, and the UniFFI surface consumed by Swift.
 
-The local iOS runtime is not the iOS host shell. Commands run inside an embedded persistent iSH Alpine Linux fakefs. The default home is `/root`; Litter creates `/root/litter`, `/root/.litter/builds`, and `/usr/local/bin`; app Documents can be bridged through `/mnt/apps`; and native Codex settings are bridged to `/root/.codex` so local Codex skills can be installed where the app runtime reads them.
+The local runtime is not the iOS host shell. Commands run inside an embedded persistent iSH Alpine Linux fakefs. The default home is `/root`; Litter creates `/root/litter`, `/root/.litter/builds`, and `/usr/local/bin`; app Documents can be bridged through `/mnt/apps`; and Codex home is bridged to `/root/.codex` so installed skills are visible to the app runtime.
 
-A native preflight runs `true` before exposing shell tools. If that fails, the issue is the iSH/runtime bridge, not Swift, BuildKit, PATH, or fakefs command shims.
+Before exposing local shell tools, Litter runs a native preflight command. If simple commands such as `true`, `pwd`, or `ls` fail with bootstrap errors, debug the iSH runtime bridge first. PATH, Swift, and BuildKit checks come after the fakefs is bootstrapped.
 
 ## Main iOS Features
 
-- Home dashboard with local and remote sessions, active turn state, branching/fork actions, hide/delete/rename actions, zoomed session telemetry, goal banners, and recent activity.
-- Conversation timeline with markdown, tool cards, command output display preferences, image generation result cards, selectable/copyable messages, edit/fork actions, streaming assistant rendering, and dynamic widget rendering.
-- Discovery and connection flows for local runtime, manual app-server URLs, SSH bootstrapping, LAN/remote servers, and Slingshot connected computers from the signed-in ChatGPT account.
-- Settings sections for appearance, font, conversation display, local terminal, experimental features, AI providers, diagnostics bundles, account/API key/base URL, connected servers, and developer BuildKit controls.
-- Picture-in-Picture streaming cards using `AVPictureInPictureController` with a sample-buffer SwiftUI renderer.
+- Home dashboard for local and remote sessions, active turn state, recent activity, branch/fork actions, rename/delete/hide actions, goal banners, and connection status.
+- Conversation timeline with markdown, tool cards, command output display preferences, image generation cards, selectable messages, edit/fork actions, streaming rendering, and dynamic widget rendering.
+- Discovery and connection flows for the local runtime, manual app-server URLs, SSH bootstrapping, LAN or remote servers, and Slingshot connected computers.
+- Settings for appearance, fonts, conversation display, local terminal, experimental features, AI providers, diagnostics bundles, account/API key/base URL, connected servers, updates, and BuildKit developer controls.
+- Picture-in-Picture streaming cards through `AVPictureInPictureController` with a sample-buffer SwiftUI renderer.
 - CarPlay voice scene support and experimental Apple Watch projection/complication targets.
 
-## File Workspace and Terminal
+## Files And Terminal
 
-The Files button opens a local iSH file workspace rooted at `/root`. The browser reads the fakefs through `ishRun`, so it sees the same files the bot and terminal see. It supports:
+The Files button opens the iSH workspace rooted at `/root`. It uses the same fakefs command bridge used by Codex tool calls and the terminal panel, so file actions operate on the same filesystem the bot sees.
 
-- List and grid views, breadcrumbs, search, sorting, filters, hidden-file toggles, advanced locations, favorites, recents, and quick locations such as `/root`, `/root/litter`, `/root/.codex`, `/root/.litter/builds`, `/tmp`, and `/usr/local/bin`.
-- Creating, renaming, moving, duplicating, deleting, making executable, sharing, compressing, and extracting files/folders.
-- File/folder import from iOS Files, text/code editing, previews, inspector sheets, symlink details, archive/build-artifact detection, and bot-context path copying.
-- BuildKit shortcuts for Swift check, Swift build, IPA build, build status, filesystem doctor, and `LitterBuild.json` creation.
+The file workspace includes list/grid views, breadcrumbs, search, sorting, filters, hidden-file toggles, quick locations, favorites, recents, inspectors, archive/build-artifact detection, and bot-context path copying. It also exposes file operations for creating, renaming, moving, duplicating, deleting, making executable, sharing, compressing, extracting, importing from iOS Files, and editing text/code files.
 
-The interactive terminal now lives in Settings under `Local Tools -> Terminal`. File browser actions such as `Open Terminal Here` open that shared terminal at the selected fakefs directory. This terminal uses the same iSH runtime and command shims used by Codex tool calls.
+The terminal lives in Settings under `Local Tools -> Terminal`. `Open Terminal Here` from the file browser sets the starting directory for that same terminal. It is a command panel backed by the iSH command bridge: prompt, cwd tracking, history, shortcut keys, copy output, clear, and command execution all share the local fakefs runtime. It is not a separate iOS host shell.
 
-## Appearance, Wallpapers, and Typing Effects
+BuildKit shortcuts in the file workspace and BuildKit settings call the same fakefs commands, including Swift check, Swift build, IPA build, build status, fakefs doctor, and `LitterBuild.json` creation.
 
-Appearance settings include system/light/dark mode selection, app-wide conversation font scaling, live preview, and separate light/dark theme pickers loaded from the app's theme resources.
+## Appearance And Streaming
 
-Conversation wallpaper settings are scoped per thread or per server. The background tab supports built-in generated presets, light/dark app themes as backgrounds, solid colors, images from Photos, videos from Photos, and video URLs. Custom image preview uses a fitted image renderer instead of blindly zooming the image to fill the screen.
+Appearance settings include system/light/dark mode selection, app-wide conversation font scaling, live preview, and separate light/dark theme pickers loaded from app resources.
 
-Built-in background presets in `WallpaperManager` are:
+Conversation wallpapers are scoped per thread or per server. Supported sources include built-in generated presets, light/dark app themes, solid colors, images from Photos, videos from Photos, and video URLs. Custom image preview uses a fitted renderer instead of blindly zooming the image to fill the screen.
 
-- Aurora
-- Terminal Grid
-- Blueprint
-- Midnight Neon
-- Ocean Glass
-- Sakura
-- Carbon Mesh
-- Solar Flare
-- Paper
-- Forest
+Built-in background presets in `WallpaperManager` are Aurora, Terminal Grid, Blueprint, Midnight Neon, Ocean Glass, Sakura, Carbon Mesh, Solar Flare, Paper, and Forest.
 
-Typing effects are persisted with the same wallpaper scope and are driven by `StreamingEffectKind` plus HairballUI `StreamingTextEffect` implementations. Current options are:
-
-- Fade Edge
-- Sparkle
-- Glow Cursor
-- Wave
-- Scale Pop
-- Rainbow
-- Fire Trail
-- Explosion
-- Nyan Cat
-- Matrix Decode
-- Phosphor CRT
-- Shockwave
-- Typewriter
-- Terminal Scan
-- Soft Blur
-- Neon Pulse
-- Ghost Trail
-- Pixel Decode
-- Ink Spread
-- Slide Up
-- Glitch
-- Focus Beam
-
-The typing effect tab also exposes reveal speed, reveal granularity, and reveal mode controls.
+Typing effects are persisted with the wallpaper scope and are driven by `StreamingEffectKind` plus HairballUI `StreamingTextEffect` implementations. Current options include Fade Edge, Sparkle, Glow Cursor, Wave, Scale Pop, Rainbow, Fire Trail, Explosion, Nyan Cat, Matrix Decode, Phosphor CRT, Shockwave, Typewriter, Terminal Scan, Soft Blur, Neon Pulse, Ghost Trail, Pixel Decode, Ink Spread, Slide Up, Glitch, and Focus Beam.
 
 ## AI Providers
 
-The runtime picker separates two supported routes:
+Supported routes are:
 
 - ChatGPT Account: the signed-in local Codex/ChatGPT route.
-- Computer Bridge: a selected Mac/Windows/Linux Codex app-server bridge.
+- Computer Bridge: a selected Mac, Windows, or Linux Codex app-server bridge.
+- OpenAI-compatible server profiles: custom `/v1` endpoints for services such as Ollama or LM Studio running on another machine.
 
-On-device GGUF downloading and iPhone-local llama.cpp inference are disabled in current iOS builds. For private or local models, run Ollama, LM Studio, or another OpenAI-compatible server on a computer and add its `/v1` endpoint in AI provider settings.
+Disabled routes are cleaned up on load. Stored `localGGUF` providers are removed, a stored local routing preference is reset to automatic, local models are not added to the model picker, and old local model files are shown only so the user can delete them and recover storage.
 
 ## Thread Goals
 
-The Rust bridge advertises `features.goals` and includes UniFFI methods for getting, setting, clearing, and hydrating thread goals. iOS stores hydrated goals in app state and renders goal status/objective/usage in the home dashboard and PiP views. Goal persistence depends on the connected Codex server's state database being available for that thread.
+The Rust bridge advertises `features.goals` and exposes UniFFI methods for getting, setting, clearing, and hydrating thread goals. iOS stores hydrated goals in app state and renders goal status, objective, and usage in the home dashboard and PiP views. Goal persistence depends on the connected Codex server state database for that thread.
 
-## On-device Swift BuildKit
+## Swift BuildKit
 
-Litter vendors Nyxian source as the foundation for its on-device iOS toolchain, then layers a Litter-specific native BuildKit bridge on top. The public repo contains source and reproducible vendor/build scripts; full on-device Swift/iOS compilation still requires a private `LitterBuildKitAssets` bundle because Apple SDK files and compiled private frameworks are not committed.
+BuildKit is the experimental on-device Swift/iOS build path. Litter vendors Nyxian source, verifies it with `tools/scripts/verify-nyxian-source-import.sh`, and layers a Litter-specific native bridge on top. The public repo has source and reproducible scripts. Full Swift/iOS compilation still needs a private `LitterBuildKitAssets.zip` because Apple SDK files and compiled private frameworks are not committed.
 
-The vendored Nyxian source is pinned in `ThirdParty/Nyxian/LITTER_NYXIAN_IMPORT.json` and verified by `tools/scripts/verify-nyxian-source-import.sh`. The private asset bundle must include:
+The private asset pack must include:
 
 - `Toolchains/Nyxian/CoreCompiler.framework`
 - `Toolchains/Nyxian/CoreCompilerSupportLibs`
 - `Toolchains/Nyxian/SwiftResourceDir`
 - `Toolchains/Nyxian/LitterBuildKitNative.framework`
 - `SDK/iPhoneOS<version>.sdk`
-- optional `Toolchains/Nyxian/bin/litter-buildkit-runner` for runner mode
+- optional `Toolchains/Nyxian/bin/litter-buildkit-runner`
 - `manifest.json` with required paths and SHA256 entries
 
-The important packaging rule is this: changing `ThirdParty/Nyxian/LitterBuildKitNative/**` is not enough by itself. The app loads `LitterBuildKitNative.framework` from `LitterBuildKitAssets.zip`. After native bridge changes, rebuild and upload the private BuildKit asset pack first, then rebuild the unsigned IPA against the new asset SHA. Rebuilding only the IPA can reuse a stale private framework and leave the runtime behavior unchanged.
+Important packaging rule: changing `ThirdParty/Nyxian/LitterBuildKitNative/**` does not change installed app behavior by itself. The app loads `LitterBuildKitNative.framework` from `LitterBuildKitAssets.zip`. After native bridge changes, rebuild and upload the private asset pack, update `LITTER_BUILDKIT_ASSET_URL` and `LITTER_BUILDKIT_ASSET_SHA256`, then build the IPA against that new asset.
 
 Canonical fakefs commands installed into `/usr/local/bin` include:
 
@@ -190,16 +156,16 @@ litter-build-status
 litter-build-cancel
 ```
 
-Compatibility shims are also installed for common bot expectations:
+Compatibility shims are installed for common bot expectations:
 
 ```text
 swift swiftc clang clang++ cc c++ ld ld64 xcodebuild xcrun plutil code
 ar llvm-ar ranlib llvm-ranlib nm llvm-nm objdump llvm-objdump strip strings lipo
 ```
 
-`litter-*` commands are the canonical API. The compatibility shims support the iOS-only cases Litter can actually run. This is not full desktop Xcode: SwiftPM package resolution, simulator workflows, Interface Builder, previews, signing/provisioning management, and macOS toolchains are outside BuildKit v1.
+`litter-*` commands are the supported API. The compatibility shims cover the iOS-only cases Litter can run. BuildKit v1 is not desktop Xcode: SwiftPM package resolution, simulator workflows, Interface Builder, previews, signing/provisioning management, and macOS toolchains are outside scope.
 
-Useful in-app/fakefs checks:
+Useful in-app checks:
 
 ```bash
 litter-fs-doctor
@@ -211,34 +177,57 @@ litter-swift-check /root/hello.swift
 swiftc /root/hello.swift -o /root/hello
 ```
 
-## BuildKit Asset and IPA CI Flow
+## Private BuildKit Asset Flow
 
-`.github/workflows/buildkit-assets.yml` builds the private asset pack on `macos-26`, verifies it, uploads it to the private release repo, updates the unsigned IPA workflow secrets, and can dispatch a new unsigned IPA build. Its default release target is `NightVibes33/litter-buildkit-assets` with tag `buildkit-ios26.4-v1`.
+`.github/workflows/buildkit-assets.yml` builds or reuses the private BuildKit asset pack on `macos-26`, verifies it, and can upload it to the private asset release repo. Defaults are:
+
+- owner: `NightVibes33`
+- repo: `litter-buildkit-assets`
+- tag: `buildkit-ios26.4-v1`
+- asset name pattern: `LitterBuildKitAssets-<run>-<attempt>.zip`
 
 Use this flow when BuildKit source or private framework behavior changes:
 
 1. Run `Build Private BuildKit Assets` on the branch containing the source fix.
-2. Use `force_rebuild=true` when the native framework must be rebuilt. Set `use_existing_private_release=false` if you need to guarantee the old release asset is not reused.
-3. Let the workflow upload a new `LitterBuildKitAssets.zip` and update `LITTER_BUILDKIT_ASSET_URL` plus `LITTER_BUILDKIT_ASSET_SHA256`.
-4. Run or let it dispatch `.github/workflows/ios-unsigned-ipa.yml` on the same branch.
-5. Install the new IPA and run `litter-swift-selftest` inside Litter.
+2. Use `force_rebuild=true` when the native framework or Swift/LLVM payload must be rebuilt.
+3. Set `use_existing_private_release=false` when you need to prove the old private release asset is not being reused.
+4. Let the workflow upload a verified `LitterBuildKitAssets.zip` and update the unsigned IPA asset secrets.
+5. Run or let it dispatch `.github/workflows/ios-unsigned-ipa.yml` on the same branch.
+6. Install the new IPA and run `litter-swift-selftest` inside Litter.
 
-`.github/workflows/ios-unsigned-ipa.yml` builds a SideStore/AltStore-style unsigned IPA artifact named `Litter-iOS26-Unsigned-SideStore-AltStore.ipa`. It downloads and verifies the private BuildKit assets when the asset secrets are set, packages `LitterBuildKitAssets.zip` into the app resources, embeds the loadable compiler frameworks/support dylibs under `Payload/*.app/Frameworks`, and publishes both Actions artifacts and GitHub Release assets. The IPA is intentionally unsigned and must be re-signed by a sideloading tool before installation.
+Normal public IPAs keep the private compiler payload external for launch safety. The app can still download/install user-owned BuildKit assets from BuildKit settings.
+
+## Unsigned IPA And AltStore Source
+
+`.github/workflows/ios-unsigned-ipa.yml` builds a SideStore/AltStore-style unsigned IPA on `macos-26` with Xcode 26.3. It produces `build/unsigned-ipa/Litter-${VERSION}.ipa`, a SHA256 file, build metadata, release notes, `litter-update.json`, and `litter-altstore-source.json`.
+
+Manual build modes are:
+
+- `fast-device`: normal fast device lane. Reuses generated Rust assets when possible, strips stale signatures, removes embedded extensions, and keeps private BuildKit compiler payload external.
+- `release-device`: full device lane. Rebuilds Rust instead of using the fast-device shortcut.
+- `nyxian-private`: private/manual lane. Embeds verified private BuildKit assets and keeps `PlugIns/LiveProcess.appex`, the NSExtension required by original Nyxian/emexDE. This is not the default public IPA lane.
+
+Every successful IPA build creates or updates a versioned GitHub release named `litter-v${VERSION}` and uploads the IPA, checksum, metadata, update JSON, source JSON, and release notes. The stable `app-source` release is also updated with `litter-altstore-source.json`, `litter-update.json`, and the source icon.
+
+The AltStore/SideStore source keeps every published IPA reachable. The latest compatible build is listed in the app entry `versions` array, and historical IPA downloads are also emitted as source `news` cards with direct IPA URLs.
+
+All IPAs from this workflow are unsigned. They must be signed by SideStore, AltStore, Feather, or another signing tool before installation.
 
 ## Local Runtime Notes
 
 - Local commands run inside iSH Alpine Linux, not the iOS host filesystem.
 - The fakefs can see `/root`, `/tmp`, `/usr/local/bin`, `/root/.codex`, `/root/litter`, and app-provided mounts such as `/mnt/apps`.
-- It cannot directly see arbitrary iOS sandbox paths like `/private/var/mobile/...`; Litter stages files through Documents/BuildKit when native code must read them.
-- `litter-dev-bootstrap` repairs/installs expected fakefs utilities where possible; some tools may still be absent until Alpine packages are installed.
-- Shell failures with exit `-6` mean the iSH runtime was not bootstrapped, so debugging should start at runtime/session initialization before looking at PATH, Swift, or BuildKit.
+- The fakefs cannot directly see arbitrary iOS sandbox paths such as `/private/var/mobile/...`; Litter stages native BuildKit files through app storage when native code must read them.
+- `litter-dev-bootstrap` repairs expected fakefs utilities where possible. Some tools may still require Alpine packages.
+- Shell failures with exit `-6` mean the iSH runtime was not bootstrapped. Start debugging at runtime/session initialization before looking at PATH, Swift, or BuildKit.
+- PTY or streaming command errors usually mean the command RPC path and client process id handling need attention, not that the fakefs files disappeared.
 
 ## Make Targets
 
 | Target | Description |
 |---|---|
 | `make ios-device-fast` | Fast iOS device build using the raw device staticlib lane. |
-| `make ios-sim-fast` | Fast iOS simulator build. |
+| `make ios-sim-fast` | Fast simulator build. |
 | `make ios` | Full iOS package lane. |
 | `make rust-check` | Host `cargo check` for shared Rust crates. |
 | `make rust-test` | Host `cargo test` for shared Rust crates. |
@@ -250,16 +239,12 @@ Use this flow when BuildKit source or private framework behavior changes:
 | `make nyxian-buildkit-assets-verify` | Validate a BuildKit asset ZIP or folder. |
 | `make clean` | Remove build artifacts. |
 
-## Credits and Attribution
+## Credits And License
 
-Litter is a fork of the original [dnakov/litter](https://github.com/dnakov/litter) project created and maintained upstream by Daniel Nakov. This fork is maintained by NightVibes33 / Zyn and includes additional iOS sideloading, update, local runtime, BuildKit, and UI work.
+Litter is a fork of [dnakov/litter](https://github.com/dnakov/litter). This fork is maintained by NightVibes33 / Zyn and includes additional iOS sideloading, update-source, local runtime, BuildKit, and UI work.
 
-Accepted upstream contributors from Daniel's original repository are listed in [AUTHORS.md](AUTHORS.md), generated from `upstream/main` commit history. Third-party code and vendored toolchain sources are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Litter is not MIT licensed. The project uses GPLv3 with an additional GPLv3 section 7 permission for Apple App Store and iOS distribution. Vendored Nyxian/emexDE source is AGPL-3.0-or-later, OpenAI Codex source is Apache-2.0, and third-party components keep their own licenses. See [LICENSE](LICENSE), [AUTHORS.md](AUTHORS.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Contributing
 
-Litter is under active development. Small, focused PRs are easier to review than broad rewrites because the app, Rust bridge, and private BuildKit pipeline are tightly coupled. See `CONTRIBUTING.md` for contributor expectations.
-
-## License
-
-Litter is open source, but it is not MIT licensed. The project is licensed under GPLv3 with an additional GPLv3 section 7 permission for Apple App Store and iOS distribution; see [LICENSE](LICENSE). Vendored Nyxian/emexDE source is AGPL-3.0-or-later; see `ThirdParty/Nyxian/LICENSE`. OpenAI Codex source is Apache-2.0 with its own notice file under `shared/third_party/codex`. Third-party components keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The app, Rust bridge, fakefs runtime, and private BuildKit pipeline are tightly coupled. Keep PRs focused, include the workflow or command you used to verify the change, and update this README when behavior changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor expectations.
