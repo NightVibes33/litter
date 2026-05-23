@@ -854,9 +854,24 @@ jobs:
           rm -rf Payload
           mkdir -p Payload build/unsigned-ipa
           cp -R "$APP_PATH" Payload/
-          rm -rf Payload/*.app/_CodeSignature Payload/*.app/embedded.mobileprovision
+          APP_BUNDLE="Payload/$(basename "$APP_PATH")"
 
-          INFO_PLIST="Payload/$(basename "$APP_PATH")/Info.plist"
+          # SideStore/AltStore re-sign the IPA after download. Leaving archive-time
+          # signatures, mobileprovisions, extensions, or watch bundles in place can
+          # produce installs that pass packaging but are killed by iOS at launch.
+          find "$APP_BUNDLE" -name _CodeSignature -type d -prune -exec rm -rf {} +
+          find "$APP_BUNDLE" -name embedded.mobileprovision -type f -delete
+          find "$APP_BUNDLE" -name CodeResources -type f -delete
+          find "$APP_BUNDLE" -name '*.xcent' -type f -delete
+          rm -rf "$APP_BUNDLE/PlugIns" "$APP_BUNDLE/Watch" "$APP_BUNDLE/AppClips"
+
+          if find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print -quit | grep -q .; then
+            echo "::error::Unsigned sideload IPA still contains stale signatures or embedded extensions." >&2
+            find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print >&2
+            exit 1
+          fi
+
+          INFO_PLIST="$APP_BUNDLE/Info.plist"
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST" 2>/dev/null || true)"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST" 2>/dev/null || true)"
           BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST" 2>/dev/null || true)"
@@ -970,9 +985,60 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import re
+          import urllib.error
+          import urllib.request
           from pathlib import Path
 
           notes = Path("build/unsigned-ipa/release-notes.md").read_text()
+          token = os.environ.get("GH_TOKEN", "")
+          repository = os.environ["GITHUB_REPOSITORY"]
+          api_root = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+
+          def request_json(url, accept="application/vnd.github+json"):
+              headers = {
+                  "Accept": accept,
+                  "User-Agent": "litter-altstore-source-builder",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              }
+              if token:
+                  headers["Authorization"] = f"Bearer {token}"
+              req = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(req, timeout=45) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          def request_asset_json(asset):
+              try:
+                  return request_json(asset["url"], accept="application/octet-stream")
+              except Exception as error:
+                  print(f"::warning::Could not read {asset.get('name', 'asset')}: {error}")
+                  return {}
+
+          def release_pages():
+              page = 1
+              while page <= 10:
+                  url = f"{api_root}/repos/{repository}/releases?per_page=100&page={page}"
+                  releases = request_json(url)
+                  if not releases:
+                      break
+                  yield from releases
+                  if len(releases) < 100:
+                      break
+                  page += 1
+
+          def semver_key(version):
+              parts = [int(part) for part in re.findall(r"\d+", version)]
+              return tuple((parts + [0, 0, 0, 0])[:4])
+
+          def build_key(build):
+              return int(build) if str(build).isdigit() else -1
+
+          def asset_named(release, name):
+              for asset in release.get("assets", []):
+                  if asset.get("name") == name:
+                      return asset
+              return None
+
           update = {
               "schemaVersion": 1,
               "name": "Litter",
@@ -994,6 +1060,54 @@ jobs:
               "sideStoreSourceURL": os.environ["SOURCE_URL"],
               "altStoreSourceURL": os.environ["SOURCE_URL"],
           }
+
+          current_version = {
+              "version": os.environ["VERSION"],
+              "buildVersion": os.environ["BUILD"],
+              "date": os.environ["PUBLISHED_AT"],
+              "localizedDescription": notes,
+              "downloadURL": os.environ["IPA_DOWNLOAD_URL"],
+              "size": int(os.environ["IPA_SIZE"]),
+              "minOSVersion": "18.0",
+          }
+
+          versions_by_key = {(current_version["version"], current_version["buildVersion"]): current_version}
+          tag_pattern = re.compile(r"^litter-v(\d+\.\d+\.\d+(?:\.\d+)?)$")
+          for release in release_pages():
+              if release.get("draft"):
+                  continue
+              match = tag_pattern.match(release.get("tag_name", ""))
+              if not match:
+                  continue
+              version = match.group(1)
+              ipa_asset = next((asset for asset in release.get("assets", []) if asset.get("name", "").endswith(".ipa")), None)
+              if not ipa_asset:
+                  continue
+              metadata = {}
+              for metadata_name in ("build-metadata.json", "litter-update.json"):
+                  metadata_asset = asset_named(release, metadata_name)
+                  if metadata_asset:
+                      metadata = request_asset_json(metadata_asset)
+                      if metadata:
+                          break
+              build = str(metadata.get("build") or metadata.get("buildVersion") or "0")
+              key = (version, build)
+              if key in versions_by_key:
+                  continue
+              description = release.get("body") or metadata.get("releaseNotes") or f"Litter {version}"
+              versions_by_key[key] = {
+                  "version": version,
+                  "buildVersion": build,
+                  "date": release.get("published_at") or release.get("created_at") or os.environ["PUBLISHED_AT"],
+                  "localizedDescription": description,
+                  "downloadURL": ipa_asset.get("browser_download_url", ""),
+                  "size": int(metadata.get("size") or ipa_asset.get("size") or 0),
+                  "minOSVersion": str(metadata.get("minimumIOSVersion") or "18.0"),
+              }
+
+          versions = list(versions_by_key.values())
+          versions.sort(key=lambda item: (semver_key(item["version"]), build_key(item.get("buildVersion", "0")), item.get("date", "")), reverse=True)
+
           source = {
               "name": "ZYN",
               "identifier": "com.nightvibes33.zyn.source",
@@ -1010,17 +1124,7 @@ jobs:
                       "localizedDescription": "Litter for sideloaded iOS installs.",
                       "category": "developer",
                       "tintColor": "06B6D4",
-                      "versions": [
-                          {
-                              "version": os.environ["VERSION"],
-                              "buildVersion": os.environ["BUILD"],
-                              "date": os.environ["PUBLISHED_AT"],
-                              "localizedDescription": notes,
-                              "downloadURL": os.environ["IPA_DOWNLOAD_URL"],
-                              "size": int(os.environ["IPA_SIZE"]),
-                              "minOSVersion": "18.0",
-                          }
-                      ],
+                      "versions": versions,
                       "appPermissions": {
                           "entitlements": [
                               "aps-environment",
@@ -1034,6 +1138,7 @@ jobs:
           }
           Path("build/unsigned-ipa/litter-update.json").write_text(json.dumps(update, indent=2) + "\n")
           Path("build/unsigned-ipa/litter-altstore-source.json").write_text(json.dumps(source, indent=2) + "\n")
+          print(f"AltStore source versions: {len(versions)}")
           PY
 
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -1064,7 +1169,7 @@ jobs:
 
           if gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable SideStore/AltStore source metadata for the latest Litter sideload build." --prerelease
+            gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." --prerelease
           else
             gh release create "$SOURCE_TAG" \
               "$UPDATE_PATH" \
@@ -1073,7 +1178,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "Litter app source" \
-              --notes "Stable SideStore/AltStore source metadata for the latest Litter sideload build." \
+              --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." \
               --prerelease
           fi
 
