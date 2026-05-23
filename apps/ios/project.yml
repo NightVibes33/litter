@@ -27,7 +27,7 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_OBJC_BRIDGING_HEADER: Sources/Litter/Bridge/codex_bridge_objc.h
     OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client"
-    HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers $(PROJECT_DIR)/Frameworks/llama.xcframework/**/Headers"
+    HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
     SWIFT_INCLUDE_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
     CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
     "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(PROJECT_DIR)/GeneratedRust/ios-device"
@@ -107,7 +107,6 @@ targets:
         product: WebRTC
       - package: ZIPFoundation
         product: ZIPFoundation
-      - framework: Frameworks/llama.xcframework
       - package: Nuke
         product: Nuke
       - package: Nuke
@@ -379,7 +378,6 @@ targets:
           - Views/LockScreenCardView.swift
           - Views/RealtimeVoiceScreen.swift
           - Views/VoiceCallView.swift
-          - Bridge/LitterLlamaBridge.mm
           - "**/*.h"
       - path: Sources/Litter/Bridge/UniFFICodexClient.generated.swift
     resources:

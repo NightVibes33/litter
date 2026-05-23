@@ -7,13 +7,15 @@ enum ChatRuntimeMode: String, Codable, CaseIterable, Identifiable {
     case computerBridge
     case localModel
 
+    static var allCases: [ChatRuntimeMode] { [.chatGPTAccount, .computerBridge] }
+
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .chatGPTAccount: return "ChatGPT Account"
         case .computerBridge: return "Computer Bridge"
-        case .localModel: return "On-device Model"
+        case .localModel: return "On-device AI Disabled"
         }
     }
 
@@ -21,7 +23,7 @@ enum ChatRuntimeMode: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .chatGPTAccount: return "ChatGPT"
         case .computerBridge: return "Bridge"
-        case .localModel: return "On-device"
+        case .localModel: return "Disabled"
         }
     }
 
@@ -35,12 +37,11 @@ enum ChatRuntimeMode: String, Codable, CaseIterable, Identifiable {
 }
 
 func isLocalGGUFModelSelection(_ selection: String?) -> Bool {
-    let trimmed = selection?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return trimmed.hasPrefix("local-gguf:")
+    false
 }
 
 func isLocalGGUFModelInfo(_ model: ModelInfo) -> Bool {
-    isLocalGGUFModelSelection(model.id) || isLocalGGUFModelSelection(model.model)
+    false
 }
 
 @MainActor
@@ -84,8 +85,11 @@ final class AppState {
         }
     }
     var preferredChatRuntimeMode: ChatRuntimeMode {
-        get { ChatRuntimeMode(rawValue: preferredChatRuntimeRaw) ?? .chatGPTAccount }
-        set { preferredChatRuntimeRaw = newValue.rawValue }
+        get {
+            let mode = ChatRuntimeMode(rawValue: preferredChatRuntimeRaw) ?? .chatGPTAccount
+            return mode == .localModel ? .chatGPTAccount : mode
+        }
+        set { preferredChatRuntimeRaw = (newValue == .localModel ? ChatRuntimeMode.chatGPTAccount : newValue).rawValue }
     }
     var preferredModel: String {
         didSet {

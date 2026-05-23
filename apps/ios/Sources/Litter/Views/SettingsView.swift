@@ -468,7 +468,7 @@ struct SettingsView: View {
                         Text("AI Providers")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("OpenAI, Ollama/PC servers, and on-device models")
+                        Text("OpenAI and PC-hosted Ollama/LM Studio servers")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
@@ -1469,7 +1469,7 @@ private struct SettingsConnectionAccountSection: View {
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     } else {
-                        Text("Optional OpenAI-compatible endpoint for local models.")
+                        Text("Optional OpenAI-compatible endpoint for a PC-hosted model server.")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }

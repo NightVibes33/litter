@@ -9,11 +9,11 @@ enum LocalLlamaRuntimeError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unavailable:
-            return "The on-device llama.cpp token generator is not linked in this build."
+            return "On-device AI is disabled in this build. Use ChatGPT or a PC-hosted OpenAI-compatible server."
         case .missingModel:
             return "The local model file is missing."
         case .toolLoopUnavailable:
-            return "The local model tool loop is available, but llama.cpp token generation is not connected yet."
+            return "On-device AI is disabled in this build. Use ChatGPT or a PC-hosted OpenAI-compatible server."
         case .unsupportedAttachment(let message):
             return message
         }
@@ -288,9 +288,8 @@ private final class LocalLlamaTokenBuffer: @unchecked Sendable {
 
 /// App-side contract for the native llama.cpp engine.
 ///
-/// The repository now has the download/import layer, guarded fakefs tools,
-/// approval events, retries, and stream state. A production build still needs
-/// the native llama.cpp Swift/C bridge to call `configureTokenGenerator`.
+/// Kept for stored-model cleanup and old local-thread state, but the native
+/// llama.cpp bridge is disabled in Litter builds.
 struct LocalLlamaRuntimeCapabilities: Equatable {
     var isAvailable: Bool
     var turboQuant: TurboQuantAvailability
@@ -298,7 +297,7 @@ struct LocalLlamaRuntimeCapabilities: Equatable {
 
     static let unavailable = LocalLlamaRuntimeCapabilities(
         isAvailable: false,
-        turboQuant: .unavailable("The linked llama.cpp bridge does not report TurboQuant support in this build."),
+        turboQuant: .unavailable("On-device AI is disabled in this build."),
         supportedKVCacheModes: [.automatic, .f16, .q8, .q4]
     )
 }

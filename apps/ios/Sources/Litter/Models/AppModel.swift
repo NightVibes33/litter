@@ -2056,7 +2056,7 @@ final class AppModel {
             content: .assistant(HydratedAssistantMessageData(
                 text: "",
                 agentNickname: "Local",
-                agentRole: "On-device GGUF",
+                agentRole: "Disabled on-device AI",
                 phase: nil
             )),
             sourceTurnId: turnId,
@@ -2079,12 +2079,12 @@ final class AppModel {
                 if trimmed.hasPrefix("/") {
                     paths.append(trimmed)
                 } else {
-                    throw LocalLlamaRuntimeError.unsupportedAttachment("Local GGUF turns only accept file mentions with absolute fakefs paths. Use hosted/OpenAI-compatible routing for plugin mentions.")
+                    throw LocalLlamaRuntimeError.unsupportedAttachment("On-device AI is disabled. Use hosted/OpenAI-compatible routing for plugin mentions.")
                 }
             case .text:
                 break
             case .image, .localImage, .skill:
-                throw LocalLlamaRuntimeError.unsupportedAttachment("On-device GGUF turns currently support text and absolute fakefs file mentions only.")
+                throw LocalLlamaRuntimeError.unsupportedAttachment("On-device AI is disabled. Use ChatGPT or an OpenAI-compatible computer endpoint.")
             }
         }
         if paths.isEmpty {
@@ -2229,7 +2229,7 @@ final class AppModel {
             content: .assistant(HydratedAssistantMessageData(
                 text: text,
                 agentNickname: "Local",
-                agentRole: "On-device GGUF",
+                agentRole: "Disabled on-device AI",
                 phase: nil
             )),
             sourceTurnId: turnId,

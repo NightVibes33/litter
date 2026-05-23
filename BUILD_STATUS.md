@@ -38,4 +38,4 @@ Current runner asset workflow:
 - BuildKit asset CI now checks for a verified private release before rebuilding Swift/LLVM, restores both finished and partial compiler caches, and saves partial outputs after failed long builds so retries do not restart from zero.
 - BuildKit source rebuilds are now opt-in with `force_rebuild=true`; normal runs skip successfully if no reusable private release/cache exists instead of spending hours compiling Swift/LLVM by default.
 - The native wrapper now also stages flattened `CoreCompiler` headers, fixing the final packaging failure from run `25644535373` after CoreCompiler itself succeeded.
-- Unsigned IPA CI now installs only Xcodegen up front; CMake/Ninja install only when the llama.cpp XCFramework cache is missing.
+- Unsigned IPA CI no longer builds or restores llama.cpp; on-device GGUF inference is disabled and local/private models should use a PC-hosted OpenAI-compatible endpoint.

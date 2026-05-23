@@ -11,7 +11,7 @@ enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .openAI: return "OpenAI"
         case .openAICompatible: return "OpenAI-Compatible Server"
-        case .localGGUF: return "On-Device GGUF"
+        case .localGGUF: return "On-device AI Disabled"
         }
     }
 }
@@ -164,7 +164,7 @@ enum AIModelRoutingMode: String, Codable, CaseIterable, Identifiable {
         case .automatic: return "Automatic"
         case .openAI: return "OpenAI"
         case .openAICompatible: return "Ollama / OpenAI-Compatible"
-        case .localGGUF: return "On-Device GGUF"
+        case .localGGUF: return "On-device AI Disabled"
         }
     }
 }

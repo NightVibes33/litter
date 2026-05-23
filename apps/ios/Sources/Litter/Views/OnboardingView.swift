@@ -201,13 +201,6 @@ struct OnboardingView: View {
                 actionTitle: "Add Server",
                 action: { finishAndOpen(onOpenServerPicker) }
             )
-            routeCard(
-                icon: ChatRuntimeMode.localModel.systemImage,
-                title: "On-device Model",
-                detail: "Use installed GGUF models for local text turns when the native llama runtime is available.",
-                actionTitle: "Model Settings",
-                action: { finishAndOpen { onOpenSettingsRoute("aiProviders") } }
-            )
         }
     }
 
@@ -524,7 +517,7 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .welcome: return "A practical tour of the workspace you will use every day."
-        case .runtime: return "Use hosted AI, a connected computer, or local models when available."
+        case .runtime: return "Use hosted AI or connect a computer for local/private models."
         case .workspace: return "The bot, file browser, and terminal share the same iSH fakefs."
         case .buildKit: return "Understand what works on device and what needs private assets."
         case .personalize: return "Tune the interface without losing the developer workflow."

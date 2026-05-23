@@ -16,7 +16,7 @@
 
 ## Current Scope
 
-Litter is a native SwiftUI iOS app that talks to Codex through a shared Rust client. It can run a local Codex runtime inside an embedded iSH Alpine Linux fakefs, connect to remote Codex app servers, pair with connected computers through Slingshot, and route conversations through hosted ChatGPT, OpenAI-compatible computer/LAN endpoints, or installed on-device GGUF models when the native llama runtime is present.
+Litter is a native SwiftUI iOS app that talks to Codex through a shared Rust client. It can run a local Codex runtime inside an embedded iSH Alpine Linux fakefs, connect to remote Codex app servers, pair with connected computers through Slingshot, and route conversations through hosted ChatGPT or OpenAI-compatible computer/LAN endpoints.
 
 The repository also contains CI release lanes for iOS, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline for on-device Swift/iOS builds.
 
@@ -139,17 +139,14 @@ Typing effects are persisted with the same wallpaper scope and are driven by `St
 
 The typing effect tab also exposes reveal speed, reveal granularity, and reveal mode controls.
 
-## AI Providers and Local Models
+## AI Providers
 
-The runtime picker separates three routes:
+The runtime picker separates two supported routes:
 
 - ChatGPT Account: the signed-in local Codex/ChatGPT route.
 - Computer Bridge: a selected Mac/Windows/Linux Codex app-server bridge.
-- On-device Model: installed `local-gguf:<id>` models backed by the native llama runtime when `apps/ios/Frameworks/llama.xcframework` is available.
 
-AI provider settings include hosted/OpenAI-compatible routing, local GGUF catalog/import/download flows, runtime settings, cellular policy, thermal/storage/RAM guidance, idle unload behavior, post-download validation, and per-model generation options. Local GGUF turns currently support text and absolute fakefs file mentions; plugin mentions and broader hosted-tool behavior should use hosted or bridge routes.
-
-The unsigned iOS build lane compiles a TurboQuant-flavored llama.cpp XCFramework when the cache is missing and records the resolved framework version in `apps/ios/Frameworks/llama.version`. TurboQuant options are exposed only when the linked runtime reports support for them.
+On-device GGUF downloading and iPhone-local llama.cpp inference are disabled in current iOS builds. For private or local models, run Ollama, LM Studio, or another OpenAI-compatible server on a computer and add its `/v1` endpoint in AI provider settings.
 
 ## Thread Goals
 
@@ -248,7 +245,6 @@ Use this flow when BuildKit source or private framework behavior changes:
 | `make bindings` | Regenerate UniFFI Swift bindings. |
 | `make xcgen` | Regenerate `Litter.xcodeproj` from `apps/ios/project.yml`. |
 | `make alpine-fs` | Prepare the bundled Alpine fakefs. |
-| `make llama-ios` | Build the iOS llama.cpp/TurboQuant XCFramework. |
 | `make nyxian-source-verify` | Verify the committed Nyxian source import. |
 | `make nyxian-buildkit-assets` | Build/package private BuildKit assets on macOS. |
 | `make nyxian-buildkit-assets-verify` | Validate a BuildKit asset ZIP or folder. |

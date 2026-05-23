@@ -11,6 +11,7 @@ on:
         options:
           - fast-device
           - release-device
+          - nyxian-private
   push:
     branches:
       - main
@@ -63,7 +64,10 @@ jobs:
       LITTER_BUILDKIT_ASSET_URL: ${{ secrets.LITTER_BUILDKIT_ASSET_URL }}
       LITTER_BUILDKIT_ASSET_SHA256: ${{ secrets.LITTER_BUILDKIT_ASSET_SHA256 }}
       LITTER_BUILDKIT_ASSET_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
-      LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: "0"
+      LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
+      LITTER_NYXIAN_PRIVATE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
+      LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
+      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
 
     steps:
       - name: Checkout
@@ -160,39 +164,6 @@ jobs:
           restore-keys: |
             ios-generated-assets-${{ runner.os }}-
 
-      - name: Restore prebuilt llama.cpp XCFramework
-        id: llama_cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            apps/ios/Frameworks/llama.xcframework
-            apps/ios/Frameworks/llama.version
-            .build-stamps/llama-ios-turboquant-main
-            ~/Library/Caches/litter-build/llama.cpp
-          key: ios-llama-turboquant-xcframework-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/build-llama-xcframework.sh') }}
-          restore-keys: |
-            ios-llama-turboquant-xcframework-v1-${{ runner.os }}-
-
-      - name: Check prebuilt llama.cpp XCFramework
-        id: llama_prebuilt
-        run: |
-          set -euo pipefail
-          if [ -d apps/ios/Frameworks/llama.xcframework ] && [ -f apps/ios/Frameworks/llama.version ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-            echo "Using cached llama.cpp XCFramework."
-            cat apps/ios/Frameworks/llama.version
-            find apps/ios/Frameworks/llama.xcframework -maxdepth 3 -type f -print | sed -n '1,20p'
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "No valid cached llama.cpp XCFramework found."
-          fi
-
-      - name: Install llama.cpp build dependencies
-        if: steps.llama_prebuilt.outputs.available != 'true'
-        run: |
-          set -euo pipefail
-          brew list cmake >/dev/null 2>&1 || brew install cmake
-          brew list ninja >/dev/null 2>&1 || brew install ninja
 
       - name: Ensure Swift UniFFI binding
         run: |
@@ -271,8 +242,8 @@ jobs:
         id: rust_prebuilt
         run: |
           set -euo pipefail
-          BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
-          if [ "$BUILD_MODE" != "fast-device" ]; then
+          BUILD_MODE="$LITTER_IOS_BUILD_MODE"
+          if [ "$BUILD_MODE" != "fast-device" ] && [ "$BUILD_MODE" != "nyxian-private" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "Release-device mode intentionally rebuilds Rust."
             exit 0
@@ -334,9 +305,9 @@ jobs:
         if: steps.rust_prebuilt.outputs.available != 'true'
         run: |
           set -euo pipefail
-          BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
+          BUILD_MODE="$LITTER_IOS_BUILD_MODE"
           echo "Using build mode: $BUILD_MODE"
-          if [ "$BUILD_MODE" = "fast-device" ]; then
+          if [ "$BUILD_MODE" = "fast-device" ] || [ "$BUILD_MODE" = "nyxian-private" ]; then
             if [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h ] && [ -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
               time ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --skip-bindings
             else
@@ -361,25 +332,6 @@ jobs:
           set -euo pipefail
           time make alpine-fs
 
-      - name: Build llama.cpp XCFramework
-        if: steps.llama_prebuilt.outputs.available != 'true'
-        run: |
-          set -euo pipefail
-          export LLAMA_CPP_FLAVOR=turboquant
-          export LLAMA_CPP_REPO=https://github.com/animehacker/llama-turboquant.git
-          export LLAMA_CPP_VERSION=main
-          time make llama-ios
-
-      - name: Save prebuilt llama.cpp XCFramework
-        if: steps.llama_cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            apps/ios/Frameworks/llama.xcframework
-            apps/ios/Frameworks/llama.version
-            .build-stamps/llama-ios-turboquant-main
-            ~/Library/Caches/litter-build/llama.cpp
-          key: ${{ steps.llama_cache.outputs.cache-primary-key }}
 
       - name: Restore prepared private BuildKit assets
         id: buildkit_assets_cache
@@ -545,6 +497,39 @@ jobs:
             DEVELOPMENT_TEAM="" \
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+
+      - name: Build Nyxian LiveProcess extension
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        run: |
+          set -euo pipefail
+          BUILD_ROOT="$PWD/build/NyxianLiveProcess"
+          OUTPUT_ROOT="$PWD/build/nyxian-liveprocess"
+          rm -rf "$BUILD_ROOT" "$OUTPUT_ROOT"
+          mkdir -p "$BUILD_ROOT" "$OUTPUT_ROOT"
+
+          xcodebuild build \
+            -project ThirdParty/Nyxian/Nyxian.xcodeproj \
+            -target LiveProcess \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$BUILD_ROOT/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.LiveProcess" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+
+          LIVEPROCESS_APPEX="$(find "$BUILD_ROOT/DerivedData/Build/Products" -type d -name 'LiveProcess.appex' -print | head -n 1)"
+          if [ -z "$LIVEPROCESS_APPEX" ] || [ ! -d "$LIVEPROCESS_APPEX" ]; then
+            echo "::error::Nyxian LiveProcess.appex was not produced" >&2
+            find "$BUILD_ROOT" -maxdepth 6 -print >&2 || true
+            exit 1
+          fi
+
+          cp -R "$LIVEPROCESS_APPEX" "$OUTPUT_ROOT/LiveProcess.appex"
+          /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$OUTPUT_ROOT/LiveProcess.appex/Info.plist" >/dev/null
+          echo "Nyxian LiveProcess extension staged at $OUTPUT_ROOT/LiveProcess.appex"
 
       - name: Verify archived BuildKit asset payload
         if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
@@ -856,19 +841,43 @@ jobs:
           cp -R "$APP_PATH" Payload/
           APP_BUNDLE="Payload/$(basename "$APP_PATH")"
 
-          # SideStore/AltStore re-sign the IPA after download. Leaving archive-time
-          # signatures, mobileprovisions, extensions, or watch bundles in place can
-          # produce installs that pass packaging but are killed by iOS at launch.
+          # SideStore/AltStore re-sign the IPA after download. Normal builds stay
+          # extension-free for launch safety. The manual nyxian-private lane keeps
+          # only the LiveProcess NSExtension required by original Nyxian/emexDE.
           find "$APP_BUNDLE" -name _CodeSignature -type d -prune -exec rm -rf {} +
           find "$APP_BUNDLE" -name embedded.mobileprovision -type f -delete
           find "$APP_BUNDLE" -name CodeResources -type f -delete
           find "$APP_BUNDLE" -name '*.xcent' -type f -delete
-          rm -rf "$APP_BUNDLE/PlugIns" "$APP_BUNDLE/Watch" "$APP_BUNDLE/AppClips"
 
-          if find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print -quit | grep -q .; then
-            echo "::error::Unsigned sideload IPA still contains stale signatures or embedded extensions." >&2
-            find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print >&2
-            exit 1
+          if [ "${LITTER_PRESERVE_NYXIAN_LIVEPROCESS:-0}" = "1" ]; then
+            mkdir -p "$APP_BUNDLE/PlugIns"
+            LIVEPROCESS_SRC="build/nyxian-liveprocess/LiveProcess.appex"
+            if [ ! -d "$LIVEPROCESS_SRC" ]; then
+              echo "::error::nyxian-private build is missing staged LiveProcess.appex" >&2
+              exit 1
+            fi
+            rm -rf "$APP_BUNDLE/PlugIns/LiveProcess.appex"
+            cp -R "$LIVEPROCESS_SRC" "$APP_BUNDLE/PlugIns/LiveProcess.appex"
+            find "$APP_BUNDLE/PlugIns" -mindepth 1 -maxdepth 1 -type d ! -name 'LiveProcess.appex' -prune -exec rm -rf {} +
+            rm -rf "$APP_BUNDLE/Watch" "$APP_BUNDLE/AppClips"
+            find "$APP_BUNDLE" -name _CodeSignature -type d -prune -exec rm -rf {} +
+            find "$APP_BUNDLE" -name embedded.mobileprovision -type f -delete
+            find "$APP_BUNDLE" -name CodeResources -type f -delete
+            find "$APP_BUNDLE" -name '*.xcent' -type f -delete
+            /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$APP_BUNDLE/PlugIns/LiveProcess.appex/Info.plist" >/dev/null
+            if find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision \) -print -quit | grep -q .; then
+              echo "::error::nyxian-private IPA still contains stale signatures or mobileprovisions." >&2
+              find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision \) -print >&2
+              exit 1
+            fi
+            echo "nyxian-private IPA keeps PlugIns/LiveProcess.appex for the Nyxian runtime."
+          else
+            rm -rf "$APP_BUNDLE/PlugIns" "$APP_BUNDLE/Watch" "$APP_BUNDLE/AppClips"
+            if find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print -quit | grep -q .; then
+              echo "::error::Unsigned sideload IPA still contains stale signatures or embedded extensions." >&2
+              find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print >&2
+              exit 1
+            fi
           fi
 
           INFO_PLIST="$APP_BUNDLE/Info.plist"
@@ -894,7 +903,7 @@ jobs:
           printf '%s  %s\n' "$IPA_SHA256" "$IPA_NAME" > "${IPA_PATH}.sha256"
 
           export BUNDLE_ID VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE
-          export BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
+          export BUILD_MODE="$LITTER_IOS_BUILD_MODE"
           python3 - <<'PY'
           import json
           import os
@@ -914,6 +923,8 @@ jobs:
               "sha256": os.environ["IPA_SHA256"],
               "size": int(os.environ["IPA_SIZE"]),
               "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing",
+              "nyxianLiveProcessExtension": os.environ.get("LITTER_NYXIAN_PRIVATE_BUILD") == "1",
+              "privateBuildKitAssetsEmbedded": os.environ.get("LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS") == "1",
           }
           Path("build/unsigned-ipa/build-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
           PY
@@ -929,7 +940,7 @@ jobs:
         if: success()
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
-          BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
+          BUILD_MODE: ${{ env.LITTER_IOS_BUILD_MODE }}
         run: |
           set -euo pipefail
           METADATA_PATH="build/unsigned-ipa/build-metadata.json"
@@ -1127,6 +1138,10 @@ jobs:
               build_mode = metadata.get("buildMode") or os.environ.get("BUILD_MODE", "")
               if build_mode:
                   lines.append(f"- Build mode: {build_mode}")
+              if metadata.get("nyxianLiveProcessExtension"):
+                  lines.append("- Nyxian LiveProcess extension: embedded")
+              if metadata.get("privateBuildKitAssetsEmbedded"):
+                  lines.append("- Private BuildKit assets: embedded")
               sha256 = metadata.get("sha256") or os.environ.get("IPA_SHA256", "")
               if sha256:
                   lines.append(f"- SHA-256: {sha256}")
@@ -1154,6 +1169,8 @@ jobs:
               "releaseURL": os.environ["RELEASE_URL"],
               "iconURL": os.environ["APP_ICON_URL"],
               "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing",
+              "nyxianLiveProcessExtension": os.environ.get("LITTER_NYXIAN_PRIVATE_BUILD") == "1",
+              "privateBuildKitAssetsEmbedded": os.environ.get("LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS") == "1",
           }
           current_release = {
               "tag_name": current_release_tag,
@@ -1287,7 +1304,7 @@ jobs:
                       "bundleIdentifier": os.environ["BUNDLE_ID"],
                       "developerName": "NightVibes33",
                       "iconURL": os.environ["APP_ICON_URL"],
-                      "subtitle": "On-device Codex runtime for iPhone",
+                      "subtitle": "Mobile Codex workspace for iPhone",
                       "localizedDescription": "Litter for sideloaded iOS installs.",
                       "category": "developer",
                       "tintColor": "06B6D4",

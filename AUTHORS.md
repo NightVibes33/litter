@@ -42,7 +42,7 @@ Litter also includes or builds against third-party projects. Their copyright and
 - ProjectNyxian/LLVM-On-iOS compiler support references.
 - dnakov/litter-ish for the embedded iSH backend.
 - dnakov/alleycat bridge crates used by the Rust mobile bridge.
-- ggml-org/llama.cpp, ZIPFoundation, Rust crates, Swift packages, and other package-manager dependencies resolved by the build system.
+- ZIPFoundation, Rust crates, Swift packages, and other package-manager dependencies resolved by the build system.
 
 ## License Note
 

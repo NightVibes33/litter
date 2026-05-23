@@ -927,7 +927,7 @@ struct InlineModelSelectorView: View {
         case .computerBridge:
             return "No bridge models on this route"
         case .localModel:
-            return "No installed local models"
+            return "On-device AI is disabled"
         }
     }
 
@@ -951,7 +951,7 @@ struct InlineModelSelectorView: View {
             if let currentServer, !currentServer.isLocal { return currentServer.displayName }
             return "Pick Mac/Windows/Linux"
         case .localModel:
-            return localModels.isEmpty ? "Download GGUF first" : "Runs on this iPhone"
+            return "Use a PC-hosted model server"
         }
     }
 

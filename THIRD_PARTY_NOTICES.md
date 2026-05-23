@@ -52,14 +52,6 @@ The Rust mobile bridge references Alleycat bridge crates for connected computer 
 - Upstream: https://github.com/dnakov/alleycat
 - Referenced by: `shared/rust-bridge/Cargo.toml`
 
-## llama.cpp
-
-The iOS app can build or consume a llama.cpp/TurboQuant XCFramework for local GGUF model execution.
-
-- Upstream: https://github.com/ggml-org/llama.cpp
-- Swift package binary target: `llama` in `Package.swift`
-- Build artifact path: `apps/ios/Frameworks/llama.xcframework` when present
-
 ## ZIPFoundation
 
 The Swift package manifest depends on ZIPFoundation for ZIP archive handling.

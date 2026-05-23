@@ -138,7 +138,7 @@ struct LocalModelPromptTemplate {
         if family.contains("phi") {
             return "Phi: short context-sensitive answers, avoid multi-tool batches, ask for narrower context when unsure."
         }
-        return "Generic GGUF: conservative tool use, strict JSON for tools, concise final answer."
+        return "On-device AI is disabled in this build; use a hosted or computer endpoint."
     }
 }
 
