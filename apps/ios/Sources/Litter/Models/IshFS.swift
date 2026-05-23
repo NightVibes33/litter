@@ -253,7 +253,7 @@ enum IshFS {
     }
 
     static func delete(path: String) async throws {
-        let result = await run("rm -rf \(shellQuote(path))")
+        let result = await run("target=\(shellQuote(path)); [ \"$target\" != / ] || exit 64; rm -rf -- \"$target\"")
         guard result.exitCode == 0 else { throw error("Could not delete item", result: result) }
     }
 
