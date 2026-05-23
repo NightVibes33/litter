@@ -865,7 +865,10 @@ private struct SettingsTerminalView: View {
     }
 
     private var terminalPanelInitialDirectory: String {
-        activeBotCwd ?? ""
+        if let activeBotCwd { return activeBotCwd }
+        guard selectedBotServer?.isLocal == true else { return "" }
+        let trimmed = initialDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? HomeAnchor.path : trimmed
     }
 
     private var terminalHostTitle: String {
@@ -944,7 +947,7 @@ private struct SettingsTerminalView: View {
                 serverId: server.serverId,
                 params: AppExecCommandRequest(
                     command: ["/bin/sh", "-lc", command],
-                    processId: nil,
+                    processId: "settings-terminal-\(UUID().uuidString)",
                     tty: true,
                     streamStdin: false,
                     streamStdoutStderr: false,

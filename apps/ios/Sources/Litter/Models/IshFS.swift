@@ -15,6 +15,8 @@ enum IshFS {
         let output: String
     }
 
+    private nonisolated(unsafe) static var runtimeKnownReady = false
+
     /// POSIX single-quote a string for safe interpolation into a shell
     /// command: `'x'` stays `'x'`, `x's` becomes `'x'\''s'`.
     static func shellQuote(_ s: String) -> String {
@@ -26,7 +28,10 @@ enum IshFS {
     /// but serializes internally, so we hop to a background task to avoid
     /// blocking the caller (typically a SwiftUI MainActor path).
     static func run(_ cmd: String, cwd: String? = nil) async -> Result {
-        await Task.detached(priority: .userInitiated) {
+        if let readinessFailure = await ensureRuntimeReadyForCommand() {
+            return readinessFailure
+        }
+        let result = await Task.detached(priority: .userInitiated) {
             let res = ishRun(cmd: cmd, cwd: cwd ?? "")
             var output = String(data: res.output, encoding: .utf8) ?? ""
             if res.exitCode < 0 && output.isEmpty {
@@ -34,6 +39,29 @@ enum IshFS {
             }
             return Result(exitCode: res.exitCode, output: output)
         }.value
+        if result.exitCode == -6 { runtimeKnownReady = false }
+        return result
+    }
+
+    private static func ensureRuntimeReadyForCommand() async -> Result? {
+#if targetEnvironment(macCatalyst)
+        return nil
+#else
+        if runtimeKnownReady { return nil }
+        let preflight = ishRuntimePreflight()
+        if preflight.exitCode == 0 {
+            runtimeKnownReady = true
+            return nil
+        }
+        do {
+            try await LitterPlatform.ensureLocalRuntimeReady()
+            runtimeKnownReady = true
+            return nil
+        } catch {
+            runtimeKnownReady = false
+            return Result(exitCode: preflight.exitCode, output: error.localizedDescription)
+        }
+#endif
     }
 
     static func listDirectory(path: String, includeHidden: Bool) async throws -> [LocalFileEntry] {

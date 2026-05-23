@@ -2567,6 +2567,7 @@ struct LitterTerminalPanel: View {
     @State private var commandHistoryCursor: Int?
     @State private var isRunning = false
     @State private var runningCommand: String?
+    @State private var keyboardHeight: CGFloat = 0
     @FocusState private var inputFocused: Bool
 
     var visibleHistory: [LitterTerminalEntry] {
@@ -2619,8 +2620,14 @@ struct LitterTerminalPanel: View {
             }
             terminalShortcutRail
             terminalInput
+            if keyboardHeight > 0 {
+                Color.clear
+                    .frame(height: keyboardHeight)
+                    .accessibilityHidden(true)
+            }
         }
         .background(terminalBackground)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .task {
             cwd = requestedDirectory.isEmpty ? browserPath : requestedDirectory
             loadStoredCommandHistory()
@@ -2628,6 +2635,15 @@ struct LitterTerminalPanel: View {
         }
         .onChange(of: requestedDirectory) { _, newValue in
             if !newValue.isEmpty { cwd = newValue }
+        }
+        .onChange(of: inputFocused) { _, focused in
+            if !focused { keyboardHeight = 0 }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
+            updateKeyboardHeight(notification)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardHeight = 0
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
@@ -2957,6 +2973,15 @@ struct LitterTerminalPanel: View {
         guard let pasted = UIPasteboard.general.string, !pasted.isEmpty else { return }
         command += pasted
         inputFocused = true
+    }
+
+    private func updateKeyboardHeight(_ notification: Notification) {
+        guard inputFocused,
+              let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
+            keyboardHeight = 0
+            return
+        }
+        keyboardHeight = max(0, UIScreen.main.bounds.height - frame.minY)
     }
 
     private func terminalShellCommand(_ raw: String) -> String {
