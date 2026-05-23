@@ -217,6 +217,8 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var cxxStandardLibraryHeadersInstalled: Bool
     var commandShimsInstalled: Bool
     var requestMonitorRunning: Bool
+    var embeddedProvisionPresent: Bool
+    var nyxianSigningCertificateInstalled: Bool
     var toolchainRoot: String
     var sdkRoot: String
     var buildKitRoot: String
@@ -234,6 +236,17 @@ struct LitterBuildKitStatus: Equatable, Sendable {
 
     var canBuildUnsignedIPA: Bool {
         isReadyForNativeBuilds && (installedCapabilities.contains("unsigned-ipa-build") || installedCapabilities.contains("unsigned-ipa-package"))
+    }
+
+    var canRunNyxianApps: Bool {
+        isReadyForNativeBuilds && embeddedProvisionPresent && nyxianSigningCertificateInstalled
+    }
+
+    var nyxianRunInstallRequirements: [String] {
+        var lines: [String] = []
+        if !embeddedProvisionPresent { lines.append("SideStore/AltStore embedded.mobileprovision on the installed Litter app") }
+        if !nyxianSigningCertificateInstalled { lines.append("matching SideStore/AltStore .p12 certificate imported for Nyxian signing") }
+        return lines
     }
 
     var missingRequirements: [String] {
@@ -263,7 +276,10 @@ struct LitterBuildKitStatus: Equatable, Sendable {
 
     var readinessDetail: String {
         if isReadyForNativeBuilds {
-            return "Fakefs Swift and IPA commands can route to the native BuildKit driver."
+            if canRunNyxianApps {
+                return "Fakefs Swift, unsigned IPA packaging, and original Nyxian run/install signing are ready."
+            }
+            return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs the matching SideStore/AltStore .p12 certificate imported."
         }
         if privateAssetsInstalled {
             return "The private asset pack is installed, but the native driver/framework is not loadable yet. Rebuild the sideload IPA with the private BuildKit framework embedded."
@@ -452,6 +468,8 @@ actor LitterBuildKit {
             cxxStandardLibraryHeadersInstalled: Self.cxxStandardLibraryHeadersInstalled,
             commandShimsInstalled: shimsInstalled,
             requestMonitorRunning: monitorTask != nil,
+            embeddedProvisionPresent: Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") != nil,
+            nyxianSigningCertificateInstalled: Self.nyxianSigningCertificateInstalled,
             toolchainRoot: Self.toolchainRoot.path,
             sdkRoot: Self.sdkRoot.path,
             buildKitRoot: Self.buildKitRoot.path,
@@ -459,6 +477,11 @@ actor LitterBuildKit {
             assetManifest: manifest,
             sourceImportManifest: sourceManifest
         )
+    }
+
+    private static var nyxianSigningCertificateInstalled: Bool {
+        guard let data = UserDefaults.standard.data(forKey: "LCCertificateData") else { return false }
+        return !data.isEmpty
     }
 
     private func monitorLoop() async {
@@ -2358,6 +2381,9 @@ actor LitterBuildKit {
         libc++ headers: \(status.cxxStandardLibraryHeadersInstalled ? "installed" : "missing")
         Fakefs command shims: \(status.commandShimsInstalled ? "installed" : "missing")
         Request monitor: \(status.requestMonitorRunning ? "running" : "stopped")
+        App provisioning profile: \(status.embeddedProvisionPresent ? "present" : "missing")
+        Nyxian signing certificate: \(status.nyxianSigningCertificateInstalled ? "imported" : "missing")
+        Nyxian run/install: \(status.canRunNyxianApps ? "ready" : "blocked")
         BuildKit root: \(status.buildKitRoot)
         Toolchain root: \(status.toolchainRoot)
         SDK root: \(status.sdkRoot)
@@ -2394,6 +2420,9 @@ actor LitterBuildKit {
             output += "\nMissing requirements:\n" + status.missingRequirements.map { "- \($0)" }.joined(separator: "\n") + "\n"
             output += "\nAsset search:\n\(assetAvailabilityReport())\n"
         }
+        if !status.nyxianRunInstallRequirements.isEmpty {
+            output += "\nNyxian run/install requirements:\n" + status.nyxianRunInstallRequirements.map { "- \($0)" }.joined(separator: "\n") + "\n"
+        }
         return output
     }
 
@@ -2406,6 +2435,9 @@ actor LitterBuildKit {
         output += "- Private asset root: \(status.buildKitRoot)\n"
         output += "- Swift direct execution: \(status.canRunSwiftDirectly ? "available" : "not available")\n"
         output += "- Unsigned IPA packaging: \(status.canBuildUnsignedIPA ? "available" : "not available")\n"
+        output += "- SideStore/AltStore embedded profile: \(status.embeddedProvisionPresent ? "present" : "missing")\n"
+        output += "- Matching signing certificate: \(status.nyxianSigningCertificateInstalled ? "imported" : "missing")\n"
+        output += "- Run/install built apps: \(status.canRunNyxianApps ? "available" : "not available")\n"
         output += "- Driver mode: \(status.assetManifest?.toolchain.nativeDriverMode ?? "unknown")\n"
         output += "- Capabilities: \(status.installedCapabilities.isEmpty ? "none" : status.installedCapabilities.joined(separator: ", "))\n"
         output += "\nBot path examples:\n"

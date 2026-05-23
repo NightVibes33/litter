@@ -17,6 +17,8 @@ The app installs fakefs shims such as `litter-fs-doctor`, `litter-swift-check`, 
 
 Full native Swift/iOS compilation requires the private `LitterBuildKitAssets.zip` bundle. That bundle contains `CoreCompiler.framework`, `CoreCompilerSupportLibs`, `LitterBuildKitNative.framework`, and a user-owned iPhoneOS SDK. Apple SDK files and compiled private assets are not committed here.
 
+Unsigned IPA packaging does not need a signing certificate. Original Nyxian run/install mode does: the installed Litter app must be signed by SideStore, AltStore, Feather, or another signer, and BuildKit settings must import the matching `.p12` certificate so built apps can be signed with the same identity.
+
 Important: if `ThirdParty/Nyxian/LitterBuildKitNative/**` changes, rebuild and upload the private BuildKit asset pack before rebuilding the unsigned IPA. The IPA embeds the framework from the asset ZIP; an IPA-only rebuild can reuse a stale native framework.
 
 ## Regenerate Project

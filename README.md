@@ -134,6 +134,8 @@ The private asset pack must include:
 
 Important packaging rule: changing `ThirdParty/Nyxian/LitterBuildKitNative/**` does not change installed app behavior by itself. The app loads `LitterBuildKitNative.framework` from `LitterBuildKitAssets.zip`. After native bridge changes, rebuild and upload the private asset pack, update `LITTER_BUILDKIT_ASSET_URL` and `LITTER_BUILDKIT_ASSET_SHA256`, then build the IPA against that new asset.
 
+Original Nyxian run/install mode also needs signing material on the installed app. SideStore, AltStore, Feather, or another signer signs the unsigned Litter IPA with a user Apple ID certificate. To run built apps through the original Nyxian path, import the matching `.p12` certificate in BuildKit settings so the generated app can be re-signed with the same identity.
+
 Canonical fakefs commands installed into `/usr/local/bin` include:
 
 ```text

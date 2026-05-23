@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -9,6 +10,9 @@ struct BuildKitSettingsView: View {
     @State private var showingAssetImporter = false
     @State private var lastActionOutput: String?
     @State private var tokenInput = ""
+    @State private var showingCertificateImporter = false
+    @State private var certificatePasswordInput = ""
+    @State private var certificateActionMessage: String?
 
     var body: some View {
         List {
@@ -16,6 +20,7 @@ struct BuildKitSettingsView: View {
             privateAssetDownloadSection
             commandsSection
             pathsSection
+            signingSection
             sourceSection
             actionOutputSection
         }
@@ -29,6 +34,9 @@ struct BuildKitSettingsView: View {
         }
         .fileImporter(isPresented: $showingAssetImporter, allowedContentTypes: [.folder, .json, .zip], allowsMultipleSelection: false) { result in
             handleAssetImport(result)
+        }
+        .fileImporter(isPresented: $showingCertificateImporter, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
+            handleCertificateImport(result)
         }
         .onChange(of: downloader.installRevision) { _, _ in
             taskBag.run { await refresh() }
@@ -285,6 +293,53 @@ struct BuildKitSettingsView: View {
         }
     }
 
+    private var signingSection: some View {
+        Section {
+            Text("SideStore or AltStore signs the unsigned Litter IPA with your Apple ID. Original Nyxian run/install needs the matching .p12 certificate saved here so it can sign built apps with the same identity.")
+                .litterFont(.caption)
+                .foregroundStyle(LitterTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            statusRow("Embedded profile", status?.embeddedProvisionPresent == true ? "Present" : "Missing")
+            statusRow("Imported certificate", status?.nyxianSigningCertificateInstalled == true ? "Imported" : "Missing")
+            statusRow("Run/install built apps", status?.canRunNyxianApps == true ? "Ready" : "Blocked")
+
+            SecureField("Certificate password", text: $certificatePasswordInput)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                showingCertificateImporter = true
+            } label: {
+                Label("Import SideStore Certificate", systemImage: "key")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button(role: .destructive) {
+                clearNyxianCertificate()
+            } label: {
+                Label("Clear Imported Certificate", systemImage: "trash")
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            if let certificateActionMessage, !certificateActionMessage.isEmpty {
+                Text(certificateActionMessage)
+                    .litterFont(.caption)
+                    .foregroundStyle(LitterTheme.textSecondary)
+                    .textSelection(.enabled)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+        } header: {
+            Text("Nyxian Signing")
+                .foregroundStyle(LitterTheme.textSecondary)
+        } footer: {
+            Text("This does not sign CI release IPAs. It stores the certificate in the original Nyxian keys used by LCUtils for on-device run/install after the app has been signed by SideStore, AltStore, or another sideload signer.")
+        }
+    }
+
     private var sourceSection: some View {
         Section {
             statusRow("Nyxian source", status?.sourceImportAvailable == true ? "Bundled manifest present" : "Missing")
@@ -423,6 +478,43 @@ struct BuildKitSettingsView: View {
         case .failure(let error):
             lastActionOutput = "BuildKit asset import failed.\n\(error.localizedDescription)\n"
         }
+    }
+
+    @MainActor
+    private func handleCertificateImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccess { url.stopAccessingSecurityScopedResource() }
+            }
+            do {
+                let data = try Data(contentsOf: url)
+                guard !data.isEmpty else {
+                    certificateActionMessage = "Certificate import failed: selected file was empty."
+                    return
+                }
+                UserDefaults.standard.set(data, forKey: "LCCertificateData")
+                UserDefaults.standard.set(certificatePasswordInput, forKey: "LCCertificatePassword")
+                certificateActionMessage = "Imported \(url.lastPathComponent) for Nyxian run/install signing."
+                lastActionOutput = "Nyxian signing certificate imported. Run Nyxian Status to confirm the embedded profile and imported certificate are both present."
+                taskBag.run { await refresh() }
+            } catch {
+                certificateActionMessage = "Certificate import failed: \(error.localizedDescription)"
+            }
+        case .failure(let error):
+            certificateActionMessage = "Certificate import failed: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func clearNyxianCertificate() {
+        UserDefaults.standard.removeObject(forKey: "LCCertificateData")
+        UserDefaults.standard.removeObject(forKey: "LCCertificatePassword")
+        certificatePasswordInput = ""
+        certificateActionMessage = "Removed the imported Nyxian signing certificate."
+        taskBag.run { await refresh() }
     }
 
     @MainActor
