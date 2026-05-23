@@ -25,7 +25,7 @@ jobs:
         with:
           path: |
             apps/ios/GeneratedRust
-          key: ios-rust-generated-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          key: ios-rust-generated-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/build-ghostty.sh', 'apps/ios/scripts/sync-ghostty.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**', 'patches/ghostty/**', 'shared/third_party/ghostty/**') }}
           restore-keys: |
             ios-rust-generated-${{ runner.os }}-
 
@@ -37,6 +37,8 @@ jobs:
             exit 1
           }
           test -s apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a
+          test -s apps/ios/GeneratedRust/ios-device/libghostty.a
+          test -f apps/ios/GeneratedRust/Headers/ghostty.h
           test -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
           test -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
           test -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift

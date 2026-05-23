@@ -54,6 +54,8 @@ shlex = { workspace = true }
 sha1 = "0.10"
 hex = "0.4"
 semver = { version = "1", default-features = false }
+linkify = "0.10"
+unicode-segmentation = "1"
 
 [features]
 rpc-trace = []
@@ -74,3 +76,7 @@ ish-embed-host = { git = "https://github.com/dnakov/litter-ish.git", branch = "m
 jni = "0.21"
 ndk-context = "0.1"
 openssl-sys = { version = "0.9", features = ["vendored"] }
+portable-pty = "0.9"
+flate2 = "1"
+tar = "0.4"
+rusqlite = { version = "0.32.1", features = ["bundled"] }

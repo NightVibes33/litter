@@ -833,32 +833,10 @@ private struct ConversationSettingsRouteView: View {
 
 private struct SettingsTerminalView: View {
     let initialDirectory: String
-    @State private var copiedOutput = false
 
     var body: some View {
-        ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
-            LitterTerminalPanel(
-                browserPath: HomeAnchor.path,
-                requestedDirectory: initialDirectory,
-                searchQuery: "",
-                onBrowse: nil,
-                onCopy: { text in
-                    UIPasteboard.general.string = text
-                    copiedOutput = true
-                }
-            )
-            .background(LitterTheme.surface.opacity(0.4))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .padding(12)
-        }
-        .navigationTitle("Terminal")
-        .navigationBarTitleDisplayMode(.inline)
-        .alert("Terminal", isPresented: $copiedOutput) {
-            Button("OK", role: .cancel) { copiedOutput = false }
-        } message: {
-            Text("Copied terminal output.")
-        }
+        TerminalScreen(cwd: initialDirectory)
+            .navigationBarTitleDisplayMode(.inline)
     }
 }
 

@@ -109,6 +109,11 @@ pub struct MobileClient {
     pub(crate) ssh_bootstrap_flows:
         Arc<tokio::sync::Mutex<HashMap<String, ManagedSshBootstrapFlow>>>,
     alleycat_restart_targets: Arc<StdMutex<HashMap<String, AlleycatRestartTarget>>>,
+    /// Live terminal session handles keyed by session id. The store
+    /// holds the FFI-visible snapshot; these strong references keep
+    /// the underlying PTY / SSH channel alive while renderers come and go.
+    pub(crate) terminal_sessions:
+        Arc<StdMutex<HashMap<String, Arc<crate::terminal::TerminalSession>>>>,
 }
 
 /// State for a single in-flight guided SSH connect.
@@ -712,6 +717,7 @@ impl MobileClient {
             alleycat_secret_key: Arc::new(StdMutex::new(None)),
             ssh_bootstrap_flows: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             alleycat_restart_targets: Arc::new(StdMutex::new(HashMap::new())),
+            terminal_sessions: Arc::new(StdMutex::new(HashMap::new())),
         }
     }
 
@@ -1125,13 +1131,10 @@ impl MobileClient {
         params: upstream::GetAccountParams,
     ) -> Result<upstream::GetAccountResponse, crate::RpcClientError> {
         use crate::{RpcClientError, next_request_id};
-        self.request_typed_for_server(
-            server_id,
-            upstream::ClientRequest::GetAccount {
-                request_id: upstream::RequestId::Integer(next_request_id()),
-                params,
-            },
-        )
+        self.request_typed_for_server(server_id, upstream::ClientRequest::GetAccount {
+            request_id: upstream::RequestId::Integer(next_request_id()),
+            params,
+        })
         .await
         .map_err(RpcClientError::Rpc)
     }
@@ -1142,13 +1145,10 @@ impl MobileClient {
         params: upstream::ThreadForkParams,
     ) -> Result<upstream::ThreadForkResponse, crate::RpcClientError> {
         use crate::{RpcClientError, next_request_id};
-        self.request_typed_for_server(
-            server_id,
-            upstream::ClientRequest::ThreadFork {
-                request_id: upstream::RequestId::Integer(next_request_id()),
-                params,
-            },
-        )
+        self.request_typed_for_server(server_id, upstream::ClientRequest::ThreadFork {
+            request_id: upstream::RequestId::Integer(next_request_id()),
+            params,
+        })
         .await
         .map_err(RpcClientError::Rpc)
     }
@@ -1159,13 +1159,10 @@ impl MobileClient {
         params: upstream::ThreadRollbackParams,
     ) -> Result<upstream::ThreadRollbackResponse, crate::RpcClientError> {
         use crate::{RpcClientError, next_request_id};
-        self.request_typed_for_server(
-            server_id,
-            upstream::ClientRequest::ThreadRollback {
-                request_id: upstream::RequestId::Integer(next_request_id()),
-                params,
-            },
-        )
+        self.request_typed_for_server(server_id, upstream::ClientRequest::ThreadRollback {
+            request_id: upstream::RequestId::Integer(next_request_id()),
+            params,
+        })
         .await
         .map_err(RpcClientError::Rpc)
     }
@@ -1276,13 +1273,10 @@ impl MobileClient {
     ) {
         self.clear_oauth_callback_tunnel(server_id).await;
         let mut tunnels = self.oauth_callback_tunnels.lock().await;
-        tunnels.insert(
-            server_id.to_string(),
-            OAuthCallbackTunnel {
-                login_id: login_id.to_string(),
-                local_port,
-            },
-        );
+        tunnels.insert(server_id.to_string(), OAuthCallbackTunnel {
+            login_id: login_id.to_string(),
+            local_port,
+        });
     }
 
     fn existing_active_session(&self, server_id: &str) -> Option<Arc<ServerSession>> {
@@ -1774,20 +1768,16 @@ impl MobileClient {
         };
         match self.alleycat_restart_targets.lock() {
             Ok(mut guard) => {
-                guard.insert(
-                    server_id.clone(),
-                    AlleycatRestartTarget {
-                        params: params.clone(),
-                    },
-                );
+                guard.insert(server_id.clone(), AlleycatRestartTarget {
+                    params: params.clone(),
+                });
             }
             Err(error) => {
-                error.into_inner().insert(
-                    server_id.clone(),
-                    AlleycatRestartTarget {
+                error
+                    .into_inner()
+                    .insert(server_id.clone(), AlleycatRestartTarget {
                         params: params.clone(),
-                    },
-                );
+                    });
             }
         }
         self.app_store
@@ -2383,21 +2373,18 @@ impl MobileClient {
     pub(crate) async fn list_threads(&self, server_id: &str) -> Result<Vec<ThreadInfo>, RpcError> {
         self.get_session(server_id)?;
         let response = self
-            .server_thread_list(
-                server_id,
-                upstream::ThreadListParams {
-                    limit: None,
-                    cursor: None,
-                    sort_key: None,
-                    sort_direction: None,
-                    model_providers: None,
-                    source_kinds: None,
-                    archived: None,
-                    cwd: None,
-                    search_term: None,
-                    use_state_db_only: false,
-                },
-            )
+            .server_thread_list(server_id, upstream::ThreadListParams {
+                limit: None,
+                cursor: None,
+                sort_key: None,
+                sort_direction: None,
+                model_providers: None,
+                source_kinds: None,
+                archived: None,
+                cwd: None,
+                search_term: None,
+                use_state_db_only: false,
+            })
             .await
             .map_err(map_rpc_client_error)?;
         let threads = response
@@ -2412,12 +2399,9 @@ impl MobileClient {
     pub async fn sync_server_account(&self, server_id: &str) -> Result<(), RpcError> {
         self.get_session(server_id)?;
         let response = self
-            .server_get_account(
-                server_id,
-                upstream::GetAccountParams {
-                    refresh_token: false,
-                },
-            )
+            .server_get_account(server_id, upstream::GetAccountParams {
+                refresh_token: false,
+            })
             .await
             .map_err(map_rpc_client_error)?;
         self.apply_account_response(server_id, &response);
@@ -3014,15 +2998,12 @@ impl MobileClient {
     ) -> Result<(), RpcError> {
         self.get_session(server_id)?;
         let _: upstream::ThreadUnsubscribeResponse = self
-            .request_typed_for_server(
-                server_id,
-                upstream::ClientRequest::ThreadUnsubscribe {
-                    request_id: upstream::RequestId::Integer(crate::next_request_id()),
-                    params: upstream::ThreadUnsubscribeParams {
-                        thread_id: thread_id.to_string(),
-                    },
+            .request_typed_for_server(server_id, upstream::ClientRequest::ThreadUnsubscribe {
+                request_id: upstream::RequestId::Integer(crate::next_request_id()),
+                params: upstream::ThreadUnsubscribeParams {
+                    thread_id: thread_id.to_string(),
                 },
-            )
+            })
             .await
             .map_err(RpcError::Deserialization)?;
         self.direct_resumed_threads().remove(&ThreadKey {
@@ -3264,13 +3245,10 @@ impl MobileClient {
 
         if rollback_depth > 0 {
             let response = self
-                .server_thread_rollback(
-                    &key.server_id,
-                    upstream::ThreadRollbackParams {
-                        thread_id: key.thread_id.clone(),
-                        num_turns: rollback_depth,
-                    },
-                )
+                .server_thread_rollback(&key.server_id, upstream::ThreadRollbackParams {
+                    thread_id: key.thread_id.clone(),
+                    num_turns: rollback_depth,
+                })
                 .await
                 .map_err(|e| RpcError::Deserialization(e.to_string()))?;
             let turns = response.thread.turns.clone();
@@ -3352,13 +3330,10 @@ impl MobileClient {
 
         if rollback_depth > 0 {
             let rollback_response = self
-                .server_thread_rollback(
-                    &key.server_id,
-                    upstream::ThreadRollbackParams {
-                        thread_id: next_key.thread_id.clone(),
-                        num_turns: rollback_depth,
-                    },
-                )
+                .server_thread_rollback(&key.server_id, upstream::ThreadRollbackParams {
+                    thread_id: next_key.thread_id.clone(),
+                    num_turns: rollback_depth,
+                })
                 .await
                 .map_err(|e| RpcError::Deserialization(e.to_string()))?;
             snapshot = thread_snapshot_from_upstream_thread_with_overrides(
@@ -3474,12 +3449,9 @@ impl MobileClient {
             answers: normalized_answers
                 .into_iter()
                 .map(|answer| {
-                    (
-                        answer.question_id,
-                        upstream::ToolRequestUserInputAnswer {
-                            answers: answer.answers,
-                        },
-                    )
+                    (answer.question_id, upstream::ToolRequestUserInputAnswer {
+                        answers: answer.answers,
+                    })
                 })
                 .collect::<HashMap<_, _>>(),
         };
@@ -3583,6 +3555,106 @@ impl MobileClient {
         self.subscribe_updates()
     }
 
+    /// Open a new terminal session, store the strong handle on the
+    /// client, register a snapshot entry on the reducer, and wire output
+    /// bytes back into the ring buffer. Returns the generated session
+    /// id.
+    pub async fn open_terminal_session(
+        &self,
+        kind: crate::terminal::TerminalBackendKind,
+        size: crate::terminal::TerminalSize,
+        trust_store: Option<Arc<crate::terminal::TerminalSshTrustStore>>,
+    ) -> Result<String, crate::terminal::TerminalError> {
+        let session = match trust_store {
+            Some(store) => {
+                crate::terminal::TerminalSession::open_with_trust_store(kind.clone(), size, store)
+                    .await?
+            }
+            None => crate::terminal::TerminalSession::open(kind.clone(), size).await?,
+        };
+        let session = Arc::new(session);
+        let id = uuid::Uuid::new_v4().to_string();
+        self.terminal_sessions
+            .lock()
+            .expect("terminal_sessions poisoned")
+            .insert(id.clone(), Arc::clone(&session));
+        self.app_store
+            .open_terminal_session_record(id.clone(), kind, size.cols, size.rows);
+
+        // Subscribe to the session's output to feed the ring buffer.
+        let reducer = Arc::clone(&self.app_store);
+        let id_for_listener = id.clone();
+        let strong = Arc::clone(&session);
+        let sessions = Arc::clone(&self.terminal_sessions);
+        let listener: Box<dyn crate::terminal::TerminalOutputListener> =
+            Box::new(TerminalRingListener {
+                reducer,
+                id: id_for_listener,
+                sessions,
+            });
+        strong.subscribe_output(listener);
+        Ok(id)
+    }
+
+    /// Close a terminal session: drop the strong handle (which kills the
+    /// underlying backend on the last reference being released), then
+    /// mark the snapshot as exited. The snapshot's output_tail is
+    /// retained until [`MobileClient::forget_terminal_session`].
+    pub async fn close_terminal_session(
+        &self,
+        id: &str,
+    ) -> Result<(), crate::terminal::TerminalError> {
+        let session = self
+            .terminal_sessions
+            .lock()
+            .expect("terminal_sessions poisoned")
+            .remove(id);
+        if let Some(session) = session {
+            session.close_session().await?;
+        }
+        self.app_store.mark_terminal_exited(id, 0);
+        Ok(())
+    }
+
+    /// Forget a session entirely (drop the snapshot's buffered output).
+    pub fn forget_terminal_session(&self, id: &str) {
+        self.terminal_sessions
+            .lock()
+            .expect("terminal_sessions poisoned")
+            .remove(id);
+        self.app_store.remove_terminal_session_record(id);
+    }
+
+    /// Return the live session handle for `id`, or `None` if the session
+    /// has been closed.
+    pub fn terminal_session_handle(
+        &self,
+        id: &str,
+    ) -> Option<Arc<crate::terminal::TerminalSession>> {
+        self.terminal_sessions
+            .lock()
+            .expect("terminal_sessions poisoned")
+            .get(id)
+            .cloned()
+    }
+
+    /// Write `bytes` to the currently-active terminal session, if any.
+    /// Returns `Ok(false)` if there is no active session.
+    pub async fn write_to_active_terminal(
+        &self,
+        bytes: Vec<u8>,
+    ) -> Result<bool, crate::terminal::TerminalError> {
+        let active_id = self.app_store.snapshot().active_terminal_id.clone();
+        let Some(id) = active_id else {
+            return Ok(false);
+        };
+        let Some(session) = self.terminal_session_handle(&id) else {
+            return Ok(false);
+        };
+        session.write_input(bytes).await?;
+        Ok(true)
+    }
+
     pub fn set_active_thread(&self, key: Option<ThreadKey>) {
         self.app_store.set_active_thread(key);
     }
@@ -3609,30 +3681,27 @@ impl MobileClient {
         let collaboration_mode = thread
             .as_ref()
             .and_then(|t| collaboration_mode_from_thread(t, AppModeKind::Default, None, None));
-        self.start_turn(
-            &key.server_id,
-            upstream::TurnStartParams {
-                thread_id: key.thread_id.clone(),
-                input: vec![upstream::UserInput::Text {
-                    text: "Implement the plan.".to_string(),
-                    text_elements: Vec::new(),
-                }],
-                responsesapi_client_metadata: None,
-                cwd: None,
-                approval_policy: None,
-                approvals_reviewer: None,
-                sandbox_policy: None,
-                environments: None,
-                permissions: None,
-                model: None,
-                service_tier: None,
-                effort: None,
-                summary: None,
-                personality: None,
-                output_schema: None,
-                collaboration_mode,
-            },
-        )
+        self.start_turn(&key.server_id, upstream::TurnStartParams {
+            thread_id: key.thread_id.clone(),
+            input: vec![upstream::UserInput::Text {
+                text: "Implement the plan.".to_string(),
+                text_elements: Vec::new(),
+            }],
+            responsesapi_client_metadata: None,
+            cwd: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
+            environments: None,
+            permissions: None,
+            model: None,
+            service_tier: None,
+            effort: None,
+            summary: None,
+            personality: None,
+            output_schema: None,
+            collaboration_mode,
+        })
         .await
     }
 
@@ -3672,6 +3741,27 @@ impl MobileClient {
     /// If `project_root` is `None`, all entries for the server are cleared.
     pub fn invalidate_ambient_suggestions(&self, server_id: &str, project_root: Option<&str>) {
         crate::ambient_suggestions::invalidate_cache(&self.ambient_cache, server_id, project_root);
+    }
+}
+
+/// Listener that feeds session output bytes into the reducer's ring
+/// buffer and marks the session exited when the backend reports exit.
+struct TerminalRingListener {
+    reducer: Arc<AppStoreReducer>,
+    id: String,
+    sessions: Arc<StdMutex<HashMap<String, Arc<crate::terminal::TerminalSession>>>>,
+}
+
+impl crate::terminal::TerminalOutputListener for TerminalRingListener {
+    fn on_bytes(&self, data: Vec<u8>) {
+        self.reducer.append_terminal_output(&self.id, &data);
+    }
+    fn on_exit(&self, code: i32) {
+        self.reducer.mark_terminal_exited(&self.id, code);
+        self.sessions
+            .lock()
+            .expect("terminal_sessions poisoned")
+            .remove(&self.id);
     }
 }
 

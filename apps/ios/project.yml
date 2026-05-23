@@ -26,7 +26,7 @@ settings:
     MARKETING_VERSION: "1.5.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_OBJC_BRIDGING_HEADER: Sources/Litter/Bridge/codex_bridge_objc.h
-    OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client"
+    OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
     HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
     SWIFT_INCLUDE_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
     CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
@@ -95,11 +95,16 @@ targets:
       - path: Sources/Litter/Resources/home_cat_entrance.png
     dependencies:
       - sdk: CarPlay.framework
+      - sdk: CoreGraphics.framework
+      - sdk: CoreText.framework
+      - sdk: CoreVideo.framework
+      - sdk: IOSurface.framework
       - sdk: Security.framework
       - sdk: SystemConfiguration.framework
       - sdk: Network.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
+      - sdk: QuartzCore.framework
       - sdk: Accelerate.framework
       - package: Hairball
         product: HairballUI
@@ -319,7 +324,7 @@ targets:
           APP_CODE_SIGN_STYLE: Automatic
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
-          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client"
+          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
         Release:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic
@@ -418,7 +423,7 @@ targets:
           APP_CODE_SIGN_STYLE: Automatic
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
-          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client"
+          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
         Release:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic

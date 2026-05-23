@@ -459,6 +459,8 @@ pub struct AppSnapshotRecord {
     pub pending_approvals: Vec<PendingApproval>,
     pub pending_user_inputs: Vec<PendingUserInputRequest>,
     pub voice_session: AppVoiceSessionSnapshot,
+    pub terminal_sessions: Vec<crate::store::snapshot::TerminalSessionSnapshot>,
+    pub active_terminal_id: Option<String>,
 }
 
 impl TryFrom<AppSnapshot> for AppSnapshotRecord {
@@ -536,6 +538,8 @@ impl TryFrom<AppSnapshot> for AppSnapshotRecord {
             pending_approvals: snapshot.pending_approvals,
             pending_user_inputs: snapshot.pending_user_inputs,
             voice_session: snapshot.voice_session,
+            terminal_sessions: snapshot.terminal_sessions,
+            active_terminal_id: snapshot.active_terminal_id,
         })
     }
 }
@@ -1493,9 +1497,134 @@ mod tests {
     fn current_agent_directory_version_matches_summary_hash() {
         let mut snapshot = AppSnapshot::default();
 
-        let mut parent = ThreadSnapshot::from_info(
-            "srv",
-            ThreadInfo {
+        let mut parent = ThreadSnapshot::from_info("srv", ThreadInfo {
+            id: "thread-a".to_string(),
+            title: Some("Parent".to_string()),
+            model: None,
+            preview: Some("Preview".to_string()),
+            cwd: None,
+            path: None,
+            model_provider: None,
+            agent_nickname: None,
+            agent_role: None,
+            parent_thread_id: None,
+            forked_from_id: None,
+            agent_status: None,
+            created_at: None,
+            status: ThreadSummaryStatus::Idle,
+            updated_at: Some(20),
+        });
+        parent.active_turn_id = Some("turn-a".to_string());
+        snapshot.threads.insert(parent.key.clone(), parent);
+
+        let child_key = ThreadKey {
+            server_id: "srv".to_string(),
+            thread_id: "thread-b".to_string(),
+        };
+        snapshot.threads.insert(child_key.clone(), ThreadSnapshot {
+            key: child_key,
+            info: ThreadInfo {
+                id: "thread-b".to_string(),
+                title: None,
+                model: None,
+                preview: None,
+                cwd: None,
+                path: None,
+                model_provider: None,
+                parent_thread_id: Some(" thread-a ".to_string()),
+                forked_from_id: None,
+                agent_nickname: Some("assistant".to_string()),
+                agent_role: Some("coder".to_string()),
+                agent_status: Some("running".to_string()),
+                created_at: None,
+                status: ThreadSummaryStatus::Active,
+                updated_at: Some(10),
+            },
+            agent_runtime_kind: "codex".to_string(),
+            collaboration_mode: AppModeKind::Default,
+            model: None,
+            reasoning_effort: None,
+            effective_approval_policy: None,
+            effective_sandbox_policy: None,
+            items: Vec::new(),
+            local_overlay_items: Vec::new(),
+            queued_follow_ups: Vec::new(),
+            queued_follow_up_drafts: Vec::new(),
+            active_turn_id: None,
+            context_tokens_used: None,
+            model_context_window: None,
+            rate_limits: None,
+            realtime_session_id: None,
+            goal: None,
+            active_plan_progress: None,
+            pending_plan_implementation_turn_id: None,
+            older_turns_cursor: None,
+            initial_turns_loaded: false,
+            is_resumed: false,
+        });
+
+        let expected = agent_directory_version(&session_summaries_from_snapshot(&snapshot));
+        assert_eq!(current_agent_directory_version(&snapshot), expected);
+    }
+
+    #[test]
+    fn app_session_summary_treats_active_status_as_active_turn() {
+        let thread = ThreadSnapshot::from_info("srv", ThreadInfo {
+            id: "thread-active".to_string(),
+            title: Some("Active thread".to_string()),
+            model: None,
+            preview: Some("working".to_string()),
+            cwd: None,
+            path: None,
+            model_provider: None,
+            agent_nickname: None,
+            agent_role: None,
+            parent_thread_id: None,
+            forked_from_id: None,
+            agent_status: None,
+            created_at: None,
+            status: ThreadSummaryStatus::Active,
+            updated_at: Some(20),
+        });
+
+        assert!(thread.active_turn_id.is_none());
+        let summary = app_session_summary(&thread, None);
+        assert!(summary.has_active_turn);
+    }
+
+    #[test]
+    fn app_session_summary_keeps_title_distinct_from_preview() {
+        let summary = app_session_summary(
+            &ThreadSnapshot::from_info("srv", ThreadInfo {
+                id: "thread-a".to_string(),
+                title: None,
+                model: None,
+                preview: Some("First user message".to_string()),
+                cwd: None,
+                path: None,
+                model_provider: None,
+                agent_nickname: None,
+                agent_role: None,
+                parent_thread_id: None,
+                forked_from_id: None,
+                agent_status: None,
+                created_at: None,
+                status: ThreadSummaryStatus::Idle,
+                updated_at: Some(20),
+            }),
+            None,
+        );
+
+        assert_eq!(summary.title, "First user message");
+        assert_eq!(summary.preview, "First user message");
+    }
+
+    #[test]
+    fn plan_prompt_projection_hides_when_blocked_and_reappears() {
+        let mut snapshot = AppSnapshot::default();
+        let thread = ThreadSnapshot {
+            pending_plan_implementation_turn_id: Some("turn-1".to_string()),
+            ..ThreadSnapshot::from_info("srv", ThreadInfo {
                 id: "thread-a".to_string(),
                 title: Some("Parent".to_string()),
                 model: None,
@@ -1511,147 +1640,7 @@ mod tests {
                 created_at: None,
                 status: ThreadSummaryStatus::Idle,
                 updated_at: Some(20),
-            },
-        );
-        parent.active_turn_id = Some("turn-a".to_string());
-        snapshot.threads.insert(parent.key.clone(), parent);
-
-        let child_key = ThreadKey {
-            server_id: "srv".to_string(),
-            thread_id: "thread-b".to_string(),
-        };
-        snapshot.threads.insert(
-            child_key.clone(),
-            ThreadSnapshot {
-                key: child_key,
-                info: ThreadInfo {
-                    id: "thread-b".to_string(),
-                    title: None,
-                    model: None,
-                    preview: None,
-                    cwd: None,
-                    path: None,
-                    model_provider: None,
-                    parent_thread_id: Some(" thread-a ".to_string()),
-                    forked_from_id: None,
-                    agent_nickname: Some("assistant".to_string()),
-                    agent_role: Some("coder".to_string()),
-                    agent_status: Some("running".to_string()),
-                    created_at: None,
-                    status: ThreadSummaryStatus::Active,
-                    updated_at: Some(10),
-                },
-                agent_runtime_kind: "codex".to_string(),
-                collaboration_mode: AppModeKind::Default,
-                model: None,
-                reasoning_effort: None,
-                effective_approval_policy: None,
-                effective_sandbox_policy: None,
-                items: Vec::new(),
-                local_overlay_items: Vec::new(),
-                queued_follow_ups: Vec::new(),
-                queued_follow_up_drafts: Vec::new(),
-                active_turn_id: None,
-                context_tokens_used: None,
-                model_context_window: None,
-                rate_limits: None,
-                realtime_session_id: None,
-                goal: None,
-                active_plan_progress: None,
-                pending_plan_implementation_turn_id: None,
-                older_turns_cursor: None,
-                initial_turns_loaded: false,
-                is_resumed: false,
-            },
-        );
-
-        let expected = agent_directory_version(&session_summaries_from_snapshot(&snapshot));
-        assert_eq!(current_agent_directory_version(&snapshot), expected);
-    }
-
-    #[test]
-    fn app_session_summary_treats_active_status_as_active_turn() {
-        let thread = ThreadSnapshot::from_info(
-            "srv",
-            ThreadInfo {
-                id: "thread-active".to_string(),
-                title: Some("Active thread".to_string()),
-                model: None,
-                preview: Some("working".to_string()),
-                cwd: None,
-                path: None,
-                model_provider: None,
-                agent_nickname: None,
-                agent_role: None,
-                parent_thread_id: None,
-                forked_from_id: None,
-                agent_status: None,
-                created_at: None,
-                status: ThreadSummaryStatus::Active,
-                updated_at: Some(20),
-            },
-        );
-
-        assert!(thread.active_turn_id.is_none());
-        let summary = app_session_summary(&thread, None);
-        assert!(summary.has_active_turn);
-    }
-
-    #[test]
-    fn app_session_summary_keeps_title_distinct_from_preview() {
-        let summary = app_session_summary(
-            &ThreadSnapshot::from_info(
-                "srv",
-                ThreadInfo {
-                    id: "thread-a".to_string(),
-                    title: None,
-                    model: None,
-                    preview: Some("First user message".to_string()),
-                    cwd: None,
-                    path: None,
-                    model_provider: None,
-                    agent_nickname: None,
-                    agent_role: None,
-                    parent_thread_id: None,
-                    forked_from_id: None,
-                    agent_status: None,
-                    created_at: None,
-                    status: ThreadSummaryStatus::Idle,
-                    updated_at: Some(20),
-                },
-            ),
-            None,
-        );
-
-        assert_eq!(summary.title, "First user message");
-        assert_eq!(summary.preview, "First user message");
-    }
-
-    #[test]
-    fn plan_prompt_projection_hides_when_blocked_and_reappears() {
-        let mut snapshot = AppSnapshot::default();
-        let thread = ThreadSnapshot {
-            pending_plan_implementation_turn_id: Some("turn-1".to_string()),
-            ..ThreadSnapshot::from_info(
-                "srv",
-                ThreadInfo {
-                    id: "thread-a".to_string(),
-                    title: Some("Parent".to_string()),
-                    model: None,
-                    preview: Some("Preview".to_string()),
-                    cwd: None,
-                    path: None,
-                    model_provider: None,
-                    agent_nickname: None,
-                    agent_role: None,
-                    parent_thread_id: None,
-                    forked_from_id: None,
-                    agent_status: None,
-                    created_at: None,
-                    status: ThreadSummaryStatus::Idle,
-                    updated_at: Some(20),
-                },
-            )
+            })
         };
         let key = thread.key.clone();
         snapshot.threads.insert(key.clone(), thread);
@@ -1686,26 +1675,23 @@ mod tests {
     #[test]
     fn app_thread_snapshot_hides_duplicate_local_user_overlay_once_turn_bound() {
         let mut snapshot = AppSnapshot::default();
-        let mut thread = ThreadSnapshot::from_info(
-            "srv",
-            ThreadInfo {
-                id: "thread-a".to_string(),
-                title: Some("Thread".to_string()),
-                model: None,
-                preview: Some("hello".to_string()),
-                cwd: None,
-                path: None,
-                model_provider: None,
-                agent_nickname: None,
-                agent_role: None,
-                parent_thread_id: None,
-                forked_from_id: None,
-                agent_status: None,
-                created_at: None,
-                status: ThreadSummaryStatus::Active,
-                updated_at: Some(20),
-            },
-        );
+        let mut thread = ThreadSnapshot::from_info("srv", ThreadInfo {
+            id: "thread-a".to_string(),
+            title: Some("Thread".to_string()),
+            model: None,
+            preview: Some("hello".to_string()),
+            cwd: None,
+            path: None,
+            model_provider: None,
+            agent_nickname: None,
+            agent_role: None,
+            parent_thread_id: None,
+            forked_from_id: None,
+            agent_status: None,
+            created_at: None,
+            status: ThreadSummaryStatus::Active,
+            updated_at: Some(20),
+        });
         thread
             .items
             .push(crate::conversation_uniffi::HydratedConversationItem {
@@ -1752,26 +1738,23 @@ mod tests {
     #[test]
     fn merged_hydrated_items_filters_overlay_when_real_item_has_no_turn_id() {
         let mut snapshot = AppSnapshot::default();
-        let mut thread = ThreadSnapshot::from_info(
-            "srv",
-            ThreadInfo {
-                id: "thread".to_string(),
-                title: None,
-                model: None,
-                preview: None,
-                cwd: None,
-                path: None,
-                model_provider: None,
-                agent_nickname: None,
-                agent_role: None,
-                parent_thread_id: None,
-                forked_from_id: None,
-                agent_status: None,
-                created_at: None,
-                status: ThreadSummaryStatus::Idle,
-                updated_at: None,
-            },
-        );
+        let mut thread = ThreadSnapshot::from_info("srv", ThreadInfo {
+            id: "thread".to_string(),
+            title: None,
+            model: None,
+            preview: None,
+            cwd: None,
+            path: None,
+            model_provider: None,
+            agent_nickname: None,
+            agent_role: None,
+            parent_thread_id: None,
+            forked_from_id: None,
+            agent_status: None,
+            created_at: None,
+            status: ThreadSummaryStatus::Idle,
+            updated_at: None,
+        });
         // Real item from ItemStarted (no source_turn_id).
         thread
             .items
@@ -1820,26 +1803,23 @@ mod tests {
     #[test]
     fn app_thread_snapshot_places_bound_local_user_overlay_before_same_turn_items() {
         let mut snapshot = AppSnapshot::default();
-        let mut thread = ThreadSnapshot::from_info(
-            "srv",
-            ThreadInfo {
-                id: "thread".to_string(),
-                title: None,
-                model: None,
-                preview: None,
-                cwd: None,
-                path: None,
-                model_provider: None,
-                agent_nickname: None,
-                agent_role: None,
-                parent_thread_id: None,
-                forked_from_id: None,
-                agent_status: None,
-                created_at: None,
-                status: ThreadSummaryStatus::Active,
-                updated_at: None,
-            },
-        );
+        let mut thread = ThreadSnapshot::from_info("srv", ThreadInfo {
+            id: "thread".to_string(),
+            title: None,
+            model: None,
+            preview: None,
+            cwd: None,
+            path: None,
+            model_provider: None,
+            agent_nickname: None,
+            agent_role: None,
+            parent_thread_id: None,
+            forked_from_id: None,
+            agent_status: None,
+            created_at: None,
+            status: ThreadSummaryStatus::Active,
+            updated_at: None,
+        });
         thread
             .items
             .push(crate::conversation_uniffi::HydratedConversationItem {
@@ -1915,64 +1895,55 @@ mod tests {
             .map(|item| item.id.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(
-            item_ids,
-            vec![
-                "old-user",
-                "old-assistant",
-                "local-user-message:1",
-                "assistant-1"
-            ]
-        );
+        assert_eq!(item_ids, vec![
+            "old-user",
+            "old-assistant",
+            "local-user-message:1",
+            "assistant-1"
+        ]);
     }
 
     #[test]
     fn app_thread_snapshot_projects_multi_agent_targets_to_display_labels() {
         let mut snapshot = AppSnapshot::default();
 
-        let parent = ThreadSnapshot::from_info(
-            "srv",
-            ThreadInfo {
-                id: "parent-thread".to_string(),
-                title: Some("Parent".to_string()),
-                model: None,
-                preview: Some("Preview".to_string()),
-                cwd: None,
-                path: None,
-                model_provider: None,
-                agent_nickname: None,
-                agent_role: None,
-                parent_thread_id: None,
-                forked_from_id: None,
-                agent_status: None,
-                created_at: None,
-                status: ThreadSummaryStatus::Idle,
-                updated_at: Some(20),
-            },
-        );
+        let parent = ThreadSnapshot::from_info("srv", ThreadInfo {
+            id: "parent-thread".to_string(),
+            title: Some("Parent".to_string()),
+            model: None,
+            preview: Some("Preview".to_string()),
+            cwd: None,
+            path: None,
+            model_provider: None,
+            agent_nickname: None,
+            agent_role: None,
+            parent_thread_id: None,
+            forked_from_id: None,
+            agent_status: None,
+            created_at: None,
+            status: ThreadSummaryStatus::Idle,
+            updated_at: Some(20),
+        });
         let parent_key = parent.key.clone();
         snapshot.threads.insert(parent_key.clone(), parent);
 
-        let child = ThreadSnapshot::from_info(
-            "srv",
-            ThreadInfo {
-                id: "child-thread".to_string(),
-                title: Some("Child".to_string()),
-                model: None,
-                preview: Some("Child preview".to_string()),
-                cwd: None,
-                path: None,
-                model_provider: None,
-                agent_nickname: Some("Scout".to_string()),
-                agent_role: Some("explorer".to_string()),
-                parent_thread_id: Some("parent-thread".to_string()),
-                forked_from_id: None,
-                agent_status: Some("running".to_string()),
-                created_at: None,
-                status: ThreadSummaryStatus::Active,
-                updated_at: Some(21),
-            },
-        );
+        let child = ThreadSnapshot::from_info("srv", ThreadInfo {
+            id: "child-thread".to_string(),
+            title: Some("Child".to_string()),
+            model: None,
+            preview: Some("Child preview".to_string()),
+            cwd: None,
+            path: None,
+            model_provider: None,
+            agent_nickname: Some("Scout".to_string()),
+            agent_role: Some("explorer".to_string()),
+            parent_thread_id: Some("parent-thread".to_string()),
+            forked_from_id: None,
+            agent_status: Some("running".to_string()),
+            created_at: None,
+            status: ThreadSummaryStatus::Active,
+            updated_at: Some(21),
+        });
         snapshot.threads.insert(child.key.clone(), child);
 
         snapshot

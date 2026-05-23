@@ -52,6 +52,11 @@ jobs:
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios,i686-unknown-linux-musl
 
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 

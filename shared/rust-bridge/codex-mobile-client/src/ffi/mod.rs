@@ -15,6 +15,7 @@ mod reconnect;
 mod remote_path;
 pub(crate) mod shared;
 mod ssh;
+mod terminal;
 
 pub use crate::ssh_bridge::{AgentAvailabilityStatus, RemoteAgentAvailability, SshBridgeTransport};
 pub use alleycat::{
@@ -31,6 +32,12 @@ pub use parser::MessageParser;
 pub use reconnect::ReconnectController;
 pub use remote_path::RemotePath;
 pub use ssh::{AppSshBridgeConnectResult, AppSshConnectionResult, AppSshSessionResult, SshBridge};
+pub use terminal::{
+    TerminalBackendKind, TerminalCellMetrics, TerminalCellRange, TerminalConfig,
+    TerminalCursorStyle, TerminalError, TerminalKeyAction, TerminalKeyCode, TerminalKeyEvent,
+    TerminalKeyMods, TerminalOutputListener, TerminalPalette, TerminalRenderer,
+    TerminalRendererBackend, TerminalSession, TerminalSize, TerminalThemePreset,
+};
 
 // Re-export reconnect boundary types so UniFFI can discover them.
 pub use crate::reconnect::{

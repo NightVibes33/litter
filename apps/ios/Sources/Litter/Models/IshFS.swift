@@ -27,6 +27,11 @@ enum IshFS {
     /// blocking the caller (typically a SwiftUI MainActor path).
     static func run(_ cmd: String, cwd: String? = nil) async -> Result {
         await Task.detached(priority: .userInitiated) {
+            do {
+                try await LitterPlatform.ensureLocalRuntimeReady()
+            } catch {
+                return Result(exitCode: -6, output: error.localizedDescription)
+            }
             let res = ishRun(cmd: cmd, cwd: cwd ?? "")
             var output = String(data: res.output, encoding: .utf8) ?? ""
             if res.exitCode < 0 && output.isEmpty {

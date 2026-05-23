@@ -15,6 +15,8 @@ on:
       - shared/rust-bridge/**
       - shared/third_party/codex
       - patches/codex/**
+      - patches/ghostty/**
+      - shared/third_party/ghostty
       - tools/scripts/build-android-rust.sh
 
 permissions:
@@ -66,6 +68,8 @@ jobs:
               - 'apps/ios/Tests/**'
               - 'apps/ios/scripts/app-store-release.sh'
               - 'apps/ios/scripts/build-rust.sh'
+              - 'apps/ios/scripts/build-ghostty.sh'
+              - 'apps/ios/scripts/sync-ghostty.sh'
               - 'apps/ios/scripts/download-alpine-fs.sh'
               - 'apps/ios/scripts/regenerate-project.sh'
               - 'apps/ios/scripts/release-common.sh'
@@ -75,7 +79,9 @@ jobs:
               - 'docs/releases/testflight-whats-new.md'
               - 'shared/rust-bridge/**'
               - 'shared/third_party/codex'
+              - 'shared/third_party/ghostty'
               - 'patches/codex/**'
+              - 'patches/ghostty/**'
             release_mac_testflight:
               - 'Makefile'
               - '.github/workflows/mobile-release.yml'
@@ -83,6 +89,8 @@ jobs:
               - 'apps/ios/project.yml'
               - 'apps/ios/Sources/**'
               - 'apps/ios/scripts/build-rust.sh'
+              - 'apps/ios/scripts/build-ghostty.sh'
+              - 'apps/ios/scripts/sync-ghostty.sh'
               - 'apps/ios/scripts/regenerate-project.sh'
               - 'apps/ios/scripts/release-common.sh'
               - 'apps/ios/scripts/sync-codex.sh'
@@ -90,7 +98,9 @@ jobs:
               - 'docs/releases/testflight-whats-new.md'
               - 'shared/rust-bridge/**'
               - 'shared/third_party/codex'
+              - 'shared/third_party/ghostty'
               - 'patches/codex/**'
+              - 'patches/ghostty/**'
             release_mac_direct:
               - 'Makefile'
               - '.github/workflows/mobile-release.yml'
@@ -98,13 +108,17 @@ jobs:
               - 'apps/ios/project.yml'
               - 'apps/ios/Sources/**'
               - 'apps/ios/scripts/build-rust.sh'
+              - 'apps/ios/scripts/build-ghostty.sh'
+              - 'apps/ios/scripts/sync-ghostty.sh'
               - 'apps/ios/scripts/direct-dist-mac.sh'
               - 'apps/ios/scripts/regenerate-project.sh'
               - 'apps/ios/scripts/release-common.sh'
               - 'apps/ios/scripts/sync-codex.sh'
               - 'shared/rust-bridge/**'
               - 'shared/third_party/codex'
+              - 'shared/third_party/ghostty'
               - 'patches/codex/**'
+              - 'patches/ghostty/**'
 
       - name: Resolve release matrix
         id: resolve
@@ -535,6 +549,12 @@ jobs:
           mkdir -p .build-stamps
           touch .build-stamps/sync
 
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
       - name: Prepare iOS release assets
         env:
           CARGO_INCREMENTAL: "0"
@@ -845,6 +865,12 @@ jobs:
           tar -xzf "$SHARED_PREP_ROOT/generated-mobile-sources.tgz" -C .
           mkdir -p .build-stamps
           touch .build-stamps/sync
+
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Prepare Mac Catalyst release assets
         env:

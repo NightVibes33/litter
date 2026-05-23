@@ -306,4 +306,43 @@ pub struct AppSnapshot {
     pub pending_user_inputs: Vec<PendingUserInputRequest>,
     pub(crate) pending_user_input_seeds: HashMap<PendingUserInputKey, PendingUserInputSeed>,
     pub voice_session: AppVoiceSessionSnapshot,
+    /// Live terminal session snapshots, keyed by session id. Holds the
+    /// ring-buffered output tail + lifecycle phase so renderers can
+    /// re-attach after view teardown without losing scrollback. The
+    /// strong [`crate::terminal::TerminalSession`] handles live on
+    /// [`crate::MobileClient::terminal_sessions`]; this snapshot is the
+    /// FFI-visible projection.
+    pub terminal_sessions: Vec<TerminalSessionSnapshot>,
+    /// Id of the currently-focused terminal session, if any. Drives the
+    /// "Run in terminal" code-block action via
+    /// [`crate::ffi::AppStore::write_to_active_terminal`].
+    pub active_terminal_id: Option<String>,
+}
+
+/// Lifecycle phase of a terminal session as seen by the store. Maps
+/// loosely to the platform-side `TerminalSessionController.Phase`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum AppTerminalSessionPhase {
+    Connecting,
+    Running,
+    Exited,
+    Failed,
+}
+
+/// Snapshot of a single terminal session held in the store.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TerminalSessionSnapshot {
+    pub id: String,
+    pub backend_kind: crate::terminal::TerminalBackendKind,
+    pub phase: AppTerminalSessionPhase,
+    pub cols: u16,
+    pub rows: u16,
+    /// Wall-clock milliseconds since `UNIX_EPOCH` of the most recent
+    /// activity (output byte or write). Stored as `u64` so the value
+    /// crosses the UniFFI boundary without precision loss.
+    pub last_activity_ts_ms: u64,
+    /// Tail of the output byte stream, capped at 64 KiB.
+    pub output_tail: Vec<u8>,
+    /// Exit code if the session has exited. `None` otherwise.
+    pub exit_code: Option<i32>,
 }

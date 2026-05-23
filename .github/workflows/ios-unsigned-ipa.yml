@@ -20,6 +20,9 @@ on:
       - 'Package.swift'
       - 'apps/ios/**'
       - 'patches/codex/**'
+      - 'shared/third_party/ghostty'
+      - 'patches/ghostty/**'
+      - '.gitmodules'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
       - 'ThirdParty/Nyxian/**'
@@ -113,6 +116,11 @@ jobs:
         with:
           targets: aarch64-apple-ios,i686-unknown-linux-musl
 
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
       - name: Cache Cargo registry
         uses: actions/cache@v4
         with:
@@ -134,7 +142,7 @@ jobs:
           path: |
             apps/ios/GeneratedRust
             apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
-          key: ios-rust-generated-v3-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**') }}
+          key: ios-rust-generated-v3-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/build-ghostty.sh', 'apps/ios/scripts/sync-ghostty.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**', 'patches/ghostty/**', 'shared/third_party/ghostty/**') }}
           restore-keys: |
             ios-rust-generated-v3-${{ runner.os }}-
 
@@ -206,12 +214,28 @@ jobs:
               echo "::warning::Swift UniFFI binding is stale: missing connectRemoteSlingshotUrlServer()."
               stale=1
             fi
+            if ! grep -q "TerminalBackendKind" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing TerminalBackendKind."
+              stale=1
+            fi
+            if ! grep -q "openTerminalSession" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing openTerminalSession()."
+              stale=1
+            fi
+            if ! grep -q "TerminalOutputListener" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing TerminalOutputListener."
+              stale=1
+            fi
             if ! grep -q "ish_runtime_preflight" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
               echo "::warning::Swift UniFFI C header is stale: missing ish_runtime_preflight."
               stale=1
             fi
             if ! grep -q "connect_remote_slingshot_url_server" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
               echo "::warning::Swift UniFFI C header is stale: missing connect_remote_slingshot_url_server."
+              stale=1
+            fi
+            if ! grep -q "terminal" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
+              echo "::warning::Swift UniFFI C header is stale: missing terminal bindings."
               stale=1
             fi
           fi
@@ -276,6 +300,8 @@ jobs:
           }
 
           require_nonempty apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a
+          require_nonempty apps/ios/GeneratedRust/ios-device/libghostty.a
+          require_file apps/ios/GeneratedRust/Headers/ghostty.h
           require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
           require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
           if [ "$missing" -eq 0 ]; then

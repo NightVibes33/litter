@@ -19,6 +19,7 @@ pub(crate) use snapshot::QueuedFollowUpDraft;
 pub use snapshot::{
     AppConnectionProgressSnapshot, AppConnectionStepKind, AppConnectionStepSnapshot,
     AppConnectionStepState, AppQueuedFollowUpKind, AppQueuedFollowUpPreview, AppSnapshot,
-    AppVoiceSessionSnapshot, ServerHealthSnapshot, ServerSnapshot, ThreadSnapshot,
+    AppTerminalSessionPhase, AppVoiceSessionSnapshot, ServerHealthSnapshot, ServerSnapshot,
+    TerminalSessionSnapshot, ThreadSnapshot,
 };
 pub use updates::{AppStoreUpdateRecord, ThreadStreamingDeltaKind};

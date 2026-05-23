@@ -278,6 +278,12 @@ jobs:
           mkdir -p .build-stamps
           touch .build-stamps/sync .build-stamps/bindings-swift
 
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
       - name: Build Rust for iOS simulator
         run: env -u CARGO_INCREMENTAL ./apps/ios/scripts/build-rust.sh --preserve-current --fast-sim --skip-bindings
 
