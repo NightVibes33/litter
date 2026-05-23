@@ -2280,7 +2280,17 @@ struct LitterTerminalEntry: Identifiable, Hashable {
     let directory: String
     let output: String
     let exitCode: Int32
-    let date = Date()
+    let duration: TimeInterval
+    let date: Date
+
+    init(command: String, directory: String, output: String, exitCode: Int32, duration: TimeInterval = 0, date: Date = Date()) {
+        self.command = command
+        self.directory = directory
+        self.output = output
+        self.exitCode = exitCode
+        self.duration = duration
+        self.date = date
+    }
 }
 
 struct LitterTerminalPanel: View {
@@ -2289,11 +2299,22 @@ struct LitterTerminalPanel: View {
     let searchQuery: String
     let onBrowse: ((String) -> Void)?
     let onCopy: (String) -> Void
+    var hostTitle: String = "litter.local"
+    var isLocalFilesystem: Bool = true
+    var runCommand: ((String, String) async -> IshFS.Result)? = nil
 
+    @AppStorage("litterTerminalCommandHistory") private var storedCommandHistory = ""
+    @AppStorage("litterTerminalFontSize") private var terminalFontSize = 13.0
     @State private var cwd = HomeAnchor.path
+    @State private var previousCwd: String?
     @State private var command = ""
     @State private var history: [LitterTerminalEntry] = []
+    @State private var commandHistory: [String] = []
+    @State private var commandHistoryCursor: Int?
     @State private var isRunning = false
+    @State private var runningCommand: String?
+    @State private var keyboardHeight: CGFloat = 0
+    @FocusState private var inputFocused: Bool
 
     var visibleHistory: [LitterTerminalEntry] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2308,166 +2329,629 @@ struct LitterTerminalPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             terminalHeader
-            Divider().overlay(LitterTheme.surfaceLight.opacity(0.35))
+            Divider().overlay(LitterTheme.accent.opacity(0.28))
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         if visibleHistory.isEmpty {
-                            LocalFileEmptyState(
-                                systemImage: "terminal",
-                                title: "Terminal Ready",
-                                message: "Commands run in the same iSH runtime used by bots.",
-                                actionTitle: "Run pwd",
-                                action: { Task { await run("pwd") } }
-                            )
-                            .frame(minHeight: 260)
+                            terminalWelcome
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
                             ForEach(visibleHistory) { item in
                                 terminalEntry(item)
                                     .id(item.id)
                             }
                         }
+                        if let runningCommand {
+                            terminalRunningRow(runningCommand)
+                                .id("terminal-running-row")
+                        }
                     }
-                    .padding(14)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
                 }
+                .background(terminalBackground)
                 .onChange(of: history.count) { _, _ in
                     if let last = history.last {
                         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
+                .onChange(of: isRunning) { _, running in
+                    if running {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("terminal-running-row", anchor: .bottom)
+                        }
+                    }
+                }
             }
+            terminalShortcutRail
             terminalInput
+            if keyboardHeight > 0 {
+                Color.clear
+                    .frame(height: keyboardHeight)
+                    .accessibilityHidden(true)
+            }
         }
+        .background(terminalBackground)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .task {
             cwd = requestedDirectory.isEmpty ? browserPath : requestedDirectory
+            loadStoredCommandHistory()
+            inputFocused = true
         }
         .onChange(of: requestedDirectory) { _, newValue in
             if !newValue.isEmpty { cwd = newValue }
         }
+        .onChange(of: inputFocused) { _, focused in
+            if !focused { keyboardHeight = 0 }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
+            updateKeyboardHeight(notification)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardHeight = 0
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Button("Tab") { insertTerminalText("\t") }
+                Button("~") { insertTerminalText("~") }
+                Button("/") { insertTerminalText("/") }
+                Button("|") { insertTerminalText(" | ") }
+                Button { pasteCommandFromClipboard() } label: { Image(systemName: "doc.on.clipboard") }
+                Spacer()
+                Button { recallPreviousCommand() } label: { Image(systemName: "arrow.up") }
+                    .disabled(commandHistory.isEmpty)
+                Button { recallNextCommand() } label: { Image(systemName: "arrow.down") }
+                    .disabled(commandHistory.isEmpty)
+            }
+        }
     }
 
     private var terminalHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Label("Shared iSH Terminal", systemImage: "terminal")
-                    .litterFont(.subheadline, weight: .semibold)
-                    .foregroundStyle(LitterTheme.textPrimary)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Circle().fill(LitterTheme.danger).frame(width: 10, height: 10)
+                    Circle().fill(LitterTheme.warning).frame(width: 10, height: 10)
+                    Circle().fill(LitterTheme.success).frame(width: 10, height: 10)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(hostTitle)
+                        .litterMonoFont(size: 12, weight: .semibold)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                    Text(statusLine)
+                        .litterMonoFont(size: 10, weight: .regular)
+                        .foregroundStyle(LitterTheme.textMuted)
+                        .lineLimit(1)
+                }
                 Spacer()
                 if let onBrowse {
-                    Button { onBrowse(cwd) } label: { Image(systemName: "folder") }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Browse terminal directory")
+                    terminalIconButton(systemImage: "folder", accessibilityLabel: "Browse terminal directory") {
+                        onBrowse(cwd)
+                    }
                 }
-                Button { onCopy(history.map { "$ \($0.command)\n\($0.output)" }.joined(separator: "\n\n")) } label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Copy terminal output")
-                Button { history.removeAll() } label: { Image(systemName: "trash") }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear terminal")
+                terminalIconButton(systemImage: "textformat.size.smaller", accessibilityLabel: "Decrease terminal font size") {
+                    terminalFontSize = max(10, terminalFontSize - 1)
+                }
+                terminalIconButton(systemImage: "textformat.size.larger", accessibilityLabel: "Increase terminal font size") {
+                    terminalFontSize = min(20, terminalFontSize + 1)
+                }
+                terminalIconButton(systemImage: "doc.on.clipboard", accessibilityLabel: "Paste command") {
+                    pasteCommandFromClipboard()
+                }
+                terminalIconButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy terminal output") {
+                    onCopy(transcriptText)
+                }
+                terminalIconButton(systemImage: "trash", accessibilityLabel: "Clear terminal") {
+                    history.removeAll()
+                }
             }
-            Text(cwd)
+            Text(promptText)
                 .litterMonoFont(size: 11, weight: .regular)
-                .foregroundStyle(LitterTheme.textMuted)
+                .foregroundStyle(LitterTheme.accent)
                 .lineLimit(1)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
+        .background(LitterTheme.codeBackground.opacity(0.98))
     }
 
     private var terminalInput: some View {
-        HStack(spacing: 10) {
-            Text("$")
-                .litterMonoFont(size: 14, weight: .bold)
-                .foregroundStyle(LitterTheme.accent)
-            TextField("command", text: $command, axis: .vertical)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.system(.body, design: .monospaced))
-                .lineLimit(1...3)
-                .submitLabel(.return)
-                .onSubmit {
-                    let pending = command
-                    command = ""
-                    Task { await run(pending) }
+        VStack(spacing: 0) {
+            Divider().overlay(LitterTheme.accent.opacity(0.26))
+            HStack(alignment: .bottom, spacing: 10) {
+                Text("#")
+                    .litterMonoFont(size: 17, weight: .bold)
+                    .foregroundStyle(LitterTheme.accent)
+                    .padding(.bottom, 7)
+                TextField("sh command", text: $command, axis: .vertical)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: CGFloat(terminalFontSize + 1), weight: .regular, design: .monospaced))
+                    .lineLimit(1...5)
+                    .submitLabel(.return)
+                    .focused($inputFocused)
+                    .onSubmit { submitCommand() }
+                Button { submitCommand() } label: {
+                    if isRunning {
+                        ProgressView().scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "return")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
                 }
-            Button {
-                let pending = command
-                command = ""
-                Task { await run(pending) }
-            } label: {
-                if isRunning {
-                    ProgressView().scaleEffect(0.8)
-                } else {
-                    Image(systemName: "paperplane.fill")
-                }
+                .buttonStyle(.plain)
+                .frame(width: 38, height: 38)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(canSubmit ? LitterTheme.accent.opacity(0.22) : LitterTheme.surface.opacity(0.42))
+                )
+                .disabled(!canSubmit)
             }
-            .buttonStyle(.plain)
-            .disabled(isRunning || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
         }
-        .padding(12)
-        .background(LitterTheme.surface.opacity(0.72))
+        .background(LitterTheme.codeBackground.opacity(0.98))
+    }
+
+    private var terminalShortcutRail: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                terminalShortcutButton(title: "Tab") { insertTerminalText("\t") }
+                terminalShortcutButton(title: "~") { insertTerminalText("~") }
+                terminalShortcutButton(title: "./") { insertTerminalText("./") }
+                terminalShortcutButton(title: "../") { insertTerminalText("../") }
+                terminalShortcutButton(title: "|") { insertTerminalText(" | ") }
+                terminalShortcutButton(title: "&&") { insertTerminalText(" && ") }
+                terminalShortcutButton(title: "Up", systemImage: "arrow.up") { recallPreviousCommand() }
+                    .disabled(commandHistory.isEmpty)
+                terminalShortcutButton(title: "Down", systemImage: "arrow.down") { recallNextCommand() }
+                    .disabled(commandHistory.isEmpty)
+                terminalShortcutButton(title: "Paste", systemImage: "doc.on.clipboard") { pasteCommandFromClipboard() }
+                terminalCommandChip("pwd")
+                terminalCommandChip("ls -la")
+                terminalCommandChip("git status")
+                terminalCommandChip("clear")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+        .background(LitterTheme.codeBackground.opacity(0.96))
     }
 
     private func terminalEntry(_ item: LitterTerminalEntry) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text(item.directory)
-                    .litterMonoFont(size: 10, weight: .regular)
-                    .foregroundStyle(LitterTheme.textMuted)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text(prompt(for: item.directory))
+                    .litterMonoFont(size: 12, weight: .semibold)
+                    .foregroundStyle(item.exitCode == 0 ? LitterTheme.accent : LitterTheme.warning)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(item.command)
+                    .font(.system(size: CGFloat(terminalFontSize), weight: .semibold, design: .monospaced))
+                    .foregroundStyle(LitterTheme.textPrimary)
+                    .textSelection(.enabled)
                 Spacer()
-                Text("exit \(item.exitCode)")
+                Text("\(item.exitCode) \(formatDuration(item.duration))")
                     .litterMonoFont(size: 10, weight: .semibold)
                     .foregroundStyle(item.exitCode == 0 ? LitterTheme.success : LitterTheme.warning)
+                terminalIconButton(systemImage: "arrow.clockwise", accessibilityLabel: "Run command again") {
+                    command = item.command
+                    submitCommand()
+                }
+                terminalIconButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy command output") {
+                    onCopy(entryTranscript(item))
+                }
             }
-            Text("$ \(item.command)")
-                .font(.system(.footnote, design: .monospaced).weight(.semibold))
-                .foregroundStyle(LitterTheme.textPrimary)
-                .textSelection(.enabled)
-            Text(item.output.isEmpty ? " " : item.output)
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(LitterTheme.textSecondary)
+            Text(terminalAttributedOutput(item.output.isEmpty ? " " : item.output))
+                .font(.system(size: CGFloat(terminalFontSize), weight: .regular, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
-        .background(LitterTheme.codeBackground.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.vertical, 4)
     }
 
     private func run(_ raw: String) async {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isRunning else { return }
+        recordCommand(trimmed)
         isRunning = true
+        runningCommand = trimmed
+        defer {
+            isRunning = false
+            runningCommand = nil
+            commandHistoryCursor = nil
+        }
         if trimmed == "clear" {
             history.removeAll()
-            isRunning = false
             return
         }
-        if trimmed == "pwd" {
-            history.append(LitterTerminalEntry(command: trimmed, directory: cwd, output: cwd, exitCode: 0))
-            isRunning = false
-            return
-        }
-        if trimmed.hasPrefix("cd") {
+        if isCdCommand(trimmed) {
             await runCd(trimmed)
-            isRunning = false
             return
         }
-        let result = await IshFS.run(trimmed, cwd: cwd)
-        history.append(LitterTerminalEntry(command: trimmed, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
-        isRunning = false
+        let started = Date()
+        let result = await executeTerminalCommand(terminalShellCommand(trimmed), cwd: cwd)
+        history.append(LitterTerminalEntry(
+            command: trimmed,
+            directory: cwd,
+            output: cleanTerminalOutput(result.output),
+            exitCode: result.exitCode,
+            duration: Date().timeIntervalSince(started)
+        ))
     }
 
     private func runCd(_ command: String) async {
+        let startCwd = cwd
+        let started = Date()
         let target = command.dropFirst(2).trimmingCharacters(in: .whitespacesAndNewlines)
-        let destination = target.isEmpty ? HomeAnchor.path : PathDisplay.expand(target, isLocal: true)
-        let result = await IshFS.run("cd \(IshFS.shellQuote(destination)) && pwd", cwd: cwd)
-        if result.exitCode == 0 {
-            let next = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-            cwd = next.isEmpty ? destination : next
-            history.append(LitterTerminalEntry(command: command, directory: cwd, output: cwd, exitCode: 0))
+        let shellCommand: String
+        if target == "-" {
+            guard let previousCwd else {
+                history.append(LitterTerminalEntry(
+                    command: command,
+                    directory: startCwd,
+                    output: "cd: OLDPWD not set",
+                    exitCode: 1,
+                    duration: 0
+                ))
+                return
+            }
+            shellCommand = "cd \(IshFS.shellQuote(previousCwd)) && pwd"
+        } else if target.isEmpty {
+            shellCommand = "cd && pwd"
         } else {
-            history.append(LitterTerminalEntry(command: command, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
+            shellCommand = "cd \(target) && pwd"
+        }
+
+        let result = await executeTerminalCommand(shellCommand, cwd: startCwd)
+        let output = cleanTerminalOutput(result.output)
+        if result.exitCode == 0 {
+            let next = output.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
+            previousCwd = startCwd
+            cwd = next.isEmpty ? startCwd : next
+            history.append(LitterTerminalEntry(
+                command: command,
+                directory: startCwd,
+                output: output.isEmpty ? cwd : output,
+                exitCode: 0,
+                duration: Date().timeIntervalSince(started)
+            ))
+        } else {
+            history.append(LitterTerminalEntry(
+                command: command,
+                directory: startCwd,
+                output: output,
+                exitCode: result.exitCode,
+                duration: Date().timeIntervalSince(started)
+            ))
+        }
+    }
+    private var terminalBackground: some View {
+        LinearGradient(
+            colors: [
+                Color.black.opacity(0.96),
+                LitterTheme.codeBackground.opacity(0.98),
+                Color.black.opacity(0.92)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    private var terminalWelcome: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Last login: \(Date().formatted(date: .abbreviated, time: .shortened)) on iSH")
+                .foregroundStyle(LitterTheme.textMuted)
+            Text("Alpine Linux fakefs mounted at \(HomeAnchor.path)")
+                .foregroundStyle(LitterTheme.textSecondary)
+            HStack(spacing: 7) {
+                Text(promptText)
+                    .foregroundStyle(LitterTheme.accent)
+                Text("pwd")
+                    .foregroundStyle(LitterTheme.textPrimary)
+            }
+        }
+        .font(.system(size: CGFloat(terminalFontSize), weight: .regular, design: .monospaced))
+        .textSelection(.enabled)
+        .padding(.top, 6)
+    }
+
+    private func terminalRunningRow(_ command: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView().scaleEffect(0.7)
+            Text("\(promptText) \(command)")
+                .litterMonoFont(size: 12, weight: .semibold)
+                .foregroundStyle(LitterTheme.textSecondary)
+                .lineLimit(3)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private var statusLine: String {
+        if let runningCommand {
+            return "running \(runningCommand)"
+        }
+        let last = history.last
+        let exit = last.map { "exit \($0.exitCode)" } ?? "ready"
+        return "\(PathDisplay.display(cwd, isLocal: isLocalFilesystem)) - \(exit)"
+    }
+
+    private var promptText: String {
+        prompt(for: cwd)
+    }
+
+    private var promptHost: String {
+        let sanitized = hostTitle.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: " ", with: "-").lowercased()
+        return sanitized.isEmpty ? "litter" : sanitized
+    }
+
+    private var canSubmit: Bool {
+        !isRunning && !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var transcriptText: String {
+        history.map(entryTranscript).joined(separator: "\n\n")
+    }
+
+    private func prompt(for directory: String) -> String {
+        "root@\(promptHost):\(PathDisplay.display(directory, isLocal: isLocalFilesystem))#"
+    }
+
+    private func entryTranscript(_ item: LitterTerminalEntry) -> String {
+        "\(prompt(for: item.directory)) \(item.command)\n\(item.output)\n[exit \(item.exitCode), \(formatDuration(item.duration))]"
+    }
+
+    private func submitCommand() {
+        let pending = command
+        guard !isRunning, !pending.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        command = ""
+        inputFocused = true
+        Task { await run(pending) }
+    }
+
+    private func insertTerminalText(_ text: String) {
+        command += text
+        inputFocused = true
+    }
+
+    private func pasteCommandFromClipboard() {
+        guard let pasted = UIPasteboard.general.string, !pasted.isEmpty else { return }
+        command += pasted
+        inputFocused = true
+    }
+
+    private func updateKeyboardHeight(_ notification: Notification) {
+        guard inputFocused,
+              let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
+            keyboardHeight = 0
+            return
+        }
+        keyboardHeight = max(0, UIScreen.main.bounds.height - frame.minY)
+    }
+
+    private func terminalShellCommand(_ raw: String) -> String {
+        "export TERM=xterm-256color COLORTERM=truecolor CLICOLOR=1 CLICOLOR_FORCE=1; \(raw)"
+    }
+
+    private func executeTerminalCommand(_ command: String, cwd: String) async -> IshFS.Result {
+        if let runCommand {
+            return await runCommand(command, cwd)
+        }
+        return await IshFS.run(command, cwd: cwd)
+    }
+
+    private func recallPreviousCommand() {
+        guard !commandHistory.isEmpty else { return }
+        let nextIndex: Int
+        if let commandHistoryCursor {
+            nextIndex = max(0, commandHistoryCursor - 1)
+        } else {
+            nextIndex = commandHistory.count - 1
+        }
+        commandHistoryCursor = nextIndex
+        command = commandHistory[nextIndex]
+        inputFocused = true
+    }
+
+    private func recallNextCommand() {
+        guard let commandHistoryCursor else { return }
+        let nextIndex = commandHistoryCursor + 1
+        if nextIndex < commandHistory.count {
+            self.commandHistoryCursor = nextIndex
+            command = commandHistory[nextIndex]
+        } else {
+            self.commandHistoryCursor = nil
+            command = ""
+        }
+        inputFocused = true
+    }
+
+    private func terminalIconButton(systemImage: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(LitterTheme.textPrimary)
+                .frame(width: 30, height: 30)
+                .background(LitterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func terminalShortcutButton(title: String, systemImage: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12, weight: .semibold))
+                } else {
+                    Text(title)
+                        .litterMonoFont(size: 12, weight: .semibold)
+                }
+            }
+            .foregroundStyle(LitterTheme.textPrimary)
+            .frame(minWidth: 38, minHeight: 32)
+            .padding(.horizontal, systemImage == nil ? 4 : 0)
+            .background(LitterTheme.surface.opacity(0.42), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    private func terminalCommandChip(_ title: String) -> some View {
+        Button(title) {
+            command = title
+            submitCommand()
+        }
+        .litterMonoFont(size: 12, weight: .semibold)
+        .foregroundStyle(LitterTheme.accent)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 32)
+        .background(LitterTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .buttonStyle(.plain)
+    }
+
+    private func cdDestination(from rawTarget: String) -> String {
+        let trimmed = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        let unquoted: String
+        if trimmed.count >= 2,
+           ((trimmed.hasPrefix("\"") && trimmed.hasSuffix("\"")) ||
+            (trimmed.hasPrefix("'") && trimmed.hasSuffix("'"))) {
+            unquoted = String(trimmed.dropFirst().dropLast())
+        } else {
+            unquoted = trimmed
+        }
+        if unquoted == "~" {
+            return HomeAnchor.path
+        }
+        if unquoted.hasPrefix("~/") {
+            return HomeAnchor.path + "/" + String(unquoted.dropFirst(2))
+        }
+        return unquoted
+    }
+
+    private func isCdCommand(_ raw: String) -> Bool {
+        raw == "cd" || raw.hasPrefix("cd ") || raw.hasPrefix("cd\t")
+    }
+
+    private func loadStoredCommandHistory() {
+        guard commandHistory.isEmpty,
+              let data = storedCommandHistory.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String].self, from: data) else {
+            return
+        }
+        commandHistory = decoded
+    }
+
+    private func recordCommand(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        commandHistory.removeAll { $0 == trimmed }
+        commandHistory.append(trimmed)
+        if commandHistory.count > 80 {
+            commandHistory.removeFirst(commandHistory.count - 80)
+        }
+        if let data = try? JSONEncoder().encode(commandHistory),
+           let encoded = String(data: data, encoding: .utf8) {
+            storedCommandHistory = encoded
+        }
+    }
+
+    private func cleanTerminalOutput(_ text: String) -> String {
+        var output = text
+        while output.last == "\n" || output.last == "\r" {
+            output.removeLast()
+        }
+        return output
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        if duration <= 0 { return "0ms" }
+        if duration < 1 {
+            return "\(max(1, Int(duration * 1000)))ms"
+        }
+        return String(format: "%.1fs", duration)
+    }
+
+    private func terminalAttributedOutput(_ raw: String) -> AttributedString {
+        var result = AttributedString()
+        var buffer = ""
+        var foreground: Color?
+        var bold = false
+        let scalars = Array(raw.unicodeScalars)
+
+        func flush() {
+            guard !buffer.isEmpty else { return }
+            var chunk = AttributedString(buffer)
+            chunk.foregroundColor = foreground ?? LitterTheme.textSecondary
+            if bold {
+                chunk.inlinePresentationIntent = .stronglyEmphasized
+            }
+            result += chunk
+            buffer.removeAll(keepingCapacity: true)
+        }
+
+        func applySGR(_ sequence: String) {
+            let parts = sequence.isEmpty ? [0] : sequence.split(separator: ";").compactMap { Int($0) }
+            for code in parts {
+                switch code {
+                case 0:
+                    foreground = nil
+                    bold = false
+                case 1:
+                    bold = true
+                case 22:
+                    bold = false
+                case 39:
+                    foreground = nil
+                default:
+                    if let color = ansiColor(code) {
+                        foreground = color
+                    }
+                }
+            }
+        }
+
+        var index = 0
+        while index < scalars.count {
+            let scalar = scalars[index]
+            if scalar.value == 0x1B,
+               index + 1 < scalars.count,
+               scalars[index + 1].value == 0x5B {
+                flush()
+                var cursor = index + 2
+                var sequence = ""
+                while cursor < scalars.count, scalars[cursor].value != 0x6D {
+                    sequence.unicodeScalars.append(scalars[cursor])
+                    cursor += 1
+                }
+                if cursor < scalars.count {
+                    applySGR(sequence)
+                    index = cursor + 1
+                    continue
+                }
+            }
+            if scalar.value == 0x09 || scalar.value == 0x0A || scalar.value == 0x0D || scalar.value >= 0x20 {
+                buffer.unicodeScalars.append(scalar)
+            }
+            index += 1
+        }
+        flush()
+        return result
+    }
+
+    private func ansiColor(_ code: Int) -> Color? {
+        switch code {
+        case 30, 90: return LitterTheme.textMuted
+        case 31, 91: return LitterTheme.danger
+        case 32, 92: return LitterTheme.success
+        case 33, 93: return LitterTheme.warning
+        case 34, 94: return Color(hex: "#6AA9FF")
+        case 35, 95: return Color(hex: "#C792EA")
+        case 36, 96: return Color(hex: "#4DD0E1")
+        case 37, 97: return LitterTheme.textPrimary
+        default: return nil
         }
     }
 }

@@ -100,10 +100,7 @@ enum LitterPlatform {
         if repair.exitCode != 0 {
             NSLog("[ish] core device repair failed rc=\(repair.exitCode): \(repair.output)")
         }
-        // The bundled Swift BuildKit payload is large and can require native
-        // driver probing. Keep app launch focused on the shell runtime; install
-        // BuildKit assets lazily when the user runs a Swift/BuildKit command or
-        // explicitly requests installation from settings.
+        await LitterBuildKit.shared.installBundledAssetsIfAvailable()
         await LitterBuildKit.shared.installFakefsCommandShims()
         await LitterBuildKit.shared.startFakefsRequestMonitor()
     }
