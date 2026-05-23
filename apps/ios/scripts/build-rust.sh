@@ -179,32 +179,41 @@ from pathlib import Path
 import sys
 
 root = Path(sys.argv[1])
-marker = "# Litter iOS CI: use Meson VDSO stub on Darwin."
-needle = 'CLANG="$1"\n'
-patch = """CLANG="$1"
+marker = "# Litter iOS CI: force Meson VDSO stub on Darwin."
+needle = "has_vdso_compiler = false\n"
+patch = """has_vdso_compiler = false
 
-# Litter iOS CI: use Meson VDSO stub on Darwin.
-# The iSH ARM64 VDSO is optional, and both Apple clang and current Homebrew
-# LLVM clang reject the upstream hard-coded `-fuse-ld=lld` invocation on macOS.
-# Returning a probe failure lets litter-ish use its supported stub target.
-if [ "$(uname -s)" = "Darwin" ]; then
-    echo "ARM64 VDSO disabled on Darwin; using Meson stub fallback"
-    exit 1
-fi
+# Litter iOS CI: force Meson VDSO stub on Darwin.
+# The iSH ARM64 VDSO is optional. Current macOS hosted clang variants reject
+# the upstream hard-coded `-fuse-ld=lld` Linux VDSO command, so keep the iOS
+# Rust build on litter-ish's supported stub path.
+if run_command('uname', '-s', check: false).stdout().strip() == 'Darwin'
+    message('ARM64 VDSO disabled on Darwin; using Meson stub fallback')
+else
+"""
+end_needle = """endif
+
+if has_vdso_compiler
+"""
+end_patch = """endif
+endif
+
+if has_vdso_compiler
 """
 patched = 0
-for path in root.glob("litter-ish-*/**/vdso/arm64/check-cc-arm64.sh"):
+for path in root.glob("litter-ish-*/**/vdso/arm64/meson.build"):
     text = path.read_text()
     if marker in text:
         continue
-    if needle not in text:
-        print(f"warning: unexpected litter-ish VDSO probe shape: {path}")
+    if needle not in text or end_needle not in text:
+        print(f"warning: unexpected litter-ish VDSO Meson shape: {path}")
         continue
-    path.write_text(text.replace(needle, patch, 1))
+    text = text.replace(needle, patch, 1).replace(end_needle, end_patch, 1)
+    path.write_text(text)
     patched += 1
-    print(f"==> Patched litter-ish Darwin VDSO probe: {path}")
+    print(f"==> Patched litter-ish Darwin VDSO Meson target: {path}")
 if patched == 0:
-    print("==> No unpatched litter-ish Darwin VDSO probe found")
+    print("==> No unpatched litter-ish Darwin VDSO Meson target found")
 PYVDSPATCH
 }
 
