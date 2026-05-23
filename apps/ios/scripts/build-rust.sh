@@ -202,21 +202,32 @@ replacement = [
     ")\n",
 ]
 
-def find_vdso_block(lines):
-    for start, line in enumerate(lines):
-        if line.strip() != "if has_vdso_compiler":
-            continue
+def matching_endif(lines, start):
+    depth = 0
+    for end in range(start, len(lines)):
+        stripped = lines[end].strip()
+        if stripped.startswith("if "):
+            depth += 1
+        elif stripped == "endif":
+            depth -= 1
+            if depth == 0:
+                return end + 1
+    return None
 
-        depth = 0
-        for end in range(start, len(lines)):
-            stripped = lines[end].strip()
-            if stripped.startswith("if "):
-                depth += 1
-            elif stripped == "endif":
-                depth -= 1
-                if depth == 0:
-                    return start, end + 1
-        return None
+def find_vdso_block(lines):
+    # Newer litter-ish gates the real VDSO target behind has_vdso_compiler.
+    for start, line in enumerate(lines):
+        if line.strip() == "if has_vdso_compiler":
+            end = matching_endif(lines, start)
+            return (start, end) if end is not None else None
+
+    # The locked revision used by Cargo puts the real VDSO target directly
+    # inside the top-level clang.found() block. Replace that whole block.
+    for start, line in enumerate(lines):
+        if line.strip() == "if clang.found()":
+            end = matching_endif(lines, start)
+            return (start, end) if end is not None else None
+
     return None
 
 paths = sorted(root.glob("litter-ish-*/**/vdso/arm64/meson.build"))
