@@ -230,6 +230,10 @@ impl AlleycatSession {
     pub fn connection(&self) -> Connection {
         self.connection.clone()
     }
+
+    pub(crate) fn close(&self) {
+        <Self as SessionKeepalive>::close(self);
+    }
 }
 
 impl SessionKeepalive for AlleycatSession {
@@ -404,13 +408,10 @@ pub async fn list_agents(
     params: ParsedPairPayload,
 ) -> Result<Vec<AgentInfo>, AlleycatError> {
     let (conn, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
-    write_json_frame(
-        &mut send,
-        &Request::ListAgents {
-            v: ALLEYCAT_PROTOCOL_VERSION,
-            token: params.token.clone(),
-        },
-    )
+    write_json_frame(&mut send, &Request::ListAgents {
+        v: ALLEYCAT_PROTOCOL_VERSION,
+        token: params.token.clone(),
+    })
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
     validate_response(&response)?;
@@ -437,14 +438,11 @@ pub async fn restart_agent(
     agent: String,
 ) -> Result<(), AlleycatError> {
     let (conn, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
-    write_json_frame(
-        &mut send,
-        &Request::RestartAgent {
-            v: ALLEYCAT_PROTOCOL_VERSION,
-            token: params.token.clone(),
-            agent,
-        },
-    )
+    write_json_frame(&mut send, &Request::RestartAgent {
+        v: ALLEYCAT_PROTOCOL_VERSION,
+        token: params.token.clone(),
+        agent,
+    })
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
     validate_response(&response)?;
@@ -459,14 +457,11 @@ pub async fn connect_app_server_client(
     wire: AgentWire,
 ) -> Result<(AppServerClient, Arc<AlleycatSession>), AlleycatError> {
     let (connection, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
-    write_json_frame(
-        &mut send,
-        &Request::Connect {
-            v: ALLEYCAT_PROTOCOL_VERSION,
-            token: params.token.clone(),
-            agent: agent.clone(),
-        },
-    )
+    write_json_frame(&mut send, &Request::Connect {
+        v: ALLEYCAT_PROTOCOL_VERSION,
+        token: params.token.clone(),
+        agent: agent.clone(),
+    })
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
     validate_response(&response)?;
@@ -498,6 +493,29 @@ pub async fn connect_app_server_client(
         wire,
     });
     Ok((AppServerClient::Remote(remote), session))
+}
+
+pub(crate) async fn connect_jsonl_agent_stream(
+    endpoint: &Endpoint,
+    params: ParsedPairPayload,
+    agent: String,
+) -> Result<(AlleycatStream, Arc<AlleycatSession>), AlleycatError> {
+    let (connection, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
+    write_json_frame(&mut send, &Request::Connect {
+        v: ALLEYCAT_PROTOCOL_VERSION,
+        token: params.token.clone(),
+        agent: agent.clone(),
+    })
+    .await?;
+    let response: Response = read_json_frame(&mut recv).await?;
+    validate_response(&response)?;
+    let session = Arc::new(AlleycatSession {
+        connection,
+        params,
+        agent,
+        wire: AgentWire::Jsonl,
+    });
+    Ok((AlleycatStream::new(send, recv), session))
 }
 
 /// Build the app-wide alleycat iroh `Endpoint`. Called exactly once per
@@ -667,7 +685,7 @@ impl From<AgentWireWire> for AgentWire {
 }
 
 #[derive(Debug)]
-struct AlleycatStream {
+pub(crate) struct AlleycatStream {
     send: SendStream,
     recv: RecvStream,
 }

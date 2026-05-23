@@ -31,6 +31,7 @@ mod keychain;
 mod port_forward;
 mod probes;
 mod resolve_binary;
+mod terminal_channel;
 mod types;
 
 use std::collections::HashMap;
