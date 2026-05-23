@@ -1535,7 +1535,6 @@ private struct ConversationInputBar: View {
     @State private var renameCurrentThreadTitle = ""
     @State private var renameDraft = ""
     @State private var slashErrorMessage: String?
-    @State private var slashAlertTitle = "Slash Command Error"
     @State private var experimentalFeatures: [ExperimentalFeature] = []
     @State private var experimentalFeaturesLoading = false
     @State private var skills: [SkillMetadata] = []
@@ -1619,7 +1618,6 @@ private struct ConversationInputBar: View {
             renameCurrentThreadTitle: $renameCurrentThreadTitle,
             renameDraft: $renameDraft,
             slashErrorMessage: $slashErrorMessage,
-            slashAlertTitle: $slashAlertTitle,
             showMicPermissionAlert: $showMicPermissionAlert,
             onOpenSettings: openAppSettings,
             onLoadSelectedPhoto: loadSelectedPhoto,
@@ -1744,16 +1742,6 @@ private struct ConversationInputBar: View {
         }
     }
 
-    private func showSlashCommandError(_ message: String) {
-        slashAlertTitle = "Slash Command Error"
-        slashErrorMessage = message
-    }
-
-    private func showSlashCommandMessage(_ message: String, title: String = "Slash Command") {
-        slashAlertTitle = title
-        slashErrorMessage = message
-    }
-
     private func contextPercent() -> Int64? {
         guard let contextWindow = snapshot.modelContextWindow else { return nil }
         let baseline: Int64 = 12_000
@@ -1784,7 +1772,7 @@ private struct ConversationInputBar: View {
                 attachments.append(attachment)
             }
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -1801,7 +1789,7 @@ private struct ConversationInputBar: View {
                     answers: payload
                 )
             } catch {
-                showSlashCommandError(error.localizedDescription)
+                slashErrorMessage = error.localizedDescription
             }
         }
     }
@@ -1814,7 +1802,7 @@ private struct ConversationInputBar: View {
                     previewId: preview.id
                 )
             } catch {
-                showSlashCommandError(error.localizedDescription)
+                slashErrorMessage = error.localizedDescription
             }
         }
     }
@@ -1827,7 +1815,7 @@ private struct ConversationInputBar: View {
                     previewId: preview.id
                 )
             } catch {
-                showSlashCommandError(error.localizedDescription)
+                slashErrorMessage = error.localizedDescription
             }
         }
     }
@@ -1949,7 +1937,7 @@ private struct ConversationInputBar: View {
                 LLog.info("conversation", "interrupt turn rpc ok")
             } catch {
                 LLog.warn("conversation", "interrupt turn failed", fields: ["error": String(describing: error)])
-                showSlashCommandError(error.localizedDescription)
+                slashErrorMessage = error.localizedDescription
             }
         }
     }
@@ -1975,7 +1963,7 @@ private struct ConversationInputBar: View {
         do {
             try await appModel.store.implementPlan(key: snapshot.threadKey)
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -2259,7 +2247,7 @@ private struct ConversationInputBar: View {
                 )
             )
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -2273,7 +2261,7 @@ private struct ConversationInputBar: View {
                     serverId: snapshot.threadKey.serverId,
                     params: AppThreadGoalGetRequest(threadId: snapshot.threadKey.threadId)
                 )
-                showSlashCommandMessage(goal.map { goalSummary($0) } ?? goalSlashUsageMessage(prefix: "No goal is set for this thread."))
+                slashErrorMessage = goal.map { goalSummary($0) } ?? goalSlashUsageMessage(prefix: "No goal is set for this thread.")
             case .setObjective(let objective):
                 _ = try await appModel.client.setThreadGoal(
                     serverId: snapshot.threadKey.serverId,
@@ -2284,7 +2272,7 @@ private struct ConversationInputBar: View {
                         tokenBudget: nil
                     )
                 )
-                showSlashCommandMessage("Goal set. Use /goal to view it, /goal pause to pause it, or /goal complete when done.")
+                slashErrorMessage = "Goal set. Use /goal to view it, /goal pause to pause it, or /goal complete when done."
             case .setBudget(let budget):
                 _ = try await appModel.client.setThreadGoal(
                     serverId: snapshot.threadKey.serverId,
@@ -2295,7 +2283,7 @@ private struct ConversationInputBar: View {
                         tokenBudget: budget
                     )
                 )
-                showSlashCommandMessage("Goal token budget set to \(budget).")
+                slashErrorMessage = "Goal token budget set to \(budget)."
             case .setStatus(let status):
                 _ = try await appModel.client.setThreadGoal(
                     serverId: snapshot.threadKey.serverId,
@@ -2306,18 +2294,18 @@ private struct ConversationInputBar: View {
                         tokenBudget: nil
                     )
                 )
-                showSlashCommandMessage("Goal status set to \(goalStatusLabel(status)).")
+                slashErrorMessage = "Goal status set to \(goalStatusLabel(status))."
             case .clear:
                 _ = try await appModel.client.clearThreadGoal(
                     serverId: snapshot.threadKey.serverId,
                     params: AppThreadGoalClearRequest(threadId: snapshot.threadKey.threadId)
                 )
-                showSlashCommandMessage("Goal cleared.")
+                slashErrorMessage = "Goal cleared."
             case .usage(let prefix):
-                showSlashCommandMessage(goalSlashUsageMessage(prefix: prefix))
+                slashErrorMessage = goalSlashUsageMessage(prefix: prefix)
             }
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -2393,7 +2381,7 @@ private struct ConversationInputBar: View {
                 )
             )
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -2404,7 +2392,7 @@ private struct ConversationInputBar: View {
                 params: AppThreadGoalClearRequest(threadId: snapshot.threadKey.threadId)
             )
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -2419,7 +2407,7 @@ private struct ConversationInputBar: View {
             renameCurrentThreadTitle = ""
             renameDraft = ""
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -2445,14 +2433,14 @@ private struct ConversationInputBar: View {
             }
             onOpenConversation?(nextKey)
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
     private func loadExperimentalFeatures() async {
         guard appModel.snapshot?.servers.first(where: { $0.serverId == snapshot.threadKey.serverId })?.canUseTransportActions == true else {
             experimentalFeatures = []
-            showSlashCommandError("Not connected to a server")
+            slashErrorMessage = "Not connected to a server"
             return
         }
         experimentalFeaturesLoading = true
@@ -2468,7 +2456,7 @@ private struct ConversationInputBar: View {
                 return left < right
             }
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -2478,7 +2466,7 @@ private struct ConversationInputBar: View {
 
     private func setExperimentalFeature(named featureName: String, enabled: Bool) async {
         guard appModel.snapshot?.servers.first(where: { $0.serverId == snapshot.threadKey.serverId })?.canUseTransportActions == true else {
-            showSlashCommandError("Not connected to a server")
+            slashErrorMessage = "Not connected to a server"
             return
         }
         guard let currentIndex = experimentalFeatures.firstIndex(where: { $0.name == featureName }) else {
@@ -2508,7 +2496,7 @@ private struct ConversationInputBar: View {
                 )
             )
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
             if let rollbackIndex = experimentalFeatures.firstIndex(where: { $0.name == currentFeature.name }) {
                 experimentalFeatures[rollbackIndex] = ExperimentalFeature(
                     name: currentFeature.name,
@@ -2534,7 +2522,7 @@ private struct ConversationInputBar: View {
             let validPaths = Set(loadedSkills.map { $0.path.value })
             mentionSkillPathsByName = mentionSkillPathsByName.filter { _, path in validPaths.contains(path) }
             if showErrors && loadedSkills.isEmpty {
-                showSlashCommandError("Not connected to a server")
+                slashErrorMessage = "Not connected to a server"
             }
             return
         }
@@ -2559,7 +2547,7 @@ private struct ConversationInputBar: View {
                 let validPaths = Set(loadedSkills.map { $0.path.value })
                 mentionSkillPathsByName = mentionSkillPathsByName.filter { _, path in validPaths.contains(path) }
             } else if showErrors {
-                showSlashCommandError(error.localizedDescription)
+                slashErrorMessage = error.localizedDescription
             }
         }
     }
@@ -2572,7 +2560,7 @@ private struct ConversationInputBar: View {
             }
             await loadSkills(forceReload: true, showErrors: false)
         } catch {
-            showSlashCommandError(error.localizedDescription)
+            slashErrorMessage = error.localizedDescription
         }
     }
 
@@ -2727,9 +2715,10 @@ private struct ConversationInputBar: View {
                 mentionSkillPathsByName.removeValue(forKey: normalizedName)
             }
 
-            guard let candidates = skillsByName[normalizedName], candidates.count == 1, let match = candidates.first else {
+            guard let candidates = skillsByName[normalizedName], candidates.count == 1 else {
                 continue
             }
+            let match = candidates[0]
             guard seenPaths.insert(match.path.value).inserted else { continue }
             resolved.append(SkillMentionSelection(name: match.name, path: match.path.value))
         }

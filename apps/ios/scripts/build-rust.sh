@@ -151,6 +151,22 @@ ensure_host_llvm_on_path() {
     "/opt/local/bin"
   )
 
+  if [ -n "${ANDROID_NDK_HOME:-}" ]; then
+    for candidate in "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/*/bin; do
+      llvm_candidates+=("$candidate")
+    done
+  fi
+
+  if [ -n "${ANDROID_NDK_ROOT:-}" ]; then
+    for candidate in "$ANDROID_NDK_ROOT"/toolchains/llvm/prebuilt/*/bin; do
+      llvm_candidates+=("$candidate")
+    done
+  fi
+
+  for candidate in /opt/homebrew/share/android-commandlinetools/ndk/*/toolchains/llvm/prebuilt/*/bin; do
+    llvm_candidates+=("$candidate")
+  done
+
   for candidate in "${llvm_candidates[@]}"; do
     if [ -x "$candidate/clang" ] && [ -x "$candidate/ld.lld" ]; then
       case ":$PATH:" in
@@ -163,105 +179,6 @@ ensure_host_llvm_on_path() {
 }
 
 ensure_host_llvm_on_path
-
-patch_litter_ish_darwin_vdso_probe() {
-  if [ "$(uname -s)" != "Darwin" ]; then
-    return
-  fi
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "ERROR: python3 is required to patch litter-ish VDSO sources on Darwin" >&2
-    exit 1
-  fi
-
-  echo "==> Fetching Rust dependencies for Darwin VDSO patch..."
-  cargo fetch --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" --locked
-
-  local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
-  local checkouts_dir="$cargo_home/git/checkouts"
-  if [ ! -d "$checkouts_dir" ]; then
-    echo "ERROR: Cargo git checkout directory not found: $checkouts_dir" >&2
-    exit 1
-  fi
-
-  python3 - "$checkouts_dir" <<'PYVDSPATCH'
-from pathlib import Path
-import sys
-
-root = Path(sys.argv[1])
-marker = "# Litter iOS CI: replace ARM64 VDSO with stub on Darwin."
-replacement = [
-    f"{marker}\n",
-    "# The ARM64 VDSO is optional for the embedded iSH runtime. macOS hosted\n",
-    "# clang variants can reject litter-ish's Linux VDSO link command,\n",
-    "# so CI keeps iOS Rust builds on litter-ish's supported stub target.\n",
-    "message('ARM64 VDSO disabled on Darwin; using Meson stub target')\n",
-    "vdso = custom_target(\n",
-    "    'vdso-arm64-stub',\n",
-    "    output: 'libvdso.so.elf',\n",
-    "    command: ['touch', '@OUTPUT@']\n",
-    ")\n",
-]
-
-def matching_endif(lines, start):
-    depth = 0
-    for end in range(start, len(lines)):
-        stripped = lines[end].strip()
-        if stripped.startswith("if "):
-            depth += 1
-        elif stripped == "endif":
-            depth -= 1
-            if depth == 0:
-                return end + 1
-    return None
-
-def find_vdso_block(lines):
-    # Newer litter-ish gates the real VDSO target behind has_vdso_compiler.
-    for start, line in enumerate(lines):
-        if line.strip() == "if has_vdso_compiler":
-            end = matching_endif(lines, start)
-            return (start, end) if end is not None else None
-
-    # The locked revision used by Cargo puts the real VDSO target directly
-    # inside the top-level clang.found() block. Replace that whole block.
-    for start, line in enumerate(lines):
-        if line.strip() == "if clang.found()":
-            end = matching_endif(lines, start)
-            return (start, end) if end is not None else None
-
-    return None
-
-paths = sorted(root.glob("litter-ish-*/**/vdso/arm64/meson.build"))
-if not paths:
-    raise SystemExit(f"ERROR: no litter-ish VDSO Meson files found under {root}")
-
-patched_or_present = 0
-unexpected = []
-for path in paths:
-    text = path.read_text()
-    if marker in text:
-        patched_or_present += 1
-        print(f"==> litter-ish Darwin VDSO stub already forced: {path}")
-        continue
-
-    lines = text.splitlines(keepends=True)
-    block = find_vdso_block(lines)
-    if block is None:
-        unexpected.append(path)
-        continue
-
-    start, end = block
-    lines[start:end] = replacement
-    path.write_text("".join(lines))
-    patched_or_present += 1
-    print(f"==> Forced litter-ish Darwin VDSO stub target: {path}")
-
-for path in unexpected:
-    print(f"warning: unexpected litter-ish VDSO Meson shape: {path}", file=sys.stderr)
-
-if patched_or_present == 0:
-    raise SystemExit("ERROR: failed to force a litter-ish Darwin VDSO stub target")
-PYVDSPATCH
-}
 
 export CXX_aarch64_apple_ios="$IOS_CLANGXX_WRAPPER"
 export CXX_aarch64_apple_ios_sim="$IOS_CLANGXX_WRAPPER"
@@ -388,7 +305,6 @@ fi
 # releases used i686, current releases use AArch64; keep both targets available
 # so the git-tracked dependency can move without breaking iOS/Catalyst builds.
 rustup target add i686-unknown-linux-musl aarch64-unknown-linux-musl
-patch_litter_ish_darwin_vdso_probe
 
 if [ "$DEVICE_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios ($PROFILE)..."

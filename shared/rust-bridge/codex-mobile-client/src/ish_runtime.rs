@@ -74,7 +74,6 @@ pub fn bootstrap(
 
     let dest = application_support_dir.join("fs");
     extract_rootfs_if_needed(bundle_fs_path, &dest)?;
-    ensure_root_home(&dest)?;
     sanitize_root_home_volatiles(&dest)?;
 
     let meta_db = dest.join("meta.db");
@@ -91,14 +90,7 @@ pub fn bootstrap(
         "[ish] booting kernel with rootfs='{}' workdir='/root'",
         data_path.display()
     );
-    let instance = match IshInstance::boot(&data_path, Some(Path::new("/root"))) {
-        Ok(instance) => instance,
-        Err(err) if err.to_string().contains("chdir") => {
-            eprintln!("[ish] boot workdir /root failed ({err}); retrying with /");
-            IshInstance::boot(&data_path, Some(Path::new("/")))?
-        }
-        Err(err) => return Err(err.into()),
-    };
+    let instance = IshInstance::boot(&data_path, Some(Path::new("/root")))?;
     eprintln!("[ish] kernel booted");
 
     INSTANCE
@@ -416,25 +408,6 @@ fn replace_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
     preserve_root_home(dst, &tmp)?;
     remove_path_if_exists(dst)?;
     fs::rename(&tmp, dst)?;
-    Ok(())
-}
-
-fn ensure_root_home(rootfs: &Path) -> io::Result<()> {
-    let home = rootfs.join(ROOTFS_ROOT_HOME_DIR);
-    match fs::symlink_metadata(&home) {
-        Ok(meta) if meta.is_dir() => {}
-        Ok(_) => {
-            remove_path_if_exists(&home)?;
-            fs::create_dir_all(&home)?;
-        }
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            fs::create_dir_all(&home)?;
-        }
-        Err(err) => return Err(err),
-    }
-    let mut perms = fs::metadata(&home)?.permissions();
-    perms.set_mode(0o700);
-    fs::set_permissions(&home, perms)?;
     Ok(())
 }
 

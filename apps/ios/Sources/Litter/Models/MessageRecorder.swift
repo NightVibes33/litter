@@ -62,9 +62,8 @@ final class MessageRecorder {
     // MARK: - File management
 
     static var recordingsDirectory: URL {
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory())
-        return documentsDir.appendingPathComponent("recordings", isDirectory: true)
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("recordings", isDirectory: true)
     }
 
     func listRecordings() -> [URL] {

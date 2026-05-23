@@ -914,7 +914,7 @@ struct DirectoryPickerView: View {
     private func selectNextServer() {
         guard !servers.isEmpty else { return }
         guard let currentIndex = servers.firstIndex(where: { $0.id == selectedServerId }) else {
-            selectedServerId = servers.first?.id ?? selectedServerId
+            selectedServerId = servers[0].id
             return
         }
         let nextIndex = (currentIndex + 1) % servers.count

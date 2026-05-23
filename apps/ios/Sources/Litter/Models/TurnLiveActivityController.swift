@@ -41,10 +41,8 @@ final class TurnLiveActivityController {
         }
 
         // Pick the best thread to show: prefer the active thread, else most recent.
-        guard let best = activeThreads.first(where: { $0.key == snapshot.activeThread }) ?? activeThreads.first else {
-            endCurrent(phase: .completed, snapshot: snapshot)
-            return
-        }
+        let best = activeThreads.first(where: { $0.key == snapshot.activeThread })
+            ?? activeThreads.first!
 
         if let currentKey = activeKey, currentKey != best.key {
             // Active thread changed — end old, start new.
@@ -87,12 +85,7 @@ final class TurnLiveActivityController {
                 attributes: attributes,
                 content: .init(state: state, staleDate: nil)
             )
-        } catch {
-            LLog.warn("live-activity", "failed to start turn activity", fields: [
-                "threadId": thread.key.threadId,
-                "error": error.localizedDescription
-            ])
-        }
+        } catch {}
     }
 
     private func update(for thread: AppThreadSnapshot, activeCount: Int) {

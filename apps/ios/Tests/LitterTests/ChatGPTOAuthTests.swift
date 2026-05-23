@@ -48,11 +48,11 @@ final class ChatGPTOAuthTests: XCTestCase {
     }
 
     func testTokenBundlePreservesExistingRefreshTokenWhenRefreshResponseOmitsIt() throws {
-        let idToken = try jwt(claims: [
+        let idToken = jwt(claims: [
             "chatgpt_account_id": "acct_123",
             "chatgpt_plan_type": "plus"
         ])
-        let accessToken = try jwt(claims: [
+        let accessToken = jwt(claims: [
             "chatgpt_account_id": "acct_123"
         ])
 
@@ -70,11 +70,11 @@ final class ChatGPTOAuthTests: XCTestCase {
         XCTAssertEqual(bundle.planType, "plus")
     }
 
-    private func jwt(claims: [String: String]) throws -> String {
+    private func jwt(claims: [String: String]) -> String {
         let header = ["alg": "none", "typ": "JWT"]
         let encoder = JSONEncoder()
-        let headerData = try encoder.encode(header)
-        let payloadData = try encoder.encode(claims)
+        let headerData = try! encoder.encode(header)
+        let payloadData = try! encoder.encode(claims)
         return [
             headerData.base64URLEncodedString(),
             payloadData.base64URLEncodedString(),

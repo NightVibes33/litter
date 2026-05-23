@@ -833,146 +833,35 @@ private struct ConversationSettingsRouteView: View {
 
 private struct SettingsTerminalView: View {
     let initialDirectory: String
-    @Environment(AppModel.self) private var appModel
-    @AppStorage("litterSettingsTerminalServerId") private var selectedServerId = ""
     @State private var copiedOutput = false
-
-    private var connectedServers: [AppServerSnapshot] {
-        appModel.snapshot?.servers.filter { $0.health != .disconnected } ?? []
-    }
-
-    private var selectedBotServer: AppServerSnapshot? {
-        let servers = connectedServers
-        if let explicit = servers.first(where: { $0.serverId == selectedServerId }) {
-            return explicit
-        }
-        if let active = appModel.snapshot?.activeThread,
-           let activeServer = servers.first(where: { $0.serverId == active.serverId }) {
-            return activeServer
-        }
-        return servers.first
-    }
-
-    private var activeBotCwd: String? {
-        guard let server = selectedBotServer,
-              let active = appModel.snapshot?.activeThread,
-              active.serverId == server.serverId,
-              let cwd = appModel.snapshot?.threadSnapshot(for: active)?.info.cwd,
-              !cwd.isEmpty else {
-            return nil
-        }
-        return cwd
-    }
-
-    private var terminalPanelInitialDirectory: String {
-        if let activeBotCwd { return activeBotCwd }
-        guard selectedBotServer?.isLocal == true else { return "" }
-        let trimmed = initialDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? HomeAnchor.path : trimmed
-    }
-
-    private var terminalHostTitle: String {
-        selectedBotServer?.displayName ?? "bot.local"
-    }
-
-    private var terminalIdentity: String {
-        "bot::\(selectedBotServer?.serverId ?? "none")::\(terminalPanelInitialDirectory)"
-    }
-
-    private var terminalRunner: ((String, String) async -> IshFS.Result) {
-        { command, cwd in
-            await runBotTerminal(command: command, cwd: cwd)
-        }
-    }
 
     var body: some View {
         ZStack {
-            LitterTheme.codeBackground.ignoresSafeArea()
-            VStack(spacing: 0) {
-                terminalConnectionBar
-                LitterTerminalPanel(
-                    browserPath: terminalPanelInitialDirectory,
-                    requestedDirectory: terminalPanelInitialDirectory,
-                    searchQuery: "",
-                    onBrowse: nil,
-                    onCopy: { text in
-                        UIPasteboard.general.string = text
-                        copiedOutput = true
-                    },
-                    hostTitle: terminalHostTitle,
-                    isLocalFilesystem: false,
-                    runCommand: terminalRunner
-                )
-                .id(terminalIdentity)
-            }
+            LitterTheme.backgroundGradient.ignoresSafeArea()
+            LitterTerminalPanel(
+                browserPath: HomeAnchor.path,
+                requestedDirectory: initialDirectory,
+                searchQuery: "",
+                onBrowse: nil,
+                onCopy: { text in
+                    UIPasteboard.general.string = text
+                    copiedOutput = true
+                }
+            )
+            .background(LitterTheme.surface.opacity(0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(12)
         }
         .navigationTitle("Terminal")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarBackground(LitterTheme.codeBackground, for: .navigationBar)
         .alert("Terminal", isPresented: $copiedOutput) {
             Button("OK", role: .cancel) { copiedOutput = false }
         } message: {
             Text("Copied terminal output.")
         }
     }
-
-    private var terminalConnectionBar: some View {
-        HStack(spacing: 10) {
-            Menu {
-                ForEach(connectedServers, id: \.serverId) { server in
-                    Button(server.displayName) {
-                        selectedServerId = server.serverId
-                    }
-                }
-            } label: {
-                Label(selectedBotServer?.displayName ?? "No bot", systemImage: "server.rack")
-                    .lineLimit(1)
-            }
-            .disabled(connectedServers.isEmpty)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(LitterTheme.codeBackground.opacity(0.98))
-    }
-
-    private func runBotTerminal(command: String, cwd: String) async -> IshFS.Result {
-        guard let server = selectedBotServer else {
-            return IshFS.Result(exitCode: 127, output: "No connected bot terminal.")
-        }
-        do {
-            let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
-            let result = try await appModel.client.execCommand(
-                serverId: server.serverId,
-                params: AppExecCommandRequest(
-                    command: ["/bin/sh", "-lc", command],
-                    processId: nil,
-                    tty: false,
-                    streamStdin: false,
-                    streamStdoutStderr: false,
-                    outputBytesCap: 8_000_000,
-                    disableOutputCap: false,
-                    disableTimeout: true,
-                    timeoutMs: nil,
-                    cwd: trimmedCwd.isEmpty ? nil : trimmedCwd,
-                    sandboxPolicy: .dangerFullAccess
-                )
-            )
-            let output: String
-            if result.stdout.isEmpty {
-                output = result.stderr
-            } else if result.stderr.isEmpty {
-                output = result.stdout
-            } else {
-                output = result.stdout + "\n" + result.stderr
-            }
-            return IshFS.Result(exitCode: Int32(result.exitCode), output: output)
-        } catch {
-            return IshFS.Result(exitCode: 1, output: error.localizedDescription)
-        }
-    }
 }
+
 private enum SettingsServerSheet: Identifiable {
     case add
     case edit(HomeDashboardServer)

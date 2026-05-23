@@ -31,13 +31,10 @@ final class UltrasonicEmitter {
 
     func start() {
         guard !isRunning else { return }
-        guard let format = AVAudioFormat(
+        let format = AVAudioFormat(
             standardFormatWithSampleRate: Self.sampleRate,
             channels: 1
-        ) else {
-            LLog.warn("pair", "ultrasonic: failed to create output format")
-            return
-        }
+        )!
         guard let buffer = AVAudioPCMBuffer(
             pcmFormat: format,
             frameCapacity: Self.bufferLength
@@ -47,10 +44,7 @@ final class UltrasonicEmitter {
         }
         buffer.frameLength = Self.bufferLength
 
-        guard let channel = buffer.floatChannelData?[0] else {
-            LLog.warn("pair", "ultrasonic: output buffer has no float channel data")
-            return
-        }
+        let channel = buffer.floatChannelData![0]
         let twoPi = 2.0 * Double.pi
         for i in 0..<Int(Self.bufferLength) {
             let phase = twoPi * Double(i) * Self.carrierFrequencyHz / Self.sampleRate

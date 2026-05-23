@@ -154,13 +154,13 @@ final class WallpaperManager {
 
     @ObservationIgnored
     private static var prefsFileURL: URL {
-        documentsDir.appendingPathComponent(prefsFileName)
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return dir.appendingPathComponent(prefsFileName)
     }
 
     @ObservationIgnored
     private static var documentsDir: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory())
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     }
 
     // Legacy compat — some views still check this

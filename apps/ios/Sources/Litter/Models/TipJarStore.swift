@@ -87,11 +87,7 @@ final class TipJarStore {
                     )
                 }
             }
-        } catch {
-            LLog.warn("tipjar", "failed to load StoreKit products", fields: [
-                "error": error.localizedDescription
-            ])
-        }
+        } catch {}
         await refreshPurchasedState()
         isLoading = false
     }

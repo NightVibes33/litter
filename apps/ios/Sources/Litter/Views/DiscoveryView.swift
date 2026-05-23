@@ -566,13 +566,9 @@ struct DiscoveryView: View {
            !progressDetail.isEmpty {
             return progressDetail
         }
-        let snapshotHost = snapshot?.host.trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayHost: String
-        if let snapshotHost, !snapshotHost.isEmpty {
-            displayHost = snapshotHost
-        } else {
-            displayHost = server.hostname
-        }
+        let displayHost = snapshot?.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? snapshot!.host
+            : server.hostname
         var parts = [displayHost]
         if let os = server.os {
             parts.append(" - \(os)")

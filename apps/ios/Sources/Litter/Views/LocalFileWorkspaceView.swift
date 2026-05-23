@@ -11,9 +11,20 @@ struct LocalFileWorkspaceView: View {
 
     @State private var model = LocalFileWorkspaceModel()
     @State private var showImporter = false
+    @State private var showNewFile = false
+    @State private var showNewFolder = false
+    @State private var draftName = ""
+    @State private var renameTarget: LocalFileEntry?
+    @State private var renameText = ""
+    @State private var moveTarget: LocalFileEntry?
+    @State private var moveDestination = ""
+    @State private var deleteTarget: LocalFileEntry?
+    @State private var showDeleteSelection = false
     @State private var alertMessage: String?
-    @State private var activeSheet: LocalFileWorkspaceSheet?
-    @State private var deleteRequest: LocalFileDeleteRequest?
+    @State private var previewTarget: LocalFileEntry?
+    @State private var inspectorTarget: LocalFileEntry?
+    @State private var sharePayload: LocalFileSharePayload?
+    @State private var commandOutput: LocalCommandOutput?
 
     @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
@@ -22,60 +33,98 @@ struct LocalFileWorkspaceView: View {
 
     private var sheetLayer: some View {
         alertLayer
-            .sheet(item: $activeSheet) { sheet in
-                sheetContent(for: sheet)
+            .sheet(item: $previewTarget) { file in
+                previewSheet(for: file)
             }
-    }
-
-    @ViewBuilder
-    private func sheetContent(for sheet: LocalFileWorkspaceSheet) -> some View {
-        switch sheet {
-        case .preview(let file):
-            previewSheet(for: file)
-        case .inspector(let file):
-            LocalFileInspectorSheet(
-                file: file,
-                onPreview: { presentSheet(.preview(file)) },
-                onEdit: { presentSheet(.editor(file)) },
-                onCopyPath: { copyPath(file.path) },
-                onCopyBotMention: { copyBotMention(file) },
-                onOpenTerminal: { openTerminal(at: terminalPath(for: file)) }
-            )
-        case .editor(let file):
-            LocalTextFileEditorView(file: file) { saved in
-                if saved { taskBag.run { await model.reload() } }
+            .sheet(item: $inspectorTarget) { file in
+                LocalFileInspectorSheet(
+                    file: file,
+                    onPreview: { previewTarget = file },
+                    onEdit: { model.openFile = file },
+                    onCopyPath: { copyPath(file.path) },
+                    onCopyBotMention: { copyBotMention(file) },
+                    onOpenTerminal: { openTerminal(at: terminalPath(for: file)) }
+                )
             }
-        case .namePrompt(let prompt):
-            LocalFileNamePromptSheet(prompt: prompt) { value in
-                taskBag.run { await performNamePrompt(prompt, rawValue: value) }
+            .sheet(item: $model.openFile) { file in
+                LocalTextFileEditorView(file: file) { saved in
+                    if saved { taskBag.run { await model.reload() } }
+                }
             }
-        case .share(let payload):
-            LocalFileActivitySheet(urls: payload.urls)
-        case .command(let output):
-            LocalCommandOutputSheet(output: output)
-        }
+            .sheet(item: $sharePayload) { payload in
+                LocalFileActivitySheet(urls: payload.urls)
+            }
+            .sheet(item: $commandOutput) { output in
+                LocalCommandOutputSheet(output: output)
+            }
     }
 
     private var alertLayer: some View {
-        importerLayer
-            .confirmationDialog(
-                deleteRequest?.title ?? "Delete",
-                isPresented: Binding(get: { deleteRequest != nil }, set: { if !$0 { deleteRequest = nil } }),
-                titleVisibility: .visible
-            ) {
-                Button("Delete", role: .destructive) {
-                    let request = deleteRequest
-                    deleteRequest = nil
-                    taskBag.run { await confirmDelete(request) }
-                }
-                Button("Cancel", role: .cancel) { deleteRequest = nil }
-            } message: {
-                Text(deleteRequest?.message ?? "This removes the selected item from the iSH filesystem.")
-            }
+        messageAlertLayer
+    }
+
+    private var messageAlertLayer: some View {
+        deleteAlertLayer
             .alert("Files", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
                 Button("OK", role: .cancel) { alertMessage = nil }
             } message: {
                 Text(alertMessage ?? "")
+            }
+    }
+
+    private var deleteAlertLayer: some View {
+        renameMoveAlertLayer
+            .alert("Delete Item", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
+                Button("Cancel", role: .cancel) { deleteTarget = nil }
+                Button("Delete", role: .destructive) { taskBag.run { await deleteSelected() } }
+            } message: {
+                Text("This removes \(deleteTarget?.name ?? "this item") from the iSH filesystem.")
+            }
+            .alert("Delete Selected Items", isPresented: $showDeleteSelection) {
+                Button("Cancel", role: .cancel) {}
+                Button("Delete", role: .destructive) { taskBag.run { await deleteSelection() } }
+            } message: {
+                Text("This removes \(model.selectedPaths.count) selected item(s) from the iSH filesystem.")
+            }
+    }
+
+    private var renameMoveAlertLayer: some View {
+        creationAlertLayer
+            .alert("Rename", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
+                TextField("Name", text: $renameText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) { renameTarget = nil }
+                Button("Save") { taskBag.run { await renameSelected() } }
+            }
+            .alert("Move Item", isPresented: Binding(get: { moveTarget != nil }, set: { if !$0 { moveTarget = nil } })) {
+                TextField("Destination folder", text: $moveDestination)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) { moveTarget = nil }
+                Button("Move") { taskBag.run { await moveSelected() } }
+            } message: {
+                Text("Move \(moveTarget?.name ?? "this item") to another iSH folder. You can use ~ for /root.")
+            }
+    }
+
+    private var creationAlertLayer: some View {
+        importerLayer
+            .alert("New File", isPresented: $showNewFile) {
+                TextField("filename.swift", text: $draftName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) { draftName = "" }
+                Button("Create") { taskBag.run { await create(kind: .file) } }
+            } message: {
+                Text("Create a text file in the current iSH directory.")
+            }
+            .alert("New Folder", isPresented: $showNewFolder) {
+                TextField("folder-name", text: $draftName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) { draftName = "" }
+                Button("Create") { taskBag.run { await create(kind: .directory) } }
             }
     }
 
@@ -116,10 +165,19 @@ struct LocalFileWorkspaceView: View {
     private func previewSheet(for file: LocalFileEntry) -> some View {
         LocalFilePreviewSheet(
             file: file,
-            onEdit: { beginEdit(file) },
+            onEdit: { openEditorAfterPreview(file) },
             onShare: { taskBag.run { await share([file]) } },
             onCopyPath: { copyPath(file.path) }
         )
+    }
+
+    private func openEditorAfterPreview(_ file: LocalFileEntry) {
+        previewTarget = nil
+        taskBag.run {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            model.openFile = file
+        }
     }
 
     @ToolbarContentBuilder
@@ -135,7 +193,7 @@ struct LocalFileWorkspaceView: View {
                 Button { taskBag.run { await share(model.selectedEntries) } } label: { Image(systemName: "square.and.arrow.up") }
                     .disabled(model.selectedPaths.isEmpty)
                     .accessibilityLabel("Share selected")
-                Button(role: .destructive) { deleteRequest = .selection(count: model.selectedPaths.count) } label: { Image(systemName: "trash") }
+                Button(role: .destructive) { showDeleteSelection = true } label: { Image(systemName: "trash") }
                     .disabled(model.selectedPaths.isEmpty)
                     .accessibilityLabel("Delete selected")
             }
@@ -144,8 +202,8 @@ struct LocalFileWorkspaceView: View {
                 Button { showImporter = true } label: { Image(systemName: "square.and.arrow.down") }
                     .accessibilityLabel("Import file")
                 Menu {
-                    Button("New File", systemImage: "doc.badge.plus") { beginCreate(kind: .file) }
-                    Button("New Folder", systemImage: "folder.badge.plus") { beginCreate(kind: .directory) }
+                    Button("New File", systemImage: "doc.badge.plus") { draftName = ""; showNewFile = true }
+                    Button("New Folder", systemImage: "folder.badge.plus") { draftName = ""; showNewFolder = true }
                     Divider()
                     Button("Refresh", systemImage: "arrow.clockwise") { taskBag.run { await model.reload() } }
                 } label: {
@@ -273,7 +331,7 @@ struct LocalFileWorkspaceView: View {
                 title: "This folder is empty",
                 message: "Create a file, create a folder, or import a document from iOS Files.",
                 actionTitle: "New File",
-                action: { beginCreate(kind: .file) }
+                action: { draftName = ""; showNewFile = true }
             )
         } else if model.visibleEntries.isEmpty {
             LocalFileEmptyState(
@@ -318,17 +376,13 @@ struct LocalFileWorkspaceView: View {
             }
             Section {
                 ForEach(model.visibleEntries) { entry in
-                    entryCell(entry) {
+                    entryButton(entry) {
                         LocalFileRow(
                             entry: entry,
                             isSelected: model.selectedPaths.contains(entry.path),
                             isFavorite: model.isFavorite(entry.path),
                             showsSelection: model.isSelecting,
-                            onOpen: { taskBag.run { await open(entry) } },
-                            onInspect: { presentSheet(.inspector(entry)) },
-                            onEdit: { beginEdit(entry) },
-                            onRename: { beginRename(entry) },
-                            onDelete: { beginDelete(entry) }
+                            onInspect: { inspectorTarget = entry }
                         )
                     }
                     .listRowBackground(LitterTheme.surface.opacity(0.58))
@@ -364,19 +418,15 @@ struct LocalFileWorkspaceView: View {
                 }
                 LocalFileSectionHeader(title: "Current Folder", detail: model.visibleSummary)
                     .padding(.horizontal, 18)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 112), spacing: 12)], spacing: 12) {
                     ForEach(model.visibleEntries) { entry in
-                        entryCell(entry) {
+                        entryButton(entry) {
                             LocalFileGridItem(
                                 entry: entry,
                                 isSelected: model.selectedPaths.contains(entry.path),
                                 isFavorite: model.isFavorite(entry.path),
                                 showsSelection: model.isSelecting,
-                                onOpen: { taskBag.run { await open(entry) } },
-                                onInspect: { presentSheet(.inspector(entry)) },
-                                onEdit: { beginEdit(entry) },
-                                onRename: { beginRename(entry) },
-                                onDelete: { beginDelete(entry) }
+                                onInspect: { inspectorTarget = entry }
                             )
                         }
                     }
@@ -435,33 +485,31 @@ struct LocalFileWorkspaceView: View {
         }
     }
 
-    private func entryCell<Content: View>(_ entry: LocalFileEntry, @ViewBuilder label: () -> Content) -> some View {
-        label()
-            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                Button(role: .destructive) { beginDelete(entry) } label: { Label("Delete", systemImage: "trash") }
-                Button { beginRename(entry) } label: { Label("Rename", systemImage: "pencil") }
-                    .tint(.blue)
+    private func entryButton<Content: View>(_ entry: LocalFileEntry, @ViewBuilder label: () -> Content) -> some View {
+        Button {
+            taskBag.run { await open(entry) }
+        } label: {
+            label()
+        }
+        .buttonStyle(.plain)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) { deleteTarget = entry } label: { Label("Delete", systemImage: "trash") }
+            Button { beginRename(entry) } label: { Label("Rename", systemImage: "pencil") }
+                .tint(.blue)
+        }
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
+            Button { model.toggleFavorite(entry) } label: {
+                Label(model.isFavorite(entry.path) ? "Unfavorite" : "Favorite", systemImage: model.isFavorite(entry.path) ? "star.slash" : "star")
             }
-            .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                Button { model.toggleFavorite(entry) } label: {
-                    Label(model.isFavorite(entry.path) ? "Unfavorite" : "Favorite", systemImage: model.isFavorite(entry.path) ? "star.slash" : "star")
-                }
-                .tint(.yellow)
-                if entry.isTextPreviewable {
-                    Button { beginEdit(entry) } label: { Label("Edit", systemImage: "square.and.pencil") }
-                        .tint(.green)
-                }
-            }
-            .contextMenu { contextMenu(for: entry) }
+            .tint(.yellow)
+        }
+        .contextMenu { contextMenu(for: entry) }
     }
 
     @ViewBuilder
     private func contextMenu(for entry: LocalFileEntry) -> some View {
-        Button("Preview", systemImage: "doc.text.magnifyingglass") { presentSheet(.preview(entry)) }
-        if entry.isTextPreviewable {
-            Button("Edit", systemImage: "square.and.pencil") { beginEdit(entry) }
-        }
-        Button("Inspector", systemImage: "info.circle") { presentSheet(.inspector(entry)) }
+        Button("Preview", systemImage: "doc.text.magnifyingglass") { previewTarget = entry }
+        Button("Inspector", systemImage: "info.circle") { inspectorTarget = entry }
         Button("Copy Path", systemImage: "doc.on.doc") { copyPath(entry.path) }
         Button("Copy Chat Link", systemImage: "link") { copyChatLink(title: entry.name, path: entry.path) }
         Button("Copy for Bot", systemImage: "bubble.left.and.text.bubble.right") { copyBotMention(entry) }
@@ -501,20 +549,7 @@ struct LocalFileWorkspaceView: View {
         if entry.isBuildLog {
             Button("Explain Build Log", systemImage: "exclamationmark.bubble") { copyBuildLogPrompt(entry) }
         }
-        Button("Delete", systemImage: "trash", role: .destructive) { beginDelete(entry) }
-    }
-
-    private func presentSheet(_ sheet: LocalFileWorkspaceSheet) {
-        if activeSheet == nil {
-            activeSheet = sheet
-            return
-        }
-        activeSheet = nil
-        taskBag.run {
-            try? await Task.sleep(nanoseconds: 180_000_000)
-            guard !Task.isCancelled else { return }
-            activeSheet = sheet
-        }
+        Button("Delete", systemImage: "trash", role: .destructive) { deleteTarget = entry }
     }
 
     private func open(_ entry: LocalFileEntry) async {
@@ -531,36 +566,17 @@ struct LocalFileWorkspaceView: View {
             await model.open(entry)
             return
         }
-        presentSheet(.preview(entry))
-    }
-
-    private func beginCreate(kind: LocalFileEntry.Kind) {
-        switch kind {
-        case .directory:
-            presentSheet(.namePrompt(.newFolder))
-        case .file, .symlink, .special:
-            presentSheet(.namePrompt(.newFile))
-        }
-    }
-
-    private func beginEdit(_ entry: LocalFileEntry) {
-        guard entry.isTextPreviewable else {
-            presentSheet(.preview(entry))
-            return
-        }
-        presentSheet(.editor(entry))
+        previewTarget = entry
     }
 
     private func beginRename(_ entry: LocalFileEntry) {
-        presentSheet(.namePrompt(.rename(entry)))
+        renameTarget = entry
+        renameText = entry.name
     }
 
     private func beginMove(_ entry: LocalFileEntry) {
-        presentSheet(.namePrompt(.move(entry, initialDirectory: model.displayPath)))
-    }
-
-    private func beginDelete(_ entry: LocalFileEntry) {
-        deleteRequest = .item(entry)
+        moveTarget = entry
+        moveDestination = model.displayPath
     }
 
     private func copyPath(_ path: String) {
@@ -621,7 +637,7 @@ struct LocalFileWorkspaceView: View {
         guard !entries.isEmpty else { return }
         do {
             let urls = try await model.export(entries: entries)
-            presentSheet(.share(LocalFileSharePayload(urls: urls)))
+            sharePayload = LocalFileSharePayload(urls: urls)
         } catch {
             alertMessage = error.localizedDescription
         }
@@ -669,7 +685,7 @@ struct LocalFileWorkspaceView: View {
 
     private func runSwiftCheck(_ entry: LocalFileEntry) async {
         let result = await IshFS.run("litter-swift-check \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Swift Check", command: "litter-swift-check \(entry.name)", result: result)))
+        commandOutput = LocalCommandOutput(title: "Swift Check", command: "litter-swift-check \(entry.name)", result: result)
     }
 
     private func runSwiftBuild(projectPath: String? = nil) async {
@@ -679,7 +695,7 @@ struct LocalFileWorkspaceView: View {
             return
         }
         let result = await IshFS.run("litter-swift-build --timeout 600 \(IshFS.shellQuote(path))", cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Swift Build", command: "litter-swift-build \((path as NSString).lastPathComponent)", result: result)))
+        commandOutput = LocalCommandOutput(title: "Swift Build", command: "litter-swift-build \((path as NSString).lastPathComponent)", result: result)
     }
 
     private func runIPABuild(projectPath: String? = nil) async {
@@ -689,7 +705,7 @@ struct LocalFileWorkspaceView: View {
             return
         }
         let result = await IshFS.run("litter-ipa-build --timeout 900 \(IshFS.shellQuote(path))", cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "IPA Build", command: "litter-ipa-build \((path as NSString).lastPathComponent)", result: result)))
+        commandOutput = LocalCommandOutput(title: "IPA Build", command: "litter-ipa-build \((path as NSString).lastPathComponent)", result: result)
         await model.reload()
     }
 
@@ -718,7 +734,7 @@ struct LocalFileWorkspaceView: View {
         fi
         """
         let result = await IshFS.run(command, cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Recursive Search", command: "search \(query)", result: result)))
+        commandOutput = LocalCommandOutput(title: "Recursive Search", command: "search \(query)", result: result)
     }
 
     private func runLargeFileSearch() async {
@@ -730,7 +746,7 @@ struct LocalFileWorkspaceView: View {
         done | sort -nr | head -n 100
         """
         let result = await IshFS.run(command, cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Large Files", command: "find files over 1 MB", result: result)))
+        commandOutput = LocalCommandOutput(title: "Large Files", command: "find files over 1 MB", result: result)
     }
 
     private func runTreeSnapshot() async {
@@ -739,7 +755,7 @@ struct LocalFileWorkspaceView: View {
         find "$dir" -maxdepth 3 2>/dev/null | sed "s#^$dir#.#" | head -n 300
         """
         let result = await IshFS.run(command, cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Folder Tree", command: "tree \(model.displayPath)", result: result)))
+        commandOutput = LocalCommandOutput(title: "Folder Tree", command: "tree \(model.displayPath)", result: result)
     }
 
     private func runGitStatus() async {
@@ -750,17 +766,17 @@ struct LocalFileWorkspaceView: View {
         git -C "$top" status --short --branch
         """
         let result = await IshFS.run(command, cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Git Status", command: "git status", result: result)))
+        commandOutput = LocalCommandOutput(title: "Git Status", command: "git status", result: result)
     }
 
     private func runBuildStatus() async {
         let result = await IshFS.run("litter-build-status", cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Build Status", command: "litter-build-status", result: result)))
+        commandOutput = LocalCommandOutput(title: "Build Status", command: "litter-build-status", result: result)
     }
 
     private func runFilesystemDoctor() async {
         let result = await IshFS.run("litter-fs-doctor", cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Filesystem Doctor", command: "litter-fs-doctor", result: result)))
+        commandOutput = LocalCommandOutput(title: "Filesystem Doctor", command: "litter-fs-doctor", result: result)
     }
 
     private func createLitterBuildManifest() async {
@@ -805,43 +821,32 @@ struct LocalFileWorkspaceView: View {
         find "$dir" -maxdepth 2 -type f 2>/dev/null | head -n 80
         """
         let result = await IshFS.run(command, cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Directory Summary", command: "summarize \(entry.name)", result: result)))
+        commandOutput = LocalCommandOutput(title: "Directory Summary", command: "summarize \(entry.name)", result: result)
     }
 
     private func runShellScript(_ entry: LocalFileEntry) async {
         let result = await IshFS.run("sh \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
-        presentSheet(.command(LocalCommandOutput(title: "Script Output", command: "sh \(entry.name)", result: result)))
+        commandOutput = LocalCommandOutput(title: "Script Output", command: "sh \(entry.name)", result: result)
     }
 
-    private func performNamePrompt(_ prompt: LocalFileNamePrompt, rawValue: String) async {
-        switch prompt {
-        case .newFile:
-            await create(rawName: rawValue, kind: .file)
-        case .newFolder:
-            await create(rawName: rawValue, kind: .directory)
-        case .rename(let target):
-            await rename(target, rawName: rawValue)
-        case .move(let target, _):
-            await move(target, rawDestination: rawValue)
-        }
-    }
-
-    private func create(rawName: String, kind: LocalFileEntry.Kind) async {
-        let validation = validateName(rawName)
+    private func create(kind: LocalFileEntry.Kind) async {
+        let validation = validateName(draftName)
+        draftName = ""
         guard case .valid(let name) = validation else {
             alertMessage = validation.errorMessage
             return
         }
         do {
             try await model.create(name: name, kind: kind)
-            alertMessage = kind == .directory ? "Created folder." : "Created file."
         } catch {
             alertMessage = error.localizedDescription
         }
     }
 
-    private func rename(_ target: LocalFileEntry, rawName: String) async {
-        let validation = validateName(rawName)
+    private func renameSelected() async {
+        guard let target = renameTarget else { return }
+        let validation = validateName(renameText)
+        renameTarget = nil
         guard case .valid(let name) = validation else {
             alertMessage = validation.errorMessage
             return
@@ -849,37 +854,39 @@ struct LocalFileWorkspaceView: View {
         guard name != target.name else { return }
         do {
             try await model.rename(target, to: name)
-            alertMessage = "Renamed \(target.name)."
         } catch {
             alertMessage = error.localizedDescription
         }
     }
 
-    private func move(_ target: LocalFileEntry, rawDestination: String) async {
-        let destination = PathDisplay.expand(rawDestination.trimmingCharacters(in: .whitespacesAndNewlines), isLocal: true)
+    private func moveSelected() async {
+        guard let target = moveTarget else { return }
+        let destination = PathDisplay.expand(moveDestination.trimmingCharacters(in: .whitespacesAndNewlines), isLocal: true)
+        moveTarget = nil
         guard !destination.isEmpty else {
             alertMessage = "Destination folder cannot be empty."
             return
         }
         do {
             try await model.move(target, toDirectory: destination)
-            alertMessage = "Moved \(target.name)."
         } catch {
             alertMessage = error.localizedDescription
         }
     }
 
-    private func confirmDelete(_ request: LocalFileDeleteRequest?) async {
-        guard let request else { return }
+    private func deleteSelected() async {
+        guard let target = deleteTarget else { return }
+        deleteTarget = nil
         do {
-            switch request {
-            case .item(let target):
-                try await model.delete(target)
-                alertMessage = "Deleted \(target.name)."
-            case .selection(let count):
-                try await model.deleteSelectedEntries()
-                alertMessage = "Deleted \(count) item(s)."
-            }
+            try await model.delete(target)
+        } catch {
+            alertMessage = error.localizedDescription
+        }
+    }
+
+    private func deleteSelection() async {
+        do {
+            try await model.deleteSelectedEntries()
         } catch {
             alertMessage = error.localizedDescription
         }
@@ -915,129 +922,8 @@ struct LocalFileWorkspaceView: View {
         }
         return .valid(name)
     }
-
 }
 
-private enum LocalFileWorkspaceSheet: Identifiable {
-    case preview(LocalFileEntry)
-    case inspector(LocalFileEntry)
-    case editor(LocalFileEntry)
-    case namePrompt(LocalFileNamePrompt)
-    case share(LocalFileSharePayload)
-    case command(LocalCommandOutput)
-
-    var id: String {
-        switch self {
-        case .preview(let file): return "preview:\(file.path)"
-        case .inspector(let file): return "inspector:\(file.path)"
-        case .editor(let file): return "editor:\(file.path)"
-        case .namePrompt(let prompt): return "name:\(prompt.id)"
-        case .share(let payload): return "share:\(payload.id)"
-        case .command(let output): return "command:\(output.id)"
-        }
-    }
-}
-
-private enum LocalFileNamePrompt: Identifiable, Hashable {
-    case newFile
-    case newFolder
-    case rename(LocalFileEntry)
-    case move(LocalFileEntry, initialDirectory: String)
-
-    var id: String {
-        switch self {
-        case .newFile: return "new-file"
-        case .newFolder: return "new-folder"
-        case .rename(let entry): return "rename:\(entry.path)"
-        case .move(let entry, let initialDirectory): return "move:\(entry.path):\(initialDirectory)"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .newFile: return "New File"
-        case .newFolder: return "New Folder"
-        case .rename: return "Rename"
-        case .move: return "Move Item"
-        }
-    }
-
-    var actionTitle: String {
-        switch self {
-        case .newFile, .newFolder: return "Create"
-        case .rename: return "Rename"
-        case .move: return "Move"
-        }
-    }
-
-    var placeholder: String {
-        switch self {
-        case .newFile: return "filename.swift"
-        case .newFolder: return "folder-name"
-        case .rename: return "Name"
-        case .move: return "Destination folder"
-        }
-    }
-
-    var initialValue: String {
-        switch self {
-        case .newFile, .newFolder: return ""
-        case .rename(let entry): return entry.name
-        case .move(_, let initialDirectory): return initialDirectory
-        }
-    }
-
-    var message: String {
-        switch self {
-        case .newFile: return "Create a text file in the current iSH directory."
-        case .newFolder: return "Create a folder in the current iSH directory."
-        case .rename(let entry): return "Rename \(entry.name) without changing its folder."
-        case .move(let entry, _): return "Move \(entry.name) to another iSH folder. You can use ~ for /root."
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .newFile: return "doc.badge.plus"
-        case .newFolder: return "folder.badge.plus"
-        case .rename: return "pencil"
-        case .move: return "folder"
-        }
-    }
-
-    var acceptsPath: Bool {
-        if case .move = self { return true }
-        return false
-    }
-}
-
-private enum LocalFileDeleteRequest: Identifiable {
-    case item(LocalFileEntry)
-    case selection(count: Int)
-
-    var id: String {
-        switch self {
-        case .item(let entry): return "item:\(entry.path)"
-        case .selection(let count): return "selection:\(count)"
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .item(let entry):
-            let kindTitle = entry.kind == .directory ? "Folder" : "File"
-            return "Delete \(kindTitle)?"
-        case .selection(let count): return "Delete \(count) Items?"
-        }
-    }
-
-    var message: String {
-        switch self {
-        case .item(let entry): return "This permanently removes \(entry.name) from the iSH filesystem."
-        case .selection(let count): return "This permanently removes \(count) selected item(s) from the iSH filesystem."
-        }
-    }
-}
 
 private enum LocalFileFilter: String, CaseIterable, Identifiable {
     case all
@@ -1891,82 +1777,67 @@ private struct LocalFileRow: View {
     let isSelected: Bool
     let isFavorite: Bool
     let showsSelection: Bool
-    let onOpen: () -> Void
     let onInspect: () -> Void
-    let onEdit: () -> Void
-    let onRename: () -> Void
-    let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            Button(action: onOpen) {
-                HStack(spacing: 12) {
-                    if showsSelection {
-                        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(isSelected ? LitterTheme.accent : LitterTheme.textMuted)
-                            .frame(width: 24)
-                    }
-                    ZStack(alignment: .bottomTrailing) {
-                        Image(systemName: entry.iconName)
-                            .font(.system(size: 21, weight: .semibold))
-                            .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : (entry.isBrokenLink ? LitterTheme.warning : LitterTheme.textSecondary))
-                            .frame(width: 34, height: 34)
-                        if entry.isRecentlyModified {
-                            Circle()
-                                .fill(LitterTheme.success)
-                                .frame(width: 7, height: 7)
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 6) {
-                            Text(entry.name)
-                                .litterFont(.subheadline, weight: .medium)
-                                .foregroundStyle(LitterTheme.textPrimary)
-                                .lineLimit(1)
-                            if isFavorite {
-                                Image(systemName: "star.fill")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(.yellow)
-                            }
-                            if let badge = entry.badgeText {
-                                LocalFileBadge(text: badge)
-                            }
-                        }
-                        Text(entry.compactMetaText)
-                            .litterMonoFont(size: 11, weight: .regular)
-                            .foregroundStyle(LitterTheme.textMuted)
-                            .lineLimit(1)
-                        if !entry.permissions.isEmpty {
-                            Text(entry.permissions)
-                                .litterMonoFont(size: 10, weight: .regular)
-                                .foregroundStyle(LitterTheme.textMuted.opacity(0.8))
-                                .lineLimit(1)
-                        }
-                    }
-                    Spacer(minLength: 4)
-                    Image(systemName: entry.kind == .directory ? "chevron.right" : "doc.text.magnifyingglass")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(LitterTheme.textMuted)
+        HStack(spacing: 12) {
+            if showsSelection {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(isSelected ? LitterTheme.accent : LitterTheme.textMuted)
+                    .frame(width: 24)
+            }
+            ZStack(alignment: .bottomTrailing) {
+                Image(systemName: entry.iconName)
+                    .font(.system(size: 21, weight: .semibold))
+                    .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : (entry.isBrokenLink ? LitterTheme.warning : LitterTheme.textSecondary))
+                    .frame(width: 34, height: 34)
+                if entry.isRecentlyModified {
+                    Circle()
+                        .fill(LitterTheme.success)
+                        .frame(width: 7, height: 7)
                 }
-                .contentShape(Rectangle())
+            }
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text(entry.name)
+                        .litterFont(.subheadline, weight: .medium)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                        .lineLimit(1)
+                    if isFavorite {
+                        Image(systemName: "star.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.yellow)
+                    }
+                    if let badge = entry.badgeText {
+                        LocalFileBadge(text: badge)
+                    }
+                }
+                Text(entry.compactMetaText)
+                    .litterMonoFont(size: 11, weight: .regular)
+                    .foregroundStyle(LitterTheme.textMuted)
+                    .lineLimit(1)
+                if !entry.permissions.isEmpty {
+                    Text(entry.permissions)
+                        .litterMonoFont(size: 10, weight: .regular)
+                        .foregroundStyle(LitterTheme.textMuted.opacity(0.8))
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            Button(action: onInspect) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(LitterTheme.textMuted)
+                    .frame(width: 30, height: 30)
             }
             .buttonStyle(.plain)
-            actionStrip
+            Image(systemName: entry.kind == .directory ? "chevron.right" : "ellipsis")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(LitterTheme.textMuted)
         }
         .padding(.vertical, 8)
-    }
-
-    private var actionStrip: some View {
-        HStack(spacing: 2) {
-            LocalFileIconActionButton(systemImage: "info.circle", accessibilityLabel: "Inspect \(entry.name)", tint: LitterTheme.textMuted, action: onInspect)
-            if entry.isTextPreviewable {
-                LocalFileIconActionButton(systemImage: "square.and.pencil", accessibilityLabel: "Edit \(entry.name)", tint: LitterTheme.accent, action: onEdit)
-            }
-            LocalFileIconActionButton(systemImage: "pencil", accessibilityLabel: "Rename \(entry.name)", tint: LitterTheme.textSecondary, action: onRename)
-            LocalFileIconActionButton(systemImage: "trash", accessibilityLabel: "Delete \(entry.name)", tint: LitterTheme.danger, action: onDelete)
-        }
-        .fixedSize(horizontal: true, vertical: false)
+        .contentShape(Rectangle())
     }
 }
 
@@ -1975,97 +1846,62 @@ private struct LocalFileGridItem: View {
     let isSelected: Bool
     let isFavorite: Bool
     let showsSelection: Bool
-    let onOpen: () -> Void
     let onInspect: () -> Void
-    let onEdit: () -> Void
-    let onRename: () -> Void
-    let onDelete: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Button(action: onOpen) {
-                VStack(alignment: .leading, spacing: 10) {
-                    ZStack(alignment: .topTrailing) {
+            ZStack(alignment: .topTrailing) {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(LitterTheme.surface.opacity(0.62))
+                    .frame(height: 82)
+                    .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(LitterTheme.surface.opacity(0.62))
-                            .frame(height: 82)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(LitterTheme.border.opacity(0.35), lineWidth: 1)
-                            )
-                        Image(systemName: entry.iconName)
-                            .font(.system(size: 30, weight: .semibold))
-                            .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : (entry.isBrokenLink ? LitterTheme.warning : LitterTheme.textSecondary))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        VStack(alignment: .trailing, spacing: 5) {
-                            HStack(spacing: 4) {
-                                if isFavorite {
-                                    Image(systemName: "star.fill")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundStyle(.yellow)
-                                }
-                                if showsSelection {
-                                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 17, weight: .semibold))
-                                        .foregroundStyle(isSelected ? LitterTheme.accent : LitterTheme.textMuted)
-                                }
-                            }
-                            if let badge = entry.badgeText {
-                                LocalFileBadge(text: badge)
-                            }
+                            .stroke(LitterTheme.border.opacity(0.35), lineWidth: 1)
+                    )
+                Image(systemName: entry.iconName)
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(entry.kind == .directory ? LitterTheme.accent : (entry.isBrokenLink ? LitterTheme.warning : LitterTheme.textSecondary))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(alignment: .trailing, spacing: 5) {
+                    HStack(spacing: 4) {
+                        if isFavorite {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.yellow)
                         }
-                        .padding(7)
+                        if showsSelection {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(isSelected ? LitterTheme.accent : LitterTheme.textMuted)
+                        }
                     }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(entry.name)
-                            .litterFont(.caption, weight: .semibold)
-                            .foregroundStyle(LitterTheme.textPrimary)
-                            .lineLimit(2)
-                            .frame(minHeight: 32, alignment: .topLeading)
-                        Text(entry.kind == .directory ? "Folder" : ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file))
-                            .litterMonoFont(size: 10, weight: .regular)
-                            .foregroundStyle(LitterTheme.textMuted)
-                            .lineLimit(1)
+                    if let badge = entry.badgeText {
+                        LocalFileBadge(text: badge)
                     }
                 }
+                .padding(7)
             }
-            .buttonStyle(.plain)
-            gridActionStrip
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.name)
+                    .litterFont(.caption, weight: .semibold)
+                    .foregroundStyle(LitterTheme.textPrimary)
+                    .lineLimit(2)
+                    .frame(minHeight: 32, alignment: .topLeading)
+                Text(entry.kind == .directory ? "Folder" : ByteCountFormatter.string(fromByteCount: entry.size, countStyle: .file))
+                    .litterMonoFont(size: 10, weight: .regular)
+                    .foregroundStyle(LitterTheme.textMuted)
+                    .lineLimit(1)
+                Button(action: onInspect) {
+                    Label("Info", systemImage: "info.circle")
+                        .litterMonoFont(size: 10, weight: .medium)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(LitterTheme.accent)
+            }
         }
         .padding(8)
         .background(LitterTheme.surfaceLight.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private var gridActionStrip: some View {
-        HStack(spacing: 2) {
-            LocalFileIconActionButton(systemImage: "info.circle", accessibilityLabel: "Inspect \(entry.name)", tint: LitterTheme.textMuted, action: onInspect)
-            if entry.isTextPreviewable {
-                LocalFileIconActionButton(systemImage: "square.and.pencil", accessibilityLabel: "Edit \(entry.name)", tint: LitterTheme.accent, action: onEdit)
-            }
-            LocalFileIconActionButton(systemImage: "pencil", accessibilityLabel: "Rename \(entry.name)", tint: LitterTheme.textSecondary, action: onRename)
-            LocalFileIconActionButton(systemImage: "trash", accessibilityLabel: "Delete \(entry.name)", tint: LitterTheme.danger, action: onDelete)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct LocalFileIconActionButton: View {
-    let systemImage: String
-    let accessibilityLabel: String
-    let tint: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 28, height: 28)
-                .background(LitterTheme.surface.opacity(0.44), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
     }
 }
 
@@ -2138,96 +1974,6 @@ private struct LocalFileEmptyState: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-
-private struct LocalFileNamePromptSheet: View {
-    let prompt: LocalFileNamePrompt
-    let onSubmit: (String) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var value: String
-    @FocusState private var focused: Bool
-
-    init(prompt: LocalFileNamePrompt, onSubmit: @escaping (String) -> Void) {
-        self.prompt = prompt
-        self.onSubmit = onSubmit
-        _value = State(initialValue: prompt.initialValue)
-    }
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 12) {
-                        Image(systemName: prompt.systemImage)
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(LitterTheme.accent)
-                            .frame(width: 42, height: 42)
-                            .background(LitterTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(prompt.title)
-                                .litterFont(.headline, weight: .semibold)
-                                .foregroundStyle(LitterTheme.textPrimary)
-                            Text(prompt.message)
-                                .litterFont(.footnote)
-                                .foregroundStyle(LitterTheme.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    TextField(prompt.placeholder, text: $value, axis: .vertical)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.system(.body, design: .monospaced))
-                        .focused($focused)
-                        .submitLabel(.done)
-                        .onSubmit(submit)
-                        .padding(12)
-                        .background(LitterTheme.surface.opacity(0.58), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .stroke(canSubmit ? LitterTheme.accent.opacity(0.45) : LitterTheme.border.opacity(0.45), lineWidth: 1)
-                        )
-                    Spacer()
-                }
-                .padding(16)
-            }
-            .navigationTitle(prompt.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button(prompt.actionTitle) { submit() }
-                        .disabled(!canSubmit)
-                        .foregroundStyle(canSubmit ? LitterTheme.accent : LitterTheme.textMuted)
-                }
-            }
-            .task {
-                let delay: UInt64 = reduceMotion ? 20_000_000 : 140_000_000
-                try? await Task.sleep(nanoseconds: delay)
-                guard !Task.isCancelled else { return }
-                focused = true
-            }
-        }
-    }
-
-    private var canSubmit: Bool {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        guard !prompt.acceptsPath else { return true }
-        return trimmed != "." && trimmed != ".." && !trimmed.contains("/") && !trimmed.contains("\\")
-    }
-
-    private func submit() {
-        guard canSubmit else { return }
-        let submitted = value
-        dismiss()
-        onSubmit(submitted)
     }
 }
 
@@ -2534,17 +2280,7 @@ struct LitterTerminalEntry: Identifiable, Hashable {
     let directory: String
     let output: String
     let exitCode: Int32
-    let duration: TimeInterval
-    let date: Date
-
-    init(command: String, directory: String, output: String, exitCode: Int32, duration: TimeInterval = 0, date: Date = Date()) {
-        self.command = command
-        self.directory = directory
-        self.output = output
-        self.exitCode = exitCode
-        self.duration = duration
-        self.date = date
-    }
+    let date = Date()
 }
 
 struct LitterTerminalPanel: View {
@@ -2553,22 +2289,11 @@ struct LitterTerminalPanel: View {
     let searchQuery: String
     let onBrowse: ((String) -> Void)?
     let onCopy: (String) -> Void
-    var hostTitle: String = "litter.local"
-    var isLocalFilesystem: Bool = true
-    var runCommand: ((String, String) async -> IshFS.Result)? = nil
 
-    @AppStorage("litterTerminalCommandHistory") private var storedCommandHistory = ""
-    @AppStorage("litterTerminalFontSize") private var terminalFontSize = 13.0
     @State private var cwd = HomeAnchor.path
-    @State private var previousCwd: String?
     @State private var command = ""
     @State private var history: [LitterTerminalEntry] = []
-    @State private var commandHistory: [String] = []
-    @State private var commandHistoryCursor: Int?
     @State private var isRunning = false
-    @State private var runningCommand: String?
-    @State private var keyboardHeight: CGFloat = 0
-    @FocusState private var inputFocused: Bool
 
     var visibleHistory: [LitterTerminalEntry] {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2583,629 +2308,166 @@ struct LitterTerminalPanel: View {
     var body: some View {
         VStack(spacing: 0) {
             terminalHeader
-            Divider().overlay(LitterTheme.accent.opacity(0.28))
+            Divider().overlay(LitterTheme.surfaceLight.opacity(0.35))
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         if visibleHistory.isEmpty {
-                            terminalWelcome
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            LocalFileEmptyState(
+                                systemImage: "terminal",
+                                title: "Terminal Ready",
+                                message: "Commands run in the same iSH runtime used by bots.",
+                                actionTitle: "Run pwd",
+                                action: { Task { await run("pwd") } }
+                            )
+                            .frame(minHeight: 260)
                         } else {
                             ForEach(visibleHistory) { item in
                                 terminalEntry(item)
                                     .id(item.id)
                             }
                         }
-                        if let runningCommand {
-                            terminalRunningRow(runningCommand)
-                                .id("terminal-running-row")
-                        }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
+                    .padding(14)
                 }
-                .background(terminalBackground)
                 .onChange(of: history.count) { _, _ in
                     if let last = history.last {
                         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
-                .onChange(of: isRunning) { _, running in
-                    if running {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo("terminal-running-row", anchor: .bottom)
-                        }
-                    }
-                }
             }
-            terminalShortcutRail
             terminalInput
-            if keyboardHeight > 0 {
-                Color.clear
-                    .frame(height: keyboardHeight)
-                    .accessibilityHidden(true)
-            }
         }
-        .background(terminalBackground)
-        .ignoresSafeArea(.keyboard, edges: .bottom)
         .task {
             cwd = requestedDirectory.isEmpty ? browserPath : requestedDirectory
-            loadStoredCommandHistory()
-            inputFocused = true
         }
         .onChange(of: requestedDirectory) { _, newValue in
             if !newValue.isEmpty { cwd = newValue }
         }
-        .onChange(of: inputFocused) { _, focused in
-            if !focused { keyboardHeight = 0 }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
-            updateKeyboardHeight(notification)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-            keyboardHeight = 0
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Button("Tab") { insertTerminalText("\t") }
-                Button("~") { insertTerminalText("~") }
-                Button("/") { insertTerminalText("/") }
-                Button("|") { insertTerminalText(" | ") }
-                Button { pasteCommandFromClipboard() } label: { Image(systemName: "doc.on.clipboard") }
-                Spacer()
-                Button { recallPreviousCommand() } label: { Image(systemName: "arrow.up") }
-                    .disabled(commandHistory.isEmpty)
-                Button { recallNextCommand() } label: { Image(systemName: "arrow.down") }
-                    .disabled(commandHistory.isEmpty)
-            }
-        }
     }
 
     private var terminalHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    Circle().fill(LitterTheme.danger).frame(width: 10, height: 10)
-                    Circle().fill(LitterTheme.warning).frame(width: 10, height: 10)
-                    Circle().fill(LitterTheme.success).frame(width: 10, height: 10)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(hostTitle)
-                        .litterMonoFont(size: 12, weight: .semibold)
-                        .foregroundStyle(LitterTheme.textPrimary)
-                    Text(statusLine)
-                        .litterMonoFont(size: 10, weight: .regular)
-                        .foregroundStyle(LitterTheme.textMuted)
-                        .lineLimit(1)
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Label("Shared iSH Terminal", systemImage: "terminal")
+                    .litterFont(.subheadline, weight: .semibold)
+                    .foregroundStyle(LitterTheme.textPrimary)
                 Spacer()
                 if let onBrowse {
-                    terminalIconButton(systemImage: "folder", accessibilityLabel: "Browse terminal directory") {
-                        onBrowse(cwd)
-                    }
+                    Button { onBrowse(cwd) } label: { Image(systemName: "folder") }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Browse terminal directory")
                 }
-                terminalIconButton(systemImage: "textformat.size.smaller", accessibilityLabel: "Decrease terminal font size") {
-                    terminalFontSize = max(10, terminalFontSize - 1)
-                }
-                terminalIconButton(systemImage: "textformat.size.larger", accessibilityLabel: "Increase terminal font size") {
-                    terminalFontSize = min(20, terminalFontSize + 1)
-                }
-                terminalIconButton(systemImage: "doc.on.clipboard", accessibilityLabel: "Paste command") {
-                    pasteCommandFromClipboard()
-                }
-                terminalIconButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy terminal output") {
-                    onCopy(transcriptText)
-                }
-                terminalIconButton(systemImage: "trash", accessibilityLabel: "Clear terminal") {
-                    history.removeAll()
-                }
+                Button { onCopy(history.map { "$ \($0.command)\n\($0.output)" }.joined(separator: "\n\n")) } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Copy terminal output")
+                Button { history.removeAll() } label: { Image(systemName: "trash") }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear terminal")
             }
-            Text(promptText)
+            Text(cwd)
                 .litterMonoFont(size: 11, weight: .regular)
-                .foregroundStyle(LitterTheme.accent)
+                .foregroundStyle(LitterTheme.textMuted)
                 .lineLimit(1)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(LitterTheme.codeBackground.opacity(0.98))
+        .padding(.vertical, 10)
     }
 
     private var terminalInput: some View {
-        VStack(spacing: 0) {
-            Divider().overlay(LitterTheme.accent.opacity(0.26))
-            HStack(alignment: .bottom, spacing: 10) {
-                Text("#")
-                    .litterMonoFont(size: 17, weight: .bold)
-                    .foregroundStyle(LitterTheme.accent)
-                    .padding(.bottom, 7)
-                TextField("sh command", text: $command, axis: .vertical)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.system(size: CGFloat(terminalFontSize + 1), weight: .regular, design: .monospaced))
-                    .lineLimit(1...5)
-                    .submitLabel(.return)
-                    .focused($inputFocused)
-                    .onSubmit { submitCommand() }
-                Button { submitCommand() } label: {
-                    if isRunning {
-                        ProgressView().scaleEffect(0.8)
-                    } else {
-                        Image(systemName: "return")
-                            .font(.system(size: 15, weight: .semibold))
-                    }
+        HStack(spacing: 10) {
+            Text("$")
+                .litterMonoFont(size: 14, weight: .bold)
+                .foregroundStyle(LitterTheme.accent)
+            TextField("command", text: $command, axis: .vertical)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(.body, design: .monospaced))
+                .lineLimit(1...3)
+                .submitLabel(.return)
+                .onSubmit {
+                    let pending = command
+                    command = ""
+                    Task { await run(pending) }
                 }
-                .buttonStyle(.plain)
-                .frame(width: 38, height: 38)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(canSubmit ? LitterTheme.accent.opacity(0.22) : LitterTheme.surface.opacity(0.42))
-                )
-                .disabled(!canSubmit)
+            Button {
+                let pending = command
+                command = ""
+                Task { await run(pending) }
+            } label: {
+                if isRunning {
+                    ProgressView().scaleEffect(0.8)
+                } else {
+                    Image(systemName: "paperplane.fill")
+                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .buttonStyle(.plain)
+            .disabled(isRunning || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .background(LitterTheme.codeBackground.opacity(0.98))
-    }
-
-    private var terminalShortcutRail: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                terminalShortcutButton(title: "Tab") { insertTerminalText("\t") }
-                terminalShortcutButton(title: "~") { insertTerminalText("~") }
-                terminalShortcutButton(title: "./") { insertTerminalText("./") }
-                terminalShortcutButton(title: "../") { insertTerminalText("../") }
-                terminalShortcutButton(title: "|") { insertTerminalText(" | ") }
-                terminalShortcutButton(title: "&&") { insertTerminalText(" && ") }
-                terminalShortcutButton(title: "Up", systemImage: "arrow.up") { recallPreviousCommand() }
-                    .disabled(commandHistory.isEmpty)
-                terminalShortcutButton(title: "Down", systemImage: "arrow.down") { recallNextCommand() }
-                    .disabled(commandHistory.isEmpty)
-                terminalShortcutButton(title: "Paste", systemImage: "doc.on.clipboard") { pasteCommandFromClipboard() }
-                terminalCommandChip("pwd")
-                terminalCommandChip("ls -la")
-                terminalCommandChip("git status")
-                terminalCommandChip("clear")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-        }
-        .background(LitterTheme.codeBackground.opacity(0.96))
+        .padding(12)
+        .background(LitterTheme.surface.opacity(0.72))
     }
 
     private func terminalEntry(_ item: LitterTerminalEntry) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text(prompt(for: item.directory))
-                    .litterMonoFont(size: 12, weight: .semibold)
-                    .foregroundStyle(item.exitCode == 0 ? LitterTheme.accent : LitterTheme.warning)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(item.directory)
+                    .litterMonoFont(size: 10, weight: .regular)
+                    .foregroundStyle(LitterTheme.textMuted)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                Text(item.command)
-                    .font(.system(size: CGFloat(terminalFontSize), weight: .semibold, design: .monospaced))
-                    .foregroundStyle(LitterTheme.textPrimary)
-                    .textSelection(.enabled)
                 Spacer()
-                Text("\(item.exitCode) \(formatDuration(item.duration))")
+                Text("exit \(item.exitCode)")
                     .litterMonoFont(size: 10, weight: .semibold)
                     .foregroundStyle(item.exitCode == 0 ? LitterTheme.success : LitterTheme.warning)
-                terminalIconButton(systemImage: "arrow.clockwise", accessibilityLabel: "Run command again") {
-                    command = item.command
-                    submitCommand()
-                }
-                terminalIconButton(systemImage: "doc.on.doc", accessibilityLabel: "Copy command output") {
-                    onCopy(entryTranscript(item))
-                }
             }
-            Text(terminalAttributedOutput(item.output.isEmpty ? " " : item.output))
-                .font(.system(size: CGFloat(terminalFontSize), weight: .regular, design: .monospaced))
+            Text("$ \(item.command)")
+                .font(.system(.footnote, design: .monospaced).weight(.semibold))
+                .foregroundStyle(LitterTheme.textPrimary)
+                .textSelection(.enabled)
+            Text(item.output.isEmpty ? " " : item.output)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(LitterTheme.textSecondary)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 4)
+        .padding(12)
+        .background(LitterTheme.codeBackground.opacity(0.72), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func run(_ raw: String) async {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isRunning else { return }
-        recordCommand(trimmed)
         isRunning = true
-        runningCommand = trimmed
-        defer {
-            isRunning = false
-            runningCommand = nil
-            commandHistoryCursor = nil
-        }
         if trimmed == "clear" {
             history.removeAll()
+            isRunning = false
             return
         }
-        if isCdCommand(trimmed) {
+        if trimmed == "pwd" {
+            history.append(LitterTerminalEntry(command: trimmed, directory: cwd, output: cwd, exitCode: 0))
+            isRunning = false
+            return
+        }
+        if trimmed.hasPrefix("cd") {
             await runCd(trimmed)
+            isRunning = false
             return
         }
-        let started = Date()
-        let result = await executeTerminalCommand(terminalShellCommand(trimmed), cwd: cwd)
-        history.append(LitterTerminalEntry(
-            command: trimmed,
-            directory: cwd,
-            output: cleanTerminalOutput(result.output),
-            exitCode: result.exitCode,
-            duration: Date().timeIntervalSince(started)
-        ))
+        let result = await IshFS.run(trimmed, cwd: cwd)
+        history.append(LitterTerminalEntry(command: trimmed, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
+        isRunning = false
     }
 
     private func runCd(_ command: String) async {
-        let startCwd = cwd
-        let started = Date()
         let target = command.dropFirst(2).trimmingCharacters(in: .whitespacesAndNewlines)
-        let shellCommand: String
-        if target == "-" {
-            guard let previousCwd else {
-                history.append(LitterTerminalEntry(
-                    command: command,
-                    directory: startCwd,
-                    output: "cd: OLDPWD not set",
-                    exitCode: 1,
-                    duration: 0
-                ))
-                return
-            }
-            shellCommand = "cd \(IshFS.shellQuote(previousCwd)) && pwd"
-        } else if target.isEmpty {
-            shellCommand = "cd && pwd"
-        } else {
-            shellCommand = "cd \(target) && pwd"
-        }
-
-        let result = await executeTerminalCommand(shellCommand, cwd: startCwd)
-        let output = cleanTerminalOutput(result.output)
+        let destination = target.isEmpty ? HomeAnchor.path : PathDisplay.expand(target, isLocal: true)
+        let result = await IshFS.run("cd \(IshFS.shellQuote(destination)) && pwd", cwd: cwd)
         if result.exitCode == 0 {
-            let next = output.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
-            previousCwd = startCwd
-            cwd = next.isEmpty ? startCwd : next
-            history.append(LitterTerminalEntry(
-                command: command,
-                directory: startCwd,
-                output: output.isEmpty ? cwd : output,
-                exitCode: 0,
-                duration: Date().timeIntervalSince(started)
-            ))
+            let next = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            cwd = next.isEmpty ? destination : next
+            history.append(LitterTerminalEntry(command: command, directory: cwd, output: cwd, exitCode: 0))
         } else {
-            history.append(LitterTerminalEntry(
-                command: command,
-                directory: startCwd,
-                output: output,
-                exitCode: result.exitCode,
-                duration: Date().timeIntervalSince(started)
-            ))
-        }
-    }
-    private var terminalBackground: some View {
-        LinearGradient(
-            colors: [
-                Color.black.opacity(0.96),
-                LitterTheme.codeBackground.opacity(0.98),
-                Color.black.opacity(0.92)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
-    private var terminalWelcome: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("Last login: \(Date().formatted(date: .abbreviated, time: .shortened)) on iSH")
-                .foregroundStyle(LitterTheme.textMuted)
-            Text("Alpine Linux fakefs mounted at \(HomeAnchor.path)")
-                .foregroundStyle(LitterTheme.textSecondary)
-            HStack(spacing: 7) {
-                Text(promptText)
-                    .foregroundStyle(LitterTheme.accent)
-                Text("pwd")
-                    .foregroundStyle(LitterTheme.textPrimary)
-            }
-        }
-        .font(.system(size: CGFloat(terminalFontSize), weight: .regular, design: .monospaced))
-        .textSelection(.enabled)
-        .padding(.top, 6)
-    }
-
-    private func terminalRunningRow(_ command: String) -> some View {
-        HStack(spacing: 8) {
-            ProgressView().scaleEffect(0.7)
-            Text("\(promptText) \(command)")
-                .litterMonoFont(size: 12, weight: .semibold)
-                .foregroundStyle(LitterTheme.textSecondary)
-                .lineLimit(3)
-        }
-        .padding(.vertical, 4)
-    }
-
-    private var statusLine: String {
-        if let runningCommand {
-            return "running \(runningCommand)"
-        }
-        let last = history.last
-        let exit = last.map { "exit \($0.exitCode)" } ?? "ready"
-        return "\(PathDisplay.display(cwd, isLocal: isLocalFilesystem)) - \(exit)"
-    }
-
-    private var promptText: String {
-        prompt(for: cwd)
-    }
-
-    private var promptHost: String {
-        let sanitized = hostTitle.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: " ", with: "-").lowercased()
-        return sanitized.isEmpty ? "litter" : sanitized
-    }
-
-    private var canSubmit: Bool {
-        !isRunning && !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var transcriptText: String {
-        history.map(entryTranscript).joined(separator: "\n\n")
-    }
-
-    private func prompt(for directory: String) -> String {
-        "root@\(promptHost):\(PathDisplay.display(directory, isLocal: isLocalFilesystem))#"
-    }
-
-    private func entryTranscript(_ item: LitterTerminalEntry) -> String {
-        "\(prompt(for: item.directory)) \(item.command)\n\(item.output)\n[exit \(item.exitCode), \(formatDuration(item.duration))]"
-    }
-
-    private func submitCommand() {
-        let pending = command
-        guard !isRunning, !pending.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        command = ""
-        inputFocused = true
-        Task { await run(pending) }
-    }
-
-    private func insertTerminalText(_ text: String) {
-        command += text
-        inputFocused = true
-    }
-
-    private func pasteCommandFromClipboard() {
-        guard let pasted = UIPasteboard.general.string, !pasted.isEmpty else { return }
-        command += pasted
-        inputFocused = true
-    }
-
-    private func updateKeyboardHeight(_ notification: Notification) {
-        guard inputFocused,
-              let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
-            keyboardHeight = 0
-            return
-        }
-        keyboardHeight = max(0, UIScreen.main.bounds.height - frame.minY)
-    }
-
-    private func terminalShellCommand(_ raw: String) -> String {
-        "export TERM=xterm-256color COLORTERM=truecolor CLICOLOR=1 CLICOLOR_FORCE=1; \(raw)"
-    }
-
-    private func executeTerminalCommand(_ command: String, cwd: String) async -> IshFS.Result {
-        if let runCommand {
-            return await runCommand(command, cwd)
-        }
-        return await IshFS.run(command, cwd: cwd)
-    }
-
-    private func recallPreviousCommand() {
-        guard !commandHistory.isEmpty else { return }
-        let nextIndex: Int
-        if let commandHistoryCursor {
-            nextIndex = max(0, commandHistoryCursor - 1)
-        } else {
-            nextIndex = commandHistory.count - 1
-        }
-        commandHistoryCursor = nextIndex
-        command = commandHistory[nextIndex]
-        inputFocused = true
-    }
-
-    private func recallNextCommand() {
-        guard let commandHistoryCursor else { return }
-        let nextIndex = commandHistoryCursor + 1
-        if nextIndex < commandHistory.count {
-            self.commandHistoryCursor = nextIndex
-            command = commandHistory[nextIndex]
-        } else {
-            self.commandHistoryCursor = nil
-            command = ""
-        }
-        inputFocused = true
-    }
-
-    private func terminalIconButton(systemImage: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(LitterTheme.textPrimary)
-                .frame(width: 30, height: 30)
-                .background(LitterTheme.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private func terminalShortcutButton(title: String, systemImage: String? = nil, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Group {
-                if let systemImage {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 12, weight: .semibold))
-                } else {
-                    Text(title)
-                        .litterMonoFont(size: 12, weight: .semibold)
-                }
-            }
-            .foregroundStyle(LitterTheme.textPrimary)
-            .frame(minWidth: 38, minHeight: 32)
-            .padding(.horizontal, systemImage == nil ? 4 : 0)
-            .background(LitterTheme.surface.opacity(0.42), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-    }
-
-    private func terminalCommandChip(_ title: String) -> some View {
-        Button(title) {
-            command = title
-            submitCommand()
-        }
-        .litterMonoFont(size: 12, weight: .semibold)
-        .foregroundStyle(LitterTheme.accent)
-        .padding(.horizontal, 10)
-        .frame(minHeight: 32)
-        .background(LitterTheme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .buttonStyle(.plain)
-    }
-
-    private func cdDestination(from rawTarget: String) -> String {
-        let trimmed = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
-        let unquoted: String
-        if trimmed.count >= 2,
-           ((trimmed.hasPrefix("\"") && trimmed.hasSuffix("\"")) ||
-            (trimmed.hasPrefix("'") && trimmed.hasSuffix("'"))) {
-            unquoted = String(trimmed.dropFirst().dropLast())
-        } else {
-            unquoted = trimmed
-        }
-        if unquoted == "~" {
-            return HomeAnchor.path
-        }
-        if unquoted.hasPrefix("~/") {
-            return HomeAnchor.path + "/" + String(unquoted.dropFirst(2))
-        }
-        return unquoted
-    }
-
-    private func isCdCommand(_ raw: String) -> Bool {
-        raw == "cd" || raw.hasPrefix("cd ") || raw.hasPrefix("cd\t")
-    }
-
-    private func loadStoredCommandHistory() {
-        guard commandHistory.isEmpty,
-              let data = storedCommandHistory.data(using: .utf8),
-              let decoded = try? JSONDecoder().decode([String].self, from: data) else {
-            return
-        }
-        commandHistory = decoded
-    }
-
-    private func recordCommand(_ raw: String) {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        commandHistory.removeAll { $0 == trimmed }
-        commandHistory.append(trimmed)
-        if commandHistory.count > 80 {
-            commandHistory.removeFirst(commandHistory.count - 80)
-        }
-        if let data = try? JSONEncoder().encode(commandHistory),
-           let encoded = String(data: data, encoding: .utf8) {
-            storedCommandHistory = encoded
-        }
-    }
-
-    private func cleanTerminalOutput(_ text: String) -> String {
-        var output = text
-        while output.last == "\n" || output.last == "\r" {
-            output.removeLast()
-        }
-        return output
-    }
-
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        if duration <= 0 { return "0ms" }
-        if duration < 1 {
-            return "\(max(1, Int(duration * 1000)))ms"
-        }
-        return String(format: "%.1fs", duration)
-    }
-
-    private func terminalAttributedOutput(_ raw: String) -> AttributedString {
-        var result = AttributedString()
-        var buffer = ""
-        var foreground: Color?
-        var bold = false
-        let scalars = Array(raw.unicodeScalars)
-
-        func flush() {
-            guard !buffer.isEmpty else { return }
-            var chunk = AttributedString(buffer)
-            chunk.foregroundColor = foreground ?? LitterTheme.textSecondary
-            if bold {
-                chunk.inlinePresentationIntent = .stronglyEmphasized
-            }
-            result += chunk
-            buffer.removeAll(keepingCapacity: true)
-        }
-
-        func applySGR(_ sequence: String) {
-            let parts = sequence.isEmpty ? [0] : sequence.split(separator: ";").compactMap { Int($0) }
-            for code in parts {
-                switch code {
-                case 0:
-                    foreground = nil
-                    bold = false
-                case 1:
-                    bold = true
-                case 22:
-                    bold = false
-                case 39:
-                    foreground = nil
-                default:
-                    if let color = ansiColor(code) {
-                        foreground = color
-                    }
-                }
-            }
-        }
-
-        var index = 0
-        while index < scalars.count {
-            let scalar = scalars[index]
-            if scalar.value == 0x1B,
-               index + 1 < scalars.count,
-               scalars[index + 1].value == 0x5B {
-                flush()
-                var cursor = index + 2
-                var sequence = ""
-                while cursor < scalars.count, scalars[cursor].value != 0x6D {
-                    sequence.unicodeScalars.append(scalars[cursor])
-                    cursor += 1
-                }
-                if cursor < scalars.count {
-                    applySGR(sequence)
-                    index = cursor + 1
-                    continue
-                }
-            }
-            if scalar.value == 0x09 || scalar.value == 0x0A || scalar.value == 0x0D || scalar.value >= 0x20 {
-                buffer.unicodeScalars.append(scalar)
-            }
-            index += 1
-        }
-        flush()
-        return result
-    }
-
-    private func ansiColor(_ code: Int) -> Color? {
-        switch code {
-        case 30, 90: return LitterTheme.textMuted
-        case 31, 91: return LitterTheme.danger
-        case 32, 92: return LitterTheme.success
-        case 33, 93: return LitterTheme.warning
-        case 34, 94: return Color(hex: "#6AA9FF")
-        case 35, 95: return Color(hex: "#C792EA")
-        case 36, 96: return Color(hex: "#4DD0E1")
-        case 37, 97: return LitterTheme.textPrimary
-        default: return nil
+            history.append(LitterTerminalEntry(command: command, directory: cwd, output: result.output.trimmingCharacters(in: .whitespacesAndNewlines), exitCode: result.exitCode))
         }
     }
 }
