@@ -947,8 +947,8 @@ private struct SettingsTerminalView: View {
                 serverId: server.serverId,
                 params: AppExecCommandRequest(
                     command: ["/bin/sh", "-lc", command],
-                    processId: "settings-terminal-\(UUID().uuidString)",
-                    tty: true,
+                    processId: nil,
+                    tty: false,
                     streamStdin: false,
                     streamStdoutStderr: false,
                     outputBytesCap: 8_000_000,
