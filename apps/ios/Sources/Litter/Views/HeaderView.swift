@@ -208,7 +208,6 @@ struct HeaderView: View {
     }
 
     private func runtimeLabel(forSelection selection: String?) -> String {
-        if isLocalGGUFModelSelection(selection) { return ChatRuntimeMode.localModel.shortTitle }
         if server?.isLocal == true { return ChatRuntimeMode.chatGPTAccount.shortTitle }
         return ChatRuntimeMode.computerBridge.shortTitle
     }
@@ -623,19 +622,13 @@ struct InlineModelSelectorView: View {
         return appModel.snapshot?.serverSnapshot(for: resolvedServerId)
     }
 
-    private var localModels: [ModelInfo] {
-        models.filter(isLocalGGUFModelInfo)
-    }
-
     private var serverModels: [ModelInfo] {
-        models.filter { !isLocalGGUFModelInfo($0) }
+        models
     }
 
     private var selectedRuntimeMode: ChatRuntimeMode {
-        if isLocalGGUFModelSelection(selectedModel) { return .localModel }
         if threadKey == nil {
             let preferred = appState.preferredChatRuntimeMode
-            if preferred == .localModel { return .localModel }
             if let currentServer {
                 if preferred == .computerBridge, !currentServer.isLocal { return .computerBridge }
                 if preferred == .chatGPTAccount, currentServer.isLocal { return .chatGPTAccount }
@@ -647,12 +640,7 @@ struct InlineModelSelectorView: View {
     }
 
     private var modelsForSelectedRuntime: [ModelInfo] {
-        switch selectedRuntimeMode {
-        case .localModel:
-            return localModels
-        case .chatGPTAccount, .computerBridge:
-            return serverModels
-        }
+        serverModels
     }
 
     var body: some View {
@@ -926,8 +914,6 @@ struct InlineModelSelectorView: View {
             return "No ChatGPT models on this route"
         case .computerBridge:
             return "No bridge models on this route"
-        case .localModel:
-            return "On-device AI is disabled"
         }
     }
 
@@ -937,8 +923,6 @@ struct InlineModelSelectorView: View {
             return currentServer?.isLocal == true && !serverModels.isEmpty
         case .computerBridge:
             return currentServer.map { !$0.isLocal && !serverModels.isEmpty } ?? false
-        case .localModel:
-            return !localModels.isEmpty
         }
     }
 
@@ -950,21 +934,13 @@ struct InlineModelSelectorView: View {
         case .computerBridge:
             if let currentServer, !currentServer.isLocal { return currentServer.displayName }
             return "Pick Mac/Windows/Linux"
-        case .localModel:
-            return "Use a PC-hosted model server"
         }
     }
 
     private func selectRuntime(_ mode: ChatRuntimeMode) {
         appState.preferredChatRuntimeMode = mode
-        switch mode {
-        case .localModel:
-            guard let model = localModels.first else { return }
-            selectModel(model)
-        case .chatGPTAccount, .computerBridge:
-            guard let model = serverModels.first else { return }
-            selectModel(model)
-        }
+        guard let model = serverModels.first else { return }
+        selectModel(model)
     }
 
     private func selectModel(_ model: ModelInfo) {
@@ -975,9 +951,7 @@ struct InlineModelSelectorView: View {
         } else {
             reasoningEffort = defaultReasoningEffortSelection(for: model)
         }
-        if isLocalGGUFModelInfo(model) {
-            appState.preferredChatRuntimeMode = .localModel
-        } else if currentServer?.isLocal == true {
+        if currentServer?.isLocal == true {
             appState.preferredChatRuntimeMode = .chatGPTAccount
         } else {
             appState.preferredChatRuntimeMode = .computerBridge

@@ -8,7 +8,6 @@ struct AIProviderSettingsView: View {
         List {
             modelSettingsSection
             providersSection
-            disabledLocalModelsSection
             notesSection
         }
         .navigationTitle("AI Providers")
@@ -30,18 +29,17 @@ struct AIProviderSettingsView: View {
         }
         .onAppear {
             providerStore.reload()
-            Task { await providerStore.refreshRuntimeCapabilities() }
         }
     }
 
     private var modelSettingsSection: some View {
         Section {
             Picker("Default Route", selection: globalRoutingBinding) {
-                ForEach(hostedRoutingModes) { mode in
+                ForEach(AIModelRoutingMode.allCases) { mode in
                     Text(mode.displayName).tag(mode)
                 }
             }
-            Text("On-device GGUF downloading and local inference are disabled in this build. Use ChatGPT, OpenAI, or a PC-hosted OpenAI-compatible server for private/local models.")
+            Text("Use ChatGPT, OpenAI, or an OpenAI-compatible server such as Ollama, LM Studio, Tailscale, or another machine on your LAN.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
         } header: {
@@ -85,46 +83,9 @@ struct AIProviderSettingsView: View {
         }
     }
 
-    private var disabledLocalModelsSection: some View {
-        Section {
-            Text(AIProviderStore.onDeviceAIUnavailableMessage)
-                .litterFont(.caption)
-                .foregroundColor(LitterTheme.textMuted)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            if !providerStore.localModels.isEmpty {
-                ForEach(providerStore.localModels) { model in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(model.fileName)
-                            .litterFont(.subheadline)
-                            .foregroundColor(LitterTheme.textPrimary)
-                            .lineLimit(1)
-                        Text(localModelSubtitle(model))
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textSecondary)
-                        Text("This model will not appear in the model picker. Delete it here to recover storage.")
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textMuted)
-                    }
-                    .swipeActions {
-                        Button(role: .destructive) {
-                            try? providerStore.removeLocalModel(model)
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    }
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
-                }
-            }
-        } header: {
-            Text("On-Device AI")
-                .foregroundColor(LitterTheme.textSecondary)
-        }
-    }
-
     private var notesSection: some View {
         Section {
-            Text("For private/local models, run Ollama or LM Studio on a computer and add its OpenAI-compatible /v1 endpoint here. That keeps the iPhone app focused on the terminal, file browser, remote bridges, and Swift BuildKit.")
+            Text("For private/local models, run them on a computer and add the server's OpenAI-compatible /v1 endpoint here. The iPhone app stays focused on the terminal, file browser, remote bridges, and Swift BuildKit.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -134,18 +95,11 @@ struct AIProviderSettingsView: View {
         }
     }
 
-    private var hostedRoutingModes: [AIModelRoutingMode] {
-        AIModelRoutingMode.allCases.filter { $0 != .localGGUF }
-    }
-
     private var globalRoutingBinding: Binding<AIModelRoutingMode> {
         Binding(
-            get: {
-                let mode = providerStore.globalModelSettings.routingMode
-                return mode == .localGGUF ? .automatic : mode
-            },
+            get: { providerStore.globalModelSettings.routingMode },
             set: { value in
-                providerStore.updateGlobalModelSettings { $0.routingMode = value == .localGGUF ? .automatic : value }
+                providerStore.updateGlobalModelSettings { $0.routingMode = value }
             }
         )
     }
@@ -154,7 +108,6 @@ struct AIProviderSettingsView: View {
         switch provider.kind {
         case .openAI: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
         case .openAICompatible: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
-        case .localGGUF: return "Disabled"
         }
     }
 
@@ -162,16 +115,7 @@ struct AIProviderSettingsView: View {
         switch kind {
         case .openAI: return "cloud"
         case .openAICompatible: return "desktopcomputer"
-        case .localGGUF: return "nosign"
         }
-    }
-
-    private func localModelSubtitle(_ model: LocalModelRecord) -> String {
-        var parts = [model.displaySize]
-        if let quantizationHint = model.quantizationHint { parts.append(quantizationHint) }
-        if let nativeContextLength = model.nativeContextLength { parts.append("\(nativeContextLength) ctx") }
-        parts.append(model.validationStatus.displayName)
-        return parts.joined(separator: " · ")
     }
 }
 

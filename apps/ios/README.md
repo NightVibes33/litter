@@ -7,7 +7,6 @@
 - SwiftUI home dashboard, conversation timeline, settings, appearance/theme controls, wallpaper and typing-effect picker, local file workspace, and settings terminal.
 - Local iSH Alpine fakefs runtime rooted at `/root`; `/root/.codex` is bridged to native Codex storage and `/mnt/apps` exposes app-provided files.
 - Shared Rust/UniFFI Codex client for local/remote sessions, SSH, Slingshot connected computers, goals, permissions, widgets, and app-server transport.
-- Optional native llama runtime for installed `local-gguf:<id>` models.
 - Optional private Nyxian BuildKit assets for on-device Swift checks, builds, tests, and unsigned IPA packaging.
 - PiP streaming cards, CarPlay voice scene support, and experimental Watch targets.
 

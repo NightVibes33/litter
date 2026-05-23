@@ -5,19 +5,16 @@ import Security
 @MainActor
 final class AIProviderStore: ObservableObject {
     static let shared = AIProviderStore()
-    static let onDeviceAIUnavailableMessage = "On-device AI is disabled in this build. Use ChatGPT or a PC-hosted OpenAI-compatible server such as Ollama or LM Studio."
 
     @Published private(set) var providers: [AIProviderProfile] = []
-    @Published private(set) var localModels: [LocalModelRecord] = []
-    @Published private(set) var validatingLocalModelId: UUID?
     @Published private(set) var globalModelSettings: GlobalModelSettings = .defaults
-    @Published private(set) var localModelRuntimeSettings: [String: LocalModelRuntimeSettings] = [:]
-    @Published private(set) var turboQuantAvailability: TurboQuantAvailability = .unavailable("Runtime capability has not been scanned yet.")
 
     private let providersKey = "ai-provider-profiles-v1"
-    private let localModelsKey = "local-gguf-models-v1"
     private let globalModelSettingsKey = "global-model-settings-v1"
-    private let localModelRuntimeSettingsKey = "local-model-runtime-settings-v1"
+    private let legacyOnDeviceAIKeys = [
+        "local-gguf-models-v1",
+        "local-model-runtime-settings-v1"
+    ]
     private let keychainService = "com.sigkitten.litter.ai-provider-secret"
     private let defaults = UserDefaults.standard
     private let encoder = JSONEncoder()
@@ -32,59 +29,14 @@ final class AIProviderStore: ObservableObject {
 
     func reload() {
         load()
-        Task { await refreshRuntimeCapabilities() }
-    }
-
-    func refreshRuntimeCapabilities() async {
-        turboQuantAvailability = .unavailable(Self.onDeviceAIUnavailableMessage)
-        sanitizeTurboQuantSettings()
     }
 
     func updateGlobalModelSettings(_ update: (inout GlobalModelSettings) -> Void) {
         var next = globalModelSettings
         update(&next)
         globalModelSettings = next
+        sanitizeGlobalSettings()
         try? persistGlobalModelSettings()
-        sanitizeTurboQuantSettings()
-    }
-
-    func runtimeSettings(for model: LocalModelRecord, capability: DeviceCapabilityProfile = .current()) -> LocalModelRuntimeSettings {
-        let stored = localModelRuntimeSettings[model.id.uuidString] ?? .defaults(for: capability)
-        return stored.sanitized(for: capability, turboQuantAvailable: turboQuantAvailability.isAvailable)
-    }
-
-    func effectiveRuntimeSettings(for model: LocalModelRecord, capability: DeviceCapabilityProfile = .current()) -> LocalModelRuntimeSettings {
-        runtimeSettings(for: model, capability: capability)
-    }
-
-    func localModelInfos() -> [ModelInfo] { [] }
-
-    func localModel(forSelection selection: String?) -> LocalModelRecord? { nil }
-
-    func preferredLocalModelForMainConversation() -> LocalModelRecord? { nil }
-
-    func updateCodexEval(for model: LocalModelRecord, score: Int, summary: String) {
-        guard let index = localModels.firstIndex(where: { $0.id == model.id }) else { return }
-        localModels[index].codexEvalScore = min(100, max(0, score))
-        localModels[index].codexEvalSummary = summary
-        localModels[index].codexEvalDate = Date()
-        try? persistLocalModels()
-    }
-
-    func updateRuntimeSettings(
-        for model: LocalModelRecord,
-        capability: DeviceCapabilityProfile = .current(),
-        _ update: (inout LocalModelRuntimeSettings) -> Void
-    ) {
-        var next = runtimeSettings(for: model, capability: capability)
-        update(&next)
-        localModelRuntimeSettings[model.id.uuidString] = next.sanitized(for: capability, turboQuantAvailable: turboQuantAvailability.isAvailable)
-        try? persistLocalModelRuntimeSettings()
-    }
-
-    func resetRuntimeSettings(for model: LocalModelRecord) {
-        localModelRuntimeSettings.removeValue(forKey: model.id.uuidString)
-        try? persistLocalModelRuntimeSettings()
     }
 
     func upsertProvider(_ provider: AIProviderProfile, apiKey: String?) throws {
@@ -104,7 +56,9 @@ final class AIProviderStore: ObservableObject {
     func deleteProvider(_ provider: AIProviderProfile) throws {
         providers.removeAll { $0.id == provider.id }
         try deleteSecret(providerId: provider.id)
+        sanitizeGlobalSettings()
         try persistProviders()
+        try persistGlobalModelSettings()
     }
 
     func secret(for provider: AIProviderProfile) -> String? {
@@ -112,9 +66,6 @@ final class AIProviderStore: ObservableObject {
     }
 
     func testProvider(_ provider: AIProviderProfile, apiKey: String?) async -> AIProviderHealthReport {
-        guard provider.kind != .localGGUF else {
-            return AIProviderHealthReport(status: .failed(Self.onDeviceAIUnavailableMessage), models: [])
-        }
         guard let base = provider.normalizedBaseURL else {
             return AIProviderHealthReport(status: .failed("Invalid base URL"), models: [])
         }
@@ -131,44 +82,14 @@ final class AIProviderStore: ObservableObject {
         }
     }
 
-    func validateLocalModel(_ record: LocalModelRecord) async {
-        guard let index = localModels.firstIndex(where: { $0.id == record.id }) else { return }
-        localModels[index].validationStatus = .failed(Self.onDeviceAIUnavailableMessage, Date())
-        try? persistLocalModels()
-    }
-
-    func cancelLocalModelValidation() {
-        validatingLocalModelId = nil
-    }
-
-    func removeLocalModel(_ record: LocalModelRecord) throws {
-        localModels.removeAll { $0.id == record.id }
-        localModelRuntimeSettings.removeValue(forKey: record.id.uuidString)
-        let fileURL = record.fileURL
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            try FileManager.default.removeItem(at: fileURL)
-        }
-        if let projectorURL = record.projectorURL, FileManager.default.fileExists(atPath: projectorURL.path) {
-            try FileManager.default.removeItem(at: projectorURL)
-        }
-        try persistLocalModels()
-        try persistLocalModelRuntimeSettings()
-    }
-
-    func localModelsDirectory() throws -> URL {
-        let url = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
     private func load() {
-        providers = decode([AIProviderProfile].self, key: providersKey) ?? []
-        localModels = decode([LocalModelRecord].self, key: localModelsKey) ?? []
+        providers = decodeProviders()
         globalModelSettings = decode(GlobalModelSettings.self, key: globalModelSettingsKey) ?? .defaults
-        localModelRuntimeSettings = decode([String: LocalModelRuntimeSettings].self, key: localModelRuntimeSettingsKey) ?? [:]
         ensureDefaultOpenAIProvider()
-        removeLocalProviderIfNeeded()
-        sanitizeTurboQuantSettings()
+        sanitizeGlobalSettings()
+        purgeLegacyOnDeviceAIState()
+        try? persistProviders()
+        try? persistGlobalModelSettings()
     }
 
     private func ensureDefaultOpenAIProvider() {
@@ -177,24 +98,20 @@ final class AIProviderStore: ObservableObject {
         try? persistProviders()
     }
 
-    private func removeLocalProviderIfNeeded() {
-        let originalCount = providers.count
-        providers.removeAll { $0.kind == .localGGUF }
-        if providers.count != originalCount {
-            try? persistProviders()
-        }
-        var settingsChanged = false
-        if globalModelSettings.routingMode == .localGGUF {
-            globalModelSettings.routingMode = .automatic
-            settingsChanged = true
-        }
+    private func sanitizeGlobalSettings() {
         if let preferredProviderId = globalModelSettings.preferredProviderId,
            !providers.contains(where: { $0.id == preferredProviderId }) {
             globalModelSettings.preferredProviderId = nil
-            settingsChanged = true
         }
-        if settingsChanged {
-            try? persistGlobalModelSettings()
+    }
+
+    private func purgeLegacyOnDeviceAIState() {
+        for key in legacyOnDeviceAIKeys {
+            defaults.removeObject(forKey: key)
+        }
+        let modelsURL = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
+        if FileManager.default.fileExists(atPath: modelsURL.path) {
+            try? FileManager.default.removeItem(at: modelsURL)
         }
     }
 
@@ -210,40 +127,20 @@ final class AIProviderStore: ObservableObject {
         defaults.set(data, forKey: providersKey)
     }
 
-    private func persistLocalModels() throws {
-        let data = try encoder.encode(localModels)
-        defaults.set(data, forKey: localModelsKey)
-    }
-
     private func persistGlobalModelSettings() throws {
         let data = try encoder.encode(globalModelSettings)
         defaults.set(data, forKey: globalModelSettingsKey)
     }
 
-    private func persistLocalModelRuntimeSettings() throws {
-        let data = try encoder.encode(localModelRuntimeSettings)
-        defaults.set(data, forKey: localModelRuntimeSettingsKey)
-    }
-
-    private func sanitizeTurboQuantSettings() {
-        guard !turboQuantAvailability.isAvailable else { return }
-        if globalModelSettings.turboQuantPreference == .forceTurbo3 || globalModelSettings.turboQuantPreference == .forceTurbo4 {
-            globalModelSettings.turboQuantPreference = .autoWhenAvailable
-            try? persistGlobalModelSettings()
-        }
-        var changed = false
-        for (key, settings) in localModelRuntimeSettings where settings.kvCacheMode.requiresTurboQuant {
-            var next = settings
-            next.kvCacheMode = .automatic
-            localModelRuntimeSettings[key] = next
-            changed = true
-        }
-        if changed { try? persistLocalModelRuntimeSettings() }
-    }
-
     private func decode<T: Decodable>(_ type: T.Type, key: String) -> T? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? decoder.decode(type, from: data)
+    }
+
+    private func decodeProviders() -> [AIProviderProfile] {
+        guard let data = defaults.data(forKey: providersKey) else { return [] }
+        guard let wrappers = try? decoder.decode([LossyProviderProfile].self, from: data) else { return [] }
+        return wrappers.compactMap(\.value)
     }
 
     private func fetchModels(baseURL: URL, apiKey: String?) async throws -> [String] {
@@ -341,6 +238,14 @@ final class AIProviderStore: ObservableObject {
             code: Int(status),
             userInfo: [NSLocalizedDescriptionKey: "Keychain error (\(status))"]
         )
+    }
+}
+
+private struct LossyProviderProfile: Decodable {
+    let value: AIProviderProfile?
+
+    init(from decoder: Decoder) throws {
+        value = try? AIProviderProfile(from: decoder)
     }
 }
 

@@ -54,28 +54,6 @@ enum InstalledSkillCatalog {
         }
     }
 
-
-
-    static func localModelSkillContext(maxSkills: Int = 12, maxCharacters: Int = 24_000) -> String {
-        let enabledSkills = installedUserSkills().filter(\.enabled).prefix(maxSkills)
-        var sections: [String] = []
-        var remaining = maxCharacters
-        for skill in enabledSkills where remaining > 0 {
-            let body = (try? String(contentsOfFile: skill.path.value, encoding: .utf8)) ?? ""
-            let cappedBody = String(body.prefix(max(0, min(remaining, 4_000))))
-            let section = """
-            --- skill: \(skill.name) ---
-            Description: \(skill.description)
-            Path: \(skill.path.value)
-            Instructions:
-            \(cappedBody)
-            """
-            sections.append(section)
-            remaining -= section.count
-        }
-        return sections.joined(separator: "\n\n")
-    }
-
     static func withEnabled(_ skill: SkillMetadata, enabled: Bool) -> SkillMetadata {
         SkillMetadata(
             name: skill.name,

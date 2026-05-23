@@ -18,7 +18,7 @@
 
 Litter is a SwiftUI iOS app that talks to Codex through `shared/rust-bridge`. It can run Codex commands inside an embedded iSH Alpine Linux fakefs, connect to Codex app servers on other computers, pair through Slingshot, and route chat through a signed-in ChatGPT account or OpenAI-compatible servers such as Ollama or LM Studio running on a computer.
 
-On-device GGUF model download and iPhone-local llama.cpp inference are intentionally disabled. The iOS app no longer builds, links, downloads, or exposes the llama.cpp path. Private or local models should run on a computer and be added through the AI Providers screen as an OpenAI-compatible `/v1` endpoint.
+iPhone-local model downloading and inference are not part of the app. Private or local models should run on a computer and be added through the AI Providers screen as an OpenAI-compatible `/v1` endpoint.
 
 The repository also contains CI lanes for unsigned sideload IPAs, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline. Public source contains the Nyxian and BuildKit integration code, but the Apple SDK payload and compiled private BuildKit frameworks are not committed.
 
@@ -112,7 +112,7 @@ Supported routes are:
 - Computer Bridge: a selected Mac, Windows, or Linux Codex app-server bridge.
 - OpenAI-compatible server profiles: custom `/v1` endpoints for services such as Ollama or LM Studio running on another machine.
 
-Disabled routes are cleaned up on load. Stored `localGGUF` providers are removed, a stored local routing preference is reset to automatic, local models are not added to the model picker, and old local model files are shown only so the user can delete them and recover storage.
+Legacy on-device AI state is cleaned up on load. Old local provider records are skipped, old local routing preferences fall back to automatic, old local model files are purged from the app documents directory, and only hosted routes are shown in the picker.
 
 ## Thread Goals
 

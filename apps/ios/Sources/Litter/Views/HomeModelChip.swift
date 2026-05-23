@@ -41,8 +41,7 @@ struct HomeModelChip: View {
     }
 
     private var selectedRuntimeLabel: String {
-        if isLocalGGUFModelSelection(appState.preferredModel) { return ChatRuntimeMode.localModel.shortTitle }
-        return appState.preferredChatRuntimeMode.shortTitle
+        appState.preferredChatRuntimeMode.shortTitle
     }
 
     private var selectedModelLabel: String {

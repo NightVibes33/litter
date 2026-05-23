@@ -208,18 +208,6 @@ struct ConversationView: View {
                 Text(messageActionError ?? "Unknown error")
             }
         }
-        .sheet(item: Binding<LocalModelAgentApprovalState?>(
-            get: { appModel.localConversationPendingApproval },
-            set: { nextValue in
-                if nextValue == nil, appModel.localConversationPendingApproval != nil {
-                    appModel.resolveLocalConversationApproval(.denied)
-                }
-            }
-        )) { approval in
-            LocalModelApprovalSheet(approval: approval) { decision in
-                appModel.resolveLocalConversationApproval(decision)
-            }
-        }
         .onAppear {
             guard !hasLoggedFirstRender else { return }
             hasLoggedFirstRender = true
@@ -1916,10 +1904,6 @@ private struct ConversationInputBar: View {
             return
         }
         let threadKey = snapshot.threadKey
-        if activeTurnId.hasPrefix("local-") {
-            appModel.cancelLocalModelTurn(key: threadKey)
-            return
-        }
         LLog.info(
             "conversation",
             "interrupt turn",
