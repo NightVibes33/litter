@@ -168,10 +168,19 @@ patch_litter_ish_darwin_vdso_probe() {
   if [ "$(uname -s)" != "Darwin" ]; then
     return
   fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "ERROR: python3 is required to patch litter-ish VDSO sources on Darwin" >&2
+    exit 1
+  fi
+
+  echo "==> Fetching Rust dependencies for Darwin VDSO patch..."
+  cargo fetch --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" --locked
+
   local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
   local checkouts_dir="$cargo_home/git/checkouts"
-  if [ ! -d "$checkouts_dir" ] || ! command -v python3 >/dev/null 2>&1; then
-    return
+  if [ ! -d "$checkouts_dir" ]; then
+    echo "ERROR: Cargo git checkout directory not found: $checkouts_dir" >&2
+    exit 1
   fi
 
   python3 - "$checkouts_dir" <<'PYVDSPATCH'
@@ -179,41 +188,67 @@ from pathlib import Path
 import sys
 
 root = Path(sys.argv[1])
-marker = "# Litter iOS CI: force Meson VDSO stub on Darwin."
-needle = "has_vdso_compiler = false\n"
-patch = """has_vdso_compiler = false
+marker = "# Litter iOS CI: replace ARM64 VDSO with stub on Darwin."
+replacement = [
+    f"{marker}\n",
+    "# The ARM64 VDSO is optional for the embedded iSH runtime. macOS hosted\n",
+    "# clang variants can reject litter-ish's Linux VDSO link command,\n",
+    "# so CI keeps iOS Rust builds on litter-ish's supported stub target.\n",
+    "message('ARM64 VDSO disabled on Darwin; using Meson stub target')\n",
+    "vdso = custom_target(\n",
+    "    'vdso-arm64-stub',\n",
+    "    output: 'libvdso.so.elf',\n",
+    "    command: ['touch', '@OUTPUT@']\n",
+    ")\n",
+]
 
-# Litter iOS CI: force Meson VDSO stub on Darwin.
-# The iSH ARM64 VDSO is optional. Current macOS hosted clang variants reject
-# the upstream hard-coded `-fuse-ld=lld` Linux VDSO command, so keep the iOS
-# Rust build on litter-ish's supported stub path.
-if run_command('uname', '-s', check: false).stdout().strip() == 'Darwin'
-    message('ARM64 VDSO disabled on Darwin; using Meson stub fallback')
-else
-"""
-end_needle = """endif
+def find_vdso_block(lines):
+    for start, line in enumerate(lines):
+        if line.strip() != "if has_vdso_compiler":
+            continue
 
-if has_vdso_compiler
-"""
-end_patch = """endif
-endif
+        depth = 0
+        for end in range(start, len(lines)):
+            stripped = lines[end].strip()
+            if stripped.startswith("if "):
+                depth += 1
+            elif stripped == "endif":
+                depth -= 1
+                if depth == 0:
+                    return start, end + 1
+        return None
+    return None
 
-if has_vdso_compiler
-"""
-patched = 0
-for path in root.glob("litter-ish-*/**/vdso/arm64/meson.build"):
+paths = sorted(root.glob("litter-ish-*/**/vdso/arm64/meson.build"))
+if not paths:
+    raise SystemExit(f"ERROR: no litter-ish VDSO Meson files found under {root}")
+
+patched_or_present = 0
+unexpected = []
+for path in paths:
     text = path.read_text()
     if marker in text:
+        patched_or_present += 1
+        print(f"==> litter-ish Darwin VDSO stub already forced: {path}")
         continue
-    if needle not in text or end_needle not in text:
-        print(f"warning: unexpected litter-ish VDSO Meson shape: {path}")
+
+    lines = text.splitlines(keepends=True)
+    block = find_vdso_block(lines)
+    if block is None:
+        unexpected.append(path)
         continue
-    text = text.replace(needle, patch, 1).replace(end_needle, end_patch, 1)
-    path.write_text(text)
-    patched += 1
-    print(f"==> Patched litter-ish Darwin VDSO Meson target: {path}")
-if patched == 0:
-    print("==> No unpatched litter-ish Darwin VDSO Meson target found")
+
+    start, end = block
+    lines[start:end] = replacement
+    path.write_text("".join(lines))
+    patched_or_present += 1
+    print(f"==> Forced litter-ish Darwin VDSO stub target: {path}")
+
+for path in unexpected:
+    print(f"warning: unexpected litter-ish VDSO Meson shape: {path}", file=sys.stderr)
+
+if patched_or_present == 0:
+    raise SystemExit("ERROR: failed to force a litter-ish Darwin VDSO stub target")
 PYVDSPATCH
 }
 
