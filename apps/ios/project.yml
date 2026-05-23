@@ -121,7 +121,7 @@ targets:
         script: |
           set -eu
           ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
-          if [ ! -d "$ASSET_ROOT" ]; then
+          if [ ! -f "$ASSET_ROOT/manifest.json" ]; then
             exit 0
           fi
           RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
@@ -138,8 +138,9 @@ targets:
           if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
             exit 0
           fi
+          MANIFEST="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/manifest.json"
           ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/Toolchains/Nyxian"
-          if [ ! -d "$ASSET_ROOT" ]; then
+          if [ ! -f "$MANIFEST" ] || [ ! -d "$ASSET_ROOT" ]; then
             exit 0
           fi
           mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"

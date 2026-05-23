@@ -63,6 +63,7 @@ jobs:
       LITTER_BUILDKIT_ASSET_URL: ${{ secrets.LITTER_BUILDKIT_ASSET_URL }}
       LITTER_BUILDKIT_ASSET_SHA256: ${{ secrets.LITTER_BUILDKIT_ASSET_SHA256 }}
       LITTER_BUILDKIT_ASSET_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
+      LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: "0"
 
     steps:
       - name: Checkout
@@ -382,19 +383,20 @@ jobs:
 
       - name: Restore prepared private BuildKit assets
         id: buildkit_assets_cache
-        if: env.LITTER_BUILDKIT_ASSET_SHA256 != ''
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1' && env.LITTER_BUILDKIT_ASSET_SHA256 != ''
         uses: actions/cache/restore@v4
         with:
           path: apps/ios/Sources/Litter/Resources/BuildKitAssets
           key: ios-buildkit-assets-v2-${{ runner.os }}-${{ env.LITTER_BUILDKIT_ASSET_SHA256 }}
 
       - name: Prepare private BuildKit assets
-        if: steps.buildkit_assets_cache.outputs.cache-hit != 'true'
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1' && steps.buildkit_assets_cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           apps/ios/scripts/prepare-buildkit-assets.sh
 
       - name: Verify private BuildKit assets are prepared
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
         run: |
           set -euo pipefail
           export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="$(tools/scripts/buildkit-native-source-fingerprint.sh)"
@@ -459,7 +461,7 @@ jobs:
           PY
 
       - name: Save prepared private BuildKit assets
-        if: env.LITTER_BUILDKIT_ASSET_SHA256 != '' && steps.buildkit_assets_cache.outputs.cache-hit != 'true'
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1' && env.LITTER_BUILDKIT_ASSET_SHA256 != '' && steps.buildkit_assets_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: apps/ios/Sources/Litter/Resources/BuildKitAssets
@@ -545,6 +547,7 @@ jobs:
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
 
       - name: Verify archived BuildKit asset payload
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
         run: |
           set -euo pipefail
           export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="$(tools/scripts/buildkit-native-source-fingerprint.sh)"
@@ -803,6 +806,40 @@ jobs:
 
               print(f"Archived BuildKit assets verified: {manifest.get('bundleIdentifier', 'unknown')} SDK {manifest.get('sdkVersion', 'unknown')}")
           PY
+
+      - name: Verify private BuildKit payload is external
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS != '1'
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No .app found in archive" >&2
+            exit 1
+          fi
+
+          forbidden=0
+          for item in             "$APP_PATH/LitterBuildKitAssets.zip"             "$APP_PATH/Frameworks/CoreCompiler.framework"             "$APP_PATH/Frameworks/LitterBuildKitNative.framework"; do
+            if [ -e "$item" ]; then
+              echo "::error::Launch-safe IPA must not embed private BuildKit payload: $item" >&2
+              forbidden=1
+            fi
+          done
+
+          if find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print -quit | grep -q .; then
+            echo "::error::Launch-safe IPA must not embed compiler support dylibs" >&2
+            find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print >&2
+            forbidden=1
+          fi
+
+          if find "$APP_PATH" -path '*/BuildKitAssets/SDK/*' -print -quit | grep -q .; then
+            echo "::error::Launch-safe IPA must not embed expanded BuildKit SDK payload" >&2
+            forbidden=1
+          fi
+
+          if [ "$forbidden" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Launch-safe IPA keeps private BuildKit compiler payload external. Install assets from BuildKit settings when needed."
 
       - name: Package SideStore/AltStore IPA artifact
         run: |
