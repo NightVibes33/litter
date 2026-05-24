@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This repository is a fork of the original Litter project and also vendors or builds against several upstream projects. Each upstream keeps its own copyright and license terms.
+This repository is a fork of the original Litter project and also vendors or builds against several upstream projects. Each upstream keeps its own copyright and license terms. Exact vendored SideStore, Feather, minimuxer, Zsign-Package, and LocalDevVPN source refs are recorded in `ThirdParty/UPSTREAMS.md`.
 
 ## Original Litter Upstream
 
@@ -18,8 +18,9 @@ Litter builds unsigned IPA artifacts, emits AltStore/SideStore-compatible source
 - SideStore Team and contributors
   - Upstream: https://github.com/SideStore/SideStore
   - Website/docs: https://sidestore.io and https://docs.sidestore.io
-  - Role in Litter: SideStore-compatible sideloading expectations, public Anisette server list conventions, LocalDevVPN install/refresh model, and update-source compatibility target.
-  - License: AGPL-3.0 for SideStore source.
+  - Vendored source paths: `ThirdParty/SideStore/MinimuxerWrapper.swift` and `ThirdParty/SideStore/minimuxer`
+  - Role in Litter: SideStore-compatible sideloading expectations, public Anisette server list conventions, LocalDevVPN install/refresh model, update-source compatibility target, and the minimuxer transport API Litter is adapting for KittyStore install/refresh.
+  - License: AGPL-3.0 for SideStore and minimuxer source.
 - AltStore / Riley Testut and contributors
   - Upstream: https://github.com/altstoreio/AltStore and https://github.com/rileytestut/AltStore
   - Website/docs: https://altstore.io
@@ -27,18 +28,23 @@ Litter builds unsigned IPA artifacts, emits AltStore/SideStore-compatible source
   - License: AGPL-3.0 for AltStore source, with upstream's additional permission language for Riley Testut's original code in its README.
 - Feather / khcrysalis and contributors
   - Upstream: https://github.com/khcrysalis/Feather
-  - Role in Litter: referenced certificate-paired IPA signing workflow, signer screen structure, advanced modify/properties flow, and on-device signing expectations.
+  - Role in Litter: certificate-paired IPA signing workflow, signer screen structure, advanced modify/properties flow, and on-device signing expectations used by KittyStore.
   - License: GPL-3.0 for Feather source.
 - Zsign / zhlynn and contributors
   - Upstream: https://github.com/zhlynn/zsign
-  - Role in Litter: referenced signing engine used by Feather-style on-device IPA signing research.
+  - Vendored source path: `ThirdParty/Feather/Zsign-Package`
+  - Role in Litter: native IPA signing engine used by KittyStore's Feather-style BuildKit signer.
+  - License: MIT, see `ThirdParty/Feather/Zsign-Package/LICENSE`.
 - LocalDevVPN / Coxson Engineering LLC / jkcoxson
   - Upstream: https://github.com/jkcoxson/LocalDevVPN
   - App Store listing: https://apps.apple.com/us/app/localdevvpn/id6755608044
-  - Role in Litter: LocalDevVPN-style tunnel detection for future on-device install/refresh readiness.
+  - Vendored source path: `ThirdParty/SideStore/LocalDevVPN-TunnelProv`
+  - Role in Litter: LocalDevVPN-style tunnel detection and tunnel-provider source used for the KittyStore install/refresh transport work.
 - minimuxer / jkcoxson and SideStore contributors
   - Upstreams: https://github.com/jkcoxson/minimuxer and https://github.com/SideStore/minimuxer
-  - Role in Litter: referenced SideStore device-communication layer for install/refresh transport planning.
+  - Vendored source path: `ThirdParty/SideStore/minimuxer`
+  - Role in Litter: SideStore device-communication layer being adapted for KittyStore install/refresh transport.
+  - License: AGPL-3.0, see `ThirdParty/SideStore/minimuxer/LICENSE`.
 - em_proxy / jkcoxson and SideStore contributors
   - Upstreams: https://github.com/jkcoxson/em_proxy and https://github.com/SideStore/em_proxy
   - Role in Litter: referenced SideStore proxy/tunnel infrastructure for iOS loopback limitations.

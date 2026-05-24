@@ -17,6 +17,7 @@ struct KittyStoreView: View {
     @State private var signingImportKind: KittyStoreImportKind = .ipa
     @State private var showingSigningImporter = false
     @State private var signingAlert: KittyStoreSigningAlert?
+    @State private var signingInProgress = false
     @State private var importedIPA: KittyStoreImportedFile?
     @State private var importedProvisioningProfile: KittyStoreImportedFile?
     @State private var importedPairingFile: KittyStoreImportedFile?
@@ -559,7 +560,7 @@ struct KittyStoreView: View {
             Button {
                 startSigning()
             } label: {
-                Text("Start Signing")
+                Text(signingInProgress ? "Signing..." : "Start Signing")
                     .litterFont(.headline, weight: .semibold)
                     .foregroundStyle(Color.white)
                     .frame(maxWidth: .infinity)
@@ -567,6 +568,8 @@ struct KittyStoreView: View {
                     .background(LitterTheme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.plain)
+            .disabled(signingInProgress)
+            .opacity(signingInProgress ? 0.72 : 1)
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
         }
@@ -629,12 +632,12 @@ struct KittyStoreView: View {
         switch selectedSigningMode {
         case .certificate:
             if buildKitStatus?.nyxianSigningCertificateInstalled != true { return "Import a valid certificate in BuildKit settings." }
-            return "Feather-style certificate signing plan is ready to hand to the native signer."
+            return signingInProgress ? "Native Feather/Zsign signing is running." : "Ready to sign with the native Feather/Zsign path."
         case .appleID:
             if buildKitStatus?.appleIDConfigured != true { return "Add Apple ID login in BuildKit settings." }
             if importedPairingFile == nil { return "Import the iOS pairing file for SideStore-style install." }
             if buildKitStatus?.localDevVPNConnected != true { return "Connect LocalDevVPN for direct install and refresh." }
-            return "SideStore-style install and refresh inputs are ready."
+            return signingInProgress ? "Native signing is running before SideStore-style install." : "Inputs are ready for signing; install/refresh requires the minimuxer bridge in the private build."
         }
     }
 
@@ -797,11 +800,26 @@ struct KittyStoreView: View {
             }
         }
 
-        UIPasteboard.general.string = signingPlanJSON()
-        signingAlert = KittyStoreSigningAlert(
-            title: "Signing Plan Ready",
-            message: "KittyStore copied a Feather/SideStore-compatible signing plan. The native signer still needs the Feather Zsign path and SideStore install bridge wired before this button can produce and install the final IPA."
-        )
+        let plan = signingPlanJSON()
+        UIPasteboard.general.string = plan
+        signingInProgress = true
+        taskBag.run {
+            let result = await LitterBuildKit.shared.signKittyStorePlan(planJSON: plan)
+            signingInProgress = false
+            buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
+            let artifacts = result.fakefsArtifacts.isEmpty ? "" : "\n\nSigned IPA: \(result.fakefsArtifacts.joined(separator: "\n"))"
+            if result.exitCode == 0 {
+                signingAlert = KittyStoreSigningAlert(
+                    title: "Signed IPA Ready",
+                    message: "KittyStore signed the IPA with the native Feather/Zsign path.\(artifacts)"
+                )
+            } else {
+                signingAlert = KittyStoreSigningAlert(
+                    title: "Signing Failed",
+                    message: "Status: \(result.status)\n\n\(result.log.prefix(1800))"
+                )
+            }
+        }
     }
 
     private func signingPlanJSON() -> String {

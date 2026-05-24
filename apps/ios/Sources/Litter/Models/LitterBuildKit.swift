@@ -201,6 +201,13 @@ private struct BuildKitHostStaging: Sendable {
     var fakefsProjectPath: String?
 }
 
+struct KittyStoreSigningResult: Sendable {
+    var exitCode: Int
+    var status: String
+    var log: String
+    var fakefsArtifacts: [String]
+}
+
 struct LitterBuildKitStatus: Equatable, Sendable {
     var sourceImportAvailable: Bool
     var liveContainerSourceAvailable: Bool
@@ -384,6 +391,31 @@ actor LitterBuildKit {
     private var activeJobs: [String: Task<BuildKitCommandResult, Never>] = [:]
 
     private init() {}
+
+    func signKittyStorePlan(planJSON: String) async -> KittyStoreSigningResult {
+        let buildID = "kittystore-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8))"
+        let buildDir = "\(Self.buildRoot)/\(buildID)"
+        let staging = await Self.stageKittyStoreSigningPlanForNativeDriver(
+            planText: planJSON,
+            originalPlanPath: "KittyStore UI signing plan",
+            outputPath: nil,
+            buildDir: buildDir
+        )
+        let result = await nativeBuildCommand(
+            command: "litter-kittystore-sign",
+            args: "--plan \(Self.shellQuoteForDisplay(staging.hostInputPath ?? "KittyStorePlan.json"))",
+            cwd: "/root",
+            buildDir: buildDir,
+            prelude: staging.log,
+            staging: staging
+        )
+        return KittyStoreSigningResult(
+            exitCode: result.exitCode,
+            status: result.status,
+            log: result.log,
+            fakefsArtifacts: result.artifacts.compactMap { $0.fakefsPath }.filter { !$0.isEmpty }
+        )
+    }
 
     func startFakefsRequestMonitor() {
         guard monitorTask == nil else { return }
@@ -619,11 +651,11 @@ actor LitterBuildKit {
         case "litter-kittystore-plan":
             return await kittyStorePlan(args: args, cwd: cwd)
         case "litter-kittystore-sign":
-            return await kittyStoreSign(args: args, cwd: cwd)
+            return await kittyStoreSign(args: args, cwd: cwd, buildDir: buildDir)
         case "litter-kittystore-install":
-            return await kittyStoreInstallOrRefresh(command: command, args: args, cwd: cwd)
+            return await kittyStoreInstallOrRefresh(command: command, args: args, cwd: cwd, buildDir: buildDir)
         case "litter-kittystore-refresh":
-            return await kittyStoreInstallOrRefresh(command: command, args: args, cwd: cwd)
+            return await kittyStoreInstallOrRefresh(command: command, args: args, cwd: cwd, buildDir: buildDir)
         case "litter-buildkit-install-assets":
             return installAssetsCommand()
         case "litter-fs-doctor":
@@ -940,10 +972,10 @@ actor LitterBuildKit {
         return BuildKitCommandResult(exitCode: missing.isEmpty ? 0 : 78, status: missing.isEmpty ? "kittystore-plan-ready" : "kittystore-plan-blocked", log: planText)
     }
 
-    private func kittyStoreSign(args: String, cwd: String) async -> BuildKitCommandResult {
+    private func kittyStoreSign(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-sign-help", log: "Usage: litter-kittystore-sign --plan /root/plan.json\nValidates the plan path and reports native signer availability.\n")
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-sign-help", log: "Usage: litter-kittystore-sign --plan /root/plan.json [--out /root/Signed.ipa]\nStages the plan and runs the Feather Zsign-backed native signer.\n")
         }
         let planPath = Self.optionValue(tokens: tokens, names: ["--plan"]).map { Self.resolveFakefsPath($0, cwd: cwd) } ?? tokens.first(where: { !$0.hasPrefix("-") }).map { Self.resolveFakefsPath($0, cwd: cwd) }
         guard let planPath else {
@@ -952,14 +984,29 @@ actor LitterBuildKit {
         guard await IshFS.exists(path: planPath) else {
             return BuildKitCommandResult(exitCode: 66, status: "kittystore-sign-plan-missing", log: "Signing plan does not exist: \(planPath)\n")
         }
-        let current = await status(checkRevocation: true)
-        var log = "KittyStore sign request accepted for plan: \(planPath)\n\n"
-        log += Self.prettyJSON(Self.kittyStoreStatusPayload(current)) + "\n\n"
-        log += "Native signing is not wired yet. Required backend: unpack IPA, apply Feather-style dylib/framework/tweak/properties changes, run the user-owned certificate through Zsign/LCUtils, repack the IPA, and return the signed artifact path.\n"
-        return BuildKitCommandResult(exitCode: 78, status: "native-signer-unavailable", log: log)
+        let outputPath = Self.optionValue(tokens: tokens, names: ["--out", "-o"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
+        do {
+            let planText = try await IshFS.readTextFile(path: planPath, maxBytes: 512_000)
+            let staging = await Self.stageKittyStoreSigningPlanForNativeDriver(
+                planText: planText,
+                originalPlanPath: planPath,
+                outputPath: outputPath,
+                buildDir: buildDir
+            )
+            return await nativeBuildCommand(
+                command: "litter-kittystore-sign",
+                args: args,
+                cwd: cwd,
+                buildDir: buildDir,
+                prelude: staging.log,
+                staging: staging
+            )
+        } catch {
+            return BuildKitCommandResult(exitCode: 65, status: "kittystore-sign-plan-read-failed", log: "Could not read signing plan: \(planPath)\n\(error.localizedDescription)\n")
+        }
     }
 
-    private func kittyStoreInstallOrRefresh(command: String, args: String, cwd: String) async -> BuildKitCommandResult {
+    private func kittyStoreInstallOrRefresh(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
             return BuildKitCommandResult(exitCode: 0, status: "kittystore-install-help", log: "Usage: \(command) [--ipa /root/App.ipa] [--bundle-id com.example.app] [--pairing /root/device.mobiledevicepairing]\nReports SideStore-style install/refresh readiness for bots.\n")
@@ -995,7 +1042,15 @@ actor LitterBuildKit {
         if !missing.isEmpty {
             return BuildKitCommandResult(exitCode: 78, status: "kittystore-install-blocked", log: Self.prettyJSON(payload) + "\n")
         }
-        return BuildKitCommandResult(exitCode: 78, status: "install-bridge-unavailable", log: Self.prettyJSON(payload) + "\nNative SideStore install/refresh bridge is not wired yet. Required backend: minimuxer/LocalDevVPN transport, pairing validation, provisioning install, app install, refresh bookkeeping, and explicit progress events.\n")
+        let hostRoot = Self.hostJobRoot(buildDir: buildDir)
+        let staging = BuildKitHostStaging(
+            log: "SideStore minimuxer native preflight\n" + Self.prettyJSON(payload) + "\n",
+            hostWorkDir: hostRoot.path,
+            hostProjectPath: nil,
+            hostInputPath: nil,
+            fakefsProjectPath: nil
+        )
+        return await nativeBuildCommand(command: command, args: args, cwd: cwd, buildDir: buildDir, prelude: staging.log, staging: staging)
     }
 
     private func installAssetsCommand() -> BuildKitCommandResult {
@@ -1683,6 +1738,128 @@ actor LitterBuildKit {
         return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: hostInput.path, fakefsProjectPath: fakefsPath)
     }
 
+    private static func stageKittyStoreSigningPlanForNativeDriver(planText: String, originalPlanPath: String, outputPath: String?, buildDir: String) async -> BuildKitHostStaging {
+        let hostRoot = hostJobRoot(buildDir: buildDir)
+        let hostPlan = hostRoot.appendingPathComponent("KittyStoreSigningPlan.json")
+        let inputsRoot = hostRoot.appendingPathComponent("Inputs", isDirectory: true)
+        var log = "KittyStore native signing preflight\nPlan: \(originalPlanPath)\n"
+        var stagedFiles = 0
+        var skippedFiles = 0
+
+        guard let data = planText.data(using: .utf8),
+              var plan = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else {
+            do {
+                try FileManager.default.createDirectory(at: hostRoot, withIntermediateDirectories: true, attributes: nil)
+                try planText.write(to: hostPlan, atomically: true, encoding: .utf8)
+                log += "- Plan JSON could not be decoded; native signer will return a decode failure.\n"
+            } catch {
+                log += "- Could not stage invalid plan JSON: \(error.localizedDescription)\n"
+            }
+            return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: hostPlan.path, fakefsProjectPath: originalPlanPath)
+        }
+
+        func stagePath(_ raw: String, label: String) async -> String {
+            let path = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !path.isEmpty, path != "embedded" else { return raw }
+            if isNativeHostPath(path) { return path }
+            guard await IshFS.exists(path: path) else {
+                skippedFiles += 1
+                log += "- Missing fakefs input for \(label): \(path)\n"
+                return path
+            }
+            let isDirectory = await IshFS.run("[ -d \(IshFS.shellQuote(path)) ]").exitCode == 0
+            if isDirectory {
+                let safeFolder = sanitizedHostFileName("\(label)-\(URL(fileURLWithPath: path).lastPathComponent)")
+                let destinationRoot = inputsRoot.appendingPathComponent(safeFolder, isDirectory: true)
+                let list = await IshFS.run("find \(IshFS.shellQuote(path)) -type f")
+                guard list.exitCode == 0 else {
+                    skippedFiles += 1
+                    log += "- Could not enumerate fakefs directory for \(label): \(path)\n"
+                    return path
+                }
+                do {
+                    try FileManager.default.createDirectory(at: destinationRoot, withIntermediateDirectories: true, attributes: nil)
+                    for file in list.output.split(separator: "\n").map(String.init) {
+                        let relative = relativeFakefsPath(file, base: path)
+                        let hostFile = URL(fileURLWithPath: (destinationRoot.path as NSString).appendingPathComponent(relative))
+                        let temp = try await IshFS.copyFileToTemporaryURL(path: file, suggestedFileName: URL(fileURLWithPath: file).lastPathComponent, maxBytes: 1_500_000_000)
+                        try FileManager.default.createDirectory(at: hostFile.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
+                        try? FileManager.default.removeItem(at: hostFile)
+                        try FileManager.default.copyItem(at: temp, to: hostFile)
+                        stagedFiles += 1
+                    }
+                    log += "- Staged directory \(label): \(path) -> \(destinationRoot.path)\n"
+                    return destinationRoot.path
+                } catch {
+                    skippedFiles += 1
+                    log += "- Could not stage directory \(label) from \(path): \(error.localizedDescription)\n"
+                    return path
+                }
+            }
+
+            let safeName = sanitizedHostFileName("\(label)-\(URL(fileURLWithPath: path).lastPathComponent)")
+            let destination = inputsRoot.appendingPathComponent(safeName)
+            do {
+                let temp = try await IshFS.copyFileToTemporaryURL(path: path, suggestedFileName: URL(fileURLWithPath: path).lastPathComponent, maxBytes: 1_500_000_000)
+                try FileManager.default.createDirectory(at: inputsRoot, withIntermediateDirectories: true, attributes: nil)
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.copyItem(at: temp, to: destination)
+                stagedFiles += 1
+                log += "- Staged file \(label): \(path) -> \(destination.path)\n"
+                return destination.path
+            } catch {
+                skippedFiles += 1
+                log += "- Could not stage file \(label) from \(path): \(error.localizedDescription)\n"
+                return path
+            }
+        }
+
+        if var app = plan["app"] as? [String: Any] {
+            if let ipa = jsonString(app["ipa"]) { app["ipa"] = await stagePath(ipa, label: "ipa") }
+            plan["app"] = app
+        }
+        if var signing = plan["signing"] as? [String: Any] {
+            if let profile = jsonString(signing["provisioningProfile"]), !profile.isEmpty, profile != "embedded" {
+                signing["provisioningProfile"] = await stagePath(profile, label: "profile")
+            }
+            if let pairing = jsonString(signing["pairingFile"]), !pairing.isEmpty {
+                signing["pairingFile"] = await stagePath(pairing, label: "pairing")
+            }
+            plan["signing"] = signing
+        }
+        if var modify = plan["modify"] as? [String: Any] {
+            let arrayKeys = ["existingDylibs", "frameworksAndPlugins", "tweaks"]
+            for key in arrayKeys {
+                let values = (modify[key] as? [Any] ?? []).compactMap { jsonString($0) }
+                var staged: [String] = []
+                for (index, value) in values.enumerated() {
+                    staged.append(await stagePath(value, label: "\(key)-\(index + 1)"))
+                }
+                modify[key] = staged
+            }
+            plan["modify"] = modify
+        }
+
+        let fallbackOutputName = sanitizedHostFileName(jsonString((plan["app"] as? [String: Any])?["name"]) ?? "Signed")
+        plan["outputFakefsPath"] = outputPath ?? "\(buildDir)/\(fallbackOutputName)-signed.ipa"
+        plan["nativeStaging"] = [
+            "hostWorkDir": hostRoot.path,
+            "sourcePlan": originalPlanPath
+        ]
+
+        do {
+            let stagedData = try JSONSerialization.data(withJSONObject: plan, options: [.prettyPrinted, .sortedKeys])
+            try FileManager.default.createDirectory(at: hostRoot, withIntermediateDirectories: true, attributes: nil)
+            try stagedData.write(to: hostPlan, options: .atomic)
+            log += "- Staged plan: \(hostPlan.path)\n"
+            log += "- Staged input files: \(stagedFiles); skipped inputs: \(skippedFiles)\n"
+        } catch {
+            log += "- Could not write staged signing plan: \(error.localizedDescription)\n"
+        }
+        return BuildKitHostStaging(log: log, hostWorkDir: hostRoot.path, hostProjectPath: nil, hostInputPath: hostPlan.path, fakefsProjectPath: originalPlanPath)
+    }
+
     private static func sanitizedHostFileName(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = trimmed.isEmpty ? "Input" : trimmed
@@ -1769,7 +1946,13 @@ actor LitterBuildKit {
     }
 
     private static func isNativeHostPath(_ path: String) -> Bool {
-        path.hasPrefix(documentsRoot.path + "/") || path.hasPrefix(buildKitRoot.path + "/")
+        let home = NSHomeDirectory()
+        let temp = NSTemporaryDirectory()
+        return path.hasPrefix(documentsRoot.path + "/")
+            || path.hasPrefix(buildKitRoot.path + "/")
+            || (!home.isEmpty && path.hasPrefix(home + "/"))
+            || (!temp.isEmpty && path.hasPrefix(temp))
+            || FileManager.default.fileExists(atPath: path)
     }
 
     private static var buildKitRoot: URL {
@@ -2437,6 +2620,13 @@ actor LitterBuildKit {
     private static func resolveFakefsPath(_ token: String, cwd: String) -> String {
         if token.hasPrefix("/") { return normalizedFakefsPath(token) }
         return normalizedFakefsPath((cwd as NSString).appendingPathComponent(token))
+    }
+
+    private static func shellQuoteForDisplay(_ value: String) -> String {
+        if value.rangeOfCharacter(from: .whitespacesAndNewlines) == nil, !value.contains("'") {
+            return value
+        }
+        return "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     private static func plutilInputToken(_ tokens: [String]) -> String? {

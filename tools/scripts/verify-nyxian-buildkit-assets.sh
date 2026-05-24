@@ -55,7 +55,7 @@ manifest_path = root / "manifest.json"
 manifest = json.loads(manifest_path.read_text())
 toolchain = manifest.get("toolchain", {})
 required = list(manifest.get("requiredPaths", []))
-for key in ("coreCompilerFramework", "nativeDriverFramework", "nativeRunner", "supportLibraries", "sdkPath", "clangResourceDir", "cxxStandardLibraryIncludeDir", "swiftResourceDir"):
+for key in ("coreCompilerFramework", "nativeDriverFramework", "nativeRunner", "supportLibraries", "opensslFramework", "sdkPath", "clangResourceDir", "cxxStandardLibraryIncludeDir", "swiftResourceDir"):
     value = toolchain.get(key)
     if value:
         required.append(value)

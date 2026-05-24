@@ -13,6 +13,7 @@ import sys
 root = pathlib.Path(sys.argv[1])
 paths = [
     "ThirdParty/Nyxian/LitterBuildKitNative",
+    "ThirdParty/Feather/Zsign-Package/src",
     "ThirdParty/Nyxian/MobileDevelopmentKit/Support",
     "ThirdParty/Nyxian/MobileDevelopmentKit/Tools",
     "tools/scripts/build-litter-buildkit-native.sh",

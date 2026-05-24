@@ -6,6 +6,7 @@ OUT_DIR="${LITTER_BUILDKIT_OUT_DIR:-${ROOT_DIR}/artifacts/buildkit/LitterBuildKi
 ZIP_PATH="${LITTER_BUILDKIT_ZIP:-${ROOT_DIR}/artifacts/buildkit/LitterBuildKitAssets.zip}"
 CORECOMPILER_FRAMEWORK="${CORECOMPILER_FRAMEWORK:-}"
 NATIVE_DRIVER_FRAMEWORK="${LITTER_BUILDKIT_NATIVE_FRAMEWORK:-}"
+OPENSSL_FRAMEWORK="${LITTER_BUILDKIT_OPENSSL_FRAMEWORK:-${ROOT_DIR}/ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework}"
 NYXIAN_RUNNER="${NYXIAN_BUILDKIT_RUNNER:-}"
 NATIVE_MODE="${LITTER_BUILDKIT_NATIVE_MODE:-inprocess}"
 SUPPORT_LIBS="${CORECOMPILER_SUPPORT_LIBS:-}"
@@ -172,6 +173,11 @@ rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR/Toolchains/Nyxian" "$OUT_DIR/SDK" "$(dirname "$ZIP_PATH")"
 cp -R "$CORECOMPILER_FRAMEWORK" "$OUT_DIR/Toolchains/Nyxian/CoreCompiler.framework"
 cp -R "$NATIVE_DRIVER_FRAMEWORK" "$OUT_DIR/Toolchains/Nyxian/LitterBuildKitNative.framework"
+OPENSSL_REL=""
+if [[ -d "$OPENSSL_FRAMEWORK" ]]; then
+  cp -R "$OPENSSL_FRAMEWORK" "$OUT_DIR/Toolchains/Nyxian/OpenSSL.framework"
+  OPENSSL_REL="Toolchains/Nyxian/OpenSSL.framework"
+fi
 cp -R "$SUPPORT_LIBS" "$OUT_DIR/Toolchains/Nyxian/CoreCompilerSupportLibs"
 CLANG_RESOURCE_REL="Toolchains/Nyxian/ClangResourceDir"
 CLANG_RESOURCE_DEST="$OUT_DIR/$CLANG_RESOURCE_REL"
@@ -279,6 +285,7 @@ sign_buildkit_payload() {
   find "$OUT_DIR/Toolchains/Nyxian" -type f \( \
     -name 'CoreCompiler' -o \
     -name 'LitterBuildKitNative' -o \
+    -name 'OpenSSL' -o \
     -name 'litter-buildkit-runner' -o \
     -name 'lib_Compiler*.dylib' -o \
     -name 'libLLVM*.dylib' -o \
@@ -295,7 +302,7 @@ normalize_buildkit_payload_symlinks
 prune_sdk_compiler_dylibs
 sign_buildkit_payload
 
-python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$SWIFT_COMPATIBILITY_VERSION" "$SDK_SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" "$SOURCE_COMMIT" "$NATIVE_SOURCE_FINGERPRINT" "$CLANG_RESOURCE_REL" "$CXX_INCLUDE_REL" "$SWIFT_RESOURCE_REL" <<'PY'
+python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$SWIFT_COMPATIBILITY_VERSION" "$SDK_SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" "$SOURCE_COMMIT" "$NATIVE_SOURCE_FINGERPRINT" "$CLANG_RESOURCE_REL" "$CXX_INCLUDE_REL" "$SWIFT_RESOURCE_REL" "$OPENSSL_REL" <<'PY'
 import datetime, hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 sdk_version = sys.argv[2]
@@ -309,6 +316,7 @@ native_source_fingerprint = sys.argv[9]
 clang_resource_rel = sys.argv[10]
 cxx_include_rel = sys.argv[11]
 swift_resource_rel = sys.argv[12]
+openssl_rel = sys.argv[13]
 required = [
     "Toolchains/Nyxian/CoreCompiler.framework",
     "Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler",
@@ -327,6 +335,8 @@ required = [
 ]
 if runner_rel:
     required.append(runner_rel)
+if openssl_rel:
+    required.extend([openssl_rel, f"{openssl_rel}/OpenSSL"])
 hashes = {}
 for path in sorted(root.rglob("*")):
     if path.is_file() and path.stat().st_size <= 64 * 1024 * 1024:
@@ -358,12 +368,13 @@ manifest = {
         "nativeRunner": runner_rel or None,
         "nativeDriverMode": native_mode,
         "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
+        "opensslFramework": openssl_rel or None,
         "swiftResourceDir": swift_resource_rel,
         "sdkPath": f"SDK/iPhoneOS{sdk_version}.sdk",
         "clangResourceDir": clang_resource_rel,
         "cxxStandardLibraryIncludeDir": cxx_include_rel,
     },
-    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package", "clang-ios-build", "objc-ios-build", "cxx-ios-build", "objcxx-ios-build", "ld-ios-link", "xcrun-compat", "plutil-compat", "clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports"] + (["nyxian-runner"] if runner_rel else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
+    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package", "clang-ios-build", "objc-ios-build", "cxx-ios-build", "objcxx-ios-build", "ld-ios-link", "xcrun-compat", "plutil-compat", "clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports"] + (["nyxian-runner"] if runner_rel else []) + (["feather-zsign", "kittystore-zsign"] if openssl_rel and native_mode == "inprocess" else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
     "requiredPaths": required,
     "sha256": hashes,
 }
