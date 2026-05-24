@@ -319,6 +319,7 @@ fn configure_for_target(config: &mut autotools::Config) {
     };
 
     config.config_option("host", Some(host));
+    config.env("ac_cv_c_undeclared_builtin_options", "-fno-builtin");
 }
 
 fn autotools_host_for_target(target: &str) -> Option<&'static str> {
