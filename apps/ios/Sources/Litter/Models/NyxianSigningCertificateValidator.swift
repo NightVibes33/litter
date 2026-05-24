@@ -483,9 +483,10 @@ enum NyxianSigningCertificateValidator {
         }
         guard let items = importedItems as? [[String: Any]],
               let item = items.first(where: { $0[kSecImportItemIdentity as String] != nil }),
-              let identity = item[kSecImportItemIdentity as String] as? SecIdentity else {
+              let identityObject = item[kSecImportItemIdentity as String] else {
             throw NyxianSigningCertificateValidationError.noSigningIdentity
         }
+        let identity = identityObject as! SecIdentity
 
         var privateKey: SecKey?
         let privateKeyStatus = SecIdentityCopyPrivateKey(identity, &privateKey)
@@ -535,7 +536,7 @@ enum NyxianSigningCertificateValidator {
         guard let rawChain = item[kSecImportItemCertChain as String] as? [Any] else {
             return []
         }
-        return rawChain.compactMap { $0 as? SecCertificate }
+        return rawChain.map { $0 as! SecCertificate }
     }
 
     private static func evaluateTrust(
@@ -543,9 +544,9 @@ enum NyxianSigningCertificateValidator {
         certificateChain: [SecCertificate],
         checkRevocation: Bool
     ) throws {
-        var policies = [SecPolicyCreateBasicX509()]
-        if checkRevocation {
-            policies.append(SecPolicyCreateRevocation(CFOptionFlags(kSecRevocationUseAnyAvailableMethod)))
+        var policies: [SecPolicy] = [SecPolicyCreateBasicX509()]
+        if checkRevocation, let revocationPolicy = SecPolicyCreateRevocation(CFOptionFlags(kSecRevocationUseAnyAvailableMethod)) {
+            policies.append(revocationPolicy)
         }
 
         let trustInput: CFTypeRef
