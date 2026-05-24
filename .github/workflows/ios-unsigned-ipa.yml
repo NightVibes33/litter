@@ -535,10 +535,11 @@ jobs:
 
           xcodebuild build \
             -project ThirdParty/Nyxian/Nyxian.xcodeproj \
-            -scheme LiveProcess \
+            -target LiveProcess \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath "$BUILD_ROOT/DerivedData" \
+            SYMROOT="$BUILD_ROOT/Build/Products" \
+            OBJROOT="$BUILD_ROOT/Build/Intermediates" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -546,7 +547,7 @@ jobs:
             PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.LiveProcess" \
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
 
-          LIVEPROCESS_APPEX="$(find "$BUILD_ROOT/DerivedData/Build/Products" -type d -name 'LiveProcess.appex' -print | head -n 1)"
+          LIVEPROCESS_APPEX="$(find "$BUILD_ROOT" -type d -name 'LiveProcess.appex' -print | head -n 1)"
           if [ -z "$LIVEPROCESS_APPEX" ] || [ ! -d "$LIVEPROCESS_APPEX" ]; then
             echo "::error::Nyxian LiveProcess.appex was not produced" >&2
             find "$BUILD_ROOT" -maxdepth 6 -print >&2 || true
