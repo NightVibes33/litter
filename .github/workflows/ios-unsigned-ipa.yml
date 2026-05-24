@@ -557,23 +557,44 @@ jobs:
             exit 1
           fi
           EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")"
-          APP_BINARY="$APP_PATH/$EXECUTABLE"
           missing=0
-          while IFS= read -r dependency; do
-            framework="$(printf '%s\n' "$dependency" | /usr/bin/sed -E 's#^@rpath/([^/]+\.framework)/.*#\1#')"
-            binary="$(/usr/bin/basename "$dependency")"
-            if [ ! -f "$APP_PATH/Frameworks/$framework/$binary" ]; then
-              echo "::error::Litter links $dependency but $APP_PATH/Frameworks/$framework/$binary is missing" >&2
-              missing=1
-            else
-              echo "Verified embedded framework: $framework/$binary"
+          scan_binary() {
+            local binary="$1"
+            if [ ! -f "$binary" ]; then
+              return 0
             fi
-          done < <(/usr/bin/otool -L "$APP_BINARY" | /usr/bin/awk 'NR > 1 { print $1 }' | /usr/bin/grep '^@rpath/.*\.framework/' || true)
+            if ! /usr/bin/file "$binary" | /usr/bin/grep -q 'Mach-O'; then
+              return 0
+            fi
+            while IFS= read -r dependency; do
+              local framework
+              local dependency_binary
+              framework="$(printf '%s\n' "$dependency" | /usr/bin/sed -E 's#^@rpath/([^/]+\.framework)/.*#\1#')"
+              dependency_binary="$(/usr/bin/basename "$dependency")"
+              if [ ! -f "$APP_PATH/Frameworks/$framework/$dependency_binary" ]; then
+                echo "::error::$(basename "$binary") links $dependency but $APP_PATH/Frameworks/$framework/$dependency_binary is missing" >&2
+                missing=1
+              else
+                echo "Verified embedded framework for $(basename "$binary"): $framework/$dependency_binary"
+              fi
+            done < <(/usr/bin/otool -L "$binary" | /usr/bin/awk 'NR > 1 { print $1 }' | /usr/bin/grep '^@rpath/.*\.framework/' || true)
+          }
+          scan_binary "$APP_PATH/$EXECUTABLE"
+          if [ -d "$APP_PATH/Frameworks" ]; then
+            for framework_dir in "$APP_PATH"/Frameworks/*.framework; do
+              if [ -d "$framework_dir" ]; then
+                framework_name="$(/usr/bin/basename "$framework_dir" .framework)"
+                scan_binary "$framework_dir/$framework_name"
+              fi
+            done
+            while IFS= read -r dylib; do
+              scan_binary "$dylib"
+            done < <(find "$APP_PATH/Frameworks" -maxdepth 1 -type f -name '*.dylib' -print)
+          fi
           if [ "$missing" -ne 0 ]; then
             find "$APP_PATH/Frameworks" -maxdepth 3 -type f -print >&2 || true
             exit 1
           fi
-
       - name: Build Nyxian LiveProcess extension
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         run: |

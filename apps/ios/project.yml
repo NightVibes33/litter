@@ -144,30 +144,47 @@ targets:
             name="$1"
             required="$2"
             source=""
+            checked=""
             for candidate in \
-              "$BUILT_PRODUCTS_DIR/$name.framework" \
               "$BUILT_PRODUCTS_DIR/PackageFrameworks/$name.framework" \
-              "$CONFIGURATION_BUILD_DIR/$name.framework" \
               "$CONFIGURATION_BUILD_DIR/PackageFrameworks/$name.framework" \
-              "$TARGET_BUILD_DIR/$name.framework" \
-              "$TARGET_BUILD_DIR/PackageFrameworks/$name.framework"
+              "$PROJECT_TEMP_DIR/../UninstalledProducts/$PLATFORM_NAME/$name.framework" \
+              "$CONFIGURATION_TEMP_DIR/../../UninstalledProducts/$PLATFORM_NAME/$name.framework" \
+              "$TARGET_TEMP_DIR/../../../UninstalledProducts/$PLATFORM_NAME/$name.framework" \
+              "$TARGET_BUILD_DIR/PackageFrameworks/$name.framework" \
+              "$BUILT_PRODUCTS_DIR/$name.framework" \
+              "$CONFIGURATION_BUILD_DIR/$name.framework" \
+              "$TARGET_BUILD_DIR/$name.framework"
             do
-              if [ -d "$candidate" ]; then
+              if [ ! -d "$candidate" ]; then
+                continue
+              fi
+              checked="${checked}${candidate}
+"
+              if [ -f "$candidate/Info.plist" ] && [ -f "$candidate/$name" ]; then
                 source="$candidate"
                 break
               fi
+              echo "warning: skipping incomplete $name.framework candidate at $candidate" >&2
             done
             if [ -z "$source" ]; then
               if [ "$required" = "1" ]; then
-                echo "error: required framework $name.framework was not built" >&2
+                echo "error: required framework $name.framework was not built as a complete framework bundle" >&2
+                printf 'Checked candidates:
+%s' "$checked" >&2
                 exit 1
               fi
               return 0
             fi
             destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$name.framework"
             rm -rf "$destination"
-            cp -R "$source" "$destination"
+            /usr/bin/ditto "$source" "$destination"
+            if [ ! -f "$destination/Info.plist" ] || [ ! -f "$destination/$name" ]; then
+              echo "error: copied $name.framework is incomplete at $destination" >&2
+              exit 1
+            fi
             sign_if_requested "$destination"
+            echo "Embedded $name.framework from $source"
           }
           embed_framework_if_present AltSign-Dynamic 1
           embed_framework_if_present OpenSSL 0
