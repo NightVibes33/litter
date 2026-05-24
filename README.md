@@ -22,7 +22,7 @@ iPhone-local model downloading and inference are not part of the app. Private or
 
 The repository also contains CI lanes for unsigned sideload IPAs, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline. Public source contains the Nyxian and BuildKit integration code, but the Apple SDK payload and compiled private BuildKit frameworks are not committed.
 
-Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com/dnakov). Current fork maintainer/developer: [NightVibes33 / Zyn](https://github.com/NightVibes33). Accepted upstream contributors and third-party attribution are tracked in [AUTHORS.md](AUTHORS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com/dnakov). This fork is maintained by [NightVibes33](https://github.com/NightVibes33). In this repo, NightVibes, NightVibes33, NightVibes3, ZYN, and Zyn refer to the same fork maintainer, not separate contributors. Accepted upstream contributors and third-party attribution are tracked in [AUTHORS.md](AUTHORS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Screenshots
 
@@ -134,7 +134,13 @@ The private asset pack must include:
 
 Important packaging rule: changing `ThirdParty/Nyxian/LitterBuildKitNative/**` does not change installed app behavior by itself. The app loads `LitterBuildKitNative.framework` from `LitterBuildKitAssets.zip`. After native bridge changes, rebuild and upload the private asset pack, update `LITTER_BUILDKIT_ASSET_URL` and `LITTER_BUILDKIT_ASSET_SHA256`, then build the IPA against that new asset.
 
-Original Nyxian run/install mode also needs signing material on the installed app. SideStore, AltStore, Feather, or another signer signs the unsigned Litter IPA with a user Apple ID certificate. To run built apps through the original Nyxian path, import the matching `.p12` certificate in BuildKit settings so the generated app can be re-signed with the same identity.
+Nyxian run/install mode needs more than compiler files. The installed app also needs the Apple ID and signing state used by the original Nyxian flow: an Apple ID login saved in Keychain, a SideStore-compatible Anisette server, the matching `.p12` signing identity, and the embedded provisioning profile from the signed Litter install.
+
+BuildKit settings validates imported signing material before it is treated as usable. A bad `.p12` password, missing private key, profile/certificate mismatch, untrusted certificate, or revoked certificate keeps Nyxian run/install blocked and shows the failure in status instead of silently accepting broken credentials.
+
+The Anisette picker can load SideStore's public server list from `https://servers.sidestore.io/servers.json`, falls back to known SideStore-compatible servers, and allows a custom server URL. Anisette only supplies Apple authentication metadata. It does not install apps by itself.
+
+Full on-device install/refresh also needs SideStore-style local transport. Litter checks for a LocalDevVPN-style tunnel and reports that separately from signing readiness. Swift compilation and unsigned IPA packaging can still work without LocalDevVPN, but direct install/refresh stays blocked until that transport is available.
 
 Canonical fakefs commands installed into `/usr/local/bin` include:
 
@@ -165,7 +171,7 @@ swift swiftc clang clang++ cc c++ ld ld64 xcodebuild xcrun plutil code
 ar llvm-ar ranlib llvm-ranlib nm llvm-nm objdump llvm-objdump strip strings lipo
 ```
 
-`litter-*` commands are the supported API. The compatibility shims cover the iOS-only cases Litter can run. BuildKit v1 is not desktop Xcode: SwiftPM package resolution, simulator workflows, Interface Builder, previews, signing/provisioning management, and macOS toolchains are outside scope.
+`litter-*` commands are the supported API. The compatibility shims cover the iOS-only cases Litter can run. BuildKit v1 is not desktop Xcode: SwiftPM package resolution, simulator workflows, Interface Builder, previews, App Store upload flows, Apple Developer portal management, and macOS toolchains are outside scope.
 
 Useful in-app checks:
 
@@ -211,7 +217,7 @@ Manual build modes are:
 
 Every successful IPA build creates or updates a versioned GitHub release named `litter-v${VERSION}` and uploads the IPA, checksum, metadata, update JSON, source JSON, and release notes. The stable `app-source` release is also updated with `litter-altstore-source.json`, `litter-update.json`, and the source icon.
 
-The AltStore/SideStore source keeps every published IPA reachable. The latest compatible build is listed in the app entry `versions` array, and historical IPA downloads are also emitted as source `news` cards with direct IPA URLs.
+The AltStore/SideStore source is version-history first. Every successful versioned IPA release should remain installable through the app entry `versions` array with its own download URL, checksum, version date, and build version. Historical IPA downloads are also emitted as source `news` cards with direct IPA URLs. Do not replace the source with only the latest build.
 
 All IPAs from this workflow are unsigned. They must be signed by SideStore, AltStore, Feather, or another signing tool before installation.
 
@@ -243,10 +249,10 @@ All IPAs from this workflow are unsigned. They must be signed by SideStore, AltS
 
 ## Credits And License
 
-Litter is a fork of [dnakov/litter](https://github.com/dnakov/litter). This fork is maintained by NightVibes33 / Zyn and includes additional iOS sideloading, update-source, local runtime, BuildKit, and UI work.
+Litter is a fork of [dnakov/litter](https://github.com/dnakov/litter). This fork is maintained by NightVibes33 / ZYN / Zyn, which are the same maintainer identity for this fork, and includes additional iOS sideloading, update-source, local runtime, BuildKit, and UI work.
 
 Litter is not MIT licensed. The project uses GPLv3 with an additional GPLv3 section 7 permission for Apple App Store and iOS distribution. Vendored Nyxian/emexDE source is AGPL-3.0-or-later, OpenAI Codex source is Apache-2.0, and third-party components keep their own licenses. See [LICENSE](LICENSE), [AUTHORS.md](AUTHORS.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Contributing
 
-The app, Rust bridge, fakefs runtime, and private BuildKit pipeline are tightly coupled. Keep PRs focused, include the workflow or command you used to verify the change, and update this README when behavior changes. See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor expectations.
+The app, Rust bridge, fakefs runtime, and private BuildKit pipeline are tightly coupled. Keep PRs focused, include the workflow or command you used to verify the change, and update this README when behavior changes. BuildKit, Apple ID, signing, Anisette, LocalDevVPN, and AltStore source changes must document what changed and whether a new private BuildKit asset pack or IPA release is required. See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor expectations.

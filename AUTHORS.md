@@ -8,7 +8,7 @@ This file records project attribution for the public Litter fork. It is based on
 
 ## Current Fork
 
-- NightVibes33 / Zyn - current fork maintainer and developer for `NightVibes33/litter`.
+- NightVibes33 / NightVibes3 / ZYN / Zyn - current fork maintainer and developer for `NightVibes33/litter`. These names refer to the same maintainer identity in this fork.
 - Codex / OpenAI-assisted implementation - AI-assisted commits made under maintainer direction in this fork. These entries are attribution notes, not a replacement for human copyright ownership.
 
 ## Accepted Upstream Contributors
