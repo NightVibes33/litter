@@ -4,14 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rusty_libimobiledevice = { git = "https://github.com/SideStore/rusty_libimobiledevice", features = [
+rusty_libimobiledevice = { path = "../rusty_libimobiledevice", features = [
   "static",
   "vendored",
 ], default-features = false }
 
 idevice = { version = "0.1.29", features = ["full"] }
 
-plist_plus = { version = "0.2", features = ["static", "vendored"] }
+plist_plus = { path = "../plist_plus", features = ["static", "vendored"] }
 plist = "1"
 swift-bridge = { git = "https://github.com/naturecodevoid/swift-bridge" } # TODO: change to official repo once https://github.com/chinedufn/swift-bridge/pull/209 is merged
 
@@ -28,6 +28,9 @@ once_cell = "1.21.1"
 reqwest = { version = "0.12", features = ["blocking"] }
 zip = "2.6"
 chrono = "0.4"
+
+[patch.crates-io]
+plist_plus = { path = "../plist_plus" }
 
 [dev-dependencies]
 env_logger = "0.11"

@@ -20,6 +20,12 @@ These source drops are kept small and source-only. Generated build products, IPA
 - minimuxer repo: https://github.com/SideStore/minimuxer.git
 - minimuxer vendored commit: `f9432a085b19de1bbcd744c600f510f499703a97`
 - minimuxer vendored path: `ThirdParty/SideStore/minimuxer`
+- rusty_libimobiledevice repo: https://github.com/SideStore/rusty_libimobiledevice.git
+- rusty_libimobiledevice vendored commit: `6a556c63b6d7f905e17b62d302086c93b0fddef8`
+- rusty_libimobiledevice vendored path: `ThirdParty/SideStore/rusty_libimobiledevice`
+- plist_plus repo: https://github.com/jkcoxson/plist_plus.git
+- plist_plus vendored version: `0.2.6`
+- plist_plus vendored path: `ThirdParty/SideStore/plist_plus`
 - Minimuxer wrapper path: `ThirdParty/SideStore/MinimuxerWrapper.swift`
 - KittyStore layout reference files adapted from SideStore at the inspected commit:
   - `AltStore/TabBarController.swift`
@@ -30,4 +36,4 @@ These source drops are kept small and source-only. Generated build products, IPA
 - LocalDevVPN repo: https://github.com/jkcoxson/LocalDevVPN.git
 - LocalDevVPN vendored commit: `c4566ce08931cef414c9f656e7e33c66bdb2454e`
 - LocalDevVPN tunnel-provider path: `ThirdParty/SideStore/LocalDevVPN-TunnelProv`
-- License: minimuxer is AGPL-3.0, see `ThirdParty/SideStore/minimuxer/LICENSE`; LocalDevVPN keeps its upstream terms.
+- License: minimuxer is AGPL-3.0, see `ThirdParty/SideStore/minimuxer/LICENSE`; rusty_libimobiledevice and plist_plus are LGPL-2.1-or-later; LocalDevVPN keeps its upstream terms.
