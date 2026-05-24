@@ -17,7 +17,9 @@ mod ffi {
     enum Errors {}
 
     extern "Rust" {
+        #[swift_bridge(swift_name = "yeetAppAfc")]
         fn yeet_app_afc(bundle_id: String, ipa_bytes: &[u8]) -> Result<(), Errors>;
+        #[swift_bridge(swift_name = "installIpa")]
         fn install_ipa(bundle_id: String) -> Result<(), Errors>;
         fn remove_app(bundle_id: String) -> Result<(), Errors>;
     }
