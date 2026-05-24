@@ -210,7 +210,7 @@ enum KittyStoreSideStoreSigningBridge {
 
             let profileBundleID = profile.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
             let requestedBundleID = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !profileBundleID.isEmpty, !requestedBundleID.isEmpty, !bundleIdentifier(requestedBundleID, isAllowedByProfileBundleIdentifier: profileBundleID) {
+            if !profileBundleID.isEmpty, !requestedBundleID.isEmpty, !profileBundleIdentifierAllows(requestedBundleID, profileBundleIdentifier: profileBundleID) {
                 return OperationResult(
                     exitCode: 67,
                     status: "sidestore-profile-bundle-mismatch",
@@ -439,7 +439,7 @@ private extension KittyStoreSideStoreSigningBridge {
 
     static func requestCertificate(team: ALTTeam, session: ALTAppleAPISession) async throws -> ALTCertificate {
         let certificate: ALTCertificate = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ALTCertificate, Error>) in
-            let machineName = "KittyStore - \(UIDevice.current.name)"
+            let machineName = "KittyStore iOS"
             ALTAppleAPI.shared.addCertificate(machineName: machineName, to: team, session: session) { certificate, error in
                 if let error { continuation.resume(throwing: error) }
                 else if let certificate { continuation.resume(returning: certificate) }
@@ -473,7 +473,7 @@ private extension KittyStoreSideStoreSigningBridge {
             return existing
         }
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ALTDevice, Error>) in
-            ALTAppleAPI.shared.registerDevice(name: UIDevice.current.name, identifier: udid, type: .iphone, team: team, session: session) { device, error in
+            ALTAppleAPI.shared.registerDevice(name: "KittyStore iPhone", identifier: udid, type: .iphone, team: team, session: session) { device, error in
                 if let error { continuation.resume(throwing: error) }
                 else if let device { continuation.resume(returning: device) }
                 else { continuation.resume(throwing: NSError(domain: "KittyStoreSideStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return a registered device."])) }
@@ -637,7 +637,7 @@ private extension KittyStoreSideStoreSigningBridge {
         return directory.appendingPathComponent("\(safeBase)-SideStoreSigned-\(UUID().uuidString.prefix(8)).ipa")
     }
 
-    static func bundleIdentifier(_ bundleIdentifier: String, isAllowedByProfileBundleIdentifier profileBundleIdentifier: String) -> Bool {
+    static func profileBundleIdentifierAllows(_ bundleIdentifier: String, profileBundleIdentifier: String) -> Bool {
         if profileBundleIdentifier == bundleIdentifier {
             return true
         }

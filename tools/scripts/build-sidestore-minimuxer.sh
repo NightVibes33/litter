@@ -96,6 +96,40 @@ public class RustByteSlice {
         inner.deallocate()
     }
 }
+
+enum Minimuxer {
+    static func startWithLogger(
+        pairingFile: String,
+        logPath: String,
+        isConsoleLoggingEnabled: Bool
+    ) throws {
+        try startWithLogger(pairingFile, logPath, isConsoleLoggingEnabled)
+    }
+
+    static func fetchUDID() -> String? {
+        fetch_udid()?.toString()
+    }
+
+    static func installProvisioningProfile(profile: Data) throws {
+        try profile.withUnsafeBytes { rawBuffer in
+            let bytes = rawBuffer.bindMemory(to: UInt8.self)
+            let buffer = UnsafeBufferPointer(start: bytes.baseAddress, count: bytes.count)
+            try install_provisioning_profile(buffer)
+        }
+    }
+
+    static func yeetAppAfc(bundleId: String, ipaBytes: Data) throws {
+        try ipaBytes.withUnsafeBytes { rawBuffer in
+            let bytes = rawBuffer.bindMemory(to: UInt8.self)
+            let buffer = UnsafeBufferPointer(start: bytes.baseAddress, count: bytes.count)
+            try yeetAppAfc(bundleId, buffer)
+        }
+    }
+
+    static func installIpa(bundleId: String) throws {
+        try installIpa(bundleId)
+    }
+}
 SWIFT
 
 cat > "$MINIMUXER_ROOT/generated/minimuxer-Bridging-Header.h" <<'HEADER'
@@ -130,6 +164,7 @@ MODULEMAP
 require_file "$MINIMUXER_ROOT/target/libminimuxer-ios.a"
 require_file "$MINIMUXER_ROOT/generated/minimuxer.swift"
 require_file "$MINIMUXER_ROOT/generated/minimuxer-helpers.swift"
+require_file "$MINIMUXER_ROOT/generated/SwiftBridgeCore.swift"
 require_file "$MINIMUXER_ROOT/generated/minimuxer.h"
 require_file "$MINIMUXER_ROOT/generated/SwiftBridgeCore.h"
 require_file "$MINIMUXER_ROOT/generated/minimuxer-Bridging-Header.h"
@@ -144,6 +179,7 @@ grep -q "installIpa" "$MINIMUXER_ROOT/generated/minimuxer.swift" || {
 }
 
 cp "$MINIMUXER_ROOT/target/libminimuxer-ios.a" "$DEVICE_LIB_DIR/libminimuxer-ios.a"
+cp "$MINIMUXER_ROOT/generated/SwiftBridgeCore.swift" "$GENERATED_SWIFT_DIR/SwiftBridgeCore.generated.swift"
 cp "$MINIMUXER_ROOT/generated/minimuxer.swift" "$GENERATED_SWIFT_DIR/minimuxer.generated.swift"
 cp "$MINIMUXER_ROOT/generated/minimuxer-helpers.swift" "$GENERATED_SWIFT_DIR/minimuxer-helpers.generated.swift"
 cp "$MINIMUXER_ROOT/generated/SwiftBridgeCore.h" "$HEADER_DIR/SwiftBridgeCore.h"
