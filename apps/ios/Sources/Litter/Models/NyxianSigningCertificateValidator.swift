@@ -88,7 +88,8 @@ enum NyxianSigningCertificateStorage {
 struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
     var email: String
     var teamID: String
-    var updatedAt: Date
+    var anisetteServerURL: String?
+    var loggedInAt: Date
 
     var statusDetail: String {
         "\(email) / \(teamID)"
@@ -97,17 +98,23 @@ struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
 
 enum NyxianAppleIDValidationError: LocalizedError {
     case invalidEmail
+    case missingPassword
     case missingTeamID
     case invalidTeamID
+    case invalidAnisetteURL
 
     var errorDescription: String? {
         switch self {
         case .invalidEmail:
             return "Enter the Apple ID email used by SideStore or AltStore."
+        case .missingPassword:
+            return "Enter the Apple ID password or app-specific password used by your signer."
         case .missingTeamID:
             return "Enter the Apple Developer Team ID for that Apple ID."
         case .invalidTeamID:
             return "Apple Developer Team IDs are 10 uppercase letters or numbers."
+        case .invalidAnisetteURL:
+            return "Enter a valid Anisette server URL or leave it blank."
         }
     }
 }
@@ -122,11 +129,25 @@ enum NyxianAppleIDStore {
         return try? JSONDecoder().decode(NyxianAppleIDAccount.self, from: data)
     }
 
-    static func save(email rawEmail: String, teamID rawTeamID: String) throws -> NyxianAppleIDAccount {
+    static var isLoggedIn: Bool {
+        load() != nil && NyxianAppleIDCredentialStore.shared.hasStoredPassword
+    }
+
+    static func login(
+        email rawEmail: String,
+        password rawPassword: String,
+        teamID rawTeamID: String,
+        anisetteServerURL rawAnisetteServerURL: String
+    ) throws -> NyxianAppleIDAccount {
         let email = rawEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let password = rawPassword.trimmingCharacters(in: .whitespacesAndNewlines)
         let teamID = rawTeamID.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let anisetteServerURL = try normalizedAnisetteURL(rawAnisetteServerURL)
         guard email.contains("@"), email.contains(".") else {
             throw NyxianAppleIDValidationError.invalidEmail
+        }
+        guard !password.isEmpty else {
+            throw NyxianAppleIDValidationError.missingPassword
         }
         guard !teamID.isEmpty else {
             throw NyxianAppleIDValidationError.missingTeamID
@@ -137,14 +158,111 @@ enum NyxianAppleIDStore {
             throw NyxianAppleIDValidationError.invalidTeamID
         }
 
-        let account = NyxianAppleIDAccount(email: email, teamID: teamID, updatedAt: Date())
+        let account = NyxianAppleIDAccount(
+            email: email,
+            teamID: teamID,
+            anisetteServerURL: anisetteServerURL,
+            loggedInAt: Date()
+        )
         let encoded = try JSONEncoder().encode(account)
         UserDefaults.standard.set(encoded, forKey: accountKey)
+        try NyxianAppleIDCredentialStore.shared.save(password: password)
         return account
     }
 
-    static func clear() {
+    static func clear() throws {
         UserDefaults.standard.removeObject(forKey: accountKey)
+        try NyxianAppleIDCredentialStore.shared.clear()
+    }
+
+    private static func normalizedAnisetteURL(_ raw: String) throws -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              url.host?.isEmpty == false else {
+            throw NyxianAppleIDValidationError.invalidAnisetteURL
+        }
+        return trimmed
+    }
+}
+
+final class NyxianAppleIDCredentialStore {
+    static let shared = NyxianAppleIDCredentialStore()
+
+    private let service = "com.sigkitten.litter.nyxian-apple-id"
+    private let passwordAccount = "apple-id-password"
+
+    private init() {}
+
+    var hasStoredPassword: Bool {
+        (try? loadPassword())?.isEmpty == false
+    }
+
+    func loadPassword() throws -> String? {
+        let query = baseQuery().merging([
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]) { _, new in new }
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        switch status {
+        case errSecSuccess:
+            guard let data = item as? Data,
+                  let password = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+            let trimmed = password.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        case errSecItemNotFound:
+            return nil
+        default:
+            throw keychainError(status)
+        }
+    }
+
+    func save(password: String) throws {
+        let trimmed = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        let data = Data(trimmed.utf8)
+        let attributes = baseQuery().merging([
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecValueData as String: data,
+        ]) { _, new in new }
+        let status = SecItemAdd(attributes as CFDictionary, nil)
+        if status == errSecDuplicateItem {
+            let update: [String: Any] = [
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                kSecValueData as String: data,
+            ]
+            let updateStatus = SecItemUpdate(baseQuery() as CFDictionary, update as CFDictionary)
+            guard updateStatus == errSecSuccess else { throw keychainError(updateStatus) }
+            return
+        }
+        guard status == errSecSuccess else { throw keychainError(status) }
+    }
+
+    func clear() throws {
+        let status = SecItemDelete(baseQuery() as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw keychainError(status)
+        }
+    }
+
+    private func baseQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: passwordAccount,
+        ]
+    }
+
+    private func keychainError(_ status: OSStatus) -> NSError {
+        NSError(
+            domain: NSOSStatusErrorDomain,
+            code: Int(status),
+            userInfo: [NSLocalizedDescriptionKey: "Keychain error (\(status))"]
+        )
     }
 }
 

@@ -13,6 +13,8 @@ struct BuildKitSettingsView: View {
     @State private var showingCertificateImporter = false
     @State private var appleIDEmailInput = ""
     @State private var appleIDTeamIDInput = ""
+    @State private var appleIDPasswordInput = ""
+    @State private var appleIDAnisetteURLInput = ""
     @State private var appleIDActionMessage: String?
     @State private var certificatePasswordInput = ""
     @State private var certificateActionMessage: String?
@@ -298,14 +300,14 @@ struct BuildKitSettingsView: View {
 
     private var signingSection: some View {
         Section {
-            Text("SideStore or AltStore signs the unsigned Litter IPA with your Apple ID. Original Nyxian run/install needs the matching .p12 certificate saved here so it can sign built apps with the same identity.")
+            Text("SideStore or AltStore signs the unsigned Litter IPA with your Apple ID. Original Nyxian run/install needs this Apple ID login and the matching .p12 certificate saved here so it can sign built apps with the same identity.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             statusRow("Embedded profile", status?.embeddedProvisionPresent == true ? "Present" : "Missing")
-            statusRow("Apple ID", status?.appleIDConfigured == true ? "Configured" : "Missing")
+            statusRow("Apple ID login", status?.appleIDConfigured == true ? "Logged in" : "Missing")
             statusRow("Apple ID detail", status?.appleIDDetail ?? "Missing")
             statusRow("Imported certificate", status?.nyxianSigningCertificateInstalled == true ? "Validated" : "Missing or invalid")
             statusRow("Certificate detail", status?.nyxianSigningCertificateDetail ?? "Missing")
@@ -323,10 +325,22 @@ struct BuildKitSettingsView: View {
                 .autocorrectionDisabled()
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
+            SecureField("Apple ID password or app-specific password", text: $appleIDPasswordInput)
+                .textContentType(.password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            TextField("Anisette server URL (optional)", text: $appleIDAnisetteURLInput)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
             Button {
                 saveNyxianAppleID()
             } label: {
-                Label("Save Apple ID Setup", systemImage: "person.badge.key")
+                Label("Login Apple ID", systemImage: "person.badge.key.fill")
                     .foregroundStyle(LitterTheme.accent)
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -334,7 +348,7 @@ struct BuildKitSettingsView: View {
             Button(role: .destructive) {
                 clearNyxianAppleID()
             } label: {
-                Label("Clear Apple ID Setup", systemImage: "person.crop.circle.badge.xmark")
+                Label("Clear Apple ID Login", systemImage: "person.crop.circle.badge.xmark")
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
@@ -558,23 +572,36 @@ struct BuildKitSettingsView: View {
     @MainActor
     private func saveNyxianAppleID() {
         do {
-            let account = try NyxianAppleIDStore.save(email: appleIDEmailInput, teamID: appleIDTeamIDInput)
+            let account = try NyxianAppleIDStore.login(
+                email: appleIDEmailInput,
+                password: appleIDPasswordInput,
+                teamID: appleIDTeamIDInput,
+                anisetteServerURL: appleIDAnisetteURLInput
+            )
             appleIDEmailInput = account.email
             appleIDTeamIDInput = account.teamID
-            appleIDActionMessage = "Saved Apple ID setup for \(account.statusDetail)."
+            appleIDAnisetteURLInput = account.anisetteServerURL ?? ""
+            appleIDPasswordInput = ""
+            appleIDActionMessage = "Apple ID login saved for \(account.statusDetail). Password is stored in Keychain."
             taskBag.run { await refresh() }
         } catch {
-            appleIDActionMessage = "Apple ID setup failed: \(error.localizedDescription)"
+            appleIDActionMessage = "Apple ID login failed: \(error.localizedDescription)"
         }
     }
 
     @MainActor
     private func clearNyxianAppleID() {
-        NyxianAppleIDStore.clear()
-        appleIDEmailInput = ""
-        appleIDTeamIDInput = ""
-        appleIDActionMessage = "Removed Apple ID setup."
-        taskBag.run { await refresh() }
+        do {
+            try NyxianAppleIDStore.clear()
+            appleIDEmailInput = ""
+            appleIDTeamIDInput = ""
+            appleIDPasswordInput = ""
+            appleIDAnisetteURLInput = ""
+            appleIDActionMessage = "Removed Apple ID login."
+            taskBag.run { await refresh() }
+        } catch {
+            appleIDActionMessage = "Could not remove Apple ID login: \(error.localizedDescription)"
+        }
     }
 
     @MainActor
@@ -592,6 +619,7 @@ struct BuildKitSettingsView: View {
         if let account = NyxianAppleIDStore.load(), appleIDEmailInput.isEmpty, appleIDTeamIDInput.isEmpty {
             appleIDEmailInput = account.email
             appleIDTeamIDInput = account.teamID
+            appleIDAnisetteURLInput = account.anisetteServerURL ?? ""
         }
         isRefreshing = false
     }

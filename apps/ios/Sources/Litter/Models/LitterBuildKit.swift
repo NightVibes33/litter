@@ -248,7 +248,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var nyxianRunInstallRequirements: [String] {
         var lines: [String] = []
         if !embeddedProvisionPresent { lines.append("SideStore/AltStore embedded.mobileprovision on the installed Litter app") }
-        if !appleIDConfigured { lines.append("Apple ID email and Team ID used by SideStore or AltStore") }
+        if !appleIDConfigured { lines.append("Apple ID login in BuildKit settings (email, password, Team ID, optional Anisette URL)") }
         if !nyxianSigningCertificateInstalled { lines.append("validated matching SideStore/AltStore .p12 certificate for Nyxian signing") }
         return lines
     }
@@ -283,7 +283,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
             if canRunNyxianApps {
                 return "Fakefs Swift, unsigned IPA packaging, and original Nyxian run/install signing are ready."
             }
-            return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs Apple ID/team metadata and the matching SideStore/AltStore .p12 certificate imported."
+            return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs Apple ID login and the matching SideStore/AltStore .p12 certificate imported."
         }
         if privateAssetsInstalled {
             return "The private asset pack is installed, but the native driver/framework is not loadable yet. Rebuild the sideload IPA with the private BuildKit framework embedded."
@@ -457,6 +457,15 @@ actor LitterBuildKit {
         let sourceManifest = Self.sourceImportManifest
         let nativeDriverLoad = Self.loadNativeDriver()
         let appleIDAccount = NyxianAppleIDStore.load()
+        let appleIDLoggedIn = NyxianAppleIDStore.isLoggedIn
+        let appleIDDetail: String
+        if let appleIDAccount {
+            appleIDDetail = appleIDLoggedIn
+                ? "\(appleIDAccount.statusDetail) (password in Keychain)"
+                : "\(appleIDAccount.statusDetail) (password missing from Keychain)"
+        } else {
+            appleIDDetail = "Missing Apple ID login"
+        }
         let signingCertificateState = NyxianSigningCertificateStorage.savedState(checkRevocation: checkRevocation)
         return LitterBuildKitStatus(
             sourceImportAvailable: Self.sourceImportAvailable,
@@ -475,8 +484,8 @@ actor LitterBuildKit {
             commandShimsInstalled: shimsInstalled,
             requestMonitorRunning: monitorTask != nil,
             embeddedProvisionPresent: Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") != nil,
-            appleIDConfigured: appleIDAccount != nil,
-            appleIDDetail: appleIDAccount?.statusDetail ?? "Missing",
+            appleIDConfigured: appleIDLoggedIn,
+            appleIDDetail: appleIDDetail,
             nyxianSigningCertificateInstalled: signingCertificateState.isUsable,
             nyxianSigningCertificateDetail: signingCertificateState.statusDetail,
             toolchainRoot: Self.toolchainRoot.path,
@@ -2427,7 +2436,7 @@ actor LitterBuildKit {
         Fakefs command shims: \(status.commandShimsInstalled ? "installed" : "missing")
         Request monitor: \(status.requestMonitorRunning ? "running" : "stopped")
         App provisioning profile: \(status.embeddedProvisionPresent ? "present" : "missing")
-        Apple ID setup: \(status.appleIDConfigured ? "configured" : "missing")
+        Apple ID login: \(status.appleIDConfigured ? "logged in" : "missing")
         Apple ID detail: \(status.appleIDDetail)
         Nyxian signing certificate: \(status.nyxianSigningCertificateInstalled ? "validated" : "missing or invalid")
         Nyxian signing detail: \(status.nyxianSigningCertificateDetail)
@@ -2484,7 +2493,7 @@ actor LitterBuildKit {
         output += "- Swift direct execution: \(status.canRunSwiftDirectly ? "available" : "not available")\n"
         output += "- Unsigned IPA packaging: \(status.canBuildUnsignedIPA ? "available" : "not available")\n"
         output += "- SideStore/AltStore embedded profile: \(status.embeddedProvisionPresent ? "present" : "missing")\n"
-        output += "- Apple ID setup: \(status.appleIDConfigured ? "configured" : "missing")\n"
+        output += "- Apple ID login: \(status.appleIDConfigured ? "logged in" : "missing")\n"
         output += "- Apple ID detail: \(status.appleIDDetail)\n"
         output += "- Matching signing certificate: \(status.nyxianSigningCertificateInstalled ? "validated" : "missing or invalid")\n"
         output += "- Signing certificate detail: \(status.nyxianSigningCertificateDetail)\n"
