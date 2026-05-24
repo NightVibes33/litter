@@ -417,6 +417,23 @@ actor LitterBuildKit {
         )
     }
 
+    func installKittyStoreIPA(ipaPath: String, bundleIdentifier: String, pairingPath: String, profilePath: String?, refresh: Bool) async -> KittyStoreSigningResult {
+        let buildID = "kittystore-install-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8))"
+        let buildDir = "\(Self.buildRoot)/\(buildID)"
+        var args = "--ipa \(Self.shellQuoteForDisplay(ipaPath)) --bundle-id \(Self.shellQuoteForDisplay(bundleIdentifier)) --pairing \(Self.shellQuoteForDisplay(pairingPath))"
+        if let profilePath, !profilePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, profilePath != "embedded" {
+            args += " --profile \(Self.shellQuoteForDisplay(profilePath))"
+        }
+        let command = refresh ? "litter-kittystore-refresh" : "litter-kittystore-install"
+        let result = await kittyStoreInstallOrRefresh(command: command, args: args, cwd: "/root", buildDir: buildDir)
+        return KittyStoreSigningResult(
+            exitCode: result.exitCode,
+            status: result.status,
+            log: result.log,
+            fakefsArtifacts: result.artifacts.compactMap { $0.fakefsPath }.filter { !$0.isEmpty }
+        )
+    }
+
     func startFakefsRequestMonitor() {
         guard monitorTask == nil else { return }
         monitorTask = Task(priority: .utility) {

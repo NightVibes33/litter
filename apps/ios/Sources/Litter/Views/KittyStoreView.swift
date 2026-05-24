@@ -637,7 +637,8 @@ struct KittyStoreView: View {
             if buildKitStatus?.appleIDConfigured != true { return "Add Apple ID login in BuildKit settings." }
             if importedPairingFile == nil { return "Import the iOS pairing file for SideStore-style install." }
             if buildKitStatus?.localDevVPNConnected != true { return "Connect LocalDevVPN for direct install and refresh." }
-            return signingInProgress ? "Native signing is running before SideStore-style install." : "Inputs are ready for signing; install/refresh requires the minimuxer bridge in the private build."
+            if !KittyStoreMinimuxerBridge.isLinked { return "This build was not linked with the SideStore minimuxer bridge yet." }
+            return signingInProgress ? "Native signing or install is running." : "Inputs are ready for signing and SideStore-style install."
         }
     }
 
@@ -801,6 +802,10 @@ struct KittyStoreView: View {
         }
 
         let plan = signingPlanJSON()
+        let shouldInstallAfterSigning = installAfterSigning
+        let pairingPath = importedPairingFile?.stagedPath
+        let profilePath = importedProvisioningProfile?.stagedPath
+        let bundleID = displayedBundleIdentifier
         UIPasteboard.general.string = plan
         signingInProgress = true
         taskBag.run {
@@ -809,6 +814,30 @@ struct KittyStoreView: View {
             buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
             let artifacts = result.fakefsArtifacts.isEmpty ? "" : "\n\nSigned IPA: \(result.fakefsArtifacts.joined(separator: "\n"))"
             if result.exitCode == 0 {
+                if shouldInstallAfterSigning, let signedPath = result.fakefsArtifacts.first, let pairingPath {
+                    signingInProgress = true
+                    let installResult = await LitterBuildKit.shared.installKittyStoreIPA(
+                        ipaPath: signedPath,
+                        bundleIdentifier: bundleID,
+                        pairingPath: pairingPath,
+                        profilePath: profilePath,
+                        refresh: false
+                    )
+                    signingInProgress = false
+                    buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
+                    if installResult.exitCode == 0 {
+                        signingAlert = KittyStoreSigningAlert(
+                            title: "Installed",
+                            message: "KittyStore signed the IPA and installed it through the SideStore minimuxer bridge.\(artifacts)"
+                        )
+                    } else {
+                        signingAlert = KittyStoreSigningAlert(
+                            title: "Install Failed",
+                            message: "Signing succeeded, but install failed.\nStatus: \(installResult.status)\n\n\(installResult.log.prefix(1800))\(artifacts)"
+                        )
+                    }
+                    return
+                }
                 signingAlert = KittyStoreSigningAlert(
                     title: "Signed IPA Ready",
                     message: "KittyStore signed the IPA with the native Feather/Zsign path.\(artifacts)"
