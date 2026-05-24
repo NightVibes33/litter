@@ -1,5 +1,9 @@
 #include "util.h"
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 #ifdef _WIN32
 #define PRId64						"lld"
 #elif __APPLE__
@@ -59,12 +63,17 @@ bool  ZUtil::SystemExecV(const char* szCmd, ...)
 		return false;
 	}
 
+#if defined(__APPLE__) && TARGET_OS_IPHONE
+	ZLog::ErrorV("SystemExec is unavailable on iOS: \"%s\"\n", szRealCmd);
+	return false;
+#else
 	int status = system(szRealCmd);
 	if (0 != status) {
 		ZLog::ErrorV("SystemExec: \"%s\", error!\n", szRealCmd);
 		return false;
 	}
 	return true;
+#endif
 }
 
 uint16_t ZUtil::Swap(uint16_t value)

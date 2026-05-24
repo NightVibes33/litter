@@ -278,8 +278,8 @@ jobs:
           gh secret set LITTER_BUILDKIT_ASSET_URL --repo "$GITHUB_REPOSITORY" --body "$ASSET_URL"
           gh secret set LITTER_BUILDKIT_ASSET_SHA256 --repo "$GITHUB_REPOSITORY" --body "$ASSET_SHA256"
           DISPATCH_REF="${GITHUB_REF_NAME:-main}"
-          gh workflow run ios-unsigned-ipa.yml --repo "$GITHUB_REPOSITORY" --ref "$DISPATCH_REF" -f build_mode=fast-device
-          echo "Linked BuildKit assets and dispatched unsigned IPA rebuild on $DISPATCH_REF."
+          gh workflow run ios-unsigned-ipa.yml --repo "$GITHUB_REPOSITORY" --ref "$DISPATCH_REF" -f build_mode=nyxian-private
+          echo "Linked BuildKit assets and dispatched nyxian-private unsigned IPA rebuild on $DISPATCH_REF."
 
       - name: Print unsigned IPA secret values
         if: inputs.upload_private_release == true && (steps.existing_assets.outputs.available == 'true' || steps.cached_assets.outputs.available == 'true' || steps.build_assets.outcome == 'success')

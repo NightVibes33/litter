@@ -362,6 +362,12 @@ jobs:
           set -euo pipefail
           time make alpine-fs
 
+      - name: Compute private BuildKit source fingerprint
+        id: buildkit_fingerprint
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
+        run: |
+          set -euo pipefail
+          echo "native_source_fingerprint=$(tools/scripts/buildkit-native-source-fingerprint.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Restore prepared private BuildKit assets
         id: buildkit_assets_cache
@@ -369,7 +375,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: apps/ios/Sources/Litter/Resources/BuildKitAssets
-          key: ios-buildkit-assets-v2-${{ runner.os }}-${{ env.LITTER_BUILDKIT_ASSET_SHA256 }}
+          key: ios-buildkit-assets-v3-${{ runner.os }}-${{ env.LITTER_BUILDKIT_ASSET_SHA256 }}-${{ steps.buildkit_fingerprint.outputs.native_source_fingerprint }}
 
       - name: Prepare private BuildKit assets
         if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1' && steps.buildkit_assets_cache.outputs.cache-hit != 'true'
@@ -381,7 +387,7 @@ jobs:
         if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
         run: |
           set -euo pipefail
-          export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="$(tools/scripts/buildkit-native-source-fingerprint.sh)"
+          export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="${{ steps.buildkit_fingerprint.outputs.native_source_fingerprint }}"
           tools/scripts/verify-nyxian-buildkit-assets.sh apps/ios/Sources/Litter/Resources/BuildKitAssets
           python3 - <<'PY'
           import json
@@ -573,7 +579,7 @@ jobs:
         if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
         run: |
           set -euo pipefail
-          export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="$(tools/scripts/buildkit-native-source-fingerprint.sh)"
+          export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="${{ steps.buildkit_fingerprint.outputs.native_source_fingerprint }}"
           APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
           if [ -z "$APP_PATH" ]; then
             echo "::error::No .app found in archive" >&2
