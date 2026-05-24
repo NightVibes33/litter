@@ -841,7 +841,7 @@ actor LitterBuildKit {
         var frameworks: [String] = []
         var tweaks: [String] = []
         var properties: [String: String] = [:]
-        var installAfterSigning = false
+        var postSigningAction = "none"
         var deleteAfterSigning = false
         var errors: [String] = []
 
@@ -876,7 +876,10 @@ actor LitterBuildKit {
                     if parts.count == 2 { properties[parts[0]] = parts[1] } else { errors.append("Property must be key=value: \(value)") }
                 }
             case "--out", "-o": outputPath = takeValue(token)
-            case "--install-after-signing": installAfterSigning = true
+            case "--install-after-signing": postSigningAction = "install"
+            case "--refresh-after-signing": postSigningAction = "refresh"
+            case "--post-signing-action":
+                if let value = takeValue(token) { postSigningAction = value.lowercased() }
             case "--delete-after-signing": deleteAfterSigning = true
             default:
                 errors.append("Unknown option: \(token)")
@@ -888,6 +891,9 @@ actor LitterBuildKit {
         if mode == "appleid" || mode == "apple_id" { mode = "apple-id" }
         if !["certificate", "apple-id"].contains(mode) {
             errors.append("Unsupported mode: \(mode). Use certificate or apple-id.")
+        }
+        if !["none", "install", "refresh"].contains(postSigningAction) {
+            errors.append("Unsupported post-signing action: \(postSigningAction). Use none, install, or refresh.")
         }
         guard errors.isEmpty else {
             return BuildKitCommandResult(exitCode: 64, status: "kittystore-plan-usage", log: errors.joined(separator: "\n") + "\n\n" + Self.kittyStorePlanUsage())
@@ -933,8 +939,12 @@ actor LitterBuildKit {
         }
         if mode == "apple-id" {
             if !current.appleIDConfigured { missing.append("Apple ID login is missing in BuildKit settings") }
-            if resolvedPairing == nil { missing.append("--pairing is required for apple-id install/refresh mode") }
+            if resolvedPairing == nil { missing.append("--pairing is required for apple-id signing") }
+        }
+        if postSigningAction != "none" {
+            if resolvedPairing == nil { missing.append("--pairing is required for post-signing install/refresh") }
             if !current.localDevVPNConnected { warnings.append("LocalDevVPN is not detected; direct install/refresh will remain blocked") }
+            if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer bridge is not linked into this IPA") }
         }
         if !current.canBuildUnsignedIPA { warnings.append("Unsigned IPA BuildKit packaging is not ready on this install") }
 
@@ -974,7 +984,9 @@ actor LitterBuildKit {
                 "entitlements": entitlementsValue
             ],
             "properties": properties.merging([
-                "installAfterSigning": String(installAfterSigning),
+                "postSigningAction": postSigningAction,
+                "installAfterSigning": String(postSigningAction == "install"),
+                "refreshAfterSigning": String(postSigningAction == "refresh"),
                 "deleteAfterSigning": String(deleteAfterSigning)
             ]) { _, new in new },
             "readiness": [
@@ -3161,7 +3173,9 @@ actor LitterBuildKit {
           --entitlements /root/entitlements.plist
           --entitlements-json '{"get-task-allow":true}'
           --property key=value
+          --post-signing-action none|install|refresh
           --install-after-signing
+          --refresh-after-signing
           --delete-after-signing
           --out /root/plan.json
         """

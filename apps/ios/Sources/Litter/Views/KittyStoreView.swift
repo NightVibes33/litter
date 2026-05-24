@@ -44,7 +44,7 @@ struct KittyStoreView: View {
     @State private var iPadFullscreen = false
     @State private var removeURLScheme = false
     @State private var removeProvisioning = false
-    @State private var installAfterSigning = true
+    @State private var postSigningAction: KittyStorePostSigningAction = .install
     @State private var deleteAfterSigning = false
     @State private var replaceSubstrateWithElleKit = true
     @State private var enableLiquidGlass = false
@@ -396,6 +396,12 @@ struct KittyStoreView: View {
                 actionRow("Sign IPA", detail: "Open the Feather-style signing workspace", icon: "signature") {
                     showingSigningSheet = true
                 }
+                if let selectedApp = app, let latest = selectedApp.versions.first {
+                    actionRow("Refresh Latest", detail: "Download, sign, then refresh \(selectedApp.name) through SideStore", icon: "arrow.triangle.2.circlepath") {
+                        postSigningAction = .refresh
+                        downloadSourceIPAForSigning(storeApp: selectedApp, version: latest, openSigning: true)
+                    }
+                }
             }
         }
     }
@@ -723,7 +729,7 @@ struct KittyStoreView: View {
                     iPadFullscreen: $iPadFullscreen,
                     removeURLScheme: $removeURLScheme,
                     removeProvisioning: $removeProvisioning,
-                    installAfterSigning: $installAfterSigning,
+                    postSigningAction: $postSigningAction,
                     deleteAfterSigning: $deleteAfterSigning,
                     replaceSubstrateWithElleKit: $replaceSubstrateWithElleKit,
                     enableLiquidGlass: $enableLiquidGlass
@@ -819,16 +825,20 @@ struct KittyStoreView: View {
     private var signingReadinessMessage: String? {
         if sourceIPADownloadInProgress { return sourceIPADownloadMessage ?? "Downloading the selected source IPA." }
         guard importedIPA != nil else { return "Import an IPA before signing." }
+        if postSigningAction.requiresDeviceTransfer {
+            if importedPairingFile == nil { return "Import the iOS pairing file for SideStore-style \(postSigningAction.transferVerb)." }
+            if !KittyStoreMinimuxerBridge.isLinked { return "This build was not linked with the SideStore minimuxer bridge yet." }
+            if buildKitStatus?.localDevVPNConnected != true { return "Ready to try SideStore signing. LocalDevVPN will be verified by minimuxer during \(postSigningAction.transferVerb)." }
+        }
         switch selectedSigningMode {
         case .certificate:
             if buildKitStatus?.nyxianSigningCertificateInstalled != true { return "Import a valid certificate in BuildKit settings." }
             return signingInProgress ? "Native Feather/Zsign signing is running." : "Ready to sign with the native Feather/Zsign path."
         case .appleID:
             if buildKitStatus?.appleIDConfigured != true { return "Add Apple ID login in BuildKit settings." }
-            if importedPairingFile == nil { return "Import the iOS pairing file for SideStore-style install." }
+            if importedPairingFile == nil { return "Import the iOS pairing file for SideStore Apple ID signing." }
             if !KittyStoreMinimuxerBridge.isLinked { return "This build was not linked with the SideStore minimuxer bridge yet." }
-            if installAfterSigning, buildKitStatus?.localDevVPNConnected != true { return "Ready to try SideStore signing. LocalDevVPN will be verified by minimuxer during install." }
-            return signingInProgress ? "Native signing or install is running." : "Inputs are ready for signing and SideStore-style install."
+            return signingInProgress ? "Native signing or transfer is running." : "Inputs are ready for signing and SideStore-style \(postSigningAction.transferVerb)."
         }
     }
 
@@ -1043,6 +1053,18 @@ struct KittyStoreView: View {
             return
         }
 
+        let selectedPostSigningAction = postSigningAction
+        if selectedPostSigningAction.requiresDeviceTransfer {
+            guard importedPairingFile != nil else {
+                signingAlert = KittyStoreSigningAlert(title: "Pairing File Missing", message: "Import the SideStore-style iOS pairing file before \(selectedPostSigningAction.transferVerb).")
+                return
+            }
+            guard KittyStoreMinimuxerBridge.isLinked else {
+                signingAlert = KittyStoreSigningAlert(title: "Minimuxer Missing", message: "This IPA was not linked with the SideStore minimuxer bridge, so direct on-device install and refresh cannot run.")
+                return
+            }
+        }
+
         switch selectedSigningMode {
         case .certificate:
             guard buildKitStatus?.nyxianSigningCertificateInstalled == true else {
@@ -1065,7 +1087,6 @@ struct KittyStoreView: View {
         }
 
         let plan = signingPlanJSON()
-        let shouldInstallAfterSigning = installAfterSigning
         let pairingPath = importedPairingFile?.stagedPath
         let profilePath = importedProvisioningProfile?.stagedPath
         let bundleID = displayedBundleIdentifier
@@ -1078,7 +1099,7 @@ struct KittyStoreView: View {
             startSideStoreAltSignSigning(
                 importedIPA: importedIPA,
                 provisioningProfile: importedProvisioningProfile,
-                shouldInstallAfterSigning: shouldInstallAfterSigning,
+                postSigningAction: selectedPostSigningAction,
                 pairingPath: pairingPath,
                 bundleID: bundleID
             )
@@ -1090,7 +1111,7 @@ struct KittyStoreView: View {
            let importedIPA {
             startSideStoreAppleIDSigning(
                 importedIPA: importedIPA,
-                shouldInstallAfterSigning: shouldInstallAfterSigning,
+                postSigningAction: selectedPostSigningAction,
                 pairingPath: pairingPath,
                 bundleID: bundleID
             )
@@ -1104,26 +1125,26 @@ struct KittyStoreView: View {
             buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
             let artifacts = result.fakefsArtifacts.isEmpty ? "" : "\n\nSigned IPA: \(result.fakefsArtifacts.joined(separator: "\n"))"
             if result.exitCode == 0 {
-                if shouldInstallAfterSigning, let signedPath = result.fakefsArtifacts.first, let pairingPath {
+                if selectedPostSigningAction.requiresDeviceTransfer, let signedPath = result.fakefsArtifacts.first, let pairingPath {
                     signingInProgress = true
                     let installResult = await LitterBuildKit.shared.installKittyStoreIPA(
                         ipaPath: signedPath,
                         bundleIdentifier: bundleID,
                         pairingPath: pairingPath,
                         profilePath: profilePath,
-                        refresh: false
+                        refresh: selectedPostSigningAction == .refresh
                     )
                     signingInProgress = false
                     buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
                     if installResult.exitCode == 0 {
                         signingAlert = KittyStoreSigningAlert(
-                            title: "Installed",
-                            message: "KittyStore signed the IPA and installed it through the SideStore minimuxer bridge.\(artifacts)"
+                            title: selectedPostSigningAction.successTitle,
+                            message: "KittyStore signed the IPA and \(selectedPostSigningAction.completedVerb) it through the SideStore minimuxer bridge.\(artifacts)"
                         )
                     } else {
                         signingAlert = KittyStoreSigningAlert(
-                            title: "Install Failed",
-                            message: "Signing succeeded, but install failed.\nStatus: \(installResult.status)\n\n\(installResult.log.prefix(1800))\(artifacts)"
+                            title: selectedPostSigningAction.failureTitle,
+                            message: "Signing succeeded, but \(selectedPostSigningAction.transferVerb) failed.\nStatus: \(installResult.status)\n\n\(installResult.log.prefix(1800))\(artifacts)"
                         )
                     }
                     return
@@ -1144,7 +1165,7 @@ struct KittyStoreView: View {
     @MainActor
     private func startSideStoreAppleIDSigning(
         importedIPA: KittyStoreImportedFile,
-        shouldInstallAfterSigning: Bool,
+        postSigningAction: KittyStorePostSigningAction,
         pairingPath: String?,
         bundleID: String
     ) {
@@ -1221,11 +1242,11 @@ struct KittyStoreView: View {
                 return
             }
 
-            if shouldInstallAfterSigning, let pairing = pairingContents {
+            if postSigningAction.requiresDeviceTransfer, let pairing = pairingContents, let minimuxerAction = postSigningAction.minimuxerAction {
                 do {
                     signingInProgress = true
                     let installResult = await KittyStoreMinimuxerBridge.installOrRefresh(
-                        action: .install,
+                        action: minimuxerAction,
                         bundleIdentifier: bundleID,
                         pairingFileContents: pairing,
                         ipaURL: URL(fileURLWithPath: signedPath),
@@ -1235,20 +1256,20 @@ struct KittyStoreView: View {
                     signingInProgress = false
                     if installResult.exitCode == 0 {
                         signingAlert = KittyStoreSigningAlert(
-                            title: "Installed",
-                            message: "SideStore Apple ID signing finished and minimuxer installed the IPA.\n\nSigned IPA: \(signedPath)\n\n\(installResult.log.prefix(1400))"
+                            title: postSigningAction.successTitle,
+                            message: "SideStore Apple ID signing finished and minimuxer \(postSigningAction.completedVerb) the IPA.\n\nSigned IPA: \(signedPath)\n\n\(installResult.log.prefix(1400))"
                         )
                     } else {
                         signingAlert = KittyStoreSigningAlert(
-                            title: "Install Failed",
-                            message: "SideStore Apple ID signing succeeded, but minimuxer install failed.\nStatus: \(installResult.status)\n\n\(installResult.log.prefix(1600))\n\nSigned IPA: \(signedPath)"
+                            title: postSigningAction.failureTitle,
+                            message: "SideStore Apple ID signing succeeded, but minimuxer \(postSigningAction.transferVerb) failed.\nStatus: \(installResult.status)\n\n\(installResult.log.prefix(1600))\n\nSigned IPA: \(signedPath)"
                         )
                     }
                 } catch {
                     signingInProgress = false
                     signingAlert = KittyStoreSigningAlert(
                         title: "Signed IPA Ready",
-                        message: "SideStore Apple ID signing finished, but the pairing file could not be read for install.\n\(error.localizedDescription)\n\nSigned IPA: \(signedPath)"
+                        message: "SideStore Apple ID signing finished, but the pairing file could not be read for \(postSigningAction.transferVerb).\n\(error.localizedDescription)\n\nSigned IPA: \(signedPath)"
                     )
                 }
             } else {
@@ -1264,7 +1285,7 @@ struct KittyStoreView: View {
     private func startSideStoreAltSignSigning(
         importedIPA: KittyStoreImportedFile,
         provisioningProfile: KittyStoreImportedFile,
-        shouldInstallAfterSigning: Bool,
+        postSigningAction: KittyStorePostSigningAction,
         pairingPath: String?,
         bundleID: String
     ) {
@@ -1315,12 +1336,12 @@ struct KittyStoreView: View {
                 return
             }
 
-            if shouldInstallAfterSigning, let pairingPath {
+            if postSigningAction.requiresDeviceTransfer, let pairingPath, let minimuxerAction = postSigningAction.minimuxerAction {
                 do {
                     let pairing = try String(contentsOfFile: pairingPath, encoding: .utf8)
                     signingInProgress = true
                     let installResult = await KittyStoreMinimuxerBridge.installOrRefresh(
-                        action: .install,
+                        action: minimuxerAction,
                         bundleIdentifier: bundleID,
                         pairingFileContents: pairing,
                         ipaURL: URL(fileURLWithPath: signedPath),
@@ -1330,20 +1351,20 @@ struct KittyStoreView: View {
                     signingInProgress = false
                     if installResult.exitCode == 0 {
                         signingAlert = KittyStoreSigningAlert(
-                            title: "Installed",
-                            message: "SideStore AltSign signed the IPA and minimuxer installed it.\n\nSigned IPA: \(signedPath)\n\n\(installResult.log.prefix(1400))"
+                            title: postSigningAction.successTitle,
+                            message: "SideStore AltSign signed the IPA and minimuxer \(postSigningAction.completedVerb) it.\n\nSigned IPA: \(signedPath)\n\n\(installResult.log.prefix(1400))"
                         )
                     } else {
                         signingAlert = KittyStoreSigningAlert(
-                            title: "Install Failed",
-                            message: "SideStore AltSign signing succeeded, but minimuxer install failed.\nStatus: \(installResult.status)\n\n\(installResult.log.prefix(1600))\n\nSigned IPA: \(signedPath)"
+                            title: postSigningAction.failureTitle,
+                            message: "SideStore AltSign signing succeeded, but minimuxer \(postSigningAction.transferVerb) failed.\nStatus: \(installResult.status)\n\n\(installResult.log.prefix(1600))\n\nSigned IPA: \(signedPath)"
                         )
                     }
                 } catch {
                     signingInProgress = false
                     signingAlert = KittyStoreSigningAlert(
                         title: "Signed IPA Ready",
-                        message: "SideStore AltSign signed the IPA, but the pairing file could not be read for install.\n\(error.localizedDescription)\n\nSigned IPA: \(signedPath)"
+                        message: "SideStore AltSign signed the IPA, but the pairing file could not be read for \(postSigningAction.transferVerb).\n\(error.localizedDescription)\n\nSigned IPA: \(signedPath)"
                     )
                 }
             } else {
@@ -1390,7 +1411,9 @@ struct KittyStoreView: View {
                 "iPadFullscreen": iPadFullscreen,
                 "removeURLScheme": removeURLScheme,
                 "removeProvisioning": removeProvisioning,
-                "installAfterSigning": installAfterSigning,
+                "postSigningAction": postSigningAction.rawValue,
+                "installAfterSigning": postSigningAction == .install,
+                "refreshAfterSigning": postSigningAction == .refresh,
                 "deleteAfterSigning": deleteAfterSigning,
                 "replaceSubstrateWithElleKit": replaceSubstrateWithElleKit,
                 "enableLiquidGlass": enableLiquidGlass
@@ -1787,6 +1810,64 @@ private enum KittyStoreFeatherSigningType: String, CaseIterable, Identifiable {
     }
 }
 
+private enum KittyStorePostSigningAction: String, CaseIterable, Identifiable {
+    case none
+    case install
+    case refresh
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .none: return "None"
+        case .install: return "Install"
+        case .refresh: return "Refresh"
+        }
+    }
+
+    var requiresDeviceTransfer: Bool { self != .none }
+
+    var transferVerb: String {
+        switch self {
+        case .none: return "save"
+        case .install: return "install"
+        case .refresh: return "refresh"
+        }
+    }
+
+    var completedVerb: String {
+        switch self {
+        case .none: return "saved"
+        case .install: return "installed"
+        case .refresh: return "refreshed"
+        }
+    }
+
+    var successTitle: String {
+        switch self {
+        case .none: return "Signed IPA Ready"
+        case .install: return "Installed"
+        case .refresh: return "Refreshed"
+        }
+    }
+
+    var failureTitle: String {
+        switch self {
+        case .none: return "Signing Failed"
+        case .install: return "Install Failed"
+        case .refresh: return "Refresh Failed"
+        }
+    }
+
+    var minimuxerAction: KittyStoreMinimuxerBridge.Action? {
+        switch self {
+        case .none: return nil
+        case .install: return .install
+        case .refresh: return .refresh
+        }
+    }
+}
+
 private enum KittyStoreInjectPath: String, CaseIterable, Identifiable {
     case executable = "@executable_path"
     case rpath = "@rpath"
@@ -2055,7 +2136,7 @@ private struct KittyStoreSigningPropertiesView: View {
     @Binding var iPadFullscreen: Bool
     @Binding var removeURLScheme: Bool
     @Binding var removeProvisioning: Bool
-    @Binding var installAfterSigning: Bool
+    @Binding var postSigningAction: KittyStorePostSigningAction
     @Binding var deleteAfterSigning: Bool
     @Binding var replaceSubstrateWithElleKit: Bool
     @Binding var enableLiquidGlass: Bool
@@ -2102,7 +2183,11 @@ private struct KittyStoreSigningPropertiesView: View {
             }
 
             Section("Post Signing") {
-                Toggle("Install After Signing", isOn: $installAfterSigning)
+                Picker("After Signing", selection: $postSigningAction) {
+                    ForEach(KittyStorePostSigningAction.allCases) { action in
+                        Text(action.title).tag(action)
+                    }
+                }
                 Toggle("Delete After Signing", isOn: $deleteAfterSigning)
             }
 
