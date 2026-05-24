@@ -12,6 +12,7 @@ struct KittyStoreView: View {
     @State private var copiedMessage: String?
     @State private var shareItem: KittyStoreShareItem?
     @State private var selectedTab: KittyStoreTab = .browse
+    @State private var selectedSourceAppID: String?
     @State private var showingSigningSheet = false
     @State private var buildKitStatus: LitterBuildKitStatus?
     @State private var selectedSigningMode: KittyStoreSigningMode = .certificate
@@ -19,6 +20,8 @@ struct KittyStoreView: View {
     @State private var showingSigningImporter = false
     @State private var signingAlert: KittyStoreSigningAlert?
     @State private var signingInProgress = false
+    @State private var sourceIPADownloadInProgress = false
+    @State private var sourceIPADownloadMessage: String?
     @State private var importedIPA: KittyStoreImportedFile?
     @State private var importedProvisioningProfile: KittyStoreImportedFile?
     @State private var importedPairingFile: KittyStoreImportedFile?
@@ -48,7 +51,13 @@ struct KittyStoreView: View {
 
     private var apps: [KittyStoreApp] { source?.apps ?? [] }
     private var currentBundleIdentifier: String { updater.latestManifest?.bundleIdentifier ?? Bundle.main.bundleIdentifier ?? "com.sigkitten.litter" }
-    private var app: KittyStoreApp? { apps.first { $0.bundleIdentifier == currentBundleIdentifier } ?? apps.first }
+    private var app: KittyStoreApp? {
+        if let selectedSourceAppID,
+           let selected = apps.first(where: { $0.bundleIdentifier == selectedSourceAppID }) {
+            return selected
+        }
+        return apps.first { $0.bundleIdentifier == currentBundleIdentifier } ?? apps.first
+    }
     private var selectedAppName: String { app?.name ?? updater.latestManifest?.name ?? "App" }
     private var versions: [KittyStoreVersion] { app?.versions ?? [] }
     private var latestVersion: KittyStoreVersion? { versions.first }
@@ -236,6 +245,14 @@ struct KittyStoreView: View {
     private var sourceAppsPanel: some View {
         panel(title: "Browse", icon: "bag") {
             VStack(spacing: 10) {
+                if let sourceIPADownloadMessage {
+                    readinessRow(
+                        sourceIPADownloadInProgress ? "IPA Download" : "IPA Ready",
+                        detail: sourceIPADownloadMessage,
+                        state: sourceIPADownloadInProgress ? nil : importedIPA != nil
+                    )
+                }
+
                 if apps.isEmpty {
                     emptyState(sourcePhase.message)
                 } else {
@@ -739,8 +756,8 @@ struct KittyStoreView: View {
                     .background(LitterTheme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             .buttonStyle(.plain)
-            .disabled(signingInProgress)
-            .opacity(signingInProgress ? 0.72 : 1)
+            .disabled(signingInProgress || sourceIPADownloadInProgress)
+            .opacity((signingInProgress || sourceIPADownloadInProgress) ? 0.72 : 1)
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
         }
@@ -800,6 +817,7 @@ struct KittyStoreView: View {
     }
 
     private var signingReadinessMessage: String? {
+        if sourceIPADownloadInProgress { return sourceIPADownloadMessage ?? "Downloading the selected source IPA." }
         guard importedIPA != nil else { return "Import an IPA before signing." }
         switch selectedSigningMode {
         case .certificate:
@@ -856,7 +874,11 @@ struct KittyStoreView: View {
         sourcePhase = .loading
         do {
             let data = try await GitHubReleaseAPI.data(url: url)
-            source = try JSONDecoder().decode(KittyStoreSource.self, from: data)
+            let decodedSource = try JSONDecoder().decode(KittyStoreSource.self, from: data)
+            source = decodedSource
+            if let selectedSourceAppID, !decodedSource.apps.contains(where: { $0.bundleIdentifier == selectedSourceAppID }) {
+                self.selectedSourceAppID = nil
+            }
             sourcePhase = .loaded
         } catch {
             sourcePhase = .failed(error.localizedDescription)
@@ -906,6 +928,75 @@ struct KittyStoreView: View {
             frameworksAndPlugins.append(contentsOf: files)
         case .tweaks:
             tweaks.append(contentsOf: files)
+        }
+    }
+
+    @MainActor
+    private func selectSourceApp(_ storeApp: KittyStoreApp) {
+        selectedSourceAppID = storeApp.bundleIdentifier
+    }
+
+    @MainActor
+    private func prepareSigningFields(for storeApp: KittyStoreApp, version: KittyStoreVersion?) {
+        selectSourceApp(storeApp)
+        appNameOverride = storeApp.name
+        bundleIdentifierOverride = storeApp.bundleIdentifier
+        appVersionOverride = version?.version ?? version?.buildVersion ?? ""
+    }
+
+    @MainActor
+    private func downloadSourceIPAForSigning(storeApp: KittyStoreApp, version: KittyStoreVersion, openSigning: Bool) {
+        guard !sourceIPADownloadInProgress else { return }
+        prepareSigningFields(for: storeApp, version: version)
+        guard let remoteURL = URL(string: version.downloadURL) else {
+            signingAlert = KittyStoreSigningAlert(title: "Invalid IPA URL", message: "The selected source version does not have a valid IPA download URL.")
+            return
+        }
+
+        sourceIPADownloadInProgress = true
+        sourceIPADownloadMessage = "Downloading \(storeApp.name) \(version.version ?? version.buildVersion ?? "IPA")"
+        taskBag.run {
+            do {
+                let directory = try LitterDownloadSupport.appSupportDirectory(named: "KittyStoreSourceIPAs")
+                let fileName = sourceIPAFileName(for: storeApp, version: version, remoteURL: remoteURL)
+                let destination = directory.appendingPathComponent(fileName)
+                let request = GitHubReleaseAPI.request(url: remoteURL, accept: "application/octet-stream")
+                let driver = FileDownloadDriver(destination: destination) { written, expected in
+                    Task { @MainActor in
+                        updateSourceDownloadProgress(written: written, expected: expected, appName: storeApp.name)
+                    }
+                }
+                let fileURL = try await driver.start(request: request)
+                let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
+                let size = values?.fileSize.map(Int64.init)
+                importedIPA = KittyStoreImportedFile(displayName: fileName, stagedPath: fileURL.path, size: size, isDirectory: false)
+                sourceIPADownloadInProgress = false
+                sourceIPADownloadMessage = "Ready to sign \(fileName)"
+                if openSigning { showingSigningSheet = true }
+            } catch is CancellationError {
+                sourceIPADownloadInProgress = false
+                sourceIPADownloadMessage = "IPA download cancelled."
+            } catch {
+                sourceIPADownloadInProgress = false
+                sourceIPADownloadMessage = "IPA download failed."
+                signingAlert = KittyStoreSigningAlert(title: "Download Failed", message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func sourceIPAFileName(for storeApp: KittyStoreApp, version: KittyStoreVersion, remoteURL: URL) -> String {
+        let remoteName = remoteURL.lastPathComponent.removingPercentEncoding ?? remoteURL.lastPathComponent
+        if remoteName.lowercased().hasSuffix(".ipa") { return sanitizeFileName(remoteName) }
+        let versionToken = version.version ?? version.buildVersion ?? "source"
+        return sanitizeFileName("\(storeApp.name)-\(versionToken).ipa")
+    }
+
+    @MainActor
+    private func updateSourceDownloadProgress(written: Int64, expected: Int64, appName: String) {
+        if expected > 0 {
+            sourceIPADownloadMessage = "Downloading \(appName): \(LitterDownloadSupport.formatBytes(written)) / \(LitterDownloadSupport.formatBytes(expected))"
+        } else {
+            sourceIPADownloadMessage = "Downloading \(appName): \(LitterDownloadSupport.formatBytes(written))"
         }
     }
 
@@ -1328,7 +1419,10 @@ struct KittyStoreView: View {
     }
 
     private func sourceAppRow(_ storeApp: KittyStoreApp) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let latest = storeApp.versions.first
+        let isSelected = storeApp.bundleIdentifier == app?.bundleIdentifier
+
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -1340,7 +1434,7 @@ struct KittyStoreView: View {
                 .frame(width: 52, height: 52)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(LitterTheme.border.opacity(0.45), lineWidth: 0.8)
+                        .stroke(isSelected ? LitterTheme.accent.opacity(0.9) : LitterTheme.border.opacity(0.45), lineWidth: isSelected ? 1.2 : 0.8)
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -1359,7 +1453,9 @@ struct KittyStoreView: View {
                         .truncationMode(.middle)
                 }
                 Spacer(minLength: 0)
-                if let version = storeApp.versions.first?.version {
+                if isSelected {
+                    statusPill("Selected", color: LitterTheme.success)
+                } else if let version = latest?.version {
                     statusPill(version, color: LitterTheme.accent)
                 }
             }
@@ -1372,16 +1468,17 @@ struct KittyStoreView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let latest = storeApp.versions.first {
+            if let latest {
                 HStack(spacing: 8) {
+                    compactButton(isSelected ? "Selected" : "View", icon: isSelected ? "checkmark.circle.fill" : "rectangle.and.text.magnifyingglass") {
+                        selectSourceApp(storeApp)
+                        selectedTab = .myApps
+                    }
                     if let sideStoreURL = installerURL(scheme: "sidestore", host: "install", targetURL: latest.downloadURL) {
                         compactButton("SideStore", icon: "square.and.arrow.down") { openURL(sideStoreURL) }
                     }
-                    compactButton("Sign", icon: "signature") {
-                        appNameOverride = storeApp.name
-                        bundleIdentifierOverride = storeApp.bundleIdentifier
-                        appVersionOverride = latest.version ?? ""
-                        showingSigningSheet = true
+                    compactButton(sourceIPADownloadInProgress ? "Wait" : "Sign", icon: "signature") {
+                        downloadSourceIPAForSigning(storeApp: storeApp, version: latest, openSigning: true)
                     }
                     compactButton("Copy", icon: "doc.on.doc") {
                         UIPasteboard.general.string = latest.downloadURL
@@ -1392,7 +1489,14 @@ struct KittyStoreView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LitterTheme.surfaceLight.opacity(0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(
+            LitterTheme.surfaceLight.opacity(isSelected ? 0.48 : 0.34),
+            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(isSelected ? LitterTheme.accent.opacity(0.5) : Color.clear, lineWidth: 0.8)
+        )
     }
 
     private func versionRow(_ version: KittyStoreVersion) -> some View {
@@ -1437,6 +1541,11 @@ struct KittyStoreView: View {
                 }
                 if let altStoreURL = installerURL(scheme: "altstore", host: "install", targetURL: version.downloadURL) {
                     compactButton("AltStore", icon: "square.and.arrow.down.on.square") { openURL(altStoreURL) }
+                }
+                if let storeApp = app {
+                    compactButton(sourceIPADownloadInProgress ? "Wait" : "Sign", icon: "signature") {
+                        downloadSourceIPAForSigning(storeApp: storeApp, version: version, openSigning: true)
+                    }
                 }
                 compactButton("Copy", icon: "doc.on.doc") {
                     UIPasteboard.general.string = version.downloadURL

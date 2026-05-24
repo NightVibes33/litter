@@ -126,7 +126,7 @@ enum KittyStoreSideStoreSigningBridge {
             if let deviceUDID, !deviceUDID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 _ = try await registerDeviceIfNeeded(udid: deviceUDID, team: auth.team, session: auth.session)
             }
-            let certificate = try await requestCertificate(team: auth.team, session: auth.session)
+            let certificate = try await requestCertificate(team: auth.team, session: auth.session, appName: appName)
             let prepared = try await prepareSideStoreAppleIDSigningInput(
                 ipaURL: ipaURL,
                 outputDirectory: outputDirectory,
@@ -222,10 +222,13 @@ enum KittyStoreSideStoreSigningBridge {
 
             let account = ALTAccount()
             account.appleID = ""
-            account.firstName = "KittyStore"
+            account.firstName = appDisplayName
             account.lastName = ""
+            let cleanedTeamName = rawTeamName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let profileName = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let teamName = !cleanedTeamName.isEmpty ? cleanedTeamName : (!profileName.isEmpty ? profileName : "Imported Signing Team")
             let team = ALTTeam(
-                name: rawTeamName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? rawTeamName! : "KittyStore Team",
+                name: teamName,
                 identifier: teamID,
                 type: .unknown,
                 account: account
@@ -437,9 +440,9 @@ private extension KittyStoreSideStoreSigningBridge {
         }
     }
 
-    static func requestCertificate(team: ALTTeam, session: ALTAppleAPISession) async throws -> ALTCertificate {
+    static func requestCertificate(team: ALTTeam, session: ALTAppleAPISession, appName: String) async throws -> ALTCertificate {
         let certificate: ALTCertificate = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ALTCertificate, Error>) in
-            let machineName = "KittyStore iOS"
+            let machineName = certificateMachineName(appName: appName, accountFirstName: team.account.firstName)
             ALTAppleAPI.shared.addCertificate(machineName: machineName, to: team, session: session) { certificate, error in
                 if let error { continuation.resume(throwing: error) }
                 else if let certificate { continuation.resume(returning: certificate) }
@@ -473,7 +476,7 @@ private extension KittyStoreSideStoreSigningBridge {
             return existing
         }
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ALTDevice, Error>) in
-            ALTAppleAPI.shared.registerDevice(name: "KittyStore iPhone", identifier: udid, type: .iphone, team: team, session: session) { device, error in
+            ALTAppleAPI.shared.registerDevice(name: deviceRegistrationName, identifier: udid, type: .iphone, team: team, session: session) { device, error in
                 if let error { continuation.resume(throwing: error) }
                 else if let device { continuation.resume(returning: device) }
                 else { continuation.resume(throwing: NSError(domain: "KittyStoreSideStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return a registered device."])) }
@@ -629,6 +632,27 @@ private extension KittyStoreSideStoreSigningBridge {
         case .organization: return "organization"
         default: return "unknown"
         }
+    }
+
+    static var appDisplayName: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let displayName = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? "Litter"
+        let cleaned = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "Litter" : cleaned
+    }
+
+    static var deviceRegistrationName: String {
+        let cleaned = UIDevice.current.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? UIDevice.current.model : cleaned
+    }
+
+    static func certificateMachineName(appName: String, accountFirstName: String) -> String {
+        let cleanedAppName = appName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let brandName = cleanedAppName.isEmpty ? appDisplayName : cleanedAppName
+        let asciiBrand = brandName.unicodeScalars.allSatisfy(\.isASCII) ? brandName : appDisplayName
+        let owner = accountFirstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ownerText = owner.isEmpty ? "user" : owner
+        return "\(asciiBrand) - \(ownerText)'s \(deviceRegistrationName)"
     }
 
     static func stagedOutputURL(for ipaURL: URL, in directory: URL) throws -> URL {
