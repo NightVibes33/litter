@@ -136,6 +136,7 @@ fn main() {
         // Clone the vendored libraries
         repo_setup("https://github.com/libimobiledevice/libplist.git");
         repo_setup("https://github.com/libimobiledevice/libimobiledevice-glue.git");
+        repo_setup("https://github.com/libimobiledevice/libtatsu.git");
         repo_setup("https://github.com/libimobiledevice/libusbmuxd.git");
         repo_setup("https://github.com/libimobiledevice/libimobiledevice.git");
 
@@ -196,6 +197,24 @@ fn main() {
         let dst = dst.build();
 
         println!("cargo:rustc-link-search=native={}", dst.display());
+
+        let mut dst = autotools::Config::new("libtatsu");
+        dst.env("PKG_CONFIG_PATH", &out_path.join("lib/pkgconfig"));
+        dst.env("libcurl_CFLAGS", "");
+        dst.env("libcurl_LIBS", "-lcurl");
+        configure_for_target(&mut dst);
+        for flag in &c_flags {
+            dst.cflag(flag);
+        }
+        for flag in &cxx_flags {
+            dst.cxxflag(flag);
+        }
+        let dst = dst.build();
+
+        println!(
+            "cargo:rustc-link-search=native={}",
+            dst.join("lib").display()
+        );
 
         let mut dst = autotools::Config::new("libusbmuxd");
         dst.without("cython", None);
@@ -264,9 +283,11 @@ fn main() {
         location_determinator
     );
     println!("cargo:rustc-link-lib={}=plist-2.0", location_determinator);
+    println!("cargo:rustc-link-lib={location_determinator}=tatsu");
 
     println!("cargo:rustc-link-lib={location_determinator}=crypto");
     println!("cargo:rustc-link-lib={location_determinator}=ssl");
+    println!("cargo:rustc-link-lib=dylib=curl");
 }
 
 fn configure_for_target(config: &mut autotools::Config) {
