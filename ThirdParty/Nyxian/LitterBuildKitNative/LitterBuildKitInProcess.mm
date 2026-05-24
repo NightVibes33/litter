@@ -1122,7 +1122,206 @@ static BOOL LBICopyIntoAppSubdir(NSString *source, NSString *appDir, NSString *s
     return YES;
 }
 
-static void LBIKittyStoreCollectInputs(NSDictionary *plan, NSString *appDir, vector<string> &dylibs, vector<string> &removeDylibs, NSMutableString *log)
+
+static NSString *LBIArchiveString(const unsigned char *bytes, NSUInteger length)
+{
+    NSUInteger actual = 0;
+    while(actual < length && bytes[actual] != 0) { actual++; }
+    NSString *raw = [[NSString alloc] initWithBytes:bytes length:actual encoding:NSUTF8StringEncoding] ?: @"";
+    return [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
+static BOOL LBIArchiveRelativePathIsSafe(NSString *path)
+{
+    if(path.length == 0 || [path hasPrefix:@"/"]) { return NO; }
+    for(NSString *component in path.pathComponents)
+    {
+        if([component isEqualToString:@".."] || [component isEqualToString:@"/"]) { return NO; }
+    }
+    return YES;
+}
+
+static unsigned long long LBITarOctalSize(const unsigned char *bytes, NSUInteger length)
+{
+    unsigned long long value = 0;
+    for(NSUInteger i = 0; i < length; i++)
+    {
+        unsigned char ch = bytes[i];
+        if(ch == 0 || ch == ' ') { continue; }
+        if(ch < '0' || ch > '7') { break; }
+        value = (value << 3) + (unsigned long long)(ch - '0');
+    }
+    return value;
+}
+
+static BOOL LBIWriteDataToPath(NSData *data, NSString *path, NSMutableString *log)
+{
+    NSString *parent = path.stringByDeletingLastPathComponent;
+    [NSFileManager.defaultManager createDirectoryAtPath:parent withIntermediateDirectories:YES attributes:nil error:nil];
+    NSError *error = nil;
+    if(![data writeToFile:path options:NSDataWritingAtomic error:&error])
+    {
+        [log appendFormat:@"Could not write extracted tweak file %@: %@\n", path.lastPathComponent, error.localizedDescription ?: @"unknown error"];
+        return NO;
+    }
+    return YES;
+}
+
+static NSData *LBIGunzipData(NSData *data, NSString *scratchRoot, NSMutableString *log)
+{
+    NSString *gzPath = [scratchRoot stringByAppendingPathComponent:[NSString stringWithFormat:@"data-%@.tar.gz", [NSUUID UUID].UUIDString]];
+    if(!LBIWriteDataToPath(data, gzPath, log)) { return nil; }
+    gzFile file = gzopen(gzPath.fileSystemRepresentation, "rb");
+    if(file == NULL)
+    {
+        [log appendString:@"Could not open gzip payload from .deb tweak.\n"];
+        return nil;
+    }
+    NSMutableData *output = [NSMutableData data];
+    unsigned char buffer[256 * 1024];
+    int readBytes = 0;
+    while((readBytes = gzread(file, buffer, sizeof(buffer))) > 0)
+    {
+        [output appendBytes:buffer length:(NSUInteger)readBytes];
+    }
+    int closeStatus = gzclose(file);
+    if(closeStatus != Z_OK)
+    {
+        [log appendFormat:@"Could not decompress gzip payload from .deb tweak (zlib status %d).\n", closeStatus];
+        return nil;
+    }
+    return output;
+}
+
+static BOOL LBIExtractTarData(NSData *tarData, NSString *destinationRoot, NSMutableString *log)
+{
+    const unsigned char *bytes = (const unsigned char *)tarData.bytes;
+    NSUInteger length = tarData.length;
+    NSUInteger offset = 0;
+    BOOL extractedAny = NO;
+    while(offset + 512 <= length)
+    {
+        const unsigned char *header = bytes + offset;
+        BOOL empty = YES;
+        for(NSUInteger i = 0; i < 512; i++)
+        {
+            if(header[i] != 0) { empty = NO; break; }
+        }
+        if(empty) { break; }
+
+        NSString *name = LBIArchiveString(header, 100);
+        NSString *prefix = LBIArchiveString(header + 345, 155);
+        if(prefix.length > 0) { name = [prefix stringByAppendingPathComponent:name]; }
+        unsigned long long fileSize = LBITarOctalSize(header + 124, 12);
+        char type = (char)header[156];
+        NSUInteger dataOffset = offset + 512;
+        unsigned long long padded = ((fileSize + 511ULL) / 512ULL) * 512ULL;
+        if(dataOffset + (NSUInteger)fileSize > length)
+        {
+            [log appendFormat:@"Tweak tar payload is truncated at %@.\n", name];
+            return NO;
+        }
+
+        if(LBIArchiveRelativePathIsSafe(name))
+        {
+            NSString *outputPath = [destinationRoot stringByAppendingPathComponent:name];
+            if(type == '5')
+            {
+                [NSFileManager.defaultManager createDirectoryAtPath:outputPath withIntermediateDirectories:YES attributes:nil error:nil];
+                extractedAny = YES;
+            }
+            else if(type == '\0' || type == '0')
+            {
+                NSData *fileData = [tarData subdataWithRange:NSMakeRange(dataOffset, (NSUInteger)fileSize)];
+                if(!LBIWriteDataToPath(fileData, outputPath, log)) { return NO; }
+                extractedAny = YES;
+            }
+        }
+        else
+        {
+            [log appendFormat:@"Skipped unsafe tweak tar path: %@\n", name];
+        }
+        offset = dataOffset + (NSUInteger)padded;
+    }
+    return extractedAny;
+}
+
+static BOOL LBIExtractDebDataPayload(NSString *debPath, NSString *destinationRoot, NSMutableString *log)
+{
+    NSData *debData = [NSData dataWithContentsOfFile:debPath options:NSDataReadingMappedIfSafe error:nil];
+    const unsigned char *bytes = (const unsigned char *)debData.bytes;
+    NSUInteger length = debData.length;
+    if(length < 8 || memcmp(bytes, "!<arch>\n", 8) != 0)
+    {
+        [log appendFormat:@"Tweak input is not a Debian ar archive: %@\n", debPath.lastPathComponent];
+        return NO;
+    }
+    NSUInteger offset = 8;
+    while(offset + 60 <= length)
+    {
+        const unsigned char *header = bytes + offset;
+        NSString *name = LBIArchiveString(header, 16);
+        while([name hasSuffix:@"/"]) { name = [name substringToIndex:name.length - 1]; }
+        NSString *sizeText = LBIArchiveString(header + 48, 10);
+        unsigned long long size = strtoull(sizeText.UTF8String, NULL, 10);
+        NSUInteger dataOffset = offset + 60;
+        if(dataOffset + (NSUInteger)size > length)
+        {
+            [log appendFormat:@"Debian archive member %@ is truncated.\n", name];
+            return NO;
+        }
+        NSData *memberData = [debData subdataWithRange:NSMakeRange(dataOffset, (NSUInteger)size)];
+        if([name hasPrefix:@"data.tar"])
+        {
+            NSData *tarData = memberData;
+            if([name hasSuffix:@".gz"])
+            {
+                tarData = LBIGunzipData(memberData, destinationRoot, log);
+                if(tarData.length == 0) { return NO; }
+            }
+            else if(![name isEqualToString:@"data.tar"])
+            {
+                [log appendFormat:@"Unsupported .deb data payload %@. Supported tweak payloads are data.tar and data.tar.gz.\n", name];
+                return NO;
+            }
+            BOOL ok = LBIExtractTarData(tarData, destinationRoot, log);
+            if(ok) { [log appendFormat:@"Extracted tweak payload from %@.\n", debPath.lastPathComponent]; }
+            return ok;
+        }
+        offset = dataOffset + (NSUInteger)size + ((size % 2ULL) ? 1 : 0);
+    }
+    [log appendFormat:@"No data.tar payload was found in tweak %@.\n", debPath.lastPathComponent];
+    return NO;
+}
+
+static void LBIKittyStoreCollectTweakPayload(NSString *root, NSString *appDir, vector<string> &dylibs, NSMutableString *log)
+{
+    NSDirectoryEnumerator<NSURL *> *enumerator = [NSFileManager.defaultManager enumeratorAtURL:[NSURL fileURLWithPath:root]
+                                                                    includingPropertiesForKeys:@[NSURLIsDirectoryKey]
+                                                                                       options:0
+                                                                                  errorHandler:nil];
+    for(NSURL *url in enumerator)
+    {
+        NSNumber *isDirectoryValue = nil;
+        [url getResourceValue:&isDirectoryValue forKey:NSURLIsDirectoryKey error:nil];
+        BOOL isDirectory = isDirectoryValue.boolValue;
+        NSString *ext = url.pathExtension.lowercaseString;
+        if(isDirectory && ([ext isEqualToString:@"framework"] || [ext isEqualToString:@"appex"] || [ext isEqualToString:@"plugin"]))
+        {
+            if([ext isEqualToString:@"framework"]) { LBICopyIntoAppSubdir(url.path, appDir, @"Frameworks", log); }
+            else { LBICopyIntoAppSubdir(url.path, appDir, @"PlugIns", log); }
+            [enumerator skipDescendants];
+            continue;
+        }
+        if(!isDirectory && [ext isEqualToString:@"dylib"])
+        {
+            dylibs.push_back(string(url.path.UTF8String));
+            [log appendFormat:@"Queued tweak dylib injection: %@\n", url.lastPathComponent];
+        }
+    }
+}
+
+static void LBIKittyStoreCollectInputs(NSDictionary *plan, NSString *appDir, NSString *workRoot, vector<string> &dylibs, vector<string> &removeDylibs, NSMutableString *log)
 {
     auto addDylib = ^(NSString *path) {
         if(path.length == 0) { return; }
@@ -1162,12 +1361,33 @@ static void LBIKittyStoreCollectInputs(NSDictionary *plan, NSString *appDir, vec
             [log appendFormat:@"Unsupported framework/plugin type for now: %@\n", path.lastPathComponent];
         }
     }
+    NSString *tweakRoot = [workRoot stringByAppendingPathComponent:@"TweakInputs"];
+    [NSFileManager.defaultManager createDirectoryAtPath:tweakRoot withIntermediateDirectories:YES attributes:nil error:nil];
     for(NSString *path in LBIStringArray(plan, @"modify", @"tweaks"))
     {
+        BOOL isDir = NO;
+        if(![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&isDir])
+        {
+            [log appendFormat:@"Tweak input missing: %@\n", path];
+            continue;
+        }
         NSString *ext = path.pathExtension.lowercaseString;
-        if([ext isEqualToString:@"dylib"]) { addDylib(path); }
+        if(isDir) { LBIKittyStoreCollectTweakPayload(path, appDir, dylibs, log); }
+        else if([ext isEqualToString:@"dylib"]) { addDylib(path); }
         else if([ext isEqualToString:@"framework"]) { LBICopyIntoAppSubdir(path, appDir, @"Frameworks", log); }
         else if([ext isEqualToString:@"appex"] || [ext isEqualToString:@"plugin"]) { LBICopyIntoAppSubdir(path, appDir, @"PlugIns", log); }
+        else if([ext isEqualToString:@"zip"])
+        {
+            NSString *extractDir = [tweakRoot stringByAppendingPathComponent:[NSString stringWithFormat:@"zip-%@", [NSUUID UUID].UUIDString]];
+            if(Zip::Extract(path.UTF8String, extractDir.UTF8String)) { LBIKittyStoreCollectTweakPayload(extractDir, appDir, dylibs, log); }
+            else { [log appendFormat:@"Could not extract tweak zip: %@\n", path.lastPathComponent]; }
+        }
+        else if([ext isEqualToString:@"deb"])
+        {
+            NSString *extractDir = [tweakRoot stringByAppendingPathComponent:[NSString stringWithFormat:@"deb-%@", [NSUUID UUID].UUIDString]];
+            [NSFileManager.defaultManager createDirectoryAtPath:extractDir withIntermediateDirectories:YES attributes:nil error:nil];
+            if(LBIExtractDebDataPayload(path, extractDir, log)) { LBIKittyStoreCollectTweakPayload(extractDir, appDir, dylibs, log); }
+        }
         else { [log appendFormat:@"Unsupported tweak input type for now: %@\n", path.lastPathComponent]; }
     }
 }
@@ -1210,7 +1430,7 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
     LBIKittyStoreModifyInfoPlist(plan, appDir, log);
     vector<string> dylibs;
     vector<string> removeDylibs;
-    LBIKittyStoreCollectInputs(plan, appDir, dylibs, removeDylibs, log);
+    LBIKittyStoreCollectInputs(plan, appDir, workRoot, dylibs, removeDylibs, log);
 
     NSString *signingType = LBINestedString(plan, @"signing", @"type").lowercaseString;
     if(signingType.length == 0 || [signingType isEqualToString:@"standard"]) { signingType = @"default"; }
