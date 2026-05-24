@@ -103,18 +103,18 @@ enum Minimuxer {
         logPath: String,
         isConsoleLoggingEnabled: Bool
     ) throws {
-        try startWithLogger(pairingFile, logPath, isConsoleLoggingEnabled)
+        try Litter.startWithLogger(pairingFile, logPath, isConsoleLoggingEnabled)
     }
 
     static func fetchUDID() -> String? {
-        fetch_udid()?.toString()
+        Litter.fetch_udid()?.toString()
     }
 
     static func installProvisioningProfile(profile: Data) throws {
         try profile.withUnsafeBytes { rawBuffer in
             let bytes = rawBuffer.bindMemory(to: UInt8.self)
             let buffer = UnsafeBufferPointer(start: bytes.baseAddress, count: bytes.count)
-            try install_provisioning_profile(buffer)
+            try Litter.install_provisioning_profile(buffer)
         }
     }
 
@@ -122,12 +122,12 @@ enum Minimuxer {
         try ipaBytes.withUnsafeBytes { rawBuffer in
             let bytes = rawBuffer.bindMemory(to: UInt8.self)
             let buffer = UnsafeBufferPointer(start: bytes.baseAddress, count: bytes.count)
-            try yeetAppAfc(bundleId, buffer)
+            try Litter.yeetAppAfc(bundleId, buffer)
         }
     }
 
     static func installIpa(bundleId: String) throws {
-        try installIpa(bundleId)
+        try Litter.installIpa(bundleId)
     }
 }
 SWIFT
