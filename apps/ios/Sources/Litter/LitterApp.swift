@@ -685,6 +685,8 @@ private struct HomeNavigationView: View {
         /// with `.conversation(key)` so the bottom composer visually
         /// inherits the hero composer's position.
         case newThread
+        /// KittyLitter-branded sideload/update source.
+        case kittyStore
         /// Real local iSH file workspace.
         case filesWorkspace
         /// Saved apps list — always-visible.
@@ -909,6 +911,8 @@ private struct HomeNavigationView: View {
                     )
                     .toolbar(.hidden, for: .navigationBar)
                     .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                case .kittyStore:
+                    KittyStoreView()
                 case .filesWorkspace:
                     LocalFileWorkspaceView()
                 case .appsList:
@@ -1464,6 +1468,27 @@ private struct HomeNavigationView: View {
         navigationPath.append(.filesWorkspace)
     }
 
+    /// Opens the KittyLitter-branded sideload source and update store.
+    private func openKittyStore() {
+        appState.showModelSelector = false
+        appState.showSettings = false
+        showProjectPicker = false
+        directoryPickerSheet = nil
+
+        if navigationPath.contains(where: { route in
+            if case .kittyStore = route { return true }
+            return false
+        }) {
+            while let last = navigationPath.last {
+                if case .kittyStore = last { break }
+                navigationPath.removeLast()
+            }
+            return
+        }
+
+        navigationPath.append(.kittyStore)
+    }
+
     /// Swap the hero composer out for the freshly-created conversation in
     /// a single animation frame so the composer's apparent position is
     /// preserved by the glass morph.
@@ -1502,6 +1527,7 @@ private struct HomeNavigationView: View {
             onOpenProjectPicker: { showProjectPicker = true },
             onThreadCreated: { key in homeDashboardModel.pinThread(key) },
             onShowSettings: { appState.showSettings = true },
+            onShowStore: openKittyStore,
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
             onShowFiles: openFilesWorkspace,
             onPinThread: pinThread,
@@ -1545,6 +1571,7 @@ private struct HomeNavigationView: View {
             onOpenProjectPicker: { showProjectPicker = true },
             onThreadCreated: { key in homeDashboardModel.pinThread(key) },
             onShowSettings: { appState.showSettings = true },
+            onShowStore: openKittyStore,
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
             onShowFiles: openFilesWorkspace,
             onPinThread: pinThread,

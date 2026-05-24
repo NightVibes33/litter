@@ -32,6 +32,8 @@ struct HomeDashboardView: View {
     let onOpenProjectPicker: () -> Void
     let onThreadCreated: (ThreadKey) -> Void
     let onShowSettings: () -> Void
+    /// Optional: surface a KittyStore button alongside Settings.
+    var onShowStore: (() -> Void)? = nil
     /// Optional: surface an "Apps" button alongside Settings. Wired by the
     /// hosting navigation when a "Saved Apps" launcher should be exposed.
     var onShowApps: (() -> Void)? = nil
@@ -293,6 +295,13 @@ struct HomeDashboardView: View {
                 Button(action: onShowSettings) {
                     Image(systemName: "gearshape")
                         .foregroundColor(LitterTheme.textSecondary)
+                }
+                if let onShowStore {
+                    Button(action: onShowStore) {
+                        Image(systemName: "storefront")
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                    .accessibilityLabel("KittyStore")
                 }
                 if let onShowFiles {
                     Button(action: onShowFiles) {
