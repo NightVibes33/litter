@@ -288,7 +288,6 @@ fn main() {
 
     println!("cargo:rustc-link-lib={location_determinator}=crypto");
     println!("cargo:rustc-link-lib={location_determinator}=ssl");
-    println!("cargo:rustc-link-lib=dylib=curl");
 }
 
 fn curl_cflags() -> String {

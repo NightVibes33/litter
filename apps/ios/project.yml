@@ -473,6 +473,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.liveactivity
         INFOPLIST_FILE: Sources/LitterLiveActivity/Info.plist
+        OTHER_LDFLAGS: ""
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        HEADER_SEARCH_PATHS: "$(inherited)"
+        SWIFT_INCLUDE_PATHS: "$(inherited)"
+        OTHER_SWIFT_FLAGS: "$(inherited)"
       configs:
         Debug:
           CODE_SIGN_STYLE: "$(LIVE_ACTIVITY_CODE_SIGN_STYLE)"
