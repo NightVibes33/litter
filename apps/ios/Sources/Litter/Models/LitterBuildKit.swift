@@ -218,7 +218,10 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var commandShimsInstalled: Bool
     var requestMonitorRunning: Bool
     var embeddedProvisionPresent: Bool
+    var appleIDConfigured: Bool
+    var appleIDDetail: String
     var nyxianSigningCertificateInstalled: Bool
+    var nyxianSigningCertificateDetail: String
     var toolchainRoot: String
     var sdkRoot: String
     var buildKitRoot: String
@@ -239,13 +242,14 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     }
 
     var canRunNyxianApps: Bool {
-        isReadyForNativeBuilds && embeddedProvisionPresent && nyxianSigningCertificateInstalled
+        isReadyForNativeBuilds && embeddedProvisionPresent && appleIDConfigured && nyxianSigningCertificateInstalled
     }
 
     var nyxianRunInstallRequirements: [String] {
         var lines: [String] = []
         if !embeddedProvisionPresent { lines.append("SideStore/AltStore embedded.mobileprovision on the installed Litter app") }
-        if !nyxianSigningCertificateInstalled { lines.append("matching SideStore/AltStore .p12 certificate imported for Nyxian signing") }
+        if !appleIDConfigured { lines.append("Apple ID email and Team ID used by SideStore or AltStore") }
+        if !nyxianSigningCertificateInstalled { lines.append("validated matching SideStore/AltStore .p12 certificate for Nyxian signing") }
         return lines
     }
 
@@ -279,7 +283,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
             if canRunNyxianApps {
                 return "Fakefs Swift, unsigned IPA packaging, and original Nyxian run/install signing are ready."
             }
-            return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs the matching SideStore/AltStore .p12 certificate imported."
+            return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs Apple ID/team metadata and the matching SideStore/AltStore .p12 certificate imported."
         }
         if privateAssetsInstalled {
             return "The private asset pack is installed, but the native driver/framework is not loadable yet. Rebuild the sideload IPA with the private BuildKit framework embedded."
@@ -447,11 +451,13 @@ actor LitterBuildKit {
         try? await IshFS.writeTextFile(path: Self.shimInstallMarker, text: Date().description)
     }
 
-    func status() async -> LitterBuildKitStatus {
+    func status(checkRevocation: Bool = false) async -> LitterBuildKitStatus {
         let shimsInstalled = await IshFS.exists(path: Self.shimInstallMarker)
         let manifest = Self.installedManifest
         let sourceManifest = Self.sourceImportManifest
         let nativeDriverLoad = Self.loadNativeDriver()
+        let appleIDAccount = NyxianAppleIDStore.load()
+        let signingCertificateState = NyxianSigningCertificateStorage.savedState(checkRevocation: checkRevocation)
         return LitterBuildKitStatus(
             sourceImportAvailable: Self.sourceImportAvailable,
             liveContainerSourceAvailable: sourceManifest?.liveContainer?.sourceIncluded ?? false,
@@ -469,7 +475,10 @@ actor LitterBuildKit {
             commandShimsInstalled: shimsInstalled,
             requestMonitorRunning: monitorTask != nil,
             embeddedProvisionPresent: Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") != nil,
-            nyxianSigningCertificateInstalled: Self.nyxianSigningCertificateInstalled,
+            appleIDConfigured: appleIDAccount != nil,
+            appleIDDetail: appleIDAccount?.statusDetail ?? "Missing",
+            nyxianSigningCertificateInstalled: signingCertificateState.isUsable,
+            nyxianSigningCertificateDetail: signingCertificateState.statusDetail,
             toolchainRoot: Self.toolchainRoot.path,
             sdkRoot: Self.sdkRoot.path,
             buildKitRoot: Self.buildKitRoot.path,
@@ -477,11 +486,6 @@ actor LitterBuildKit {
             assetManifest: manifest,
             sourceImportManifest: sourceManifest
         )
-    }
-
-    private static var nyxianSigningCertificateInstalled: Bool {
-        guard let data = UserDefaults.standard.data(forKey: "LCCertificateData") else { return false }
-        return !data.isEmpty
     }
 
     private func monitorLoop() async {
@@ -493,7 +497,14 @@ actor LitterBuildKit {
     }
 
     private func processPendingRequests() async {
-        let list = await IshFS.run("find \(Self.requestRoot) -type f -name '*.request' 2>/dev/null | sort | head -n 8")
+        let list = await IshFS.run(
+            """
+            { printf '%s\n' \(IshFS.shellQuote(Self.stateRoot)); cat \(IshFS.shellQuote(Self.stateRoot))/active-roots.txt 2>/dev/null || true; } | awk 'NF && !seen[$0]++' | while IFS= read -r root; do
+              [ -n "$root" ] || continue
+              find "$root/requests" -type f -name '*.request' 2>/dev/null
+            done | sort | head -n 8
+            """
+        )
         guard list.exitCode == 0 else { return }
         let paths = list.output.split(separator: "\n").map(String.init)
         for path in paths {
@@ -502,16 +513,35 @@ actor LitterBuildKit {
     }
 
     private func processRequest(path: String) async {
+        let fallbackID = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
         guard let requestText = try? await IshFS.readTextFile(path: path, maxBytes: 32_000) else {
+            let result = BuildKitCommandResult(
+                exitCode: 74,
+                status: "request-decode-failed",
+                log: "Could not read BuildKit request file: \(path)\n"
+            )
+            await writeResult(id: fallbackID, buildRoot: Self.buildRoot, result: result)
             _ = await IshFS.run("rm -f \(IshFS.shellQuote(path))")
             return
         }
+
         let request = Self.parseRequest(requestText)
-        let id = request["id"] ?? URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
-        let command = request["command"] ?? "litter-buildkit"
+        guard let id = request["id"], !id.isEmpty,
+              let command = request["command"], !command.isEmpty else {
+            let result = BuildKitCommandResult(
+                exitCode: 65,
+                status: "request-decode-failed",
+                log: "Malformed BuildKit request: missing id or command.\nRequest path: \(path)\n"
+            )
+            await writeResult(id: request["id"] ?? fallbackID, buildRoot: request["builds"] ?? Self.buildRoot, result: result)
+            _ = await IshFS.run("rm -f \(IshFS.shellQuote(path))")
+            return
+        }
+
         let cwd = request["cwd"] ?? "/root"
         let args = request["args"] ?? ""
-        let buildDir = "\(Self.buildRoot)/\(id)"
+        let buildRoot = request["builds"] ?? Self.buildRoot
+        let buildDir = "\(buildRoot)/\(id)"
         _ = await IshFS.run("mkdir -p \(IshFS.shellQuote(buildDir))")
         _ = await IshFS.run("rm -f \(IshFS.shellQuote(path))")
 
@@ -521,8 +551,23 @@ actor LitterBuildKit {
         activeJobs[id] = job
         let result = await job.value
         activeJobs.removeValue(forKey: id)
-        try? await IshFS.writeTextFile(path: "\(buildDir)/status.txt", text: result.statusText)
-        try? await IshFS.writeTextFile(path: "\(buildDir)/log.txt", text: result.logText)
+        await writeResult(id: id, buildRoot: buildRoot, result: result)
+    }
+
+    private func writeResult(id: String, buildRoot: String, result: BuildKitCommandResult) async {
+        let buildDir = "\(buildRoot)/\(id)"
+        _ = await IshFS.run("mkdir -p \(IshFS.shellQuote(buildDir))")
+        do {
+            try await IshFS.writeTextFile(path: "\(buildDir)/status.txt", text: result.statusText)
+            try await IshFS.writeTextFile(path: "\(buildDir)/log.txt", text: result.logText)
+        } catch {
+            LLog.error(
+                "buildkit",
+                "failed to write BuildKit result",
+                error: error,
+                fields: ["id": id, "buildRoot": buildRoot, "status": result.status]
+            )
+        }
     }
 
     private func handle(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
@@ -531,7 +576,7 @@ actor LitterBuildKit {
             let current = await status()
             return BuildKitCommandResult(exitCode: 0, status: "ready", log: Self.statusLog(current))
         case "litter-nyxian-status":
-            let current = await status()
+            let current = await status(checkRevocation: true)
             return BuildKitCommandResult(exitCode: 0, status: current.isReadyForNativeBuilds ? "nyxian-ready" : "nyxian-blocked", log: Self.nyxianStatusLog(current))
         case "litter-buildkit-install-assets":
             return installAssetsCommand()
@@ -576,7 +621,7 @@ actor LitterBuildKit {
         case "litter-build-cancel":
             return cancelCommand(args: args)
         default:
-            return BuildKitCommandResult(exitCode: 64, status: "unknown-command", log: "Unknown BuildKit command: \(command)\n")
+            return BuildKitCommandResult(exitCode: 64, status: "unsupported-command", log: "Unsupported BuildKit command: \(command)\n")
         }
     }
 
@@ -2382,7 +2427,10 @@ actor LitterBuildKit {
         Fakefs command shims: \(status.commandShimsInstalled ? "installed" : "missing")
         Request monitor: \(status.requestMonitorRunning ? "running" : "stopped")
         App provisioning profile: \(status.embeddedProvisionPresent ? "present" : "missing")
-        Nyxian signing certificate: \(status.nyxianSigningCertificateInstalled ? "imported" : "missing")
+        Apple ID setup: \(status.appleIDConfigured ? "configured" : "missing")
+        Apple ID detail: \(status.appleIDDetail)
+        Nyxian signing certificate: \(status.nyxianSigningCertificateInstalled ? "validated" : "missing or invalid")
+        Nyxian signing detail: \(status.nyxianSigningCertificateDetail)
         Nyxian run/install: \(status.canRunNyxianApps ? "ready" : "blocked")
         BuildKit root: \(status.buildKitRoot)
         Toolchain root: \(status.toolchainRoot)
@@ -2436,7 +2484,10 @@ actor LitterBuildKit {
         output += "- Swift direct execution: \(status.canRunSwiftDirectly ? "available" : "not available")\n"
         output += "- Unsigned IPA packaging: \(status.canBuildUnsignedIPA ? "available" : "not available")\n"
         output += "- SideStore/AltStore embedded profile: \(status.embeddedProvisionPresent ? "present" : "missing")\n"
-        output += "- Matching signing certificate: \(status.nyxianSigningCertificateInstalled ? "imported" : "missing")\n"
+        output += "- Apple ID setup: \(status.appleIDConfigured ? "configured" : "missing")\n"
+        output += "- Apple ID detail: \(status.appleIDDetail)\n"
+        output += "- Matching signing certificate: \(status.nyxianSigningCertificateInstalled ? "validated" : "missing or invalid")\n"
+        output += "- Signing certificate detail: \(status.nyxianSigningCertificateDetail)\n"
         output += "- Run/install built apps: \(status.canRunNyxianApps ? "available" : "not available")\n"
         output += "- Driver mode: \(status.assetManifest?.toolchain.nativeDriverMode ?? "unknown")\n"
         output += "- Capabilities: \(status.installedCapabilities.isEmpty ? "none" : status.installedCapabilities.joined(separator: ", "))\n"
@@ -2466,10 +2517,14 @@ actor LitterBuildKit {
         """
         #!/bin/sh
         set -eu
-        root=${LITTER_BUILDKIT_ROOT:-/root/.litter/buildkit}
+        default_root=/root/.litter/buildkit
+        root=${LITTER_BUILDKIT_ROOT:-$default_root}
         requests="$root/requests"
         builds=${LITTER_BUILDKIT_BUILDS:-/root/.litter/builds}
-        mkdir -p "$requests" "$builds"
+        mkdir -p "$requests" "$builds" "$default_root"
+        if [ "$root" != "$default_root" ]; then
+          printf '%s\n' "$root" >> "$default_root/active-roots.txt"
+        fi
         cmd="${0##*/}"
         quote_arg() {
           printf "'"
@@ -2523,6 +2578,7 @@ actor LitterBuildKit {
           printf 'id=%s\n' "$id"
           printf 'command=%s\n' "$cmd"
           printf 'cwd=%s\n' "$(pwd)"
+          printf 'builds=%s\n' "$builds"
           write_args "$@"
         } > "$req"
         if [ "$wait_for_result" -eq 0 ]; then

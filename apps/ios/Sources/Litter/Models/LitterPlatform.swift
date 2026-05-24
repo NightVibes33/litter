@@ -82,6 +82,7 @@ enum LitterPlatform {
             guard isAlreadyBootstrapped(error) else { throw error }
             NSLog("[ish] bootstrap already completed")
         }
+        await LitterBuildKit.shared.startFakefsRequestMonitor()
 
     }
 

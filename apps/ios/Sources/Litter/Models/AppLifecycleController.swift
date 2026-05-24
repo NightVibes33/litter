@@ -418,6 +418,13 @@ final class AppLifecycleController {
                 "refreshKeys": Array(keysToRefresh).map(\.debugLabel)
             ]
         )
+        if LitterPlatform.supportsLocalRuntime {
+            do {
+                try await LitterPlatform.ensureLocalRuntimeReady()
+            } catch {
+                logLocalRuntimeUnavailable(error, fields: ["phase": "foregroundRecovery"])
+            }
+        }
         // Always attempt to reconnect saved servers on foreground return.
         // The ReconnectController skips servers whose health != .disconnected,
         // so this is cheap when everything is still connected.

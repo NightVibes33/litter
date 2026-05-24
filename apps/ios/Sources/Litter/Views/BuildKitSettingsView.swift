@@ -11,6 +11,9 @@ struct BuildKitSettingsView: View {
     @State private var lastActionOutput: String?
     @State private var tokenInput = ""
     @State private var showingCertificateImporter = false
+    @State private var appleIDEmailInput = ""
+    @State private var appleIDTeamIDInput = ""
+    @State private var appleIDActionMessage: String?
     @State private var certificatePasswordInput = ""
     @State private var certificateActionMessage: String?
 
@@ -302,8 +305,46 @@ struct BuildKitSettingsView: View {
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             statusRow("Embedded profile", status?.embeddedProvisionPresent == true ? "Present" : "Missing")
-            statusRow("Imported certificate", status?.nyxianSigningCertificateInstalled == true ? "Imported" : "Missing")
+            statusRow("Apple ID", status?.appleIDConfigured == true ? "Configured" : "Missing")
+            statusRow("Apple ID detail", status?.appleIDDetail ?? "Missing")
+            statusRow("Imported certificate", status?.nyxianSigningCertificateInstalled == true ? "Validated" : "Missing or invalid")
+            statusRow("Certificate detail", status?.nyxianSigningCertificateDetail ?? "Missing")
             statusRow("Run/install built apps", status?.canRunNyxianApps == true ? "Ready" : "Blocked")
+
+            TextField("Apple ID email", text: $appleIDEmailInput)
+                .keyboardType(.emailAddress)
+                .textContentType(.username)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            TextField("Team ID", text: $appleIDTeamIDInput)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                saveNyxianAppleID()
+            } label: {
+                Label("Save Apple ID Setup", systemImage: "person.badge.key")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button(role: .destructive) {
+                clearNyxianAppleID()
+            } label: {
+                Label("Clear Apple ID Setup", systemImage: "person.crop.circle.badge.xmark")
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            if let appleIDActionMessage, !appleIDActionMessage.isEmpty {
+                Text(appleIDActionMessage)
+                    .litterFont(.caption)
+                    .foregroundStyle(LitterTheme.textSecondary)
+                    .textSelection(.enabled)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
 
             SecureField("Certificate password", text: $certificatePasswordInput)
                 .textInputAutocapitalization(.never)
@@ -444,6 +485,7 @@ struct BuildKitSettingsView: View {
     @MainActor
     private func runBuildKitCommand(_ command: String, title: String) async {
         await LitterBuildKit.shared.installFakefsCommandShims()
+        await LitterBuildKit.shared.startFakefsRequestMonitor()
         let result = await IshFS.run(command)
         let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         lastActionOutput = "\(title)\nCommand: \(command)\nExit code: \(result.exitCode)\n\n" + (output.isEmpty ? "No output." : output)
@@ -491,17 +533,22 @@ struct BuildKitSettingsView: View {
             }
             do {
                 let data = try Data(contentsOf: url)
-                guard !data.isEmpty else {
-                    certificateActionMessage = "Certificate import failed: selected file was empty."
-                    return
-                }
-                UserDefaults.standard.set(data, forKey: "LCCertificateData")
-                UserDefaults.standard.set(certificatePasswordInput, forKey: "LCCertificatePassword")
-                certificateActionMessage = "Imported \(url.lastPathComponent) for Nyxian run/install signing."
-                lastActionOutput = "Nyxian signing certificate imported. Run Nyxian Status to confirm the embedded profile and imported certificate are both present."
+                let summary = try NyxianSigningCertificateValidator.validate(
+                    pkcs12Data: data,
+                    password: certificatePasswordInput,
+                    checkRevocation: true
+                )
+                NyxianSigningCertificateStorage.save(
+                    data: data,
+                    password: certificatePasswordInput,
+                    summary: summary
+                )
+                certificateActionMessage = summary.importMessage
+                lastActionOutput = "Nyxian signing certificate validated and saved.\nSubject: \(summary.commonName)\nSHA256: \(summary.sha256Fingerprint)"
                 taskBag.run { await refresh() }
             } catch {
                 certificateActionMessage = "Certificate import failed: \(error.localizedDescription)"
+                lastActionOutput = "Nyxian signing certificate import failed.\n\(error.localizedDescription)"
             }
         case .failure(let error):
             certificateActionMessage = "Certificate import failed: \(error.localizedDescription)"
@@ -509,9 +556,30 @@ struct BuildKitSettingsView: View {
     }
 
     @MainActor
+    private func saveNyxianAppleID() {
+        do {
+            let account = try NyxianAppleIDStore.save(email: appleIDEmailInput, teamID: appleIDTeamIDInput)
+            appleIDEmailInput = account.email
+            appleIDTeamIDInput = account.teamID
+            appleIDActionMessage = "Saved Apple ID setup for \(account.statusDetail)."
+            taskBag.run { await refresh() }
+        } catch {
+            appleIDActionMessage = "Apple ID setup failed: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func clearNyxianAppleID() {
+        NyxianAppleIDStore.clear()
+        appleIDEmailInput = ""
+        appleIDTeamIDInput = ""
+        appleIDActionMessage = "Removed Apple ID setup."
+        taskBag.run { await refresh() }
+    }
+
+    @MainActor
     private func clearNyxianCertificate() {
-        UserDefaults.standard.removeObject(forKey: "LCCertificateData")
-        UserDefaults.standard.removeObject(forKey: "LCCertificatePassword")
+        NyxianSigningCertificateStorage.clear()
         certificatePasswordInput = ""
         certificateActionMessage = "Removed the imported Nyxian signing certificate."
         taskBag.run { await refresh() }
@@ -521,6 +589,10 @@ struct BuildKitSettingsView: View {
     private func refresh() async {
         isRefreshing = true
         status = await LitterBuildKit.shared.status()
+        if let account = NyxianAppleIDStore.load(), appleIDEmailInput.isEmpty, appleIDTeamIDInput.isEmpty {
+            appleIDEmailInput = account.email
+            appleIDTeamIDInput = account.teamID
+        }
         isRefreshing = false
     }
 }
