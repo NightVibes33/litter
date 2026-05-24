@@ -348,6 +348,7 @@ actor LitterBuildKit {
         "litter-kittystore-sign",
         "litter-kittystore-install",
         "litter-kittystore-refresh",
+        "litter-kittystore-remove",
         "litter-buildkit-install-assets",
         "litter-fs-doctor",
         "litter-env-report",
@@ -684,6 +685,8 @@ actor LitterBuildKit {
             return await kittyStoreInstallOrRefresh(command: command, args: args, cwd: cwd, buildDir: buildDir)
         case "litter-kittystore-refresh":
             return await kittyStoreInstallOrRefresh(command: command, args: args, cwd: cwd, buildDir: buildDir)
+        case "litter-kittystore-remove":
+            return await kittyStoreRemove(args: args, cwd: cwd)
         case "litter-buildkit-install-assets":
             return installAssetsCommand()
         case "litter-fs-doctor":
@@ -1119,6 +1122,54 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: bridge.exitCode, status: bridge.status, log: log)
         } catch {
             return BuildKitCommandResult(exitCode: 74, status: "kittystore-install-staging-failed", log: "Could not stage SideStore install/refresh inputs.\n\(error.localizedDescription)\n" + Self.prettyJSON(payload) + "\n")
+        }
+    }
+
+    private func kittyStoreRemove(args: String, cwd: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-remove-help", log: "Usage: litter-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing\nRemoves an installed app through the SideStore minimuxer bridge when this IPA was built with the vendored minimuxer sources linked.\n")
+        }
+        let current = await status(checkRevocation: true)
+        let pairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let bundleID = Self.optionValue(tokens: tokens, names: ["--bundle-id", "--identifier"]) ?? ""
+        var missing: [String] = []
+        if !current.localDevVPNConnected { missing.append("LocalDevVPN is not detected") }
+        if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer bridge is not linked into this IPA") }
+        if bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { missing.append("Bundle identifier is required for SideStore remove") }
+        if let pairing {
+            if !(await IshFS.exists(path: pairing)) { missing.append("Pairing file does not exist: \(pairing)") }
+        } else {
+            missing.append("Pairing file is required for SideStore-style remove")
+        }
+        var payload: [String: Any] = [
+            "command": "litter-kittystore-remove",
+            "pairingFile": pairing ?? "",
+            "bundleIdentifier": bundleID,
+            "ready": missing.isEmpty,
+            "missing": missing,
+            "sideStore": [
+                "localDevVPNConnected": current.localDevVPNConnected,
+                "localDevVPNDetail": current.localDevVPNDetail,
+                "minimuxerLinked": KittyStoreMinimuxerBridge.isLinked
+            ]
+        ]
+        if !missing.isEmpty {
+            return BuildKitCommandResult(exitCode: 78, status: "kittystore-remove-blocked", log: Self.prettyJSON(payload) + "\n")
+        }
+
+        do {
+            let pairingText = try await IshFS.readTextFile(path: pairing!, maxBytes: 2_000_000)
+            let bridge = await KittyStoreMinimuxerBridge.removeApp(
+                bundleIdentifier: bundleID,
+                pairingFileContents: pairingText,
+                consoleLoggingEnabled: false
+            )
+            payload["ready"] = bridge.exitCode == 0
+            let log = "SideStore minimuxer remove preflight\n" + Self.prettyJSON(payload) + "\n" + bridge.log
+            return BuildKitCommandResult(exitCode: bridge.exitCode, status: bridge.status, log: log)
+        } catch {
+            return BuildKitCommandResult(exitCode: 74, status: "kittystore-remove-staging-failed", log: "Could not stage SideStore remove inputs.\n\(error.localizedDescription)\n" + Self.prettyJSON(payload) + "\n")
         }
     }
 
@@ -3133,7 +3184,8 @@ actor LitterBuildKit {
                 "litter-kittystore-plan",
                 "litter-kittystore-sign",
                 "litter-kittystore-install",
-                "litter-kittystore-refresh"
+                "litter-kittystore-refresh",
+                "litter-kittystore-remove"
             ]
         ]
     }
@@ -3150,8 +3202,9 @@ actor LitterBuildKit {
         - litter-kittystore-sign --plan /root/plan.json
         - litter-kittystore-install --ipa /root/App.ipa --bundle-id com.example.app --pairing /root/device.mobiledevicepairing [--profile /root/App.mobileprovision]
         - litter-kittystore-refresh --ipa /root/App.ipa --bundle-id com.example.app --pairing /root/device.mobiledevicepairing [--profile /root/App.mobileprovision]
+        - litter-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing
 
-        The source/version/status/plan commands are bot-safe. Sign uses the native Feather/Zsign path when private BuildKit assets include it. Install/refresh call the vendored SideStore minimuxer bridge when the iOS IPA is built with KITTYSTORE_MINIMUXER_LINKED.
+        The source/version/status/plan commands are bot-safe. Sign uses the native Feather/Zsign path when private BuildKit assets include it. Install/refresh/remove call the vendored SideStore minimuxer bridge when the iOS IPA is built with KITTYSTORE_MINIMUXER_LINKED.
         """
     }
 

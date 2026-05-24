@@ -133,6 +133,10 @@ enum Minimuxer {
     static func installIpa(bundleId: String) throws {
         try Litter.installIpa(bundleId)
     }
+
+    static func removeApp(bundleId: String) throws {
+        try Litter.remove_app(bundleId)
+    }
 }
 SWIFT
 
@@ -183,6 +187,10 @@ grep -q "func ready" "$MINIMUXER_ROOT/generated/minimuxer.swift" || {
 }
 grep -q "installIpa" "$MINIMUXER_ROOT/generated/minimuxer.swift" || {
   echo "error: generated minimuxer Swift bridge is missing installIpa" >&2
+  exit 1
+}
+grep -q "remove_app" "$MINIMUXER_ROOT/generated/minimuxer.swift" || {
+  echo "error: generated minimuxer Swift bridge is missing remove_app" >&2
   exit 1
 }
 

@@ -133,4 +133,53 @@ enum KittyStoreMinimuxerBridge {
         )
         #endif
     }
+    static func removeApp(
+        bundleIdentifier: String,
+        pairingFileContents: String,
+        consoleLoggingEnabled: Bool
+    ) async -> Result {
+        #if KITTYSTORE_MINIMUXER_LINKED
+        return await Task.detached(priority: .userInitiated) {
+            do {
+                var log: [String] = []
+                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+                    ?? FileManager.default.temporaryDirectory
+                let documentsPath = documentsURL.absoluteString
+
+                setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
+                log.append("SideStore minimuxer remove")
+                log.append("- Bundle ID: \(bundleIdentifier)")
+                log.append("- Log path: \(documentsPath)")
+
+                try Minimuxer.startWithLogger(
+                    pairingFile: pairingFileContents,
+                    logPath: documentsPath,
+                    isConsoleLoggingEnabled: consoleLoggingEnabled
+                )
+                log.append("- minimuxer started with the imported pairing file")
+
+                try Minimuxer.removeApp(bundleId: bundleIdentifier)
+                log.append("- uninstall request sent through installation_proxy")
+
+                let udid = Minimuxer.fetchUDID() ?? ""
+                if !udid.isEmpty {
+                    log.append("- device UDID: \(udid)")
+                }
+                return Result(exitCode: 0, status: "kittystore-remove-ok", log: log.joined(separator: "\n") + "\n")
+            } catch {
+                return Result(exitCode: 70, status: "kittystore-remove-failed", log: "\(error.localizedDescription)\n\(String(describing: error))\n")
+            }
+        }.value
+        #else
+        return Result(
+            exitCode: 78,
+            status: "sidestore-minimuxer-not-linked",
+            log: """
+            SideStore minimuxer is not linked into this Litter build.
+            Rebuild the iOS app with tools/scripts/build-sidestore-minimuxer.sh and KITTYSTORE_MINIMUXER_LINKED enabled so the vendored SideStore minimuxer Rust bridge is compiled into the app process.
+            """
+        )
+        #endif
+    }
+
 }

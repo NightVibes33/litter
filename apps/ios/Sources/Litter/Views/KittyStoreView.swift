@@ -19,7 +19,9 @@ struct KittyStoreView: View {
     @State private var signingImportKind: KittyStoreImportKind = .ipa
     @State private var showingSigningImporter = false
     @State private var signingAlert: KittyStoreSigningAlert?
+    @State private var pendingDeviceRemoval: KittyStoreRemovalRequest?
     @State private var signingInProgress = false
+    @State private var deviceActionInProgress = false
     @State private var sourceIPADownloadInProgress = false
     @State private var sourceIPADownloadMessage: String?
     @State private var importedIPA: KittyStoreImportedFile?
@@ -129,6 +131,14 @@ struct KittyStoreView: View {
         }
         .alert(item: $signingAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
+        .confirmationDialog("Remove from Device", item: $pendingDeviceRemoval, titleVisibility: .visible) { request in
+            Button("Remove \(request.name)", role: .destructive) {
+                removeSelectedAppFromDevice(request)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { request in
+            Text("Uninstall \(request.bundleIdentifier) through the SideStore minimuxer bridge.")
         }
         .task { await refreshAll() }
         .onDisappear {
@@ -400,6 +410,16 @@ struct KittyStoreView: View {
                     actionRow("Refresh Latest", detail: "Download, sign, then refresh \(selectedApp.name) through SideStore", icon: "arrow.triangle.2.circlepath") {
                         postSigningAction = .refresh
                         downloadSourceIPAForSigning(storeApp: selectedApp, version: latest, openSigning: true)
+                    }
+                }
+                if let selectedApp = app {
+                    actionRow(
+                        "Remove from Device",
+                        detail: importedPairingFile == nil ? "Import a pairing file before uninstalling." : "Uninstall \(selectedApp.bundleIdentifier) through SideStore",
+                        icon: "trash",
+                        enabled: importedPairingFile != nil && KittyStoreMinimuxerBridge.isLinked && !deviceActionInProgress
+                    ) {
+                        pendingDeviceRemoval = KittyStoreRemovalRequest(name: selectedApp.name, bundleIdentifier: selectedApp.bundleIdentifier)
                     }
                 }
             }
@@ -1376,6 +1396,46 @@ struct KittyStoreView: View {
         }
     }
 
+    @MainActor
+    private func removeSelectedAppFromDevice(_ request: KittyStoreRemovalRequest) {
+        guard let pairingPath = importedPairingFile?.stagedPath else {
+            signingAlert = KittyStoreSigningAlert(title: "Pairing File Missing", message: "Import the SideStore-style iOS pairing file before removing an app from the device.")
+            return
+        }
+        guard KittyStoreMinimuxerBridge.isLinked else {
+            signingAlert = KittyStoreSigningAlert(title: "Minimuxer Missing", message: "This IPA was not linked with the SideStore minimuxer bridge, so direct on-device remove cannot run.")
+            return
+        }
+
+        deviceActionInProgress = true
+        taskBag.run {
+            do {
+                let pairing = try String(contentsOfFile: pairingPath, encoding: .utf8)
+                let result = await KittyStoreMinimuxerBridge.removeApp(
+                    bundleIdentifier: request.bundleIdentifier,
+                    pairingFileContents: pairing,
+                    consoleLoggingEnabled: true
+                )
+                deviceActionInProgress = false
+                buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
+                if result.exitCode == 0 {
+                    signingAlert = KittyStoreSigningAlert(
+                        title: "Removed",
+                        message: "SideStore minimuxer removed \(request.name).\n\n\(result.log.prefix(1400))"
+                    )
+                } else {
+                    signingAlert = KittyStoreSigningAlert(
+                        title: "Remove Failed",
+                        message: "Status: \(result.status)\n\n\(result.log.prefix(1600))"
+                    )
+                }
+            } catch {
+                deviceActionInProgress = false
+                signingAlert = KittyStoreSigningAlert(title: "Remove Failed", message: "Could not read the imported pairing file.\n\(error.localizedDescription)")
+            }
+        }
+    }
+
     private func signingPlanJSON() -> String {
         let payload: [String: Any] = [
             "mode": selectedSigningMode.rawValue,
@@ -1952,6 +2012,12 @@ private struct KittyStoreSigningAlert: Identifiable {
     let id = UUID()
     var title: String
     var message: String
+}
+
+private struct KittyStoreRemovalRequest: Identifiable {
+    let id = UUID()
+    var name: String
+    var bundleIdentifier: String
 }
 
 private enum KittyStoreSourcePhase: Equatable {
