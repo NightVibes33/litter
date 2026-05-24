@@ -24,6 +24,35 @@ enum KittyStoreMinimuxerBridge {
         #endif
     }
 
+    static func fetchUDID(pairingFileContents: String, consoleLoggingEnabled: Bool) async -> Result {
+        #if KITTYSTORE_MINIMUXER_LINKED
+        return await Task.detached(priority: .userInitiated) {
+            do {
+                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+                    ?? FileManager.default.temporaryDirectory
+                setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
+                try Minimuxer.startWithLogger(
+                    pairingFile: pairingFileContents,
+                    logPath: documentsURL.absoluteString,
+                    isConsoleLoggingEnabled: consoleLoggingEnabled
+                )
+                guard let udid = Minimuxer.fetchUDID(), !udid.isEmpty else {
+                    return Result(exitCode: 69, status: "sidestore-udid-missing", log: "minimuxer did not return a device UDID.\n")
+                }
+                return Result(exitCode: 0, status: "sidestore-udid-ok", log: udid + "\n")
+            } catch {
+                return Result(exitCode: 70, status: "sidestore-udid-failed", log: "\(error.localizedDescription)\n\(String(describing: error))\n")
+            }
+        }.value
+        #else
+        return Result(
+            exitCode: 78,
+            status: "sidestore-minimuxer-not-linked",
+            log: "SideStore minimuxer is not linked into this Litter build.\n"
+        )
+        #endif
+    }
+
     static func installOrRefresh(
         action: Action,
         bundleIdentifier: String,

@@ -14,6 +14,7 @@ struct BuildKitSettingsView: View {
     @State private var appleIDEmailInput = ""
     @State private var appleIDTeamIDInput = ""
     @State private var appleIDPasswordInput = ""
+    @State private var appleIDTwoFactorCodeInput = ""
     @State private var appleIDAnisetteURLInput = NyxianAnisetteServerDirectory.defaultServerURL
     @State private var selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.defaultServerURL
     @State private var anisetteServerListURLInput = NyxianAnisetteServerDirectory.officialListURL
@@ -318,6 +319,7 @@ struct BuildKitSettingsView: View {
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             statusRow("Embedded profile", status?.embeddedProvisionPresent == true ? "Present" : "Missing")
+            statusRow("SideStore AltSign", KittyStoreSideStoreSigningBridge.isLinked ? "Linked" : "Missing")
             statusRow("Apple ID login", status?.appleIDConfigured == true ? "Logged in" : "Missing")
             statusRow("Apple ID detail", status?.appleIDDetail ?? "Missing")
             statusRow("Imported certificate", status?.nyxianSigningCertificateInstalled == true ? "Validated" : "Missing or invalid")
@@ -347,6 +349,13 @@ struct BuildKitSettingsView: View {
 
             SecureField("Apple ID password or app-specific password", text: $appleIDPasswordInput)
                 .textContentType(.password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            TextField("Two-factor code", text: $appleIDTwoFactorCodeInput)
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -390,7 +399,7 @@ struct BuildKitSettingsView: View {
             }
 
             Button {
-                saveNyxianAppleID()
+                taskBag.run { await saveNyxianAppleID() }
             } label: {
                 Label("Login Apple ID", systemImage: "person.badge.key.fill")
                     .foregroundStyle(LitterTheme.accent)
@@ -659,23 +668,47 @@ struct BuildKitSettingsView: View {
     }
 
     @MainActor
-    private func saveNyxianAppleID() {
+    private func saveNyxianAppleID() async {
         do {
-            let account = try NyxianAppleIDStore.login(
-                email: appleIDEmailInput,
-                password: appleIDPasswordInput,
-                teamID: appleIDTeamIDInput,
-                anisetteServerURL: anisetteURLForLogin
-            )
-            appleIDEmailInput = account.email
-            appleIDTeamIDInput = account.teamID
-            appleIDAnisetteURLInput = account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
-            syncAnisetteSelectionFromInput()
-            appleIDPasswordInput = ""
-            appleIDActionMessage = account.hasSelectedTeam
-                ? "Apple ID login saved for \(account.statusDetail). Password is stored in Keychain."
-                : "Apple ID login saved for \(account.email). Team selection can happen after authentication. Password is stored in Keychain."
-            taskBag.run { await refresh() }
+            let anisetteURL = anisetteURLForLogin
+            if KittyStoreSideStoreSigningBridge.isLinked {
+                let result = await KittyStoreSideStoreSigningBridge.authenticate(
+                    email: appleIDEmailInput,
+                    password: appleIDPasswordInput,
+                    requestedTeamID: appleIDTeamIDInput,
+                    anisetteServerURL: anisetteURL,
+                    twoFactorCode: appleIDTwoFactorCodeInput
+                )
+                let summary = try result.get()
+                let account = try NyxianAppleIDStore.login(
+                    email: summary.email,
+                    password: appleIDPasswordInput,
+                    teamID: summary.teamID,
+                    anisetteServerURL: summary.anisetteServerURL
+                )
+                appleIDEmailInput = account.email
+                appleIDTeamIDInput = summary.teamID
+                appleIDAnisetteURLInput = summary.anisetteServerURL
+                syncAnisetteSelectionFromInput()
+                appleIDPasswordInput = ""
+                appleIDTwoFactorCodeInput = ""
+                appleIDActionMessage = "SideStore Apple ID login verified for \(summary.statusDetail). Teams found: \(summary.availableTeams.map(\.displayText).joined(separator: ", "))."
+            } else {
+                let account = try NyxianAppleIDStore.login(
+                    email: appleIDEmailInput,
+                    password: appleIDPasswordInput,
+                    teamID: appleIDTeamIDInput,
+                    anisetteServerURL: anisetteURL
+                )
+                appleIDEmailInput = account.email
+                appleIDTeamIDInput = account.teamID
+                appleIDAnisetteURLInput = account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+                syncAnisetteSelectionFromInput()
+                appleIDPasswordInput = ""
+                appleIDTwoFactorCodeInput = ""
+                appleIDActionMessage = "Apple ID login saved locally, but SideStore AltSign is not linked in this build yet."
+            }
+            await refresh()
         } catch {
             appleIDActionMessage = "Apple ID login failed: \(error.localizedDescription)"
         }
@@ -688,6 +721,7 @@ struct BuildKitSettingsView: View {
             appleIDEmailInput = ""
             appleIDTeamIDInput = ""
             appleIDPasswordInput = ""
+            appleIDTwoFactorCodeInput = ""
             appleIDAnisetteURLInput = NyxianAnisetteServerDirectory.defaultServerURL
             selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.defaultServerURL
             appleIDActionMessage = "Removed Apple ID login."

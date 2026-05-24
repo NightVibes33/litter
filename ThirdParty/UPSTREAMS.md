@@ -14,6 +14,9 @@ These source drops are kept small and source-only. Generated build products, IPA
 
 - SideStore reference repo: https://github.com/SideStore/SideStore.git
 - SideStore reference commit inspected for this integration: `d292edffd1264918e6a83d3d2a0fb8cfde80e3ca`
+- AltSign signing package repo: https://github.com/SideStore/AltSign.git
+- AltSign submodule commit: `7efe511440cfdbddc04a723490def86232c42f6c`
+- AltSign submodule path: `ThirdParty/SideStore/AltSign`
 - minimuxer repo: https://github.com/SideStore/minimuxer.git
 - minimuxer vendored commit: `f9432a085b19de1bbcd744c600f510f499703a97`
 - minimuxer vendored path: `ThirdParty/SideStore/minimuxer`

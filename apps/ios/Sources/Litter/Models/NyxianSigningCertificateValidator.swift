@@ -17,8 +17,10 @@ struct NyxianSigningCertificateSummary: Codable, Equatable, Sendable {
 
     var importMessage: String {
         let profile = provisioningProfileName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let profileText = profile.isEmpty ? "embedded provisioning profile" : profile
-        return "Imported \(commonName). Password, private key, trust, revocation, and \(profileText) match passed."
+        if profile.isEmpty {
+            return "Imported \(commonName). Password, private key, trust, and revocation checks passed."
+        }
+        return "Imported \(commonName). Password, private key, trust, revocation, and \(profile) match passed."
     }
 
     var statusDetail: String {
@@ -65,6 +67,14 @@ enum NyxianSigningCertificateStorage {
         UserDefaults.standard.removeObject(forKey: certificateDataKey)
         UserDefaults.standard.removeObject(forKey: certificatePasswordKey)
         UserDefaults.standard.removeObject(forKey: validationSummaryKey)
+    }
+
+    static func loadIdentity() -> (data: Data, password: String)? {
+        guard let data = UserDefaults.standard.data(forKey: certificateDataKey) else {
+            return nil
+        }
+        let password = UserDefaults.standard.string(forKey: certificatePasswordKey) ?? ""
+        return (data, password)
     }
 
     static func savedState(checkRevocation: Bool = false) -> NyxianSigningCertificateState {
@@ -468,7 +478,8 @@ enum NyxianSigningCertificateValidator {
     static func validate(
         pkcs12Data data: Data,
         password: String,
-        checkRevocation: Bool = true
+        checkRevocation: Bool = true,
+        requireEmbeddedProfileMatch: Bool = false
     ) throws -> NyxianSigningCertificateSummary {
         guard !data.isEmpty else { throw NyxianSigningCertificateValidationError.emptyFile }
 
@@ -502,12 +513,18 @@ enum NyxianSigningCertificateValidator {
 
         let certificateData = SecCertificateCopyData(certificate) as Data
         let commonName = certificateCommonName(certificate)
-        let provisioningProfile = try EmbeddedProvisioningProfile.load()
-        guard !provisioningProfile.developerCertificates.isEmpty else {
-            throw NyxianSigningCertificateValidationError.provisioningProfileHasNoDeveloperCertificates
-        }
-        guard provisioningProfile.developerCertificates.contains(certificateData) else {
-            throw NyxianSigningCertificateValidationError.certificateDoesNotMatchProvisioningProfile(commonName)
+        var matchedProvisioningProfile: EmbeddedProvisioningProfile?
+        do {
+            let provisioningProfile = try EmbeddedProvisioningProfile.load()
+            if provisioningProfile.developerCertificates.isEmpty {
+                if requireEmbeddedProfileMatch { throw NyxianSigningCertificateValidationError.provisioningProfileHasNoDeveloperCertificates }
+            } else if provisioningProfile.developerCertificates.contains(certificateData) {
+                matchedProvisioningProfile = provisioningProfile
+            } else if requireEmbeddedProfileMatch {
+                throw NyxianSigningCertificateValidationError.certificateDoesNotMatchProvisioningProfile(commonName)
+            }
+        } catch let error as NyxianSigningCertificateValidationError {
+            if requireEmbeddedProfileMatch { throw error }
         }
 
         let chain = certificateChain(from: item)
@@ -520,8 +537,8 @@ enum NyxianSigningCertificateValidator {
         return NyxianSigningCertificateSummary(
             commonName: commonName,
             sha256Fingerprint: sha256Fingerprint(for: certificateData),
-            provisioningProfileName: provisioningProfile.name,
-            provisioningProfileUUID: provisioningProfile.uuid,
+            provisioningProfileName: matchedProvisioningProfile?.name,
+            provisioningProfileUUID: matchedProvisioningProfile?.uuid,
             validatedAt: Date()
         )
     }

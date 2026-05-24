@@ -959,6 +959,33 @@ struct KittyStoreView: View {
         let profilePath = importedProvisioningProfile?.stagedPath
         let bundleID = displayedBundleIdentifier
         UIPasteboard.general.string = plan
+
+        if selectedSigningMode == .certificate,
+           KittyStoreSideStoreSigningBridge.isLinked,
+           let importedIPA,
+           let importedProvisioningProfile {
+            startSideStoreAltSignSigning(
+                importedIPA: importedIPA,
+                provisioningProfile: importedProvisioningProfile,
+                shouldInstallAfterSigning: shouldInstallAfterSigning,
+                pairingPath: pairingPath,
+                bundleID: bundleID
+            )
+            return
+        }
+
+        if selectedSigningMode == .appleID,
+           KittyStoreSideStoreSigningBridge.isLinked,
+           let importedIPA {
+            startSideStoreAppleIDSigning(
+                importedIPA: importedIPA,
+                shouldInstallAfterSigning: shouldInstallAfterSigning,
+                pairingPath: pairingPath,
+                bundleID: bundleID
+            )
+            return
+        }
+
         signingInProgress = true
         taskBag.run {
             let result = await LitterBuildKit.shared.signKittyStorePlan(planJSON: plan)
@@ -998,6 +1025,220 @@ struct KittyStoreView: View {
                 signingAlert = KittyStoreSigningAlert(
                     title: "Signing Failed",
                     message: "Status: \(result.status)\n\n\(result.log.prefix(1800))"
+                )
+            }
+        }
+    }
+
+    @MainActor
+    private func startSideStoreAppleIDSigning(
+        importedIPA: KittyStoreImportedFile,
+        shouldInstallAfterSigning: Bool,
+        pairingPath: String?,
+        bundleID: String
+    ) {
+        guard let account = NyxianAppleIDStore.load() else {
+            signingAlert = KittyStoreSigningAlert(title: "Apple ID Missing", message: "Log in with Apple ID in BuildKit settings before using SideStore Apple ID signing.")
+            return
+        }
+        let password: String
+        do {
+            guard let storedPassword = try NyxianAppleIDCredentialStore.shared.loadPassword() else {
+                signingAlert = KittyStoreSigningAlert(title: "Apple ID Password Missing", message: "Save the Apple ID password or app-specific password in BuildKit settings first.")
+                return
+            }
+            password = storedPassword
+        } catch {
+            signingAlert = KittyStoreSigningAlert(title: "Apple ID Password Failed", message: error.localizedDescription)
+            return
+        }
+
+        signingInProgress = true
+        taskBag.run {
+            let outputDirectory: URL
+            do {
+                outputDirectory = try LitterDownloadSupport.appSupportDirectory(named: "KittyStoreSignedIPAs")
+            } catch {
+                signingInProgress = false
+                signingAlert = KittyStoreSigningAlert(title: "Signing Failed", message: "Could not create the signed IPA output folder.\n\(error.localizedDescription)")
+                return
+            }
+
+            var pairingContents: String?
+            var deviceUDID: String?
+            if let pairingPath {
+                do {
+                    let pairing = try String(contentsOfFile: pairingPath, encoding: .utf8)
+                    pairingContents = pairing
+                    let udidResult = await KittyStoreMinimuxerBridge.fetchUDID(pairingFileContents: pairing, consoleLoggingEnabled: true)
+                    guard udidResult.exitCode == 0 else {
+                        signingInProgress = false
+                        signingAlert = KittyStoreSigningAlert(
+                            title: "Pairing Failed",
+                            message: "Could not read the device UDID through SideStore minimuxer.\nStatus: \(udidResult.status)\n\n\(udidResult.log.prefix(1200))"
+                        )
+                        return
+                    }
+                    deviceUDID = udidResult.log.trimmingCharacters(in: .whitespacesAndNewlines)
+                } catch {
+                    signingInProgress = false
+                    signingAlert = KittyStoreSigningAlert(title: "Pairing Failed", message: "Could not read the imported pairing file.\n\(error.localizedDescription)")
+                    return
+                }
+            }
+
+            let signingResult = await KittyStoreSideStoreSigningBridge.signIPAWithAppleID(
+                ipaURL: URL(fileURLWithPath: importedIPA.stagedPath),
+                outputDirectory: outputDirectory,
+                bundleIdentifier: bundleID,
+                appName: displayedAppName,
+                email: account.email,
+                password: password,
+                requestedTeamID: account.teamID,
+                anisetteServerURL: account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL,
+                twoFactorCode: "",
+                deviceUDID: deviceUDID
+            )
+            signingInProgress = false
+            buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
+
+            guard signingResult.exitCode == 0, let signedPath = signingResult.signedIPAPath else {
+                signingAlert = KittyStoreSigningAlert(
+                    title: "Apple ID Signing Failed",
+                    message: "Status: \(signingResult.status)\n\n\(signingResult.log.prefix(1800))"
+                )
+                return
+            }
+
+            if shouldInstallAfterSigning, let pairing = pairingContents {
+                do {
+                    signingInProgress = true
+                    let installResult = await KittyStoreMinimuxerBridge.installOrRefresh(
+                        action: .install,
+                        bundleIdentifier: bundleID,
+                        pairingFileContents: pairing,
+                        ipaURL: URL(fileURLWithPath: signedPath),
+                        provisioningProfileData: signingResult.provisioningProfileData,
+                        consoleLoggingEnabled: true
+                    )
+                    signingInProgress = false
+                    if installResult.exitCode == 0 {
+                        signingAlert = KittyStoreSigningAlert(
+                            title: "Installed",
+                            message: "SideStore Apple ID signing finished and minimuxer installed the IPA.\n\nSigned IPA: \(signedPath)\n\n\(installResult.log.prefix(1400))"
+                        )
+                    } else {
+                        signingAlert = KittyStoreSigningAlert(
+                            title: "Install Failed",
+                            message: "SideStore Apple ID signing succeeded, but minimuxer install failed.\nStatus: \(installResult.status)\n\n\(installResult.log.prefix(1600))\n\nSigned IPA: \(signedPath)"
+                        )
+                    }
+                } catch {
+                    signingInProgress = false
+                    signingAlert = KittyStoreSigningAlert(
+                        title: "Signed IPA Ready",
+                        message: "SideStore Apple ID signing finished, but the pairing file could not be read for install.\n\(error.localizedDescription)\n\nSigned IPA: \(signedPath)"
+                    )
+                }
+            } else {
+                signingAlert = KittyStoreSigningAlert(
+                    title: "Signed IPA Ready",
+                    message: "SideStore Apple ID signing finished.\n\nSigned IPA: \(signedPath)\n\n\(signingResult.log.prefix(1200))"
+                )
+            }
+        }
+    }
+
+    @MainActor
+    private func startSideStoreAltSignSigning(
+        importedIPA: KittyStoreImportedFile,
+        provisioningProfile: KittyStoreImportedFile,
+        shouldInstallAfterSigning: Bool,
+        pairingPath: String?,
+        bundleID: String
+    ) {
+        guard let identity = NyxianSigningCertificateStorage.loadIdentity() else {
+            signingAlert = KittyStoreSigningAlert(title: "No Certificate", message: "Import and validate a .p12 certificate before using SideStore AltSign.")
+            return
+        }
+
+        signingInProgress = true
+        taskBag.run {
+            let profileData: Data
+            do {
+                profileData = try Data(contentsOf: URL(fileURLWithPath: provisioningProfile.stagedPath))
+            } catch {
+                signingInProgress = false
+                signingAlert = KittyStoreSigningAlert(title: "Profile Failed", message: "Could not read the imported provisioning profile.\n\(error.localizedDescription)")
+                return
+            }
+
+            let outputDirectory: URL
+            do {
+                outputDirectory = try LitterDownloadSupport.appSupportDirectory(named: "KittyStoreSignedIPAs")
+            } catch {
+                signingInProgress = false
+                signingAlert = KittyStoreSigningAlert(title: "Signing Failed", message: "Could not create the signed IPA output folder.\n\(error.localizedDescription)")
+                return
+            }
+
+            let account = NyxianAppleIDStore.load()
+            let signingResult = await KittyStoreSideStoreSigningBridge.signIPAWithImportedIdentity(
+                ipaURL: URL(fileURLWithPath: importedIPA.stagedPath),
+                outputDirectory: outputDirectory,
+                bundleIdentifier: bundleID,
+                teamID: account?.teamID ?? "",
+                teamName: nil,
+                certificateData: identity.data,
+                certificatePassword: identity.password,
+                provisioningProfileData: profileData
+            )
+            signingInProgress = false
+            buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
+
+            guard signingResult.exitCode == 0, let signedPath = signingResult.signedIPAPath else {
+                signingAlert = KittyStoreSigningAlert(
+                    title: "SideStore Signing Failed",
+                    message: "Status: \(signingResult.status)\n\n\(signingResult.log.prefix(1800))"
+                )
+                return
+            }
+
+            if shouldInstallAfterSigning, let pairingPath {
+                do {
+                    let pairing = try String(contentsOfFile: pairingPath, encoding: .utf8)
+                    signingInProgress = true
+                    let installResult = await KittyStoreMinimuxerBridge.installOrRefresh(
+                        action: .install,
+                        bundleIdentifier: bundleID,
+                        pairingFileContents: pairing,
+                        ipaURL: URL(fileURLWithPath: signedPath),
+                        provisioningProfileData: profileData,
+                        consoleLoggingEnabled: true
+                    )
+                    signingInProgress = false
+                    if installResult.exitCode == 0 {
+                        signingAlert = KittyStoreSigningAlert(
+                            title: "Installed",
+                            message: "SideStore AltSign signed the IPA and minimuxer installed it.\n\nSigned IPA: \(signedPath)\n\n\(installResult.log.prefix(1400))"
+                        )
+                    } else {
+                        signingAlert = KittyStoreSigningAlert(
+                            title: "Install Failed",
+                            message: "SideStore AltSign signing succeeded, but minimuxer install failed.\nStatus: \(installResult.status)\n\n\(installResult.log.prefix(1600))\n\nSigned IPA: \(signedPath)"
+                        )
+                    }
+                } catch {
+                    signingInProgress = false
+                    signingAlert = KittyStoreSigningAlert(
+                        title: "Signed IPA Ready",
+                        message: "SideStore AltSign signed the IPA, but the pairing file could not be read for install.\n\(error.localizedDescription)\n\nSigned IPA: \(signedPath)"
+                    )
+                }
+            } else {
+                signingAlert = KittyStoreSigningAlert(
+                    title: "Signed IPA Ready",
+                    message: "SideStore AltSign signed the IPA.\n\nSigned IPA: \(signedPath)\n\n\(signingResult.log.prefix(1200))"
                 )
             }
         }
