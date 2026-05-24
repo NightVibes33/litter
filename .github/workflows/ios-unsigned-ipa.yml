@@ -535,7 +535,7 @@ jobs:
 
           xcodebuild build \
             -project ThirdParty/Nyxian/Nyxian.xcodeproj \
-            -target LiveProcess \
+            -scheme LiveProcess \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath "$BUILD_ROOT/DerivedData" \
