@@ -32,6 +32,16 @@ require_cmd cargo
 require_cmd rustup
 require_cmd xcrun
 
+if ! command -v bindgen >/dev/null 2>&1; then
+  echo "==> Installing bindgen-cli for aws-lc-sys"
+  cargo install --force --locked bindgen-cli --version 0.69.5
+fi
+
+if [ -z "${LIBCLANG_PATH:-}" ]; then
+  CLANG_BIN="$(xcrun --find clang)"
+  export LIBCLANG_PATH="$(cd "$(dirname "$CLANG_BIN")/.." && pwd)/lib"
+fi
+
 if [ ! -f "$MINIMUXER_ROOT/Cargo.toml" ]; then
   echo "error: minimuxer source is missing: $MINIMUXER_ROOT" >&2
   exit 1
