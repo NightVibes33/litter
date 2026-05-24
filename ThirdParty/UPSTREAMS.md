@@ -18,6 +18,12 @@ These source drops are kept small and source-only. Generated build products, IPA
 - minimuxer vendored commit: `f9432a085b19de1bbcd744c600f510f499703a97`
 - minimuxer vendored path: `ThirdParty/SideStore/minimuxer`
 - Minimuxer wrapper path: `ThirdParty/SideStore/MinimuxerWrapper.swift`
+- KittyStore layout reference files adapted from SideStore at the inspected commit:
+  - `AltStore/TabBarController.swift`
+  - `AltStore/Browse/BrowseViewController.swift`
+  - `AltStore/My Apps/MyAppsViewController.swift`
+  - `AltStore/Sources/SourcesViewController.swift`
+  - `AltStore/Settings/SettingsViewController.swift`
 - LocalDevVPN repo: https://github.com/jkcoxson/LocalDevVPN.git
 - LocalDevVPN vendored commit: `c4566ce08931cef414c9f656e7e33c66bdb2454e`
 - LocalDevVPN tunnel-provider path: `ThirdParty/SideStore/LocalDevVPN-TunnelProv`

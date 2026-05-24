@@ -11,7 +11,8 @@ struct KittyStoreView: View {
     @State private var sourcePhase: KittyStoreSourcePhase = .idle
     @State private var copiedMessage: String?
     @State private var shareItem: KittyStoreShareItem?
-    @State private var selectedSection: KittyStoreSection = .featured
+    @State private var selectedTab: KittyStoreTab = .browse
+    @State private var showingSigningSheet = false
     @State private var buildKitStatus: LitterBuildKitStatus?
     @State private var selectedSigningMode: KittyStoreSigningMode = .certificate
     @State private var signingImportKind: KittyStoreImportKind = .ipa
@@ -51,15 +52,30 @@ struct KittyStoreView: View {
     private var sourceURL: String { updater.latestManifest?.sideStoreSourceURL ?? updater.stableSourceURL }
 
     var body: some View {
-        Group {
-            if selectedSection == .sign {
-                signingWorkspace
-            } else {
-                storeWorkspace
-            }
+        TabView(selection: $selectedTab) {
+            newsWorkspace
+                .tabItem { Label("News", systemImage: "newspaper") }
+                .tag(KittyStoreTab.news)
+
+            sourcesWorkspace
+                .tabItem { Label("Sources", systemImage: "list.bullet.rectangle") }
+                .tag(KittyStoreTab.sources)
+
+            browseWorkspace
+                .tabItem { Label("Browse", systemImage: "bag") }
+                .tag(KittyStoreTab.browse)
+
+            myAppsWorkspace
+                .tabItem { Label("My Apps", systemImage: "square.stack.3d.up.fill") }
+                .tag(KittyStoreTab.myApps)
+
+            settingsWorkspace
+                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tag(KittyStoreTab.settings)
         }
+        .tint(LitterTheme.accent)
         .background(LitterTheme.backgroundGradient.ignoresSafeArea())
-        .navigationTitle(selectedSection == .sign ? "Signing" : "KittyStore")
+        .navigationTitle(selectedTab.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -73,11 +89,6 @@ struct KittyStoreView: View {
             }
         }
         .refreshable { await refreshAll() }
-        .safeAreaInset(edge: .bottom) {
-            if selectedSection == .sign {
-                startSigningBar
-            }
-        }
         .fileImporter(
             isPresented: $showingSigningImporter,
             allowedContentTypes: signingImportKind.allowedContentTypes,
@@ -87,6 +98,22 @@ struct KittyStoreView: View {
         }
         .sheet(item: $shareItem) { item in
             KittyStoreActivityView(activityItems: [item.url])
+        }
+        .sheet(isPresented: $showingSigningSheet) {
+            NavigationStack {
+                signingWorkspace
+                    .navigationTitle("Signing")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showingSigningSheet = false }
+                        }
+                    }
+                    .safeAreaInset(edge: .bottom) {
+                        startSigningBar
+                    }
+            }
+            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
         }
         .alert(item: $signingAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
@@ -98,25 +125,47 @@ struct KittyStoreView: View {
         }
     }
 
-    private var storeWorkspace: some View {
+    private var newsWorkspace: some View {
+        storeScroll {
+            versionHistoryPanel
+        }
+    }
+
+    private var sourcesWorkspace: some View {
+        storeScroll {
+            sourcePanel
+            setupPanel
+        }
+    }
+
+    private var browseWorkspace: some View {
+        storeScroll {
+            heroPanel
+            featuredPanel
+            installPanel
+        }
+    }
+
+    private var myAppsWorkspace: some View {
+        storeScroll {
+            myAppsPanel
+            versionHistoryPanel
+        }
+    }
+
+    private var settingsWorkspace: some View {
+        storeScroll {
+            accountSettingsPanel
+            signingSettingsPanel
+            transportSettingsPanel
+            diagnosticsSettingsPanel
+        }
+    }
+
+    private func storeScroll<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         ScrollView {
             VStack(spacing: 14) {
-                heroPanel
-                sideStoreTabBar
-
-                switch selectedSection {
-                case .featured:
-                    featuredPanel
-                    installPanel
-                case .versions:
-                    myAppsPanel
-                    versionHistoryPanel
-                case .sign:
-                    EmptyView()
-                case .setup:
-                    sourcePanel
-                    setupPanel
-                }
+                content()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
@@ -125,11 +174,6 @@ struct KittyStoreView: View {
 
     private var signingWorkspace: some View {
         Form {
-            Section {
-                sideStoreTabBar
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.62))
-
             signingCustomizationSection
             signingIdentitySection
             sideStoreTransportSection
@@ -180,34 +224,6 @@ struct KittyStoreView: View {
                 if let size = updater.latestManifest?.size ?? latestVersion?.size, size > 0 {
                     metricItem("IPA Size", LitterDownloadSupport.formatBytes(size))
                 }
-            }
-        }
-    }
-
-    private var sideStoreTabBar: some View {
-        HStack(spacing: 6) {
-            ForEach(KittyStoreSection.allCases) { section in
-                Button {
-                    withAnimation(.snappy(duration: 0.2)) { selectedSection = section }
-                } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: section.systemImage)
-                            .font(.system(size: 17, weight: .semibold))
-                        Text(section.title)
-                            .litterFont(.caption2, weight: .semibold)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-                    }
-                    .foregroundStyle(selectedSection == section ? Color.white : LitterTheme.textSecondary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(
-                        selectedSection == section ? LitterTheme.accent : LitterTheme.surfaceLight.opacity(0.24),
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(section.accessibilityTitle)
             }
         }
     }
@@ -342,7 +358,7 @@ struct KittyStoreView: View {
                     taskBag.run { await refreshAll() }
                 }
                 actionRow("Sign IPA", detail: "Open the Feather-style signing workspace", icon: "signature") {
-                    selectedSection = .sign
+                    showingSigningSheet = true
                 }
             }
         }
@@ -394,6 +410,81 @@ struct KittyStoreView: View {
                 }
 
                 copiedNotice
+            }
+        }
+    }
+
+    private var accountSettingsPanel: some View {
+        panel(title: "Account", icon: "person.crop.circle") {
+            VStack(spacing: 10) {
+                readinessRow(
+                    "Apple ID",
+                    detail: buildKitStatus?.appleIDDetail ?? "Save Apple ID credentials and Anisette details in BuildKit settings.",
+                    state: buildKitStatus?.appleIDConfigured
+                )
+                navigationActionRow("Apple ID Settings", detail: "Open the SideStore-style account, Anisette, and team setup.", icon: "person.badge.key") {
+                    BuildKitSettingsView()
+                }
+            }
+        }
+    }
+
+    private var signingSettingsPanel: some View {
+        panel(title: "Signing", icon: "signature") {
+            VStack(spacing: 10) {
+                readinessRow(
+                    "Certificate",
+                    detail: buildKitStatus?.nyxianSigningCertificateDetail ?? "Import a .p12, password, private key, and mobileprovision before certificate signing.",
+                    state: buildKitStatus?.nyxianSigningCertificateInstalled
+                )
+                readinessRow(
+                    "Provisioning Profile",
+                    detail: buildKitStatus?.embeddedProvisionPresent == true ? "Embedded profile is available." : "Use an embedded profile or import one in the signing workspace.",
+                    state: buildKitStatus?.embeddedProvisionPresent
+                )
+                navigationActionRow("Certificate Settings", detail: "Validate .p12 password, private key, profile match, and revocation state.", icon: "checkmark.seal") {
+                    BuildKitSettingsView()
+                }
+                actionRow("Signing Workspace", detail: "Import IPAs, profiles, dylibs, tweaks, entitlements, and signing properties.", icon: "slider.horizontal.3") {
+                    showingSigningSheet = true
+                }
+            }
+        }
+    }
+
+    private var transportSettingsPanel: some View {
+        panel(title: "App Refresh", icon: "antenna.radiowaves.left.and.right") {
+            VStack(spacing: 10) {
+                readinessRow(
+                    "Pairing File",
+                    detail: importedPairingFile?.displayName ?? "Import the iOS pairing file used by SideStore/minimuxer.",
+                    state: importedPairingFile != nil
+                )
+                readinessRow(
+                    "LocalDevVPN",
+                    detail: buildKitStatus?.localDevVPNDetail ?? "Required for direct on-device install and refresh.",
+                    state: buildKitStatus?.localDevVPNConnected
+                )
+                readinessRow(
+                    "Minimuxer Bridge",
+                    detail: KittyStoreMinimuxerBridge.isLinked ? "Linked into this build." : "This IPA was not linked with SideStore minimuxer yet.",
+                    state: KittyStoreMinimuxerBridge.isLinked
+                )
+                actionRow("Import Pairing File", detail: "Choose the pairing file used for SideStore install and refresh.", icon: "doc.badge.gearshape") {
+                    presentImporter(.pairingFile)
+                }
+            }
+        }
+    }
+
+    private var diagnosticsSettingsPanel: some View {
+        panel(title: "Diagnostics", icon: "stethoscope") {
+            VStack(spacing: 10) {
+                readinessRow("Source Feed", detail: sourcePhase.message, state: source != nil)
+                readinessRow("BuildKit", detail: buildKitStatus == nil ? "Status has not loaded yet." : "Status refreshed from the local BuildKit bridge.", state: buildKitStatus != nil)
+                actionRow("Refresh Diagnostics", detail: "Reload source, update status, certificate checks, and LocalDevVPN state.", icon: "arrow.clockwise") {
+                    taskBag.run { await refreshAll() }
+                }
             }
         }
     }
@@ -849,7 +940,7 @@ struct KittyStoreView: View {
             }
         case .appleID:
             guard buildKitStatus?.appleIDConfigured == true else {
-                signingAlert = KittyStoreSigningAlert(title: "Apple ID Missing", message: "Save the Apple ID, Team ID, password, and Anisette server in BuildKit settings first.")
+                signingAlert = KittyStoreSigningAlert(title: "Apple ID Missing", message: "Save the Apple ID, password, and Anisette server in BuildKit settings first. Team selection happens after authentication when needed.")
                 return
             }
             guard importedPairingFile != nil else {
@@ -1135,6 +1226,15 @@ struct KittyStoreView: View {
         .disabled(!enabled)
     }
 
+    private func navigationActionRow<Destination: View>(_ title: String, detail: String, icon: String, @ViewBuilder destination: () -> Destination) -> some View {
+        NavigationLink {
+            destination()
+        } label: {
+            actionRowLabel(title, detail: detail, icon: icon, enabled: true)
+        }
+        .buttonStyle(.plain)
+    }
+
     private func actionRowLabel(_ title: String, detail: String, icon: String, enabled: Bool) -> some View {
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: icon)
@@ -1199,34 +1299,23 @@ struct KittyStoreView: View {
     }
 }
 
-private enum KittyStoreSection: String, CaseIterable, Identifiable {
-    case featured
-    case versions
-    case sign
-    case setup
+private enum KittyStoreTab: String, CaseIterable, Identifiable {
+    case news
+    case sources
+    case browse
+    case myApps
+    case settings
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .featured: return "Browse"
-        case .versions: return "My Apps"
-        case .sign: return "Signing"
-        case .setup: return "Sources"
+        case .news: return "News"
+        case .sources: return "Sources"
+        case .browse: return "Browse"
+        case .myApps: return "My Apps"
+        case .settings: return "Settings"
         }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .featured: return "square.grid.2x2.fill"
-        case .versions: return "square.stack.3d.up.fill"
-        case .sign: return "signature"
-        case .setup: return "link.circle.fill"
-        }
-    }
-
-    var accessibilityTitle: String {
-        "KittyStore \(title)"
     }
 }
 
