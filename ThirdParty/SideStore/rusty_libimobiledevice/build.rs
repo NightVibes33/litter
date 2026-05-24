@@ -200,7 +200,7 @@ fn main() {
 
         let mut dst = autotools::Config::new("libtatsu");
         dst.env("PKG_CONFIG_PATH", &out_path.join("lib/pkgconfig"));
-        dst.env("libcurl_CFLAGS", "");
+        dst.env("libcurl_CFLAGS", curl_cflags());
         dst.env("libcurl_LIBS", "-lcurl");
         configure_for_target(&mut dst);
         for flag in &c_flags {
@@ -288,6 +288,27 @@ fn main() {
     println!("cargo:rustc-link-lib={location_determinator}=crypto");
     println!("cargo:rustc-link-lib={location_determinator}=ssl");
     println!("cargo:rustc-link-lib=dylib=curl");
+}
+
+fn curl_cflags() -> String {
+    if let Ok(flags) = env::var("LITTER_LIBCURL_CFLAGS") {
+        if !flags.trim().is_empty() {
+            return flags;
+        }
+    }
+
+    for include_root in [
+        "/opt/homebrew/opt/curl/include",
+        "/usr/local/opt/curl/include",
+        "/opt/homebrew/include",
+        "/usr/local/include",
+    ] {
+        if PathBuf::from(include_root).join("curl/curl.h").is_file() {
+            return format!("-I{include_root}");
+        }
+    }
+
+    String::new()
 }
 
 fn configure_for_target(config: &mut autotools::Config) {

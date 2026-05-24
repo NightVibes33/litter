@@ -119,6 +119,7 @@ jobs:
           brew list automake >/dev/null 2>&1 || brew install automake
           brew list libtool >/dev/null 2>&1 || brew install libtool
           brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
+          brew list curl >/dev/null 2>&1 || brew install curl
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
