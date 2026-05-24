@@ -11,6 +11,36 @@ This repository is a fork of the original Litter project and also vendors or bui
 
 Accepted upstream contributors are listed in `AUTHORS.md`.
 
+## Sideloading Ecosystem References
+
+Litter builds unsigned IPA artifacts, emits AltStore/SideStore-compatible source metadata, and documents a SideStore-style Apple ID, Anisette, certificate, LocalDevVPN, install, and refresh flow. The projects below are credited because their public work defines that ecosystem. Unless a vendored path is named elsewhere in this file, this repo is referencing their behavior, formats, or public services rather than claiming ownership of their code.
+
+- SideStore Team and contributors
+  - Upstream: https://github.com/SideStore/SideStore
+  - Website/docs: https://sidestore.io and https://docs.sidestore.io
+  - Role in Litter: SideStore-compatible sideloading expectations, public Anisette server list conventions, LocalDevVPN install/refresh model, and update-source compatibility target.
+  - License: AGPL-3.0 for SideStore source.
+- AltStore / Riley Testut and contributors
+  - Upstream: https://github.com/altstoreio/AltStore and https://github.com/rileytestut/AltStore
+  - Website/docs: https://altstore.io
+  - Role in Litter: original AltStore sideloading, signing, refresh, and app-source model that SideStore extends and that Litter's source metadata targets.
+  - License: AGPL-3.0 for AltStore source, with upstream's additional permission language for Riley Testut's original code in its README.
+- LocalDevVPN / Coxson Engineering LLC / jkcoxson
+  - Upstream: https://github.com/jkcoxson/LocalDevVPN
+  - App Store listing: https://apps.apple.com/us/app/localdevvpn/id6755608044
+  - Role in Litter: LocalDevVPN-style tunnel detection for future on-device install/refresh readiness.
+- minimuxer / jkcoxson and SideStore contributors
+  - Upstreams: https://github.com/jkcoxson/minimuxer and https://github.com/SideStore/minimuxer
+  - Role in Litter: referenced SideStore device-communication layer for install/refresh transport planning.
+- em_proxy / jkcoxson and SideStore contributors
+  - Upstreams: https://github.com/jkcoxson/em_proxy and https://github.com/SideStore/em_proxy
+  - Role in Litter: referenced SideStore proxy/tunnel infrastructure for iOS loopback limitations.
+  - License: AGPL-3.0 for the SideStore fork.
+- Jitterbug / osy and contributors
+  - Upstream: https://github.com/osy/Jitterbug
+  - Role in Litter: referenced loopback/debugging approach used in SideStore's LocalDevVPN explanation.
+  - License: Apache-2.0.
+
 ## OpenAI Codex
 
 Litter vendors OpenAI Codex source for the shared mobile client and local Codex runtime integration.

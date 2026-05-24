@@ -40,6 +40,10 @@ Litter also includes or builds against third-party projects. Their copyright and
 - OpenAI Codex source under `shared/third_party/codex`.
 - ProjectNyxian/Nyxian and emexDE-derived BuildKit source under `ThirdParty/Nyxian`.
 - ProjectNyxian/LLVM-On-iOS compiler support references.
+- SideStore Team and contributors for the SideStore sideloading workflow, Anisette server list convention, update-source expectations, and LocalDevVPN-based install/refresh model Litter documents and targets.
+- AltStore / Riley Testut and contributors for the original AltStore app/source/signing model that SideStore builds on.
+- Coxson Engineering LLC / jkcoxson for LocalDevVPN and related on-device sideloading infrastructure including minimuxer and em_proxy.
+- osy / Jitterbug contributors for the loopback/debugging approach referenced by SideStore's LocalDevVPN flow.
 - dnakov/litter-ish for the embedded iSH backend.
 - dnakov/alleycat bridge crates used by the Rust mobile bridge.
 - ZIPFoundation, Rust crates, Swift packages, and other package-manager dependencies resolved by the build system.

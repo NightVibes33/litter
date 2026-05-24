@@ -21,6 +21,7 @@ Do not open attribution PRs that split those names into separate people. If auth
 - **Don't bundle dependency upgrades** with feature/bug PRs.
 - **Say how you tested it.** Include the local command, Xcode build, GitHub Actions run, or device check you used.
 - **Update the docs** when behavior changes. README updates are required for BuildKit, signing, AltStore/SideStore source, terminal, file browser, runtime, and release-flow changes.
+- **Credit upstreams.** If a change uses, vendors, mirrors, or depends on another project, update `THIRD_PARTY_NOTICES.md` and, when appropriate, `AUTHORS.md` with the upstream project, maintainer/team, URL, and license.
 
 ## Things that will not be merged
 
