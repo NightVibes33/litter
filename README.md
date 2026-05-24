@@ -81,7 +81,7 @@ Before exposing local shell tools, Litter runs a native preflight command. If si
 - Conversation timeline with markdown, tool cards, command output display preferences, image generation cards, selectable messages, edit/fork actions, streaming rendering, and dynamic widget rendering.
 - Discovery and connection flows for the local runtime, manual app-server URLs, SSH bootstrapping, LAN or remote servers, and Slingshot connected computers.
 - Settings for appearance, fonts, conversation display, local terminal, experimental features, AI providers, diagnostics bundles, account/API key/base URL, connected servers, updates, and BuildKit developer controls.
-- KittyStore, a KittyLitter-branded SideStore/AltStore-compatible source surface that shows the latest Litter IPA, all published version-history IPAs, source subscription links, direct IPA install links, and download/share actions.
+- KittyStore, a KittyLitter-branded SideStore/AltStore-compatible source surface that shows the latest Litter IPA, all published version-history IPAs, source subscription links, direct IPA install links, download/share actions, and a Feather-style signing workspace for imported IPAs.
 - Picture-in-Picture streaming cards through `AVPictureInPictureController` with a sample-buffer SwiftUI renderer.
 - CarPlay voice scene support and experimental Apple Watch projection/complication targets.
 
@@ -220,7 +220,7 @@ Every successful IPA build creates or updates a versioned GitHub release named `
 
 The AltStore/SideStore source is version-history first. Every successful versioned IPA release should remain installable through the app entry `versions` array with its own download URL, checksum, version date, and build version. Historical IPA downloads are also emitted as source `news` cards with direct IPA URLs. Do not replace the source with only the latest build.
 
-The in-app KittyStore tab reads that same source, rebrands the Litter feed for this app, and opens `sidestore://` or `altstore://` install/source URLs. It does not vendor or claim ownership of SideStore itself; SideStore, AltStore, LocalDevVPN, minimuxer, em_proxy, and Jitterbug are credited in `THIRD_PARTY_NOTICES.md`.
+The in-app KittyStore tab reads that same source, rebrands the Litter feed for this app, and opens `sidestore://` or `altstore://` install/source URLs. Its Sign screen follows Feather's signer layout: IPA customization, certificate/provisioning selection, SideStore-style Apple ID/pairing/LocalDevVPN readiness, advanced Modify rows, Entitlements, Tweaks, Properties, and Start Signing. The current public code stages a signing plan and validates readiness; the native Feather/Zsign signer path and SideStore install bridge still need to be wired before KittyStore can produce and install a final signed IPA itself. Litter does not vendor or claim ownership of SideStore, Feather, or their supporting tools; SideStore, AltStore, Feather, LocalDevVPN, minimuxer, em_proxy, Jitterbug, and Zsign are credited in `THIRD_PARTY_NOTICES.md`.
 
 All IPAs from this workflow are unsigned. They must be signed by SideStore, AltStore, Feather, or another signing tool before installation.
 

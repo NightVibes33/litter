@@ -13,7 +13,7 @@ Accepted upstream contributors are listed in `AUTHORS.md`.
 
 ## Sideloading Ecosystem References
 
-Litter builds unsigned IPA artifacts, emits AltStore/SideStore-compatible source metadata, and documents a SideStore-style Apple ID, Anisette, certificate, LocalDevVPN, install, and refresh flow. The projects below are credited because their public work defines that ecosystem. Unless a vendored path is named elsewhere in this file, this repo is referencing their behavior, formats, or public services rather than claiming ownership of their code.
+Litter builds unsigned IPA artifacts, emits AltStore/SideStore-compatible source metadata, and documents SideStore-style Apple ID, Anisette, certificate, LocalDevVPN, install, refresh, and Feather-style certificate signing flows. The projects below are credited because their public work defines that ecosystem. Unless a vendored path is named elsewhere in this file, this repo is referencing their behavior, formats, UI patterns, or public services rather than claiming ownership of their code.
 
 - SideStore Team and contributors
   - Upstream: https://github.com/SideStore/SideStore
@@ -25,6 +25,13 @@ Litter builds unsigned IPA artifacts, emits AltStore/SideStore-compatible source
   - Website/docs: https://altstore.io
   - Role in Litter: original AltStore sideloading, signing, refresh, and app-source model that SideStore extends and that Litter's source metadata targets.
   - License: AGPL-3.0 for AltStore source, with upstream's additional permission language for Riley Testut's original code in its README.
+- Feather / khcrysalis and contributors
+  - Upstream: https://github.com/khcrysalis/Feather
+  - Role in Litter: referenced certificate-paired IPA signing workflow, signer screen structure, advanced modify/properties flow, and on-device signing expectations.
+  - License: GPL-3.0 for Feather source.
+- Zsign / zhlynn and contributors
+  - Upstream: https://github.com/zhlynn/zsign
+  - Role in Litter: referenced signing engine used by Feather-style on-device IPA signing research.
 - LocalDevVPN / Coxson Engineering LLC / jkcoxson
   - Upstream: https://github.com/jkcoxson/LocalDevVPN
   - App Store listing: https://apps.apple.com/us/app/localdevvpn/id6755608044
