@@ -114,6 +114,11 @@ jobs:
           brew list meson >/dev/null 2>&1 || brew install meson
           brew list ninja >/dev/null 2>&1 || brew install ninja
           brew list llvm >/dev/null 2>&1 || brew install llvm
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list autoconf >/dev/null 2>&1 || brew install autoconf
+          brew list automake >/dev/null 2>&1 || brew install automake
+          brew list libtool >/dev/null 2>&1 || brew install libtool
+          brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
