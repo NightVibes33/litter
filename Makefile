@@ -188,7 +188,7 @@ $(shell mkdir -p $(STAMPS))
 	rust-ios rust-ios-package rust-ios-device-release rust-mac-release rust-ios-device-fast rust-ios-sim-fast rust-ios-macabi-fast rust-android rust-check rust-test rust-host-dev \
 	alleycat-main \
 	bindings bindings-swift bindings-kotlin \
-	sync patch unpatch xcgen alpine-fs ish-dev-random nyxian-vendor nyxian-source-verify nyxian-buildkit-assets nyxian-buildkit-assets-verify buildkit-assets-package buildkit-assets-upload \
+	sync patch unpatch xcgen alpine-fs ish-dev-random nyxian-vendor nyxian-source-verify nyxian-buildkit-assets nyxian-buildkit-assets-verify buildkit-assets-package buildkit-assets-upload sidestore-minimuxer \
 	ios-build ios-build-sim ios-build-sim-fast ios-build-device ios-build-device-fast \
 	watch watch-sim watch-sim-run watch-device watch-typecheck \
 	test test-rust test-ios test-android \
@@ -533,6 +533,9 @@ buildkit-assets-package:
 
 buildkit-assets-upload:
 	@tools/scripts/upload-buildkit-assets-release.sh
+
+sidestore-minimuxer:
+	@tools/scripts/build-sidestore-minimuxer.sh
 
 xcgen:
 	@echo "==> Regenerating Xcode project..."

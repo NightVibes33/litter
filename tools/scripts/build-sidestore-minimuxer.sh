@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MINIMUXER_ROOT="${LITTER_SIDESTORE_MINIMUXER_ROOT:-$ROOT_DIR/ThirdParty/SideStore/minimuxer}"
+IOS_DIR="$ROOT_DIR/apps/ios"
+GENERATED_SWIFT_DIR="$IOS_DIR/Sources/Litter/Generated/Minimuxer"
+HEADER_DIR="$IOS_DIR/GeneratedRust/Headers/Minimuxer"
+DEVICE_LIB_DIR="$IOS_DIR/GeneratedRust/ios-device"
+SKIP_SIM="${LITTER_MINIMUXER_SKIP_SIM:-true}"
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "error: $1 is required to build the SideStore minimuxer bridge" >&2
+    exit 127
+  fi
+}
+
+require_file() {
+  if [ ! -s "$1" ]; then
+    echo "error: expected minimuxer build output is missing: $1" >&2
+    exit 1
+  fi
+}
+
+case "$(uname -s)" in
+  Darwin) ;;
+  *) echo "error: SideStore minimuxer iOS static library must be built on macOS/Xcode" >&2; exit 78 ;;
+esac
+
+require_cmd cargo
+require_cmd rustup
+require_cmd xcrun
+
+if [ ! -f "$MINIMUXER_ROOT/Cargo.toml" ]; then
+  echo "error: minimuxer source is missing: $MINIMUXER_ROOT" >&2
+  exit 1
+fi
+
+rustup target add aarch64-apple-ios >/dev/null
+if [ "$SKIP_SIM" != "true" ]; then
+  require_cmd lipo
+  rustup target add aarch64-apple-ios-sim x86_64-apple-ios >/dev/null
+fi
+
+mkdir -p "$GENERATED_SWIFT_DIR" "$HEADER_DIR" "$DEVICE_LIB_DIR"
+
+(
+  cd "$MINIMUXER_ROOT"
+  echo "==> Building SideStore minimuxer for iOS device"
+  cargo build --release --target aarch64-apple-ios
+  cp target/aarch64-apple-ios/release/libminimuxer.a target/libminimuxer-ios.a
+
+  if [ "$SKIP_SIM" != "true" ]; then
+    echo "==> Building SideStore minimuxer for iOS simulator"
+    cargo build --release --target aarch64-apple-ios-sim
+    cargo build --release --target x86_64-apple-ios
+    lipo -create \
+      -output target/libminimuxer-sim.a \
+      target/aarch64-apple-ios-sim/release/libminimuxer.a \
+      target/x86_64-apple-ios/release/libminimuxer.a
+  fi
+)
+
+require_file "$MINIMUXER_ROOT/target/libminimuxer-ios.a"
+require_file "$MINIMUXER_ROOT/generated/minimuxer.swift"
+require_file "$MINIMUXER_ROOT/generated/minimuxer-helpers.swift"
+require_file "$MINIMUXER_ROOT/generated/minimuxer.h"
+require_file "$MINIMUXER_ROOT/generated/SwiftBridgeCore.h"
+require_file "$MINIMUXER_ROOT/generated/minimuxer-Bridging-Header.h"
+
+grep -q "startWithLogger" "$MINIMUXER_ROOT/generated/minimuxer.swift" || {
+  echo "error: generated minimuxer Swift bridge is missing startWithLogger" >&2
+  exit 1
+}
+grep -q "installIpa" "$MINIMUXER_ROOT/generated/minimuxer.swift" || {
+  echo "error: generated minimuxer Swift bridge is missing installIpa" >&2
+  exit 1
+}
+
+cp "$MINIMUXER_ROOT/target/libminimuxer-ios.a" "$DEVICE_LIB_DIR/libminimuxer-ios.a"
+cp "$MINIMUXER_ROOT/generated/minimuxer.swift" "$GENERATED_SWIFT_DIR/minimuxer.generated.swift"
+cp "$MINIMUXER_ROOT/generated/minimuxer-helpers.swift" "$GENERATED_SWIFT_DIR/minimuxer-helpers.generated.swift"
+cp "$MINIMUXER_ROOT/generated/SwiftBridgeCore.h" "$HEADER_DIR/SwiftBridgeCore.h"
+cp "$MINIMUXER_ROOT/generated/minimuxer.h" "$HEADER_DIR/minimuxer.h"
+cp "$MINIMUXER_ROOT/generated/minimuxer-Bridging-Header.h" "$HEADER_DIR/minimuxer-Bridging-Header.h"
+cp "$MINIMUXER_ROOT/module.modulemap" "$HEADER_DIR/module.modulemap"
+
+cat > "$HEADER_DIR/README.txt" <<'EOF'
+Generated from ThirdParty/SideStore/minimuxer by tools/scripts/build-sidestore-minimuxer.sh.
+Do not edit these generated bridge headers by hand.
+EOF
+
+echo "SideStore minimuxer bridge staged:"
+echo "- $DEVICE_LIB_DIR/libminimuxer-ios.a"
+echo "- $GENERATED_SWIFT_DIR/minimuxer.generated.swift"
+echo "- $HEADER_DIR/minimuxer-Bridging-Header.h"
+echo "Use these xcodebuild settings:"
+echo "- KITTYSTORE_MINIMUXER_LDFLAGS=-lminimuxer-ios -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork"
+echo "- KITTYSTORE_MINIMUXER_SWIFT_FLAGS=-D KITTYSTORE_MINIMUXER_LINKED"

@@ -26,9 +26,10 @@ settings:
     MARKETING_VERSION: "1.5.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_OBJC_BRIDGING_HEADER: Sources/Litter/Bridge/codex_bridge_objc.h
-    OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
+    OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty $(KITTYSTORE_MINIMUXER_LDFLAGS)"
     HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
     SWIFT_INCLUDE_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
+    OTHER_SWIFT_FLAGS: "$(inherited) $(KITTYSTORE_MINIMUXER_SWIFT_FLAGS)"
     CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
     "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(PROJECT_DIR)/GeneratedRust/ios-device"
     "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(PROJECT_DIR)/GeneratedRust/ios-sim"
@@ -324,7 +325,7 @@ targets:
           APP_CODE_SIGN_STYLE: Automatic
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
-          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
+          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty $(KITTYSTORE_MINIMUXER_LDFLAGS)"
         Release:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic
@@ -376,6 +377,7 @@ targets:
           - Models/WatchCompanionBridge.swift
           - Models/WatchProjection.swift
           - Resources/BuildKitAssets/**
+          - Generated/Minimuxer/**
           - Views/HomeVoiceOrbButton.swift
           - Views/InlineVoiceButton.swift
           - Views/InlineVoiceStatusStrip.swift
@@ -423,7 +425,7 @@ targets:
           APP_CODE_SIGN_STYLE: Automatic
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
-          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
+          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty $(KITTYSTORE_MINIMUXER_LDFLAGS)"
         Release:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic

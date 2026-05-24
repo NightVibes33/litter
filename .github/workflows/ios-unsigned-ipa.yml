@@ -26,11 +26,15 @@ on:
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
       - 'ThirdParty/Nyxian/**'
+      - 'ThirdParty/Feather/**'
+      - 'ThirdParty/SideStore/**'
+      - 'ThirdParty/UPSTREAMS.md'
       - 'ThirdParty/LLVM-On-iOS/**'
       - 'tools/assets/**'
       - 'tools/scripts/load-sccache-aws-creds.sh'
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
+      - 'tools/scripts/build-sidestore-minimuxer.sh'
       - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
@@ -127,7 +131,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ios-cargo-registry-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock') }}
+          key: ios-cargo-registry-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.lock') }}
           restore-keys: |
             ios-cargo-registry-${{ runner.os }}-
 
@@ -445,6 +449,11 @@ jobs:
           path: apps/ios/Sources/Litter/Resources/BuildKitAssets
           key: ${{ steps.buildkit_assets_cache.outputs.cache-primary-key }}
 
+      - name: Build SideStore minimuxer bridge
+        run: |
+          set -euo pipefail
+          time tools/scripts/build-sidestore-minimuxer.sh
+
       - name: Generate Xcode project
         run: |
           set -euo pipefail
@@ -522,7 +531,9 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
             MARKETING_VERSION="$MARKETING_VERSION" \
-            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
+            KITTYSTORE_MINIMUXER_LDFLAGS="-lminimuxer-ios -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork" \
+            KITTYSTORE_MINIMUXER_SWIFT_FLAGS="-D KITTYSTORE_MINIMUXER_LINKED"
 
       - name: Build Nyxian LiveProcess extension
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
