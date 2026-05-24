@@ -159,8 +159,7 @@ targets:
               if [ ! -d "$candidate" ]; then
                 continue
               fi
-              checked="${checked}${candidate}
-"
+              checked="${checked} ${candidate}"
               if [ -f "$candidate/Info.plist" ] && [ -f "$candidate/$name" ]; then
                 source="$candidate"
                 break
@@ -170,8 +169,7 @@ targets:
             if [ -z "$source" ]; then
               if [ "$required" = "1" ]; then
                 echo "error: required framework $name.framework was not built as a complete framework bundle" >&2
-                printf 'Checked candidates:
-%s' "$checked" >&2
+                printf 'Checked candidates:%s\n' "$checked" >&2
                 exit 1
               fi
               return 0
