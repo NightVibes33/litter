@@ -31,6 +31,7 @@ struct KittyStoreView: View {
     @State private var installedDeviceApps: [KittyStoreInstalledDeviceApp] = []
     @State private var installedDeviceAppsMessage: String?
     @State private var existingDylibs: [KittyStoreImportedFile] = []
+    @State private var removeDylibNames = ""
     @State private var frameworksAndPlugins: [KittyStoreImportedFile] = []
     @State private var tweaks: [KittyStoreImportedFile] = []
     @State private var appNameOverride = ""
@@ -728,6 +729,10 @@ struct KittyStoreView: View {
                         showingImporter: $showingSigningImporter,
                         emptyMessage: "Import dylibs to track removals or replacement targets before signing."
                     )
+                }
+
+                NavigationLink("Remove Dylibs") {
+                    KittyStoreCodeEditorView(title: "Remove Dylibs", text: $removeDylibNames)
                 }
 
                 NavigationLink("Frameworks & PlugIns") {
@@ -1511,6 +1516,13 @@ struct KittyStoreView: View {
         }
     }
 
+    private func parsedRemoveDylibNames() -> [String] {
+        removeDylibNames
+            .components(separatedBy: CharacterSet(charactersIn: "\n,"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     private func signingPlanJSON() -> String {
         let payload: [String: Any] = [
             "mode": selectedSigningMode.rawValue,
@@ -1530,6 +1542,7 @@ struct KittyStoreView: View {
             ],
             "modify": [
                 "existingDylibs": existingDylibs.map(\.stagedPath),
+                "removeDylibs": parsedRemoveDylibNames(),
                 "frameworksAndPlugins": frameworksAndPlugins.map(\.stagedPath),
                 "tweaks": tweaks.map(\.stagedPath),
                 "entitlements": entitlementsText

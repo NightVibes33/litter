@@ -1122,7 +1122,7 @@ static BOOL LBICopyIntoAppSubdir(NSString *source, NSString *appDir, NSString *s
     return YES;
 }
 
-static void LBIKittyStoreCollectInputs(NSDictionary *plan, NSString *appDir, vector<string> &dylibs, NSMutableString *log)
+static void LBIKittyStoreCollectInputs(NSDictionary *plan, NSString *appDir, vector<string> &dylibs, vector<string> &removeDylibs, NSMutableString *log)
 {
     auto addDylib = ^(NSString *path) {
         if(path.length == 0) { return; }
@@ -1137,6 +1137,13 @@ static void LBIKittyStoreCollectInputs(NSDictionary *plan, NSString *appDir, vec
     for(NSString *path in LBIStringArray(plan, @"modify", @"existingDylibs"))
     {
         addDylib(path);
+    }
+    for(NSString *name in LBIStringArray(plan, @"modify", @"removeDylibs"))
+    {
+        NSString *trimmed = [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if(trimmed.length == 0) { continue; }
+        removeDylibs.push_back(string(trimmed.UTF8String));
+        [log appendFormat:@"Queued dylib removal: %@\n", trimmed];
     }
     for(NSString *path in LBIStringArray(plan, @"modify", @"frameworksAndPlugins"))
     {
@@ -1202,7 +1209,8 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
 
     LBIKittyStoreModifyInfoPlist(plan, appDir, log);
     vector<string> dylibs;
-    LBIKittyStoreCollectInputs(plan, appDir, dylibs, log);
+    vector<string> removeDylibs;
+    LBIKittyStoreCollectInputs(plan, appDir, dylibs, removeDylibs, log);
 
     NSString *signingType = LBINestedString(plan, @"signing", @"type").lowercaseString;
     if(signingType.length == 0 || [signingType isEqualToString:@"standard"]) { signingType = @"default"; }
@@ -1239,7 +1247,6 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
     NSString *bundleID = LBINestedString(plan, @"app", @"bundleIdentifier");
     NSString *version = LBINestedString(plan, @"app", @"version");
     NSString *displayName = LBINestedString(plan, @"app", @"name");
-    vector<string> removeDylibs;
     ZBundle bundle;
     bundle.m_bEnableDocuments = LBINestedBool(plan, @"properties", @"fileSharing") || LBINestedBool(plan, @"properties", @"iTunesFileSharing");
     BOOL removeProvision = LBINestedBool(plan, @"properties", @"removeProvisioning");

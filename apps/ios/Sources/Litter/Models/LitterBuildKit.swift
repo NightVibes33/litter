@@ -845,6 +845,7 @@ actor LitterBuildKit {
         var entitlementsJSON: String?
         var outputPath: String?
         var dylibs: [String] = []
+        var removeDylibs: [String] = []
         var frameworks: [String] = []
         var tweaks: [String] = []
         var properties: [String: String] = [:]
@@ -878,6 +879,7 @@ actor LitterBuildKit {
             case "--entitlements": entitlementsPath = takeValue(token)
             case "--entitlements-json": entitlementsJSON = takeValue(token)
             case "--dylib": if let value = takeValue(token) { dylibs.append(value) }
+            case "--remove-dylib", "--rm-dylib": if let value = takeValue(token) { removeDylibs.append(value) }
             case "--framework", "--plugin": if let value = takeValue(token) { frameworks.append(value) }
             case "--tweak": if let value = takeValue(token) { tweaks.append(value) }
             case "--property":
@@ -996,6 +998,7 @@ actor LitterBuildKit {
             ],
             "modify": [
                 "existingDylibs": resolvedDylibs,
+                "removeDylibs": removeDylibs,
                 "frameworksAndPlugins": resolvedFrameworks,
                 "tweaks": resolvedTweaks,
                 "entitlements": entitlementsValue
@@ -3295,6 +3298,7 @@ actor LitterBuildKit {
           --bundle-id com.example.app
           --version 1.0
           --dylib /root/libExample.dylib
+          --remove-dylib @executable_path/libOld.dylib
           --framework /root/Example.framework
           --plugin /root/Example.appex
           --tweak /root/tweak.deb
