@@ -222,6 +222,8 @@ The AltStore/SideStore source is version-history first. Every successful version
 
 The in-app KittyStore tab reads that same source, rebrands the Litter feed for this app, and opens `sidestore://` or `altstore://` install/source URLs. Its Sign screen follows Feather's signer layout: IPA customization, certificate/provisioning selection, SideStore-style Apple ID/pairing/LocalDevVPN readiness, advanced Modify rows, Entitlements, Tweaks, Properties, and Start Signing. The current public code stages a signing plan and validates readiness; the native Feather/Zsign signer path and SideStore install bridge still need to be wired before KittyStore can produce and install a final signed IPA itself. Litter does not vendor or claim ownership of SideStore, Feather, or their supporting tools; SideStore, AltStore, Feather, LocalDevVPN, minimuxer, em_proxy, Jitterbug, and Zsign are credited in `THIRD_PARTY_NOTICES.md`.
 
+Bots get a matching fakefs command surface so they do not have to scrape UI state: `litter-kittystore-status`, `litter-kittystore-source`, `litter-kittystore-versions`, `litter-kittystore-plan`, `litter-kittystore-sign`, `litter-kittystore-install`, and `litter-kittystore-refresh`. Source, version, status, and plan commands return JSON or write JSON to `/root`; sign/install/refresh return explicit blocked or unavailable statuses until the native signer and install bridge are implemented.
+
 All IPAs from this workflow are unsigned. They must be signed by SideStore, AltStore, Feather, or another signing tool before installation.
 
 ## Local Runtime Notes

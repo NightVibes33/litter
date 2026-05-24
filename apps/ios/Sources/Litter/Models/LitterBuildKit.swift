@@ -318,10 +318,20 @@ actor LitterBuildKit {
     private static let stateRoot = "/root/.litter/buildkit"
     private static let requestRoot = "\(stateRoot)/requests"
     private static let buildRoot = "/root/.litter/builds"
+    private static let kittyStoreSourceURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json"
+    private static let kittyStoreUpdateURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-update.json"
     private static let shimInstallMarker = "\(stateRoot)/shims-installed-v6"
     private static let canonicalCommandNames = [
         "litter-buildkit",
         "litter-nyxian-status",
+        "litter-kittystore",
+        "litter-kittystore-status",
+        "litter-kittystore-source",
+        "litter-kittystore-versions",
+        "litter-kittystore-plan",
+        "litter-kittystore-sign",
+        "litter-kittystore-install",
+        "litter-kittystore-refresh",
         "litter-buildkit-install-assets",
         "litter-fs-doctor",
         "litter-env-report",
@@ -600,6 +610,20 @@ actor LitterBuildKit {
         case "litter-nyxian-status":
             let current = await status(checkRevocation: true)
             return BuildKitCommandResult(exitCode: 0, status: current.isReadyForNativeBuilds ? "nyxian-ready" : "nyxian-blocked", log: Self.nyxianStatusLog(current))
+        case "litter-kittystore", "litter-kittystore-status":
+            return await kittyStoreStatus(command: command, args: args)
+        case "litter-kittystore-source":
+            return await kittyStoreSource(args: args)
+        case "litter-kittystore-versions":
+            return await kittyStoreVersions(args: args)
+        case "litter-kittystore-plan":
+            return await kittyStorePlan(args: args, cwd: cwd)
+        case "litter-kittystore-sign":
+            return await kittyStoreSign(args: args, cwd: cwd)
+        case "litter-kittystore-install":
+            return await kittyStoreInstallOrRefresh(command: command, args: args, cwd: cwd)
+        case "litter-kittystore-refresh":
+            return await kittyStoreInstallOrRefresh(command: command, args: args, cwd: cwd)
         case "litter-buildkit-install-assets":
             return installAssetsCommand()
         case "litter-fs-doctor":
@@ -645,6 +669,333 @@ actor LitterBuildKit {
         default:
             return BuildKitCommandResult(exitCode: 64, status: "unsupported-command", log: "Unsupported BuildKit command: \(command)\n")
         }
+    }
+
+    private func kittyStoreStatus(command: String, args: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-help", log: Self.kittyStoreUsage())
+        }
+
+        let current = await status(checkRevocation: true)
+        let payload = Self.kittyStoreStatusPayload(current)
+        let state = current.canInstallOrRefreshOnDevice ? "kittystore-install-ready" : (current.nyxianSigningCertificateInstalled || current.appleIDConfigured ? "kittystore-partial" : "kittystore-blocked")
+        if command == "litter-kittystore" && !tokens.contains("--json") {
+            return BuildKitCommandResult(exitCode: 0, status: state, log: Self.kittyStoreUsage() + "\n" + Self.prettyJSON(payload) + "\n")
+        }
+        return BuildKitCommandResult(exitCode: 0, status: state, log: Self.prettyJSON(payload) + "\n")
+    }
+
+    private func kittyStoreSource(args: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-source-help", log: "Usage: litter-kittystore-source [--url] [--out /root/source.json]\nFetches the KittyStore AltStore/SideStore source JSON for bots.\n")
+        }
+        if tokens.contains("--url") {
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-source-url", log: Self.kittyStoreSourceURL + "\n")
+        }
+        guard let url = URL(string: Self.kittyStoreSourceURL) else {
+            return BuildKitCommandResult(exitCode: 70, status: "kittystore-source-url-invalid", log: "Invalid KittyStore source URL.\n")
+        }
+        do {
+            let data = try await GitHubReleaseAPI.data(url: url, accept: "application/json")
+            guard let sourceText = String(data: data, encoding: .utf8) else {
+                return BuildKitCommandResult(exitCode: 65, status: "kittystore-source-decode-failed", log: "KittyStore source was not UTF-8 JSON.\n")
+            }
+            if let out = Self.optionValue(tokens: tokens, names: ["--out", "-o"]) {
+                let outputPath = Self.resolveFakefsPath(out, cwd: "/root")
+                let parent = (outputPath as NSString).deletingLastPathComponent
+                _ = await IshFS.run("mkdir -p \(IshFS.shellQuote(parent))")
+                try await IshFS.writeTextFile(path: outputPath, text: sourceText)
+                return BuildKitCommandResult(exitCode: 0, status: "kittystore-source-written", log: "Wrote KittyStore source JSON to \(outputPath)\n")
+            }
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-source", log: sourceText + "\n")
+        } catch {
+            return BuildKitCommandResult(exitCode: 69, status: "kittystore-source-fetch-failed", log: "Could not fetch KittyStore source JSON.\n\(error.localizedDescription)\n")
+        }
+    }
+
+    private func kittyStoreVersions(args: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-versions-help", log: "Usage: litter-kittystore-versions [--out /root/versions.json]\nPrints normalized KittyStore version history JSON for bots.\n")
+        }
+        guard let url = URL(string: Self.kittyStoreSourceURL) else {
+            return BuildKitCommandResult(exitCode: 70, status: "kittystore-source-url-invalid", log: "Invalid KittyStore source URL.\n")
+        }
+        do {
+            let data = try await GitHubReleaseAPI.data(url: url, accept: "application/json")
+            let root = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let apps = root?["apps"] as? [[String: Any]] ?? []
+            let app = apps.first ?? [:]
+            let versions = app["versions"] as? [[String: Any]] ?? []
+            let normalizedVersions = versions.map { version -> [String: Any] in
+                var row: [String: Any] = [:]
+                for key in ["version", "buildVersion", "date", "localizedDescription", "downloadURL", "minOSVersion", "sha256"] {
+                    if let value = Self.jsonString(version[key]) { row[key] = value }
+                }
+                if let size = version["size"] as? NSNumber { row["size"] = size.int64Value }
+                if let size = version["size"] as? Int64 { row["size"] = size }
+                if let size = version["size"] as? Int { row["size"] = size }
+                return row
+            }
+            let payload: [String: Any] = [
+                "sourceURL": Self.kittyStoreSourceURL,
+                "name": Self.jsonString(root?["name"]) ?? "KittyStore",
+                "appName": Self.jsonString(app["name"]) ?? "Litter",
+                "bundleIdentifier": Self.jsonString(app["bundleIdentifier"]) ?? "",
+                "count": normalizedVersions.count,
+                "versions": normalizedVersions
+            ]
+            let output = Self.prettyJSON(payload) + "\n"
+            if let out = Self.optionValue(tokens: tokens, names: ["--out", "-o"]) {
+                let outputPath = Self.resolveFakefsPath(out, cwd: "/root")
+                let parent = (outputPath as NSString).deletingLastPathComponent
+                _ = await IshFS.run("mkdir -p \(IshFS.shellQuote(parent))")
+                try await IshFS.writeTextFile(path: outputPath, text: output)
+                return BuildKitCommandResult(exitCode: 0, status: "kittystore-versions-written", log: "Wrote KittyStore versions JSON to \(outputPath)\n")
+            }
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-versions", log: output)
+        } catch {
+            return BuildKitCommandResult(exitCode: 69, status: "kittystore-versions-failed", log: "Could not read KittyStore version history.\n\(error.localizedDescription)\n")
+        }
+    }
+
+    private func kittyStorePlan(args: String, cwd: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-plan-help", log: Self.kittyStorePlanUsage())
+        }
+
+        var mode = "certificate"
+        var ipa: String?
+        var profile: String?
+        var pairing: String?
+        var name: String?
+        var bundleID: String?
+        var version: String?
+        var entitlementsPath: String?
+        var entitlementsJSON: String?
+        var outputPath: String?
+        var dylibs: [String] = []
+        var frameworks: [String] = []
+        var tweaks: [String] = []
+        var properties: [String: String] = [:]
+        var installAfterSigning = false
+        var deleteAfterSigning = false
+        var errors: [String] = []
+
+        var index = 0
+        func takeValue(_ flag: String) -> String? {
+            guard index + 1 < tokens.count else {
+                errors.append("Missing value for \(flag)")
+                return nil
+            }
+            index += 1
+            return tokens[index]
+        }
+
+        while index < tokens.count {
+            let token = tokens[index]
+            switch token {
+            case "--mode": if let value = takeValue(token) { mode = value }
+            case "--ipa": ipa = takeValue(token)
+            case "--profile", "--mobileprovision": profile = takeValue(token)
+            case "--pairing", "--pairing-file": pairing = takeValue(token)
+            case "--name": name = takeValue(token)
+            case "--bundle-id", "--identifier": bundleID = takeValue(token)
+            case "--version": version = takeValue(token)
+            case "--entitlements": entitlementsPath = takeValue(token)
+            case "--entitlements-json": entitlementsJSON = takeValue(token)
+            case "--dylib": if let value = takeValue(token) { dylibs.append(value) }
+            case "--framework", "--plugin": if let value = takeValue(token) { frameworks.append(value) }
+            case "--tweak": if let value = takeValue(token) { tweaks.append(value) }
+            case "--property":
+                if let value = takeValue(token) {
+                    let parts = value.split(separator: "=", maxSplits: 1).map(String.init)
+                    if parts.count == 2 { properties[parts[0]] = parts[1] } else { errors.append("Property must be key=value: \(value)") }
+                }
+            case "--out", "-o": outputPath = takeValue(token)
+            case "--install-after-signing": installAfterSigning = true
+            case "--delete-after-signing": deleteAfterSigning = true
+            default:
+                errors.append("Unknown option: \(token)")
+            }
+            index += 1
+        }
+
+        mode = mode.lowercased()
+        if mode == "appleid" || mode == "apple_id" { mode = "apple-id" }
+        if !["certificate", "apple-id"].contains(mode) {
+            errors.append("Unsupported mode: \(mode). Use certificate or apple-id.")
+        }
+        guard errors.isEmpty else {
+            return BuildKitCommandResult(exitCode: 64, status: "kittystore-plan-usage", log: errors.joined(separator: "\n") + "\n\n" + Self.kittyStorePlanUsage())
+        }
+
+        let resolvedIPA = ipa.map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let resolvedProfile = profile.map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let resolvedPairing = pairing.map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let resolvedDylibs = dylibs.map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let resolvedFrameworks = frameworks.map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let resolvedTweaks = tweaks.map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let resolvedEntitlements = entitlementsPath.map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let current = await status(checkRevocation: true)
+        var missing: [String] = []
+        var warnings: [String] = []
+
+        if let resolvedIPA {
+            if !(await IshFS.exists(path: resolvedIPA)) { missing.append("IPA does not exist: \(resolvedIPA)") }
+        } else {
+            missing.append("--ipa is required")
+        }
+        if let resolvedProfile {
+            if !(await IshFS.exists(path: resolvedProfile)) { missing.append("Provisioning profile does not exist: \(resolvedProfile)") }
+        }
+        if let resolvedPairing {
+            if !(await IshFS.exists(path: resolvedPairing)) { missing.append("Pairing file does not exist: \(resolvedPairing)") }
+        }
+        for path in resolvedDylibs {
+            if !(await IshFS.exists(path: path)) { missing.append("Dylib does not exist: \(path)") }
+        }
+        for path in resolvedFrameworks {
+            if !(await IshFS.exists(path: path)) { missing.append("Framework/plugin does not exist: \(path)") }
+        }
+        for path in resolvedTweaks {
+            if !(await IshFS.exists(path: path)) { missing.append("Tweak does not exist: \(path)") }
+        }
+        if let resolvedEntitlements {
+            if !(await IshFS.exists(path: resolvedEntitlements)) { missing.append("Entitlements file does not exist: \(resolvedEntitlements)") }
+        }
+
+        if mode == "certificate" && !current.nyxianSigningCertificateInstalled {
+            missing.append("Validated .p12 signing certificate is missing or invalid in BuildKit settings")
+        }
+        if mode == "apple-id" {
+            if !current.appleIDConfigured { missing.append("Apple ID login is missing in BuildKit settings") }
+            if resolvedPairing == nil { missing.append("--pairing is required for apple-id install/refresh mode") }
+            if !current.localDevVPNConnected { warnings.append("LocalDevVPN is not detected; direct install/refresh will remain blocked") }
+        }
+        if !current.canBuildUnsignedIPA { warnings.append("Unsigned IPA BuildKit packaging is not ready on this install") }
+
+        var entitlementsValue = entitlementsJSON ?? ""
+        if entitlementsValue.isEmpty, let resolvedEntitlements {
+            if let text = try? await IshFS.readTextFile(path: resolvedEntitlements, maxBytes: 128_000) {
+                entitlementsValue = text
+            }
+        }
+
+        let plan: [String: Any] = [
+            "schemaVersion": 1,
+            "kind": "KittyStoreSigningPlan",
+            "mode": mode,
+            "sourceURL": Self.kittyStoreSourceURL,
+            "createdAt": ISO8601DateFormatter().string(from: Date()),
+            "app": [
+                "name": name ?? "",
+                "bundleIdentifier": bundleID ?? "",
+                "version": version ?? "",
+                "ipa": resolvedIPA ?? ""
+            ],
+            "signing": [
+                "certificateReady": current.nyxianSigningCertificateInstalled,
+                "certificateDetail": current.nyxianSigningCertificateDetail,
+                "provisioningProfile": resolvedProfile ?? "embedded",
+                "appleIDReady": current.appleIDConfigured,
+                "appleIDDetail": current.appleIDDetail,
+                "pairingFile": resolvedPairing ?? "",
+                "localDevVPNReady": current.localDevVPNConnected,
+                "localDevVPNDetail": current.localDevVPNDetail
+            ],
+            "modify": [
+                "existingDylibs": resolvedDylibs,
+                "frameworksAndPlugins": resolvedFrameworks,
+                "tweaks": resolvedTweaks,
+                "entitlements": entitlementsValue
+            ],
+            "properties": properties.merging([
+                "installAfterSigning": String(installAfterSigning),
+                "deleteAfterSigning": String(deleteAfterSigning)
+            ]) { _, new in new },
+            "readiness": [
+                "ready": missing.isEmpty,
+                "missing": missing,
+                "warnings": warnings
+            ]
+        ]
+        let planText = Self.prettyJSON(plan) + "\n"
+        if let outputPath {
+            let resolvedOutput = Self.resolveFakefsPath(outputPath, cwd: cwd)
+            let parent = (resolvedOutput as NSString).deletingLastPathComponent
+            _ = await IshFS.run("mkdir -p \(IshFS.shellQuote(parent))")
+            do {
+                try await IshFS.writeTextFile(path: resolvedOutput, text: planText)
+                let status = missing.isEmpty ? "kittystore-plan-ready" : "kittystore-plan-blocked"
+                let code = missing.isEmpty ? 0 : 78
+                return BuildKitCommandResult(exitCode: code, status: status, log: "Wrote KittyStore signing plan to \(resolvedOutput)\n" + planText)
+            } catch {
+                return BuildKitCommandResult(exitCode: 73, status: "kittystore-plan-write-failed", log: "Could not write signing plan to \(resolvedOutput).\n\(error.localizedDescription)\n")
+            }
+        }
+        return BuildKitCommandResult(exitCode: missing.isEmpty ? 0 : 78, status: missing.isEmpty ? "kittystore-plan-ready" : "kittystore-plan-blocked", log: planText)
+    }
+
+    private func kittyStoreSign(args: String, cwd: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-sign-help", log: "Usage: litter-kittystore-sign --plan /root/plan.json\nValidates the plan path and reports native signer availability.\n")
+        }
+        let planPath = Self.optionValue(tokens: tokens, names: ["--plan"]).map { Self.resolveFakefsPath($0, cwd: cwd) } ?? tokens.first(where: { !$0.hasPrefix("-") }).map { Self.resolveFakefsPath($0, cwd: cwd) }
+        guard let planPath else {
+            return BuildKitCommandResult(exitCode: 64, status: "kittystore-sign-missing-plan", log: "Missing --plan /root/plan.json\n")
+        }
+        guard await IshFS.exists(path: planPath) else {
+            return BuildKitCommandResult(exitCode: 66, status: "kittystore-sign-plan-missing", log: "Signing plan does not exist: \(planPath)\n")
+        }
+        let current = await status(checkRevocation: true)
+        var log = "KittyStore sign request accepted for plan: \(planPath)\n\n"
+        log += Self.prettyJSON(Self.kittyStoreStatusPayload(current)) + "\n\n"
+        log += "Native signing is not wired yet. Required backend: unpack IPA, apply Feather-style dylib/framework/tweak/properties changes, run the user-owned certificate through Zsign/LCUtils, repack the IPA, and return the signed artifact path.\n"
+        return BuildKitCommandResult(exitCode: 78, status: "native-signer-unavailable", log: log)
+    }
+
+    private func kittyStoreInstallOrRefresh(command: String, args: String, cwd: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-install-help", log: "Usage: \(command) [--ipa /root/App.ipa] [--bundle-id com.example.app] [--pairing /root/device.mobiledevicepairing]\nReports SideStore-style install/refresh readiness for bots.\n")
+        }
+        let current = await status(checkRevocation: true)
+        let ipa = Self.optionValue(tokens: tokens, names: ["--ipa"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let pairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
+        var missing: [String] = []
+        if !current.appleIDConfigured { missing.append("Apple ID login is missing in BuildKit settings") }
+        if !current.localDevVPNConnected { missing.append("LocalDevVPN is not detected") }
+        if let ipa {
+            if !(await IshFS.exists(path: ipa)) { missing.append("IPA does not exist: \(ipa)") }
+        }
+        if let pairing {
+            if !(await IshFS.exists(path: pairing)) { missing.append("Pairing file does not exist: \(pairing)") }
+        } else {
+            missing.append("Pairing file is required for SideStore-style install/refresh")
+        }
+        let payload: [String: Any] = [
+            "command": command,
+            "ipa": ipa ?? "",
+            "pairingFile": pairing ?? "",
+            "bundleIdentifier": Self.optionValue(tokens: tokens, names: ["--bundle-id", "--identifier"]) ?? "",
+            "ready": missing.isEmpty,
+            "missing": missing,
+            "sideStore": [
+                "appleIDConfigured": current.appleIDConfigured,
+                "appleIDDetail": current.appleIDDetail,
+                "localDevVPNConnected": current.localDevVPNConnected,
+                "localDevVPNDetail": current.localDevVPNDetail
+            ]
+        ]
+        if !missing.isEmpty {
+            return BuildKitCommandResult(exitCode: 78, status: "kittystore-install-blocked", log: Self.prettyJSON(payload) + "\n")
+        }
+        return BuildKitCommandResult(exitCode: 78, status: "install-bridge-unavailable", log: Self.prettyJSON(payload) + "\nNative SideStore install/refresh bridge is not wired yet. Required backend: minimuxer/LocalDevVPN transport, pairing validation, provisioning install, app install, refresh bookkeeping, and explicit progress events.\n")
     }
 
     private func installAssetsCommand() -> BuildKitCommandResult {
@@ -2431,6 +2782,124 @@ actor LitterBuildKit {
         """
     }
 
+    private static func prettyJSON(_ payload: Any) -> String {
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys]),
+              let text = String(data: data, encoding: .utf8)
+        else {
+            return "{}"
+        }
+        return text
+    }
+
+    private static func jsonString(_ value: Any?) -> String? {
+        switch value {
+        case let string as String:
+            return string
+        case let number as NSNumber:
+            return number.stringValue
+        case let value?:
+            return String(describing: value)
+        case nil:
+            return nil
+        }
+    }
+
+    private static func optionValue(tokens: [String], names: Set<String>) -> String? {
+        for (index, token) in tokens.enumerated() where names.contains(token) {
+            guard index + 1 < tokens.count else { return nil }
+            return tokens[index + 1]
+        }
+        for token in tokens {
+            for name in names {
+                let prefix = name + "="
+                if token.hasPrefix(prefix) { return String(token.dropFirst(prefix.count)) }
+            }
+        }
+        return nil
+    }
+
+    private static func kittyStoreStatusPayload(_ status: LitterBuildKitStatus) -> [String: Any] {
+        [
+            "store": [
+                "name": "KittyStore",
+                "sourceURL": kittyStoreSourceURL,
+                "updateURL": kittyStoreUpdateURL,
+                "compatibleSources": ["SideStore", "AltStore"],
+                "signingWorkspace": "Feather-style"
+            ],
+            "sideStore": [
+                "appleIDConfigured": status.appleIDConfigured,
+                "appleIDDetail": status.appleIDDetail,
+                "localDevVPNConnected": status.localDevVPNConnected,
+                "localDevVPNDetail": status.localDevVPNDetail,
+                "canInstallOrRefreshOnDevice": status.canInstallOrRefreshOnDevice
+            ],
+            "feather": [
+                "certificateInstalled": status.nyxianSigningCertificateInstalled,
+                "certificateDetail": status.nyxianSigningCertificateDetail,
+                "embeddedProvisionPresent": status.embeddedProvisionPresent,
+                "canCreateSigningPlan": status.nyxianSigningCertificateInstalled || status.appleIDConfigured
+            ],
+            "buildKit": [
+                "nativeBuildsReady": status.isReadyForNativeBuilds,
+                "unsignedIPAReady": status.canBuildUnsignedIPA,
+                "requestMonitorRunning": status.requestMonitorRunning,
+                "missingRequirements": status.missingRequirements
+            ],
+            "botCommands": [
+                "litter-kittystore-status",
+                "litter-kittystore-source",
+                "litter-kittystore-versions",
+                "litter-kittystore-plan",
+                "litter-kittystore-sign",
+                "litter-kittystore-install",
+                "litter-kittystore-refresh"
+            ]
+        ]
+    }
+
+    private static func kittyStoreUsage() -> String {
+        """
+        KittyStore bot API
+        Commands:
+        - litter-kittystore-status --json
+        - litter-kittystore-source [--url] [--out /root/source.json]
+        - litter-kittystore-versions [--out /root/versions.json]
+        - litter-kittystore-plan --ipa /root/App.ipa --mode certificate --out /root/plan.json
+        - litter-kittystore-plan --ipa /root/App.ipa --mode apple-id --pairing /root/device.mobiledevicepairing --out /root/plan.json
+        - litter-kittystore-sign --plan /root/plan.json
+        - litter-kittystore-install --ipa /root/App.ipa --pairing /root/device.mobiledevicepairing
+        - litter-kittystore-refresh --bundle-id com.example.app --pairing /root/device.mobiledevicepairing
+
+        The source/version/status/plan commands are bot-safe now. Sign/install/refresh return explicit unavailable or blocked statuses until the native Feather/Zsign signer and SideStore install bridge are wired.
+        """
+    }
+
+    private static func kittyStorePlanUsage() -> String {
+        """
+        Usage:
+          litter-kittystore-plan --ipa /root/App.ipa --mode certificate [options]
+          litter-kittystore-plan --ipa /root/App.ipa --mode apple-id --pairing /root/device.mobiledevicepairing [options]
+
+        Options:
+          --profile /root/profile.mobileprovision
+          --name "App Name"
+          --bundle-id com.example.app
+          --version 1.0
+          --dylib /root/libExample.dylib
+          --framework /root/Example.framework
+          --plugin /root/Example.appex
+          --tweak /root/tweak.deb
+          --entitlements /root/entitlements.plist
+          --entitlements-json '{"get-task-allow":true}'
+          --property key=value
+          --install-after-signing
+          --delete-after-signing
+          --out /root/plan.json
+        """
+    }
+
     private static func statusLog(_ status: LitterBuildKitStatus) -> String {
         var output = """
         Litter BuildKit status
@@ -2465,7 +2934,7 @@ actor LitterBuildKit {
         Swift direct build: \(status.canRunSwiftDirectly ? "ready" : "blocked")
         Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
-        Command modes: native Swift/Clang/link: swift, swiftc, clang, clang++, cc, c++, ld, ld64; compatibility: xcodebuild, xcode-select, xcrun, plutil, code; fakefs pass-through: ar, ranlib, nm, objdump, strip, strings, lipo.
+        Command modes: native Swift/Clang/link: swift, swiftc, clang, clang++, cc, c++, ld, ld64; KittyStore bot API: litter-kittystore-status/source/versions/plan/sign/install/refresh; compatibility: xcodebuild, xcode-select, xcrun, plutil, code; fakefs pass-through: ar, ranlib, nm, objdump, strip, strings, lipo.
         """
         if let sourceManifest = status.sourceImportManifest {
             output += "\nSource manifest: \(sourceManifest.name) (\(sourceManifest.importedFileCount) files)\n"
