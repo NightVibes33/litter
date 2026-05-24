@@ -160,6 +160,7 @@ fn main() {
         }
         if target.contains("apple-ios") {
             env::set_var("PKG_CONFIG_ALLOW_CROSS", "1");
+            c_flags.push("-std=gnu17".to_string());
         } else if target.contains("apple") {
             println!("cargo:rustc-env=MACOSX_DEPLOYMENT_TARGET=10.13");
             c_flags.push("-mmacosx-version-min=10.13".to_string());

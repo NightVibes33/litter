@@ -57,6 +57,7 @@ fn main() {
         let mut config = autotools::Config::new("libplist");
         config.without("cython", None);
         configure_for_target(&mut config);
+        config.cflag("-std=gnu17");
         let dst = config.build();
 
         println!(
