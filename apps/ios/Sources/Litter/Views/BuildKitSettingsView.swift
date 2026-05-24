@@ -14,8 +14,12 @@ struct BuildKitSettingsView: View {
     @State private var appleIDEmailInput = ""
     @State private var appleIDTeamIDInput = ""
     @State private var appleIDPasswordInput = ""
-    @State private var appleIDAnisetteURLInput = ""
+    @State private var appleIDAnisetteURLInput = NyxianAnisetteServerDirectory.defaultServerURL
+    @State private var selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.defaultServerURL
+    @State private var anisetteServerListURLInput = NyxianAnisetteServerDirectory.officialListURL
+    @State private var anisetteServers = NyxianAnisetteServerDirectory.fallbackServers
     @State private var appleIDActionMessage: String?
+    @State private var anisetteServerMessage: String?
     @State private var certificatePasswordInput = ""
     @State private var certificateActionMessage: String?
 
@@ -46,7 +50,14 @@ struct BuildKitSettingsView: View {
         .onChange(of: downloader.installRevision) { _, _ in
             taskBag.run { await refresh() }
         }
-        .task { await refresh() }
+        .onChange(of: selectedAnisetteServerAddress) { _, newValue in
+            guard newValue != NyxianAnisetteServerDirectory.customSelectionID else { return }
+            appleIDAnisetteURLInput = newValue
+        }
+        .task {
+            await refresh()
+            await refreshAnisetteServers(showSuccess: false)
+        }
         .onDisappear {
             taskBag.cancelAll()
             if downloader.phase.isBusy { downloader.cancel() }
@@ -300,7 +311,7 @@ struct BuildKitSettingsView: View {
 
     private var signingSection: some View {
         Section {
-            Text("SideStore or AltStore signs the unsigned Litter IPA with your Apple ID. Original Nyxian run/install needs this Apple ID login and the matching .p12 certificate saved here so it can sign built apps with the same identity.")
+            Text("SideStore or AltStore signs the unsigned Litter IPA with your Apple ID. Original Nyxian run/install needs this Apple ID login, a SideStore Anisette server, and the matching .p12 certificate saved here. Full on-device install/refresh also requires LocalDevVPN connected.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -311,7 +322,10 @@ struct BuildKitSettingsView: View {
             statusRow("Apple ID detail", status?.appleIDDetail ?? "Missing")
             statusRow("Imported certificate", status?.nyxianSigningCertificateInstalled == true ? "Validated" : "Missing or invalid")
             statusRow("Certificate detail", status?.nyxianSigningCertificateDetail ?? "Missing")
-            statusRow("Run/install built apps", status?.canRunNyxianApps == true ? "Ready" : "Blocked")
+            statusRow("Run/install signing", status?.canRunNyxianApps == true ? "Ready" : "Blocked")
+            statusRow("LocalDevVPN", status?.localDevVPNConnected == true ? "Detected" : "Not detected")
+            statusRow("VPN detail", status?.localDevVPNDetail ?? "No active VPN tunnel interface detected")
+            statusRow("Full install/refresh", status?.canInstallOrRefreshOnDevice == true ? "Ready" : "Blocked")
 
             TextField("Apple ID email", text: $appleIDEmailInput)
                 .keyboardType(.emailAddress)
@@ -331,11 +345,43 @@ struct BuildKitSettingsView: View {
                 .autocorrectionDisabled()
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
-            TextField("Anisette server URL (optional)", text: $appleIDAnisetteURLInput)
+            Picker("Anisette server", selection: $selectedAnisetteServerAddress) {
+                ForEach(anisetteServers) { server in
+                    Text(server.displayName).tag(server.address)
+                }
+                Text("Custom").tag(NyxianAnisetteServerDirectory.customSelectionID)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            if selectedAnisetteServerAddress == NyxianAnisetteServerDirectory.customSelectionID {
+                TextField("Custom Anisette server URL", text: $appleIDAnisetteURLInput)
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+
+            TextField("Anisette server list URL", text: $anisetteServerListURLInput)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                taskBag.run { await refreshAnisetteServers(showSuccess: true) }
+            } label: {
+                Label("Refresh Anisette Servers", systemImage: "arrow.clockwise.circle")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            if let anisetteServerMessage, !anisetteServerMessage.isEmpty {
+                Text(anisetteServerMessage)
+                    .litterFont(.caption)
+                    .foregroundStyle(LitterTheme.textSecondary)
+                    .textSelection(.enabled)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
 
             Button {
                 saveNyxianAppleID()
@@ -569,6 +615,43 @@ struct BuildKitSettingsView: View {
         }
     }
 
+    private var anisetteURLForLogin: String {
+        if selectedAnisetteServerAddress == NyxianAnisetteServerDirectory.customSelectionID {
+            return appleIDAnisetteURLInput
+        }
+        return selectedAnisetteServerAddress
+    }
+
+    @MainActor
+    private func refreshAnisetteServers(showSuccess: Bool) async {
+        do {
+            let listURL = try NyxianAnisetteServerDirectory.normalizedListURL(anisetteServerListURLInput)
+            anisetteServerListURLInput = listURL
+            anisetteServers = try await NyxianAnisetteServerDirectory.fetchServers(listURL: listURL)
+            syncAnisetteSelectionFromInput()
+            if showSuccess {
+                anisetteServerMessage = "Loaded \(anisetteServers.count) SideStore Anisette servers."
+            }
+        } catch {
+            anisetteServers = NyxianAnisetteServerDirectory.fallbackServers
+            syncAnisetteSelectionFromInput()
+            anisetteServerMessage = "Could not refresh SideStore Anisette servers: \(error.localizedDescription). Using bundled defaults."
+        }
+    }
+
+    @MainActor
+    private func syncAnisetteSelectionFromInput() {
+        let raw = appleIDAnisetteURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = raw.isEmpty ? NyxianAnisetteServerDirectory.defaultServerURL : raw
+        if anisetteServers.contains(where: { $0.address == target }) {
+            selectedAnisetteServerAddress = target
+            appleIDAnisetteURLInput = target
+        } else {
+            selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.customSelectionID
+            appleIDAnisetteURLInput = target
+        }
+    }
+
     @MainActor
     private func saveNyxianAppleID() {
         do {
@@ -576,11 +659,12 @@ struct BuildKitSettingsView: View {
                 email: appleIDEmailInput,
                 password: appleIDPasswordInput,
                 teamID: appleIDTeamIDInput,
-                anisetteServerURL: appleIDAnisetteURLInput
+                anisetteServerURL: anisetteURLForLogin
             )
             appleIDEmailInput = account.email
             appleIDTeamIDInput = account.teamID
-            appleIDAnisetteURLInput = account.anisetteServerURL ?? ""
+            appleIDAnisetteURLInput = account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+            syncAnisetteSelectionFromInput()
             appleIDPasswordInput = ""
             appleIDActionMessage = "Apple ID login saved for \(account.statusDetail). Password is stored in Keychain."
             taskBag.run { await refresh() }
@@ -596,7 +680,8 @@ struct BuildKitSettingsView: View {
             appleIDEmailInput = ""
             appleIDTeamIDInput = ""
             appleIDPasswordInput = ""
-            appleIDAnisetteURLInput = ""
+            appleIDAnisetteURLInput = NyxianAnisetteServerDirectory.defaultServerURL
+            selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.defaultServerURL
             appleIDActionMessage = "Removed Apple ID login."
             taskBag.run { await refresh() }
         } catch {
@@ -619,7 +704,8 @@ struct BuildKitSettingsView: View {
         if let account = NyxianAppleIDStore.load(), appleIDEmailInput.isEmpty, appleIDTeamIDInput.isEmpty {
             appleIDEmailInput = account.email
             appleIDTeamIDInput = account.teamID
-            appleIDAnisetteURLInput = account.anisetteServerURL ?? ""
+            appleIDAnisetteURLInput = account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+            syncAnisetteSelectionFromInput()
         }
         isRefreshing = false
     }

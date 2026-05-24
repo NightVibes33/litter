@@ -220,6 +220,8 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var embeddedProvisionPresent: Bool
     var appleIDConfigured: Bool
     var appleIDDetail: String
+    var localDevVPNConnected: Bool
+    var localDevVPNDetail: String
     var nyxianSigningCertificateInstalled: Bool
     var nyxianSigningCertificateDetail: String
     var toolchainRoot: String
@@ -245,11 +247,16 @@ struct LitterBuildKitStatus: Equatable, Sendable {
         isReadyForNativeBuilds && embeddedProvisionPresent && appleIDConfigured && nyxianSigningCertificateInstalled
     }
 
+    var canInstallOrRefreshOnDevice: Bool {
+        canRunNyxianApps && localDevVPNConnected
+    }
+
     var nyxianRunInstallRequirements: [String] {
         var lines: [String] = []
         if !embeddedProvisionPresent { lines.append("SideStore/AltStore embedded.mobileprovision on the installed Litter app") }
-        if !appleIDConfigured { lines.append("Apple ID login in BuildKit settings (email, password, Team ID, optional Anisette URL)") }
+        if !appleIDConfigured { lines.append("Apple ID login in BuildKit settings (email, password, Team ID, SideStore Anisette server)") }
         if !nyxianSigningCertificateInstalled { lines.append("validated matching SideStore/AltStore .p12 certificate for Nyxian signing") }
+        if !localDevVPNConnected { lines.append("LocalDevVPN connected for SideStore-style on-device install/refresh") }
         return lines
     }
 
@@ -280,10 +287,13 @@ struct LitterBuildKitStatus: Equatable, Sendable {
 
     var readinessDetail: String {
         if isReadyForNativeBuilds {
-            if canRunNyxianApps {
-                return "Fakefs Swift, unsigned IPA packaging, and original Nyxian run/install signing are ready."
+            if canInstallOrRefreshOnDevice {
+                return "Fakefs Swift, unsigned IPA packaging, original Nyxian signing, and LocalDevVPN install/refresh transport are ready."
             }
-            return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs Apple ID login and the matching SideStore/AltStore .p12 certificate imported."
+            if canRunNyxianApps {
+                return "Fakefs Swift, unsigned IPA packaging, and original Nyxian run/install signing are ready. Connect LocalDevVPN for SideStore-style on-device install/refresh."
+            }
+            return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs Apple ID login, a SideStore Anisette server, and the matching SideStore/AltStore .p12 certificate imported. Full on-device install/refresh also needs LocalDevVPN connected."
         }
         if privateAssetsInstalled {
             return "The private asset pack is installed, but the native driver/framework is not loadable yet. Rebuild the sideload IPA with the private BuildKit framework embedded."
@@ -461,11 +471,12 @@ actor LitterBuildKit {
         let appleIDDetail: String
         if let appleIDAccount {
             appleIDDetail = appleIDLoggedIn
-                ? "\(appleIDAccount.statusDetail) (password in Keychain)"
-                : "\(appleIDAccount.statusDetail) (password missing from Keychain)"
+                ? "\(appleIDAccount.statusDetail) via \(appleIDAccount.anisetteDetail) (password in Keychain)"
+                : "\(appleIDAccount.statusDetail) via \(appleIDAccount.anisetteDetail) (password missing from Keychain)"
         } else {
             appleIDDetail = "Missing Apple ID login"
         }
+        let localDevVPNState = NyxianLocalDevVPNDetector.currentState()
         let signingCertificateState = NyxianSigningCertificateStorage.savedState(checkRevocation: checkRevocation)
         return LitterBuildKitStatus(
             sourceImportAvailable: Self.sourceImportAvailable,
@@ -486,6 +497,8 @@ actor LitterBuildKit {
             embeddedProvisionPresent: Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") != nil,
             appleIDConfigured: appleIDLoggedIn,
             appleIDDetail: appleIDDetail,
+            localDevVPNConnected: localDevVPNState.isConnected,
+            localDevVPNDetail: localDevVPNState.detail,
             nyxianSigningCertificateInstalled: signingCertificateState.isUsable,
             nyxianSigningCertificateDetail: signingCertificateState.statusDetail,
             toolchainRoot: Self.toolchainRoot.path,
@@ -2440,7 +2453,10 @@ actor LitterBuildKit {
         Apple ID detail: \(status.appleIDDetail)
         Nyxian signing certificate: \(status.nyxianSigningCertificateInstalled ? "validated" : "missing or invalid")
         Nyxian signing detail: \(status.nyxianSigningCertificateDetail)
-        Nyxian run/install: \(status.canRunNyxianApps ? "ready" : "blocked")
+        Nyxian run/install signing: \(status.canRunNyxianApps ? "ready" : "blocked")
+        LocalDevVPN install/refresh transport: \(status.localDevVPNConnected ? "detected" : "not detected")
+        LocalDevVPN detail: \(status.localDevVPNDetail)
+        Full on-device install/refresh: \(status.canInstallOrRefreshOnDevice ? "ready" : "blocked")
         BuildKit root: \(status.buildKitRoot)
         Toolchain root: \(status.toolchainRoot)
         SDK root: \(status.sdkRoot)
@@ -2497,7 +2513,10 @@ actor LitterBuildKit {
         output += "- Apple ID detail: \(status.appleIDDetail)\n"
         output += "- Matching signing certificate: \(status.nyxianSigningCertificateInstalled ? "validated" : "missing or invalid")\n"
         output += "- Signing certificate detail: \(status.nyxianSigningCertificateDetail)\n"
-        output += "- Run/install built apps: \(status.canRunNyxianApps ? "available" : "not available")\n"
+        output += "- Run/install signing: \(status.canRunNyxianApps ? "available" : "not available")\n"
+        output += "- LocalDevVPN install/refresh transport: \(status.localDevVPNConnected ? "detected" : "not detected")\n"
+        output += "- LocalDevVPN detail: \(status.localDevVPNDetail)\n"
+        output += "- Full on-device install/refresh: \(status.canInstallOrRefreshOnDevice ? "available" : "not available")\n"
         output += "- Driver mode: \(status.assetManifest?.toolchain.nativeDriverMode ?? "unknown")\n"
         output += "- Capabilities: \(status.installedCapabilities.isEmpty ? "none" : status.installedCapabilities.joined(separator: ", "))\n"
         output += "\nBot path examples:\n"

@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Security
 
@@ -85,14 +86,87 @@ enum NyxianSigningCertificateStorage {
 }
 
 
+struct NyxianLocalDevVPNState: Equatable, Sendable {
+    var isConnected: Bool
+    var detail: String
+}
+
+enum NyxianLocalDevVPNDetector {
+    static func currentState() -> NyxianLocalDevVPNState {
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0, let first = interfaces else {
+            return NyxianLocalDevVPNState(isConnected: false, detail: "Unable to inspect network interfaces")
+        }
+        defer { freeifaddrs(interfaces) }
+
+        var candidates: [String] = []
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let current = cursor {
+            defer { cursor = current.pointee.ifa_next }
+            let flags = Int32(current.pointee.ifa_flags)
+            guard flags & IFF_UP != 0, flags & IFF_RUNNING != 0 else { continue }
+            guard let rawName = current.pointee.ifa_name else { continue }
+            let name = String(cString: rawName)
+            if name.hasPrefix("utun") || name.hasPrefix("ipsec") || name.hasPrefix("ppp") {
+                candidates.append(name)
+            }
+        }
+
+        if candidates.isEmpty {
+            return NyxianLocalDevVPNState(isConnected: false, detail: "No active VPN tunnel interface detected")
+        }
+        return NyxianLocalDevVPNState(
+            isConnected: true,
+            detail: "Detected VPN tunnel: \(candidates.sorted().joined(separator: ", "))"
+        )
+    }
+}
+
 struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
     var email: String
     var teamID: String
     var anisetteServerURL: String?
     var loggedInAt: Date
 
+    enum CodingKeys: String, CodingKey {
+        case email
+        case teamID
+        case anisetteServerURL
+        case loggedInAt
+        case updatedAt
+    }
+
+    init(email: String, teamID: String, anisetteServerURL: String?, loggedInAt: Date) {
+        self.email = email
+        self.teamID = teamID
+        self.anisetteServerURL = anisetteServerURL
+        self.loggedInAt = loggedInAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        email = try container.decode(String.self, forKey: .email)
+        teamID = try container.decode(String.self, forKey: .teamID)
+        anisetteServerURL = try container.decodeIfPresent(String.self, forKey: .anisetteServerURL)
+        loggedInAt = try container.decodeIfPresent(Date.self, forKey: .loggedInAt)
+            ?? container.decodeIfPresent(Date.self, forKey: .updatedAt)
+            ?? Date()
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(email, forKey: .email)
+        try container.encode(teamID, forKey: .teamID)
+        try container.encodeIfPresent(anisetteServerURL, forKey: .anisetteServerURL)
+        try container.encode(loggedInAt, forKey: .loggedInAt)
+    }
+
     var statusDetail: String {
         "\(email) / \(teamID)"
+    }
+
+    var anisetteDetail: String {
+        anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
     }
 }
 
@@ -114,8 +188,95 @@ enum NyxianAppleIDValidationError: LocalizedError {
         case .invalidTeamID:
             return "Apple Developer Team IDs are 10 uppercase letters or numbers."
         case .invalidAnisetteURL:
-            return "Enter a valid Anisette server URL or leave it blank."
+            return "Enter a valid SideStore Anisette server URL."
         }
+    }
+}
+
+struct NyxianAnisetteServer: Codable, Equatable, Identifiable, Sendable {
+    var name: String
+    var address: String
+
+    var id: String { address }
+
+    var displayName: String {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedName.isEmpty ? address : trimmedName
+    }
+}
+
+private struct NyxianAnisetteServerListPayload: Codable {
+    var servers: [NyxianAnisetteServer]
+    var cache: String?
+}
+
+enum NyxianAnisetteServerDirectory {
+    static let officialListURL = "https://servers.sidestore.io/servers.json"
+    static let defaultServerURL = "https://ani.sidestore.io"
+    static let customSelectionID = "__custom_anisette_server__"
+
+    static let fallbackServers: [NyxianAnisetteServer] = [
+        NyxianAnisetteServer(name: "SideStore", address: "https://ani.sidestore.io"),
+        NyxianAnisetteServer(name: "SideStore (.app)", address: "https://ani.sidestore.app"),
+        NyxianAnisetteServer(name: "SideStore (.zip)", address: "https://ani.sidestore.zip"),
+        NyxianAnisetteServer(name: "SideStore (.xyz)", address: "https://ani.846969.xyz"),
+    ]
+
+    static func fetchServers(listURL rawListURL: String = officialListURL) async throws -> [NyxianAnisetteServer] {
+        let listURLString = try normalizedURL(rawListURL, defaultIfEmpty: officialListURL)
+        guard let url = URL(string: listURLString) else {
+            throw NyxianAppleIDValidationError.invalidAnisetteURL
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw NSError(
+                domain: "NyxianAnisetteServerDirectory",
+                code: http.statusCode,
+                userInfo: [NSLocalizedDescriptionKey: "Anisette server list returned HTTP \(http.statusCode)"]
+            )
+        }
+
+        let payload = try JSONDecoder().decode(NyxianAnisetteServerListPayload.self, from: data)
+        let cleaned = payload.servers.compactMap { server -> NyxianAnisetteServer? in
+            guard let address = try? normalizedURL(server.address, defaultIfEmpty: nil) else { return nil }
+            return NyxianAnisetteServer(name: server.name, address: address)
+        }
+        let unique = deduplicated(cleaned)
+        return unique.isEmpty ? fallbackServers : unique
+    }
+
+    static func normalizedServerURL(_ raw: String) throws -> String {
+        try normalizedURL(raw, defaultIfEmpty: defaultServerURL)
+    }
+
+    static func normalizedListURL(_ raw: String) throws -> String {
+        try normalizedURL(raw, defaultIfEmpty: officialListURL)
+    }
+
+    private static func normalizedURL(_ raw: String, defaultIfEmpty: String?) throws -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty, let defaultIfEmpty { return defaultIfEmpty }
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https" || scheme == "http",
+              url.host?.isEmpty == false else {
+            throw NyxianAppleIDValidationError.invalidAnisetteURL
+        }
+        return trimmed
+    }
+
+    private static func deduplicated(_ servers: [NyxianAnisetteServer]) -> [NyxianAnisetteServer] {
+        var seen = Set<String>()
+        var unique: [NyxianAnisetteServer] = []
+        for server in servers {
+            guard seen.insert(server.address).inserted else { continue }
+            unique.append(server)
+        }
+        return unique
     }
 }
 
@@ -142,7 +303,7 @@ enum NyxianAppleIDStore {
         let email = rawEmail.trimmingCharacters(in: .whitespacesAndNewlines)
         let password = rawPassword.trimmingCharacters(in: .whitespacesAndNewlines)
         let teamID = rawTeamID.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        let anisetteServerURL = try normalizedAnisetteURL(rawAnisetteServerURL)
+        let anisetteServerURL = try NyxianAnisetteServerDirectory.normalizedServerURL(rawAnisetteServerURL)
         guard email.contains("@"), email.contains(".") else {
             throw NyxianAppleIDValidationError.invalidEmail
         }
@@ -173,18 +334,6 @@ enum NyxianAppleIDStore {
     static func clear() throws {
         UserDefaults.standard.removeObject(forKey: accountKey)
         try NyxianAppleIDCredentialStore.shared.clear()
-    }
-
-    private static func normalizedAnisetteURL(_ raw: String) throws -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        guard let url = URL(string: trimmed),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "https" || scheme == "http",
-              url.host?.isEmpty == false else {
-            throw NyxianAppleIDValidationError.invalidAnisetteURL
-        }
-        return trimmed
     }
 }
 
