@@ -121,11 +121,56 @@ targets:
         product: NukeUI
       - package: AltSign
         product: AltSign-Dynamic
+        embed: true
       - target: LitterLiveActivity
         embed: true
       - target: LitterWatch
         embed: true
     postBuildScripts:
+      - name: Embed AltSign Dynamic Framework
+        script: |
+          set -eu
+          if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
+            exit 0
+          fi
+          mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+          sign_if_requested() {
+            item="$1"
+            if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+              /usr/bin/codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$item"
+            fi
+          }
+          embed_framework_if_present() {
+            name="$1"
+            required="$2"
+            source=""
+            for candidate in \
+              "$BUILT_PRODUCTS_DIR/$name.framework" \
+              "$BUILT_PRODUCTS_DIR/PackageFrameworks/$name.framework" \
+              "$CONFIGURATION_BUILD_DIR/$name.framework" \
+              "$CONFIGURATION_BUILD_DIR/PackageFrameworks/$name.framework" \
+              "$TARGET_BUILD_DIR/$name.framework" \
+              "$TARGET_BUILD_DIR/PackageFrameworks/$name.framework"
+            do
+              if [ -d "$candidate" ]; then
+                source="$candidate"
+                break
+              fi
+            done
+            if [ -z "$source" ]; then
+              if [ "$required" = "1" ]; then
+                echo "error: required framework $name.framework was not built" >&2
+                exit 1
+              fi
+              return 0
+            fi
+            destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$name.framework"
+            rm -rf "$destination"
+            cp -R "$source" "$destination"
+            sign_if_requested "$destination"
+          }
+          embed_framework_if_present AltSign-Dynamic 1
+          embed_framework_if_present OpenSSL 0
       - name: Package Private BuildKit Assets
         script: |
           set -eu

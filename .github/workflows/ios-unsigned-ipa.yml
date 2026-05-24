@@ -547,6 +547,33 @@ jobs:
             KITTYSTORE_MINIMUXER_LDFLAGS="-lminimuxer-ios -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork" \
             KITTYSTORE_MINIMUXER_SWIFT_FLAGS="-D KITTYSTORE_MINIMUXER_LINKED"
 
+      - name: Verify embedded dynamic frameworks
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "::error::No archived .app found for dynamic framework verification" >&2
+            exit 1
+          fi
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")"
+          APP_BINARY="$APP_PATH/$EXECUTABLE"
+          missing=0
+          while IFS= read -r dependency; do
+            framework="$(printf '%s\n' "$dependency" | /usr/bin/sed -E 's#^@rpath/([^/]+\.framework)/.*#\1#')"
+            binary="$(/usr/bin/basename "$dependency")"
+            if [ ! -f "$APP_PATH/Frameworks/$framework/$binary" ]; then
+              echo "::error::Litter links $dependency but $APP_PATH/Frameworks/$framework/$binary is missing" >&2
+              missing=1
+            else
+              echo "Verified embedded framework: $framework/$binary"
+            fi
+          done < <(/usr/bin/otool -L "$APP_BINARY" | /usr/bin/awk 'NR > 1 { print $1 }' | /usr/bin/grep '^@rpath/.*\.framework/' || true)
+          if [ "$missing" -ne 0 ]; then
+            find "$APP_PATH/Frameworks" -maxdepth 3 -type f -print >&2 || true
+            exit 1
+          fi
+
       - name: Build Nyxian LiveProcess extension
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         run: |
