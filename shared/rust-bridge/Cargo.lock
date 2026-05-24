@@ -7860,7 +7860,7 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 [[package]]
 name = "ish-embed-host"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/litter-ish.git?branch=main#54a6b2f9b9faea4b1d093c22305d5b9aa6bf2a0f"
+source = "git+https://github.com/dnakov/litter-ish.git?branch=main#4f783cd957b83de3019d6a843408d5bb3ff902c7"
 dependencies = [
  "async-trait",
  "bindgen 0.70.1",
@@ -7879,7 +7879,7 @@ dependencies = [
 [[package]]
 name = "ish-embed-protocol"
 version = "0.1.0"
-source = "git+https://github.com/dnakov/litter-ish.git?branch=main#54a6b2f9b9faea4b1d093c22305d5b9aa6bf2a0f"
+source = "git+https://github.com/dnakov/litter-ish.git?branch=main#4f783cd957b83de3019d6a843408d5bb3ff902c7"
 dependencies = [
  "postcard",
  "serde",
