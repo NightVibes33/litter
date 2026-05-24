@@ -98,6 +98,10 @@ public class RustByteSlice {
 }
 
 enum Minimuxer {
+    static func ready() -> Bool {
+        Litter.ready()
+    }
+
     static func startWithLogger(
         pairingFile: String,
         logPath: String,
@@ -171,6 +175,10 @@ require_file "$MINIMUXER_ROOT/generated/minimuxer-Bridging-Header.h"
 
 grep -q "startWithLogger" "$MINIMUXER_ROOT/generated/minimuxer.swift" || {
   echo "error: generated minimuxer Swift bridge is missing startWithLogger" >&2
+  exit 1
+}
+grep -q "func ready" "$MINIMUXER_ROOT/generated/minimuxer.swift" || {
+  echo "error: generated minimuxer Swift bridge is missing ready" >&2
   exit 1
 }
 grep -q "installIpa" "$MINIMUXER_ROOT/generated/minimuxer.swift" || {

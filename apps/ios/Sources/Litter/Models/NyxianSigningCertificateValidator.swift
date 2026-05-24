@@ -103,10 +103,44 @@ struct NyxianLocalDevVPNState: Equatable, Sendable {
 
 enum NyxianLocalDevVPNDetector {
     static func currentState() -> NyxianLocalDevVPNState {
-        var interfaces: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&interfaces) == 0, let first = interfaces else {
-            return NyxianLocalDevVPNState(isConnected: false, detail: "Unable to inspect network interfaces")
+        let tunnelInterfaces = activeTunnelInterfaces()
+
+        #if KITTYSTORE_MINIMUXER_LINKED
+        setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
+        if KittyStoreMinimuxerBridge.isRuntimeReady {
+            let interfaceText = tunnelInterfaces.isEmpty ? "no public tunnel interface name reported" : tunnelInterfaces.sorted().joined(separator: ", ")
+            return NyxianLocalDevVPNState(
+                isConnected: true,
+                detail: "SideStore minimuxer reports LocalDevVPN ready (\(interfaceText))."
+            )
         }
+        if tunnelInterfaces.isEmpty {
+            return NyxianLocalDevVPNState(
+                isConnected: false,
+                detail: "SideStore minimuxer is not ready and no active tunnel interface was found. Open LocalDevVPN, connect it, then retry with a valid pairing file."
+            )
+        }
+        return NyxianLocalDevVPNState(
+            isConnected: false,
+            detail: "Found active tunnel interface(s) \(tunnelInterfaces.sorted().joined(separator: ", ")), but SideStore minimuxer is not ready. This is not treated as LocalDevVPN ready."
+        )
+        #else
+        if tunnelInterfaces.isEmpty {
+            return NyxianLocalDevVPNState(
+                isConnected: false,
+                detail: "SideStore minimuxer is not linked, and no active tunnel interface was found."
+            )
+        }
+        return NyxianLocalDevVPNState(
+            isConnected: false,
+            detail: "Found active tunnel interface(s) \(tunnelInterfaces.sorted().joined(separator: ", ")), but this build cannot verify LocalDevVPN because the SideStore minimuxer bridge is not linked."
+        )
+        #endif
+    }
+
+    private static func activeTunnelInterfaces() -> [String] {
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0, let first = interfaces else { return [] }
         defer { freeifaddrs(interfaces) }
 
         var candidates: [String] = []
@@ -121,14 +155,7 @@ enum NyxianLocalDevVPNDetector {
                 candidates.append(name)
             }
         }
-
-        if candidates.isEmpty {
-            return NyxianLocalDevVPNState(isConnected: false, detail: "No active VPN tunnel interface detected")
-        }
-        return NyxianLocalDevVPNState(
-            isConnected: true,
-            detail: "Detected VPN tunnel: \(candidates.sorted().joined(separator: ", "))"
-        )
+        return candidates
     }
 }
 

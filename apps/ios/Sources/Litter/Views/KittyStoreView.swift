@@ -46,7 +46,10 @@ struct KittyStoreView: View {
     @State private var replaceSubstrateWithElleKit = true
     @State private var enableLiquidGlass = false
 
-    private var app: KittyStoreApp? { source?.apps.first }
+    private var apps: [KittyStoreApp] { source?.apps ?? [] }
+    private var currentBundleIdentifier: String { updater.latestManifest?.bundleIdentifier ?? Bundle.main.bundleIdentifier ?? "com.sigkitten.litter" }
+    private var app: KittyStoreApp? { apps.first { $0.bundleIdentifier == currentBundleIdentifier } ?? apps.first }
+    private var selectedAppName: String { app?.name ?? updater.latestManifest?.name ?? "App" }
     private var versions: [KittyStoreVersion] { app?.versions ?? [] }
     private var latestVersion: KittyStoreVersion? { versions.first }
     private var sourceURL: String { updater.latestManifest?.sideStoreSourceURL ?? updater.stableSourceURL }
@@ -141,6 +144,7 @@ struct KittyStoreView: View {
     private var browseWorkspace: some View {
         storeScroll {
             heroPanel
+            sourceAppsPanel
             featuredPanel
             installPanel
         }
@@ -204,7 +208,7 @@ struct KittyStoreView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("KittyLitter Store")
+                    Text(source?.name ?? "KittyLitter Store")
                         .litterFont(.title3, weight: .bold)
                         .foregroundStyle(LitterTheme.textPrimary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -218,11 +222,26 @@ struct KittyStoreView: View {
             }
 
             metricGrid {
-                metricItem("Installed", updater.installedVersion.displayString)
+                metricItem("Source", source?.name ?? "Not Loaded")
+                metricItem("Apps", apps.isEmpty ? "Unknown" : "\(apps.count)")
                 metricItem("Latest", updater.latestManifest?.displayVersion ?? latestVersion?.version ?? "Unknown")
                 metricItem("Versions", versions.isEmpty ? "Unknown" : "\(versions.count)")
                 if let size = updater.latestManifest?.size ?? latestVersion?.size, size > 0 {
                     metricItem("IPA Size", LitterDownloadSupport.formatBytes(size))
+                }
+            }
+        }
+    }
+
+    private var sourceAppsPanel: some View {
+        panel(title: "Browse", icon: "bag") {
+            VStack(spacing: 10) {
+                if apps.isEmpty {
+                    emptyState(sourcePhase.message)
+                } else {
+                    ForEach(apps) { storeApp in
+                        sourceAppRow(storeApp)
+                    }
                 }
             }
         }
@@ -381,7 +400,7 @@ struct KittyStoreView: View {
     private var setupPanel: some View {
         panel(title: "Setup", icon: "checklist") {
             VStack(spacing: 10) {
-                readinessRow("Unsigned IPA source", detail: "KittyStore reads the same AltStore/SideStore source that release CI publishes.", state: source != nil)
+                readinessRow("AltStore/SideStore source", detail: source == nil ? "Load a compatible source feed before browsing apps." : "Loaded \(apps.count) app(s) from \(source?.name ?? "source feed").", state: source != nil)
                 readinessRow("Version history", detail: versions.isEmpty ? "Refresh the source to load historical IPA versions." : "\(versions.count) installable IPA versions are listed.", state: !versions.isEmpty)
                 readinessRow("SideStore install", detail: "Uses sidestore:// links; SideStore signs and installs the IPA.", state: updater.sideStoreInstallURL != nil)
                 readinessRow("LocalDevVPN", detail: buildKitStatus?.localDevVPNDetail ?? "Required for SideStore-style on-device install and refresh.", state: buildKitStatus?.localDevVPNConnected)
@@ -392,7 +411,7 @@ struct KittyStoreView: View {
     private var sourcePanel: some View {
         panel(title: "Source", icon: "link") {
             VStack(spacing: 10) {
-                actionRow("Add KittyStore Source", detail: "Subscribe in SideStore", icon: "link.badge.plus") {
+                actionRow("Add Source in SideStore", detail: "Subscribe to the current compatible source", icon: "link.badge.plus") {
                     if let url = installerURL(scheme: "sidestore", host: "source", targetURL: sourceURL) { openURL(url) }
                 }
 
@@ -743,18 +762,19 @@ struct KittyStoreView: View {
     }
 
     private var heroDetail: String {
-        if let app {
-            return app.subtitle ?? app.localizedDescription ?? "KittyStore is the KittyLitter-branded source for Litter sideload builds."
+        if let source, !apps.isEmpty {
+            let sourceName = source.name ?? "Source"
+            return "\(sourceName) is loaded as a SideStore/AltStore-compatible source with \(apps.count) app(s). Signing uses SideStore AltSign and Feather-style options."
         }
-        return "KittyStore is the KittyLitter-branded source for Litter sideload builds, compatible with SideStore and AltStore."
+        return "Load a SideStore/AltStore source, import IPAs, sign with Apple ID or a certificate pair, then install through the SideStore minimuxer bridge."
     }
 
     private var sourceHost: String {
-        URL(string: sourceURL)?.host ?? "KittyStore source"
+        URL(string: sourceURL)?.host ?? "source feed"
     }
 
     private var importedIPAName: String {
-        importedIPA?.displayName ?? latestVersion.map { "Litter \($0.version ?? "IPA")" } ?? "Imported IPA"
+        importedIPA?.displayName ?? latestVersion.map { "\(selectedAppName) \($0.version ?? "IPA")" } ?? "Imported IPA"
     }
 
     private var displayedAppName: String {
@@ -788,8 +808,8 @@ struct KittyStoreView: View {
         case .appleID:
             if buildKitStatus?.appleIDConfigured != true { return "Add Apple ID login in BuildKit settings." }
             if importedPairingFile == nil { return "Import the iOS pairing file for SideStore-style install." }
-            if buildKitStatus?.localDevVPNConnected != true { return "Connect LocalDevVPN for direct install and refresh." }
             if !KittyStoreMinimuxerBridge.isLinked { return "This build was not linked with the SideStore minimuxer bridge yet." }
+            if installAfterSigning, buildKitStatus?.localDevVPNConnected != true { return "Ready to try SideStore signing. LocalDevVPN will be verified by minimuxer during install." }
             return signingInProgress ? "Native signing or install is running." : "Inputs are ready for signing and SideStore-style install."
         }
     }
@@ -830,7 +850,7 @@ struct KittyStoreView: View {
 
     private func refreshSource() async {
         guard let url = URL(string: sourceURL) else {
-            sourcePhase = .failed("Invalid KittyStore source URL.")
+            sourcePhase = .failed("Invalid source URL.")
             return
         }
         sourcePhase = .loading
@@ -947,8 +967,8 @@ struct KittyStoreView: View {
                 signingAlert = KittyStoreSigningAlert(title: "Pairing File Missing", message: "Import the SideStore-style iOS pairing file before direct install or refresh.")
                 return
             }
-            guard buildKitStatus?.localDevVPNConnected == true else {
-                signingAlert = KittyStoreSigningAlert(title: "LocalDevVPN Missing", message: "Connect LocalDevVPN before using SideStore-style on-device install or refresh.")
+            guard KittyStoreMinimuxerBridge.isLinked else {
+                signingAlert = KittyStoreSigningAlert(title: "Minimuxer Missing", message: "This IPA was not linked with the SideStore minimuxer bridge, so direct on-device install and refresh cannot run.")
                 return
             }
         }
@@ -1307,10 +1327,78 @@ struct KittyStoreView: View {
         }
     }
 
+    private func sourceAppRow(_ storeApp: KittyStoreApp) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(LitterTheme.surfaceLight.opacity(0.55))
+                    Text(String(storeApp.name.prefix(1)).uppercased())
+                        .litterFont(.title3, weight: .bold)
+                        .foregroundStyle(LitterTheme.accent)
+                }
+                .frame(width: 52, height: 52)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .stroke(LitterTheme.border.opacity(0.45), lineWidth: 0.8)
+                )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(storeApp.name)
+                        .litterFont(.headline, weight: .semibold)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                        .lineLimit(1)
+                    Text(storeApp.subtitle ?? storeApp.developerName ?? storeApp.bundleIdentifier)
+                        .litterFont(.caption)
+                        .foregroundStyle(LitterTheme.textSecondary)
+                        .lineLimit(2)
+                    Text(storeApp.bundleIdentifier)
+                        .litterMonoFont(size: 11, weight: .regular)
+                        .foregroundStyle(LitterTheme.textMuted)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+                if let version = storeApp.versions.first?.version {
+                    statusPill(version, color: LitterTheme.accent)
+                }
+            }
+
+            if let description = storeApp.localizedDescription?.trimmingCharacters(in: .whitespacesAndNewlines), !description.isEmpty {
+                Text(description)
+                    .litterFont(.caption)
+                    .foregroundStyle(LitterTheme.textSecondary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let latest = storeApp.versions.first {
+                HStack(spacing: 8) {
+                    if let sideStoreURL = installerURL(scheme: "sidestore", host: "install", targetURL: latest.downloadURL) {
+                        compactButton("SideStore", icon: "square.and.arrow.down") { openURL(sideStoreURL) }
+                    }
+                    compactButton("Sign", icon: "signature") {
+                        appNameOverride = storeApp.name
+                        bundleIdentifierOverride = storeApp.bundleIdentifier
+                        appVersionOverride = latest.version ?? ""
+                        showingSigningSheet = true
+                    }
+                    compactButton("Copy", icon: "doc.on.doc") {
+                        UIPasteboard.general.string = latest.downloadURL
+                        copiedMessage = "Copied \(storeApp.name) IPA link"
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LitterTheme.surfaceLight.opacity(0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
     private func versionRow(_ version: KittyStoreVersion) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Litter \(version.version ?? "Unknown")")
+                Text("\(selectedAppName) \(version.version ?? "Unknown")")
                     .litterFont(.subheadline, weight: .semibold)
                     .foregroundStyle(LitterTheme.textPrimary)
                     .lineLimit(1)
@@ -1352,7 +1440,7 @@ struct KittyStoreView: View {
                 }
                 compactButton("Copy", icon: "doc.on.doc") {
                     UIPasteboard.general.string = version.downloadURL
-                    copiedMessage = "Copied Litter \(version.version ?? "IPA") link"
+                    copiedMessage = "Copied \(selectedAppName) \(version.version ?? "IPA") link"
                 }
             }
         }
@@ -1689,10 +1777,10 @@ private enum KittyStoreSourcePhase: Equatable {
 
     var message: String {
         switch self {
-        case .idle: return "KittyStore has not loaded the source yet."
-        case .loading: return "Loading KittyStore source."
-        case .loaded: return "KittyStore source loaded."
-        case .failed(let message): return "Could not load KittyStore source: \(message)"
+        case .idle: return "The source has not loaded yet."
+        case .loading: return "Loading source."
+        case .loaded: return "Source loaded."
+        case .failed(let message): return "Could not load source: \(message)"
         }
     }
 }
@@ -1708,7 +1796,7 @@ private struct KittyStoreSource: Decodable, Equatable {
     var apps: [KittyStoreApp]
 }
 
-private struct KittyStoreApp: Decodable, Equatable {
+private struct KittyStoreApp: Decodable, Equatable, Identifiable {
     var name: String
     var bundleIdentifier: String
     var developerName: String?
@@ -1716,6 +1804,8 @@ private struct KittyStoreApp: Decodable, Equatable {
     var subtitle: String?
     var localizedDescription: String?
     var versions: [KittyStoreVersion]
+
+    var id: String { bundleIdentifier }
 }
 
 private struct KittyStoreVersion: Decodable, Equatable, Identifiable {

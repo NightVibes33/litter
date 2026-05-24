@@ -24,6 +24,18 @@ enum KittyStoreMinimuxerBridge {
         #endif
     }
 
+    static var isRuntimeReady: Bool {
+        #if KITTYSTORE_MINIMUXER_LINKED
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        return Minimuxer.ready()
+        #endif
+        #else
+        return false
+        #endif
+    }
+
     static func fetchUDID(pairingFileContents: String, consoleLoggingEnabled: Bool) async -> Result {
         #if KITTYSTORE_MINIMUXER_LINKED
         return await Task.detached(priority: .userInitiated) {
