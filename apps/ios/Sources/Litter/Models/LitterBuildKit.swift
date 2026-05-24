@@ -336,7 +336,7 @@ actor LitterBuildKit {
     private static let buildRoot = "/root/.litter/builds"
     private static let kittyStoreSourceURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json"
     private static let kittyStoreUpdateURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-update.json"
-    private static let shimInstallMarker = "\(stateRoot)/shims-installed-v6"
+    private static let shimInstallMarker = "\(stateRoot)/shims-installed-v7"
     private static let canonicalCommandNames = [
         "litter-buildkit",
         "litter-nyxian-status",
@@ -344,6 +344,7 @@ actor LitterBuildKit {
         "litter-kittystore-status",
         "litter-kittystore-source",
         "litter-kittystore-versions",
+        "litter-kittystore-validate-profile",
         "litter-kittystore-plan",
         "litter-kittystore-sign",
         "litter-kittystore-install",
@@ -678,6 +679,8 @@ actor LitterBuildKit {
             return await kittyStoreSource(args: args)
         case "litter-kittystore-versions":
             return await kittyStoreVersions(args: args)
+        case "litter-kittystore-validate-profile":
+            return await kittyStoreValidateProfile(args: args, cwd: cwd)
         case "litter-kittystore-plan":
             return await kittyStorePlan(args: args, cwd: cwd)
         case "litter-kittystore-sign":
@@ -824,6 +827,77 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 0, status: "kittystore-versions", log: output)
         } catch {
             return BuildKitCommandResult(exitCode: 69, status: "kittystore-versions-failed", log: "Could not read KittyStore version history.\n\(error.localizedDescription)\n")
+        }
+    }
+
+    private func kittyStoreValidateProfile(args: String, cwd: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-profile-help", log: "Usage: litter-kittystore-validate-profile --profile /root/App.mobileprovision [--bundle-id com.example.app] [--require-certificate-match]\nValidates a provisioning profile for KittyStore certificate signing.\n")
+        }
+        guard let profile = Self.optionValue(tokens: tokens, names: ["--profile", "--mobileprovision"]) else {
+            return BuildKitCommandResult(exitCode: 64, status: "kittystore-profile-missing", log: "Missing --profile /root/App.mobileprovision\n")
+        }
+        let resolvedProfile = Self.resolveFakefsPath(profile, cwd: cwd)
+        guard await IshFS.exists(path: resolvedProfile) else {
+            return BuildKitCommandResult(exitCode: 66, status: "kittystore-profile-file-missing", log: "Provisioning profile does not exist: \(resolvedProfile)\n")
+        }
+
+        let bundleID = Self.optionValue(tokens: tokens, names: ["--bundle-id", "--identifier"])
+        let requireCertificateMatch = tokens.contains("--require-certificate-match") || tokens.contains("--require-cert-match")
+        do {
+            var certificateFingerprint: String?
+            var certificateDetail = "not checked"
+            if let identity = NyxianSigningCertificateStorage.loadIdentity() {
+                let certificateSummary = try NyxianSigningCertificateValidator.validate(
+                    pkcs12Data: identity.data,
+                    password: identity.password,
+                    checkRevocation: true
+                )
+                certificateFingerprint = certificateSummary.sha256Fingerprint
+                certificateDetail = certificateSummary.statusDetail
+            } else if requireCertificateMatch {
+                return BuildKitCommandResult(exitCode: 78, status: "kittystore-profile-certificate-missing", log: "No validated .p12 certificate is saved in BuildKit settings, so the provisioning profile cannot be matched to a certificate.\n")
+            }
+
+            let tempURL = try await IshFS.copyFileToTemporaryURL(
+                path: resolvedProfile,
+                suggestedFileName: URL(fileURLWithPath: resolvedProfile).lastPathComponent,
+                maxBytes: 64_000_000
+            )
+            let data = try Data(contentsOf: tempURL)
+            let summary = try NyxianProvisioningProfileValidator.validate(
+                data: data,
+                signingCertificateFingerprint: certificateFingerprint,
+                requestedBundleIdentifier: bundleID
+            )
+            let payload: [String: Any] = [
+                "ready": true,
+                "profile": [
+                    "path": resolvedProfile,
+                    "name": summary.name,
+                    "uuid": summary.uuid,
+                    "teamIdentifiers": summary.teamIdentifiers,
+                    "bundleIdentifier": summary.bundleIdentifier,
+                    "expiresAt": summary.expiresAt.map { ISO8601DateFormatter().string(from: $0) } ?? "",
+                    "developerCertificateCount": summary.developerCertificateFingerprints.count,
+                    "matchedCertificate": summary.matchedCertificateFingerprint != nil
+                ],
+                "certificate": [
+                    "checked": certificateFingerprint != nil,
+                    "detail": certificateDetail
+                ],
+                "requestedBundleIdentifier": bundleID ?? ""
+            ]
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-profile-valid", log: Self.prettyJSON(payload) + "\n")
+        } catch {
+            let payload: [String: Any] = [
+                "ready": false,
+                "profile": ["path": resolvedProfile],
+                "requestedBundleIdentifier": bundleID ?? "",
+                "error": error.localizedDescription
+            ]
+            return BuildKitCommandResult(exitCode: 65, status: "kittystore-profile-invalid", log: Self.prettyJSON(payload) + "\n")
         }
     }
 
@@ -3254,6 +3328,7 @@ actor LitterBuildKit {
                 "litter-kittystore-status",
                 "litter-kittystore-source",
                 "litter-kittystore-versions",
+                "litter-kittystore-validate-profile",
                 "litter-kittystore-plan",
                 "litter-kittystore-sign",
                 "litter-kittystore-install",
@@ -3271,6 +3346,7 @@ actor LitterBuildKit {
         - litter-kittystore-status --json
         - litter-kittystore-source [--url] [--out /root/source.json]
         - litter-kittystore-versions [--out /root/versions.json]
+        - litter-kittystore-validate-profile --profile /root/App.mobileprovision [--bundle-id com.example.app] [--require-certificate-match]
         - litter-kittystore-plan --ipa /root/App.ipa --mode certificate --out /root/plan.json
         - litter-kittystore-plan --ipa /root/App.ipa --mode apple-id --pairing /root/device.mobiledevicepairing --out /root/plan.json
         - litter-kittystore-sign --plan /root/plan.json
@@ -3350,7 +3426,7 @@ actor LitterBuildKit {
         Swift direct build: \(status.canRunSwiftDirectly ? "ready" : "blocked")
         Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
-        Command modes: native Swift/Clang/link: swift, swiftc, clang, clang++, cc, c++, ld, ld64; KittyStore bot API: litter-kittystore-status/source/versions/plan/sign/install/refresh/remove/installed; compatibility: xcodebuild, xcode-select, xcrun, plutil, code; fakefs pass-through: ar, ranlib, nm, objdump, strip, strings, lipo.
+        Command modes: native Swift/Clang/link: swift, swiftc, clang, clang++, cc, c++, ld, ld64; KittyStore bot API: litter-kittystore-status/source/versions/validate-profile/plan/sign/install/refresh/remove/installed; compatibility: xcodebuild, xcode-select, xcrun, plutil, code; fakefs pass-through: ar, ranlib, nm, objdump, strip, strings, lipo.
         """
         if let sourceManifest = status.sourceImportManifest {
             output += "\nSource manifest: \(sourceManifest.name) (\(sourceManifest.importedFileCount) files)\n"
