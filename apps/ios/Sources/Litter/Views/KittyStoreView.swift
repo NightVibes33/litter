@@ -22,11 +22,14 @@ struct KittyStoreView: View {
     @State private var pendingDeviceRemoval: KittyStoreRemovalRequest?
     @State private var signingInProgress = false
     @State private var deviceActionInProgress = false
+    @State private var installedDeviceAppsInProgress = false
     @State private var sourceIPADownloadInProgress = false
     @State private var sourceIPADownloadMessage: String?
     @State private var importedIPA: KittyStoreImportedFile?
     @State private var importedProvisioningProfile: KittyStoreImportedFile?
     @State private var importedPairingFile: KittyStoreImportedFile?
+    @State private var installedDeviceApps: [KittyStoreInstalledDeviceApp] = []
+    @State private var installedDeviceAppsMessage: String?
     @State private var existingDylibs: [KittyStoreImportedFile] = []
     @State private var frameworksAndPlugins: [KittyStoreImportedFile] = []
     @State private var tweaks: [KittyStoreImportedFile] = []
@@ -399,9 +402,28 @@ struct KittyStoreView: View {
                 readinessRow("Current", detail: updater.installedVersion.displayString, state: true)
                 readinessRow("Latest", detail: updater.latestManifest?.displayVersion ?? latestVersion?.version ?? "Unknown", state: updater.latestManifest != nil || latestVersion != nil)
                 readinessRow("Refresh path", detail: buildKitStatus?.localDevVPNConnected == true ? "LocalDevVPN detected" : "LocalDevVPN not detected", state: buildKitStatus?.localDevVPNConnected)
+                readinessRow(
+                    "Device Apps",
+                    detail: installedDeviceAppsInProgress ? "Loading installed apps from SideStore minimuxer." : (installedDeviceAppsMessage ?? "Load installed apps through the imported pairing file."),
+                    state: installedDeviceApps.isEmpty ? nil : true
+                )
 
                 actionRow("Refresh Store", detail: "Reload source, update feed, and BuildKit readiness", icon: "arrow.clockwise") {
                     taskBag.run { await refreshAll() }
+                }
+                actionRow(
+                    "Load Installed Apps",
+                    detail: importedPairingFile == nil ? "Import a pairing file before browsing device apps." : "Browse user-installed apps through SideStore minimuxer.",
+                    icon: "iphone.gen3",
+                    enabled: importedPairingFile != nil && KittyStoreMinimuxerBridge.isLinked && !installedDeviceAppsInProgress
+                ) {
+                    loadInstalledDeviceApps()
+                }
+
+                if !installedDeviceApps.isEmpty {
+                    ForEach(Array(installedDeviceApps.prefix(12))) { installedApp in
+                        installedDeviceAppRow(installedApp)
+                    }
                 }
                 actionRow("Sign IPA", detail: "Open the Feather-style signing workspace", icon: "signature") {
                     showingSigningSheet = true
@@ -952,6 +974,8 @@ struct KittyStoreView: View {
             importedProvisioningProfile = files.first
         case .pairingFile:
             importedPairingFile = files.first
+            installedDeviceApps.removeAll()
+            installedDeviceAppsMessage = "Pairing file imported. Load installed apps to browse the device."
         case .existingDylibs:
             existingDylibs.append(contentsOf: files)
         case .frameworksAndPlugins:
@@ -1397,6 +1421,46 @@ struct KittyStoreView: View {
     }
 
     @MainActor
+    private func loadInstalledDeviceApps() {
+        guard let pairingPath = importedPairingFile?.stagedPath else {
+            signingAlert = KittyStoreSigningAlert(title: "Pairing File Missing", message: "Import the SideStore-style iOS pairing file before loading installed apps.")
+            return
+        }
+        guard KittyStoreMinimuxerBridge.isLinked else {
+            signingAlert = KittyStoreSigningAlert(title: "Minimuxer Missing", message: "This IPA was not linked with the SideStore minimuxer bridge, so installed app browsing cannot run.")
+            return
+        }
+
+        installedDeviceAppsInProgress = true
+        installedDeviceAppsMessage = "Loading installed apps from SideStore minimuxer."
+        taskBag.run {
+            do {
+                let pairing = try String(contentsOfFile: pairingPath, encoding: .utf8)
+                let result = await KittyStoreMinimuxerBridge.listInstalledApps(
+                    pairingFileContents: pairing,
+                    consoleLoggingEnabled: true
+                )
+                installedDeviceAppsInProgress = false
+                buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
+                installedDeviceApps = result.apps
+                if result.exitCode == 0 {
+                    installedDeviceAppsMessage = "Loaded \(result.apps.count) user-installed app(s) from the connected device."
+                } else {
+                    installedDeviceAppsMessage = "Failed to load installed apps: \(result.status)."
+                    signingAlert = KittyStoreSigningAlert(
+                        title: "Device Apps Failed",
+                        message: "Status: \(result.status)\n\n\(result.log.prefix(1600))"
+                    )
+                }
+            } catch {
+                installedDeviceAppsInProgress = false
+                installedDeviceAppsMessage = "Could not read the imported pairing file."
+                signingAlert = KittyStoreSigningAlert(title: "Device Apps Failed", message: "Could not read the imported pairing file.\n\(error.localizedDescription)")
+            }
+        }
+    }
+
+    @MainActor
     private func removeSelectedAppFromDevice(_ request: KittyStoreRemovalRequest) {
         guard let pairingPath = importedPairingFile?.stagedPath else {
             signingAlert = KittyStoreSigningAlert(title: "Pairing File Missing", message: "Import the SideStore-style iOS pairing file before removing an app from the device.")
@@ -1419,6 +1483,8 @@ struct KittyStoreView: View {
                 deviceActionInProgress = false
                 buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
                 if result.exitCode == 0 {
+                    installedDeviceApps.removeAll { $0.bundleIdentifier == request.bundleIdentifier }
+                    installedDeviceAppsMessage = "Removed \(request.name) from the connected device."
                     signingAlert = KittyStoreSigningAlert(
                         title: "Removed",
                         message: "SideStore minimuxer removed \(request.name).\n\n\(result.log.prefix(1400))"
@@ -1499,6 +1565,64 @@ struct KittyStoreView: View {
                     .minimumScaleFactor(0.72)
             }
         }
+    }
+
+    private func installedDeviceAppRow(_ installedApp: KittyStoreInstalledDeviceApp) -> some View {
+        let matchingSourceApp = apps.first { $0.bundleIdentifier == installedApp.bundleIdentifier }
+        let latest = matchingSourceApp?.versions.first
+
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(LitterTheme.surfaceLight.opacity(0.55))
+                    Text(String(installedApp.displayName.prefix(1)).uppercased())
+                        .litterFont(.title3, weight: .bold)
+                        .foregroundStyle(LitterTheme.accent)
+                }
+                .frame(width: 48, height: 48)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(installedApp.displayName)
+                        .litterFont(.headline, weight: .semibold)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                        .lineLimit(1)
+                    Text(installedApp.bundleIdentifier)
+                        .litterMonoFont(size: 11, weight: .regular)
+                        .foregroundStyle(LitterTheme.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    if !installedApp.path.isEmpty {
+                        Text(installedApp.path)
+                            .litterMonoFont(size: 10, weight: .regular)
+                            .foregroundStyle(LitterTheme.textMuted)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+
+                Spacer(minLength: 0)
+                statusPill(installedApp.displayVersion, color: matchingSourceApp == nil ? LitterTheme.warning : LitterTheme.success)
+            }
+
+            HStack(spacing: 8) {
+                if let matchingSourceApp, let latest {
+                    compactButton("Refresh", icon: "arrow.triangle.2.circlepath") {
+                        selectedSourceAppID = matchingSourceApp.bundleIdentifier
+                        postSigningAction = .refresh
+                        downloadSourceIPAForSigning(storeApp: matchingSourceApp, version: latest, openSigning: true)
+                    }
+                } else {
+                    statusPill("No Source Match", color: LitterTheme.warning)
+                }
+                compactButton("Remove", icon: "trash") {
+                    pendingDeviceRemoval = KittyStoreRemovalRequest(name: installedApp.displayName, bundleIdentifier: installedApp.bundleIdentifier)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LitterTheme.surfaceLight.opacity(0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private func sourceAppRow(_ storeApp: KittyStoreApp) -> some View {

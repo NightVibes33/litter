@@ -1,10 +1,9 @@
 // Jackson Coxson
 
-
 use log::{error, info};
 use plist::{Dictionary, Value};
 use plist_plus::Plist;
-use rusty_libimobiledevice::services::afc::AfcFileMode;
+use rusty_libimobiledevice::services::{afc::AfcFileMode, instproxy::InstProxyClient};
 
 use crate::{
     device::{fetch_first_device, test_device_connection},
@@ -22,6 +21,7 @@ mod ffi {
         #[swift_bridge(swift_name = "installIpa")]
         fn install_ipa(bundle_id: String) -> Result<(), Errors>;
         fn remove_app(bundle_id: String) -> Result<(), Errors>;
+        fn list_apps() -> Result<String, Errors>;
     }
 }
 
@@ -153,6 +153,49 @@ pub fn install_ipa(bundle_id: String) -> Res<()> {
             // rusty_libimobiledevice will log an error that's better
             // error!("Unable to install app: {:?}: {}", err, description);
             Err(Errors::InstallApp(e.1))
+        }
+    }
+}
+
+/// Lists user-installed apps from installation_proxy as an XML plist string.
+pub fn list_apps() -> Res<String> {
+    info!("Listing user-installed apps");
+
+    if !test_device_connection() {
+        error!("No device connection");
+        return Err(Errors::NoConnection);
+    }
+
+    let device = fetch_first_device()?;
+
+    let inst_client = match device.new_instproxy_client("minimuxer-list-apps") {
+        Ok(i) => i,
+        Err(e) => {
+            error!("Unable to start instproxy: {:?}", e);
+            return Err(Errors::CreateInstproxy);
+        }
+    };
+
+    let client_opts = InstProxyClient::create_return_attributes(
+        vec![("ApplicationType".to_string(), Plist::new_string("User"))],
+        vec![
+            "ApplicationType",
+            "CFBundleDisplayName",
+            "CFBundleExecutable",
+            "CFBundleIdentifier",
+            "CFBundleName",
+            "CFBundleShortVersionString",
+            "CFBundleVersion",
+            "Container",
+            "Path",
+        ],
+    );
+
+    match inst_client.lookup(vec![], Some(client_opts)) {
+        Ok(apps) => Ok(apps.to_string()),
+        Err(e) => {
+            error!("Unable to lookup installed apps: {:?}", e);
+            Err(Errors::LookupApps)
         }
     }
 }

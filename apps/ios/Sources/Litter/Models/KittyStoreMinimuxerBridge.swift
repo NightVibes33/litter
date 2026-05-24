@@ -4,6 +4,36 @@ import Foundation
 import Darwin
 #endif
 
+struct KittyStoreInstalledDeviceApp: Identifiable, Equatable, Sendable {
+    var bundleIdentifier: String
+    var name: String
+    var shortVersion: String
+    var version: String
+    var applicationType: String
+    var path: String
+    var container: String
+
+    var id: String { bundleIdentifier }
+
+    var displayName: String {
+        name.isEmpty ? bundleIdentifier : name
+    }
+
+    var displayVersion: String {
+        if !shortVersion.isEmpty { return shortVersion }
+        if !version.isEmpty { return version }
+        return "Installed"
+    }
+}
+
+struct KittyStoreInstalledAppsResult: Sendable {
+    var exitCode: Int
+    var status: String
+    var log: String
+    var apps: [KittyStoreInstalledDeviceApp]
+}
+
+
 enum KittyStoreMinimuxerBridge {
     enum Action: String, Sendable {
         case install
@@ -61,6 +91,52 @@ enum KittyStoreMinimuxerBridge {
             exitCode: 78,
             status: "sidestore-minimuxer-not-linked",
             log: "SideStore minimuxer is not linked into this Litter build.\n"
+        )
+        #endif
+    }
+
+    static func listInstalledApps(
+        pairingFileContents: String,
+        consoleLoggingEnabled: Bool
+    ) async -> KittyStoreInstalledAppsResult {
+        #if KITTYSTORE_MINIMUXER_LINKED
+        return await Task.detached(priority: .userInitiated) {
+            do {
+                var log: [String] = []
+                let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+                    ?? FileManager.default.temporaryDirectory
+                let documentsPath = documentsURL.absoluteString
+
+                setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
+                log.append("SideStore minimuxer installed-app browse")
+                log.append("- Log path: \(documentsPath)")
+
+                try Minimuxer.startWithLogger(
+                    pairingFile: pairingFileContents,
+                    logPath: documentsPath,
+                    isConsoleLoggingEnabled: consoleLoggingEnabled
+                )
+                log.append("- minimuxer started with the imported pairing file")
+
+                let plistText = try Minimuxer.listInstalledAppsPlist()
+                let apps = try Self.parseInstalledApps(plistText: plistText)
+                log.append("- loaded \(apps.count) user-installed app(s) through installation_proxy")
+
+                let udid = Minimuxer.fetchUDID() ?? ""
+                if !udid.isEmpty {
+                    log.append("- device UDID: \(udid)")
+                }
+                return KittyStoreInstalledAppsResult(exitCode: 0, status: "kittystore-installed-ok", log: log.joined(separator: "\n") + "\n", apps: apps)
+            } catch {
+                return KittyStoreInstalledAppsResult(exitCode: 70, status: "kittystore-installed-failed", log: "\(error.localizedDescription)\n\(String(describing: error))\n", apps: [])
+            }
+        }.value
+        #else
+        return KittyStoreInstalledAppsResult(
+            exitCode: 78,
+            status: "sidestore-minimuxer-not-linked",
+            log: "SideStore minimuxer is not linked into this Litter build.\n",
+            apps: []
         )
         #endif
     }
@@ -181,5 +257,56 @@ enum KittyStoreMinimuxerBridge {
         )
         #endif
     }
+
+    private static func parseInstalledApps(plistText: String) throws -> [KittyStoreInstalledDeviceApp] {
+        let data = Data(plistText.utf8)
+        let object = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        return installedAppDictionaries(from: object)
+            .compactMap { dictionary -> KittyStoreInstalledDeviceApp? in
+                let bundleID = stringValue(dictionary["CFBundleIdentifier"])
+                guard !bundleID.isEmpty else { return nil }
+                let name = [
+                    stringValue(dictionary["CFBundleDisplayName"]),
+                    stringValue(dictionary["CFBundleName"]),
+                    stringValue(dictionary["CFBundleExecutable"])
+                ].first { !$0.isEmpty } ?? bundleID
+                return KittyStoreInstalledDeviceApp(
+                    bundleIdentifier: bundleID,
+                    name: name,
+                    shortVersion: stringValue(dictionary["CFBundleShortVersionString"]),
+                    version: stringValue(dictionary["CFBundleVersion"]),
+                    applicationType: stringValue(dictionary["ApplicationType"]),
+                    path: stringValue(dictionary["Path"]),
+                    container: stringValue(dictionary["Container"])
+                )
+            }
+            .sorted { lhs, rhs in
+                lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+    }
+
+    private static func installedAppDictionaries(from object: Any) -> [[String: Any]] {
+        if let array = object as? [[String: Any]] {
+            return array
+        }
+        if let dictionary = object as? [String: Any] {
+            if dictionary["CFBundleIdentifier"] != nil {
+                return [dictionary]
+            }
+            return dictionary.values.compactMap { $0 as? [String: Any] }
+        }
+        return []
+    }
+
+    private static func stringValue(_ value: Any?) -> String {
+        if let string = value as? String {
+            return string.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+        return ""
+    }
+
 
 }

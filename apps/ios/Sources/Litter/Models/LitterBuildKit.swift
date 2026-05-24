@@ -349,6 +349,7 @@ actor LitterBuildKit {
         "litter-kittystore-install",
         "litter-kittystore-refresh",
         "litter-kittystore-remove",
+        "litter-kittystore-installed",
         "litter-buildkit-install-assets",
         "litter-fs-doctor",
         "litter-env-report",
@@ -687,6 +688,8 @@ actor LitterBuildKit {
             return await kittyStoreInstallOrRefresh(command: command, args: args, cwd: cwd, buildDir: buildDir)
         case "litter-kittystore-remove":
             return await kittyStoreRemove(args: args, cwd: cwd)
+        case "litter-kittystore-installed":
+            return await kittyStoreInstalledApps(args: args, cwd: cwd)
         case "litter-buildkit-install-assets":
             return installAssetsCommand()
         case "litter-fs-doctor":
@@ -1122,6 +1125,62 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: bridge.exitCode, status: bridge.status, log: log)
         } catch {
             return BuildKitCommandResult(exitCode: 74, status: "kittystore-install-staging-failed", log: "Could not stage SideStore install/refresh inputs.\n\(error.localizedDescription)\n" + Self.prettyJSON(payload) + "\n")
+        }
+    }
+
+    private func kittyStoreInstalledApps(args: String, cwd: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("--help") || tokens.contains("-help") {
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-installed-help", log: "Usage: litter-kittystore-installed --pairing /root/device.mobiledevicepairing\nLists user-installed apps through the SideStore minimuxer installation_proxy browse path when this IPA was built with the vendored minimuxer sources linked.\n")
+        }
+        let current = await status(checkRevocation: false)
+        let pairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
+        var missing: [String] = []
+        if !current.localDevVPNConnected { missing.append("LocalDevVPN is not detected") }
+        if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer bridge is not linked into this IPA") }
+        if let pairing {
+            if !(await IshFS.exists(path: pairing)) { missing.append("Pairing file does not exist: \(pairing)") }
+        } else {
+            missing.append("Pairing file is required to browse installed apps")
+        }
+        var payload: [String: Any] = [
+            "command": "litter-kittystore-installed",
+            "pairingFile": pairing ?? "",
+            "ready": missing.isEmpty,
+            "missing": missing,
+            "sideStore": [
+                "localDevVPNConnected": current.localDevVPNConnected,
+                "localDevVPNDetail": current.localDevVPNDetail,
+                "minimuxerLinked": KittyStoreMinimuxerBridge.isLinked
+            ]
+        ]
+        if !missing.isEmpty {
+            return BuildKitCommandResult(exitCode: 78, status: "kittystore-installed-blocked", log: Self.prettyJSON(payload) + "\n")
+        }
+
+        do {
+            let pairingText = try await IshFS.readTextFile(path: pairing!, maxBytes: 2_000_000)
+            let bridge = await KittyStoreMinimuxerBridge.listInstalledApps(
+                pairingFileContents: pairingText,
+                consoleLoggingEnabled: false
+            )
+            payload["ready"] = bridge.exitCode == 0
+            payload["count"] = bridge.apps.count
+            payload["installedApps"] = bridge.apps.map { app in
+                [
+                    "name": app.displayName,
+                    "bundleIdentifier": app.bundleIdentifier,
+                    "shortVersion": app.shortVersion,
+                    "version": app.version,
+                    "applicationType": app.applicationType,
+                    "path": app.path,
+                    "container": app.container
+                ]
+            }
+            let log = "SideStore minimuxer installed-app browse preflight\n" + Self.prettyJSON(payload) + "\n" + bridge.log
+            return BuildKitCommandResult(exitCode: bridge.exitCode, status: bridge.status, log: log)
+        } catch {
+            return BuildKitCommandResult(exitCode: 74, status: "kittystore-installed-staging-failed", log: "Could not stage SideStore installed-app browse inputs.\n\(error.localizedDescription)\n" + Self.prettyJSON(payload) + "\n")
         }
     }
 
@@ -3185,7 +3244,8 @@ actor LitterBuildKit {
                 "litter-kittystore-sign",
                 "litter-kittystore-install",
                 "litter-kittystore-refresh",
-                "litter-kittystore-remove"
+                "litter-kittystore-remove",
+                "litter-kittystore-installed"
             ]
         ]
     }
@@ -3203,8 +3263,9 @@ actor LitterBuildKit {
         - litter-kittystore-install --ipa /root/App.ipa --bundle-id com.example.app --pairing /root/device.mobiledevicepairing [--profile /root/App.mobileprovision]
         - litter-kittystore-refresh --ipa /root/App.ipa --bundle-id com.example.app --pairing /root/device.mobiledevicepairing [--profile /root/App.mobileprovision]
         - litter-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing
+        - litter-kittystore-installed --pairing /root/device.mobiledevicepairing
 
-        The source/version/status/plan commands are bot-safe. Sign uses the native Feather/Zsign path when private BuildKit assets include it. Install/refresh/remove call the vendored SideStore minimuxer bridge when the iOS IPA is built with KITTYSTORE_MINIMUXER_LINKED.
+        The source/version/status/plan commands are bot-safe. Sign uses the native Feather/Zsign path when private BuildKit assets include it. Install/refresh/remove/installed call the vendored SideStore minimuxer bridge when the iOS IPA is built with KITTYSTORE_MINIMUXER_LINKED.
         """
     }
 
@@ -3271,7 +3332,7 @@ actor LitterBuildKit {
         Swift direct build: \(status.canRunSwiftDirectly ? "ready" : "blocked")
         Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
-        Command modes: native Swift/Clang/link: swift, swiftc, clang, clang++, cc, c++, ld, ld64; KittyStore bot API: litter-kittystore-status/source/versions/plan/sign/install/refresh; compatibility: xcodebuild, xcode-select, xcrun, plutil, code; fakefs pass-through: ar, ranlib, nm, objdump, strip, strings, lipo.
+        Command modes: native Swift/Clang/link: swift, swiftc, clang, clang++, cc, c++, ld, ld64; KittyStore bot API: litter-kittystore-status/source/versions/plan/sign/install/refresh/remove/installed; compatibility: xcodebuild, xcode-select, xcrun, plutil, code; fakefs pass-through: ar, ranlib, nm, objdump, strip, strings, lipo.
         """
         if let sourceManifest = status.sourceImportManifest {
             output += "\nSource manifest: \(sourceManifest.name) (\(sourceManifest.importedFileCount) files)\n"
