@@ -28,6 +28,136 @@ struct NyxianSigningCertificateSummary: Codable, Equatable, Sendable {
     }
 }
 
+struct NyxianProvisioningProfileSummary: Codable, Equatable, Sendable {
+    var name: String
+    var uuid: String
+    var teamIdentifiers: [String]
+    var bundleIdentifier: String
+    var expiresAt: Date?
+    var developerCertificateFingerprints: [String]
+    var matchedCertificateFingerprint: String?
+
+    var statusDetail: String {
+        let displayName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Provisioning profile" : name
+        let bundle = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "unknown bundle" : bundleIdentifier
+        return "\(displayName) / \(bundle)"
+    }
+
+    var importMessage: String {
+        var checks = ["profile parsed", "developer certificates present"]
+        if matchedCertificateFingerprint != nil { checks.append("certificate match") }
+        if expiresAt != nil { checks.append("expiration valid") }
+        return "Imported \(statusDetail). \(checks.joined(separator: ", ")) passed."
+    }
+}
+
+enum NyxianProvisioningProfileValidationError: LocalizedError {
+    case emptyFile
+    case unreadable(String)
+    case expired(Date)
+    case noDeveloperCertificates
+    case certificateMismatch
+    case bundleMismatch(profile: String, requested: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyFile:
+            return "The selected provisioning profile is empty."
+        case .unreadable(let reason):
+            return "The provisioning profile could not be read: \(reason)"
+        case .expired(let date):
+            return "The provisioning profile expired on \(ISO8601DateFormatter().string(from: date))."
+        case .noDeveloperCertificates:
+            return "The provisioning profile does not contain developer certificates."
+        case .certificateMismatch:
+            return "The provisioning profile does not include the imported .p12 signing certificate."
+        case .bundleMismatch(let profile, let requested):
+            return "Provisioning profile bundle ID \(profile) does not match \(requested)."
+        }
+    }
+}
+
+enum NyxianProvisioningProfileValidator {
+    static func validate(
+        data: Data,
+        signingCertificateFingerprint: String? = nil,
+        requestedBundleIdentifier: String? = nil
+    ) throws -> NyxianProvisioningProfileSummary {
+        guard !data.isEmpty else { throw NyxianProvisioningProfileValidationError.emptyFile }
+        guard let plistData = NyxianProvisioningProfilePlist.extractPlistData(from: data) else {
+            throw NyxianProvisioningProfileValidationError.unreadable("no plist payload was found")
+        }
+        let plist: [String: Any]
+        do {
+            guard let decoded = try PropertyListSerialization.propertyList(from: plistData, options: [], format: nil) as? [String: Any] else {
+                throw NyxianProvisioningProfileValidationError.unreadable("plist payload was not a dictionary")
+            }
+            plist = decoded
+        } catch let error as NyxianProvisioningProfileValidationError {
+            throw error
+        } catch {
+            throw NyxianProvisioningProfileValidationError.unreadable(error.localizedDescription)
+        }
+
+        let developerCertificates = plist["DeveloperCertificates"] as? [Data] ?? []
+        guard !developerCertificates.isEmpty else { throw NyxianProvisioningProfileValidationError.noDeveloperCertificates }
+
+        let expiresAt = plist["ExpirationDate"] as? Date
+        if let expiresAt, expiresAt <= Date() {
+            throw NyxianProvisioningProfileValidationError.expired(expiresAt)
+        }
+
+        let fingerprints = developerCertificates.map(sha256Fingerprint(for:))
+        let cleanedCertificateFingerprint = signingCertificateFingerprint?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        var matchedFingerprint: String?
+        if !cleanedCertificateFingerprint.isEmpty {
+            guard let match = fingerprints.first(where: { $0.lowercased() == cleanedCertificateFingerprint }) else {
+                throw NyxianProvisioningProfileValidationError.certificateMismatch
+            }
+            matchedFingerprint = match
+        }
+
+        let bundleIdentifier = profileBundleIdentifier(from: plist)
+        let requestedBundle = requestedBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !requestedBundle.isEmpty, !bundleIdentifier.isEmpty, !profileBundleIdentifierAllows(requestedBundle, profileBundleIdentifier: bundleIdentifier) {
+            throw NyxianProvisioningProfileValidationError.bundleMismatch(profile: bundleIdentifier, requested: requestedBundle)
+        }
+
+        return NyxianProvisioningProfileSummary(
+            name: plist["Name"] as? String ?? "Provisioning profile",
+            uuid: plist["UUID"] as? String ?? "",
+            teamIdentifiers: plist["TeamIdentifier"] as? [String] ?? [],
+            bundleIdentifier: bundleIdentifier,
+            expiresAt: expiresAt,
+            developerCertificateFingerprints: fingerprints,
+            matchedCertificateFingerprint: matchedFingerprint
+        )
+    }
+
+    private static func profileBundleIdentifier(from plist: [String: Any]) -> String {
+        let entitlements = plist["Entitlements"] as? [String: Any] ?? [:]
+        if let applicationIdentifier = entitlements["application-identifier"] as? String,
+           let dot = applicationIdentifier.firstIndex(of: ".") {
+            return String(applicationIdentifier[applicationIdentifier.index(after: dot)...])
+        }
+        return ""
+    }
+
+    private static func profileBundleIdentifierAllows(_ bundleIdentifier: String, profileBundleIdentifier: String) -> Bool {
+        if profileBundleIdentifier == bundleIdentifier { return true }
+        guard profileBundleIdentifier.hasSuffix(".*") else { return false }
+        let prefix = String(profileBundleIdentifier.dropLast(2))
+        return bundleIdentifier.hasPrefix(prefix + ".")
+    }
+
+    private static func sha256Fingerprint(for data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
+
+
 enum NyxianSigningCertificateState: Equatable, Sendable {
     case missing
     case valid(NyxianSigningCertificateSummary)
@@ -636,7 +766,7 @@ private struct EmbeddedProvisioningProfile {
         } catch {
             throw NyxianSigningCertificateValidationError.embeddedProvisioningProfileUnreadable(error.localizedDescription)
         }
-        guard let plistData = extractPlistData(from: data) else {
+        guard let plistData = NyxianProvisioningProfilePlist.extractPlistData(from: data) else {
             throw NyxianSigningCertificateValidationError.embeddedProvisioningProfileUnreadable("no plist payload was found")
         }
         do {
@@ -655,7 +785,10 @@ private struct EmbeddedProvisioningProfile {
         }
     }
 
-    private static func extractPlistData(from data: Data) -> Data? {
+}
+
+private enum NyxianProvisioningProfilePlist {
+    static func extractPlistData(from data: Data) -> Data? {
         let startMarker = Data("<?xml".utf8)
         let endMarker = Data("</plist>".utf8)
         guard let start = data.range(of: startMarker)?.lowerBound,

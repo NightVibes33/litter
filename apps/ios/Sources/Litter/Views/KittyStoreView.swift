@@ -978,7 +978,15 @@ struct KittyStoreView: View {
             importedIPA = files.first
             if appNameOverride.isEmpty, let name = files.first?.nameWithoutExtension { appNameOverride = name }
         case .provisioningProfile:
-            importedProvisioningProfile = files.first
+            guard let file = files.first else { return }
+            do {
+                let summary = try validateProvisioningProfile(file, requireCertificateMatch: false)
+                importedProvisioningProfile = file
+                signingAlert = KittyStoreSigningAlert(title: "Provisioning Profile Ready", message: summary.importMessage)
+            } catch {
+                importedProvisioningProfile = nil
+                signingAlert = KittyStoreSigningAlert(title: "Provisioning Profile Failed", message: error.localizedDescription)
+            }
         case .pairingFile:
             importedPairingFile = files.first
             installedDeviceApps.removeAll()
@@ -990,6 +998,31 @@ struct KittyStoreView: View {
         case .tweaks:
             tweaks.append(contentsOf: files)
         }
+    }
+
+    private func validateProvisioningProfile(_ file: KittyStoreImportedFile, requireCertificateMatch: Bool) throws -> NyxianProvisioningProfileSummary {
+        let data = try Data(contentsOf: URL(fileURLWithPath: file.stagedPath))
+        var certificateFingerprint: String?
+        if let identity = NyxianSigningCertificateStorage.loadIdentity() {
+            let certificateSummary = try NyxianSigningCertificateValidator.validate(
+                pkcs12Data: identity.data,
+                password: identity.password,
+                checkRevocation: true
+            )
+            certificateFingerprint = certificateSummary.sha256Fingerprint
+        } else if requireCertificateMatch {
+            throw NSError(
+                domain: "KittyStoreProvisioningProfileValidation",
+                code: 64,
+                userInfo: [NSLocalizedDescriptionKey: "Import and validate a .p12 certificate before using this provisioning profile for certificate signing."]
+            )
+        }
+
+        return try NyxianProvisioningProfileValidator.validate(
+            data: data,
+            signingCertificateFingerprint: certificateFingerprint,
+            requestedBundleIdentifier: displayedBundleIdentifier
+        )
     }
 
     @MainActor
@@ -1126,6 +1159,14 @@ struct KittyStoreView: View {
                 guard buildKitStatus?.nyxianSigningCertificateInstalled == true else {
                     signingAlert = KittyStoreSigningAlert(title: "No Certificate", message: "Import and validate a .p12 certificate in BuildKit settings first. Bad passwords, missing private keys, revoked certs, and profile mismatches stay blocked there.")
                     return
+                }
+                if let importedProvisioningProfile {
+                    do {
+                        _ = try validateProvisioningProfile(importedProvisioningProfile, requireCertificateMatch: true)
+                    } catch {
+                        signingAlert = KittyStoreSigningAlert(title: "Provisioning Profile Failed", message: error.localizedDescription)
+                        return
+                    }
                 }
             }
         case .appleID:
