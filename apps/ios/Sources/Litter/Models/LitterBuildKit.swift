@@ -834,6 +834,7 @@ actor LitterBuildKit {
         }
 
         var mode = "certificate"
+        var signingType = "default"
         var ipa: String?
         var profile: String?
         var pairing: String?
@@ -865,6 +866,9 @@ actor LitterBuildKit {
             let token = tokens[index]
             switch token {
             case "--mode": if let value = takeValue(token) { mode = value }
+            case "--signing-type": if let value = takeValue(token) { signingType = value }
+            case "--adhoc": signingType = "adhoc"
+            case "--force-signing", "--force": signingType = "force"
             case "--ipa": ipa = takeValue(token)
             case "--profile", "--mobileprovision": profile = takeValue(token)
             case "--pairing", "--pairing-file": pairing = takeValue(token)
@@ -894,9 +898,14 @@ actor LitterBuildKit {
         }
 
         mode = mode.lowercased()
+        signingType = signingType.lowercased()
         if mode == "appleid" || mode == "apple_id" { mode = "apple-id" }
+        if signingType == "standard" { signingType = "default" }
         if !["certificate", "apple-id"].contains(mode) {
             errors.append("Unsupported mode: \(mode). Use certificate or apple-id.")
+        }
+        if !["default", "adhoc", "force"].contains(signingType) {
+            errors.append("Unsupported signing type: \(signingType). Use default, adhoc, or force.")
         }
         if !["none", "install", "refresh"].contains(postSigningAction) {
             errors.append("Unsupported post-signing action: \(postSigningAction). Use none, install, or refresh.")
@@ -940,7 +949,7 @@ actor LitterBuildKit {
             if !(await IshFS.exists(path: resolvedEntitlements)) { missing.append("Entitlements file does not exist: \(resolvedEntitlements)") }
         }
 
-        if mode == "certificate" && !current.nyxianSigningCertificateInstalled {
+        if mode == "certificate" && signingType != "adhoc" && !current.nyxianSigningCertificateInstalled {
             missing.append("Validated .p12 signing certificate is missing or invalid in BuildKit settings")
         }
         if mode == "apple-id" {
@@ -948,6 +957,7 @@ actor LitterBuildKit {
             if resolvedPairing == nil { missing.append("--pairing is required for apple-id signing") }
         }
         if postSigningAction != "none" {
+            if signingType == "adhoc" { missing.append("Ad hoc signed IPAs cannot be installed/refreshed on stock iOS through the SideStore minimuxer path") }
             if resolvedPairing == nil { missing.append("--pairing is required for post-signing install/refresh") }
             if !current.localDevVPNConnected { warnings.append("LocalDevVPN is not detected; direct install/refresh will remain blocked") }
             if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer bridge is not linked into this IPA") }
@@ -974,6 +984,7 @@ actor LitterBuildKit {
                 "ipa": resolvedIPA ?? ""
             ],
             "signing": [
+                "type": signingType,
                 "certificateReady": current.nyxianSigningCertificateInstalled,
                 "certificateDetail": current.nyxianSigningCertificateDetail,
                 "provisioningProfile": resolvedProfile ?? "embedded",
@@ -3277,6 +3288,9 @@ actor LitterBuildKit {
 
         Options:
           --profile /root/profile.mobileprovision
+          --signing-type default|adhoc|force
+          --adhoc
+          --force-signing
           --name "App Name"
           --bundle-id com.example.app
           --version 1.0

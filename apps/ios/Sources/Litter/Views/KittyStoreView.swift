@@ -868,12 +868,14 @@ struct KittyStoreView: View {
         if sourceIPADownloadInProgress { return sourceIPADownloadMessage ?? "Downloading the selected source IPA." }
         guard importedIPA != nil else { return "Import an IPA before signing." }
         if postSigningAction.requiresDeviceTransfer {
+            if selectedSigningMode == .certificate && signingType == .adhoc { return "Ad Hoc signed IPAs cannot be installed or refreshed through SideStore on stock iOS." }
             if importedPairingFile == nil { return "Import the iOS pairing file for SideStore-style \(postSigningAction.transferVerb)." }
             if !KittyStoreMinimuxerBridge.isLinked { return "This build was not linked with the SideStore minimuxer bridge yet." }
             if buildKitStatus?.localDevVPNConnected != true { return "Ready to try SideStore signing. LocalDevVPN will be verified by minimuxer during \(postSigningAction.transferVerb)." }
         }
         switch selectedSigningMode {
         case .certificate:
+            if signingType == .adhoc { return signingInProgress ? "Native Feather/Zsign ad-hoc signing is running." : "Ready to ad-hoc sign with the native Feather/Zsign path." }
             if buildKitStatus?.nyxianSigningCertificateInstalled != true { return "Import a valid certificate in BuildKit settings." }
             return signingInProgress ? "Native Feather/Zsign signing is running." : "Ready to sign with the native Feather/Zsign path."
         case .appleID:
@@ -1099,6 +1101,10 @@ struct KittyStoreView: View {
 
         let selectedPostSigningAction = postSigningAction
         if selectedPostSigningAction.requiresDeviceTransfer {
+            if selectedSigningMode == .certificate && signingType == .adhoc {
+                signingAlert = KittyStoreSigningAlert(title: "Ad Hoc Cannot Install", message: "Feather/Zsign ad-hoc output is useful for local inspection and LiveContainer-style loading, but stock iOS install/refresh through SideStore requires Apple-signed provisioning.")
+                return
+            }
             guard importedPairingFile != nil else {
                 signingAlert = KittyStoreSigningAlert(title: "Pairing File Missing", message: "Import the SideStore-style iOS pairing file before \(selectedPostSigningAction.transferVerb).")
                 return
@@ -1111,9 +1117,11 @@ struct KittyStoreView: View {
 
         switch selectedSigningMode {
         case .certificate:
-            guard buildKitStatus?.nyxianSigningCertificateInstalled == true else {
-                signingAlert = KittyStoreSigningAlert(title: "No Certificate", message: "Import and validate a .p12 certificate in BuildKit settings first. Bad passwords, missing private keys, revoked certs, and profile mismatches stay blocked there.")
-                return
+            if signingType != .adhoc {
+                guard buildKitStatus?.nyxianSigningCertificateInstalled == true else {
+                    signingAlert = KittyStoreSigningAlert(title: "No Certificate", message: "Import and validate a .p12 certificate in BuildKit settings first. Bad passwords, missing private keys, revoked certs, and profile mismatches stay blocked there.")
+                    return
+                }
             }
         case .appleID:
             guard buildKitStatus?.appleIDConfigured == true else {
@@ -1137,6 +1145,7 @@ struct KittyStoreView: View {
         UIPasteboard.general.string = plan
 
         if selectedSigningMode == .certificate,
+           signingType == .standard,
            KittyStoreSideStoreSigningBridge.isLinked,
            let importedIPA,
            let importedProvisioningProfile {

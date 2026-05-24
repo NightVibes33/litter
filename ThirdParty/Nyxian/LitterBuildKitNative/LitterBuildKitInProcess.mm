@@ -1204,15 +1204,33 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
     vector<string> dylibs;
     LBIKittyStoreCollectInputs(plan, appDir, dylibs, log);
 
-    NSString *certificatePath = LBIKittyStoreCertificatePath(hostWorkDir, log);
-    if(certificatePath.length == 0) { return LBICopyResponse(78, @"kittystore-certificate-missing", log); }
-    NSString *password = [NSUserDefaults.standardUserDefaults stringForKey:@"LCCertificatePassword"] ?: @"";
-    NSString *provisionPath = LBIKittyStoreProvisionPath(plan, appDir, log);
-    if(provisionPath.length == 0) { return LBICopyResponse(78, @"kittystore-profile-missing", log); }
+    NSString *signingType = LBINestedString(plan, @"signing", @"type").lowercaseString;
+    if(signingType.length == 0 || [signingType isEqualToString:@"standard"]) { signingType = @"default"; }
+    BOOL adhocSign = [signingType isEqualToString:@"adhoc"];
+    NSString *certificatePath = @"";
+    NSString *password = @"";
+    NSString *provisionPath = @"";
+    if(!adhocSign)
+    {
+        certificatePath = LBIKittyStoreCertificatePath(hostWorkDir, log);
+        if(certificatePath.length == 0) { return LBICopyResponse(78, @"kittystore-certificate-missing", log); }
+        password = [NSUserDefaults.standardUserDefaults stringForKey:@"LCCertificatePassword"] ?: @"";
+        provisionPath = LBIKittyStoreProvisionPath(plan, appDir, log);
+        if(provisionPath.length == 0) { return LBICopyResponse(78, @"kittystore-profile-missing", log); }
+    }
     NSString *entitlementsPath = LBIKittyStoreWriteEntitlements(plan, hostWorkDir, log);
 
     ZSignAsset zsa;
-    if(!zsa.Init("", certificatePath.UTF8String, provisionPath.UTF8String, entitlementsPath.UTF8String, password.UTF8String, false, false, false))
+    if(adhocSign)
+    {
+        [log appendString:@"Running Feather Zsign ad-hoc signing; certificate and provisioning profile are not required.\n"];
+        if(!zsa.Init("", "", "", entitlementsPath.UTF8String, "", true, false, false))
+        {
+            [log appendString:@"Feather Zsign could not prepare ad-hoc signing assets. Check the custom entitlements plist.\n"];
+            return LBICopyResponse(78, @"kittystore-adhoc-invalid", log);
+        }
+    }
+    else if(!zsa.Init("", certificatePath.UTF8String, provisionPath.UTF8String, entitlementsPath.UTF8String, password.UTF8String, false, false, false))
     {
         [log appendString:@"Feather Zsign could not load the certificate/profile. The .p12 password may be wrong, the cert may lack a private key, or the profile may not match.\n"];
         return LBICopyResponse(78, @"kittystore-certificate-invalid", log);
@@ -1225,7 +1243,14 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
     ZBundle bundle;
     bundle.m_bEnableDocuments = LBINestedBool(plan, @"properties", @"fileSharing") || LBINestedBool(plan, @"properties", @"iTunesFileSharing");
     BOOL removeProvision = LBINestedBool(plan, @"properties", @"removeProvisioning");
-    [log appendString:@"Running Feather Zsign bundle signer.\n"];
+    BOOL forceSign = [signingType isEqualToString:@"force"] || adhocSign;
+    BOOL weakInject = NO;
+    NSString *injectPath = LBINestedString(plan, @"properties", @"injectPath");
+    if(injectPath.length > 0 && ![injectPath isEqualToString:@"@executable_path"])
+    {
+        [log appendFormat:@"Feather Zsign bundle injection uses @executable_path for dylib load commands; requested injectPath %@ is recorded but not applied by this backend.\n", injectPath];
+    }
+    [log appendFormat:@"Running Feather Zsign bundle signer. type=%@ force=%@ weakInject=%@\n", signingType, forceSign ? @"yes" : @"no", weakInject ? @"yes" : @"no"];
     bool signedOK = bundle.SignFolder(&zsa,
                                       string(extractRoot.UTF8String),
                                       string(bundleID.UTF8String),
@@ -1233,8 +1258,8 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
                                       string(displayName.UTF8String),
                                       dylibs,
                                       removeDylibs,
-                                      true,
-                                      false,
+                                      forceSign,
+                                      weakInject,
                                       false,
                                       removeProvision);
     if(!signedOK)
