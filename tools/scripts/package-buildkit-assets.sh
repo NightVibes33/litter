@@ -41,7 +41,7 @@ find_swift_resource_dir() {
   local candidate
   if [[ -x "$SWIFT_BIN" ]]; then
     candidate="$("$SWIFT_BIN" -print-target-info 2>/dev/null | python3 -c 'import json,sys; print((json.load(sys.stdin).get("paths") or {}).get("runtimeResourcePath") or "")' 2>/dev/null || true)"
-    if [[ -d "$candidate" ]]; then
+    if [[ -d "$candidate/iphoneos" ]]; then
       printf '%s\n' "$candidate"
       return 0
     fi
@@ -49,7 +49,7 @@ find_swift_resource_dir() {
   local swift_usr_dir
   swift_usr_dir="$(cd "$(dirname "$SWIFT_BIN")/.." && pwd -P)"
   for candidate in "$swift_usr_dir/lib/swift" "$IPHONEOS_SDK_PATH/usr/lib/swift"; do
-    if [[ -d "$candidate" ]]; then
+    if [[ -d "$candidate/iphoneos" ]]; then
       printf '%s\n' "$candidate"
       return 0
     fi
@@ -58,6 +58,11 @@ find_swift_resource_dir() {
 }
 if [[ -z "$SWIFT_RESOURCE_DIR" ]]; then
   SWIFT_RESOURCE_DIR="$(find_swift_resource_dir || true)"
+fi
+if [[ -z "$SWIFT_RESOURCE_DIR" || ! -d "$SWIFT_RESOURCE_DIR/iphoneos" ]]; then
+  echo "error: unable to locate a Swift resource directory with an iphoneos target directory" >&2
+  echo "Set LITTER_BUILDKIT_SWIFT_RESOURCE_DIR to the Swift toolchain resource dir, usually XcodeDefault.xctoolchain/usr/lib/swift." >&2
+  exit 1
 fi
 find_cxx_standard_library_include_dir() {
   local toolchain_usr_dir

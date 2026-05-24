@@ -419,53 +419,55 @@ static void LBIAppendSwiftClangResourceDir(NSMutableArray<NSString *> *arguments
     [arguments addObject:resourceDir];
 }
 
-static NSString *LBIFirstExistingDirectory(NSArray<NSString *> *candidates)
+static NSString *LBIFirstUsableSwiftResourceDir(NSArray<NSString *> *candidates, NSMutableString *log)
 {
     NSFileManager *fm = NSFileManager.defaultManager;
     for(NSString *candidate in candidates ?: @[])
     {
         if(candidate.length == 0) { continue; }
         BOOL isDirectory = NO;
-        if([fm fileExistsAtPath:candidate isDirectory:&isDirectory] && isDirectory)
+        if(![fm fileExistsAtPath:candidate isDirectory:&isDirectory] || !isDirectory) { continue; }
+        NSString *iphoneOSDir = [candidate stringByAppendingPathComponent:@"iphoneos"];
+        BOOL iphoneOSIsDirectory = NO;
+        if([fm fileExistsAtPath:iphoneOSDir isDirectory:&iphoneOSIsDirectory] && iphoneOSIsDirectory)
         {
             return candidate;
         }
+        [log appendFormat:@"warning: Swift resource dir candidate is missing iphoneos target directory: %@\n", candidate];
     }
     return nil;
 }
 
-static NSString *LBIResolvedSwiftResourceDir(NSString *swiftResourceDir, NSString *toolchainRoot, NSString *buildKitRoot, NSString *sdkRoot)
+static NSString *LBIResolvedSwiftResourceDir(NSString *swiftResourceDir, NSString *toolchainRoot, NSString *buildKitRoot, NSString *sdkRoot, NSMutableString *log)
 {
+    (void)sdkRoot;
     NSString *documentsRoot = buildKitRoot.length > 0 ? buildKitRoot.stringByDeletingLastPathComponent : @"";
-    return LBIFirstExistingDirectory(@[
+    return LBIFirstUsableSwiftResourceDir(@[
         swiftResourceDir ?: @"",
         toolchainRoot.length > 0 ? [toolchainRoot stringByAppendingPathComponent:@"SwiftResourceDir"] : @"",
         buildKitRoot.length > 0 ? [buildKitRoot stringByAppendingPathComponent:@"Toolchains/Nyxian/SwiftResourceDir"] : @"",
-        sdkRoot.length > 0 ? [sdkRoot stringByAppendingPathComponent:@"usr/lib/swift"] : @"",
         documentsRoot.length > 0 ? [documentsRoot stringByAppendingPathComponent:@"Developer/usr/lib/swift"] : @""
-    ]);
+    ], log);
 }
 
-static void LBIAppendSwiftResourceDir(NSMutableArray<NSString *> *arguments,
+static BOOL LBIAppendSwiftResourceDir(NSMutableArray<NSString *> *arguments,
                                       NSString *swiftResourceDir,
                                       NSString *toolchainRoot,
                                       NSString *buildKitRoot,
                                       NSString *sdkRoot,
                                       NSMutableString *log)
 {
-    if(LBIArgumentsContainSwiftResourceDir(arguments)) { return; }
-    NSString *resourceDir = LBIResolvedSwiftResourceDir(swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot);
+    if(LBIArgumentsContainSwiftResourceDir(arguments)) { return YES; }
+    NSString *resourceDir = LBIResolvedSwiftResourceDir(swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log);
     if(resourceDir.length == 0)
     {
-        [log appendString:@"warning: no Swift resource directory was found; Swift frontend jobs may not find stdlib modules or target runtime libraries.\n"];
-        return;
+        [log appendString:@"error: no usable Swift resource directory was found. Expected BuildKit manifest toolchain.swiftResourceDir to contain an iphoneos target directory.\n"];
+        return NO;
     }
-    if(!LBIHeaderExists(resourceDir, @"iphoneos"))
-    {
-        [log appendFormat:@"warning: Swift resource dir is missing the iphoneos target directory: %@\n", resourceDir];
-    }
+    [log appendFormat:@"Swift resource dir: %@\n", resourceDir];
     [arguments addObject:@"-resource-dir"];
     [arguments addObject:resourceDir];
+    return YES;
 }
 
 static BOOL LBISourceIsCXX(NSString *source)
@@ -1307,7 +1309,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
             LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
             LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
-            LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log);
+            if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
             [driverArgs addObject:source];
             int code = LBIRunSwiftDriver(driverArgs, log);
             return LBICopyResponse(code, code == 0 ? @"swift-check-ok" : @"swift-check-failed", log);
@@ -1332,7 +1334,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
                 NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
                 LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
                 LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
-                LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log);
+                if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
                 [driverArgs addObject:source];
                 int code = LBIRunSwiftDriver(driverArgs, log);
                 return LBICopyResponse(code, code == 0 ? @"swiftc-check-ok" : @"swiftc-check-failed", log);
@@ -1349,7 +1351,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             [driverArgs addObjectsFromArray:@[@"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-o", hostOutput]];
             LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
             LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
-            LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log);
+            if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
             [driverArgs addObject:source];
             int code = LBIRunSwiftDriver(driverArgs, log);
             if(code != 0) { return LBICopyResponse(code, @"swiftc-failed", log); }
@@ -1439,7 +1441,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-sdk", sdkRoot, @"-target", [@"arm64-apple-ios" stringByAppendingString:deployment], @"-o", executable]];
             LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
             LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
-            LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log);
+            if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
             [driverArgs addObjectsFromArray:@[@"-framework", @"UIKit", @"-framework", @"Foundation"]];
             [driverArgs addObjectsFromArray:sources];
             int code = LBIRunSwiftDriver(driverArgs, log);

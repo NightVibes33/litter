@@ -12,7 +12,10 @@
     "nativeRunner": null,
     "nativeDriverMode": "inprocess",
     "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
-    "sdkPath": "SDK/iPhoneOS26.4.sdk"
+    "sdkPath": "SDK/iPhoneOS26.4.sdk",
+    "clangResourceDir": "Toolchains/Nyxian/ClangResourceDir",
+    "cxxStandardLibraryIncludeDir": "Toolchains/Nyxian/CxxStandardLibrary/include/c++/v1",
+    "swiftResourceDir": "Toolchains/Nyxian/SwiftResourceDir"
   },
   "capabilities": [
     "swift-check",
@@ -21,13 +24,20 @@
     "unsigned-ipa-build",
     "unsigned-ipa-package",
     "in-process-native-driver",
-    "in-process-ipa-packager"
+    "in-process-ipa-packager",
+    "clang-resource-dir",
+    "cxx-stdlib-headers",
+    "swift-resource-dir",
+    "ui-framework-imports"
   ],
   "requiredPaths": [
     "Toolchains/Nyxian/CoreCompiler.framework",
     "Toolchains/Nyxian/LitterBuildKitNative.framework",
     "Toolchains/Nyxian/CoreCompilerSupportLibs",
-    "SDK/iPhoneOS26.4.sdk/SDKSettings.plist"
+    "SDK/iPhoneOS26.4.sdk/SDKSettings.plist",
+    "Toolchains/Nyxian/ClangResourceDir/include/stdarg.h",
+    "Toolchains/Nyxian/CxxStandardLibrary/include/c++/v1/vector",
+    "Toolchains/Nyxian/SwiftResourceDir/iphoneos"
   ],
   "sha256": {}
 }

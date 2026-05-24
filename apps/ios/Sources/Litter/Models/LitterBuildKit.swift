@@ -14,6 +14,7 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
         var sdkPath: String
         var clangResourceDir: String?
         var cxxStandardLibraryIncludeDir: String?
+        var swiftResourceDir: String?
 
         enum CodingKeys: String, CodingKey {
             case name
@@ -25,6 +26,7 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             case sdkPath
             case clangResourceDir
             case cxxStandardLibraryIncludeDir
+            case swiftResourceDir
         }
 
         init(
@@ -36,7 +38,8 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             supportLibraries: String,
             sdkPath: String,
             clangResourceDir: String? = nil,
-            cxxStandardLibraryIncludeDir: String? = nil
+            cxxStandardLibraryIncludeDir: String? = nil,
+            swiftResourceDir: String? = nil
         ) {
             self.name = name
             self.coreCompilerFramework = coreCompilerFramework
@@ -47,6 +50,7 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             self.sdkPath = sdkPath
             self.clangResourceDir = clangResourceDir
             self.cxxStandardLibraryIncludeDir = cxxStandardLibraryIncludeDir
+            self.swiftResourceDir = swiftResourceDir
         }
 
         init(from decoder: Decoder) throws {
@@ -60,6 +64,7 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             sdkPath = try container.decode(String.self, forKey: .sdkPath)
             clangResourceDir = try container.decodeIfPresent(String.self, forKey: .clangResourceDir)
             cxxStandardLibraryIncludeDir = try container.decodeIfPresent(String.self, forKey: .cxxStandardLibraryIncludeDir)
+            swiftResourceDir = try container.decodeIfPresent(String.self, forKey: .swiftResourceDir)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -73,6 +78,7 @@ struct BuildKitAssetManifest: Codable, Equatable, Sendable {
             try container.encode(sdkPath, forKey: .sdkPath)
             try container.encodeIfPresent(clangResourceDir, forKey: .clangResourceDir)
             try container.encodeIfPresent(cxxStandardLibraryIncludeDir, forKey: .cxxStandardLibraryIncludeDir)
+            try container.encodeIfPresent(swiftResourceDir, forKey: .swiftResourceDir)
         }
     }
 
@@ -222,6 +228,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var sdkInstalled: Bool
     var clangResourceDirInstalled: Bool
     var cxxStandardLibraryHeadersInstalled: Bool
+    var swiftResourceDirInstalled: Bool
     var commandShimsInstalled: Bool
     var requestMonitorRunning: Bool
     var embeddedProvisionPresent: Bool
@@ -233,6 +240,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var nyxianSigningCertificateDetail: String
     var toolchainRoot: String
     var sdkRoot: String
+    var swiftResourceRoot: String
     var buildKitRoot: String
     var commands: [String]
     var assetManifest: BuildKitAssetManifest?
@@ -278,11 +286,12 @@ struct LitterBuildKitStatus: Equatable, Sendable {
         if !sdkInstalled { lines.append("iPhoneOS SDKSettings.plist") }
         if !clangResourceDirInstalled { lines.append("Clang resource directory with builtin headers") }
         if !cxxStandardLibraryHeadersInstalled { lines.append("libc++ standard library headers") }
+        if !swiftResourceDirInstalled { lines.append("Swift resource directory with iphoneos modules") }
         return lines
     }
 
     var isReadyForNativeBuilds: Bool {
-        nativeCompilerAssetsInstalled && nativeDriverLoadable && nativeRunnerInstalled && supportLibrariesInstalled && sdkInstalled && clangResourceDirInstalled && cxxStandardLibraryHeadersInstalled
+        nativeCompilerAssetsInstalled && nativeDriverLoadable && nativeRunnerInstalled && supportLibrariesInstalled && sdkInstalled && clangResourceDirInstalled && cxxStandardLibraryHeadersInstalled && swiftResourceDirInstalled
     }
 
     var readinessTitle: String {
@@ -551,6 +560,7 @@ actor LitterBuildKit {
             sdkInstalled: Self.sdkInstalled,
             clangResourceDirInstalled: Self.clangResourceDirInstalled,
             cxxStandardLibraryHeadersInstalled: Self.cxxStandardLibraryHeadersInstalled,
+            swiftResourceDirInstalled: Self.swiftResourceDirInstalled,
             commandShimsInstalled: shimsInstalled,
             requestMonitorRunning: monitorTask != nil,
             embeddedProvisionPresent: Bundle.main.path(forResource: "embedded", ofType: "mobileprovision") != nil,
@@ -562,6 +572,7 @@ actor LitterBuildKit {
             nyxianSigningCertificateDetail: signingCertificateState.statusDetail,
             toolchainRoot: Self.toolchainRoot.path,
             sdkRoot: Self.sdkRoot.path,
+            swiftResourceRoot: Self.swiftResourceRoot.path,
             buildKitRoot: Self.buildKitRoot.path,
             commands: Self.commandNames,
             assetManifest: manifest,
@@ -2091,12 +2102,23 @@ actor LitterBuildKit {
         return toolchainRoot.appendingPathComponent("CxxStandardLibrary/include/c++/v1", isDirectory: true)
     }
 
+    private static var swiftResourceRoot: URL {
+        if let path = installedManifest?.toolchain.swiftResourceDir, !path.isEmpty {
+            return buildKitRoot.appendingPathComponent(path, isDirectory: true)
+        }
+        return toolchainRoot.appendingPathComponent("SwiftResourceDir", isDirectory: true)
+    }
+
     private static var clangResourceDirInstalled: Bool {
         fileExists(clangResourceRoot.appendingPathComponent("include/stdarg.h")) && fileExists(clangResourceRoot.appendingPathComponent("include/stdbool.h")) && fileExists(clangResourceRoot.appendingPathComponent("include/stddef.h"))
     }
 
     private static var cxxStandardLibraryHeadersInstalled: Bool {
         fileExists(cxxStandardLibraryIncludeRoot.appendingPathComponent("vector"))
+    }
+
+    private static var swiftResourceDirInstalled: Bool {
+        fileExists(swiftResourceRoot.appendingPathComponent("iphoneos", isDirectory: true))
     }
 
     private static var nativeDriverURL: URL {
@@ -2399,13 +2421,16 @@ actor LitterBuildKit {
         guard let cxxIncludeDir = manifest.toolchain.cxxStandardLibraryIncludeDir, !cxxIncludeDir.isEmpty else {
             throw NSError(domain: "LitterBuildKit", code: 14, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing toolchain.cxxStandardLibraryIncludeDir"])
         }
+        guard let swiftResourceDir = manifest.toolchain.swiftResourceDir, !swiftResourceDir.isEmpty else {
+            throw NSError(domain: "LitterBuildKit", code: 18, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing toolchain.swiftResourceDir"])
+        }
         guard manifest.swiftCompatibilityVersion?.isEmpty == false else {
             throw NSError(domain: "LitterBuildKit", code: 15, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing swiftCompatibilityVersion"])
         }
         guard manifest.sdkSwiftVersion?.isEmpty == false else {
             throw NSError(domain: "LitterBuildKit", code: 16, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing sdkSwiftVersion"])
         }
-        let requiredCapabilities: Set<String> = ["clang-resource-dir", "cxx-stdlib-headers", "ui-framework-imports"]
+        let requiredCapabilities: Set<String> = ["clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports"]
         let missingCapabilities = requiredCapabilities.subtracting(Set(manifest.capabilities)).sorted()
         guard missingCapabilities.isEmpty else {
             throw NSError(domain: "LitterBuildKit", code: 17, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset manifest is missing capabilities: \(missingCapabilities.joined(separator: ", "))"])
@@ -2416,6 +2441,8 @@ actor LitterBuildKit {
         required.append("\(clangResourceDir)/include/stddef.h")
         required.append(cxxIncludeDir)
         required.append("\(cxxIncludeDir)/vector")
+        required.append(swiftResourceDir)
+        required.append("\(swiftResourceDir)/iphoneos")
         if let driver = manifest.toolchain.nativeDriverFramework { required.append(driver) }
         if let runner = manifest.toolchain.nativeRunner { required.append(runner) }
         for relative in Set(required) {
@@ -2620,6 +2647,7 @@ actor LitterBuildKit {
             sdkRoot: sdkRoot.path,
             clangResourceDir: clangResourceRoot.path,
             cxxStandardLibraryIncludeDir: cxxStandardLibraryIncludeRoot.path,
+            swiftResourceDir: swiftResourceRoot.path,
             sdkVersion: installedManifest?.sdkVersion,
             swiftCompatibilityVersion: installedManifest?.swiftCompatibilityVersion,
             hostWorkDir: staging.hostWorkDir,
@@ -2899,6 +2927,7 @@ actor LitterBuildKit {
             TOOLCHAIN_DIR = \(toolchainRoot.path)
             CLANG_RESOURCE_DIR = \(clangResourceRoot.path)
             CXX_STANDARD_LIBRARY_INCLUDE_DIR = \(cxxStandardLibraryIncludeRoot.path)
+            SWIFT_RESOURCE_DIR = \(swiftResourceRoot.path)
             LITTER_BUILD_MANIFEST = \(projectArgs)
         """
     }
@@ -2912,6 +2941,7 @@ actor LitterBuildKit {
         output += "iPhoneOS SDK installed: \(status.sdkInstalled ? "yes" : "no")\n"
         output += "Clang resource dir installed: \(status.clangResourceDirInstalled ? "yes" : "no")\n"
         output += "libc++ headers installed: \(status.cxxStandardLibraryHeadersInstalled ? "yes" : "no")\n"
+        output += "Swift resource dir installed: \(status.swiftResourceDirInstalled ? "yes" : "no")\n"
         output += "Native driver loadable: \(status.nativeDriverLoadable ? "yes" : "no")\n"
         if !status.nativeDriverLoadable && !status.nativeDriverDiagnostics.isEmpty {
             output += "Native driver diagnostics:\n"
@@ -3152,6 +3182,7 @@ actor LitterBuildKit {
         iPhoneOS SDK: \(status.sdkInstalled ? "installed" : "missing")
         Clang resource dir: \(status.clangResourceDirInstalled ? "installed" : "missing")
         libc++ headers: \(status.cxxStandardLibraryHeadersInstalled ? "installed" : "missing")
+        Swift resource dir: \(status.swiftResourceDirInstalled ? "installed" : "missing")
         Fakefs command shims: \(status.commandShimsInstalled ? "installed" : "missing")
         Request monitor: \(status.requestMonitorRunning ? "running" : "stopped")
         App provisioning profile: \(status.embeddedProvisionPresent ? "present" : "missing")
@@ -3169,6 +3200,7 @@ actor LitterBuildKit {
         SDK root: \(status.sdkRoot)
         Clang resource root: \(clangResourceRoot.path)
         libc++ include root: \(cxxStandardLibraryIncludeRoot.path)
+        Swift resource root: \(status.swiftResourceRoot)
         Swift direct build: \(status.canRunSwiftDirectly ? "ready" : "blocked")
         Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
@@ -3190,6 +3222,7 @@ actor LitterBuildKit {
             output += "SDK Swift: \(manifest.sdkSwiftVersion ?? "unknown")\n"
             output += "Clang resource dir: \(manifest.toolchain.clangResourceDir ?? "missing")\n"
             output += "libc++ include dir: \(manifest.toolchain.cxxStandardLibraryIncludeDir ?? "missing")\n"
+            output += "Swift resource dir: \(manifest.toolchain.swiftResourceDir ?? "missing")\n"
             output += "Capabilities: \(manifest.capabilities.joined(separator: ", "))\n"
         }
         if !status.nativeDriverLoadable && !status.nativeDriverDiagnostics.isEmpty {
@@ -3361,6 +3394,7 @@ private struct NativeDriverRequest: Encodable, Sendable {
     var sdkRoot: String
     var clangResourceDir: String
     var cxxStandardLibraryIncludeDir: String
+    var swiftResourceDir: String
     var sdkVersion: String?
     var swiftCompatibilityVersion: String?
     var hostWorkDir: String?
