@@ -334,9 +334,15 @@ struct BuildKitSettingsView: View {
                 .autocorrectionDisabled()
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
-            TextField("Team ID", text: $appleIDTeamIDInput)
+            TextField("Team ID (optional)", text: $appleIDTeamIDInput)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Text("Leave Team ID blank for login. Litter can save the Apple ID first; the team is only needed after authentication when choosing a signing team, the same way SideStore/AltStore discover a Personal Team or paid developer team.")
+                .litterFont(.caption)
+                .foregroundStyle(LitterTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             SecureField("Apple ID password or app-specific password", text: $appleIDPasswordInput)
@@ -666,7 +672,9 @@ struct BuildKitSettingsView: View {
             appleIDAnisetteURLInput = account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
             syncAnisetteSelectionFromInput()
             appleIDPasswordInput = ""
-            appleIDActionMessage = "Apple ID login saved for \(account.statusDetail). Password is stored in Keychain."
+            appleIDActionMessage = account.hasSelectedTeam
+                ? "Apple ID login saved for \(account.statusDetail). Password is stored in Keychain."
+                : "Apple ID login saved for \(account.email). Team selection can happen after authentication. Password is stored in Keychain."
             taskBag.run { await refresh() }
         } catch {
             appleIDActionMessage = "Apple ID login failed: \(error.localizedDescription)"

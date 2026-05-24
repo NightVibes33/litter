@@ -102,19 +102,20 @@ struct KittyStoreView: View {
         ScrollView {
             VStack(spacing: 14) {
                 heroPanel
-                sectionPicker
+                sideStoreTabBar
 
                 switch selectedSection {
                 case .featured:
                     featuredPanel
                     installPanel
                 case .versions:
+                    myAppsPanel
                     versionHistoryPanel
                 case .sign:
                     EmptyView()
                 case .setup:
-                    setupPanel
                     sourcePanel
+                    setupPanel
                 }
             }
             .padding(.horizontal, 16)
@@ -125,7 +126,7 @@ struct KittyStoreView: View {
     private var signingWorkspace: some View {
         Form {
             Section {
-                sectionPicker
+                sideStoreTabBar
             }
             .listRowBackground(LitterTheme.surface.opacity(0.62))
 
@@ -183,13 +184,32 @@ struct KittyStoreView: View {
         }
     }
 
-    private var sectionPicker: some View {
-        Picker("KittyStore section", selection: $selectedSection) {
+    private var sideStoreTabBar: some View {
+        HStack(spacing: 6) {
             ForEach(KittyStoreSection.allCases) { section in
-                Text(section.title).tag(section)
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { selectedSection = section }
+                } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: section.systemImage)
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(section.title)
+                            .litterFont(.caption2, weight: .semibold)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+                    }
+                    .foregroundStyle(selectedSection == section ? Color.white : LitterTheme.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(
+                        selectedSection == section ? LitterTheme.accent : LitterTheme.surfaceLight.opacity(0.24),
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(section.accessibilityTitle)
             }
         }
-        .pickerStyle(.segmented)
     }
 
     private var featuredPanel: some View {
@@ -283,6 +303,47 @@ struct KittyStoreView: View {
                 }
 
                 copiedNotice
+            }
+        }
+    }
+
+    private var myAppsPanel: some View {
+        panel(title: "My Apps", icon: "square.stack.3d.up.fill") {
+            VStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(LitterTheme.accent.opacity(0.18))
+                        Image(systemName: "app.fill")
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundStyle(LitterTheme.accent)
+                    }
+                    .frame(width: 52, height: 52)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(app?.name ?? "Litter")
+                            .litterFont(.headline, weight: .semibold)
+                            .foregroundStyle(LitterTheme.textPrimary)
+                        Text(app?.bundleIdentifier ?? "com.sigkitten.litter")
+                            .litterMonoFont(size: 11, weight: .regular)
+                            .foregroundStyle(LitterTheme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer(minLength: 0)
+                    statusPill(updater.availability.title, color: availabilityColor)
+                }
+
+                readinessRow("Current", detail: updater.installedVersion.displayString, state: true)
+                readinessRow("Latest", detail: updater.latestManifest?.displayVersion ?? latestVersion?.version ?? "Unknown", state: updater.latestManifest != nil || latestVersion != nil)
+                readinessRow("Refresh path", detail: buildKitStatus?.localDevVPNConnected == true ? "LocalDevVPN detected" : "LocalDevVPN not detected", state: buildKitStatus?.localDevVPNConnected)
+
+                actionRow("Refresh Store", detail: "Reload source, update feed, and BuildKit readiness", icon: "arrow.clockwise") {
+                    taskBag.run { await refreshAll() }
+                }
+                actionRow("Sign IPA", detail: "Open the Feather-style signing workspace", icon: "signature") {
+                    selectedSection = .sign
+                }
             }
         }
     }
@@ -1148,20 +1209,24 @@ private enum KittyStoreSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .featured: return "Store"
-        case .versions: return "Versions"
-        case .sign: return "Sign"
-        case .setup: return "Setup"
+        case .featured: return "Browse"
+        case .versions: return "My Apps"
+        case .sign: return "Signing"
+        case .setup: return "Sources"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .featured: return "sparkles"
-        case .versions: return "clock.arrow.circlepath"
+        case .featured: return "square.grid.2x2.fill"
+        case .versions: return "square.stack.3d.up.fill"
         case .sign: return "signature"
-        case .setup: return "checklist"
+        case .setup: return "link.circle.fill"
         }
+    }
+
+    var accessibilityTitle: String {
+        "KittyStore \(title)"
     }
 }
 

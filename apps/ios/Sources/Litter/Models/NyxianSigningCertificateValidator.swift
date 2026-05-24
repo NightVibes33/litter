@@ -146,7 +146,7 @@ struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         email = try container.decode(String.self, forKey: .email)
-        teamID = try container.decode(String.self, forKey: .teamID)
+        teamID = try container.decodeIfPresent(String.self, forKey: .teamID) ?? ""
         anisetteServerURL = try container.decodeIfPresent(String.self, forKey: .anisetteServerURL)
         loggedInAt = try container.decodeIfPresent(Date.self, forKey: .loggedInAt)
             ?? container.decodeIfPresent(Date.self, forKey: .updatedAt)
@@ -156,13 +156,17 @@ struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(email, forKey: .email)
-        try container.encode(teamID, forKey: .teamID)
+        if !teamID.isEmpty { try container.encode(teamID, forKey: .teamID) }
         try container.encodeIfPresent(anisetteServerURL, forKey: .anisetteServerURL)
         try container.encode(loggedInAt, forKey: .loggedInAt)
     }
 
+    var hasSelectedTeam: Bool {
+        !teamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var statusDetail: String {
-        "\(email) / \(teamID)"
+        hasSelectedTeam ? "\(email) / \(teamID)" : "\(email) / Team not selected yet"
     }
 
     var anisetteDetail: String {
@@ -173,7 +177,6 @@ struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
 enum NyxianAppleIDValidationError: LocalizedError {
     case invalidEmail
     case missingPassword
-    case missingTeamID
     case invalidTeamID
     case invalidAnisetteURL
 
@@ -183,10 +186,8 @@ enum NyxianAppleIDValidationError: LocalizedError {
             return "Enter the Apple ID email used by SideStore or AltStore."
         case .missingPassword:
             return "Enter the Apple ID password or app-specific password used by your signer."
-        case .missingTeamID:
-            return "Enter the Apple Developer Team ID for that Apple ID."
         case .invalidTeamID:
-            return "Apple Developer Team IDs are 10 uppercase letters or numbers."
+            return "Apple Developer Team IDs are 10 uppercase letters or numbers. Leave it blank if you want Litter to discover/select the team after Apple ID authentication."
         case .invalidAnisetteURL:
             return "Enter a valid SideStore Anisette server URL."
         }
@@ -310,13 +311,12 @@ enum NyxianAppleIDStore {
         guard !password.isEmpty else {
             throw NyxianAppleIDValidationError.missingPassword
         }
-        guard !teamID.isEmpty else {
-            throw NyxianAppleIDValidationError.missingTeamID
-        }
         let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
-        guard teamID.count == 10,
-              teamID.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
-            throw NyxianAppleIDValidationError.invalidTeamID
+        if !teamID.isEmpty {
+            guard teamID.count == 10,
+                  teamID.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+                throw NyxianAppleIDValidationError.invalidTeamID
+            }
         }
 
         let account = NyxianAppleIDAccount(

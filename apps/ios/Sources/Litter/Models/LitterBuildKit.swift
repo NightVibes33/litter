@@ -261,7 +261,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var nyxianRunInstallRequirements: [String] {
         var lines: [String] = []
         if !embeddedProvisionPresent { lines.append("SideStore/AltStore embedded.mobileprovision on the installed Litter app") }
-        if !appleIDConfigured { lines.append("Apple ID login in BuildKit settings (email, password, Team ID, SideStore Anisette server)") }
+        if !appleIDConfigured { lines.append("Apple ID login in BuildKit settings (email, password, SideStore Anisette server; Team ID can be selected after login)") }
         if !nyxianSigningCertificateInstalled { lines.append("validated matching SideStore/AltStore .p12 certificate for Nyxian signing") }
         if !localDevVPNConnected { lines.append("LocalDevVPN connected for SideStore-style on-device install/refresh") }
         return lines
@@ -300,7 +300,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
             if canRunNyxianApps {
                 return "Fakefs Swift, unsigned IPA packaging, and original Nyxian run/install signing are ready. Connect LocalDevVPN for SideStore-style on-device install/refresh."
             }
-            return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs Apple ID login, a SideStore Anisette server, and the matching SideStore/AltStore .p12 certificate imported. Full on-device install/refresh also needs LocalDevVPN connected."
+            return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs Apple ID login, a SideStore Anisette server, and the matching SideStore/AltStore .p12 certificate imported. Team ID is optional at login and can be selected after authentication. Full on-device install/refresh also needs LocalDevVPN connected."
         }
         if privateAssetsInstalled {
             return "The private asset pack is installed, but the native driver/framework is not loadable yet. Rebuild the sideload IPA with the private BuildKit framework embedded."
