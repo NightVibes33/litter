@@ -2694,9 +2694,6 @@ impl AppStoreReducer {
                     "emit DynamicWidgetStreaming"
                 )
             }
-            AppStoreUpdateRecord::TerminalSessionsChanged => {
-                tracing::debug!(target: "store", "emit TerminalSessionsChanged")
-            }
         }
         let _ = self.updates_tx.send(update);
     }

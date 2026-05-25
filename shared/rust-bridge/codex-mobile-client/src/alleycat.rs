@@ -528,6 +528,7 @@ pub async fn connect_app_server_client(
         v: ALLEYCAT_PROTOCOL_VERSION,
         token: params.token.clone(),
         agent: agent.clone(),
+        resume: resume_from.map(|last_seq| Resume { last_seq }),
     })
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
@@ -577,6 +578,7 @@ pub(crate) async fn connect_jsonl_agent_stream(
         v: ALLEYCAT_PROTOCOL_VERSION,
         token: params.token.clone(),
         agent: agent.clone(),
+        resume: None,
     })
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
@@ -587,7 +589,7 @@ pub(crate) async fn connect_jsonl_agent_stream(
         agent,
         wire: AgentWire::Jsonl,
     });
-    Ok((AlleycatStream::new(send, recv), session))
+    Ok((AlleycatStream::new(send, recv, None), session))
 }
 
 /// Build the app-wide alleycat iroh `Endpoint`. Called exactly once per
