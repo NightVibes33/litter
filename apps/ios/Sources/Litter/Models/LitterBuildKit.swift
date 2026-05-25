@@ -1025,6 +1025,49 @@ actor LitterBuildKit {
             if !(await IshFS.exists(path: resolvedEntitlements)) { missing.append("Entitlements file does not exist: \(resolvedEntitlements)") }
         }
 
+        var provisioningProfileValidation: [String: Any] = ["checked": false]
+        if let resolvedProfile, mode == "certificate", signingType != "adhoc", await IshFS.exists(path: resolvedProfile) {
+            do {
+                var certificateFingerprint: String?
+                if let identity = NyxianSigningCertificateStorage.loadIdentity() {
+                    let certificateSummary = try NyxianSigningCertificateValidator.validate(
+                        pkcs12Data: identity.data,
+                        password: identity.password,
+                        checkRevocation: true
+                    )
+                    certificateFingerprint = certificateSummary.sha256Fingerprint
+                }
+                let tempURL = try await IshFS.copyFileToTemporaryURL(
+                    path: resolvedProfile,
+                    suggestedFileName: URL(fileURLWithPath: resolvedProfile).lastPathComponent,
+                    maxBytes: 64_000_000
+                )
+                let data = try Data(contentsOf: tempURL)
+                let summary = try NyxianProvisioningProfileValidator.validate(
+                    data: data,
+                    signingCertificateFingerprint: certificateFingerprint,
+                    requestedBundleIdentifier: bundleID
+                )
+                provisioningProfileValidation = [
+                    "checked": true,
+                    "ready": true,
+                    "name": summary.name,
+                    "uuid": summary.uuid,
+                    "bundleIdentifier": summary.bundleIdentifier,
+                    "expiresAt": summary.expiresAt.map { ISO8601DateFormatter().string(from: $0) } ?? "",
+                    "developerCertificateCount": summary.developerCertificateFingerprints.count,
+                    "matchedCertificate": summary.matchedCertificateFingerprint != nil
+                ]
+            } catch {
+                provisioningProfileValidation = [
+                    "checked": true,
+                    "ready": false,
+                    "error": error.localizedDescription
+                ]
+                missing.append("Provisioning profile invalid: \(error.localizedDescription)")
+            }
+        }
+
         if mode == "certificate" && signingType != "adhoc" && !current.nyxianSigningCertificateInstalled {
             missing.append("Validated .p12 signing certificate is missing or invalid in BuildKit settings")
         }
@@ -1064,6 +1107,7 @@ actor LitterBuildKit {
                 "certificateReady": current.nyxianSigningCertificateInstalled,
                 "certificateDetail": current.nyxianSigningCertificateDetail,
                 "provisioningProfile": resolvedProfile ?? "embedded",
+                "provisioningProfileValidation": provisioningProfileValidation,
                 "appleIDReady": current.appleIDConfigured,
                 "appleIDDetail": current.appleIDDetail,
                 "pairingFile": resolvedPairing ?? "",
