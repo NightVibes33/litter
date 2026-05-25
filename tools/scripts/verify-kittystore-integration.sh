@@ -59,6 +59,7 @@ require_grep "KittyStore source checksum display" "shortSHA256" "apps/ios/Source
 require_grep "KittyStore source checksum verification" "sha256Hex(for: fileURL)" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "KittyStore source size verification" "Downloaded IPA size mismatch" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "SideStore AltSign fresh certificate validation" "The saved .p12 or provisioning profile is no longer valid" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
+require_grep "SideStore bridge certificate validation" "sidestore-certificate-validation-failed" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreSigningBridge.swift"
 require_grep "Feather app appearance option" "appAppearance" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "Feather minimum iOS option" "minimumAppRequirement" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "Feather remove files plan" "removeFiles" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"

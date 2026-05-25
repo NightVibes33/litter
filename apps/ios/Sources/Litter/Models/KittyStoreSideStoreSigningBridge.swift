@@ -172,6 +172,27 @@ enum KittyStoreSideStoreSigningBridge {
     ) async -> OperationResult {
         #if canImport(AltSign) && canImport(CAltSign)
         do {
+            do {
+                let certificateSummary = try NyxianSigningCertificateValidator.validate(
+                    pkcs12Data: certificateData,
+                    password: certificatePassword,
+                    checkRevocation: true
+                )
+                _ = try NyxianProvisioningProfileValidator.validate(
+                    data: provisioningProfileData,
+                    signingCertificateFingerprint: certificateSummary.sha256Fingerprint,
+                    requestedBundleIdentifier: bundleIdentifier
+                )
+            } catch {
+                return OperationResult(
+                    exitCode: 65,
+                    status: "sidestore-certificate-validation-failed",
+                    log: "SideStore AltSign rejected the imported .p12/profile before signing. \(error.localizedDescription)\n",
+                    signedIPAPath: nil,
+                    provisioningProfileData: nil
+                )
+            }
+
             guard let certificate = ALTCertificate(p12Data: certificateData, password: certificatePassword) else {
                 return OperationResult(exitCode: 65, status: "sidestore-certificate-invalid", log: "AltSign could not open the .p12 identity. The password may be wrong or the file may not contain a signing identity.\n", signedIPAPath: nil, provisioningProfileData: nil)
             }
