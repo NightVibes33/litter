@@ -558,6 +558,7 @@ final class AppModel {
         guard server.isLocal else {
             return true
         }
+        try await LitterPlatform.ensureLocalRuntimeReady()
         guard server.account == nil else {
             return true
         }
@@ -1950,6 +1951,7 @@ final class AppModel {
     }
 
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
+        try await ensureLocalRuntimeIfNeeded(serverId: key.serverId)
         await restoreStoredLocalAuthIfNeeded(serverId: key.serverId, reason: "startTurn")
 
         do {
@@ -1961,6 +1963,11 @@ final class AppModel {
             lastError = error.localizedDescription
             throw error
         }
+    }
+
+    private func ensureLocalRuntimeIfNeeded(serverId: String) async throws {
+        guard snapshot?.serverSnapshot(for: serverId)?.isLocal == true else { return }
+        try await LitterPlatform.ensureLocalRuntimeReady()
     }
 
     func hydrateThreadPermissions(for key: ThreadKey, appState: AppState) async -> ThreadKey? {
