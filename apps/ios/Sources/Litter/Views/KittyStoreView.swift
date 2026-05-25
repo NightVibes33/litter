@@ -6,11 +6,18 @@ import UniformTypeIdentifiers
 struct KittyStoreView: View {
     @Environment(\.openURL) private var openURL
     @StateObject private var taskBag = ViewTaskBag()
-    @State private var source: KittyStoreSource?
+    @State private var sources: [KittyStoreSource] = []
     @State private var sourcePhase: KittyStoreSourcePhase = .idle
+    @AppStorage("kittystore.source.urls.v1") private var storedSourceURLsJSON = ""
+    @AppStorage("kittystore.pairing.path.v1") private var storedPairingFilePath = ""
+    @AppStorage("kittystore.pairing.name.v1") private var storedPairingFileName = ""
+    @AppStorage("kittystore.pairing.size.v1") private var storedPairingFileSize = ""
+    @AppStorage("kittystore.provisioning.path.v1") private var storedProvisioningProfilePath = ""
+    @AppStorage("kittystore.provisioning.name.v1") private var storedProvisioningProfileName = ""
+    @AppStorage("kittystore.provisioning.size.v1") private var storedProvisioningProfileSize = ""
     @State private var copiedMessage: String?
     @State private var shareItem: KittyStoreShareItem?
-    @State private var selectedTab: KittyStoreTab = .browse
+    @State private var selectedTab: KittyStoreTab = .news
     @State private var selectedSourceAppID: String?
     @State private var showingSigningSheet = false
     @State private var buildKitStatus: LitterBuildKitStatus?
@@ -24,6 +31,8 @@ struct KittyStoreView: View {
     @State private var installedDeviceAppsInProgress = false
     @State private var sourceIPADownloadInProgress = false
     @State private var sourceIPADownloadMessage: String?
+    @State private var sourceURLInput = ""
+    @State private var sourceActionMessage: String?
     @State private var appleIDEmailInput = ""
     @State private var appleIDTeamIDInput = ""
     @State private var appleIDPasswordInput = ""
@@ -72,19 +81,85 @@ struct KittyStoreView: View {
     @State private var replaceSubstrateWithElleKit = true
     @State private var enableLiquidGlass = false
 
-    private var apps: [KittyStoreApp] { source?.apps ?? [] }
-    private var currentBundleIdentifier: String { Bundle.main.bundleIdentifier ?? "com.sigkitten.litter" }
+    private static var defaultSourceURLs: [String] {
+        [
+            "https://community-apps.sidestore.io/sidecommunity.json",
+            AppReleaseSource.current.stableSourceURLString
+        ]
+    }
+
+    private static func decodeSourceURLs(_ text: String) -> [String] {
+        guard let data = text.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String].self, from: data)
+        else {
+            return defaultSourceURLs
+        }
+        let urls = uniqueSourceURLs(decoded.compactMap(normalizedSourceURL))
+        return urls.isEmpty ? defaultSourceURLs : urls
+    }
+
+    private static func encodeSourceURLs(_ urls: [String]) -> String {
+        let normalized = uniqueSourceURLs(urls.compactMap(normalizedSourceURL))
+        guard let data = try? JSONEncoder().encode(normalized),
+              let text = String(data: data, encoding: .utf8)
+        else {
+            return ""
+        }
+        return text
+    }
+
+    private static func uniqueSourceURLs(_ urls: [String]) -> [String] {
+        var seen = Set<String>()
+        var unique: [String] = []
+        for url in urls {
+            let key = url.lowercased()
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            unique.append(url)
+        }
+        return unique
+    }
+
+    private static func normalizedSourceURL(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let components = URLComponents(string: trimmed),
+           let scheme = components.scheme?.lowercased(),
+           ["sidestore", "altstore"].contains(scheme),
+           let sourceURL = components.queryItems?.first(where: { $0.name == "url" })?.value {
+            return normalizedSourceURL(sourceURL)
+        }
+        let candidate = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let url = URL(string: candidate), let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else {
+            return nil
+        }
+        return url.absoluteString
+    }
+
+    private var source: KittyStoreSource? {
+        if let selectedSourceURL = app?.sourceURL {
+            return sources.first { $0.resolvedSourceURL == selectedSourceURL }
+        }
+        return sources.first
+    }
+    private var apps: [KittyStoreApp] { sources.flatMap(\.apps) }
+    private var newsItems: [KittyStoreNewsItem] {
+        sources
+            .flatMap(\.news)
+            .sorted { ($0.date ?? "") > ($1.date ?? "") }
+    }
     private var app: KittyStoreApp? {
         if let selectedSourceAppID,
-           let selected = apps.first(where: { $0.bundleIdentifier == selectedSourceAppID }) {
+           let selected = apps.first(where: { $0.id == selectedSourceAppID || $0.bundleIdentifier == selectedSourceAppID }) {
             return selected
         }
-        return apps.first { $0.bundleIdentifier == currentBundleIdentifier } ?? apps.first
+        return apps.first
     }
     private var selectedAppName: String { app?.name ?? "App" }
     private var versions: [KittyStoreVersion] { app?.versions ?? [] }
     private var latestVersion: KittyStoreVersion? { versions.first }
-    private var sourceURL: String { source?.sourceURL ?? AppReleaseSource.current.stableSourceURLString }
+    private var sourceURL: String { app?.sourceURL ?? source?.resolvedSourceURL ?? AppReleaseSource.current.stableSourceURLString }
+    private var configuredSourceURLs: [String] { Self.decodeSourceURLs(storedSourceURLsJSON) }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -182,6 +257,8 @@ struct KittyStoreView: View {
             appleIDAnisetteURLInput = newValue
         }
         .task {
+            restorePersistedImports()
+            if sourceURLInput.isEmpty { sourceURLInput = configuredSourceURLs.first ?? "" }
             await refreshAll()
             await refreshAnisetteServers(showSuccess: false)
         }
@@ -191,9 +268,16 @@ struct KittyStoreView: View {
     }
 
     private var newsWorkspace: some View {
-        storeScroll {
-            latestNewsPanel
-            versionHistoryPanel
+        storeScroll(spacing: 18) {
+            kittyWelcomeNewsCard
+            kittyCautionNewsCard
+            if newsItems.isEmpty {
+                latestNewsPanel
+            } else {
+                ForEach(newsItems) { newsItem in
+                    newsItemCard(newsItem)
+                }
+            }
         }
     }
 
@@ -205,9 +289,7 @@ struct KittyStoreView: View {
 
     private var browseWorkspace: some View {
         storeScroll {
-            heroPanel
             sourceAppsPanel
-            versionHistoryPanel
         }
     }
 
@@ -226,9 +308,9 @@ struct KittyStoreView: View {
         }
     }
 
-    private func storeScroll<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func storeScroll<Content: View>(spacing: CGFloat = 14, @ViewBuilder content: () -> Content) -> some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: spacing) {
                 content()
             }
             .padding(.horizontal, 16)
@@ -338,6 +420,93 @@ struct KittyStoreView: View {
         }
     }
 
+    private var kittyWelcomeNewsCard: some View {
+        newsArticleCard(
+            title: "Welcome to KittyStore!",
+            caption: "Check out the SideStore and Feather powered store for sources, signing, and direct app refresh.",
+            tint: Color(red: 0.48, green: 0.16, blue: 0.82),
+            symbol: "pawprint.fill",
+            footer: source?.name ?? "KittyLitter"
+        ) {
+            URL(string: "https://github.com/NightVibes33/litter")
+        }
+    }
+
+    private var kittyCautionNewsCard: some View {
+        newsArticleCard(
+            title: "Proceed with Caution!",
+            caption: "KittyStore is pre-release software. Expect bugs while the SideStore, Feather, and LocalDevVPN bridges continue to harden.",
+            tint: Color(red: 0.86, green: 0.18, blue: 0.14),
+            symbol: "exclamationmark.triangle.fill",
+            footer: "Pre-release"
+        )
+    }
+
+    private func newsItemCard(_ item: KittyStoreNewsItem) -> some View {
+        newsArticleCard(
+            title: item.title,
+            caption: item.caption,
+            tint: newsTintColor(item.tintColor),
+            symbol: item.appID == nil ? "newspaper.fill" : "square.and.arrow.down.fill",
+            footer: item.displayDate
+        ) {
+            newsDestinationURL(for: item)
+        }
+    }
+
+    private func newsArticleCard(
+        title: String,
+        caption: String,
+        tint: Color,
+        symbol: String,
+        footer: String? = nil,
+        destination: @escaping () -> URL? = { nil }
+    ) -> some View {
+        Button {
+            if let url = destination() {
+                openURL(url)
+            }
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [tint, tint.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: symbol)
+                    .font(.system(size: 92, weight: .bold))
+                    .foregroundStyle(Color.white.opacity(0.12))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(18)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    if let footer, !footer.isEmpty {
+                        Text(footer)
+                            .litterFont(.caption, weight: .semibold)
+                            .foregroundStyle(Color.white.opacity(0.82))
+                            .textCase(.uppercase)
+                    }
+                    Text(title)
+                        .litterFont(.title2, weight: .bold)
+                        .foregroundStyle(Color.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(caption)
+                        .litterFont(.subheadline, weight: .medium)
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+            }
+            .frame(maxWidth: .infinity, minHeight: 178, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var latestNewsPanel: some View {
         panel(title: "News", icon: "newspaper") {
             VStack(spacing: 10) {
@@ -379,28 +548,77 @@ struct KittyStoreView: View {
     }
 
     private var sourcePanel: some View {
-        panel(title: "Source", icon: "link") {
+        panel(title: "Sources", icon: "list.bullet.rectangle") {
             VStack(spacing: 10) {
-                actionRow("Add Source in SideStore", detail: "Subscribe to the current compatible source", icon: "link.badge.plus") {
-                    if let url = installerURL(scheme: "sidestore", host: "source", targetURL: sourceURL) { openURL(url) }
+                settingsTextField("Source URL", text: $sourceURLInput, keyboardType: .URL)
+
+                actionRow("Add Source", detail: "Add any SideStore or AltStore source URL to KittyStore.", icon: "plus.circle.fill", enabled: !sourceURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                    addSourceURL()
                 }
 
-                actionRow("Add in AltStore", detail: "Use the same compatible source", icon: "link.badge.plus") {
-                    if let url = installerURL(scheme: "altstore", host: "source", targetURL: sourceURL) { openURL(url) }
+                actionRow("Refresh Sources", detail: sourcePhase.message, icon: "arrow.clockwise") {
+                    taskBag.run { await refreshSource() }
                 }
 
-                actionRow("Copy Source URL", detail: sourceHost, icon: "doc.on.doc") {
-                    UIPasteboard.general.string = sourceURL
-                    copiedMessage = "Copied source URL"
+                if configuredSourceURLs.isEmpty {
+                    emptyState("No sources configured. Add a SideStore or AltStore source URL.")
+                } else {
+                    ForEach(configuredSourceURLs, id: \.self) { url in
+                        sourceURLRow(url)
+                    }
                 }
 
-                if let url = URL(string: sourceURL) {
-                    actionRow("Open Source JSON", detail: url.host ?? "Source feed", icon: "safari") { openURL(url) }
+                actionRow("Restore Recommended Sources", detail: "Use KittyLitter plus SideStore community defaults.", icon: "arrow.counterclockwise") {
+                    resetSourceURLs()
                 }
 
+                if let sourceActionMessage, !sourceActionMessage.isEmpty {
+                    messageBlock(sourceActionMessage)
+                }
                 copiedNotice
             }
         }
+    }
+
+    private func sourceURLRow(_ url: String) -> some View {
+        let loadedSource = sources.first { $0.resolvedSourceURL == url }
+        let title = loadedSource?.name ?? sourceHost(for: url)
+        let detail = loadedSource.map { "\($0.apps.count) app(s), \($0.news.count) news item(s)" } ?? url
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: loadedSource == nil ? "link" : "checkmark.circle.fill")
+                    .foregroundStyle(loadedSource == nil ? LitterTheme.textMuted : LitterTheme.success)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .litterFont(.subheadline, weight: .semibold)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                        .lineLimit(1)
+                    Text(detail)
+                        .litterFont(.caption)
+                        .foregroundStyle(LitterTheme.textSecondary)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 8) {
+                compactButton("Open", icon: "safari") {
+                    if let url = URL(string: url) { openURL(url) }
+                }
+                compactButton("Copy", icon: "doc.on.doc") {
+                    UIPasteboard.general.string = url
+                    copiedMessage = "Copied source URL"
+                }
+                compactButton("Remove", icon: "trash") {
+                    removeSourceURL(url)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LitterTheme.surfaceLight.opacity(0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var accountSettingsPanel: some View {
@@ -529,6 +747,9 @@ struct KittyStoreView: View {
                 }
                 actionRow("Import Pairing File", detail: "Choose the pairing file used for SideStore install and refresh.", icon: "doc.badge.gearshape") {
                     presentImporter(.pairingFile)
+                }
+                actionRow("Clear Pairing File", detail: "Remove the saved pairing file from KittyStore.", icon: "trash", enabled: importedPairingFile != nil) {
+                    clearPersistedPairingFile()
                 }
             }
         }
@@ -777,7 +998,11 @@ struct KittyStoreView: View {
     }
 
     private var sourceHost: String {
-        URL(string: sourceURL)?.host ?? "source feed"
+        sourceHost(for: sourceURL)
+    }
+
+    private func sourceHost(for url: String) -> String {
+        URL(string: url)?.host ?? "source feed"
     }
 
     private var importedIPAName: String {
@@ -833,22 +1058,101 @@ struct KittyStoreView: View {
         await refreshBuildKitStatus()
     }
 
-    private func refreshSource() async {
-        guard let url = URL(string: sourceURL) else {
-            sourcePhase = .failed("Invalid source URL.")
+    @MainActor
+    private func addSourceURL() {
+        guard let normalized = Self.normalizedSourceURL(sourceURLInput) else {
+            sourceActionMessage = "That is not a valid SideStore or AltStore source URL."
             return
         }
+        var urls = configuredSourceURLs
+        if !urls.contains(where: { $0.caseInsensitiveCompare(normalized) == .orderedSame }) {
+            urls.append(normalized)
+        }
+        storedSourceURLsJSON = Self.encodeSourceURLs(urls)
+        sourceURLInput = normalized
+        sourceActionMessage = "Added source: \(sourceHost(for: normalized))."
+        taskBag.run { await refreshSource() }
+    }
+
+    @MainActor
+    private func removeSourceURL(_ url: String) {
+        let urls = configuredSourceURLs.filter { $0 != url }
+        guard !urls.isEmpty else {
+            resetSourceURLs()
+            return
+        }
+        storedSourceURLsJSON = Self.encodeSourceURLs(urls)
+        sources.removeAll { $0.resolvedSourceURL == url }
+        if selectedSourceAppID != nil, !apps.contains(where: { $0.id == selectedSourceAppID || $0.bundleIdentifier == selectedSourceAppID }) {
+            selectedSourceAppID = nil
+        }
+        sourceActionMessage = "Removed source: \(sourceHost(for: url))."
+    }
+
+    @MainActor
+    private func resetSourceURLs() {
+        storedSourceURLsJSON = Self.encodeSourceURLs(Self.defaultSourceURLs)
+        sourceURLInput = Self.defaultSourceURLs.first ?? ""
+        sourceActionMessage = "Restored KittyStore recommended sources."
+        taskBag.run { await refreshSource() }
+    }
+
+    private func refreshSource() async {
+        let urls = configuredSourceURLs
+        guard !urls.isEmpty else {
+            sources = []
+            sourcePhase = .failed("No source URLs are configured.")
+            return
+        }
+
         sourcePhase = .loading
-        do {
-            let data = try await GitHubReleaseAPI.data(url: url)
-            let decodedSource = try JSONDecoder().decode(KittyStoreSource.self, from: data)
-            source = decodedSource
-            if let selectedSourceAppID, !decodedSource.apps.contains(where: { $0.bundleIdentifier == selectedSourceAppID }) {
-                self.selectedSourceAppID = nil
+        var loadedSources: [KittyStoreSource] = []
+        var failures: [String] = []
+        let decoder = JSONDecoder()
+
+        for rawURL in urls {
+            guard let url = URL(string: rawURL) else {
+                failures.append("\(rawURL): invalid URL")
+                continue
             }
-            sourcePhase = .loaded
-        } catch {
-            sourcePhase = .failed(error.localizedDescription)
+            do {
+                let data = try await GitHubReleaseAPI.data(url: url, accept: "application/json")
+                var decodedSource = try decoder.decode(KittyStoreSource.self, from: data)
+                let sourceName = decodedSource.name ?? sourceHost(for: rawURL)
+                decodedSource.resolvedSourceURL = rawURL
+                if decodedSource.sourceURL == nil { decodedSource.sourceURL = rawURL }
+                decodedSource.apps = decodedSource.apps.map { app in
+                    var next = app
+                    next.sourceName = sourceName
+                    next.sourceURL = rawURL
+                    return next
+                }
+                decodedSource.news = decodedSource.news.map { news in
+                    var next = news
+                    next.sourceName = sourceName
+                    next.sourceURL = rawURL
+                    return next
+                }
+                loadedSources.append(decodedSource)
+            } catch {
+                failures.append("\(sourceHost(for: rawURL)): \(error.localizedDescription)")
+            }
+        }
+
+        sources = loadedSources
+        if let selectedSourceAppID,
+           !apps.contains(where: { $0.id == selectedSourceAppID || $0.bundleIdentifier == selectedSourceAppID }) {
+            self.selectedSourceAppID = nil
+        }
+
+        if loadedSources.isEmpty {
+            sourcePhase = .failed(failures.joined(separator: "\n"))
+        } else if failures.isEmpty {
+            let appCount = loadedSources.reduce(0) { $0 + $1.apps.count }
+            sourcePhase = .loaded("Loaded \(loadedSources.count) source(s) with \(appCount) app(s).")
+        } else {
+            let appCount = loadedSources.reduce(0) { $0 + $1.apps.count }
+            sourcePhase = .loaded("Loaded \(loadedSources.count) source(s) with \(appCount) app(s). Some sources failed: \(failures.joined(separator: "; "))")
         }
     }
 
@@ -904,6 +1208,49 @@ struct KittyStoreView: View {
             selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.customSelectionID
             appleIDAnisetteURLInput = target
         }
+    }
+
+    @MainActor
+    private func restorePersistedImports() {
+        if importedPairingFile == nil,
+           let file = restoredImportedFile(path: storedPairingFilePath, name: storedPairingFileName, sizeText: storedPairingFileSize) {
+            importedPairingFile = file
+            installedDeviceAppsMessage = "Restored pairing file: \(file.displayName)."
+        }
+        if importedProvisioningProfile == nil,
+           let file = restoredImportedFile(path: storedProvisioningProfilePath, name: storedProvisioningProfileName, sizeText: storedProvisioningProfileSize) {
+            importedProvisioningProfile = file
+        }
+    }
+
+    private func restoredImportedFile(path: String, name: String, sizeText: String) -> KittyStoreImportedFile? {
+        guard !path.isEmpty, FileManager.default.fileExists(atPath: path) else { return nil }
+        let resolvedName = name.isEmpty ? URL(fileURLWithPath: path).lastPathComponent : name
+        return KittyStoreImportedFile(displayName: resolvedName, stagedPath: path, size: Int64(sizeText), isDirectory: false)
+    }
+
+    @MainActor
+    private func persistPairingFile(_ file: KittyStoreImportedFile) {
+        storedPairingFilePath = file.stagedPath
+        storedPairingFileName = file.displayName
+        storedPairingFileSize = file.size.map(String.init) ?? ""
+    }
+
+    @MainActor
+    private func persistProvisioningProfile(_ file: KittyStoreImportedFile) {
+        storedProvisioningProfilePath = file.stagedPath
+        storedProvisioningProfileName = file.displayName
+        storedProvisioningProfileSize = file.size.map(String.init) ?? ""
+    }
+
+    @MainActor
+    private func clearPersistedPairingFile() {
+        importedPairingFile = nil
+        installedDeviceApps.removeAll()
+        storedPairingFilePath = ""
+        storedPairingFileName = ""
+        storedPairingFileSize = ""
+        installedDeviceAppsMessage = "Removed the pairing file from KittyStore."
     }
 
     @MainActor
@@ -1086,6 +1433,7 @@ struct KittyStoreView: View {
             do {
                 let summary = try validateProvisioningProfile(file, requireCertificateMatch: false)
                 importedProvisioningProfile = file
+                persistProvisioningProfile(file)
                 signingAlert = KittyStoreSigningAlert(title: "Provisioning Profile Ready", message: summary.importMessage)
             } catch {
                 importedProvisioningProfile = nil
@@ -1093,8 +1441,9 @@ struct KittyStoreView: View {
             }
         case .pairingFile:
             importedPairingFile = files.first
+            if let file = files.first { persistPairingFile(file) }
             installedDeviceApps.removeAll()
-            installedDeviceAppsMessage = "Pairing file imported. Load installed apps to browse the device."
+            installedDeviceAppsMessage = files.first.map { "Pairing file imported and saved: \($0.displayName). Load installed apps to browse the device." } ?? "Pairing file imported."
         case .existingDylibs:
             existingDylibs.append(contentsOf: files)
         case .frameworksAndPlugins:
@@ -1157,7 +1506,7 @@ struct KittyStoreView: View {
 
     @MainActor
     private func selectSourceApp(_ storeApp: KittyStoreApp) {
-        selectedSourceAppID = storeApp.bundleIdentifier
+        selectedSourceAppID = storeApp.id
     }
 
     @MainActor
@@ -1858,7 +2207,7 @@ struct KittyStoreView: View {
             HStack(spacing: 8) {
                 if let matchingSourceApp, let latest {
                     compactButton("Refresh", icon: "arrow.triangle.2.circlepath") {
-                        selectedSourceAppID = matchingSourceApp.bundleIdentifier
+                        selectedSourceAppID = matchingSourceApp.id
                         postSigningAction = .refresh
                         downloadSourceIPAForSigning(storeApp: matchingSourceApp, version: latest, openSigning: true)
                     }
@@ -1877,7 +2226,7 @@ struct KittyStoreView: View {
 
     private func sourceAppRow(_ storeApp: KittyStoreApp) -> some View {
         let latest = storeApp.versions.first
-        let isSelected = storeApp.bundleIdentifier == app?.bundleIdentifier
+        let isSelected = storeApp.id == app?.id
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 12) {
@@ -1903,6 +2252,12 @@ struct KittyStoreView: View {
                         .litterFont(.caption)
                         .foregroundStyle(LitterTheme.textSecondary)
                         .lineLimit(2)
+                    if let sourceName = storeApp.sourceName {
+                        Text(sourceName)
+                            .litterFont(.caption, weight: .semibold)
+                            .foregroundStyle(LitterTheme.accent)
+                            .lineLimit(1)
+                    }
                     Text(storeApp.bundleIdentifier)
                         .litterMonoFont(size: 11, weight: .regular)
                         .foregroundStyle(LitterTheme.textMuted)
@@ -2215,6 +2570,27 @@ struct KittyStoreView: View {
             .background(LitterTheme.surfaceLight.opacity(0.28), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
+    private func newsDestinationURL(for item: KittyStoreNewsItem) -> URL? {
+        guard let target = item.externalURL, !target.isEmpty else { return nil }
+        if target.lowercased().contains(".ipa"),
+           let sideStoreURL = installerURL(scheme: "sidestore", host: "install", targetURL: target) {
+            return sideStoreURL
+        }
+        return URL(string: target)
+    }
+
+    private func newsTintColor(_ value: String?) -> Color {
+        guard let value else { return LitterTheme.accent }
+        let sanitized = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+        guard sanitized.count == 6, let number = Int(sanitized, radix: 16) else { return LitterTheme.accent }
+        let red = Double((number >> 16) & 0xff) / 255.0
+        let green = Double((number >> 8) & 0xff) / 255.0
+        let blue = Double(number & 0xff) / 255.0
+        return Color(red: red, green: green, blue: blue)
+    }
+
     private func installerURL(scheme: String, host: String, targetURL: String?) -> URL? {
         guard let targetURL, !targetURL.isEmpty else { return nil }
         var components = URLComponents()
@@ -2477,7 +2853,7 @@ private struct KittyStoreRemovalRequest: Identifiable {
 private enum KittyStoreSourcePhase: Equatable {
     case idle
     case loading
-    case loaded
+    case loaded(String)
     case failed(String)
 
     var isBusy: Bool {
@@ -2487,10 +2863,10 @@ private enum KittyStoreSourcePhase: Equatable {
 
     var message: String {
         switch self {
-        case .idle: return "The source has not loaded yet."
-        case .loading: return "Loading source."
-        case .loaded: return "Source loaded."
-        case .failed(let message): return "Could not load source: \(message)"
+        case .idle: return "No sources have loaded yet."
+        case .loading: return "Loading sources."
+        case .loaded(let message): return message
+        case .failed(let message): return "Could not load sources: \(message)"
         }
     }
 }
@@ -2503,7 +2879,82 @@ private struct KittyStoreSource: Decodable, Equatable {
     var description: String?
     var iconURL: String?
     var developerName: String?
+    var resolvedSourceURL: String?
     var apps: [KittyStoreApp]
+    var news: [KittyStoreNewsItem]
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case identifier
+        case sourceURL
+        case subtitle
+        case description
+        case iconURL
+        case developerName
+        case apps
+        case news
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        identifier = try container.decodeIfPresent(String.self, forKey: .identifier)
+        sourceURL = try container.decodeIfPresent(String.self, forKey: .sourceURL)
+        subtitle = try container.decodeIfPresent(String.self, forKey: .subtitle)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        iconURL = try container.decodeIfPresent(String.self, forKey: .iconURL)
+        developerName = try container.decodeIfPresent(String.self, forKey: .developerName)
+        resolvedSourceURL = sourceURL
+        apps = try container.decodeIfPresent([KittyStoreApp].self, forKey: .apps) ?? []
+        news = try container.decodeIfPresent([KittyStoreNewsItem].self, forKey: .news) ?? []
+    }
+}
+
+private struct KittyStoreNewsItem: Decodable, Equatable, Identifiable {
+    var identifier: String?
+    var date: String?
+    var title: String
+    var caption: String
+    var tintColor: String?
+    var imageURL: String?
+    var externalURL: String?
+    var appID: String?
+    var sourceName: String?
+    var sourceURL: String?
+
+    var id: String {
+        "\(sourceURL ?? "source")|\(identifier ?? title)|\(externalURL ?? date ?? caption)"
+    }
+
+    var displayDate: String? {
+        guard let date, !date.isEmpty else { return nil }
+        return String(date.prefix(10))
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case identifier
+        case date
+        case title
+        case caption
+        case tintColor
+        case imageURL
+        case externalURL = "url"
+        case appID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        identifier = try container.decodeIfPresent(String.self, forKey: .identifier)
+        date = try container.decodeIfPresent(String.self, forKey: .date)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? "News"
+        caption = try container.decodeIfPresent(String.self, forKey: .caption) ?? ""
+        tintColor = try container.decodeIfPresent(String.self, forKey: .tintColor)
+        imageURL = try container.decodeIfPresent(String.self, forKey: .imageURL)
+        externalURL = try container.decodeIfPresent(String.self, forKey: .externalURL)
+        appID = try container.decodeIfPresent(String.self, forKey: .appID)
+        sourceName = nil
+        sourceURL = nil
+    }
 }
 
 private struct KittyStoreApp: Decodable, Equatable, Identifiable {
@@ -2514,8 +2965,10 @@ private struct KittyStoreApp: Decodable, Equatable, Identifiable {
     var subtitle: String?
     var localizedDescription: String?
     var versions: [KittyStoreVersion]
+    var sourceName: String?
+    var sourceURL: String?
 
-    var id: String { bundleIdentifier }
+    var id: String { "\(sourceURL ?? "source")|\(bundleIdentifier)" }
 }
 
 private struct KittyStoreVersion: Decodable, Equatable, Identifiable {

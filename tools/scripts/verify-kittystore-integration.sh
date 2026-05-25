@@ -100,6 +100,12 @@ require_grep "BuildKit configurable KittyStore source" "AppReleaseSource.current
 require_absent "hardcoded AppUpdateStore NightVibes repo URL" "github.com/NightVibes33/litter" "apps/ios/Sources/Litter/Models/AppUpdateStore.swift"
 require_absent "hardcoded BuildKit KittyStore NightVibes repo URL" "github.com/NightVibes33/litter" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
 
+require_grep "KittyStore multi-source persistence" "kittystore.source.urls.v1" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
+require_grep "KittyStore default SideStore community source" "community-apps.sidestore.io/sidecommunity.json" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
+require_grep "KittyStore aggregated source apps" "sources.flatMap(\.apps)" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
+require_grep "KittyStore source URL entry" "Source URL" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
+require_grep "KittyStore pairing import persistence" "persistPairingFile" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
+require_grep "KittyStore provisioning import persistence" "persistProvisioningProfile" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "KittyStore-owned SideStore .sideconf UI import" "Import SideStore Account" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "KittyStore-owned SideStore .sideconf handler" "importSideStoreAccount" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "KittyStore-owned Apple ID login" "saveKittyStoreAppleID" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
