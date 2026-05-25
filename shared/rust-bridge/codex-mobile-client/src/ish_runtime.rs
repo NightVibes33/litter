@@ -9,7 +9,8 @@
 //!    command (`LANG`, `TMPDIR`, `CODEX_HOME`, …).
 //! 5. Snapshot host DNS into `/etc/resolv.conf` inside the fakefs.
 //! 6. Mount `<documents>/Apps/` at `/mnt/apps/` via iSH's `realfs` driver.
-//! 7. Register the `codex_core` exec hook (`ish_exec::install()`).
+//! 7. Mount native Codex home at `/mnt/codex` and bridge `/root/.codex`.
+//! 8. Register the `codex_core` exec hook (`ish_exec::install()`).
 //!
 //! After `bootstrap`, `run(cmd, cwd)` dispatches command strings through the
 //! persistent `/bin/sh` the same way `codex_ish_run` did in Obj-C.
@@ -97,6 +98,7 @@ pub fn bootstrap(
 
     let dest = application_support_dir.join("fs");
     extract_rootfs_if_needed(bundle_fs_path, &dest)?;
+    sanitize_root_home_volatiles(&dest)?;
 
     let meta_db = dest.join("meta.db");
     if meta_db.exists() {
@@ -123,6 +125,7 @@ pub fn bootstrap(
     // normal run() path, which takes the shared lock and honors the same
     // ordering guarantees as regular command dispatch.
     runtime_setup();
+    mount_codex_home(application_support_dir);
     write_resolv_conf();
     mount_apps_dir(documents_dir);
 
@@ -196,9 +199,16 @@ where
 // ish crate's own lock serializes the actual dispatches.
 
 const RUNTIME_SETUP_SCRIPT: &str = concat!(
-    "mkdir -p /root/.codex /tmp ;",
-    "chmod 700 /root/.codex ;",
-    "chmod 1777 /tmp",
+    "mkdir -p /dev /tmp /var/tmp /usr/local/bin /root/litter ",
+    "/root/.litter/buildkit/requests /root/.litter/builds ;",
+    "chmod 1777 /tmp /var/tmp 2>/dev/null || true ;",
+    "ensure_char_device() { path=\"$1\"; major=\"$2\"; minor=\"$3\"; mode=\"$4\"; ",
+    "if [ -c \"$path\" ]; then chmod \"$mode\" \"$path\" || true; return; fi; ",
+    "if [ -e \"$path\" ]; then rm -f \"$path\"; fi; ",
+    "mknod -m \"$mode\" \"$path\" c \"$major\" \"$minor\" 2>/dev/null || true; };",
+    "ensure_char_device /dev/null 1 3 666 ;",
+    "ensure_char_device /dev/random 1 8 666 ;",
+    "ensure_char_device /dev/urandom 1 9 666",
 );
 
 pub(crate) fn runtime_env() -> HashMap<String, String> {
@@ -218,8 +228,8 @@ pub(crate) fn runtime_env() -> HashMap<String, String> {
         ("PAGER".to_string(), "cat".to_string()),
         ("EDITOR".to_string(), "vi".to_string()),
         ("HOSTNAME".to_string(), "litter".to_string()),
-        // Symmetric with the native CODEX_HOME used by the Rust process.
-        // Tools inside iSH need a fakefs-local config path.
+        // This fakefs path is symlinked to the app's native Codex home
+        // during bootstrap, so shell-installed skills are visible to Codex.
         ("CODEX_HOME".to_string(), "/root/.codex".to_string()),
     ])
 }
@@ -233,6 +243,47 @@ fn runtime_setup() {
     if rc != 0 {
         eprintln!("[ish] runtime setup failed rc={rc}");
     }
+}
+
+fn mount_codex_home(application_support_dir: &Path) {
+    let codex_home = application_support_dir.join("codex");
+    if let Err(err) = fs::create_dir_all(codex_home.join("skills")) {
+        eprintln!("[ish] could not create {}: {err}", codex_home.display());
+        return;
+    }
+    let Some(codex_home_str) = codex_home.to_str() else {
+        eprintln!("[ish] CODEX_HOME dir not utf-8: {}", codex_home.display());
+        return;
+    };
+
+    let cmd = codex_home_bridge_script(codex_home_str);
+    let (rc, output) = run(&cmd, None, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS));
+    if rc != 0 {
+        let message = String::from_utf8_lossy(&output);
+        eprintln!("[ish] mount /root/.codex bridge failed rc={rc}: {message}");
+    } else {
+        eprintln!("[ish] /root/.codex bridged to '{}'", codex_home_str);
+    }
+}
+
+fn codex_home_bridge_script(codex_home: &str) -> String {
+    format!(
+        concat!(
+            "mkdir -p /mnt/codex /tmp ;",
+            "chmod 1777 /tmp ;",
+            "mount -t real {} /mnt/codex || exit $? ;",
+            "if [ -L /root/.codex ]; then rm /root/.codex; fi ;",
+            "if [ -d /root/.codex ]; then ",
+            "cp -a /root/.codex/. /mnt/codex/ 2>/dev/null || true ;",
+            "backup=\"/root/.codex.fakefs.$(date +%s)\" ;",
+            "mv /root/.codex \"$backup\" 2>/dev/null || rm -rf /root/.codex ;",
+            "fi ;",
+            "ln -s /mnt/codex /root/.codex ;",
+            "mkdir -p /root/.codex/skills ;",
+            "chmod 700 /root/.codex"
+        ),
+        shell_quote(codex_home)
+    )
 }
 
 fn write_resolv_conf() {
@@ -400,7 +451,38 @@ fn preserve_root_home(old_root: &Path, new_root: &Path) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     copy_dir_recursive(&old_home, &new_home)?;
+    quarantine_root_home_volatiles(&new_home)?;
     eprintln!("[ish] preserved /root across rootfs replacement");
+    Ok(())
+}
+
+fn sanitize_root_home_volatiles(rootfs: &Path) -> io::Result<()> {
+    let home = rootfs.join(ROOTFS_ROOT_HOME_DIR);
+    if home.is_dir() {
+        quarantine_root_home_volatiles(&home)?;
+    }
+    Ok(())
+}
+
+fn quarantine_root_home_volatiles(home: &Path) -> io::Result<()> {
+    let quarantine = home.join(".litter").join("preserved-root");
+    for volatile in [".litter-buildkit", "builds", "litter"] {
+        let path = home.join(volatile);
+        if fs::symlink_metadata(&path).is_err() {
+            continue;
+        }
+        fs::create_dir_all(&quarantine)?;
+        let mut target = quarantine.join(volatile);
+        if target.exists() {
+            target = quarantine.join(format!("{}-{}", volatile, std::process::id()));
+        }
+        if let Err(err) = fs::rename(&path, &target) {
+            eprintln!("[ish] failed to quarantine /root/{volatile}: {err}; removing");
+            remove_path_if_exists(&path)?;
+        } else {
+            eprintln!("[ish] quarantined /root/{volatile} before fakefs boot");
+        }
+    }
     Ok(())
 }
 
@@ -564,5 +646,17 @@ mod tests {
     #[test]
     fn shell_quote_path_with_spaces() {
         assert_eq!(shell_quote("/var/Documents/Apps"), "'/var/Documents/Apps'");
+    }
+
+    #[test]
+    fn codex_home_bridge_script_mounts_and_preserves_existing_home() {
+        let script = codex_home_bridge_script("/var/mobile/Application Support/codex");
+
+        assert!(script.contains(
+            "mount -t real '/var/mobile/Application Support/codex' /mnt/codex"
+        ));
+        assert!(script.contains("cp -a /root/.codex/. /mnt/codex/"));
+        assert!(script.contains("ln -s /mnt/codex /root/.codex"));
+        assert!(script.contains("mkdir -p /root/.codex/skills"));
     }
 }
