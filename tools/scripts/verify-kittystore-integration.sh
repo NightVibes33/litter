@@ -54,6 +54,8 @@ require_grep "SideStore ADI status" "hasSideStoreADI" "apps/ios/Sources/Litter/M
 require_grep "SideStore bot import command" "litter-kittystore-import-sideconf" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
 
 require_grep "Feather remove files UI" "Remove Files" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
+require_grep "KittyStore source checksum display" "shortSHA256" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
+require_grep "KittyStore source checksum verification" "sha256Hex(for: fileURL)" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "Feather app appearance option" "appAppearance" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "Feather minimum iOS option" "minimumAppRequirement" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 require_grep "Feather remove files plan" "removeFiles" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"

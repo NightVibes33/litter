@@ -1070,11 +1070,27 @@ struct KittyStoreView: View {
                     }
                 }
                 let fileURL = try await driver.start(request: request)
+                if let expectedSHA = version.normalizedSHA256 {
+                    sourceIPADownloadMessage = "Verifying \(storeApp.name) checksum"
+                    let actualSHA = try LitterDownloadSupport.sha256Hex(for: fileURL)
+                    guard actualSHA == expectedSHA else {
+                        try? FileManager.default.removeItem(at: fileURL)
+                        throw NSError(
+                            domain: "KittyStoreSourceChecksum",
+                            code: 65,
+                            userInfo: [NSLocalizedDescriptionKey: "Downloaded IPA checksum mismatch. Expected \(expectedSHA), got \(actualSHA)."]
+                        )
+                    }
+                }
                 let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
                 let size = values?.fileSize.map(Int64.init)
                 importedIPA = KittyStoreImportedFile(displayName: fileName, stagedPath: fileURL.path, size: size, isDirectory: false)
                 sourceIPADownloadInProgress = false
-                sourceIPADownloadMessage = "Ready to sign \(fileName)"
+                if let shortSHA = version.shortSHA256 {
+                    sourceIPADownloadMessage = "Ready to sign \(fileName) (verified \(shortSHA))"
+                } else {
+                    sourceIPADownloadMessage = "Ready to sign \(fileName)"
+                }
                 if openSigning { showingSigningSheet = true }
             } catch is CancellationError {
                 sourceIPADownloadInProgress = false
@@ -1810,6 +1826,9 @@ struct KittyStoreView: View {
                 if let size = version.size, size > 0 {
                     statusPill(LitterDownloadSupport.formatBytes(size), color: LitterTheme.textSecondary)
                 }
+                if let shortSHA = version.shortSHA256 {
+                    statusPill(shortSHA, color: LitterTheme.textSecondary)
+                }
                 if let minOS = version.minOSVersion, !minOS.isEmpty {
                     statusPill("iOS \(minOS)+", color: LitterTheme.textSecondary)
                 }
@@ -2312,11 +2331,20 @@ private struct KittyStoreVersion: Decodable, Equatable, Identifiable {
     var downloadURL: String
     var size: Int64?
     var minOSVersion: String?
+    var sha256: String?
 
     var id: String { "\(version ?? "unknown")-\(buildVersion ?? "0")-\(downloadURL)" }
 
     var cleanedDescription: String {
         localizedDescription?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    var normalizedSHA256: String? {
+        LitterDownloadSupport.normalizedSHA256(sha256)
+    }
+
+    var shortSHA256: String? {
+        normalizedSHA256.map { "SHA \(String($0.prefix(12)))" }
     }
 
     var displayDate: String? {
