@@ -474,24 +474,24 @@ struct KittyStoreView: View {
     }
 
     private var signingSettingsPanel: some View {
-        panel(title: "Signing", icon: "signature") {
+        panel(title: "Certificate Pair", icon: "signature") {
             VStack(spacing: 10) {
                 readinessRow(
-                    "Certificate",
-                    detail: buildKitStatus?.nyxianSigningCertificateDetail ?? "Import a .p12 and password. KittyStore validates password, private key, expiry, and revocation.",
+                    "Certificate (.p12)",
+                    detail: buildKitStatus?.nyxianSigningCertificateDetail ?? "Import the .p12 half of the Feather certificate pair. KittyStore validates password, private key, expiry, and revocation.",
                     state: buildKitStatus?.nyxianSigningCertificateInstalled
                 )
                 settingsSecureField("Certificate password", text: $certificatePasswordInput)
                 if let pendingCertificateFile {
-                    readinessRow("Selected Certificate", detail: pendingCertificateFile.displayName, state: nil)
+                    readinessRow("Selected .p12", detail: pendingCertificateFile.displayName, state: nil)
                 }
-                actionRow("Import Certificate", detail: "Choose the .p12 used for imported-certificate signing.", icon: "key") {
+                actionRow("Import .p12", detail: "Choose the certificate identity used with a .mobileprovision profile.", icon: "key") {
                     presentImporter(.certificate)
                 }
                 actionRow("Validate & Save Certificate", detail: "Reject wrong passwords, missing private keys, expired certs, and revoked certs.", icon: "checkmark.seal", enabled: pendingCertificateFile != nil) {
                     saveImportedCertificate()
                 }
-                actionRow("Clear Imported Certificate", detail: "Remove the saved .p12 and password.", icon: "trash", enabled: NyxianSigningCertificateStorage.loadIdentity() != nil) {
+                actionRow("Clear .p12", detail: "Remove the saved certificate identity and password.", icon: "trash", enabled: NyxianSigningCertificateStorage.loadIdentity() != nil) {
                     clearKittyStoreCertificate()
                 }
 
@@ -617,7 +617,7 @@ struct KittyStoreView: View {
                 showingSigningSheet = false
                 selectedTab = .settings
             } label: {
-                LabeledContent("Certificate") {
+                LabeledContent("Certificate (.p12)") {
                     Text(buildKitStatus?.nyxianSigningCertificateInstalled == true ? "Validated" : "No Certificate")
                         .foregroundStyle(buildKitStatus?.nyxianSigningCertificateInstalled == true ? LitterTheme.success : LitterTheme.warning)
                 }
@@ -627,7 +627,7 @@ struct KittyStoreView: View {
             Button {
                 presentImporter(.provisioningProfile)
             } label: {
-                LabeledContent("Provisioning Profile") {
+                LabeledContent("Profile (.mobileprovision)") {
                     Text(importedProvisioningProfile?.displayName ?? profileFallbackTitle)
                         .foregroundStyle(importedProvisioningProfile == nil ? LitterTheme.textSecondary : LitterTheme.textPrimary)
                 }
@@ -641,9 +641,9 @@ struct KittyStoreView: View {
                     .textSelection(.enabled)
             }
         } header: {
-            Text("Signing")
+            Text("Certificate Pair")
         } footer: {
-            Text("Certificate signing follows Feather's flow. KittyStore settings validate bad passwords, missing private keys, profile mismatch, expiry, and revocation before a certificate is treated as usable.")
+            Text("Feather-style certificate signing uses both files: a validated .p12 identity from KittyStore Settings and a per-app .mobileprovision profile selected here.")
         }
         .listRowBackground(LitterTheme.surface.opacity(0.62))
     }

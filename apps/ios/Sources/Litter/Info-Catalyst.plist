@@ -44,6 +44,9 @@
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tailscale</string>
+		<string>sidestore</string>
+		<string>altstore</string>
+		<string>localdevvpn</string>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
