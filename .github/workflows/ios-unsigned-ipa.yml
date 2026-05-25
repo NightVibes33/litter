@@ -39,6 +39,7 @@ on:
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
       - 'tools/scripts/verify-nyxian-source-import.sh'
+      - 'tools/scripts/verify-kittystore-integration.sh'
       - 'tools/scripts/build-nyxian-buildkit-assets.sh'
       - 'tools/scripts/verify-nyxian-buildkit-assets.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
@@ -99,6 +100,11 @@ jobs:
         run: |
           set -euo pipefail
           tools/scripts/verify-nyxian-source-import.sh
+
+      - name: Verify KittyStore SideStore/Feather integration
+        run: |
+          set -euo pipefail
+          tools/scripts/verify-kittystore-integration.sh
 
       - name: Cache Homebrew downloads
         uses: actions/cache@v4
