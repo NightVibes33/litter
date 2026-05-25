@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 
 struct KittyStoreView: View {
     @Environment(\.openURL) private var openURL
-    @StateObject private var updater = AppUpdateStore()
     @StateObject private var taskBag = ViewTaskBag()
     @State private var source: KittyStoreSource?
     @State private var sourcePhase: KittyStoreSourcePhase = .idle
@@ -25,6 +24,21 @@ struct KittyStoreView: View {
     @State private var installedDeviceAppsInProgress = false
     @State private var sourceIPADownloadInProgress = false
     @State private var sourceIPADownloadMessage: String?
+    @State private var appleIDEmailInput = ""
+    @State private var appleIDTeamIDInput = ""
+    @State private var appleIDPasswordInput = ""
+    @State private var appleIDTwoFactorCodeInput = ""
+    @State private var appleIDAnisetteURLInput = NyxianAnisetteServerDirectory.defaultServerURL
+    @State private var selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.defaultServerURL
+    @State private var anisetteServerListURLInput = NyxianAnisetteServerDirectory.officialListURL
+    @State private var anisetteServers = NyxianAnisetteServerDirectory.fallbackServers
+    @State private var appleIDTeams: [KittyStoreSideStoreSigningBridge.TeamSummary] = []
+    @State private var appleIDActionMessage: String?
+    @State private var anisetteServerMessage: String?
+    @State private var certificatePasswordInput = ""
+    @State private var certificateActionMessage: String?
+    @State private var pendingCertificateFile: KittyStoreImportedFile?
+    @State private var sideStoreAccountActionMessage: String?
     @State private var importedIPA: KittyStoreImportedFile?
     @State private var importedProvisioningProfile: KittyStoreImportedFile?
     @State private var importedPairingFile: KittyStoreImportedFile?
@@ -59,7 +73,7 @@ struct KittyStoreView: View {
     @State private var enableLiquidGlass = false
 
     private var apps: [KittyStoreApp] { source?.apps ?? [] }
-    private var currentBundleIdentifier: String { updater.latestManifest?.bundleIdentifier ?? Bundle.main.bundleIdentifier ?? "com.sigkitten.litter" }
+    private var currentBundleIdentifier: String { Bundle.main.bundleIdentifier ?? "com.sigkitten.litter" }
     private var app: KittyStoreApp? {
         if let selectedSourceAppID,
            let selected = apps.first(where: { $0.bundleIdentifier == selectedSourceAppID }) {
@@ -67,10 +81,10 @@ struct KittyStoreView: View {
         }
         return apps.first { $0.bundleIdentifier == currentBundleIdentifier } ?? apps.first
     }
-    private var selectedAppName: String { app?.name ?? updater.latestManifest?.name ?? "App" }
+    private var selectedAppName: String { app?.name ?? "App" }
     private var versions: [KittyStoreVersion] { app?.versions ?? [] }
     private var latestVersion: KittyStoreVersion? { versions.first }
-    private var sourceURL: String { updater.latestManifest?.sideStoreSourceURL ?? updater.stableSourceURL }
+    private var sourceURL: String { source?.sourceURL ?? AppReleaseSource.current.stableSourceURLString }
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -105,7 +119,7 @@ struct KittyStoreView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .disabled(updater.phase.isBusy || sourcePhase.isBusy)
+                .disabled(sourcePhase.isBusy || sourceIPADownloadInProgress)
                 .accessibilityLabel("Refresh KittyStore")
             }
         }
@@ -163,10 +177,16 @@ struct KittyStoreView: View {
                 Text("Uninstall \(request.bundleIdentifier) through the SideStore minimuxer bridge.")
             }
         }
-        .task { await refreshAll() }
+        .onChange(of: selectedAnisetteServerAddress) { _, newValue in
+            guard newValue != NyxianAnisetteServerDirectory.customSelectionID else { return }
+            appleIDAnisetteURLInput = newValue
+        }
+        .task {
+            await refreshAll()
+            await refreshAnisetteServers(showSuccess: false)
+        }
         .onDisappear {
             taskBag.cancelAll()
-            if updater.phase.isBusy { updater.cancelDownload() }
         }
     }
 
@@ -187,15 +207,13 @@ struct KittyStoreView: View {
         storeScroll {
             heroPanel
             sourceAppsPanel
-            featuredPanel
-            installPanel
+            versionHistoryPanel
         }
     }
 
     private var myAppsWorkspace: some View {
         storeScroll {
             myAppsPanel
-            versionHistoryPanel
         }
     }
 
@@ -266,9 +284,9 @@ struct KittyStoreView: View {
             metricGrid {
                 metricItem("Source", source?.name ?? "Not Loaded")
                 metricItem("Apps", apps.isEmpty ? "Unknown" : "\(apps.count)")
-                metricItem("Latest", updater.latestManifest?.displayVersion ?? latestVersion?.version ?? "Unknown")
+                metricItem("Latest", latestVersion?.version ?? "Unknown")
                 metricItem("Versions", versions.isEmpty ? "Unknown" : "\(versions.count)")
-                if let size = updater.latestManifest?.size ?? latestVersion?.size, size > 0 {
+                if let size = latestVersion?.size, size > 0 {
                     metricItem("IPA Size", LitterDownloadSupport.formatBytes(size))
                 }
             }
@@ -297,171 +315,59 @@ struct KittyStoreView: View {
         }
     }
 
-    private var featuredPanel: some View {
-        panel(title: "Featured Build", icon: "sparkles") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 10) {
-                    statusPill(updater.availability.title, color: availabilityColor)
-                    if updater.phase.isBusy || sourcePhase.isBusy {
-                        statusPill("Refreshing", color: LitterTheme.warning)
-                    }
-                    Spacer(minLength: 0)
-                }
-
-                Text(updater.statusMessage)
-                    .litterFont(.caption)
-                    .foregroundStyle(LitterTheme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let notes = updater.latestManifest?.releaseNotes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
-                    Text(shortNotes(notes))
-                        .litterMonoFont(size: 11, weight: .regular)
-                        .foregroundStyle(LitterTheme.textSecondary)
-                        .textSelection(.enabled)
-                        .lineLimit(12)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(LitterTheme.surfaceLight.opacity(0.3), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                } else if let latestVersion {
-                    Text(latestVersion.cleanedDescription)
-                        .litterMonoFont(size: 11, weight: .regular)
-                        .foregroundStyle(LitterTheme.textSecondary)
-                        .textSelection(.enabled)
-                        .lineLimit(12)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(LitterTheme.surfaceLight.opacity(0.3), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                } else {
-                    emptyState(sourcePhase.message)
-                }
-            }
-        }
-    }
-
-    private var installPanel: some View {
-        panel(title: "Install", icon: "square.and.arrow.down") {
-            VStack(spacing: 10) {
-                if let url = updater.sideStoreInstallURL {
-                    actionRow("Install Latest", detail: "Open the newest IPA in SideStore", icon: "square.and.arrow.down") { openURL(url) }
-                }
-
-                if let url = updater.altStoreInstallURL {
-                    actionRow("Install with AltStore", detail: "Open the newest IPA in AltStore", icon: "square.and.arrow.down.on.square") { openURL(url) }
-                }
-
-                Button {
-                    updater.downloadUpdate()
-                } label: {
-                    actionRowLabel(downloadTitle, detail: updater.progressText, icon: downloadIcon, enabled: updater.canDownload)
-                }
-                .buttonStyle(.plain)
-                .disabled(!updater.canDownload)
-
-                if updater.phase == .downloading || updater.phase == .verifying {
-                    ProgressView(value: updater.downloadProgress)
-                        .tint(LitterTheme.accent)
-                    if !updater.speedText.isEmpty {
-                        Text(updater.speedText)
-                            .litterMonoFont(size: 11, weight: .regular)
-                            .foregroundStyle(LitterTheme.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-
-                if let downloadedURL = updater.downloadedIPAURL {
-                    actionRow("Share Downloaded IPA", detail: updater.canInstallDownloadedIPA ? updater.checksumText : "Waiting for checksum verification", icon: "square.and.arrow.up", enabled: updater.canInstallDownloadedIPA) {
-                        shareItem = KittyStoreShareItem(url: downloadedURL)
-                    }
-                }
-
-                if let remote = updater.remoteIPAURL {
-                    actionRow("Copy IPA Link", detail: remote.host ?? "Release asset", icon: "doc.on.doc") {
-                        UIPasteboard.general.string = remote.absoluteString
-                        copiedMessage = "Copied IPA link"
-                    }
-                }
-
-                if let releaseURL = updater.releaseURL {
-                    actionRow("Open Release", detail: releaseURL.host ?? "GitHub Releases", icon: "safari") { openURL(releaseURL) }
-                }
-
-                copiedNotice
-            }
-        }
-    }
-
     private var myAppsPanel: some View {
         panel(title: "My Apps", icon: "square.stack.3d.up.fill") {
             VStack(spacing: 10) {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(LitterTheme.accent.opacity(0.18))
-                        Image(systemName: "app.fill")
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(LitterTheme.accent)
-                    }
-                    .frame(width: 52, height: 52)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(app?.name ?? "Litter")
-                            .litterFont(.headline, weight: .semibold)
-                            .foregroundStyle(LitterTheme.textPrimary)
-                        Text(app?.bundleIdentifier ?? "com.sigkitten.litter")
-                            .litterMonoFont(size: 11, weight: .regular)
-                            .foregroundStyle(LitterTheme.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Spacer(minLength: 0)
-                    statusPill(updater.availability.title, color: availabilityColor)
-                }
-
-                readinessRow("Current", detail: updater.installedVersion.displayString, state: true)
-                readinessRow("Latest", detail: updater.latestManifest?.displayVersion ?? latestVersion?.version ?? "Unknown", state: updater.latestManifest != nil || latestVersion != nil)
-                readinessRow("Refresh path", detail: buildKitStatus?.localDevVPNConnected == true ? "LocalDevVPN detected" : "LocalDevVPN not detected", state: buildKitStatus?.localDevVPNConnected)
+                readinessRow(
+                    "Apple ID",
+                    detail: buildKitStatus?.appleIDDetail ?? "Add Apple ID in KittyStore Settings for SideStore signing.",
+                    state: buildKitStatus?.appleIDConfigured
+                )
+                readinessRow(
+                    "Pairing File",
+                    detail: importedPairingFile?.displayName ?? "Import the SideStore pairing file in App Refresh.",
+                    state: importedPairingFile != nil
+                )
+                readinessRow(
+                    "LocalDevVPN",
+                    detail: buildKitStatus?.localDevVPNDetail ?? "Required for direct on-device install and refresh.",
+                    state: buildKitStatus?.localDevVPNConnected
+                )
                 readinessRow(
                     "Device Apps",
-                    detail: installedDeviceAppsInProgress ? "Loading installed apps from SideStore minimuxer." : (installedDeviceAppsMessage ?? "Load installed apps through the imported pairing file."),
+                    detail: installedDeviceAppsInProgress ? "Loading installed apps from SideStore minimuxer." : (installedDeviceAppsMessage ?? "Load apps from the paired device."),
                     state: installedDeviceApps.isEmpty ? nil : true
                 )
 
-                actionRow("Refresh Store", detail: "Reload source, update feed, and BuildKit readiness", icon: "arrow.clockwise") {
-                    taskBag.run { await refreshAll() }
-                }
-                actionRow(
-                    "Load Installed Apps",
-                    detail: importedPairingFile == nil ? "Import a pairing file before browsing device apps." : "Browse user-installed apps through SideStore minimuxer.",
-                    icon: "iphone.gen3",
-                    enabled: importedPairingFile != nil && KittyStoreMinimuxerBridge.isLinked && !installedDeviceAppsInProgress
-                ) {
+                actionRow("Load Installed Apps", detail: importedPairingFile == nil ? "Import a pairing file before browsing installed apps." : "Browse installed apps through the SideStore minimuxer bridge.", icon: "iphone.gen3", enabled: importedPairingFile != nil && KittyStoreMinimuxerBridge.isLinked && !installedDeviceAppsInProgress) {
                     loadInstalledDeviceApps()
                 }
+                actionRow("Sign IPA", detail: "Open the Feather-style signing workspace.", icon: "signature") {
+                    showingSigningSheet = true
+                }
+                actionRow("Refresh Store", detail: "Reload sources, accounts, signing status, and device readiness.", icon: "arrow.clockwise") {
+                    taskBag.run { await refreshAll() }
+                }
 
-                if !installedDeviceApps.isEmpty {
-                    ForEach(Array(installedDeviceApps.prefix(12))) { installedApp in
+                if installedDeviceApps.isEmpty {
+                    emptyState(installedDeviceAppsMessage ?? "No installed apps loaded from the paired device yet.")
+                } else {
+                    ForEach(Array(installedDeviceApps.prefix(30))) { installedApp in
                         installedDeviceAppRow(installedApp)
                     }
                 }
-                actionRow("Sign IPA", detail: "Open the Feather-style signing workspace", icon: "signature") {
-                    showingSigningSheet = true
-                }
+
                 if let selectedApp = app, let latest = selectedApp.versions.first {
-                    actionRow("Refresh Latest", detail: "Download, sign, then refresh \(selectedApp.name) through SideStore", icon: "arrow.triangle.2.circlepath") {
-                        postSigningAction = .refresh
+                    readinessRow("Selected Source App", detail: "\(selectedApp.name) \(latest.version ?? latest.buildVersion ?? "latest")", state: true)
+                    if let sideStoreURL = installerURL(scheme: "sidestore", host: "install", targetURL: latest.downloadURL) {
+                        actionRow("Install Selected", detail: "Open the selected source IPA in SideStore.", icon: "square.and.arrow.down") { openURL(sideStoreURL) }
+                    }
+                    actionRow("Sign Selected", detail: "Download \(selectedApp.name), open signing, then install or refresh.", icon: "signature") {
                         downloadSourceIPAForSigning(storeApp: selectedApp, version: latest, openSigning: true)
                     }
-                }
-                if let selectedApp = app {
-                    actionRow(
-                        "Remove from Device",
-                        detail: importedPairingFile == nil ? "Import a pairing file before uninstalling." : "Uninstall \(selectedApp.bundleIdentifier) through SideStore",
-                        icon: "trash",
-                        enabled: importedPairingFile != nil && KittyStoreMinimuxerBridge.isLinked && !deviceActionInProgress
-                    ) {
-                        pendingDeviceRemoval = KittyStoreRemovalRequest(name: selectedApp.name, bundleIdentifier: selectedApp.bundleIdentifier)
+                    actionRow("Refresh Selected", detail: importedPairingFile == nil ? "Import a pairing file before refresh." : "Sign and refresh \(selectedApp.bundleIdentifier).", icon: "arrow.triangle.2.circlepath", enabled: importedPairingFile != nil) {
+                        postSigningAction = .refresh
+                        downloadSourceIPAForSigning(storeApp: selectedApp, version: latest, openSigning: true)
                     }
                 }
             }
@@ -487,7 +393,7 @@ struct KittyStoreView: View {
             VStack(spacing: 10) {
                 readinessRow("AltStore/SideStore source", detail: source == nil ? "Load a compatible source feed before browsing apps." : "Loaded \(apps.count) app(s) from \(source?.name ?? "source feed").", state: source != nil)
                 readinessRow("Version history", detail: versions.isEmpty ? "Refresh the source to load historical IPA versions." : "\(versions.count) installable IPA versions are listed.", state: !versions.isEmpty)
-                readinessRow("SideStore install", detail: "Uses sidestore:// links; SideStore signs and installs the IPA.", state: updater.sideStoreInstallURL != nil)
+                readinessRow("SideStore install", detail: "Uses sidestore:// install links for every source app version.", state: source != nil)
                 readinessRow("LocalDevVPN", detail: buildKitStatus?.localDevVPNDetail ?? "Required for SideStore-style on-device install and refresh.", state: buildKitStatus?.localDevVPNConnected)
             }
         }
@@ -523,11 +429,66 @@ struct KittyStoreView: View {
             VStack(spacing: 10) {
                 readinessRow(
                     "Apple ID",
-                    detail: buildKitStatus?.appleIDDetail ?? "Save Apple ID credentials and Anisette details in BuildKit settings.",
+                    detail: buildKitStatus?.appleIDDetail ?? "Not logged in.",
                     state: buildKitStatus?.appleIDConfigured
                 )
-                navigationActionRow("Apple ID Settings", detail: "Open the SideStore-style account, Anisette, and team setup.", icon: "person.badge.key") {
-                    BuildKitSettingsView()
+
+                settingsTextField("Apple ID email", text: $appleIDEmailInput, keyboardType: .emailAddress, textContentType: .username)
+                settingsTextField("Team ID (optional)", text: $appleIDTeamIDInput, autocapitalization: .characters)
+                settingsSecureField("Apple ID password or app-specific password", text: $appleIDPasswordInput)
+                settingsTextField("Two-factor code", text: $appleIDTwoFactorCodeInput, keyboardType: .numberPad, textContentType: .oneTimeCode)
+
+                Picker("Anisette server", selection: $selectedAnisetteServerAddress) {
+                    ForEach(anisetteServers) { server in
+                        Text(server.displayName).tag(server.address)
+                    }
+                    Text("Custom").tag(NyxianAnisetteServerDirectory.customSelectionID)
+                }
+                .pickerStyle(.menu)
+                .padding(10)
+                .background(LitterTheme.surfaceLight.opacity(0.3), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                if selectedAnisetteServerAddress == NyxianAnisetteServerDirectory.customSelectionID {
+                    settingsTextField("Custom Anisette server URL", text: $appleIDAnisetteURLInput, keyboardType: .URL)
+                }
+                settingsTextField("Anisette server list URL", text: $anisetteServerListURLInput, keyboardType: .URL)
+
+                if !appleIDTeams.isEmpty {
+                    Picker("Signing team", selection: $appleIDTeamIDInput) {
+                        ForEach(appleIDTeams, id: \.id) { team in
+                            Text(team.displayText).tag(team.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .padding(10)
+                    .background(LitterTheme.surfaceLight.opacity(0.3), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                    actionRow("Save Selected Team", detail: appleIDTeamIDInput.isEmpty ? "Choose a team returned by Apple ID login." : "Use \(appleIDTeamIDInput) for SideStore signing.", icon: "person.2.badge.gearshape") {
+                        taskBag.run { await saveSelectedAppleIDTeam() }
+                    }
+                }
+
+                actionRow("Login Apple ID", detail: KittyStoreSideStoreSigningBridge.isLinked ? "Authenticate with SideStore AltSign and save the selected team." : "Save the account locally; this build is missing AltSign linkage.", icon: "person.badge.key.fill", enabled: !appleIDEmailInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !appleIDPasswordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                    taskBag.run { await saveKittyStoreAppleID() }
+                }
+                actionRow("Import SideStore Account", detail: "Import a .sideconf account, ADI fields, certificate, and password.", icon: "person.crop.circle.badge.plus") {
+                    presentImporter(.sideStoreAccount)
+                }
+                actionRow("Refresh Anisette Servers", detail: "Reload the SideStore Anisette server list.", icon: "arrow.clockwise.circle") {
+                    taskBag.run { await refreshAnisetteServers(showSuccess: true) }
+                }
+                actionRow("Clear Apple ID Login", detail: "Remove the saved Apple ID and Keychain password.", icon: "person.crop.circle.badge.xmark", enabled: NyxianAppleIDStore.load() != nil) {
+                    clearKittyStoreAppleID()
+                }
+
+                if let appleIDActionMessage, !appleIDActionMessage.isEmpty {
+                    messageBlock(appleIDActionMessage)
+                }
+                if let sideStoreAccountActionMessage, !sideStoreAccountActionMessage.isEmpty {
+                    messageBlock(sideStoreAccountActionMessage)
+                }
+                if let anisetteServerMessage, !anisetteServerMessage.isEmpty {
+                    messageBlock(anisetteServerMessage)
                 }
             }
         }
@@ -538,19 +499,37 @@ struct KittyStoreView: View {
             VStack(spacing: 10) {
                 readinessRow(
                     "Certificate",
-                    detail: buildKitStatus?.nyxianSigningCertificateDetail ?? "Import a .p12, password, private key, and mobileprovision before certificate signing.",
+                    detail: buildKitStatus?.nyxianSigningCertificateDetail ?? "Import a .p12 and password. KittyStore validates password, private key, expiry, and revocation.",
                     state: buildKitStatus?.nyxianSigningCertificateInstalled
                 )
+                settingsSecureField("Certificate password", text: $certificatePasswordInput)
+                if let pendingCertificateFile {
+                    readinessRow("Selected Certificate", detail: pendingCertificateFile.displayName, state: nil)
+                }
+                actionRow("Import Certificate", detail: "Choose the .p12 used for imported-certificate signing.", icon: "key") {
+                    presentImporter(.certificate)
+                }
+                actionRow("Validate & Save Certificate", detail: "Reject wrong passwords, missing private keys, expired certs, and revoked certs.", icon: "checkmark.seal", enabled: pendingCertificateFile != nil) {
+                    saveImportedCertificate()
+                }
+                actionRow("Clear Imported Certificate", detail: "Remove the saved .p12 and password.", icon: "trash", enabled: NyxianSigningCertificateStorage.loadIdentity() != nil) {
+                    clearKittyStoreCertificate()
+                }
+
                 readinessRow(
                     "Provisioning Profile",
-                    detail: buildKitStatus?.embeddedProvisionPresent == true ? "Embedded profile is available." : "Use an embedded profile or import one in the signing workspace.",
-                    state: buildKitStatus?.embeddedProvisionPresent
+                    detail: importedProvisioningProfile?.displayName ?? (buildKitStatus?.embeddedProvisionPresent == true ? "Embedded profile is available." : "Import a .mobileprovision in signing."),
+                    state: importedProvisioningProfile != nil || buildKitStatus?.embeddedProvisionPresent == true
                 )
-                navigationActionRow("Certificate Settings", detail: "Validate .p12 password, private key, profile match, and revocation state.", icon: "checkmark.seal") {
-                    BuildKitSettingsView()
+                actionRow("Import Provisioning Profile", detail: "Choose a .mobileprovision for certificate signing.", icon: "doc.badge.gearshape") {
+                    presentImporter(.provisioningProfile)
                 }
-                actionRow("Signing Workspace", detail: "Import IPAs, profiles, dylibs, tweaks, entitlements, and signing properties.", icon: "slider.horizontal.3") {
+                actionRow("Signing Workspace", detail: "Import IPAs, profiles, dylibs, tweaks, entitlements, and properties.", icon: "slider.horizontal.3") {
                     showingSigningSheet = true
+                }
+
+                if let certificateActionMessage, !certificateActionMessage.isEmpty {
+                    messageBlock(certificateActionMessage)
                 }
             }
         }
@@ -574,6 +553,9 @@ struct KittyStoreView: View {
                     detail: KittyStoreMinimuxerBridge.isLinked ? "Linked into this build." : "This IPA was not linked with SideStore minimuxer yet.",
                     state: KittyStoreMinimuxerBridge.isLinked
                 )
+                actionRow("Open LocalDevVPN", detail: "Launch the real LocalDevVPN app and enable its tunnel before install or refresh.", icon: "network") {
+                    if let url = URL(string: "localdevvpn://") { openURL(url) }
+                }
                 actionRow("Import Pairing File", detail: "Choose the pairing file used for SideStore install and refresh.", icon: "doc.badge.gearshape") {
                     presentImporter(.pairingFile)
                 }
@@ -586,8 +568,11 @@ struct KittyStoreView: View {
             VStack(spacing: 10) {
                 readinessRow("Source Feed", detail: sourcePhase.message, state: source != nil)
                 readinessRow("BuildKit", detail: buildKitStatus == nil ? "Status has not loaded yet." : "Status refreshed from the local BuildKit bridge.", state: buildKitStatus != nil)
-                actionRow("Refresh Diagnostics", detail: "Reload source, update status, certificate checks, and LocalDevVPN state.", icon: "arrow.clockwise") {
+                actionRow("Refresh Diagnostics", detail: "Reload source, account, certificate, and LocalDevVPN state.", icon: "arrow.clockwise") {
                     taskBag.run { await refreshAll() }
+                }
+                navigationActionRow("Advanced BuildKit Diagnostics", detail: "Open raw BuildKit assets, commands, and fakefs checks.", icon: "wrench.and.screwdriver") {
+                    BuildKitSettingsView()
                 }
             }
         }
@@ -635,7 +620,7 @@ struct KittyStoreView: View {
                 KittyStoreTextEditorView(title: "Identifier", text: $bundleIdentifierOverride, placeholder: app?.bundleIdentifier ?? "com.example.app")
             }
             signingInfoLink("Version", value: displayedVersion) {
-                KittyStoreTextEditorView(title: "Version", text: $appVersionOverride, placeholder: latestVersion?.version ?? updater.latestManifest?.displayVersion ?? "1.0")
+                KittyStoreTextEditorView(title: "Version", text: $appVersionOverride, placeholder: latestVersion?.version ?? "1.0")
             }
         } header: {
             Text("Customization")
@@ -657,14 +642,16 @@ struct KittyStoreView: View {
                 }
             }
 
-            NavigationLink {
-                BuildKitSettingsView()
+            Button {
+                showingSigningSheet = false
+                selectedTab = .settings
             } label: {
                 LabeledContent("Certificate") {
                     Text(buildKitStatus?.nyxianSigningCertificateInstalled == true ? "Validated" : "No Certificate")
                         .foregroundStyle(buildKitStatus?.nyxianSigningCertificateInstalled == true ? LitterTheme.success : LitterTheme.warning)
                 }
             }
+            .buttonStyle(.plain)
 
             Button {
                 presentImporter(.provisioningProfile)
@@ -685,21 +672,23 @@ struct KittyStoreView: View {
         } header: {
             Text("Signing")
         } footer: {
-            Text("Certificate signing follows Feather's flow. Certificate validation, bad password detection, private key checks, profile matching, and revocation checks are handled in BuildKit settings before a certificate is treated as usable.")
+            Text("Certificate signing follows Feather's flow. KittyStore settings validate bad passwords, missing private keys, profile mismatch, expiry, and revocation before a certificate is treated as usable.")
         }
         .listRowBackground(LitterTheme.surface.opacity(0.62))
     }
 
     private var sideStoreTransportSection: some View {
         Section {
-            NavigationLink {
-                BuildKitSettingsView()
+            Button {
+                showingSigningSheet = false
+                selectedTab = .settings
             } label: {
                 LabeledContent("Apple ID") {
                     Text(buildKitStatus?.appleIDConfigured == true ? "Logged In" : "Missing")
                         .foregroundStyle(buildKitStatus?.appleIDConfigured == true ? LitterTheme.success : LitterTheme.warning)
                 }
             }
+            .buttonStyle(.plain)
 
             Button {
                 presentImporter(.pairingFile)
@@ -731,7 +720,7 @@ struct KittyStoreView: View {
         } header: {
             Text("SideStore Install")
         } footer: {
-            Text("Apple ID, SideStore Anisette, pairing file, and LocalDevVPN are the SideStore-style path for direct on-device install and refresh. They are separate from Feather-style certificate signing.")
+            Text("Apple ID, SideStore Anisette, pairing file, and LocalDevVPN are configured in KittyStore Settings for direct on-device install and refresh.")
         }
         .listRowBackground(LitterTheme.surface.opacity(0.62))
     }
@@ -887,7 +876,7 @@ struct KittyStoreView: View {
     private var displayedVersion: String {
         let trimmed = appVersionOverride.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
-        return latestVersion?.version ?? updater.latestManifest?.displayVersion ?? "Unknown"
+        return latestVersion?.version ?? latestVersion?.buildVersion ?? "Unknown"
     }
 
     private var profileFallbackTitle: String {
@@ -906,46 +895,17 @@ struct KittyStoreView: View {
         switch selectedSigningMode {
         case .certificate:
             if signingType == .adhoc { return signingInProgress ? "Native Feather/Zsign ad-hoc signing is running." : "Ready to ad-hoc sign with the native Feather/Zsign path." }
-            if buildKitStatus?.nyxianSigningCertificateInstalled != true { return "Import a valid certificate in BuildKit settings." }
+            if buildKitStatus?.nyxianSigningCertificateInstalled != true { return "Import a valid certificate in KittyStore Settings." }
             return signingInProgress ? "Native Feather/Zsign signing is running." : "Ready to sign with the native Feather/Zsign path."
         case .appleID:
-            if buildKitStatus?.appleIDConfigured != true { return "Add Apple ID login in BuildKit settings." }
+            if buildKitStatus?.appleIDConfigured != true { return "Add Apple ID login in KittyStore Settings." }
             if importedPairingFile == nil { return "Import the iOS pairing file for SideStore Apple ID signing." }
             if !KittyStoreMinimuxerBridge.isLinked { return "This build was not linked with the SideStore minimuxer bridge yet." }
             return signingInProgress ? "Native signing or transfer is running." : "Inputs are ready for signing and SideStore-style \(postSigningAction.transferVerb)."
         }
     }
 
-    private var availabilityColor: Color {
-        switch updater.availability {
-        case .available: return LitterTheme.accent
-        case .upToDate: return LitterTheme.success
-        case .incompatibleIOS, .incomparable, .noCompatibleRelease: return LitterTheme.warning
-        case .remoteOlder, .unknown: return LitterTheme.textSecondary
-        }
-    }
-
-    private var downloadTitle: String {
-        switch updater.phase {
-        case .downloading: return "Downloading IPA"
-        case .verifying: return "Verifying IPA"
-        case .downloaded: return "Downloaded"
-        case .failed: return "Retry Download"
-        default: return updater.canDownload ? "Download IPA" : "Download IPA"
-        }
-    }
-
-    private var downloadIcon: String {
-        switch updater.phase {
-        case .downloading, .verifying: return "hourglass"
-        case .downloaded: return "checkmark.circle.fill"
-        case .failed: return "exclamationmark.arrow.circlepath"
-        default: return "arrow.down.circle.fill"
-        }
-    }
-
     private func refreshAll() async {
-        await updater.checkForUpdates()
         await refreshSource()
         await refreshBuildKitStatus()
     }
@@ -972,6 +932,197 @@ struct KittyStoreView: View {
     @MainActor
     private func refreshBuildKitStatus() async {
         buildKitStatus = await LitterBuildKit.shared.status(checkRevocation: true)
+        loadKittyStoreSettingsFields()
+    }
+
+    private var anisetteURLForLogin: String {
+        if selectedAnisetteServerAddress == NyxianAnisetteServerDirectory.customSelectionID {
+            return appleIDAnisetteURLInput
+        }
+        return selectedAnisetteServerAddress
+    }
+
+    @MainActor
+    private func loadKittyStoreSettingsFields() {
+        guard let account = NyxianAppleIDStore.load() else { return }
+        if appleIDEmailInput.isEmpty { appleIDEmailInput = account.email }
+        if appleIDTeamIDInput.isEmpty { appleIDTeamIDInput = account.teamID }
+        if appleIDAnisetteURLInput == NyxianAnisetteServerDirectory.defaultServerURL {
+            appleIDAnisetteURLInput = account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+            syncAnisetteSelectionFromInput()
+        }
+    }
+
+    @MainActor
+    private func refreshAnisetteServers(showSuccess: Bool) async {
+        do {
+            let listURL = try NyxianAnisetteServerDirectory.normalizedListURL(anisetteServerListURLInput)
+            anisetteServerListURLInput = listURL
+            anisetteServers = try await NyxianAnisetteServerDirectory.fetchServers(listURL: listURL)
+            syncAnisetteSelectionFromInput()
+            if showSuccess {
+                anisetteServerMessage = "Loaded \(anisetteServers.count) SideStore Anisette servers."
+            }
+        } catch {
+            anisetteServers = NyxianAnisetteServerDirectory.fallbackServers
+            syncAnisetteSelectionFromInput()
+            anisetteServerMessage = "Could not refresh SideStore Anisette servers: \(error.localizedDescription). Using bundled defaults."
+        }
+    }
+
+    @MainActor
+    private func syncAnisetteSelectionFromInput() {
+        let raw = appleIDAnisetteURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let target = raw.isEmpty ? NyxianAnisetteServerDirectory.defaultServerURL : raw
+        if anisetteServers.contains(where: { $0.address == target }) {
+            selectedAnisetteServerAddress = target
+            appleIDAnisetteURLInput = target
+        } else {
+            selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.customSelectionID
+            appleIDAnisetteURLInput = target
+        }
+    }
+
+    @MainActor
+    private func saveKittyStoreAppleID() async {
+        do {
+            let anisetteURL = anisetteURLForLogin
+            if KittyStoreSideStoreSigningBridge.isLinked {
+                let result = await KittyStoreSideStoreSigningBridge.authenticate(
+                    email: appleIDEmailInput,
+                    password: appleIDPasswordInput,
+                    requestedTeamID: appleIDTeamIDInput,
+                    anisetteServerURL: anisetteURL,
+                    twoFactorCode: appleIDTwoFactorCodeInput
+                )
+                let summary = try result.get()
+                let existingAccount = NyxianAppleIDStore.load()
+                let shouldPreserveSideStoreADI = existingAccount?.email.caseInsensitiveCompare(summary.email) == .orderedSame
+                let account = try NyxianAppleIDStore.login(
+                    email: summary.email,
+                    password: appleIDPasswordInput,
+                    teamID: summary.teamID,
+                    anisetteServerURL: summary.anisetteServerURL,
+                    sideStoreLocalUserIdentifier: shouldPreserveSideStoreADI ? existingAccount?.sideStoreLocalUserIdentifier : nil,
+                    sideStoreAdiPB: shouldPreserveSideStoreADI ? existingAccount?.sideStoreAdiPB : nil
+                )
+                appleIDEmailInput = account.email
+                appleIDTeamIDInput = summary.teamID
+                appleIDTeams = summary.availableTeams
+                appleIDAnisetteURLInput = summary.anisetteServerURL
+                syncAnisetteSelectionFromInput()
+                appleIDPasswordInput = ""
+                appleIDTwoFactorCodeInput = ""
+                appleIDActionMessage = "SideStore Apple ID login verified for \(summary.statusDetail). Teams found: \(summary.availableTeams.map(\.displayText).joined(separator: ", "))."
+            } else {
+                let existingAccount = NyxianAppleIDStore.load()
+                let loginEmail = appleIDEmailInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                let shouldPreserveSideStoreADI = existingAccount?.email.caseInsensitiveCompare(loginEmail) == .orderedSame
+                let account = try NyxianAppleIDStore.login(
+                    email: appleIDEmailInput,
+                    password: appleIDPasswordInput,
+                    teamID: appleIDTeamIDInput,
+                    anisetteServerURL: anisetteURL,
+                    sideStoreLocalUserIdentifier: shouldPreserveSideStoreADI ? existingAccount?.sideStoreLocalUserIdentifier : nil,
+                    sideStoreAdiPB: shouldPreserveSideStoreADI ? existingAccount?.sideStoreAdiPB : nil
+                )
+                appleIDEmailInput = account.email
+                appleIDTeamIDInput = account.teamID
+                appleIDTeams = []
+                appleIDAnisetteURLInput = account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+                syncAnisetteSelectionFromInput()
+                appleIDPasswordInput = ""
+                appleIDTwoFactorCodeInput = ""
+                appleIDActionMessage = "Apple ID login saved locally, but SideStore AltSign is not linked in this build yet."
+            }
+            await refreshBuildKitStatus()
+        } catch {
+            appleIDActionMessage = "Apple ID login failed: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func saveSelectedAppleIDTeam() async {
+        do {
+            guard let account = NyxianAppleIDStore.load() else {
+                appleIDActionMessage = "Log in with Apple ID before saving a signing team."
+                return
+            }
+            guard let password = try NyxianAppleIDCredentialStore.shared.loadPassword() else {
+                appleIDActionMessage = "Apple ID password is missing from Keychain. Log in again before saving a signing team."
+                return
+            }
+            let updated = try NyxianAppleIDStore.login(
+                email: account.email,
+                password: password,
+                teamID: appleIDTeamIDInput,
+                anisetteServerURL: account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL,
+                sideStoreLocalUserIdentifier: account.sideStoreLocalUserIdentifier,
+                sideStoreAdiPB: account.sideStoreAdiPB
+            )
+            appleIDEmailInput = updated.email
+            appleIDTeamIDInput = updated.teamID
+            appleIDAnisetteURLInput = updated.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+            syncAnisetteSelectionFromInput()
+            appleIDActionMessage = "Saved signing team \(updated.teamID)."
+            await refreshBuildKitStatus()
+        } catch {
+            appleIDActionMessage = "Could not save signing team: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func clearKittyStoreAppleID() {
+        do {
+            try NyxianAppleIDStore.clear()
+            appleIDEmailInput = ""
+            appleIDTeamIDInput = ""
+            appleIDPasswordInput = ""
+            appleIDTwoFactorCodeInput = ""
+            appleIDTeams = []
+            appleIDAnisetteURLInput = NyxianAnisetteServerDirectory.defaultServerURL
+            selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.defaultServerURL
+            appleIDActionMessage = "Removed Apple ID login."
+            taskBag.run { await refreshBuildKitStatus() }
+        } catch {
+            appleIDActionMessage = "Could not remove Apple ID login: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func saveImportedCertificate() {
+        guard let pendingCertificateFile else {
+            certificateActionMessage = "Import a .p12 certificate first."
+            return
+        }
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: pendingCertificateFile.stagedPath))
+            let summary = try NyxianSigningCertificateValidator.validate(
+                pkcs12Data: data,
+                password: certificatePasswordInput,
+                checkRevocation: true
+            )
+            NyxianSigningCertificateStorage.save(
+                data: data,
+                password: certificatePasswordInput,
+                summary: summary
+            )
+            self.pendingCertificateFile = nil
+            certificatePasswordInput = ""
+            certificateActionMessage = summary.importMessage
+            taskBag.run { await refreshBuildKitStatus() }
+        } catch {
+            certificateActionMessage = "Certificate import failed: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func clearKittyStoreCertificate() {
+        NyxianSigningCertificateStorage.clear()
+        pendingCertificateFile = nil
+        certificatePasswordInput = ""
+        certificateActionMessage = "Removed the imported signing certificate."
+        taskBag.run { await refreshBuildKitStatus() }
     }
 
     @MainActor
@@ -1002,6 +1153,11 @@ struct KittyStoreView: View {
         case .ipa:
             importedIPA = files.first
             if appNameOverride.isEmpty, let name = files.first?.nameWithoutExtension { appNameOverride = name }
+        case .certificate:
+            pendingCertificateFile = files.first
+            certificateActionMessage = files.first.map { "Selected \($0.displayName). Enter its password and tap Validate & Save Certificate." }
+        case .sideStoreAccount:
+            importSideStoreAccount(files.first)
         case .provisioningProfile:
             guard let file = files.first else { return }
             do {
@@ -1022,6 +1178,32 @@ struct KittyStoreView: View {
             frameworksAndPlugins.append(contentsOf: files)
         case .tweaks:
             tweaks.append(contentsOf: files)
+        }
+    }
+
+    @MainActor
+    private func importSideStoreAccount(_ file: KittyStoreImportedFile?) {
+        guard let file else { return }
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: file.stagedPath))
+            let summary = try KittyStoreSideStoreAccountImporter.importSideconf(
+                data: data,
+                anisetteServerURL: anisetteURLForLogin
+            )
+            appleIDEmailInput = summary.account.email
+            appleIDTeamIDInput = summary.account.teamID
+            appleIDAnisetteURLInput = summary.account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+            syncAnisetteSelectionFromInput()
+            appleIDPasswordInput = ""
+            appleIDTwoFactorCodeInput = ""
+            certificatePasswordInput = ""
+            pendingCertificateFile = nil
+            appleIDActionMessage = summary.message
+            sideStoreAccountActionMessage = summary.message
+            certificateActionMessage = summary.certificate.importMessage
+            taskBag.run { await refreshBuildKitStatus() }
+        } catch {
+            sideStoreAccountActionMessage = "SideStore account import failed: \(error.localizedDescription)"
         }
     }
 
@@ -1206,7 +1388,7 @@ struct KittyStoreView: View {
         case .certificate:
             if signingType != .adhoc {
                 guard buildKitStatus?.nyxianSigningCertificateInstalled == true else {
-                    signingAlert = KittyStoreSigningAlert(title: "No Certificate", message: "Import and validate a .p12 certificate in BuildKit settings first. Bad passwords, missing private keys, revoked certs, and profile mismatches stay blocked there.")
+                    signingAlert = KittyStoreSigningAlert(title: "No Certificate", message: "Import and validate a .p12 certificate in KittyStore Settings first. Bad passwords, missing private keys, revoked certs, and profile mismatches stay blocked there.")
                     return
                 }
                 if let importedProvisioningProfile {
@@ -1220,7 +1402,7 @@ struct KittyStoreView: View {
             }
         case .appleID:
             guard buildKitStatus?.appleIDConfigured == true else {
-                signingAlert = KittyStoreSigningAlert(title: "Apple ID Missing", message: "Save the Apple ID, password, and Anisette server in BuildKit settings first. Team selection happens after authentication when needed.")
+                signingAlert = KittyStoreSigningAlert(title: "Apple ID Missing", message: "Save the Apple ID, password, and Anisette server in KittyStore Settings first. Team selection happens after authentication when needed.")
                 return
             }
             guard importedPairingFile != nil else {
@@ -1318,13 +1500,13 @@ struct KittyStoreView: View {
         bundleID: String
     ) {
         guard let account = NyxianAppleIDStore.load() else {
-            signingAlert = KittyStoreSigningAlert(title: "Apple ID Missing", message: "Log in with Apple ID in BuildKit settings before using SideStore Apple ID signing.")
+            signingAlert = KittyStoreSigningAlert(title: "Apple ID Missing", message: "Log in with Apple ID in KittyStore Settings before using SideStore Apple ID signing.")
             return
         }
         let password: String
         do {
             guard let storedPassword = try NyxianAppleIDCredentialStore.shared.loadPassword() else {
-                signingAlert = KittyStoreSigningAlert(title: "Apple ID Password Missing", message: "Save the Apple ID password or app-specific password in BuildKit settings first.")
+                signingAlert = KittyStoreSigningAlert(title: "Apple ID Password Missing", message: "Save the Apple ID password or app-specific password in KittyStore Settings first.")
                 return
             }
             password = storedPassword
@@ -1913,6 +2095,42 @@ struct KittyStoreView: View {
         .background(LitterTheme.surfaceLight.opacity(0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
+    private func settingsTextField(
+        _ title: String,
+        text: Binding<String>,
+        keyboardType: UIKeyboardType = .default,
+        textContentType: UITextContentType? = nil,
+        autocapitalization: TextInputAutocapitalization = .never
+    ) -> some View {
+        TextField(title, text: text)
+            .keyboardType(keyboardType)
+            .textContentType(textContentType)
+            .textInputAutocapitalization(autocapitalization)
+            .autocorrectionDisabled()
+            .padding(10)
+            .background(LitterTheme.surfaceLight.opacity(0.3), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func settingsSecureField(_ title: String, text: Binding<String>) -> some View {
+        SecureField(title, text: text)
+            .textContentType(.password)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .padding(10)
+            .background(LitterTheme.surfaceLight.opacity(0.3), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func messageBlock(_ message: String) -> some View {
+        Text(message)
+            .litterMonoFont(size: 11, weight: .regular)
+            .foregroundStyle(LitterTheme.textSecondary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LitterTheme.surfaceLight.opacity(0.28), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
     private func readinessRow(_ title: String, detail: String, state: Bool?) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: readinessIcon(for: state))
@@ -2254,6 +2472,8 @@ private enum KittyStoreInjectFolder: String, CaseIterable, Identifiable {
 
 private enum KittyStoreImportKind: String {
     case ipa
+    case certificate
+    case sideStoreAccount
     case provisioningProfile
     case pairingFile
     case existingDylibs
@@ -2263,6 +2483,8 @@ private enum KittyStoreImportKind: String {
     var title: String {
         switch self {
         case .ipa: return "IPA"
+        case .certificate: return "Certificate"
+        case .sideStoreAccount: return "SideStore Account"
         case .provisioningProfile: return "Provisioning Profile"
         case .pairingFile: return "Pairing File"
         case .existingDylibs: return "Existing Dylibs"
@@ -2273,7 +2495,7 @@ private enum KittyStoreImportKind: String {
 
     var allowsMultipleSelection: Bool {
         switch self {
-        case .ipa, .provisioningProfile, .pairingFile: return false
+        case .ipa, .certificate, .sideStoreAccount, .provisioningProfile, .pairingFile: return false
         case .existingDylibs, .frameworksAndPlugins, .tweaks: return true
         }
     }
@@ -2282,6 +2504,10 @@ private enum KittyStoreImportKind: String {
         switch self {
         case .ipa:
             return [UTType(filenameExtension: "ipa") ?? .data, .zip, .data]
+        case .certificate:
+            return [UTType(filenameExtension: "p12") ?? .data, .data]
+        case .sideStoreAccount:
+            return [UTType(filenameExtension: "sideconf") ?? .data, .json, .data]
         case .provisioningProfile:
             return [UTType(filenameExtension: "mobileprovision") ?? .data, .propertyList, .data]
         case .pairingFile:

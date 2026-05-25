@@ -1,0 +1,6 @@
+CodeSigning.xcconfig
+*.ipa
+/build
+
+**/.DS_Store
+/LocalDevVPN.xcodeproj/project.xcworkspace/xcuserdata/dan.xcuserdatad/UserInterfaceState.xcuserstate

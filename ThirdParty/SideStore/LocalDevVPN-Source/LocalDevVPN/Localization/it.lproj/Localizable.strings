@@ -1,0 +1,152 @@
+/* MARK: Start Screen */
+
+"current_status" = "Stato attuale";
+
+"disconnected" = "Disconnesso";
+"connecting" = "Connessione in corso";
+"connected" = "Connesso";
+"disconnecting" = "Disconnessione in corso";
+"error" = "Errore";
+
+"local_tunnel_active" = "Tunnel locale attivo";
+"local_tunnel_inactive" = "Tunnel locale inattivo";
+
+"connected_to_ip" = "Connesso a %@";
+"connected_at" = "Connesso a";
+"ios_might_ask_you_to_allow_the_vpn" = "iOS potrebbe chiederti di consentire la VPN";
+"disconnecting_safely" = "Disconnessione in modo sicuro…";
+"open_settings_to_review_details" = "Apri Impostazioni per visualizzare i dettagli";
+"tap_connect_to_create_the_tunnel" = "Tocca Connetti per creare il tunnel";
+
+"connection" = "Connessione";
+"start_or_stop_the_secure_local_tunnel" = "Avvia o interrompi il tunnel locale sicuro.";
+
+"connect" = "Connetti";
+"disconnect" = "Disconnetti";
+"connecting_ellipsis" = "Connessione in corso...";
+"disconnecting_ellipsis" = "Disconnessione in corso...";
+"server_address_name" = "Tunnel Locale di LocalDevVPN";
+
+"auto-connect_on_launch" = "Connessione automatica all’avvio";
+"resume_your_last_state_automatically" = "Riprende automaticamente il tuo ultimo stato.";
+
+"session_details" = "Dettagli della sessione";
+"live_stats_while_the_tunnel_is_connected" = "Statistiche in tempo reale mentre il tunnel è connesso.";
+"local_device_ip" = "IP del dispositivo locale";
+
+"local_tunnel_details" = "Dettagli del Tunnel";
+"time_connected" = "Tempo Connesso";
+"status" = "Stato";
+"active" = "Attivo";
+"network_interface" = "Interfaccia di Rete";
+"local" = "Locale";
+"assigned_ip" = "IP Assegnato";
+
+/* MARK: Locales */
+"english" = "Inglese";
+"spanish" = "Spagnolo";
+"italian" = "Italiano";
+"polish" = "Polacco";
+"korean" = "Coreano";
+"TChinese" = "Cinese Tradizionale";
+"french" = "Francese";
+
+/* MARK: Settings*/
+
+"connection_settings" = "Impostazioni Connessione";
+"auto_connect_on_launch" = "Connessione automatica all’avvio";
+"connection_logs" = "Log di Connessione";
+"network_configuration" = "Impostazioni Rete";
+"device_ip" = "Indirizzo IP Dispositivo";
+"tunnel_ip" = "Indirizzo IP Tunnel";
+"subnet_mask" = "Subnet Mask";
+"app_information" = "Informazioni App";
+"privacy_policy" = "Privacy Policy";
+"data_collection_policy" = "Politica di Raccolta Dati";
+"app_version" = "Versione";
+"help_and_support" = "Guida e Supporto";
+"language" = "Impostazioni Lingua";
+"dropdown_language" = "Lingua";
+"settings" = "Impostazioni";
+"done" = "Fine";
+"warning_alert" = "Avviso";
+"warning_message" = "La modifica delle impostazioni IP del tunnel può interrompere la connessione di rete. Procedi solo se sei sicuro di quello che stai facendo.";
+"understand_button" = "Ho capito";
+
+"data_collection_policy_title" = "Politica di Raccolta Dati";
+"no_data_collection" = "Nessuna raccolta di dati";
+"no_data_collection_description" = "LocalDevVPN NON raccoglie dati utente, informazioni sul traffico o attività di navigazione. Questa app crea un tunnel di rete locale che rimane interamente sul tuo dispositivo.";
+"local_processing_only" = "Elaborazione solo sul tuo smartphone";
+"local_processing_only_description" = "Tutto il traffico di rete e le configurazioni vengono elaborate localmente sul tuo dispositivo. Nessuna informazione lascia mai il dispositivo o viene trasmessa su Internet.";
+"no_third_party_sharing" = "Nessuna condivisione con servizi di terze parti";
+"no_third_party_sharing_description" = "Poiché non raccogliamo dati, non c'è alcuna condivisione con terze parti. Non abbiamo analisi, tracciamento o meccanismi di raccolta dati in questa app.";
+"why_use_network_permissions" = "Perché concedere i permessi di Rete?";
+"why_use_network_permissions_description" = "LocalDevVPN richiede permessi di estensione di rete per creare un'interfaccia di rete locale sul tuo dispositivo. Questo è utilizzato esclusivamente per sviluppo e test locali sul tuo dispositivo.";
+"our_promise" = "La nostra promessa";
+"our_promise_description" = "Ci impegniamo per la privacy e la trasparenza. Questa app è progettata per sviluppatori per testare e connettersi a server locali senza preoccupazioni sulla privacy.";
+"data_collection_policy_nav"= "Raccolta Dati";
+"logs_nav" = "Log di connessione";
+"faq_header" = "Domande Frequenti";
+"faq_q1" = "Cosa fa LocalDevVPN?";
+"faq_q1_a1" = "LocalDevVPN crea un'interfaccia di rete locale utilizzabile per sviluppo e test. Non instrada il traffico attraverso server esterni, tutto rimane sul dispositivo.";
+"faq_common_use_cases" = "I casi d'uso comuni includono:";
+"faq_case1" = "• Test di applicazioni web con server locali.";
+"faq_case2" = "• Sviluppo e Debug di funzionalità di rete.";
+"faq_case3" = "• Accesso ad ambienti di sviluppo locali ospitati.";
+"faq_case4" = "• Test di applicazioni che richiedono configurazioni di rete specifiche.";
+"faq_q2" = "È un VPN tradizionale?";
+"faq_q2_a1" = "No, LocalDevVPN NON è un servizio VPN tradizionale. Non:";
+"faq_q2_point1" = "• Instrada il tuo traffico attraverso server esterni.";
+"faq_q2_point2" = "• Garantisce privacy e la navigazione in incognito.";
+"faq_q2_point3" = "• Esegue connessioni a server VPN remoti.";
+"faq_q2_point4" = "• Cripta o instrada il tuo traffico internet.";
+"faq_q2_a2" = "LocalDevVPN crea solo un'interfaccia di rete locale per aiutare gli sviluppatori a connettersi a servizi locali per lo sviluppo e test.";
+"faq_q3" = "Perché non si connette?";
+"faq_q3_a1" = "Un errore durante la connessione può essere dovuto a permessi di sistema, errori di configurazione o restrizioni di iOS.";
+"faq_troubleshoot_header" = "Passaggi per risolvere:";
+"faq_troubleshoot1" = "• Assicurati di aver accettato il permesso di estensione di rete.";
+"faq_troubleshoot2" = "• Prova a riavviare l'applicazione.";
+"faq_troubleshoot3" = "• Verifica se la configurazione IP è valida.";
+"faq_troubleshoot4" = "• Riavvia il dispositivo se i problemi persistono.";
+"faq_q4" = "A chi è rivolta questa app?";
+"faq_q4_intro" = "LocalDevVPN è progettato principalmente per:";
+"faq_q4_case1" = "• Sviluppatori che testano server web locali.";
+"faq_q4_case2" = "• Sviluppatori app che testano funzionalità di rete.";
+"faq_q4_case3" = "• Ingegneri QA che testano app in ambienti isolati.";
+"faq_q4_case4" = "• Chiunque necessiti di accedere a servizi locali su iOS.";
+"faq_q4_conclusion" = "Questa app è disponibile al pubblico ed è utile per sviluppatori che vogliono testare app con funzionalità di rete su iOS.";
+"business_model_header" = "Modello di Business";
+"biz_q1" = "Come funziona LocalDevVPN?";
+"biz_q1_a1" = "LocalDevVPN è un'app completamente gratuita disponibile al pubblico. Non ci sono funzionalità a pagamento, abbonamenti o acquisti in‑app.";
+"biz_key_points_header" = "Punti chiave del nostro modello:";
+"biz_point1" = "• L'app non è vincolata a nessuna azienda o gruppo.";
+"biz_point2" = "• Chiunque può scaricare e usare l'app dall'App Store.";
+"biz_point3" = "• Non è necessario creare un account.";
+"biz_point4" = "• Tutte le funzionalità sono gratuite per tutti gli utenti.";
+"biz_point5" = "• L'app è sviluppata e mantenuta come utility open per la comunità iOS.";
+"app_info_header" = "Informazioni App";
+"requires_ios" = "Richiede iOS 14.0 o superiore";
+"uses_network_extension" = "Usa le Network Extension API di Apple";
+"help_and_support_nav" = "Guida e Supporto";
+"setup_welcome_title" = "Benvenuto in LocalDevVPN";
+"setup_welcome_description" = "Un semplice tunnel di rete locale per sviluppatori";
+"setup_welcome_details" = "LocalDevVPN crea un'interfaccia di rete locale per sviluppo, test e accesso a server locali. Questa app NON raccoglie dati utente né instrada il traffico attraverso server esterni.";
+"setup_why_title" = "Perché Usare LocalDevVPN?";
+"setup_why_description" = "Perfetto per sviluppatori iOS";
+"setup_why_details" = "• Accedi a server web locali e ambienti di sviluppo.\n• Testa app che richiedono configurazioni di rete specifiche.\n• Connettiti a servizi di rete locali senza setup complessi.\n• Crea ambienti isolati per test.";
+"setup_easy_title" = "Facile da Usare";
+"setup_easy_description" = "Basta un tap per connettersi";
+"setup_easy_details" = "LocalDevVPN è progettato per essere semplice. Basta premere il pulsante di connessione per creare un tunnel locale con impostazioni preimpostate.";
+"setup_privacy_title" = "Incentrato sulla Privacy";
+"setup_privacy_description" = "I tuoi dati restano sul dispositivo";
+"setup_privacy_details" = "LocalDevVPN crea un tunnel locale che non instrada il traffico attraverso server esterni. Tutto il traffico rimane sul tuo dispositivo, garantendo privacy e sicurezza. Nessun dato viene raccolto o condiviso con servizi di terze parti.";
+"setup_nav" = "Setup";
+"setup_get_started" = "Inizia";
+"setup_next" = "Avanti";
+"setup_skip" = "Salta";
+
+/*MARK: Restart pop-up*/
+"restart_title" = "Riavvia";
+"restart_message" = "Per applicare le modifiche, è necessario riavviare l'applicazione.";
+"confirmYes" = "Si";
+"confirmNo" = "No";

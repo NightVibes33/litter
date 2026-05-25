@@ -18,7 +18,7 @@ Litter builds unsigned IPA artifacts, emits AltStore/SideStore-compatible source
 - SideStore Team and contributors
   - Upstream: https://github.com/SideStore/SideStore
   - Website/docs: https://sidestore.io and https://docs.sidestore.io
-  - Vendored source paths: `ThirdParty/SideStore/MinimuxerWrapper.swift` and `ThirdParty/SideStore/minimuxer`
+  - Vendored source paths: `ThirdParty/SideStore/Source`, `ThirdParty/SideStore/MinimuxerWrapper.swift`, and `ThirdParty/SideStore/minimuxer`
   - Role in Litter: SideStore-compatible sideloading expectations, public Anisette server list conventions, LocalDevVPN install/refresh model, update-source compatibility target, and the minimuxer transport API Litter is adapting for KittyStore install/refresh.
   - License: AGPL-3.0 for SideStore and minimuxer source.
 - AltStore / Riley Testut and contributors
@@ -28,6 +28,7 @@ Litter builds unsigned IPA artifacts, emits AltStore/SideStore-compatible source
   - License: AGPL-3.0 for AltStore source, with upstream's additional permission language for Riley Testut's original code in its README.
 - Feather / khcrysalis and contributors
   - Upstream: https://github.com/khcrysalis/Feather
+  - Vendored source path: `ThirdParty/Feather/Source`
   - Role in Litter: certificate-paired IPA signing workflow, signer screen structure, advanced modify/properties flow, and on-device signing expectations used by KittyStore.
   - License: GPL-3.0 for Feather source.
 - Zsign / zhlynn and contributors
@@ -38,7 +39,7 @@ Litter builds unsigned IPA artifacts, emits AltStore/SideStore-compatible source
 - LocalDevVPN / Coxson Engineering LLC / jkcoxson
   - Upstream: https://github.com/jkcoxson/LocalDevVPN
   - App Store listing: https://apps.apple.com/us/app/localdevvpn/id6755608044
-  - Vendored source path: `ThirdParty/SideStore/LocalDevVPN-TunnelProv`
+  - Vendored source paths: `ThirdParty/SideStore/LocalDevVPN-Source` and `ThirdParty/SideStore/LocalDevVPN-TunnelProv`
   - Role in Litter: LocalDevVPN-style tunnel detection and tunnel-provider source used for the KittyStore install/refresh transport work.
 - minimuxer / jkcoxson and SideStore contributors
   - Upstreams: https://github.com/jkcoxson/minimuxer and https://github.com/SideStore/minimuxer

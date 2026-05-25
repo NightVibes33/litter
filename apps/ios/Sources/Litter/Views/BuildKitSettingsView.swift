@@ -47,22 +47,11 @@ struct BuildKitSettingsView: View {
         .fileImporter(isPresented: $showingAssetImporter, allowedContentTypes: [.folder, .json, .zip], allowsMultipleSelection: false) { result in
             handleAssetImport(result)
         }
-        .fileImporter(isPresented: $showingCertificateImporter, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
-            handleCertificateImport(result)
-        }
-        .fileImporter(isPresented: $showingSideStoreAccountImporter, allowedContentTypes: sideStoreAccountContentTypes, allowsMultipleSelection: false) { result in
-            handleSideStoreAccountImport(result)
-        }
         .onChange(of: downloader.installRevision) { _, _ in
             taskBag.run { await refresh() }
         }
-        .onChange(of: selectedAnisetteServerAddress) { _, newValue in
-            guard newValue != NyxianAnisetteServerDirectory.customSelectionID else { return }
-            appleIDAnisetteURLInput = newValue
-        }
         .task {
             await refresh()
-            await refreshAnisetteServers(showSuccess: false)
         }
         .onDisappear {
             taskBag.cancelAll()
@@ -317,7 +306,7 @@ struct BuildKitSettingsView: View {
 
     private var signingSection: some View {
         Section {
-            Text("SideStore or AltStore signs the unsigned Litter IPA with your Apple ID. Original Nyxian run/install needs this Apple ID login, a SideStore Anisette server, and the matching .p12 certificate saved here. Full on-device install/refresh also requires LocalDevVPN connected.")
+            Text("SideStore account login, .sideconf import, certificate import, pairing files, and Feather-style signing options live in KittyStore Settings. BuildKit only reports whether those Store-owned inputs are ready for the native runner.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -333,156 +322,11 @@ struct BuildKitSettingsView: View {
             statusRow("LocalDevVPN", status?.localDevVPNConnected == true ? "Detected" : "Not detected")
             statusRow("VPN detail", status?.localDevVPNDetail ?? "No active VPN tunnel interface detected")
             statusRow("Full install/refresh", status?.canInstallOrRefreshOnDevice == true ? "Ready" : "Blocked")
-
-            TextField("Apple ID email", text: $appleIDEmailInput)
-                .keyboardType(.emailAddress)
-                .textContentType(.username)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            TextField("Team ID (optional)", text: $appleIDTeamIDInput)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            Text("Leave Team ID blank for login. Litter can save the Apple ID first; the team is only needed after authentication when choosing a signing team, the same way SideStore/AltStore discover a Personal Team or paid developer team.")
-                .litterFont(.caption)
-                .foregroundStyle(LitterTheme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            if !appleIDTeams.isEmpty {
-                Picker("Signing team", selection: $appleIDTeamIDInput) {
-                    ForEach(appleIDTeams, id: \.id) { team in
-                        Text(team.displayText).tag(team.id)
-                    }
-                }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-                Button {
-                    taskBag.run { await saveSelectedAppleIDTeam() }
-                } label: {
-                    Label("Save Selected Team", systemImage: "person.2.badge.gearshape")
-                        .foregroundStyle(LitterTheme.accent)
-                }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-            }
-
-            SecureField("Apple ID password or app-specific password", text: $appleIDPasswordInput)
-                .textContentType(.password)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            TextField("Two-factor code", text: $appleIDTwoFactorCodeInput)
-                .keyboardType(.numberPad)
-                .textContentType(.oneTimeCode)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            Picker("Anisette server", selection: $selectedAnisetteServerAddress) {
-                ForEach(anisetteServers) { server in
-                    Text(server.displayName).tag(server.address)
-                }
-                Text("Custom").tag(NyxianAnisetteServerDirectory.customSelectionID)
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            if selectedAnisetteServerAddress == NyxianAnisetteServerDirectory.customSelectionID {
-                TextField("Custom Anisette server URL", text: $appleIDAnisetteURLInput)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
-            }
-
-            TextField("Anisette server list URL", text: $anisetteServerListURLInput)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            Button {
-                taskBag.run { await refreshAnisetteServers(showSuccess: true) }
-            } label: {
-                Label("Refresh Anisette Servers", systemImage: "arrow.clockwise.circle")
-                    .foregroundStyle(LitterTheme.accent)
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            if let anisetteServerMessage, !anisetteServerMessage.isEmpty {
-                Text(anisetteServerMessage)
-                    .litterFont(.caption)
-                    .foregroundStyle(LitterTheme.textSecondary)
-                    .textSelection(.enabled)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
-            }
-
-            Button {
-                taskBag.run { await saveNyxianAppleID() }
-            } label: {
-                Label("Login Apple ID", systemImage: "person.badge.key.fill")
-                    .foregroundStyle(LitterTheme.accent)
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            Button {
-                showingSideStoreAccountImporter = true
-            } label: {
-                Label("Import SideStore Account", systemImage: "person.crop.circle.badge.plus")
-                    .foregroundStyle(LitterTheme.accent)
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            Button(role: .destructive) {
-                clearNyxianAppleID()
-            } label: {
-                Label("Clear Apple ID Login", systemImage: "person.crop.circle.badge.xmark")
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            if let appleIDActionMessage, !appleIDActionMessage.isEmpty {
-                Text(appleIDActionMessage)
-                    .litterFont(.caption)
-                    .foregroundStyle(LitterTheme.textSecondary)
-                    .textSelection(.enabled)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
-            }
-
-            SecureField("Certificate password", text: $certificatePasswordInput)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            Button {
-                showingCertificateImporter = true
-            } label: {
-                Label("Import SideStore Certificate", systemImage: "key")
-                    .foregroundStyle(LitterTheme.accent)
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            Button(role: .destructive) {
-                clearNyxianCertificate()
-            } label: {
-                Label("Clear Imported Certificate", systemImage: "trash")
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            if let certificateActionMessage, !certificateActionMessage.isEmpty {
-                Text(certificateActionMessage)
-                    .litterFont(.caption)
-                    .foregroundStyle(LitterTheme.textSecondary)
-                    .textSelection(.enabled)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
-            }
         } header: {
-            Text("Nyxian Signing")
+            Text("KittyStore Signing State")
                 .foregroundStyle(LitterTheme.textSecondary)
         } footer: {
-            Text("This does not sign CI release IPAs. It stores the certificate in the original Nyxian keys used by LCUtils for on-device run/install after the app has been signed by SideStore, AltStore, or another sideload signer.")
+            Text("BuildKit diagnostics stay read-only here so SideStore and Feather options are not scattered outside KittyStore.")
         }
     }
 
