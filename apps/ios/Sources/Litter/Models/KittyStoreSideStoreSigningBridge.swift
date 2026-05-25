@@ -107,6 +107,7 @@ enum KittyStoreSideStoreSigningBridge {
         outputDirectory: URL,
         bundleIdentifier: String,
         appName: String,
+        appVersion: String,
         email: String,
         password: String,
         requestedTeamID: String,
@@ -132,6 +133,7 @@ enum KittyStoreSideStoreSigningBridge {
                 outputDirectory: outputDirectory,
                 requestedBundleIdentifier: bundleIdentifier,
                 appName: appName,
+                appVersion: appVersion,
                 team: auth.team,
                 session: auth.session
             )
@@ -164,6 +166,8 @@ enum KittyStoreSideStoreSigningBridge {
         ipaURL: URL,
         outputDirectory: URL,
         bundleIdentifier: String,
+        appName: String,
+        appVersion: String,
         teamID rawTeamID: String,
         teamName rawTeamName: String?,
         certificateData: Data,
@@ -254,18 +258,30 @@ enum KittyStoreSideStoreSigningBridge {
                 type: .unknown,
                 account: account
             )
+            let prepared = try prepareSideStoreImportedIdentitySigningInput(
+                ipaURL: ipaURL,
+                outputDirectory: outputDirectory,
+                requestedBundleIdentifier: bundleIdentifier,
+                appName: appName,
+                appVersion: appVersion,
+                profile: profile
+            )
+            defer { try? FileManager.default.removeItem(at: prepared.workingDirectoryURL) }
+
             let outputURL = try stagedOutputURL(for: ipaURL, in: outputDirectory)
             let fileManager = FileManager.default
             if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
             try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true, attributes: nil)
-            try fileManager.copyItem(at: ipaURL, to: outputURL)
 
             let signer = ALTSigner(team: team, certificate: certificate)
-            try await sign(signer: signer, appURL: outputURL, provisioningProfiles: [profile])
+            try await sign(signer: signer, appURL: prepared.appBundleURL, provisioningProfiles: [profile])
+            let signedArchiveURL = try fileManager.zipAppBundle(at: prepared.appBundleURL)
+            try fileManager.copyItem(at: signedArchiveURL, to: outputURL)
+            try? fileManager.removeItem(at: signedArchiveURL)
             return OperationResult(
                 exitCode: 0,
                 status: "sidestore-altsign-sign-ok",
-                log: "Signed IPA with SideStore AltSign.\nInput: \(ipaURL.path)\nOutput: \(outputURL.path)\nProfile: \(profile.name) / \(profile.bundleIdentifier)\nTeam: \(teamID)\n",
+                log: "Signed IPA with SideStore AltSign.\nInput: \(ipaURL.path)\nOutput: \(outputURL.path)\nProfile: \(profile.name) / \(profile.bundleIdentifier)\nTeam: \(teamID)\nOriginal bundle ID: \(prepared.originalBundleIdentifier)\nSigned bundle ID: \(prepared.mainBundleIdentifier)\n",
                 signedIPAPath: outputURL.path,
                 provisioningProfileData: profile.data
             )
@@ -302,6 +318,13 @@ private extension KittyStoreSideStoreSigningBridge {
         var mainBundleIdentifier: String
         var profiles: [ALTProvisioningProfile]
         var mainProfile: ALTProvisioningProfile
+    }
+
+    struct PreparedImportedIdentitySigningInput {
+        var workingDirectoryURL: URL
+        var appBundleURL: URL
+        var originalBundleIdentifier: String
+        var mainBundleIdentifier: String
     }
 
     static func authenticatedSession(
@@ -343,6 +366,7 @@ private extension KittyStoreSideStoreSigningBridge {
         outputDirectory: URL,
         requestedBundleIdentifier: String,
         appName: String,
+        appVersion: String,
         team: ALTTeam,
         session: ALTAppleAPISession
     ) async throws -> PreparedAppleIDSigningInput {
@@ -393,7 +417,9 @@ private extension KittyStoreSideStoreSigningBridge {
         try applySideStoreBundleIdentifiers(
             application: application,
             mainBundleIdentifier: mainBundleIdentifier,
-            extensionBundleIdentifiers: extensionBundleIdentifiers
+            extensionBundleIdentifiers: extensionBundleIdentifiers,
+            appName: appName,
+            appVersion: appVersion
         )
 
         let profiles = Array(profilesByOriginalBundleID.values)
@@ -407,6 +433,67 @@ private extension KittyStoreSideStoreSigningBridge {
         )
     }
 
+    static func prepareSideStoreImportedIdentitySigningInput(
+        ipaURL: URL,
+        outputDirectory: URL,
+        requestedBundleIdentifier: String,
+        appName: String,
+        appVersion: String,
+        profile: ALTProvisioningProfile
+    ) throws -> PreparedImportedIdentitySigningInput {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true, attributes: nil)
+        let workingDirectoryURL = outputDirectory.appendingPathComponent("SideStoreImportWork-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: workingDirectoryURL, withIntermediateDirectories: true, attributes: nil)
+
+        let appBundleURL = try fileManager.unzipAppBundle(at: ipaURL, toDirectory: workingDirectoryURL)
+        guard let application = ALTApplication(fileURL: appBundleURL) else {
+            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 65, userInfo: [NSLocalizedDescriptionKey: "AltSign could not read an app bundle from the imported IPA."])
+        }
+
+        let originalMainBundleIdentifier = application.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mainBundleIdentifier = importedIdentityBundleIdentifier(
+            requestedBundleIdentifier: requestedBundleIdentifier,
+            originalBundleIdentifier: originalMainBundleIdentifier,
+            profileBundleIdentifier: profile.bundleIdentifier
+        )
+        if !profile.bundleIdentifier.isEmpty,
+           !mainBundleIdentifier.isEmpty,
+           !profileBundleIdentifierAllows(mainBundleIdentifier, profileBundleIdentifier: profile.bundleIdentifier) {
+            throw NSError(
+                domain: "KittyStoreSideStoreSigningBridge",
+                code: 67,
+                userInfo: [NSLocalizedDescriptionKey: "Provisioning profile bundle ID \(profile.bundleIdentifier) does not allow \(mainBundleIdentifier)."]
+            )
+        }
+
+        var extensionBundleIdentifiers: [String: String] = [:]
+        for appExtension in application.appExtensions {
+            let originalExtensionBundleIdentifier = appExtension.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !originalExtensionBundleIdentifier.isEmpty else { continue }
+            extensionBundleIdentifiers[originalExtensionBundleIdentifier] = sideStoreExtensionBundleIdentifier(
+                originalExtensionBundleIdentifier: originalExtensionBundleIdentifier,
+                originalMainBundleIdentifier: originalMainBundleIdentifier,
+                effectiveMainBundleIdentifier: mainBundleIdentifier
+            )
+        }
+
+        try applySideStoreBundleIdentifiers(
+            application: application,
+            mainBundleIdentifier: mainBundleIdentifier,
+            extensionBundleIdentifiers: extensionBundleIdentifiers,
+            appName: appName,
+            appVersion: appVersion
+        )
+
+        return PreparedImportedIdentitySigningInput(
+            workingDirectoryURL: workingDirectoryURL,
+            appBundleURL: appBundleURL,
+            originalBundleIdentifier: originalMainBundleIdentifier,
+            mainBundleIdentifier: mainBundleIdentifier
+        )
+    }
+
     static func sideStoreBundleIdentifier(requestedBundleIdentifier: String, originalBundleIdentifier: String, teamID: String) -> String {
         let requested = requestedBundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         let original = originalBundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -416,6 +503,14 @@ private extension KittyStoreSideStoreSigningBridge {
             return base
         }
         return base + "." + team
+    }
+
+    static func importedIdentityBundleIdentifier(requestedBundleIdentifier: String, originalBundleIdentifier: String, profileBundleIdentifier: String) -> String {
+        let requested = requestedBundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !requested.isEmpty { return requested }
+        let profile = profileBundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !profile.isEmpty, !profile.hasSuffix(".*") { return profile }
+        return originalBundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func sideStoreExtensionBundleIdentifier(
@@ -434,22 +529,47 @@ private extension KittyStoreSideStoreSigningBridge {
     static func applySideStoreBundleIdentifiers(
         application: ALTApplication,
         mainBundleIdentifier: String,
-        extensionBundleIdentifiers: [String: String]
+        extensionBundleIdentifiers: [String: String],
+        appName: String,
+        appVersion: String
     ) throws {
-        try rewriteInfoPlist(in: application.fileURL, bundleIdentifier: mainBundleIdentifier)
+        try rewriteInfoPlist(
+            in: application.fileURL,
+            bundleIdentifier: mainBundleIdentifier,
+            displayName: appName,
+            version: appVersion
+        )
         for appExtension in application.appExtensions {
             let originalBundleIdentifier = appExtension.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let bundleIdentifier = extensionBundleIdentifiers[originalBundleIdentifier] else { continue }
-            try rewriteInfoPlist(in: appExtension.fileURL, bundleIdentifier: bundleIdentifier)
+            try rewriteInfoPlist(
+                in: appExtension.fileURL,
+                bundleIdentifier: bundleIdentifier,
+                displayName: "",
+                version: appVersion
+            )
         }
     }
 
-    static func rewriteInfoPlist(in bundleURL: URL, bundleIdentifier: String) throws {
+    static func rewriteInfoPlist(in bundleURL: URL, bundleIdentifier: String, displayName: String, version: String) throws {
         let infoPlistURL = bundleURL.appendingPathComponent("Info.plist")
         guard let infoDictionary = NSMutableDictionary(contentsOf: infoPlistURL) else {
             throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 66, userInfo: [NSLocalizedDescriptionKey: "Could not read Info.plist at \(infoPlistURL.path)."])
         }
-        infoDictionary[kCFBundleIdentifierKey as String] = bundleIdentifier
+        let cleanedBundleIdentifier = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedVersion = version.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanedBundleIdentifier.isEmpty {
+            infoDictionary[kCFBundleIdentifierKey as String] = cleanedBundleIdentifier
+        }
+        if !cleanedDisplayName.isEmpty {
+            infoDictionary["CFBundleName"] = cleanedDisplayName
+            infoDictionary["CFBundleDisplayName"] = cleanedDisplayName
+        }
+        if !cleanedVersion.isEmpty, cleanedVersion.lowercased() != "unknown" {
+            infoDictionary["CFBundleShortVersionString"] = cleanedVersion
+            infoDictionary["CFBundleVersion"] = cleanedVersion
+        }
         infoDictionary.removeObject(forKey: "DTXcode")
         infoDictionary.removeObject(forKey: "DTXcodeBuild")
         guard infoDictionary.write(to: infoPlistURL, atomically: true) else {

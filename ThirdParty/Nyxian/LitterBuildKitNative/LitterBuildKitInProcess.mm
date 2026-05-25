@@ -14,6 +14,7 @@
 #ifdef LBN_ENABLE_KITTYSTORE_SIGNER
 #include "common/archive.h"
 #include "bundle.h"
+#include "macho.h"
 #include "openssl.h"
 #endif
 
@@ -1365,6 +1366,120 @@ static void LBIKittyStoreCollectTweakPayload(NSString *root, NSString *appDir, v
     }
 }
 
+static NSString *LBIKittyStoreExecutablePath(NSString *bundleDir)
+{
+    NSString *infoPath = [bundleDir stringByAppendingPathComponent:@"Info.plist"];
+    NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:infoPath];
+    NSString *executable = [info[@"CFBundleExecutable"] isKindOfClass:NSString.class] ? info[@"CFBundleExecutable"] : @"";
+    if(executable.length == 0) { return @""; }
+    NSString *path = [bundleDir stringByAppendingPathComponent:executable];
+    return [NSFileManager.defaultManager fileExistsAtPath:path] ? path : @"";
+}
+
+static NSArray<NSString *> *LBIKittyStoreExtensionBundlePaths(NSString *appDir)
+{
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    for(NSString *containerName in @[@"PlugIns", @"Extensions"])
+    {
+        NSString *container = [appDir stringByAppendingPathComponent:containerName];
+        NSArray<NSString *> *items = [NSFileManager.defaultManager contentsOfDirectoryAtPath:container error:nil] ?: @[];
+        for(NSString *item in items)
+        {
+            if([item.pathExtension.lowercaseString isEqualToString:@"appex"])
+            {
+                NSString *path = [container stringByAppendingPathComponent:item];
+                BOOL isDir = NO;
+                if([NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&isDir] && isDir) { [paths addObject:path]; }
+            }
+        }
+    }
+    return paths;
+}
+
+static NSString *LBIKittyStoreDylibLoadPath(NSString *fileName, NSString *injectPath, NSString *injectFolder, BOOL forExtension)
+{
+    NSString *path = injectPath.length > 0 ? injectPath : @"@executable_path";
+    NSString *folder = injectFolder.length > 0 ? injectFolder : @"/Frameworks/";
+    BOOL useRpath = [path isEqualToString:@"@rpath"];
+    BOOL useFrameworks = [folder isEqualToString:@"/Frameworks/"];
+    if(useRpath) { return [@"@rpath" stringByAppendingPathComponent:fileName]; }
+    if(forExtension)
+    {
+        return [NSString stringWithFormat:useFrameworks ? @"@executable_path/../../Frameworks/%@" : @"@executable_path/../../%@", fileName];
+    }
+    return [NSString stringWithFormat:useFrameworks ? @"@executable_path/Frameworks/%@" : @"@executable_path/%@", fileName];
+}
+
+static BOOL LBIKittyStoreInjectDylibLoadCommand(NSString *executablePath, NSString *loadPath, NSMutableString *log)
+{
+    if(executablePath.length == 0)
+    {
+        [log appendFormat:@"Cannot inject %@: bundle executable was not found.\n", loadPath.lastPathComponent];
+        return NO;
+    }
+    ZMachO macho;
+    if(!macho.Init(executablePath.UTF8String))
+    {
+        [log appendFormat:@"Cannot inject %@: %@ is not a readable Mach-O executable.\n", loadPath, executablePath.lastPathComponent];
+        return NO;
+    }
+    if(!macho.InjectDylib(false, loadPath.UTF8String))
+    {
+        [log appendFormat:@"Could not inject %@ into %@.\n", loadPath, executablePath.lastPathComponent];
+        return NO;
+    }
+    [log appendFormat:@"Injected %@ into %@.\n", loadPath, executablePath.lastPathComponent];
+    return YES;
+}
+
+static BOOL LBIKittyStoreApplyDylibInjections(NSDictionary *plan, NSString *appDir, const vector<string> &dylibs, NSMutableString *log)
+{
+    if(dylibs.empty()) { return YES; }
+    NSDictionary *properties = LBIDictionaryValue(plan, @"properties");
+    NSString *injectPath = LBIString(properties, @"injectPath");
+    if(injectPath.length == 0) { injectPath = @"@executable_path"; }
+    NSString *injectFolder = LBIString(properties, @"injectFolder");
+    if(injectFolder.length == 0) { injectFolder = @"/Frameworks/"; }
+    BOOL useFrameworks = [injectFolder isEqualToString:@"/Frameworks/"];
+    BOOL injectIntoExtensions = LBIBoolValue(properties[@"injectIntoExtensions"]);
+    NSString *destinationDir = useFrameworks ? [appDir stringByAppendingPathComponent:@"Frameworks"] : appDir;
+    [NSFileManager.defaultManager createDirectoryAtPath:destinationDir withIntermediateDirectories:YES attributes:nil error:nil];
+
+    NSString *appExecutable = LBIKittyStoreExecutablePath(appDir);
+    NSArray<NSString *> *extensions = injectIntoExtensions ? LBIKittyStoreExtensionBundlePaths(appDir) : @[];
+    for(const string &sourceString : dylibs)
+    {
+        NSString *source = [NSString stringWithUTF8String:sourceString.c_str()] ?: @"";
+        if(source.length == 0 || ![NSFileManager.defaultManager fileExistsAtPath:source])
+        {
+            [log appendFormat:@"Dylib input missing before Feather injection: %@\n", source];
+            return NO;
+        }
+        NSString *fileName = source.lastPathComponent;
+        NSString *destination = [destinationDir stringByAppendingPathComponent:fileName];
+        if(![source isEqualToString:destination])
+        {
+            [NSFileManager.defaultManager removeItemAtPath:destination error:nil];
+            NSError *copyError = nil;
+            if(![NSFileManager.defaultManager copyItemAtPath:source toPath:destination error:&copyError])
+            {
+                [log appendFormat:@"Could not copy dylib %@ into %@: %@\n", fileName, useFrameworks ? @"Frameworks" : @"app root", copyError.localizedDescription ?: @"unknown error"];
+                return NO;
+            }
+        }
+        [log appendFormat:@"Copied dylib %@ into %@ for Feather-style injection.\n", fileName, useFrameworks ? @"Frameworks" : @"app root"];
+        NSString *mainLoadPath = LBIKittyStoreDylibLoadPath(fileName, injectPath, injectFolder, NO);
+        if(!LBIKittyStoreInjectDylibLoadCommand(appExecutable, mainLoadPath, log)) { return NO; }
+        for(NSString *extensionPath in extensions)
+        {
+            NSString *extensionExecutable = LBIKittyStoreExecutablePath(extensionPath);
+            NSString *extensionLoadPath = LBIKittyStoreDylibLoadPath(fileName, injectPath, injectFolder, YES);
+            if(!LBIKittyStoreInjectDylibLoadCommand(extensionExecutable, extensionLoadPath, log)) { return NO; }
+        }
+    }
+    return YES;
+}
+
 static void LBIKittyStoreCollectInputs(NSDictionary *plan, NSString *appDir, NSString *workRoot, vector<string> &dylibs, vector<string> &removeDylibs, NSMutableString *log)
 {
     auto addDylib = ^(NSString *path) {
@@ -1476,6 +1591,12 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
     vector<string> dylibs;
     vector<string> removeDylibs;
     LBIKittyStoreCollectInputs(plan, appDir, workRoot, dylibs, removeDylibs, log);
+    BOOL hasDylibInjections = !dylibs.empty();
+    if(hasDylibInjections && !LBIKittyStoreApplyDylibInjections(plan, appDir, dylibs, log))
+    {
+        return LBICopyResponse(74, @"kittystore-dylib-injection-failed", log);
+    }
+    if(hasDylibInjections) { dylibs.clear(); }
 
     NSString *signingType = LBINestedString(plan, @"signing", @"type").lowercaseString;
     if(signingType.length == 0 || [signingType isEqualToString:@"standard"]) { signingType = @"default"; }
@@ -1515,12 +1636,13 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
     ZBundle bundle;
     bundle.m_bEnableDocuments = LBINestedBool(plan, @"properties", @"fileSharing") || LBINestedBool(plan, @"properties", @"iTunesFileSharing");
     BOOL removeProvision = LBINestedBool(plan, @"properties", @"removeProvisioning");
-    BOOL forceSign = [signingType isEqualToString:@"force"] || adhocSign;
+    BOOL forceSign = [signingType isEqualToString:@"force"] || adhocSign || hasDylibInjections;
     BOOL weakInject = NO;
     NSString *injectPath = LBINestedString(plan, @"properties", @"injectPath");
-    if(injectPath.length > 0 && ![injectPath isEqualToString:@"@executable_path"])
+    NSString *injectFolder = LBINestedString(plan, @"properties", @"injectFolder");
+    if(hasDylibInjections)
     {
-        [log appendFormat:@"Feather Zsign bundle injection uses @executable_path for dylib load commands; requested injectPath %@ is recorded but not applied by this backend.\n", injectPath];
+        [log appendFormat:@"Applied Feather dylib injection path=%@ folder=%@ injectIntoExtensions=%@ before signing.\n", injectPath.length > 0 ? injectPath : @"@executable_path", injectFolder.length > 0 ? injectFolder : @"/Frameworks/", LBINestedBool(plan, @"properties", @"injectIntoExtensions") ? @"yes" : @"no"];
     }
     [log appendFormat:@"Running Feather Zsign bundle signer. type=%@ force=%@ weakInject=%@\n", signingType, forceSign ? @"yes" : @"no", weakInject ? @"yes" : @"no"];
     bool signedOK = bundle.SignFolder(&zsa,
