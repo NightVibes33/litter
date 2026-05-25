@@ -142,11 +142,7 @@ final class AppUpdateStore: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var statusMessage = "Check the app source for a newer sideload build."
 
-    let owner = "NightVibes33"
-    let repo = "litter"
-    let manifestAssetName = "litter-update.json"
-    let stableUpdateURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-update.json"
-    let stableSourceURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json"
+    let releaseSource = AppReleaseSource.current
 
     private var activeDriver: FileDownloadDriver?
     private var activeTask: Task<Void, Never>?
@@ -163,7 +159,7 @@ final class AppUpdateStore: ObservableObject {
     var releaseURL: URL? {
         if let releaseURL = latestManifest?.releaseURL, let url = URL(string: releaseURL) { return url }
         if let htmlURL = latestRelease?.htmlURL, let url = URL(string: htmlURL) { return url }
-        return URL(string: "https://github.com/\(owner)/\(repo)/releases")
+        return URL(string: releaseSource.releasesURLString)
     }
 
     var remoteIPAURL: URL? {
@@ -180,11 +176,11 @@ final class AppUpdateStore: ObservableObject {
     }
 
     var sideStoreSourceURL: URL? {
-        installerURL(scheme: "sidestore", host: "source", targetURL: latestManifest?.sideStoreSourceURL ?? stableSourceURL)
+        installerURL(scheme: "sidestore", host: "source", targetURL: latestManifest?.sideStoreSourceURL ?? releaseSource.stableSourceURLString)
     }
 
     var altStoreSourceURL: URL? {
-        installerURL(scheme: "altstore", host: "source", targetURL: latestManifest?.altStoreSourceURL ?? stableSourceURL)
+        installerURL(scheme: "altstore", host: "source", targetURL: latestManifest?.altStoreSourceURL ?? releaseSource.stableSourceURLString)
     }
 
     func refreshInstalledVersion() {
@@ -217,11 +213,11 @@ final class AppUpdateStore: ObservableObject {
             let stableError = error
             do {
                 statusMessage = "Checking GitHub Releases fallback"
-                let releases = try await GitHubReleaseAPI.releases(owner: owner, repo: repo, perPage: 30)
+                let releases = try await GitHubReleaseAPI.releases(owner: releaseSource.owner, repo: releaseSource.repo, perPage: 30)
                 let candidate = try await selectBestCandidate(from: releases)
                 guard let candidate else {
                     availability = .noCompatibleRelease
-                    statusMessage = "No release with \(manifestAssetName) was found."
+                    statusMessage = "No release with \(releaseSource.manifestAssetName) was found."
                     lastError = "Stable app source failed: \(stableError.localizedDescription)"
                     phase = .ready
                     return
@@ -333,7 +329,7 @@ final class AppUpdateStore: ObservableObject {
     }
 
     private func stableCandidate() async throws -> Candidate {
-        guard let manifestURL = URL(string: stableUpdateURL) else {
+        guard let manifestURL = URL(string: releaseSource.stableUpdateURLString) else {
             throw NSError(domain: "AppUpdateStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid stable update feed URL."])
         }
         let data = try await GitHubReleaseAPI.data(url: manifestURL)
@@ -347,7 +343,7 @@ final class AppUpdateStore: ObservableObject {
         var firstIncomparable: Candidate?
 
         for release in releases where !release.draft {
-            guard let manifestAsset = release.asset(named: manifestAssetName), let manifestURL = URL(string: manifestAsset.browserDownloadURL) else {
+            guard let manifestAsset = release.asset(named: releaseSource.manifestAssetName), let manifestURL = URL(string: manifestAsset.browserDownloadURL) else {
                 continue
             }
             do {
@@ -395,13 +391,13 @@ final class AppUpdateStore: ObservableObject {
 
     private func enrichStable(_ manifest: inout AppUpdateManifest) {
         if manifest.releaseURL?.isEmpty != false {
-            manifest.releaseURL = "https://github.com/\(owner)/\(repo)/releases/tag/litter-v\(manifest.version)"
+            manifest.releaseURL = releaseSource.releaseURLString(version: manifest.version)
         }
         if manifest.sideStoreSourceURL?.isEmpty != false {
-            manifest.sideStoreSourceURL = stableSourceURL
+            manifest.sideStoreSourceURL = releaseSource.stableSourceURLString
         }
         if manifest.altStoreSourceURL?.isEmpty != false {
-            manifest.altStoreSourceURL = stableSourceURL
+            manifest.altStoreSourceURL = releaseSource.stableSourceURLString
         }
     }
 

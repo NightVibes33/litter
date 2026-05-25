@@ -26,6 +26,15 @@ require_grep() {
   fi
 }
 
+require_absent() {
+  label="$1"
+  pattern="$2"
+  rel="$3"
+  if grep -Fq -- "$pattern" "$ROOT_DIR/$rel"; then
+    fail "unexpected $label in $rel: $pattern"
+  fi
+}
+
 require_path "SideStore AltSign package" "ThirdParty/SideStore/AltSign"
 require_path "SideStore minimuxer source" "ThirdParty/SideStore/minimuxer"
 require_path "SideStore LocalDevVPN tunnel provider" "ThirdParty/SideStore/LocalDevVPN-TunnelProv"
@@ -36,6 +45,7 @@ require_path "BuildKit settings view" "apps/ios/Sources/Litter/Views/BuildKitSet
 require_path "SideStore account importer" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
 require_path "SideStore signing bridge" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreSigningBridge.swift"
 require_path "SideStore minimuxer bridge" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
+require_path "KittyStore release source config" "apps/ios/Sources/Litter/Models/AppReleaseSource.swift"
 
 require_grep "SideStore upstream commit provenance" "d292edffd1264918e6a83d3d2a0fb8cfde80e3ca" "ThirdParty/UPSTREAMS.md"
 require_grep "Feather upstream commit provenance" "2320fd752864adaa9a173f9fc2f64ee9241e979e" "ThirdParty/UPSTREAMS.md"
@@ -45,6 +55,11 @@ require_grep "minimuxer bridge build" "tools/scripts/build-sidestore-minimuxer.s
 require_grep "minimuxer linked Swift flag" "KITTYSTORE_MINIMUXER_LINKED" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "dynamic framework packaging guard" "Verify embedded dynamic frameworks" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "AltStore source verifier workflow gate" "verify-altstore-source.py" ".github/workflows/ios-unsigned-ipa.yml"
+
+require_grep "KittyStore configurable release source" "AppReleaseSource.current" "apps/ios/Sources/Litter/Models/AppUpdateStore.swift"
+require_grep "BuildKit configurable KittyStore source" "AppReleaseSource.current.stableSourceURLString" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
+require_absent "hardcoded AppUpdateStore NightVibes repo URL" "github.com/NightVibes33/litter" "apps/ios/Sources/Litter/Models/AppUpdateStore.swift"
+require_absent "hardcoded BuildKit KittyStore NightVibes repo URL" "github.com/NightVibes33/litter" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
 
 require_grep "SideStore .sideconf UI import" "Import SideStore Account" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
 require_grep "SideStore .sideconf handler" "handleSideStoreAccountImport" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"

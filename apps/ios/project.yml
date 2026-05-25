@@ -25,6 +25,12 @@ settings:
     SWIFT_STRICT_CONCURRENCY: targeted
     MARKETING_VERSION: "1.5.0"
     CURRENT_PROJECT_VERSION: "1"
+    LITTER_RELEASE_OWNER: NightVibes33
+    LITTER_RELEASE_REPO: litter
+    LITTER_RELEASE_MANIFEST_ASSET_NAME: litter-update.json
+    LITTER_RELEASE_SOURCE_ASSET_NAME: litter-altstore-source.json
+    LITTER_RELEASE_STABLE_TAG: app-source
+    LITTER_RELEASE_TAG_PREFIX: litter-v
     SWIFT_OBJC_BRIDGING_HEADER: Sources/Litter/Bridge/codex_bridge_objc.h
     OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty $(KITTYSTORE_MINIMUXER_LDFLAGS)"
     HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"

@@ -25,6 +25,18 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LitterReleaseOwner</key>
+	<string>$(LITTER_RELEASE_OWNER)</string>
+	<key>LitterReleaseRepo</key>
+	<string>$(LITTER_RELEASE_REPO)</string>
+	<key>LitterReleaseManifestAssetName</key>
+	<string>$(LITTER_RELEASE_MANIFEST_ASSET_NAME)</string>
+	<key>LitterReleaseSourceAssetName</key>
+	<string>$(LITTER_RELEASE_SOURCE_ASSET_NAME)</string>
+	<key>LitterReleaseStableTag</key>
+	<string>$(LITTER_RELEASE_STABLE_TAG)</string>
+	<key>LitterReleaseTagPrefix</key>
+	<string>$(LITTER_RELEASE_TAG_PREFIX)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationCategoryType</key>

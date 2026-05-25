@@ -334,8 +334,8 @@ actor LitterBuildKit {
     private static let stateRoot = "/root/.litter/buildkit"
     private static let requestRoot = "\(stateRoot)/requests"
     private static let buildRoot = "/root/.litter/builds"
-    private static let kittyStoreSourceURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json"
-    private static let kittyStoreUpdateURL = "https://github.com/NightVibes33/litter/releases/download/app-source/litter-update.json"
+    private static var kittyStoreSourceURL: String { AppReleaseSource.current.stableSourceURLString }
+    private static var kittyStoreUpdateURL: String { AppReleaseSource.current.stableUpdateURLString }
     private static let shimInstallMarker = "\(stateRoot)/shims-installed-v8"
     private static let canonicalCommandNames = [
         "litter-buildkit",
