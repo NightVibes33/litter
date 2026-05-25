@@ -154,6 +154,7 @@ pub fn bootstrap(
 
     let dest = application_support_dir.join("fs");
     extract_rootfs_if_needed(bundle_fs_path, &dest)?;
+    ensure_root_home(&dest)?;
     sanitize_root_home_volatiles(&dest)?;
 
     let meta_db = dest.join("meta.db");
@@ -258,12 +259,16 @@ where
         return (ISH_E_NOT_RUNNING, output);
     };
 
-    // The previous embed library funnelled every command through a single
-    // persistent `/bin/sh`, so `cd` between calls leaked. The new architecture
-    // forks a fresh shell per call, so an explicit `cd && cmd` wrapper is
-    // still the right way to honour caller-supplied cwd.
+    // A restored session can point at a deleted fakefs directory. Fall back to
+    // /root instead of failing basic commands such as `pwd` before they run.
     let wrapped = match cwd {
-        Some(c) if !c.is_empty() => format!("cd {} && {}", shell_quote(c), cmd),
+        Some(c) if !c.is_empty() => format!(
+            "if cd {} 2>/dev/null; then {}; else cd {} && {}; fi",
+            shell_quote(c),
+            cmd,
+            shell_quote(default_cwd()),
+            cmd
+        ),
         _ => cmd.to_string(),
     };
 
@@ -529,6 +534,22 @@ fn preserve_root_home(old_root: &Path, new_root: &Path) -> io::Result<()> {
     copy_dir_recursive(&old_home, &new_home)?;
     quarantine_root_home_volatiles(&new_home)?;
     eprintln!("[ish] preserved /root across rootfs replacement");
+    Ok(())
+}
+
+fn ensure_root_home(rootfs: &Path) -> io::Result<()> {
+    let home = rootfs.join(ROOTFS_ROOT_HOME_DIR);
+    if !home.exists() {
+        eprintln!("[ish] extracted rootfs was missing /root; creating it before kernel boot");
+        fs::create_dir_all(&home)?;
+    }
+    if home.is_dir() {
+        let mut perms = fs::metadata(&home)?.permissions();
+        perms.set_mode(0o700);
+        if let Err(err) = fs::set_permissions(&home, perms) {
+            eprintln!("[ish] chmod 0700 on /root failed: {err}");
+        }
+    }
     Ok(())
 }
 
