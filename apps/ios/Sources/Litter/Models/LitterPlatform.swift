@@ -98,12 +98,17 @@ enum LitterPlatform {
                     await UserMountStore.shared.loadAndRemountAll()
                 }
             } catch {
-                NSLog("[ish] bootstrap failed: \(error)")
-                finishLocalRuntimeBootstrap(.idle)
+                if isAlreadyBootstrapped(error) {
+                    NSLog("[ish] bootstrap already completed")
+                    finishLocalRuntimeBootstrap(.ready)
+                    Task { @MainActor in
+                        await UserMountStore.shared.loadAndRemountAll()
+                    }
+                } else {
+                    NSLog("[ish] bootstrap failed: \(error)")
+                    finishLocalRuntimeBootstrap(.idle)
+                }
             }
-        } catch {
-            guard isAlreadyBootstrapped(error) else { throw error }
-            NSLog("[ish] bootstrap already completed")
         }
         await LitterBuildKit.shared.startFakefsRequestMonitor()
 
