@@ -617,6 +617,16 @@ struct InlineModelSelectorView: View {
         return threadPermissionPreset(approvalPolicy: approval, sandboxPolicy: sandbox) == .fullAccess
     }
 
+    private var selectedRuntimeSupportsPermissionOverrides: Bool {
+        if let activeRuntimeFilter {
+            return activeRuntimeFilter.supportsThreadPermissionOverrides
+        }
+        if let selectedAgentRuntimeKind {
+            return selectedAgentRuntimeKind.supportsThreadPermissionOverrides
+        }
+        return currentModel?.agentRuntimeKind.supportsThreadPermissionOverrides ?? true
+    }
+
     private var currentServer: AppServerSnapshot? {
         guard let resolvedServerId = threadKey?.serverId ?? serverId else { return nil }
         return appModel.snapshot?.serverSnapshot(for: resolvedServerId)

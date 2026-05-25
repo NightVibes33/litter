@@ -444,7 +444,7 @@ struct ConversationView: View {
         return AppComposerPayload(
             text: text,
             additionalInputs: additionalInputs,
-            fileAttachments: fileAttachments,
+            fileAttachments: [],
             approvalPolicy: appState.launchApprovalPolicy(for: activeThreadKey),
             sandboxPolicy: appState.turnSandboxPolicy(for: activeThreadKey),
             model: pendingModelOverride,
@@ -2326,10 +2326,9 @@ private struct ConversationInputBar: View {
         switch status {
         case .active: return "active"
         case .paused: return "paused"
-        case .blocked: return "blocked"
-        case .usageLimited: return "limited by usage"
         case .budgetLimited: return "limited by budget"
         case .complete: return "complete"
+        default: return "limited"
         }
     }
 
@@ -2340,8 +2339,9 @@ private struct ConversationInputBar: View {
                 let next: AppThreadGoalStatus
                 switch current {
                 case .active: next = .paused
-                case .paused, .blocked, .usageLimited, .budgetLimited: next = .active
+                case .paused, .budgetLimited: next = .active
                 case .complete: return
+                default: next = .active
                 }
                 taskBag.run { await applyGoalUpdate(status: next) }
             },

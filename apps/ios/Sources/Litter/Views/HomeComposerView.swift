@@ -269,7 +269,7 @@ struct HomeComposerView: View {
                 let payload = AppComposerPayload(
                     text: text,
                     additionalInputs: additionalInputs,
-                    fileAttachments: files,
+                    fileAttachments: [],
                     approvalPolicy: appState.launchApprovalPolicy(for: threadKey),
                     sandboxPolicy: appState.turnSandboxPolicy(for: threadKey),
                     model: modelOverride,
@@ -325,11 +325,16 @@ struct HomeComposerView: View {
     private func applyPickedFile(_ picked: PickedComposerFile) {
         switch picked {
         case .image(let image):
-            attachedImage = image
+            appendImageAttachment(image)
         case .file(let file):
-            if !attachedFiles.contains(file) {
-                attachedFiles.append(file)
-            }
+            attachments.append(
+                ConversationAttachment(
+                    kind: .file,
+                    displayName: file.label,
+                    detail: file.path,
+                    fakefsPath: file.path
+                )
+            )
         }
     }
 

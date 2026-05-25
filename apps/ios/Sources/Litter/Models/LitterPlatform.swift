@@ -44,6 +44,12 @@ enum LitterPlatform {
     private nonisolated(unsafe) static var bootstrapState: LocalRuntimeBootstrapState = .idle
     private static let bootstrapLock = NSLock()
 
+    private static func finishLocalRuntimeBootstrap(_ state: LocalRuntimeBootstrapState) {
+        bootstrapLock.lock()
+        bootstrapState = state
+        bootstrapLock.unlock()
+    }
+
     static func bootstrapLocalRuntimeIfNeeded() {
 #if !targetEnvironment(macCatalyst)
         Task.detached(priority: .utility) {

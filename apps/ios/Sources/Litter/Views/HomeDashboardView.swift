@@ -39,6 +39,8 @@ struct HomeDashboardView: View {
     var onShowApps: (() -> Void)? = nil
     /// Opens the real local iSH file workspace.
     var onShowFiles: (() -> Void)? = nil
+    /// Opens the full shared terminal surface when the feature is available.
+    var onShowTerminal: (() -> Void)? = nil
     let onPinThread: (ThreadKey) -> Void
     let onUnpinThread: (ThreadKey) -> Void
     let onHideThread: (ThreadKey) -> Void
@@ -1213,10 +1215,9 @@ struct SessionCanvasLine: View {
         switch status {
         case .active: return "· ACTIVE"
         case .paused: return "· PAUSED"
-        case .blocked: return "· BLOCKED"
-        case .usageLimited: return "· USAGE"
         case .budgetLimited: return "· BUDGET"
         case .complete: return "· COMPLETE"
+        default: return "· LIMITED"
         }
     }
 
@@ -1326,8 +1327,9 @@ struct SessionCanvasLine: View {
         switch status {
         case .active: return LitterTheme.accent
         case .paused: return LitterTheme.textMuted
-        case .blocked, .usageLimited, .budgetLimited: return LitterTheme.warning
+        case .budgetLimited: return LitterTheme.warning
         case .complete: return LitterTheme.success
+        default: return LitterTheme.warning
         }
     }
 
