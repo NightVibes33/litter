@@ -43,8 +43,8 @@ pub(crate) fn run_command(
     let cmd = mobile_system_command(argv);
     eprintln!("[ish-exec] run: {cmd} (cwd={})", cwd.display());
 
-    let cwd_str = cwd.to_string_lossy();
-    let (code, output) = crate::ish_runtime::run(&cmd, Some(cwd_str.as_ref()), timeout_ms);
+    let cwd_str = fakefs_cwd_string(cwd);
+    let (code, output) = crate::ish_runtime::run(&cmd, Some(cwd_str.as_str()), timeout_ms);
 
     let preview = String::from_utf8_lossy(&output);
     let preview = if preview.len() > 200 {
@@ -79,9 +79,9 @@ pub(crate) fn run_command_streaming(
     let cmd = mobile_system_command(argv);
     eprintln!("[ish-exec] run(streaming): {cmd} (cwd={})", cwd.display());
 
-    let cwd_str = cwd.to_string_lossy();
+    let cwd_str = fakefs_cwd_string(cwd);
     let (code, output) =
-        crate::ish_runtime::run_streaming(&cmd, Some(cwd_str.as_ref()), timeout_ms, |chunk| {
+        crate::ish_runtime::run_streaming(&cmd, Some(cwd_str.as_str()), timeout_ms, |chunk| {
             if !chunk.is_empty() {
                 on_output(chunk.to_vec());
             }
@@ -101,6 +101,27 @@ pub(crate) fn run_command_streaming(
     (code, output)
 }
 
+fn fakefs_cwd_string(cwd: &Path) -> String {
+    fakefs_cwd_path(cwd).to_string_lossy().into_owned()
+}
+
+fn fakefs_cwd_path(cwd: &Path) -> std::path::PathBuf {
+    let cwd_string = cwd.to_string_lossy();
+    if cwd_string.is_empty() || is_ios_host_path(&cwd_string) {
+        return std::path::PathBuf::from(crate::ish_runtime::default_cwd());
+    }
+    cwd.to_path_buf()
+}
+
+fn is_ios_host_path(path: &str) -> bool {
+    path.starts_with("/private/")
+        || path.starts_with("/var/")
+        || path.starts_with("/Users/")
+        || path.starts_with("/Library/")
+        || path.starts_with("/System/")
+        || path.starts_with("/Applications/")
+}
+
 fn is_apply_patch_invocation(argv: &[String]) -> bool {
     argv.iter()
         .any(|arg| arg == codex_apply_patch::CODEX_CORE_APPLY_PATCH_ARG1)
@@ -115,8 +136,13 @@ fn run_apply_patch_in_process(argv: &[String], cwd: &Path) -> (i32, Vec<u8>) {
         return (1, b"missing apply_patch payload\n".to_vec());
     };
 
-    eprintln!("[ish-exec] apply_patch in-process (cwd={})", cwd.display());
-    let cwd_abs = match AbsolutePathBuf::from_absolute_path(cwd) {
+    let fakefs_cwd = fakefs_cwd_path(cwd);
+    eprintln!(
+        "[ish-exec] apply_patch in-process (cwd={} fakefs_cwd={})",
+        cwd.display(),
+        fakefs_cwd.display()
+    );
+    let cwd_abs = match AbsolutePathBuf::from_absolute_path(&fakefs_cwd) {
         Ok(abs) => abs,
         Err(err) => {
             let msg = format!("invalid cwd for apply_patch: {err}\n");

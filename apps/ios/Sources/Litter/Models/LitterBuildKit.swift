@@ -677,6 +677,8 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 0, status: current.isReadyForNativeBuilds ? "nyxian-ready" : "nyxian-blocked", log: Self.nyxianStatusLog(current))
         case "litter-kittystore", "litter-kittystore-status":
             return await kittyStoreStatus(command: command, args: args)
+        case "litter-kittystore-config":
+            return kittyStoreConfig(args: args)
         case "litter-kittystore-source":
             return await kittyStoreSource(args: args)
         case "litter-kittystore-versions":
@@ -757,6 +759,62 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 0, status: state, log: Self.kittyStoreUsage() + "\n" + Self.prettyJSON(payload) + "\n")
         }
         return BuildKitCommandResult(exitCode: 0, status: state, log: Self.prettyJSON(payload) + "\n")
+    }
+
+    private func kittyStoreConfig(args: String) -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.contains("--help") || tokens.contains("-help") {
+            let usage = """
+            Usage: litter-kittystore-config [--json] [--repo owner/repo] [--owner owner --repository repo] [--manifest-asset litter-update.json] [--source-asset litter-altstore-source.json] [--stable-tag app-source] [--tag-prefix litter-v] [--reset]
+            Configures the KittyStore release/source repository at runtime for bots and rebranded builds.
+            """
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-config-help", log: usage + "\n")
+        }
+
+        if tokens.contains("--reset") {
+            AppReleaseSource.clearOverrides()
+            let payload = Self.kittyStoreConfigPayload(AppReleaseSource.current, changed: ["reset"])
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-config-reset", log: Self.prettyJSON(payload) + "\n")
+        }
+
+        var owner = Self.optionValue(tokens: tokens, names: ["--owner"])
+        var repo = Self.optionValue(tokens: tokens, names: ["--repository", "--repo-name"])
+        if let repoPath = Self.optionValue(tokens: tokens, names: ["--repo"]), repoPath.contains("/") {
+            let parts = repoPath.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: true).map(String.init)
+            guard parts.count == 2 else {
+                return BuildKitCommandResult(exitCode: 64, status: "kittystore-config-invalid-repo", log: "Expected --repo owner/repo.\n")
+            }
+            owner = parts[0]
+            repo = parts[1]
+        }
+
+        let manifest = Self.optionValue(tokens: tokens, names: ["--manifest-asset"])
+        let source = Self.optionValue(tokens: tokens, names: ["--source-asset"])
+        let stableTag = Self.optionValue(tokens: tokens, names: ["--stable-tag"])
+        let tagPrefix = Self.optionValue(tokens: tokens, names: ["--tag-prefix"])
+        let changed = [
+            owner.map { _ in "owner" },
+            repo.map { _ in "repo" },
+            manifest.map { _ in "manifestAssetName" },
+            source.map { _ in "sourceAssetName" },
+            stableTag.map { _ in "stableTag" },
+            tagPrefix.map { _ in "releaseTagPrefix" }
+        ].compactMap { $0 }
+
+        if !changed.isEmpty {
+            AppReleaseSource.saveOverrides(
+                owner: owner,
+                repo: repo,
+                manifestAssetName: manifest,
+                sourceAssetName: source,
+                stableTag: stableTag,
+                releaseTagPrefix: tagPrefix
+            )
+        }
+
+        let payload = Self.kittyStoreConfigPayload(AppReleaseSource.current, changed: changed)
+        let status = changed.isEmpty ? "kittystore-config" : "kittystore-config-updated"
+        return BuildKitCommandResult(exitCode: 0, status: status, log: Self.prettyJSON(payload) + "\n")
     }
 
     private func kittyStoreSource(args: String) async -> BuildKitCommandResult {
@@ -1740,6 +1798,23 @@ actor LitterBuildKit {
         if ["--help", "-help", "help"].contains(first) {
             return BuildKitCommandResult(exitCode: 0, status: "swift-help", log: Self.swiftCompatibilityUsage())
         }
+        if first == "-e" {
+            let expression = tokens.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !expression.isEmpty else {
+                return BuildKitCommandResult(exitCode: 64, status: "swift-e-missing-expression", log: "Usage: swift -e 'print(\"hello\")'\n")
+            }
+            let sourcePath = "\(buildDir)/swift-e.swift"
+            do {
+                _ = await IshFS.run("mkdir -p \(IshFS.shellQuote(buildDir))")
+                try await IshFS.writeTextFile(path: sourcePath, text: expression + "\n")
+            } catch {
+                return BuildKitCommandResult(exitCode: 73, status: "swift-e-write-failed", log: "Could not stage swift -e source: \(error.localizedDescription)\n")
+            }
+            let result = await swiftCheck(args: sourcePath, cwd: cwd, buildDir: buildDir)
+            let status = result.exitCode == 0 ? "swift-e-check-ok" : result.status
+            let prelude = "Litter swift -e compatibility: checking the snippet with the iOS Swift driver. iSH cannot execute iOS Mach-O output directly.\nExpression source: \(sourcePath)\n\n"
+            return BuildKitCommandResult(exitCode: result.exitCode, status: status, log: prelude + result.log, artifacts: result.artifacts)
+        }
         if first == "build" {
             return await nativeBuildCommand(command: "litter-swift-build", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir)
         }
@@ -1756,7 +1831,7 @@ actor LitterBuildKit {
         if first.hasSuffix(".swift") {
             return await swiftCheck(args: args, cwd: cwd, buildDir: buildDir)
         }
-        return BuildKitCommandResult(exitCode: 64, status: "swift-unsupported", log: "Litter's swift compatibility shim supports: --version, --help, swift <file.swift>, swift build, swift test, and swift run as build-only.\nUse litter-swift-check, litter-swift-build, or litter-swift-test for the canonical bot API.\n")
+        return BuildKitCommandResult(exitCode: 64, status: "swift-unsupported", log: "Litter's swift compatibility shim supports: --version, --help, swift -e, swift <file.swift>, swift build, swift test, and swift run as build-only.\nUse litter-swift-check, litter-swift-build, or litter-swift-test for the canonical bot API.\n")
     }
 
     private func swiftcCompile(args: String, cwd: String, buildDir: String, compatibilityName: String) async -> BuildKitCommandResult {
@@ -2836,7 +2911,6 @@ actor LitterBuildKit {
         [toolchainRoot.appendingPathComponent("CoreCompilerSupportLibs", isDirectory: true)]
     }
 
-
     private static func preloadSupportLibraries(at root: URL, diagnostics: inout [String]) -> Bool {
         guard let supportLibraries = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else {
             diagnostics.append("support library directory missing or unreadable \(root.path)")
@@ -3269,6 +3343,7 @@ actor LitterBuildKit {
         Litter swift compatibility shim
         Supported:
           swift --version
+          swift -e 'print("hello")'  # check-only on iOS; direct Mach-O execution is unavailable in iSH
           swift path/to/File.swift
           swift build [LitterBuild.json]
           swift test [LitterBuild.json]
@@ -3398,6 +3473,21 @@ actor LitterBuildKit {
         return nil
     }
 
+    private static func kittyStoreConfigPayload(_ source: AppReleaseSource, changed: [String]) -> [String: Any] {
+        [
+            "repository": source.repositoryPath,
+            "owner": source.owner,
+            "repo": source.repo,
+            "manifestAssetName": source.manifestAssetName,
+            "sourceAssetName": source.sourceAssetName,
+            "stableTag": source.stableTag,
+            "releaseTagPrefix": source.releaseTagPrefix,
+            "stableUpdateURL": source.stableUpdateURLString,
+            "stableSourceURL": source.stableSourceURLString,
+            "changed": changed
+        ]
+    }
+
     private static func kittyStoreStatusPayload(_ status: LitterBuildKitStatus) -> [String: Any] {
         [
             "store": [
@@ -3429,6 +3519,7 @@ actor LitterBuildKit {
             ],
             "botCommands": [
                 "litter-kittystore-status",
+                "litter-kittystore-config",
                 "litter-kittystore-source",
                 "litter-kittystore-versions",
                 "litter-kittystore-import-sideconf",
@@ -3448,6 +3539,7 @@ actor LitterBuildKit {
         KittyStore bot API
         Commands:
         - litter-kittystore-status --json
+        - litter-kittystore-config [--repo owner/repo] [--reset]
         - litter-kittystore-source [--url] [--out /root/source.json]
         - litter-kittystore-versions [--out /root/versions.json]
         - litter-kittystore-import-sideconf --sideconf /root/Account.sideconf [--anisette-url https://ani.sidestore.io]

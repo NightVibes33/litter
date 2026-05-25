@@ -18,10 +18,10 @@ mod imp {
         cwd: Option<String>,
         size: TerminalSize,
     ) -> Result<OpenBackendResult, TerminalError> {
-        let instance = crate::ish_runtime::instance_or_wait(Duration::from_secs(60))
+        let instance = crate::ish_runtime::ready_instance_or_wait(Duration::from_secs(60))
             .await
             .ok_or_else(|| TerminalError::Backend {
-                detail: "iSH bootstrap did not complete in time. Force-quit the app and relaunch; the first launch can take 10–30s while the rootfs is extracted.".to_string(),
+                detail: "iSH bootstrap did not complete in time. Force-quit the app and relaunch; the first launch can take 10-30s while the rootfs is extracted.".to_string(),
             })?;
 
         let mut env = crate::ish_runtime::runtime_env();

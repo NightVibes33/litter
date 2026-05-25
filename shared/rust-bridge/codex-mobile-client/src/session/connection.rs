@@ -367,6 +367,19 @@ fn init_ios_tls_roots(codex_home: &std::path::Path) -> Result<(), TransportError
     Ok(())
 }
 
+fn in_process_fallback_cwd(working_dir: &std::path::Path) -> PathBuf {
+    #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]
+    {
+        let _ = working_dir;
+        PathBuf::from(crate::ish_runtime::default_cwd())
+    }
+
+    #[cfg(not(all(target_os = "ios", not(target_abi = "macabi"))))]
+    {
+        working_dir.to_path_buf()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ServerConfig
 // ---------------------------------------------------------------------------
@@ -594,6 +607,13 @@ impl ServerSession {
             max_attempts: 1,
         });
 
+        #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]
+        if !crate::ish_runtime::ready_or_wait(Duration::from_secs(60)).await {
+            return Err(TransportError::ConnectionFailed(
+                "iSH runtime did not finish bootstrapping before local Codex server start".to_string(),
+            ));
+        }
+
         let in_process = prepare_in_process_config(in_process)?;
 
         // Apply codex_home override if provided.
@@ -640,7 +660,7 @@ impl ServerSession {
             base_builder = base_builder.codex_home(codex_home.clone());
         }
         if let Some(ref working_dir) = in_process.working_directory {
-            base_builder = base_builder.fallback_cwd(Some(working_dir.clone()));
+            base_builder = base_builder.fallback_cwd(Some(in_process_fallback_cwd(working_dir)));
         }
 
         let base_config = base_builder
@@ -669,7 +689,7 @@ impl ServerSession {
             resolved_builder = resolved_builder.codex_home(codex_home.clone());
         }
         if let Some(ref working_dir) = in_process.working_directory {
-            resolved_builder = resolved_builder.fallback_cwd(Some(working_dir.clone()));
+            resolved_builder = resolved_builder.fallback_cwd(Some(in_process_fallback_cwd(working_dir)));
         }
 
         let resolved_config = resolved_builder.build().await.unwrap_or(base_config);

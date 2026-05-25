@@ -54,6 +54,7 @@ impl From<ish_embed_host::IshError> for IshBootstrapError {
 }
 
 static INSTANCE: OnceLock<IshInstance> = OnceLock::new();
+static READY: OnceLock<()> = OnceLock::new();
 
 pub(crate) fn instance() -> Option<&'static IshInstance> {
     INSTANCE.get()
@@ -77,6 +78,44 @@ pub(crate) async fn instance_or_wait(timeout: Duration) -> Option<&'static IshIn
         }
     }
     None
+}
+
+pub(crate) async fn ready_or_wait(timeout: Duration) -> bool {
+    if READY.get().is_some() {
+        return true;
+    }
+    let deadline = Instant::now() + timeout;
+    let poll = Duration::from_millis(100);
+    while Instant::now() < deadline {
+        tokio::time::sleep(poll).await;
+        if READY.get().is_some() {
+            return true;
+        }
+    }
+    false
+}
+
+pub(crate) async fn ready_instance_or_wait(timeout: Duration) -> Option<&'static IshInstance> {
+    if ready_or_wait(timeout).await {
+        INSTANCE.get()
+    } else {
+        None
+    }
+}
+
+fn ready_or_wait_blocking(timeout: Duration) -> bool {
+    if READY.get().is_some() {
+        return true;
+    }
+    let deadline = Instant::now() + timeout;
+    let poll = Duration::from_millis(100);
+    while Instant::now() < deadline {
+        std::thread::sleep(poll);
+        if READY.get().is_some() {
+            return true;
+        }
+    }
+    false
 }
 
 fn instance_or_wait_blocking(timeout: Duration) -> Option<&'static IshInstance> {
@@ -138,15 +177,16 @@ pub fn bootstrap(
         .set(instance)
         .map_err(|_| IshBootstrapError::AlreadyBootstrapped)?;
 
-    // Now that INSTANCE is published, the post-init setup goes through the
-    // normal run() path, which takes the shared lock and honors the same
-    // ordering guarantees as regular command dispatch.
+    // Now that INSTANCE is published, bootstrap setup can run inside the
+    // fakefs. Public command dispatch waits for READY below so normal user
+    // commands cannot race this setup window.
     runtime_setup();
     mount_codex_home(application_support_dir);
     write_resolv_conf();
     mount_apps_dir(documents_dir);
 
     crate::ish_exec::install();
+    let _ = READY.set(());
 
     Ok(())
 }
@@ -160,12 +200,9 @@ pub fn default_cwd() -> &'static str {
 /// Diagnostic readiness check. This is available for explicit diagnostics; app launch
 /// does not gate startup on it.
 pub fn preflight() -> (i32, Vec<u8>) {
-    if INSTANCE.get().is_none() {
-        eprintln!("[ish] preflight called before bootstrap succeeded");
-        return (
-            ISH_E_NOT_RUNNING,
-            b"iSH runtime is not bootstrapped\n".to_vec(),
-        );
+    if READY.get().is_none() {
+        eprintln!("[ish] preflight called before bootstrap completed");
+        return (ISH_E_NOT_RUNNING, b"iSH runtime is not ready\n".to_vec());
     }
 
     run("true", None, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS))
@@ -185,11 +222,35 @@ pub fn run_streaming<F>(
     cmd: &str,
     cwd: Option<&str>,
     timeout_ms: Option<u64>,
+    on_output: F,
+) -> (i32, Vec<u8>)
+where
+    F: FnMut(&[u8]),
+{
+    run_streaming_inner(cmd, cwd, timeout_ms, true, on_output)
+}
+
+fn run_bootstrap_command(cmd: &str, timeout_ms: Option<u64>) -> (i32, Vec<u8>) {
+    run_streaming_inner(cmd, None, timeout_ms, false, |_| {})
+}
+
+fn run_streaming_inner<F>(
+    cmd: &str,
+    cwd: Option<&str>,
+    timeout_ms: Option<u64>,
+    require_ready: bool,
     mut on_output: F,
 ) -> (i32, Vec<u8>)
 where
     F: FnMut(&[u8]),
 {
+    if require_ready && !ready_or_wait_blocking(INSTANCE_WAIT_TIMEOUT) {
+        eprintln!("[ish] run() called before bootstrap completed");
+        let output = b"iSH runtime is not ready\n".to_vec();
+        on_output(&output);
+        return (ISH_E_NOT_RUNNING, output);
+    }
+
     let Some(instance) = instance_or_wait_blocking(INSTANCE_WAIT_TIMEOUT) else {
         eprintln!("[ish] run() called before bootstrap succeeded");
         let output = b"iSH runtime is not bootstrapped\n".to_vec();
@@ -214,8 +275,8 @@ where
 
 // ── post-init setup helpers ──────────────────────────────────────────────
 // These mirror codex_ish_runtime_setup / codex_ish_write_resolv_conf /
-// codex_ish_mount_apps_dir from IshBridge.m. They call run() internally; the
-// ish crate's own lock serializes the actual dispatches.
+// codex_ish_mount_apps_dir from IshBridge.m. They bypass the public ready
+// latch because they are the work that makes the runtime ready.
 
 const RUNTIME_SETUP_SCRIPT: &str = concat!(
     "mkdir -p /dev /tmp /var/tmp /usr/local/bin /root/litter ",
@@ -254,11 +315,7 @@ pub(crate) fn runtime_env() -> HashMap<String, String> {
 }
 
 fn runtime_setup() {
-    let (rc, _) = run(
-        RUNTIME_SETUP_SCRIPT,
-        None,
-        Some(BOOTSTRAP_COMMAND_TIMEOUT_MS),
-    );
+    let (rc, _) = run_bootstrap_command(RUNTIME_SETUP_SCRIPT, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS));
     if rc != 0 {
         eprintln!("[ish] runtime setup failed rc={rc}");
     }
@@ -276,7 +333,7 @@ fn mount_codex_home(application_support_dir: &Path) {
     };
 
     let cmd = codex_home_bridge_script(codex_home_str);
-    let (rc, output) = run(&cmd, None, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS));
+    let (rc, output) = run_bootstrap_command(&cmd, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS));
     if rc != 0 {
         let message = String::from_utf8_lossy(&output);
         eprintln!("[ish] mount /root/.codex bridge failed rc={rc}: {message}");
@@ -308,7 +365,7 @@ fn codex_home_bridge_script(codex_home: &str) -> String {
 fn write_resolv_conf() {
     let body = resolv_conf_body();
     let cmd = format!("printf %s {} > /etc/resolv.conf", shell_quote(&body));
-    let (rc, _) = run(&cmd, None, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS));
+    let (rc, _) = run_bootstrap_command(&cmd, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS));
     if rc != 0 {
         eprintln!("[ish] failed to write /etc/resolv.conf rc={rc}");
     } else {
@@ -330,7 +387,7 @@ fn mount_apps_dir(documents_dir: &Path) {
         "mkdir -p /mnt/apps && mount -t real {} /mnt/apps",
         shell_quote(apps_str)
     );
-    let (rc, _) = run(&cmd, None, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS));
+    let (rc, _) = run_bootstrap_command(&cmd, Some(BOOTSTRAP_COMMAND_TIMEOUT_MS));
     if rc != 0 {
         eprintln!("[ish] mount /mnt/apps failed rc={rc}");
     } else {

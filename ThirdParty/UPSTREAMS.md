@@ -6,6 +6,7 @@ These source drops are kept small and source-only. Generated build products, IPA
 
 - Feather reference repo: https://github.com/khcrysalis/Feather.git
 - Feather reference commit inspected for this integration: `2320fd752864adaa9a173f9fc2f64ee9241e979e`
+- Feather app reference snapshot path: `ThirdParty/Feather/AppReference`
 - KittyStore signing option reference files adapted from Feather at the inspected commit:
   - `Feather/Backend/Observable/OptionsManager.swift`
   - `Feather/Utilities/Handlers/SigningHandler.swift`
@@ -21,6 +22,7 @@ These source drops are kept small and source-only. Generated build products, IPA
 
 - SideStore reference repo: https://github.com/SideStore/SideStore.git
 - SideStore reference commit inspected for this integration: `d292edffd1264918e6a83d3d2a0fb8cfde80e3ca`
+- SideStore app layout reference snapshot path: `ThirdParty/SideStore/AppReference`
 - AltSign signing package repo: https://github.com/SideStore/AltSign.git
 - AltSign submodule commit: `7efe511440cfdbddc04a723490def86232c42f6c`
 - AltSign submodule path: `ThirdParty/SideStore/AltSign`
