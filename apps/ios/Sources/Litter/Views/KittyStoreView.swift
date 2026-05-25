@@ -1437,6 +1437,26 @@ struct KittyStoreView: View {
                 return
             }
 
+            do {
+                let certificateSummary = try NyxianSigningCertificateValidator.validate(
+                    pkcs12Data: identity.data,
+                    password: identity.password,
+                    checkRevocation: true
+                )
+                _ = try NyxianProvisioningProfileValidator.validate(
+                    data: profileData,
+                    signingCertificateFingerprint: certificateSummary.sha256Fingerprint,
+                    requestedBundleIdentifier: bundleID
+                )
+            } catch {
+                signingInProgress = false
+                signingAlert = KittyStoreSigningAlert(
+                    title: "Certificate Failed",
+                    message: "The saved .p12 or provisioning profile is no longer valid for SideStore AltSign.\n\(error.localizedDescription)"
+                )
+                return
+            }
+
             let outputDirectory: URL
             do {
                 outputDirectory = try LitterDownloadSupport.appSupportDirectory(named: "KittyStoreSignedIPAs")
