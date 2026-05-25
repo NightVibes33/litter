@@ -6,6 +6,7 @@ import Security
 struct NyxianSigningCertificateSummary: Codable, Equatable, Sendable {
     var commonName: String
     var sha256Fingerprint: String
+    var expiresAt: Date?
     var provisioningProfileName: String?
     var provisioningProfileUUID: String?
     var validatedAt: Date
@@ -614,6 +615,7 @@ enum NyxianSigningCertificateValidationError: LocalizedError {
     case embeddedProvisioningProfileUnreadable(String)
     case provisioningProfileHasNoDeveloperCertificates
     case certificateDoesNotMatchProvisioningProfile(String)
+    case expired(Date)
     case trustCreationFailed(OSStatus)
     case trustEvaluationFailed(String)
 
@@ -639,6 +641,8 @@ enum NyxianSigningCertificateValidationError: LocalizedError {
             return "The embedded provisioning profile does not list developer certificates."
         case .certificateDoesNotMatchProvisioningProfile(let name):
             return "\(name) does not match the certificate that signed this installed Litter app."
+        case .expired(let date):
+            return "The signing certificate expired on \(ISO8601DateFormatter().string(from: date))."
         case .trustCreationFailed(let status):
             return "Could not build a trust check for the certificate (\(Self.describe(status)))."
         case .trustEvaluationFailed(let reason):
@@ -691,6 +695,10 @@ enum NyxianSigningCertificateValidator {
 
         let certificateData = SecCertificateCopyData(certificate) as Data
         let commonName = certificateCommonName(certificate)
+        let expiresAt = certificateExpirationDate(from: certificateData)
+        if let expiresAt, expiresAt <= Date() {
+            throw NyxianSigningCertificateValidationError.expired(expiresAt)
+        }
         var matchedProvisioningProfile: EmbeddedProvisioningProfile?
         do {
             let provisioningProfile = try EmbeddedProvisioningProfile.load()
@@ -715,6 +723,7 @@ enum NyxianSigningCertificateValidator {
         return NyxianSigningCertificateSummary(
             commonName: commonName,
             sha256Fingerprint: sha256Fingerprint(for: certificateData),
+            expiresAt: expiresAt,
             provisioningProfileName: matchedProvisioningProfile?.name,
             provisioningProfileUUID: matchedProvisioningProfile?.uuid,
             validatedAt: Date()
@@ -725,6 +734,164 @@ enum NyxianSigningCertificateValidator {
         let summary = SecCertificateCopySubjectSummary(certificate) as String?
         let trimmed = summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? "Signing certificate" : trimmed
+    }
+
+    private static func certificateExpirationDate(from certificateData: Data) -> Date? {
+        var rootOffset = 0
+        guard let certificate = readASN1Node(in: certificateData, offset: &rootOffset, limit: certificateData.count),
+              certificate.tag == 0x30 else {
+            return nil
+        }
+
+        var certificateOffset = certificate.contentStart
+        guard let tbsCertificate = readASN1Node(in: certificateData, offset: &certificateOffset, limit: certificate.contentEnd),
+              tbsCertificate.tag == 0x30 else {
+            return nil
+        }
+
+        var tbsOffset = tbsCertificate.contentStart
+        if let first = peekASN1Node(in: certificateData, offset: tbsOffset, limit: tbsCertificate.contentEnd),
+           first.tag == 0xA0 {
+            tbsOffset = first.end
+        }
+
+        guard skipASN1Node(in: certificateData, offset: &tbsOffset, limit: tbsCertificate.contentEnd),
+              skipASN1Node(in: certificateData, offset: &tbsOffset, limit: tbsCertificate.contentEnd),
+              skipASN1Node(in: certificateData, offset: &tbsOffset, limit: tbsCertificate.contentEnd),
+              let validity = readASN1Node(in: certificateData, offset: &tbsOffset, limit: tbsCertificate.contentEnd),
+              validity.tag == 0x30 else {
+            return nil
+        }
+
+        var validityOffset = validity.contentStart
+        guard skipASN1Node(in: certificateData, offset: &validityOffset, limit: validity.contentEnd),
+              let notAfter = readASN1Node(in: certificateData, offset: &validityOffset, limit: validity.contentEnd),
+              notAfter.tag == 0x17 || notAfter.tag == 0x18 else {
+            return nil
+        }
+
+        return parseASN1Time(
+            Data(certificateData[notAfter.contentStart..<notAfter.contentEnd]),
+            tag: notAfter.tag
+        )
+    }
+
+    private static func parseASN1Time(_ data: Data, tag: UInt8) -> Date? {
+        guard let raw = String(data: data, encoding: .ascii) else { return nil }
+        if tag == 0x17 { return parseUTCTime(raw) }
+        if tag == 0x18 { return parseGeneralizedTime(raw) }
+        return nil
+    }
+
+    private static func parseUTCTime(_ raw: String) -> Date? {
+        guard raw.count >= 10 else { return nil }
+        guard let shortYear = intField(raw, start: 0, count: 2) else { return nil }
+        let year = shortYear >= 50 ? 1900 + shortYear : 2000 + shortYear
+        return parseCertificateTime(raw, year: year, componentStart: 2)
+    }
+
+    private static func parseGeneralizedTime(_ raw: String) -> Date? {
+        guard raw.count >= 12 else { return nil }
+        return parseCertificateTime(raw, year: intField(raw, start: 0, count: 4), componentStart: 4)
+    }
+
+    private static func parseCertificateTime(_ raw: String, year: Int?, componentStart: Int) -> Date? {
+        guard let year = year,
+              let month = intField(raw, start: componentStart, count: 2),
+              let day = intField(raw, start: componentStart + 2, count: 2),
+              let hour = intField(raw, start: componentStart + 4, count: 2),
+              let minute = intField(raw, start: componentStart + 6, count: 2) else {
+            return nil
+        }
+
+        var cursor = componentStart + 8
+        var second = 0
+        if raw.count >= cursor + 2, let parsedSecond = intField(raw, start: cursor, count: 2) {
+            second = parsedSecond
+            cursor += 2
+        }
+
+        var offsetSeconds = 0
+        let scalars = Array(raw.unicodeScalars)
+        if cursor < scalars.count {
+            let marker = scalars[cursor].value
+            if marker == 90 {
+                offsetSeconds = 0
+            } else if marker == 43 || marker == 45,
+                      let hours = intField(raw, start: cursor + 1, count: 2),
+                      let minutes = intField(raw, start: cursor + 3, count: 2) {
+                let sign = marker == 45 ? -1 : 1
+                offsetSeconds = sign * ((hours * 60 + minutes) * 60)
+            }
+        }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? TimeZone.current
+        var components = DateComponents()
+        components.calendar = calendar
+        components.timeZone = calendar.timeZone
+        components.year = year
+        components.month = month
+        components.day = day
+        components.hour = hour
+        components.minute = minute
+        components.second = second
+        return calendar.date(from: components)?.addingTimeInterval(TimeInterval(-offsetSeconds))
+    }
+
+    private static func intField(_ raw: String, start: Int, count: Int) -> Int? {
+        let scalars = Array(raw.unicodeScalars)
+        guard start >= 0, count > 0, start + count <= scalars.count else { return nil }
+        var value = 0
+        for scalar in scalars[start..<(start + count)] {
+            guard scalar.value >= 48, scalar.value <= 57 else { return nil }
+            value = value * 10 + Int(scalar.value - 48)
+        }
+        return value
+    }
+
+    private struct ASN1Node {
+        var tag: UInt8
+        var contentStart: Int
+        var contentEnd: Int
+        var end: Int
+    }
+
+    private static func peekASN1Node(in data: Data, offset: Int, limit: Int) -> ASN1Node? {
+        var mutableOffset = offset
+        return readASN1Node(in: data, offset: &mutableOffset, limit: limit)
+    }
+
+    private static func skipASN1Node(in data: Data, offset: inout Int, limit: Int) -> Bool {
+        readASN1Node(in: data, offset: &offset, limit: limit) != nil
+    }
+
+    private static func readASN1Node(in data: Data, offset: inout Int, limit: Int) -> ASN1Node? {
+        guard offset >= 0, offset + 2 <= limit, limit <= data.count else { return nil }
+        let tag = data[offset]
+        offset += 1
+        let lengthByte = data[offset]
+        offset += 1
+
+        let length: Int
+        if lengthByte & 0x80 == 0 {
+            length = Int(lengthByte)
+        } else {
+            let byteCount = Int(lengthByte & 0x7F)
+            guard byteCount > 0, byteCount <= 4, offset + byteCount <= limit else { return nil }
+            var parsedLength = 0
+            for _ in 0..<byteCount {
+                parsedLength = (parsedLength << 8) | Int(data[offset])
+                offset += 1
+            }
+            length = parsedLength
+        }
+
+        let contentStart = offset
+        let contentEnd = contentStart + length
+        guard length >= 0, contentEnd <= limit else { return nil }
+        offset = contentEnd
+        return ASN1Node(tag: tag, contentStart: contentStart, contentEnd: contentEnd, end: contentEnd)
     }
 
     private static func certificateChain(from item: [String: Any]) -> [SecCertificate] {

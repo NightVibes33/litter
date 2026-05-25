@@ -139,13 +139,29 @@ struct KittyStoreView: View {
         .alert(item: $signingAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
         }
-        .confirmationDialog("Remove from Device", item: $pendingDeviceRemoval, titleVisibility: .visible) { request in
-            Button("Remove \(request.name)", role: .destructive) {
-                removeSelectedAppFromDevice(request)
+        .confirmationDialog(
+            "Remove from Device",
+            isPresented: Binding(
+                get: { pendingDeviceRemoval != nil },
+                set: { isPresented in
+                    if !isPresented { pendingDeviceRemoval = nil }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let request = pendingDeviceRemoval {
+                Button("Remove \(request.name)", role: .destructive) {
+                    removeSelectedAppFromDevice(request)
+                    pendingDeviceRemoval = nil
+                }
             }
-            Button("Cancel", role: .cancel) {}
-        } message: { request in
-            Text("Uninstall \(request.bundleIdentifier) through the SideStore minimuxer bridge.")
+            Button("Cancel", role: .cancel) {
+                pendingDeviceRemoval = nil
+            }
+        } message: {
+            if let request = pendingDeviceRemoval {
+                Text("Uninstall \(request.bundleIdentifier) through the SideStore minimuxer bridge.")
+            }
         }
         .task { await refreshAll() }
         .onDisappear {
