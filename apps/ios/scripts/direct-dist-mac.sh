@@ -276,6 +276,8 @@ archive_cmd=(
     clean archive
     MARKETING_VERSION="$MARKETING_VERSION"
     CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+    ARCHS=arm64
+    ONLY_ACTIVE_ARCH=NO
 )
 
 if [[ -n "$TEAM_ID" ]]; then

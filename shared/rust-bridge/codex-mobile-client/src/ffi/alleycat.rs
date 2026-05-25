@@ -52,6 +52,8 @@ pub struct AppAgentCapabilities {
     pub visible_modes: Option<Vec<String>>,
     pub supports_ssh_bridge: bool,
     pub uses_direct_codex_port: bool,
+    pub supports_thread_permission_overrides: bool,
+    pub reports_effective_thread_permissions: bool,
 }
 
 impl From<AgentPresentation> for AppAgentPresentation {
@@ -73,6 +75,8 @@ impl From<AgentCapabilities> for AppAgentCapabilities {
             visible_modes: value.visible_modes,
             supports_ssh_bridge: value.supports_ssh_bridge,
             uses_direct_codex_port: value.uses_direct_codex_port,
+            supports_thread_permission_overrides: value.supports_thread_permission_overrides,
+            reports_effective_thread_permissions: value.reports_effective_thread_permissions,
         }
     }
 }

@@ -7,7 +7,7 @@ APP_PATH="$(/bin/ls -dt "${DERIVED_DATA_ROOT}"/Litter-*/Build/Products/Debug-iph
 BUNDLE_ID="com.sigkitten.litter"
 APP_EXECUTABLE_NAME="$(basename "${APP_PATH}" .app)"
 
-PROFILE_ENABLED="${IOS_DEVICE_PROFILE:-1}"
+PROFILE_ENABLED="${IOS_DEVICE_PROFILE:-0}"
 PROFILE_TEMPLATE="${IOS_DEVICE_PROFILE_TEMPLATE:-Time Profiler}"
 PROFILE_TIME_LIMIT="${IOS_DEVICE_PROFILE_TIME_LIMIT:-}"
 # When 1, xctrace launches the app itself (`--launch -- <app>`) instead of

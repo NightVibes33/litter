@@ -7,6 +7,7 @@ license-file = "../../../LICENSE"
 
 [dependencies]
 codex-app-server-client = { workspace = true }
+codex-app-server-protocol = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }

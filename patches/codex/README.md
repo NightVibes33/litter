@@ -35,9 +35,14 @@ Touches `core/src/shell_snapshot.rs`.
 ## `remote-app-server-websocket-cap.patch`
 Generalizes the remote app-server transport so it can drive any `AsyncRead + AsyncWrite` stream (not just `MaybeTlsStream<TcpStream>`). Required so that a single SSH connection can multiplex multiple websocket-style RPC sessions through litter's tunneling.
 
-Touches `app-server-client/src/remote.rs`.
+Refactors `connect_with_stream` into a wire-generic `connect_with_wire<W: JsonRpcWire>` that the upstream `connect()` path now delegates into. Exposes:
+- `JsonRpcWire` trait (re-exported from `codex_app_server_client`)
+- `RemoteAppServerClient::connect_websocket_stream<S>` — websocket-over-stream entry point
+- `RemoteAppServerClient::connect_with_wire<W>` — generic wire entry point
 
-Consumed by `shared/rust-bridge/codex-mobile-client/src/ssh_remote_transport.rs`.
+Touches `app-server-client/src/{lib.rs,remote.rs}`.
+
+Consumed by the SSH/Alleycat remote transport paths in `shared/rust-bridge/codex-mobile-client/src/alleycat.rs`, `src/session/connection.rs`, and `src/ssh_bridge.rs`. Websocket-style reconnects use `RemoteAppServerClient::connect_websocket_stream`. JSON-line transports (Pi/non-Codex servers, alleycat jsonl, SSH-bridge bootstrap) use the litter-side `codex_slingshot::json_line_wire::connect_json_line_stream`, which builds a `JsonLineWire` and feeds it into `connect_with_wire`.
 
 ## `absolute-path-cross-platform.patch`
 Lets `AbsolutePathBuf` deserialize Windows-style absolute paths on POSIX (and vice versa) without trying to canonicalize them through `path_absolutize::Absolutize` (which would mangle them by joining onto a POSIX cwd). Required because litter mobile clients consume thread metadata from servers running on either OS.
@@ -52,9 +57,9 @@ Touches `core/src/installation_id.rs`.
 ## `dynamic-tool-call-arguments-delta.patch`
 Adds streaming delta notifications for dynamic tool-call argument JSON. The model emits `response.function_call_arguments.delta` SSE events; this patch surfaces them as `EventMsg::DynamicToolCallArgumentsDelta` and `ServerNotification::DynamicToolCallArgumentsDelta` so mobile clients can render partial tool-call output before the call finalizes.
 
-Touches `protocol/src/protocol.rs`, `app-server-protocol/src/protocol/{common.rs,event_mapping.rs,v2/item.rs}`, `app-server/src/bespoke_event_handling.rs`, `codex-api/src/sse/responses.rs`, `core/src/session/turn.rs`, `mcp-server/src/codex_tool_runner.rs`, `rollout-trace/src/protocol_event.rs`, `rollout/src/policy.rs`, `tui/src/{app/app_server_event_targets.rs,chatwidget.rs}`.
+Touches `protocol/src/protocol.rs`, `app-server-protocol/src/protocol/{common.rs,event_mapping.rs,v2/item.rs}`, `app-server/src/bespoke_event_handling.rs`, `codex-api/src/sse/responses.rs`, `core/src/session/turn.rs`, `mcp-server/src/codex_tool_runner.rs`, `rollout-trace/src/protocol_event.rs`, `rollout/src/policy.rs`, `tui/src/app/app_server_event_targets.rs`, `tui/src/chatwidget/protocol.rs`.
 
-The TUI hunks are no-op match arms required only because upstream's `ServerNotification` matches are exhaustive.
+The TUI hunks are no-op match arms required only because upstream's `ServerNotification` matches are exhaustive. Upstream moved the consolidated `handle_server_notification` match from `tui/src/chatwidget.rs` into `tui/src/chatwidget/protocol.rs`; this patch targets the new location.
 
 ## `realtime-webrtc-env-apikey.patch`
 For WebRTC realtime sessions, populate the request headers with the API key obtained from `realtime_api_key(auth, provider)`. Without this, the WebRTC peer connection fails to authenticate when the user is signed in via env-key auth.

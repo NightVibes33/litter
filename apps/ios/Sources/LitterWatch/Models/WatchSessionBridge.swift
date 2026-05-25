@@ -86,6 +86,28 @@ final class WatchSessionBridge: NSObject, WCSessionDelegate {
         sendMessage(["kind": "snapshot.request"])
     }
 
+    // MARK: - Home visibility
+
+    /// Hide a thread from the home list (both watch and iPhone home).
+    /// Routes via `SavedThreadsStore.hide` on the iPhone, which fires
+    /// `.litterThreadPreferencesDidChange` and triggers a refreshed push.
+    func sendHomeHide(serverId: String, threadId: String) {
+        sendMessage([
+            "kind": "home.hide",
+            "serverId": serverId,
+            "threadId": threadId,
+        ])
+    }
+
+    /// Inverse of `sendHomeHide` — restore a previously hidden thread.
+    func sendHomeUnhide(serverId: String, threadId: String) {
+        sendMessage([
+            "kind": "home.unhide",
+            "serverId": serverId,
+            "threadId": threadId,
+        ])
+    }
+
     // MARK: - Realtime voice control
 
     func sendVoiceStart(serverId: String, threadId: String? = nil) {
@@ -171,8 +193,12 @@ final class WatchSessionBridge: NSObject, WCSessionDelegate {
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        let reachable = session.isReachable
         Task { @MainActor in
-            WatchAppStore.shared.isReachable = session.isReachable
+            WatchAppStore.shared.isReachable = reachable
+            if reachable {
+                self.requestSnapshot()
+            }
         }
     }
 
@@ -211,7 +237,11 @@ final class WatchSessionBridge: NSObject, WCSessionDelegate {
 
         Task { @MainActor in
             let store = WatchAppStore.shared
+            let now = Date()
+            WatchSnapshotStore.save(snapshot, date: now)
+            WatchThemeStore.shared.apply(snapshot.theme)
             store.tasks = snapshot.tasks
+            store.hiddenTasks = snapshot.hiddenTasks ?? []
             store.pendingApproval = snapshot.pendingApproval
             store.voice = snapshot.voice
             // Keep local focus if it's still valid, otherwise pick first task.
@@ -221,9 +251,8 @@ final class WatchSessionBridge: NSObject, WCSessionDelegate {
             } else if store.focusedTaskId == nil {
                 store.focusedTaskId = snapshot.tasks.first?.id
             }
-            store.lastSyncDate = .now
+            store.lastSyncDate = now
             self.reloadComplicationsIfChanged(store: store)
         }
     }
 }
-

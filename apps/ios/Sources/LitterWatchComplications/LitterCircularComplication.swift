@@ -9,7 +9,11 @@ struct LitterCircularComplication: Widget {
     let kind = "LitterCircularComplication"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: LitterComplicationProvider()) { entry in
+        AppIntentConfiguration(
+            kind: kind,
+            intent: ServerSelectionIntent.self,
+            provider: LitterComplicationProvider()
+        ) { entry in
             LitterCircularView(entry: entry)
                 .widgetAccentable()
                 .containerBackground(.clear, for: .widget)

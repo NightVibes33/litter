@@ -1,4 +1,5 @@
 import XCTest
+import UserNotifications
 import WatchConnectivity
 @testable import Litter
 
@@ -40,10 +41,20 @@ final class WatchCompanionBridgeTests: XCTestCase {
     // keep tests isolated we restore whatever the singleton held at the
     // start of each test in tearDown.
     private var savedSnapshot: AppSnapshotRecord?
+    // SavedThreadsStore is file-backed and shared across the whole test
+    // process. Snapshot its state in setUp and restore it in tearDown so
+    // tests that mutate pinned/hidden don't leak state to each other.
+    private var savedPinnedKeys: [PinnedThreadKey] = []
+    private var savedHiddenKeys: [PinnedThreadKey] = []
 
     override func setUp() {
         super.setUp()
         savedSnapshot = AppModel.shared.snapshot
+        savedPinnedKeys = SavedThreadsStore.pinnedKeys()
+        savedHiddenKeys = SavedThreadsStore.hiddenKeys()
+        // Wipe so each test starts from a clean home-visibility state.
+        for key in savedPinnedKeys { SavedThreadsStore.remove(key) }
+        for key in savedHiddenKeys { SavedThreadsStore.unhide(key) }
         if let pending = AppModel.shared.composerPrefillRequest {
             AppModel.shared.clearComposerPrefill(id: pending.id)
         }
@@ -51,6 +62,13 @@ final class WatchCompanionBridgeTests: XCTestCase {
 
     override func tearDown() {
         AppModel.shared.applySnapshot(savedSnapshot)
+        // Wipe whatever the test left behind…
+        for key in SavedThreadsStore.pinnedKeys() { SavedThreadsStore.remove(key) }
+        for key in SavedThreadsStore.hiddenKeys() { SavedThreadsStore.unhide(key) }
+        // …and restore the original state in original order. `add` and
+        // `hide` both prepend, so iterate in reverse to preserve order.
+        for key in savedPinnedKeys.reversed() { SavedThreadsStore.add(key) }
+        for key in savedHiddenKeys.reversed() { SavedThreadsStore.hide(key) }
         if let pending = AppModel.shared.composerPrefillRequest {
             AppModel.shared.clearComposerPrefill(id: pending.id)
         }
@@ -353,6 +371,31 @@ final class WatchCompanionBridgeTests: XCTestCase {
         XCTAssertNotNil(context?["litter.snapshot"] as? Data)
     }
 
+    func testSnapshotRequestPushesWhenWatchInstallFlagIsStale() async {
+        AppModel.shared.applySnapshot(makeRecord(
+            servers: [makeServer(id: "macbook")],
+            sessionSummaries: []
+        ))
+
+        let stub = StubWatchTransport(
+            activationState: .activated,
+            isPaired: true,
+            isWatchAppInstalled: false
+        )
+        let bridge = WatchCompanionBridge(transport: stub)
+
+        let reply = await bridge.handleInbound(["kind": "snapshot.request"])
+        XCTAssertEqual(reply?["ok"] as? Bool, true)
+
+        try? await Task.sleep(nanoseconds: 250_000_000)
+
+        XCTAssertFalse(
+            stub.sentContexts.isEmpty,
+            "expected snapshot push even when WCSession has stale isWatchAppInstalled state"
+        )
+        XCTAssertNotNil(stub.sentContexts.last?["litter.snapshot"] as? Data)
+    }
+
     // MARK: - 7. Unknown kind returns nil
 
     func testUnknownKindReturnsNilSoDelegateRepliesGenericAck() async {
@@ -402,6 +445,224 @@ final class WatchCompanionBridgeTests: XCTestCase {
         XCTAssertEqual(payload.pendingApproval?.id, "approval-1")
         XCTAssertEqual(payload.pendingApproval?.kind, .command)
         XCTAssertEqual(payload.pendingApproval?.command, "git push")
+
+        // Theme is attached on every push so the watch can mirror the
+        // user's selected iPhone palette.
+        XCTAssertNotNil(payload.theme)
+        XCTAssertTrue(payload.theme?.accent.hasPrefix("#") ?? false)
+    }
+
+    // MARK: - Home visibility parity
+
+    func testCurrentPayloadExcludesHiddenThreads() {
+        let visibleKey = ThreadKey(serverId: "macbook", threadId: "visible")
+        let hiddenKey = ThreadKey(serverId: "macbook", threadId: "hidden")
+        AppModel.shared.applySnapshot(makeRecord(
+            servers: [makeServer(id: "macbook")],
+            sessionSummaries: [
+                makeSummary(serverId: "macbook", threadId: "visible", updatedAt: 200, hasActiveTurn: false),
+                makeSummary(serverId: "macbook", threadId: "hidden", updatedAt: 100, hasActiveTurn: false),
+            ]
+        ))
+
+        SavedThreadsStore.hide(PinnedThreadKey(threadKey: hiddenKey))
+        defer { SavedThreadsStore.unhide(PinnedThreadKey(threadKey: hiddenKey)) }
+
+        let bridge = WatchCompanionBridge(transport: StubWatchTransport())
+        let payload = bridge.currentPayload()
+
+        XCTAssertEqual(payload.tasks.map(\.threadId), [visibleKey.threadId])
+    }
+
+    func testCurrentPayloadIncludesHiddenTasks() {
+        let visibleKey = ThreadKey(serverId: "macbook", threadId: "visible")
+        let hiddenKey = ThreadKey(serverId: "macbook", threadId: "hidden")
+        let otherHiddenKey = ThreadKey(serverId: "studio", threadId: "hidden2")
+        AppModel.shared.applySnapshot(makeRecord(
+            servers: [makeServer(id: "macbook"), makeServer(id: "studio")],
+            sessionSummaries: [
+                makeSummary(serverId: "macbook", threadId: "visible", updatedAt: 300, hasActiveTurn: false, title: "stays"),
+                makeSummary(serverId: "macbook", threadId: "hidden",  updatedAt: 200, hasActiveTurn: false, title: "tucked away"),
+                makeSummary(serverId: "studio",  threadId: "hidden2", updatedAt: 100, hasActiveTurn: false, title: "also tucked"),
+            ]
+        ))
+
+        SavedThreadsStore.hide(PinnedThreadKey(threadKey: hiddenKey))
+        SavedThreadsStore.hide(PinnedThreadKey(threadKey: otherHiddenKey))
+        defer {
+            SavedThreadsStore.unhide(PinnedThreadKey(threadKey: hiddenKey))
+            SavedThreadsStore.unhide(PinnedThreadKey(threadKey: otherHiddenKey))
+        }
+
+        let bridge = WatchCompanionBridge(transport: StubWatchTransport())
+        let payload = bridge.currentPayload()
+
+        // Visible slice excludes the hidden threads (existing behavior).
+        XCTAssertEqual(payload.tasks.map(\.threadId), [visibleKey.threadId])
+
+        // Hidden slice contains both hidden threads in some order.
+        let hiddenIds = Set((payload.hiddenTasks ?? []).map(\.threadId))
+        XCTAssertEqual(hiddenIds, [hiddenKey.threadId, otherHiddenKey.threadId])
+    }
+
+    func testCurrentPayloadOmitsHiddenTasksFieldWhenEmpty() {
+        AppModel.shared.applySnapshot(makeRecord(
+            servers: [makeServer(id: "macbook")],
+            sessionSummaries: [
+                makeSummary(serverId: "macbook", threadId: "visible", updatedAt: 100, hasActiveTurn: false),
+            ]
+        ))
+
+        let bridge = WatchCompanionBridge(transport: StubWatchTransport())
+        let payload = bridge.currentPayload()
+
+        XCTAssertNil(payload.hiddenTasks, "no hidden threads → no hiddenTasks slice")
+    }
+
+    func testCurrentPayloadOrdersPinnedThreadsByPinOrder() {
+        let pin1 = ThreadKey(serverId: "macbook", threadId: "alpha")
+        let pin2 = ThreadKey(serverId: "macbook", threadId: "bravo")
+        let other = ThreadKey(serverId: "macbook", threadId: "charlie")
+        AppModel.shared.applySnapshot(makeRecord(
+            servers: [makeServer(id: "macbook")],
+            sessionSummaries: [
+                // Reverse-recency order so we know pin order is doing the sorting.
+                makeSummary(serverId: "macbook", threadId: "alpha",   updatedAt: 100, hasActiveTurn: false),
+                makeSummary(serverId: "macbook", threadId: "bravo",   updatedAt: 200, hasActiveTurn: false),
+                makeSummary(serverId: "macbook", threadId: "charlie", updatedAt: 300, hasActiveTurn: false),
+            ]
+        ))
+
+        // `add` prepends — pinning bravo then alpha yields pin order: alpha, bravo.
+        SavedThreadsStore.add(PinnedThreadKey(threadKey: pin2))
+        SavedThreadsStore.add(PinnedThreadKey(threadKey: pin1))
+        defer {
+            SavedThreadsStore.remove(PinnedThreadKey(threadKey: pin1))
+            SavedThreadsStore.remove(PinnedThreadKey(threadKey: pin2))
+        }
+
+        let bridge = WatchCompanionBridge(transport: StubWatchTransport())
+        let payload = bridge.currentPayload()
+
+        // Only the two pinned threads show up (charlie is excluded because the
+        // iPhone home rule is "pins only when any are pinned"). Order matches
+        // pin order, not recency.
+        XCTAssertEqual(payload.tasks.map(\.threadId), [pin1.threadId, pin2.threadId])
+        XCTAssertFalse(payload.tasks.contains { $0.threadId == other.threadId })
+    }
+
+    func testInboundHomeHideAddsThreadToHiddenStore() async {
+        let key = ThreadKey(serverId: "macbook", threadId: "tohide")
+        let pinned = PinnedThreadKey(threadKey: key)
+        // Ensure clean start.
+        SavedThreadsStore.unhide(pinned)
+
+        let bridge = WatchCompanionBridge(transport: StubWatchTransport())
+        let reply = await bridge.handleInbound([
+            "kind": "home.hide",
+            "serverId": key.serverId,
+            "threadId": key.threadId,
+        ])
+        defer { SavedThreadsStore.unhide(pinned) }
+
+        XCTAssertEqual(reply?["ok"] as? Bool, true)
+        XCTAssertTrue(SavedThreadsStore.hiddenKeys().contains(pinned))
+    }
+
+    func testInboundHomeHideRejectsInvalidPayload() async {
+        let bridge = WatchCompanionBridge(transport: StubWatchTransport())
+        let reply = await bridge.handleInbound([
+            "kind": "home.hide",
+            "threadId": "no-server-id",
+        ])
+        XCTAssertEqual(reply?["ok"] as? Bool, false)
+    }
+
+    func testCurrentPayloadIncludesResolvedThemeForDarkAppearance() {
+        ThemeManager.shared.setAppearanceMode(.dark)
+        AppModel.shared.applySnapshot(makeRecord(
+            servers: [makeServer(id: "macbook")],
+            sessionSummaries: []
+        ))
+
+        let bridge = WatchCompanionBridge(transport: StubWatchTransport())
+        let theme = bridge.currentPayload().theme
+        XCTAssertNotNil(theme)
+        XCTAssertEqual(theme?.isDark, true)
+        XCTAssertEqual(theme?.appearanceMode, .dark)
+        XCTAssertEqual(theme?.accent, ThemeManager.shared.darkTheme.accent)
+        XCTAssertEqual(theme?.backgroundTop, ThemeManager.shared.darkTheme.background)
+    }
+
+    // MARK: - Approval notification builder
+
+    func testApprovalNotificationRequestSetsCategoryThreadAndUserInfo() {
+        let approval = PendingApproval(
+            id: "req-42",
+            serverId: "macbook",
+            kind: .command,
+            threadId: "t1",
+            turnId: nil,
+            itemId: nil,
+            command: "git push origin main",
+            path: nil,
+            grantRoot: nil,
+            cwd: nil,
+            reason: nil
+        )
+
+        let request = WatchCompanionBridge.makeApprovalNotificationRequest(
+            approval: approval,
+            serverName: "MacBook Pro",
+            threadTitle: "fix auth"
+        )
+
+        XCTAssertEqual(request.content.categoryIdentifier, WatchApprovalNotification.categoryIdentifier)
+        XCTAssertEqual(request.content.threadIdentifier, "macbook")
+        XCTAssertEqual(
+            request.content.userInfo[WatchApprovalNotification.requestIdKey] as? String,
+            "req-42"
+        )
+        XCTAssertEqual(
+            request.content.userInfo[WatchApprovalNotification.serverIdKey] as? String,
+            "macbook"
+        )
+        XCTAssertEqual(
+            request.content.userInfo[WatchApprovalNotification.threadIdKey] as? String,
+            "t1"
+        )
+        XCTAssertEqual(request.content.subtitle, "MacBook Pro")
+        // Body should weave in the thread title and the command detail.
+        XCTAssertTrue(request.content.body.contains("fix auth"))
+        XCTAssertTrue(request.content.body.contains("git push origin main"))
+        // Identifier is stable so a re-issue replaces the existing banner.
+        XCTAssertEqual(request.identifier, "litter.approval.req-42")
+    }
+
+    func testApprovalNotificationRequestOmitsThreadIdWhenAbsent() {
+        let approval = PendingApproval(
+            id: "req-99",
+            serverId: "studio",
+            kind: .permissions,
+            threadId: nil,
+            turnId: nil,
+            itemId: nil,
+            command: nil,
+            path: nil,
+            grantRoot: nil,
+            cwd: nil,
+            reason: "Allow workspace write"
+        )
+
+        let request = WatchCompanionBridge.makeApprovalNotificationRequest(
+            approval: approval,
+            serverName: "studio",
+            threadTitle: nil
+        )
+
+        XCTAssertNil(request.content.userInfo[WatchApprovalNotification.threadIdKey])
+        XCTAssertEqual(request.content.threadIdentifier, "studio")
+        XCTAssertEqual(request.content.body, "Allow workspace write")
     }
 
     // MARK: - Factories
@@ -414,23 +675,19 @@ final class WatchCompanionBridgeTests: XCTestCase {
             port: 8390,
             wakeMac: nil,
             isLocal: false,
-            supportsIpc: false,
-            hasIpc: false,
             health: connected ? .connected : .disconnected,
             transportState: connected ? .connected : .disconnected,
-            ipcState: .unsupported,
             capabilities: AppServerCapabilities(
                 canUseTransportActions: connected,
                 canBrowseDirectories: connected,
                 canStartThreads: connected,
                 canResumeThreads: connected,
-                canUseIpc: false,
-                canResumeViaIpc: false,
                 supportsTurnPagination: false
             ),
             account: nil,
             requiresOpenaiAuth: false,
             rateLimits: nil,
+            rateLimitsByRuntime: [],
             availableModels: nil,
             agentRuntimes: [AgentRuntimeInfo(kind: .codex, name: "codex", displayName: "Codex", available: true)],
             connectionProgress: nil,

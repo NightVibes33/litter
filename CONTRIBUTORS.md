@@ -3,7 +3,7 @@
 This is the source-backed credit record for Litter. It records what each
 person or tool provided, not just a list of names.
 
-Reviewed on: 2026-05-17
+Reviewed on: 2026-05-25
 
 ## License Status
 
@@ -18,9 +18,9 @@ Third-party projects keep their own licenses. See `THIRD_PARTY_NOTICES.md`.
 Credits were checked against these sources:
 
 - `dnakov/litter`, Daniel Nakov's original upstream repository, at
-  `upstream/main` commit `a2ab3b49`.
-- `NightVibes33/litter`, this fork, at `origin/main` commit `4ca12afe` before
-  this correction pass.
+  `upstream/main` commit `3fd94228`.
+- `NightVibes33/litter`, this fork, at `origin/main` commit `b424eb2b` before
+  this upstream sync.
 - GitHub merged pull request metadata from `dnakov/litter`.
 - `git log` author history for both `upstream/main` and the fork-only range
   `upstream/main..origin/main`.
@@ -47,11 +47,12 @@ the original project.
 
 | Contributor | Accepted PRs | What they provided |
 |---|---|---|
-| Maky (`makyinmars`) | [#3](https://github.com/dnakov/litter/pull/3), [#4](https://github.com/dnakov/litter/pull/4), [#10](https://github.com/dnakov/litter/pull/10), [#11](https://github.com/dnakov/litter/pull/11), [#13](https://github.com/dnakov/litter/pull/13), [#14](https://github.com/dnakov/litter/pull/14), [#26](https://github.com/dnakov/litter/pull/26), [#99](https://github.com/dnakov/litter/pull/99), [#101](https://github.com/dnakov/litter/pull/101), [#124](https://github.com/dnakov/litter/pull/124) | Improved Android/iOS session UX, mobile composer UX, iOS Codex RPC bridge coverage, Codex submodule exec support, workspace accordion/sidebar UX, skills/edit/rename/fork flows, tool-calling UX, picker UX, cross-platform agent identity and collaboration targets, thread/approval flow, iOS 18 support, Android/iOS search themes, server pill polish, SSH credential entry, system/light/dark theme mode, and AMP support. |
+| Maky (`makyinmars`) | [#3](https://github.com/dnakov/litter/pull/3), [#4](https://github.com/dnakov/litter/pull/4), [#10](https://github.com/dnakov/litter/pull/10), [#11](https://github.com/dnakov/litter/pull/11), [#13](https://github.com/dnakov/litter/pull/13), [#14](https://github.com/dnakov/litter/pull/14), [#26](https://github.com/dnakov/litter/pull/26), [#99](https://github.com/dnakov/litter/pull/99), [#101](https://github.com/dnakov/litter/pull/101), [#124](https://github.com/dnakov/litter/pull/124), [#145](https://github.com/dnakov/litter/pull/145) | Improved Android/iOS session UX, mobile composer UX, iOS Codex RPC bridge coverage, Codex submodule exec support, workspace accordion/sidebar UX, skills/edit/rename/fork flows, tool-calling UX, picker UX, cross-platform agent identity and collaboration targets, remote-host agent logos, thread/approval flow, iOS 18 support, Android/iOS search themes, server pill polish, SSH credential entry, system/light/dark theme mode, and AMP support. |
 | D-DRUMROLL / Dixith-dev (`Dixith-dev`) | [#7](https://github.com/dnakov/litter/pull/7), [#24](https://github.com/dnakov/litter/pull/24), [#44](https://github.com/dnakov/litter/pull/44), [#77](https://github.com/dnakov/litter/pull/77), [#78](https://github.com/dnakov/litter/pull/78) | Fixed Android keyboard double padding, added Android OpenCode mobile shell support, overhauled Android home/discovery/settings flows, centered the Android Settings popover title, fixed Android dropdown menu positioning, and fixed home-dashboard session deletion. |
 | Kaynan Sampaio de Camargo (`kaynansc`) | [#109](https://github.com/dnakov/litter/pull/109), [#111](https://github.com/dnakov/litter/pull/111), [#114](https://github.com/dnakov/litter/pull/114), [#116](https://github.com/dnakov/litter/pull/116), [#117](https://github.com/dnakov/litter/pull/117), [#118](https://github.com/dnakov/litter/pull/118) | Added editable saved server connections, Android SSH credential prompt parity, reconnect/edit-sheet behavior, dismissible Input Required modal, OpenAI base URL setting, active-thread scoped rate-limit behavior, thread-scoped input prompts, and correct routing for approval/user-input responses through the originating runtime channel. |
 | researchoor | [#45](https://github.com/dnakov/litter/pull/45), [#46](https://github.com/dnakov/litter/pull/46) | Fixed Live Activity timer cleanup when a background session completes and added an idle indicator dot for completed session rows. |
 | Coy Geek (`coygeek`) | [#130](https://github.com/dnakov/litter/pull/130) | Added iOS transcript display controls and UI coverage for transcript display behavior. |
+| Niklas Sheth | [#153](https://github.com/dnakov/litter/pull/153) | Fixed iOS composer editing behavior so selection is not forcibly reset while the user is editing text. |
 | eagle.one / onegaop | [#9](https://github.com/dnakov/litter/pull/9) | Added folder grouping for sessions in the sidebar. Direct accepted commits also added iPhone simulator screenshots and homepage screenshot documentation for that UI. |
 | kkellyoffical | [#82](https://github.com/dnakov/litter/pull/82) | Added Android conversation text selection support, kept renderer scope constrained, preserved message selection, avoided duplicate markdown-ready callbacks, restored user bubble styling, and stabilized Android JVM tests around those changes. |
 | Sina Rabiei (`nssina`) | [#12](https://github.com/dnakov/litter/pull/12) | Added Mac SSH setup documentation for exposing Codex sessions in Litter and updated README guidance for that flow. |
@@ -78,7 +79,7 @@ history.
 | Themes, appearance, Live Activity, push proxy, generative UI, home dashboard, transcript, Textual migration, sheet state injection | [#25](https://github.com/dnakov/litter/pull/25), [#27](https://github.com/dnakov/litter/pull/27), [#29](https://github.com/dnakov/litter/pull/29), [#30](https://github.com/dnakov/litter/pull/30) |
 | Reverse-proxy WebSocket support, local stdio runtime, simulator shell hardening, subagent/session UI, image/paste turn input | [#32](https://github.com/dnakov/litter/pull/32), [#33](https://github.com/dnakov/litter/pull/33), [#34](https://github.com/dnakov/litter/pull/34), [#35](https://github.com/dnakov/litter/pull/35), [#42](https://github.com/dnakov/litter/pull/42) |
 | Rust store boundary, runtime parity, mobile release automation, CI cache/release work, mobile runtime followups, autoscroll, collapsed transcript previews, TestFlight release splitting | [#48](https://github.com/dnakov/litter/pull/48), [#51](https://github.com/dnakov/litter/pull/51), [#52](https://github.com/dnakov/litter/pull/52), [#53](https://github.com/dnakov/litter/pull/53), [#54](https://github.com/dnakov/litter/pull/54), [#55](https://github.com/dnakov/litter/pull/55), [#56](https://github.com/dnakov/litter/pull/56), [#57](https://github.com/dnakov/litter/pull/57), [#58](https://github.com/dnakov/litter/pull/58), [#59](https://github.com/dnakov/litter/pull/59), [#60](https://github.com/dnakov/litter/pull/60), [#61](https://github.com/dnakov/litter/pull/61), [#62](https://github.com/dnakov/litter/pull/62), [#63](https://github.com/dnakov/litter/pull/63) |
-| Android OAuth and markdown math rendering | [#132](https://github.com/dnakov/litter/pull/132), [#133](https://github.com/dnakov/litter/pull/133) |
+| Android OAuth, markdown math rendering, discovery pairing, watch, terminal, Ghostty, and release followups | [#132](https://github.com/dnakov/litter/pull/132), [#133](https://github.com/dnakov/litter/pull/133), [#143](https://github.com/dnakov/litter/pull/143) plus direct upstream commits through `3fd94228` |
 
 ## Accepted Direct Upstream Commit Authors
 
@@ -90,6 +91,7 @@ are present in the original upstream history.
 |---|---|
 | Franklin | File search and commands for iOS/Android, Android picker fixes, app identifier and signing metadata cleanup, session search, font/UX updates, model list exposure, iOS exec hook path for unified exec, iOS 18 support work, search theme work, and iOS CI/CD fixes. |
 | sigkitten | Mobile IPC and connection-state work, progressive session loading, transcript chrome/thread reuse, permission handling, native mobile math parsing and iOS tests, Android permissions/wallpaper/back/OAuth/realtime fixes, generative UI Rust migration, UniFFI/Rust bridge surface cleanup, iOS signing/provisioning, reconnect actions, source-thread notifications, and Android pets overlay. |
+| Daniel Nakov (`dnakov`) | Recent direct upstream commits through `3fd94228`: Ghostty renderer terminal work, Android proot/Ghostty build targets, watch UI/complication/App Intent work, discovery pairing import, triaged crash-path fixes, trusted publishing workflow updates, and the fetchable Ghostty submodule pin. |
 | tabrobotics | Android OpenCode/mobile shell implementation details, bundled Codex server and Node proxy work, Android discovery/local bridge fixes, GitHub Actions archive fallback, Gradle/lint fixes, Android image upload path fixes, and Android input bar/model selector polish. |
 | eagle.one | Session-folder grouping implementation and screenshot/homepage documentation commits around that feature. |
 

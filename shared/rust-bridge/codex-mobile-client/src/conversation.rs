@@ -29,6 +29,8 @@ const MOBILE_COMMAND_ACTION_FIELD_CAP_BYTES: usize = 1024;
 const MOBILE_COMMAND_ACTION_COUNT_CAP: usize = 32;
 const MOBILE_COMMAND_TEXT_TRUNCATION_SUFFIX: &str = "... [truncated on mobile]";
 const MOBILE_COMMAND_OUTPUT_TRUNCATION_SUFFIX: &str = "\n[output truncated on mobile]\n";
+const DESKTOP_FILE_CONTEXT_HEADER: &str = "# Files mentioned by the user:";
+const DESKTOP_FILE_CONTEXT_REQUEST_HEADER: &str = "## My request for Codex:";
 
 // ---------------------------------------------------------------------------
 // Conversion options
@@ -1181,15 +1183,15 @@ fn render_user_input(inputs: &[UserInput]) -> (String, Vec<String>) {
     for input in inputs {
         match input {
             UserInput::Text { text, .. } => {
-                let trimmed = text.trim();
+                let trimmed = visible_user_text(text);
                 if !trimmed.is_empty() {
-                    text_parts.push(trimmed.to_string());
+                    text_parts.push(trimmed);
                 }
             }
-            UserInput::Image { url } => {
+            UserInput::Image { url, .. } => {
                 images.push(url.clone());
             }
-            UserInput::LocalImage { path } => {
+            UserInput::LocalImage { path, .. } => {
                 images.push(format!("file://{}", path.display()));
             }
             UserInput::Skill { name, path } => {
@@ -1213,6 +1215,38 @@ fn render_user_input(inputs: &[UserInput]) -> (String, Vec<String>) {
         }
     }
     (text_parts.join("\n"), images)
+}
+
+fn visible_user_text(text: &str) -> String {
+    let trimmed = text.trim();
+    if !trimmed.starts_with(DESKTOP_FILE_CONTEXT_HEADER) {
+        return trimmed.to_string();
+    }
+    let Some((file_context, request)) = trimmed.split_once(DESKTOP_FILE_CONTEXT_REQUEST_HEADER)
+    else {
+        return trimmed.to_string();
+    };
+    let request = request.trim();
+    if !request.is_empty() {
+        return request.to_string();
+    }
+    file_context_summary(file_context).unwrap_or_else(|| trimmed.to_string())
+}
+
+fn file_context_summary(file_context: &str) -> Option<String> {
+    let labels: Vec<String> = file_context
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("## "))
+        .map(|line| line.split_once(':').map(|(label, _)| label).unwrap_or(line))
+        .map(str::trim)
+        .filter(|label| !label.is_empty())
+        .map(|label| format!("[File] {label}"))
+        .collect();
+    if labels.is_empty() {
+        None
+    } else {
+        Some(labels.join("\n"))
+    }
 }
 
 fn widget_data_from_dynamic_tool_call(

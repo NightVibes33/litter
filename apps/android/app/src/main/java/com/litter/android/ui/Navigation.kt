@@ -18,4 +18,5 @@ sealed class Route {
     data class ServerWallpaperAdjust(val serverId: String) : Route()
     data object Apps : Route()
     data class SavedApp(val appId: String) : Route()
+    data class Terminal(val preferredAlleycatNodeId: String? = null) : Route()
 }

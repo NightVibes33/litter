@@ -49,7 +49,7 @@ index 2c3a926c91..7dcf5e0837 100644
 @@ -1150,6 +1150,20 @@ pub struct AgentMessageDeltaNotification {
      pub delta: String,
  }
- 
+
 +/// Streaming delta for a dynamic tool call's argument JSON.
 +#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 +#[serde(rename_all = "camelCase")]
@@ -107,131 +107,15 @@ index 4e949e43ae..8793b06118 100644
 +        );
 +        assert_matches!(&events[2], ResponseEvent::Completed { .. });
      }
- 
+
      #[tokio::test]
-diff --git a/codex-rs/core/src/session/turn.rs b/codex-rs/core/src/session/turn.rs
-index effbf5372f..fc8188270b 100644
---- a/codex-rs/core/src/session/turn.rs
-+++ b/codex-rs/core/src/session/turn.rs
-@@ -89,6 +89,7 @@ use codex_protocol::protocol::AgentMessageContentDeltaEvent;
- use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
- use codex_protocol::protocol::AskForApproval;
- use codex_protocol::protocol::CodexErrorInfo;
-+use codex_protocol::protocol::DynamicToolCallArgumentsDeltaEvent;
- use codex_protocol::protocol::ErrorEvent;
- use codex_protocol::protocol::EventMsg;
- use codex_protocol::protocol::PlanDeltaEvent;
-@@ -1522,6 +1523,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
-         | EventMsg::HookStarted(_)
-         | EventMsg::HookCompleted(_)
-         | EventMsg::AgentMessageContentDelta(_)
-+        | EventMsg::DynamicToolCallArgumentsDelta(_)
-         | EventMsg::PlanDelta(_)
-         | EventMsg::ReasoningContentDelta(_)
-         | EventMsg::ReasoningRawContentDelta(_)
-@@ -1878,6 +1880,7 @@ async fn try_run_sampling_request(
-         String,
-         Box<dyn ToolArgumentDiffConsumer>,
-     )> = None;
-+    let mut active_dynamic_tool_call: Option<(String, String)> = None;
-     let mut should_emit_turn_diff = false;
-     let reasoning_effort = turn_context.effective_reasoning_effort_for_tracing();
-     let plan_mode = turn_context.collaboration_mode.mode == ModeKind::Plan;
-@@ -2012,13 +2015,25 @@ async fn try_run_sampling_request(
-                 }
-             }
-             ResponseEvent::OutputItemAdded(item) => {
-+                active_dynamic_tool_call = None;
-                 if let ResponseItem::CustomToolCall { call_id, name, .. } = &item {
-                     let tool_name = ToolName::plain(name.as_str());
-                     active_tool_argument_diff_consumer = tool_runtime
-                         .create_diff_consumer(&tool_name)
-                         .map(|consumer| (call_id.clone(), consumer));
--                } else if matches!(&item, ResponseItem::FunctionCall { .. }) {
-+                } else if let ResponseItem::FunctionCall {
-+                    id, name, call_id, ..
-+                } = &item
-+                {
-                     active_tool_argument_diff_consumer = None;
-+                    if turn_context
-+                        .dynamic_tools
-+                        .iter()
-+                        .any(|spec| spec.name == *name)
-+                    {
-+                        let item_id = id.clone().unwrap_or_default();
-+                        active_dynamic_tool_call = Some((call_id.clone(), item_id));
-+                    }
-                 }
-                 if let Some(turn_item) = handle_non_tool_response_item(
-                     sess.as_ref(),
-@@ -2169,17 +2184,37 @@ async fn try_run_sampling_request(
-                 call_id,
-                 delta,
-             } => {
--                let Some((active_call_id, consumer)) = active_tool_argument_diff_consumer.as_mut()
--                else {
--                    continue;
--                };
--                let call_id = match call_id {
--                    Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
--                    Some(call_id) => call_id,
--                    None => active_call_id.clone(),
--                };
--                if let Some(event) = consumer.consume_diff(turn_context.as_ref(), call_id, &delta) {
--                    sess.send_event(&turn_context, event).await;
-+                if let Some((active_call_id, consumer)) =
-+                    active_tool_argument_diff_consumer.as_mut()
-+                {
-+                    let call_id = match call_id {
-+                        Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
-+                        Some(call_id) => call_id,
-+                        None => active_call_id.clone(),
-+                    };
-+                    if let Some(event) =
-+                        consumer.consume_diff(turn_context.as_ref(), call_id, &delta)
-+                    {
-+                        sess.send_event(&turn_context, event).await;
-+                    }
-+                } else if let Some((active_call_id, item_id)) = active_dynamic_tool_call.as_ref() {
-+                    let matched_call_id = match call_id {
-+                        Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
-+                        Some(call_id) => Some(call_id),
-+                        None => Some(active_call_id.clone()),
-+                    };
-+                    let event = DynamicToolCallArgumentsDeltaEvent {
-+                        thread_id: sess.conversation_id.to_string(),
-+                        turn_id: turn_context.sub_id.clone(),
-+                        item_id: item_id.clone(),
-+                        call_id: matched_call_id,
-+                        delta,
-+                    };
-+                    sess.send_event(
-+                        &turn_context,
-+                        EventMsg::DynamicToolCallArgumentsDelta(event),
-+                    )
-+                    .await;
-                 }
-             }
-             ResponseEvent::ReasoningSummaryDelta {
-diff --git a/codex-rs/mcp-server/src/codex_tool_runner.rs b/codex-rs/mcp-server/src/codex_tool_runner.rs
-index b462022dbc..5d2b81fc33 100644
---- a/codex-rs/mcp-server/src/codex_tool_runner.rs
-+++ b/codex-rs/mcp-server/src/codex_tool_runner.rs
-@@ -360,6 +360,7 @@ async fn run_codex_tool_session_inner(
-                     | EventMsg::HookStarted(_)
-                     | EventMsg::HookCompleted(_)
-                     | EventMsg::AgentMessageContentDelta(_)
-+                    | EventMsg::DynamicToolCallArgumentsDelta(_)
-                     | EventMsg::ReasoningContentDelta(_)
-                     | EventMsg::ReasoningRawContentDelta(_)
-                     | EventMsg::SkillsUpdateAvailable
 diff --git a/codex-rs/protocol/src/protocol.rs b/codex-rs/protocol/src/protocol.rs
 index 30e33abe43..bb203abfc6 100644
 --- a/codex-rs/protocol/src/protocol.rs
 +++ b/codex-rs/protocol/src/protocol.rs
 @@ -1425,6 +1425,7 @@ pub enum EventMsg {
      HookCompleted(HookCompletedEvent),
- 
+
      AgentMessageContentDelta(AgentMessageContentDeltaEvent),
 +    DynamicToolCallArgumentsDelta(DynamicToolCallArgumentsDeltaEvent),
      PlanDelta(PlanDeltaEvent),
@@ -240,7 +124,7 @@ index 30e33abe43..bb203abfc6 100644
 @@ -1827,6 +1828,17 @@ pub struct AgentMessageContentDeltaEvent {
      pub delta: String,
  }
- 
+
 +#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 +pub struct DynamicToolCallArgumentsDeltaEvent {
 +    pub thread_id: String,
@@ -301,15 +185,128 @@ index 382a82a19f..6a21415dfb 100644
          ServerNotification::ModelRerouted(notification) => Some(notification.thread_id.as_str()),
          ServerNotification::ModelVerification(notification) => {
              Some(notification.thread_id.as_str())
-diff --git a/codex-rs/tui/src/chatwidget.rs b/codex-rs/tui/src/chatwidget.rs
-index adaba76b24..9f6b7fde1b 100644
---- a/codex-rs/tui/src/chatwidget.rs
-+++ b/codex-rs/tui/src/chatwidget.rs
-@@ -6449,6 +6449,7 @@ impl ChatWidget {
+diff --git a/codex-rs/core/src/session/turn.rs b/codex-rs/core/src/session/turn.rs
+--- a/codex-rs/core/src/session/turn.rs
++++ b/codex-rs/core/src/session/turn.rs
+@@ -94,6 +94,7 @@
+ use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
+ use codex_protocol::protocol::AskForApproval;
+ use codex_protocol::protocol::CodexErrorInfo;
++use codex_protocol::protocol::DynamicToolCallArgumentsDeltaEvent;
+ use codex_protocol::protocol::ErrorEvent;
+ use codex_protocol::protocol::EventMsg;
+ use codex_protocol::protocol::PlanDeltaEvent;
+@@ -1551,6 +1552,7 @@
+         | EventMsg::HookStarted(_)
+         | EventMsg::HookCompleted(_)
+         | EventMsg::AgentMessageContentDelta(_)
++        | EventMsg::DynamicToolCallArgumentsDelta(_)
+         | EventMsg::PlanDelta(_)
+         | EventMsg::ReasoningContentDelta(_)
+         | EventMsg::ReasoningRawContentDelta(_)
+@@ -1926,6 +1928,7 @@
+         String,
+         Box<dyn ToolArgumentDiffConsumer>,
+     )> = None;
++    let mut active_dynamic_tool_call: Option<(String, String)> = None;
+     let mut should_emit_turn_diff = false;
+     let mut should_emit_token_count = false;
+     let reasoning_effort = turn_context.effective_reasoning_effort_for_tracing();
+@@ -2073,13 +2076,25 @@
+                 }
+             }
+             ResponseEvent::OutputItemAdded(item) => {
++                active_dynamic_tool_call = None;
+                 if let ResponseItem::CustomToolCall { call_id, name, .. } = &item {
+                     let tool_name = ToolName::plain(name.as_str());
+                     active_tool_argument_diff_consumer = tool_runtime
+                         .create_diff_consumer(&tool_name)
+                         .map(|consumer| (call_id.clone(), consumer));
+-                } else if matches!(&item, ResponseItem::FunctionCall { .. }) {
++                } else if let ResponseItem::FunctionCall {
++                    id, name, call_id, ..
++                } = &item
++                {
+                     active_tool_argument_diff_consumer = None;
++                    if turn_context
++                        .dynamic_tools
++                        .iter()
++                        .any(|spec| spec.name == *name)
++                    {
++                        let item_id = id.clone().unwrap_or_default();
++                        active_dynamic_tool_call = Some((call_id.clone(), item_id));
++                    }
+                 }
+                 if let Some(turn_item) = handle_non_tool_response_item(
+                     sess.as_ref(),
+@@ -2241,17 +2256,37 @@
+                 call_id,
+                 delta,
+             } => {
+-                let Some((active_call_id, consumer)) = active_tool_argument_diff_consumer.as_mut()
+-                else {
+-                    continue;
+-                };
+-                let call_id = match call_id {
+-                    Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
+-                    Some(call_id) => call_id,
+-                    None => active_call_id.clone(),
+-                };
+-                if let Some(event) = consumer.consume_diff(turn_context.as_ref(), call_id, &delta) {
+-                    sess.send_event(&turn_context, event).await;
++                if let Some((active_call_id, consumer)) =
++                    active_tool_argument_diff_consumer.as_mut()
++                {
++                    let call_id = match call_id {
++                        Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
++                        Some(call_id) => call_id,
++                        None => active_call_id.clone(),
++                    };
++                    if let Some(event) =
++                        consumer.consume_diff(turn_context.as_ref(), call_id, &delta)
++                    {
++                        sess.send_event(&turn_context, event).await;
++                    }
++                } else if let Some((active_call_id, item_id)) = active_dynamic_tool_call.as_ref() {
++                    let matched_call_id = match call_id {
++                        Some(call_id) if call_id.as_str() != active_call_id.as_str() => continue,
++                        Some(call_id) => Some(call_id),
++                        None => Some(active_call_id.clone()),
++                    };
++                    let event = DynamicToolCallArgumentsDeltaEvent {
++                        thread_id: sess.conversation_id.to_string(),
++                        turn_id: turn_context.sub_id.clone(),
++                        item_id: item_id.clone(),
++                        call_id: matched_call_id,
++                        delta,
++                    };
++                    sess.send_event(
++                        &turn_context,
++                        EventMsg::DynamicToolCallArgumentsDelta(event),
++                    )
++                    .await;
+                 }
+             }
+             ResponseEvent::ReasoningSummaryDelta {
+diff --git a/codex-rs/mcp-server/src/codex_tool_runner.rs b/codex-rs/mcp-server/src/codex_tool_runner.rs
+--- a/codex-rs/mcp-server/src/codex_tool_runner.rs
++++ b/codex-rs/mcp-server/src/codex_tool_runner.rs
+@@ -362,6 +362,7 @@
+                     | EventMsg::HookStarted(_)
+                     | EventMsg::HookCompleted(_)
+                     | EventMsg::AgentMessageContentDelta(_)
++                    | EventMsg::DynamicToolCallArgumentsDelta(_)
+                     | EventMsg::ReasoningContentDelta(_)
+                     | EventMsg::ReasoningRawContentDelta(_)
+                     | EventMsg::ExitedReviewMode(_)
+diff --git a/codex-rs/tui/src/chatwidget/protocol.rs b/codex-rs/tui/src/chatwidget/protocol.rs
+--- a/codex-rs/tui/src/chatwidget/protocol.rs
++++ b/codex-rs/tui/src/chatwidget/protocol.rs
+@@ -238,6 +238,7 @@
              | ServerNotification::WindowsSandboxSetupCompleted(_)
              | ServerNotification::AccountLoginCompleted(_) => {}
              ServerNotification::ContextCompacted(_) => {}
 +            ServerNotification::DynamicToolCallArgumentsDelta(_) => {}
          }
      }
- 
+

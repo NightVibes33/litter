@@ -76,6 +76,19 @@ extension AgentRuntimeKind {
         return metadata?.presentation?.isBeta ?? true
     }
 
+    /// Whether this runtime accepts client-side thread permission overrides.
+    /// Older daemons did not advertise the capability, so default to the
+    /// historical behaviour until a runtime explicitly opts out.
+    var supportsThreadPermissionOverrides: Bool {
+        metadata?.capabilities?.supportsThreadPermissionOverrides ?? true
+    }
+
+    /// Whether this runtime reports effective thread permissions that the UI
+    /// can present as authoritative runtime state.
+    var reportsEffectiveThreadPermissions: Bool {
+        metadata?.capabilities?.reportsEffectiveThreadPermissions ?? true
+    }
+
     /// Asset catalog name for this agent's bundled icon, by convention
     /// `agent_<id>`. Returns `nil` when no matching `UIImage(named:)`
     /// is bundled — callers fall back to a monogram chip via

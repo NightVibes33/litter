@@ -23,6 +23,12 @@ enum class LitterFeature(
         description = "Tap the Thinking shimmer while the assistant generates to play a tiny generated minigame.",
         defaultEnabled = false,
     ),
+    TERMINAL(
+        id = "terminal",
+        displayName = "Terminal",
+        description = "Show the local and remote terminal launcher on the home screen.",
+        defaultEnabled = false,
+    ),
 }
 
 object ExperimentalFeatures {

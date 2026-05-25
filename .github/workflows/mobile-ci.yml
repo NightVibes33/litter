@@ -8,8 +8,10 @@ on:
       - 'apps/android/**'
       - 'apps/ios/**'
       - 'patches/codex/**'
+      - 'patches/ghostty/**'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
+      - 'shared/third_party/ghostty'
       - 'tools/scripts/**'
       - '.github/workflows/mobile-ci.yml'
   push:
@@ -20,8 +22,10 @@ on:
       - 'apps/android/**'
       - 'apps/ios/**'
       - 'patches/codex/**'
+      - 'patches/ghostty/**'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
+      - 'shared/third_party/ghostty'
       - 'tools/scripts/**'
       - '.github/workflows/mobile-ci.yml'
 
@@ -54,6 +58,11 @@ jobs:
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.3'
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -155,6 +164,11 @@ jobs:
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libcap-dev clang cmake
 
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -196,7 +210,7 @@ jobs:
           touch .build-stamps/sync .build-stamps/bindings-kotlin
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
+        run: env -u RUSTC_WRAPPER cargo install cargo-ndk --locked
 
       - name: Build Rust JNI libs
         env:
@@ -237,6 +251,11 @@ jobs:
 
       - name: Install build dependencies
         run: brew install xcodegen meson ninja llvm lld
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable

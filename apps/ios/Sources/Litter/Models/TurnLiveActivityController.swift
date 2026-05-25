@@ -50,13 +50,13 @@ final class TurnLiveActivityController {
         }
 
         if activity == nil {
-            start(for: best, activeCount: activeThreads.count)
+            start(for: best, activeCount: activeThreads.count, snapshot: snapshot)
         } else {
-            update(for: best, activeCount: activeThreads.count)
+            update(for: best, activeCount: activeThreads.count, snapshot: snapshot)
         }
     }
 
-    private func start(for thread: AppThreadSnapshot, activeCount: Int) {
+    private func start(for thread: AppThreadSnapshot, activeCount: Int, snapshot: AppSnapshotRecord) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
 
         let now = Date()
@@ -86,17 +86,19 @@ final class TurnLiveActivityController {
                 content: .init(state: state, staleDate: nil)
             )
         } catch {}
+
+        writeRunningTurnSnapshot(for: thread, startDate: now, snapshot: snapshot)
     }
 
-    private func update(for thread: AppThreadSnapshot, activeCount: Int) {
+    private func update(for thread: AppThreadSnapshot, activeCount: Int, snapshot: AppSnapshotRecord) {
         guard let activity else { return }
         let now = CFAbsoluteTimeGetCurrent()
         guard now - lastUpdateTime > 2.0 else { return }
 
-        if let snapshot = thread.latestAssistantSnippetSnapshot,
-           outputSnippetSourceItemId != snapshot.sourceItemId || outputSnippet != snapshot.snippet {
-            outputSnippetSourceItemId = snapshot.sourceItemId
-            outputSnippet = snapshot.snippet
+        if let assistantSnippet = thread.latestAssistantSnippetSnapshot,
+           outputSnippetSourceItemId != assistantSnippet.sourceItemId || outputSnippet != assistantSnippet.snippet {
+            outputSnippetSourceItemId = assistantSnippet.sourceItemId
+            outputSnippet = assistantSnippet.snippet
         }
 
         let state = CodexTurnAttributes.ContentState(
@@ -112,6 +114,8 @@ final class TurnLiveActivityController {
         Task {
             await activity.update(.init(state: state, staleDate: Date(timeIntervalSinceNow: 60)))
         }
+
+        writeRunningTurnSnapshot(for: thread, startDate: startDate ?? Date(), snapshot: snapshot)
     }
 
     func updateBackgroundWake(for thread: AppThreadSnapshot, pushCount: Int) {
@@ -162,5 +166,61 @@ final class TurnLiveActivityController {
         outputSnippet = nil
         outputSnippetSourceItemId = nil
         lastUpdateTime = 0
+
+        // Clear the watch Smart Stack mirror so the LitterRunningTurnWidget
+        // hides as soon as the turn ends.
+        RunningTurnStore.clear()
+    }
+
+    /// Project the running thread into the App Group payload the watch's
+    /// `LitterRunningTurnWidget` reads. Kept side-effect-only so the live
+    /// activity write path stays the source of truth for "turn running".
+    private func writeRunningTurnSnapshot(
+        for thread: AppThreadSnapshot,
+        startDate: Date,
+        snapshot: AppSnapshotRecord
+    ) {
+        let payload = Self.makeRunningTurnSnapshot(
+            for: thread,
+            startDate: startDate,
+            snapshot: snapshot
+        )
+        RunningTurnStore.write(payload)
+    }
+
+    /// Static so unit tests can validate the projection without an
+    /// `ActivityKit`-backed instance.
+    static func makeRunningTurnSnapshot(
+        for thread: AppThreadSnapshot,
+        startDate: Date,
+        snapshot: AppSnapshotRecord
+    ) -> RunningTurnSnapshot {
+        let serverName: String = {
+            if let server = snapshot.servers.first(where: { $0.serverId == thread.key.serverId }) {
+                return server.displayName.isEmpty ? thread.key.serverId : server.displayName
+            }
+            return thread.key.serverId
+        }()
+        let summary = snapshot.sessionSummaries.first(where: { $0.key == thread.key })
+        let title: String = {
+            if let summary, !summary.title.isEmpty { return summary.title }
+            let preview = thread.resolvedPreview.trimmingCharacters(in: .whitespacesAndNewlines)
+            return preview.isEmpty ? "untitled task" : String(preview.prefix(60))
+        }()
+        let model = thread.resolvedModel.isEmpty ? nil : thread.resolvedModel
+        let lastTool: String? = {
+            if let label = summary?.lastToolLabel, !label.isEmpty {
+                return String(label.prefix(48))
+            }
+            return nil
+        }()
+        return RunningTurnSnapshot(
+            taskId: "\(thread.key.serverId):\(thread.key.threadId)",
+            title: title,
+            serverName: serverName,
+            model: model,
+            startedAtMs: Int64(startDate.timeIntervalSince1970 * 1000),
+            lastTool: lastTool
+        )
     }
 }

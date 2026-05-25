@@ -101,7 +101,7 @@ fn test_shell_quote_path() {
 fn test_build_posix_exec_command_uses_non_login_sh() {
     assert_eq!(
         build_posix_exec_command("echo 'hi' && printf '%s' \"$HOME\""),
-        "/bin/sh -c 'echo '\\''hi'\\'' && printf '\\''%s'\\'' \"$HOME\"'"
+        "/usr/bin/env sh -c 'echo '\\''hi'\\'' && printf '\\''%s'\\'' \"$HOME\"'"
     );
 }
 

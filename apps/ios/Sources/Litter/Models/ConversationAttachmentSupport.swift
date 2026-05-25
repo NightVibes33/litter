@@ -211,6 +211,28 @@ enum ConversationAttachmentSupport {
         downsampledImage(source: CGImageSourceCreateWithData(data as CFData, nil), maxPixelSize: attachmentMaxPixelSize)
     }
 
+    static func loadPickedFile(at url: URL) -> PickedComposerFile? {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if scoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        if isSupportedImageFile(url),
+           let data = try? Data(contentsOf: url),
+           let image = UIImage(data: data) {
+            return .image(image)
+        }
+
+        return .file(
+            ComposerFileAttachment(
+                label: fileLabel(for: url),
+                path: url.path
+            )
+        )
+    }
+
     static func buildTurnInputs(text: String, additionalInput: [AppUserInput]) -> [AppUserInput] {
         var inputs: [AppUserInput] = []
         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -415,6 +437,24 @@ enum ConversationAttachmentSupport {
         }
         return nil
     }
+
+    private static func isSupportedImageFile(_ url: URL) -> Bool {
+        let pathExtension = url.pathExtension.lowercased()
+        return ["png", "jpg", "jpeg", "gif", "webp"].contains(pathExtension)
+    }
+
+    private static func fileLabel(for url: URL) -> String {
+        let baseName = url.deletingPathExtension().lastPathComponent
+        if !baseName.isEmpty {
+            return baseName
+        }
+        return url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
+    }
+}
+
+enum PickedComposerFile {
+    case image(UIImage)
+    case file(ComposerFileAttachment)
 }
 
 private extension UIImage {

@@ -64,6 +64,23 @@ final class MessageContentBridgeTests: XCTestCase {
         XCTAssertEqual(after, "After")
     }
 
+    func testAssistantRenderBlocksNormalizeBackslashMathDelimiters() {
+        let blocks = MessageContentBridge.assistantRenderBlocks("Inline \\(a+b\\)\n\n\\[\nc+d\n\\]")
+
+        XCTAssertEqual(blocks.count, 2)
+
+        guard case .markdown(let inline) = blocks[0] else {
+            return XCTFail("Expected inline math to stay in markdown")
+        }
+        XCTAssertEqual(inline, "Inline $a+b$")
+
+        guard case .codeBlock(let language, let code) = blocks[1] else {
+            return XCTFail("Expected display math code block")
+        }
+        XCTAssertEqual(language, "math")
+        XCTAssertEqual(code, "c+d")
+    }
+
     func testNormalizedAssistantMarkdownConvertsBackslashMathDelimiters() {
         let text = """
         Hello, LaTeX.

@@ -117,30 +117,43 @@ final class WatchProjectionTests: XCTestCase {
         XCTAssertEqual(result.first?.pendingApprovalId, "ap")
     }
 
-    func testSubtitleFallsBackToLastToolLabelThenResponsePreviewThenUserThenPreviewThenNil() {
-        // last tool wins when present
-        let withTool = makeSummary(
+    func testSubtitlePrefersAssistantResponseOverToolLabelThenUserThenPreviewThenNil() {
+        // Assistant response wins over tool label — the watch prioritizes
+        // what the AI said over which tool is mid-run. The tool label is
+        // exposed separately as `lastTool` for a secondary chip.
+        let withBoth = makeSummary(
             serverId: "srv",
-            threadId: "tool",
-            updatedAt: 1,
+            threadId: "both",
+            updatedAt: 0,
             hasActiveTurn: false,
             lastToolLabel: "ran tests",
-            lastResponsePreview: "ignored",
+            lastResponsePreview: "all tests pass",
             lastUserMessage: "ignored",
             preview: "ignored"
         )
-        // tool empty -> response preview wins
-        let withResponse = makeSummary(
+        // response present, no tool -> response wins, no tool chip
+        let withResponseOnly = makeSummary(
             serverId: "srv",
             threadId: "resp",
-            updatedAt: 2,
+            updatedAt: 1,
             hasActiveTurn: false,
             lastToolLabel: nil,
             lastResponsePreview: "assistant said hi",
             lastUserMessage: "ignored",
             preview: "ignored"
         )
-        // tool+response empty -> user message wins
+        // tool only -> tool is the subtitle, no separate chip needed
+        let withToolOnly = makeSummary(
+            serverId: "srv",
+            threadId: "tool",
+            updatedAt: 2,
+            hasActiveTurn: false,
+            lastToolLabel: "ran tests",
+            lastResponsePreview: nil,
+            lastUserMessage: "ignored",
+            preview: "ignored"
+        )
+        // no tool, no response -> user message wins
         let withUser = makeSummary(
             serverId: "srv",
             threadId: "user",
@@ -151,7 +164,7 @@ final class WatchProjectionTests: XCTestCase {
             lastUserMessage: "user said hi",
             preview: "ignored"
         )
-        // all of the above empty -> preview field
+        // all empty -> preview field
         let withPreview = makeSummary(
             serverId: "srv",
             threadId: "prev",
@@ -175,14 +188,21 @@ final class WatchProjectionTests: XCTestCase {
         )
 
         let result = WatchProjection.tasks(
-            summaries: [withTool, withResponse, withUser, withPreview, withNothing],
+            summaries: [withBoth, withResponseOnly, withToolOnly, withUser, withPreview, withNothing],
             threads: [],
             pendingApprovals: []
         )
 
         let byThread = Dictionary(uniqueKeysWithValues: result.map { ($0.threadId, $0) })
-        XCTAssertEqual(byThread["tool"]?.subtitle, "ran tests")
+        // both: assistant text in subtitle, tool label in lastTool chip
+        XCTAssertEqual(byThread["both"]?.subtitle, "all tests pass")
+        XCTAssertEqual(byThread["both"]?.lastTool, "ran tests")
+        // response-only: subtitle is the response, no chip
         XCTAssertEqual(byThread["resp"]?.subtitle, "assistant said hi")
+        XCTAssertNil(byThread["resp"]?.lastTool)
+        // tool-only: subtitle is the tool, no separate chip
+        XCTAssertEqual(byThread["tool"]?.subtitle, "ran tests")
+        XCTAssertNil(byThread["tool"]?.lastTool)
         XCTAssertEqual(byThread["user"]?.subtitle, "user said hi")
         XCTAssertEqual(byThread["prev"]?.subtitle, "preview line")
         XCTAssertNil(byThread["none"]?.subtitle)
@@ -210,7 +230,7 @@ final class WatchProjectionTests: XCTestCase {
     }
 
     func testSubtitleAppliesCompactTruncationAtTheRightMaxWidths() {
-        // tool label uses max=48
+        // tool label (when it IS the subtitle) uses max=48
         let toolText = String(repeating: "a", count: 60)
         let toolSummary = makeSummary(
             serverId: "srv",
@@ -219,8 +239,8 @@ final class WatchProjectionTests: XCTestCase {
             hasActiveTurn: false,
             lastToolLabel: toolText
         )
-        // response preview uses max=60
-        let respText = String(repeating: "b", count: 80)
+        // assistant response uses max=100 (it's the prime real estate now)
+        let respText = String(repeating: "b", count: 150)
         let respSummary = makeSummary(
             serverId: "srv",
             threadId: "resp",
@@ -228,9 +248,18 @@ final class WatchProjectionTests: XCTestCase {
             hasActiveTurn: false,
             lastResponsePreview: respText
         )
+        // tool label exposed as `lastTool` chip uses max=36
+        let bothSummary = makeSummary(
+            serverId: "srv",
+            threadId: "both",
+            updatedAt: 3,
+            hasActiveTurn: false,
+            lastToolLabel: String(repeating: "c", count: 50),
+            lastResponsePreview: "short reply"
+        )
 
         let result = WatchProjection.tasks(
-            summaries: [toolSummary, respSummary],
+            summaries: [toolSummary, respSummary, bothSummary],
             threads: [],
             pendingApprovals: []
         )
@@ -239,8 +268,10 @@ final class WatchProjectionTests: XCTestCase {
         // compact pattern: take prefix(max - 1) and append "…"
         XCTAssertEqual(byThread["tool"]?.subtitle, String(repeating: "a", count: 47) + "…")
         XCTAssertEqual(byThread["tool"]?.subtitle?.count, 48)
-        XCTAssertEqual(byThread["resp"]?.subtitle, String(repeating: "b", count: 59) + "…")
-        XCTAssertEqual(byThread["resp"]?.subtitle?.count, 60)
+        XCTAssertEqual(byThread["resp"]?.subtitle, String(repeating: "b", count: 99) + "…")
+        XCTAssertEqual(byThread["resp"]?.subtitle?.count, 100)
+        XCTAssertEqual(byThread["both"]?.lastTool, String(repeating: "c", count: 35) + "…")
+        XCTAssertEqual(byThread["both"]?.lastTool?.count, 36)
     }
 
     func testApprovalSubtitleTruncatesCommandAt32() {
@@ -710,6 +741,196 @@ final class WatchProjectionTests: XCTestCase {
         XCTAssertEqual(voice?.recentTurns.first?.text, "hi")
     }
 
+    // MARK: - 9. deriveDiffs
+
+    func testDeriveDiffsCollapsesSamePathKeepingMostRecentEdit() {
+        // Same file edited twice — the later edit should win, and the
+        // resulting task should expose exactly one diff entry.
+        let earlier = makeFileChangeItem(
+            id: "f1",
+            path: "src/foo.swift",
+            kind: "modify",
+            status: .completed,
+            diff: "@@ -1,1 +1,1 @@\n-old\n+older",
+            additions: 1,
+            deletions: 1
+        )
+        let later = makeFileChangeItem(
+            id: "f2",
+            path: "src/foo.swift",
+            kind: "modify",
+            status: .completed,
+            diff: "@@ -1,1 +1,1 @@\n-older\n+latest",
+            additions: 2,
+            deletions: 1
+        )
+        let thread = makeThread(serverId: "srv", threadId: "t", items: [earlier, later])
+        let summary = makeSummary(serverId: "srv", threadId: "t", updatedAt: 1, hasActiveTurn: false)
+
+        let result = WatchProjection.tasks(
+            summaries: [summary],
+            threads: [thread],
+            pendingApprovals: []
+        )
+        let diffs = result.first?.diffs ?? []
+        XCTAssertEqual(diffs.count, 1)
+        XCTAssertEqual(diffs.first?.path, "src/foo.swift")
+        XCTAssertEqual(diffs.first?.additions, 2)
+        XCTAssertEqual(diffs.first?.deletions, 1)
+        XCTAssertEqual(diffs.first?.diff, "@@ -1,1 +1,1 @@\n-older\n+latest")
+        XCTAssertEqual(diffs.first?.truncated, false)
+    }
+
+    func testDeriveDiffsCapsAtMaxFilesPerTaskNewestFirst() {
+        // Build N+2 distinct file edits. The projection should keep
+        // `maxDiffFilesPerTask` of them, newest-first (i.e. iterate items
+        // in reverse), and drop the oldest pair.
+        let cap = WatchProjection.maxDiffFilesPerTask
+        let items: [HydratedConversationItem] = (0..<(cap + 2)).map { i in
+            makeFileChangeItem(
+                id: "f\(i)",
+                path: "src/file_\(i).swift",
+                kind: "modify",
+                status: .completed,
+                diff: "@@ -1,1 +1,1 @@\n-a\n+b",
+                additions: 1,
+                deletions: 1
+            )
+        }
+        let thread = makeThread(serverId: "srv", threadId: "t", items: items)
+        let summary = makeSummary(serverId: "srv", threadId: "t", updatedAt: 1, hasActiveTurn: false)
+
+        let result = WatchProjection.tasks(
+            summaries: [summary],
+            threads: [thread],
+            pendingApprovals: []
+        )
+        let diffs = result.first?.diffs ?? []
+        XCTAssertEqual(diffs.count, cap)
+        // Newest-first: items.last is `file_{cap+1}.swift`.
+        let expected = (0..<cap).map { "src/file_\(cap + 1 - $0).swift" }
+        XCTAssertEqual(diffs.map(\.path), expected)
+    }
+
+    func testDeriveDiffsTruncatesLargeDiffAndMarksTruncated() {
+        // 30 lines of "+aaaa…" each, longer than `maxDiffCharsPerFile`.
+        // The projection should keep the head, drop the partial trailing
+        // line, append a truncation marker, and set `truncated = true`.
+        let cap = WatchProjection.maxDiffCharsPerFile
+        let bigLine = "+" + String(repeating: "a", count: 80)
+        let diffText = (0..<60).map { _ in bigLine }.joined(separator: "\n")
+        XCTAssertGreaterThan(diffText.count, cap)
+
+        let item = makeFileChangeItem(
+            id: "f1",
+            path: "src/huge.swift",
+            kind: "modify",
+            status: .completed,
+            diff: diffText,
+            additions: 60,
+            deletions: 0
+        )
+        let thread = makeThread(serverId: "srv", threadId: "t", items: [item])
+        let summary = makeSummary(serverId: "srv", threadId: "t", updatedAt: 1, hasActiveTurn: false)
+
+        let result = WatchProjection.tasks(
+            summaries: [summary],
+            threads: [thread],
+            pendingApprovals: []
+        )
+        let projected = result.first?.diffs?.first
+        XCTAssertNotNil(projected)
+        XCTAssertEqual(projected?.truncated, true)
+        XCTAssertTrue(projected?.diff.hasSuffix("\n… (truncated)") == true)
+        // Header line plus the trimmed body must be shorter than original.
+        XCTAssertLessThan(projected?.diff.count ?? .max, diffText.count)
+    }
+
+    func testDeriveDiffsSkipsEmptyDiffStrings() {
+        // A file change with no diff text carries no useful info on the
+        // watch — skip it instead of taking up a slot.
+        let empty = makeFileChangeItem(
+            id: "f1",
+            path: "src/empty.swift",
+            kind: "modify",
+            status: .completed,
+            diff: "",
+            additions: 0,
+            deletions: 0
+        )
+        let real = makeFileChangeItem(
+            id: "f2",
+            path: "src/real.swift",
+            kind: "modify",
+            status: .completed,
+            diff: "@@ -1,1 +1,1 @@\n-x\n+y",
+            additions: 1,
+            deletions: 1
+        )
+        let thread = makeThread(serverId: "srv", threadId: "t", items: [empty, real])
+        let summary = makeSummary(serverId: "srv", threadId: "t", updatedAt: 1, hasActiveTurn: false)
+
+        let result = WatchProjection.tasks(
+            summaries: [summary],
+            threads: [thread],
+            pendingApprovals: []
+        )
+        XCTAssertEqual(result.first?.diffs?.map(\.path), ["src/real.swift"])
+    }
+
+    func testDeriveDiffsIsNilWhenThreadHasNoFileChanges() {
+        // No file-change items at all -> the projection should leave the
+        // `diffs` field nil so older watch builds (and the JSON encoder)
+        // can omit it entirely.
+        let thread = makeThread(
+            serverId: "srv",
+            threadId: "t",
+            items: [makeUserItem(id: "u", text: "hi")]
+        )
+        let summary = makeSummary(serverId: "srv", threadId: "t", updatedAt: 1, hasActiveTurn: false)
+        let result = WatchProjection.tasks(
+            summaries: [summary],
+            threads: [thread],
+            pendingApprovals: []
+        )
+        XCTAssertNil(result.first?.diffs)
+    }
+
+    func testDeriveDiffsExpandsMultiFileChangeItem() {
+        // A single fileChange item can carry multiple file entries (e.g. a
+        // patch that touches several files in one apply). All of them
+        // should land in `diffs`, ordered as they appear in the entry list.
+        let item = makeFileChangeItemMulti(
+            id: "f1",
+            status: .completed,
+            entries: [
+                HydratedFileChangeEntryData(
+                    path: "src/a.swift",
+                    kind: "modify",
+                    diff: "@@ -1,1 +1,1 @@\n-1\n+2",
+                    additions: 1,
+                    deletions: 1
+                ),
+                HydratedFileChangeEntryData(
+                    path: "src/b.swift",
+                    kind: "add",
+                    diff: "@@ -0,0 +1,1 @@\n+new",
+                    additions: 1,
+                    deletions: 0
+                ),
+            ]
+        )
+        let thread = makeThread(serverId: "srv", threadId: "t", items: [item])
+        let summary = makeSummary(serverId: "srv", threadId: "t", updatedAt: 1, hasActiveTurn: false)
+        let result = WatchProjection.tasks(
+            summaries: [summary],
+            threads: [thread],
+            pendingApprovals: []
+        )
+        XCTAssertEqual(result.first?.diffs?.map(\.path), ["src/a.swift", "src/b.swift"])
+        XCTAssertEqual(result.first?.diffs?.map(\.kind), ["modify", "add"])
+    }
+
     // MARK: - Identifier shape
 
     func testTaskIdIsServerIdColonThreadId() {
@@ -904,7 +1125,10 @@ final class WatchProjectionTests: XCTestCase {
         id: String,
         path: String,
         kind: String,
-        status: AppOperationStatus
+        status: AppOperationStatus,
+        diff: String = "",
+        additions: UInt32 = 0,
+        deletions: UInt32 = 0
     ) -> HydratedConversationItem {
         HydratedConversationItem(
             id: id,
@@ -913,10 +1137,28 @@ final class WatchProjectionTests: XCTestCase {
                 changes: [HydratedFileChangeEntryData(
                     path: path,
                     kind: kind,
-                    diff: "",
-                    additions: 0,
-                    deletions: 0
+                    diff: diff,
+                    additions: additions,
+                    deletions: deletions
                 )]
+            )),
+            sourceTurnId: nil,
+            sourceTurnIndex: nil,
+            timestamp: nil,
+            isFromUserTurnBoundary: false
+        )
+    }
+
+    private func makeFileChangeItemMulti(
+        id: String,
+        status: AppOperationStatus,
+        entries: [HydratedFileChangeEntryData]
+    ) -> HydratedConversationItem {
+        HydratedConversationItem(
+            id: id,
+            content: .fileChange(HydratedFileChangeData(
+                status: status,
+                changes: entries
             )),
             sourceTurnId: nil,
             sourceTurnIndex: nil,

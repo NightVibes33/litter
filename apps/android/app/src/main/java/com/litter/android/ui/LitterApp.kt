@@ -25,6 +25,8 @@ import com.litter.android.state.AppModel
 import com.litter.android.state.LocalAccountLoginRequiredException
 import com.litter.android.state.NetworkDiscovery
 import com.litter.android.state.PetOverlayController
+import com.litter.android.state.AlleycatCredentialStore
+import com.litter.android.state.SavedServerStore
 import com.litter.android.state.SavedThreadsStore
 import com.litter.android.state.VoiceRuntimeController
 import com.litter.android.state.connectionModeLabel
@@ -45,6 +47,7 @@ import com.litter.android.ui.sessions.DirectoryPickerServerOption
 import com.litter.android.ui.sessions.DirectoryPickerSheet
 import com.litter.android.ui.sessions.SessionLaunchSupport
 import com.litter.android.ui.sessions.SessionsUiState
+import com.litter.android.ui.terminal.TerminalScreen
 import uniffi.codex_mobile_client.AppProject
 import uniffi.codex_mobile_client.ApprovalKind
 import uniffi.codex_mobile_client.PendingUserInputRequest
@@ -281,7 +284,7 @@ fun LitterApp(
             }
         }
 
-        val rootModifier = if (currentRoute is Route.Conversation) {
+        val rootModifier = if (currentRoute is Route.Conversation || currentRoute is Route.Terminal) {
             Modifier
                 .fillMaxSize()
                 .background(LitterTheme.background)
@@ -333,6 +336,11 @@ fun LitterApp(
                             }
                         },
                         onOpenSavedApp = { appId -> navigate(Route.SavedApp(appId)) },
+                        onOpenTerminal = if (ExperimentalFeatures.isEnabled(LitterFeature.TERMINAL)) {
+                            { navigate(Route.Terminal()) }
+                        } else {
+                            null
+                        },
                     )
                 }
 
@@ -402,6 +410,12 @@ fun LitterApp(
                         serverId = route.serverId,
                         onBack = navigateBack,
                         onChangeWallpaper = { navigate(Route.ServerWallpaperSelection(route.serverId)) },
+                        onOpenShell = remoteShellLauncher(
+                            context = context,
+                            serverId = route.serverId,
+                            terminalEnabled = ExperimentalFeatures.isEnabled(LitterFeature.TERMINAL),
+                            navigate = navigate,
+                        ),
                     )
                 }
 
@@ -455,6 +469,13 @@ fun LitterApp(
                         appId = route.appId,
                         onBack = navigateBack,
                         onOpenConversation = { key -> navigate(Route.Conversation(key)) },
+                    )
+                }
+
+                is Route.Terminal -> {
+                    TerminalScreen(
+                        preferredAlleycatNodeId = route.preferredAlleycatNodeId,
+                        onBack = navigateBack,
                     )
                 }
             }
@@ -659,6 +680,23 @@ fun LitterApp(
             }
         }
     }
+}
+
+private fun remoteShellLauncher(
+    context: android.content.Context,
+    serverId: String,
+    terminalEnabled: Boolean,
+    navigate: (Route) -> Unit,
+): (() -> Unit)? {
+    if (!terminalEnabled) return null
+    val saved = SavedServerStore.remembered(context).firstOrNull { it.id == serverId } ?: return null
+    val nodeId = saved.alleycatNodeId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val token = AlleycatCredentialStore(context.applicationContext)
+        .loadToken(nodeId)
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: return null
+    return { navigate(Route.Terminal(preferredAlleycatNodeId = nodeId)) }
 }
 
 private fun PendingUserInputRequest.isRelevantToThread(threadKey: ThreadKey): Boolean {

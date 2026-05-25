@@ -127,6 +127,15 @@ struct ConversationComposerContentView: View {
                 }
             }
 
+            if !attachedFiles.isEmpty {
+                ConversationComposerFileChipStrip(
+                    files: attachedFiles,
+                    onRemove: onRemoveFileAttachment
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, attachedImage == nil ? 8 : 6)
+            }
+
             VStack(alignment: .trailing, spacing: 0) {
                 if let goal {
                     ConversationComposerGoalRowView(goal: goal, actions: goalActions)
@@ -692,7 +701,7 @@ private struct ConversationComposerGoalRowView: View {
 
     private var canTogglePause: Bool {
         switch goal.status {
-        case .active, .paused, .budgetLimited: return true
+        case .active, .paused, .blocked, .usageLimited, .budgetLimited: return true
         case .complete: return false
         }
     }
@@ -701,6 +710,8 @@ private struct ConversationComposerGoalRowView: View {
         switch goal.status {
         case .active: return "Pause goal"
         case .paused: return "Resume goal"
+        case .blocked: return "Resume goal (override block)"
+        case .usageLimited: return "Resume goal (override usage cap)"
         case .budgetLimited: return "Resume goal (override budget cap)"
         case .complete: return "Goal complete"
         }
@@ -710,6 +721,8 @@ private struct ConversationComposerGoalRowView: View {
         switch goal.status {
         case .active: return ("Pause Goal", "pause.circle")
         case .paused: return ("Resume Goal", "play.circle")
+        case .blocked: return ("Resume Goal (override block)", "play.circle")
+        case .usageLimited: return ("Resume Goal (override usage cap)", "play.circle")
         case .budgetLimited: return ("Resume Goal (override cap)", "play.circle")
         case .complete: return nil
         }
@@ -719,7 +732,7 @@ private struct ConversationComposerGoalRowView: View {
         switch goal.status {
         case .active: return LitterTheme.accent
         case .paused: return LitterTheme.textMuted
-        case .budgetLimited: return LitterTheme.warning
+        case .blocked, .usageLimited, .budgetLimited: return LitterTheme.warning
         case .complete: return LitterTheme.success
         }
     }
@@ -728,6 +741,8 @@ private struct ConversationComposerGoalRowView: View {
         switch goal.status {
         case .active: return "active"
         case .paused: return "paused"
+        case .blocked: return "blocked"
+        case .usageLimited: return "usage limit"
         case .budgetLimited: return "limited"
         case .complete: return "complete"
         }

@@ -317,6 +317,13 @@ struct HomeDashboardView: View {
                     }
                     .accessibilityLabel("Apps")
                 }
+                if let onShowTerminal {
+                    Button(action: onShowTerminal) {
+                        Image(systemName: "terminal")
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                    .accessibilityLabel("Terminal")
+                }
             }
         }
         ToolbarItem(placement: .principal) {
@@ -634,7 +641,6 @@ struct HomeDashboardView: View {
                 .frame(width: catWidth, height: catHeight)
                 .position(x: w / 2, y: h * 0.42)
         }
-        .allowsHitTesting(false)
     }
 }
 
@@ -645,7 +651,7 @@ private struct EmptyHomeFatCatView: View {
     private let loopURL = Bundle.main.url(forResource: "home_cat", withExtension: "png")
 
     var body: some View {
-        Group {
+        CatTransmissionPressView {
             if let imageURL = showingLoop ? loopURL : (entranceURL ?? loopURL) {
                 AlphaAnimatedImageView(
                     fileURL: imageURL,
@@ -1207,6 +1213,8 @@ struct SessionCanvasLine: View {
         switch status {
         case .active: return "· ACTIVE"
         case .paused: return "· PAUSED"
+        case .blocked: return "· BLOCKED"
+        case .usageLimited: return "· USAGE"
         case .budgetLimited: return "· BUDGET"
         case .complete: return "· COMPLETE"
         }
@@ -1318,7 +1326,7 @@ struct SessionCanvasLine: View {
         switch status {
         case .active: return LitterTheme.accent
         case .paused: return LitterTheme.textMuted
-        case .budgetLimited: return LitterTheme.warning
+        case .blocked, .usageLimited, .budgetLimited: return LitterTheme.warning
         case .complete: return LitterTheme.success
         }
     }

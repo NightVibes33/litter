@@ -13,6 +13,7 @@ struct ConversationInfoView: View {
     let serverId: String?
     var onOpenWallpaper: (() -> Void)?
     var onOpenConversation: ((ThreadKey) -> Void)?
+    var onOpenShell: (() -> Void)?
 
     /// Whether we're in server-only mode (no specific thread).
     private var isServerOnly: Bool { threadKey == nil }
@@ -108,6 +109,11 @@ struct ConversationInfoView: View {
         HStack(spacing: 0) {
             actionCircle(icon: "paintbrush", label: "Appearance") {
                 onOpenWallpaper?()
+            }
+            if let onOpenShell {
+                actionCircle(icon: "terminal", label: "Shell") {
+                    onOpenShell()
+                }
             }
         }
     }

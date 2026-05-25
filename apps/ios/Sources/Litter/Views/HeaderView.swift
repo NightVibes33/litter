@@ -811,24 +811,26 @@ struct InlineModelSelectorView: View {
                     .clipShape(Capsule())
                 }
 
-                Button {
-                    if isFullAccess {
-                        appState.setPermissions(approvalPolicy: "on-request", sandboxMode: "workspace-write", for: threadKey)
-                    } else {
-                        appState.setPermissions(approvalPolicy: "never", sandboxMode: "danger-full-access", for: threadKey)
+                if selectedRuntimeSupportsPermissionOverrides {
+                    Button {
+                        if isFullAccess {
+                            appState.setPermissions(approvalPolicy: "on-request", sandboxMode: "workspace-write", for: threadKey)
+                        } else {
+                            appState.setPermissions(approvalPolicy: "never", sandboxMode: "danger-full-access", for: threadKey)
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: isFullAccess ? "lock.open.fill" : "lock.fill")
+                                .litterFont(size: 9, weight: .semibold)
+                            Text(isFullAccess ? "Full Access" : "Supervised")
+                                .litterFont(.caption2, weight: .medium)
+                        }
+                        .foregroundColor(isFullAccess ? LitterTheme.textOnAccent : LitterTheme.textPrimary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(isFullAccess ? LitterTheme.danger : LitterTheme.surfaceLight)
+                        .clipShape(Capsule())
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: isFullAccess ? "lock.open.fill" : "lock.fill")
-                            .litterFont(size: 9, weight: .semibold)
-                        Text(isFullAccess ? "Full Access" : "Supervised")
-                            .litterFont(.caption2, weight: .medium)
-                    }
-                    .foregroundColor(isFullAccess ? LitterTheme.textOnAccent : LitterTheme.textPrimary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(isFullAccess ? LitterTheme.danger : LitterTheme.surfaceLight)
-                    .clipShape(Capsule())
                 }
 
                 Spacer()

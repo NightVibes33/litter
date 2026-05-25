@@ -6,6 +6,7 @@ import WatchKit
 /// (`VoiceScreen`) via a secondary action.
 struct RealtimeVoiceScreen: View {
     @EnvironmentObject var store: WatchAppStore
+    @EnvironmentObject var theme: WatchThemeStore
 
     var body: some View {
         Group {
@@ -17,7 +18,7 @@ struct RealtimeVoiceScreen: View {
         }
         .containerBackground(
             RadialGradient(
-                colors: [WatchTheme.ginger.opacity(0.18), .black],
+                colors: [theme.accent.opacity(0.18), theme.backgroundBottom],
                 center: .init(x: 0.5, y: 0.7),
                 startRadius: 6, endRadius: 200
             ),
@@ -30,6 +31,7 @@ struct RealtimeVoiceScreen: View {
 
 private struct ActiveBody: View {
     @EnvironmentObject var store: WatchAppStore
+    @EnvironmentObject var theme: WatchThemeStore
     let voice: WatchVoiceState
 
     var body: some View {
@@ -92,11 +94,11 @@ private struct ActiveBody: View {
                 } label: {
                     Text("stop")
                         .font(WatchTheme.mono(11, weight: .bold))
-                        .foregroundStyle(WatchTheme.danger)
+                        .foregroundStyle(theme.danger)
                         .frame(maxWidth: .infinity, minHeight: 30)
                         .background(
-                            Capsule().fill(WatchTheme.surfaceHi)
-                                .overlay(Capsule().stroke(WatchTheme.danger.opacity(0.4), lineWidth: 1))
+                            Capsule().fill(theme.surfaceLight)
+                                .overlay(Capsule().stroke(theme.danger.opacity(0.4), lineWidth: 1))
                         )
                 }
                 .buttonStyle(.plain)
@@ -107,9 +109,9 @@ private struct ActiveBody: View {
                 } label: {
                     Text("barge in")
                         .font(WatchTheme.mono(11, weight: .bold))
-                        .foregroundStyle(WatchTheme.onAccent)
+                        .foregroundStyle(theme.textOnAccent)
                         .frame(maxWidth: .infinity, minHeight: 30)
-                        .background(Capsule().fill(WatchTheme.ginger))
+                        .background(Capsule().fill(theme.accent))
                 }
                 .buttonStyle(.plain)
             }
@@ -119,7 +121,7 @@ private struct ActiveBody: View {
             } label: {
                 Label("type instead", systemImage: "keyboard")
                     .font(WatchTheme.mono(10))
-                    .foregroundStyle(WatchTheme.dim)
+                    .foregroundStyle(theme.textSecondary)
             }
             .buttonStyle(.plain)
             .padding(.top, 2)
@@ -128,6 +130,7 @@ private struct ActiveBody: View {
 }
 
 private struct VoiceTurnRow: View {
+    @EnvironmentObject var theme: WatchThemeStore
     let turn: WatchTranscriptTurn
 
     var body: some View {
@@ -153,13 +156,13 @@ private struct VoiceTurnRow: View {
             case .assistant:
                 Text(turn.text)
                     .font(WatchTheme.mono(10))
-                    .foregroundStyle(WatchTheme.text)
+                    .foregroundStyle(theme.textPrimary)
                     .opacity(turn.faded ? 0.6 : 1)
                 Spacer(minLength: 0)
             case .system:
                 Text(turn.text)
                     .font(WatchTheme.mono(9))
-                    .foregroundStyle(WatchTheme.dim)
+                    .foregroundStyle(theme.textSecondary)
                     .italic()
                 Spacer(minLength: 0)
             }
@@ -170,6 +173,8 @@ private struct VoiceTurnRow: View {
 // MARK: - Mic ring
 
 private struct MicRing: View {
+    @EnvironmentObject var theme: WatchThemeStore
+    @Environment(\.watchSize) private var watchSize
     let audioLevel: Double
     let isMuted: Bool
     let mode: WatchVoiceState.Mode
@@ -179,8 +184,8 @@ private struct MicRing: View {
         Button(action: onTap) {
             ZStack {
                 Circle()
-                    .stroke(WatchTheme.ginger.opacity(0.35), lineWidth: 2)
-                    .frame(width: 96, height: 96)
+                    .stroke(theme.accent.opacity(0.35), lineWidth: 2)
+                    .frame(width: outerDiameter, height: outerDiameter)
                     .scaleEffect(scale)
                     .animation(.easeOut(duration: 0.18), value: scale)
                 Circle()
@@ -192,16 +197,19 @@ private struct MicRing: View {
                             endRadius: 50
                         )
                     )
-                    .frame(width: 80, height: 80)
-                    .shadow(color: WatchTheme.ginger.opacity(isMuted ? 0.0 : 0.45), radius: 12)
+                    .frame(width: innerDiameter, height: innerDiameter)
+                    .shadow(color: theme.accent.opacity(isMuted ? 0.0 : 0.45), radius: 12)
                 Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
-                    .font(.system(size: 30, weight: .heavy))
-                    .foregroundStyle(WatchTheme.onAccent)
+                    .font(.system(size: 30 * watchSize.fontScale, weight: .heavy))
+                    .foregroundStyle(theme.textOnAccent)
             }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isMuted ? "Unmute" : "Mute")
     }
+
+    private var outerDiameter: CGFloat { 96 * watchSize.fontScale }
+    private var innerDiameter: CGFloat { 80 * watchSize.fontScale }
 
     private var scale: CGFloat {
         let clamped = max(0, min(1, audioLevel))
@@ -210,17 +218,17 @@ private struct MicRing: View {
 
     private var ringColors: [Color] {
         if isMuted {
-            return [WatchTheme.dim, WatchTheme.surfaceHi]
+            return [theme.textSecondary, theme.surfaceLight]
         }
         switch mode {
         case .listening, .idle:
-            return [WatchTheme.gingerLight, WatchTheme.ginger, WatchTheme.amber]
+            return [theme.accentSoft, theme.accent, theme.accentStrong]
         case .speaking:
-            return [WatchTheme.success, WatchTheme.successSoft, WatchTheme.amberDeep]
+            return [theme.success, theme.successSoft, theme.accentStrong]
         case .thinking:
-            return [WatchTheme.gingerLight, WatchTheme.amberDeep, WatchTheme.surfaceHi]
+            return [theme.accentSoft, theme.accentStrong, theme.surfaceLight]
         case .error:
-            return [WatchTheme.danger, WatchTheme.amberDeep, .black]
+            return [theme.danger, theme.accentStrong, theme.backgroundBottom]
         }
     }
 }
@@ -228,6 +236,7 @@ private struct MicRing: View {
 // MARK: - Status pill
 
 private struct StatusPill: View {
+    @EnvironmentObject var theme: WatchThemeStore
     let mode: WatchVoiceState.Mode
 
     var body: some View {
@@ -254,11 +263,11 @@ private struct StatusPill: View {
 
     private var color: Color {
         switch mode {
-        case .idle:      return WatchTheme.dim
-        case .listening: return WatchTheme.ginger
-        case .speaking:  return WatchTheme.success
-        case .thinking:  return WatchTheme.gingerLight
-        case .error:     return WatchTheme.danger
+        case .idle:      return theme.textSecondary
+        case .listening: return theme.accent
+        case .speaking:  return theme.success
+        case .thinking:  return theme.warning
+        case .error:     return theme.danger
         }
     }
 }
@@ -267,6 +276,7 @@ private struct StatusPill: View {
 
 private struct IdleBody: View {
     @EnvironmentObject var store: WatchAppStore
+    @EnvironmentObject var theme: WatchThemeStore
 
     var body: some View {
         VStack(spacing: 10) {
@@ -287,9 +297,9 @@ private struct IdleBody: View {
                 } label: {
                     Label("start voice", systemImage: "mic.fill")
                         .font(WatchTheme.mono(12, weight: .bold))
-                        .foregroundStyle(WatchTheme.onAccent)
+                        .foregroundStyle(theme.textOnAccent)
                         .frame(maxWidth: .infinity, minHeight: 32)
-                        .background(Capsule().fill(WatchTheme.ginger))
+                        .background(Capsule().fill(theme.accent))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 4)
@@ -300,7 +310,7 @@ private struct IdleBody: View {
             } label: {
                 Label("type instead", systemImage: "keyboard")
                     .font(WatchTheme.mono(10))
-                    .foregroundStyle(WatchTheme.dim)
+                    .foregroundStyle(theme.textSecondary)
             }
             .buttonStyle(.plain)
         }
@@ -313,6 +323,7 @@ private struct IdleBody: View {
     NavigationStack {
         RealtimeVoiceScreen()
             .environmentObject(WatchAppStore.previewStore())
+            .environmentObject(WatchThemeStore.shared)
     }
 }
 
@@ -326,6 +337,7 @@ private struct IdleBody: View {
                 s.lastSyncDate = .now
                 return s
             }())
+            .environmentObject(WatchThemeStore.shared)
     }
 }
 #endif

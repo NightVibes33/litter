@@ -1320,7 +1320,7 @@ impl AppClient {
             if let Ok(resp) = exec_command_simple(
                 c.as_ref(),
                 &server_id,
-                &["/bin/sh", "-lc", r#"printf %s "$HOME""#],
+                &["/usr/bin/env", "sh", "-lc", r#"printf %s "$HOME""#],
                 Some("/tmp"),
             )
             .await
@@ -1378,7 +1378,7 @@ impl AppClient {
             let resp = exec_command_simple(
                 c.as_ref(),
                 &server_id,
-                &["/bin/sh", "-lc", &cmd],
+                &["/usr/bin/env", "sh", "-lc", &cmd],
                 Some(&project_root),
             )
             .await?;
@@ -1932,7 +1932,8 @@ fn image_read_command(path: &str) -> Vec<String> {
     }
 
     vec![
-        "/bin/sh".to_string(),
+        "/usr/bin/env".to_string(),
+        "sh".to_string(),
         "-lc".to_string(),
         r#"path="$1"; case "$path" in "~/"*) path="$HOME/${path#~/}" ;; esac; base64 < "$path""#
             .to_string(),
@@ -1973,7 +1974,12 @@ done"#;
     let response = exec_command_simple_owned(
         client,
         server_id,
-        vec!["/bin/sh".to_string(), "-lc".to_string(), script.to_string()],
+        vec![
+            "/usr/bin/env".to_string(),
+            "sh".to_string(),
+            "-lc".to_string(),
+            script.to_string(),
+        ],
         None,
     )
     .await?;
@@ -2087,7 +2093,8 @@ fn file_exists_command(path: &str) -> Vec<String> {
         ];
     }
     vec![
-        "/bin/sh".to_string(),
+        "/usr/bin/env".to_string(),
+        "sh".to_string(),
         "-lc".to_string(),
         r#"path="$1"; case "$path" in "~/"*) path="$HOME/${path#~/}" ;; esac; test -f "$path""#
             .to_string(),
@@ -2288,6 +2295,7 @@ async fn start_ephemeral_thread_for_structured(
         model_provider: None,
         service_tier: None,
         cwd: None,
+        runtime_workspace_roots: None,
         approval_policy: None,
         approvals_reviewer: None,
         sandbox: None,
@@ -2339,6 +2347,7 @@ async fn run_structured_turn(
         }],
         responsesapi_client_metadata: None,
         cwd: None,
+        runtime_workspace_roots: None,
         approval_policy: None,
         approvals_reviewer: None,
         sandbox_policy: None,
@@ -2580,6 +2589,7 @@ async fn perform_update_saved_app(
         model_provider: None,
         service_tier: service_tier.clone(),
         cwd: Some(thread_cwd.clone()),
+        runtime_workspace_roots: None,
         approval_policy: Some(upstream::AskForApproval::Never),
         approvals_reviewer: None,
         sandbox: Some(upstream::SandboxMode::DangerFullAccess),
@@ -2632,6 +2642,7 @@ async fn perform_update_saved_app(
         }],
         responsesapi_client_metadata: None,
         cwd: None,
+        runtime_workspace_roots: None,
         approval_policy: Some(upstream::AskForApproval::Never),
         approvals_reviewer: None,
         sandbox_policy: Some(upstream::SandboxPolicy::DangerFullAccess),
@@ -3228,8 +3239,9 @@ mod tests {
     #[test]
     fn builds_posix_image_read_command_with_remote_tilde_expansion() {
         let command = image_read_command("~/image.png");
-        assert_eq!(command[0], "/bin/sh");
-        assert!(command[2].contains(r#"${path#~/}"#));
+        assert_eq!(command[0], "/usr/bin/env");
+        assert_eq!(command[1], "sh");
+        assert!(command[3].contains(r#"${path#~/}"#));
     }
 
     mod plugin_list {
@@ -3269,6 +3281,8 @@ mod tests {
         ) -> upstream::PluginSummary {
             upstream::PluginSummary {
                 id: id.into(),
+                remote_plugin_id: None,
+                local_version: None,
                 name: name.into(),
                 share_context: None,
                 source: upstream::PluginSource::Remote,

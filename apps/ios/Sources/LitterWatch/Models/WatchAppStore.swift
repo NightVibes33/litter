@@ -1,12 +1,21 @@
 import Foundation
 import Combine
 import WatchConnectivity
+#if canImport(WatchKit)
+import WatchKit
+#endif
 
 /// Observable state container for the watch app. Sourced from the iPhone
 /// via `WatchSessionBridge`; starts empty and populates on first snapshot.
 @MainActor
 final class WatchAppStore: ObservableObject {
-    @Published var tasks: [WatchTask] = []
+    @Published var tasks: [WatchTask] = [] {
+        didSet { detectAndPlayHaptics(oldTasks: oldValue, newTasks: tasks) }
+    }
+    /// Tasks the user has hidden from home. Surfaced on the watch via
+    /// `HiddenThreadsScreen` so the user can unhide without touching the
+    /// iPhone.
+    @Published var hiddenTasks: [WatchTask] = []
     /// The task the user is currently drilled into. Purely local — the
     /// transcript for each task is carried inside the task itself, so this
     /// doesn't need to round-trip to the phone.
@@ -24,6 +33,15 @@ final class WatchAppStore: ObservableObject {
     @Published var approvalError: String?
 
     static let shared = WatchAppStore()
+
+    /// Pure logic that decides which haptics to fire from a task diff.
+    /// Owned by the store so the detector's `lastFired` map survives
+    /// across snapshots without leaking into call sites.
+    private let hapticDetector = WatchHapticDetector()
+    private var hapticLastFired: [WatchHaptic: Date] = [:]
+    /// Skip haptics on the very first `tasks` assignment so cold-launch
+    /// hydration doesn't fire a burst of "everything is new" buzzes.
+    private var hasHydratedTasksOnce = false
 
     var focusedTask: WatchTask? {
         if let id = focusedTaskId, let task = tasks.first(where: { $0.id == id }) {
@@ -55,10 +73,22 @@ final class WatchAppStore: ObservableObject {
     /// WCSession activation so the UI can render last-known state instead
     /// of an infinite "syncing…" placeholder.
     func hydrateFromAppGroupIfNeeded() {
-        guard lastSyncDate == nil,
-              let (payload, date) = WatchSnapshotStore.current()
-        else { return }
+        guard lastSyncDate == nil else { return }
+        applyAppGroupSnapshot()
+    }
+
+    /// Reload from the App Group even when `lastSyncDate` is already set.
+    /// Used by the background refresh task so the watch picks up updates
+    /// the iPhone wrote while the watch app was suspended.
+    func forceHydrateFromAppGroup() {
+        applyAppGroupSnapshot()
+    }
+
+    private func applyAppGroupSnapshot() {
+        guard let (payload, date) = WatchSnapshotStore.current() else { return }
+        WatchThemeStore.shared.apply(payload.theme)
         tasks = payload.tasks
+        hiddenTasks = payload.hiddenTasks ?? []
         pendingApproval = payload.pendingApproval
         voice = payload.voice
         lastSyncDate = date
@@ -94,10 +124,36 @@ final class WatchAppStore: ObservableObject {
         focusedTaskId = task.id
     }
 
+    // MARK: - Haptics
+
+    /// Diff tasks across snapshots and play any haptics that result. Routes
+    /// through the pure `WatchHapticDetector` so the side effect lives in
+    /// one place and the policy is unit-testable.
+    private func detectAndPlayHaptics(oldTasks: [WatchTask], newTasks: [WatchTask]) {
+        let firstHydration = !hasHydratedTasksOnce
+        hasHydratedTasksOnce = true
+
+        let outcome = hapticDetector.evaluate(
+            oldTasks: oldTasks,
+            newTasks: newTasks,
+            lastFired: hapticLastFired,
+            now: Date(),
+            isFirstHydration: firstHydration
+        )
+        hapticLastFired = outcome.updatedLastFired
+
+        #if canImport(WatchKit)
+        for haptic in outcome.haptics {
+            WKInterfaceDevice.current().play(haptic.wkType)
+        }
+        #endif
+    }
+
     #if DEBUG
     static func previewStore() -> WatchAppStore {
         let store = WatchAppStore()
         store.tasks = WatchPreviewFixtures.tasks
+        store.hiddenTasks = WatchPreviewFixtures.hiddenTasks
         store.focusedTaskId = WatchPreviewFixtures.tasks.first?.id
         store.pendingApproval = WatchPreviewFixtures.approval
         store.voice = WatchPreviewFixtures.voice

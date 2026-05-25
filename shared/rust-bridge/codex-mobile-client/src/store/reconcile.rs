@@ -2,7 +2,7 @@ use std::any::Any;
 use std::collections::HashSet;
 
 use crate::MobileClient;
-use crate::conversation_uniffi::HydratedConversationItem;
+use crate::conversation_uniffi::{HydratedConversationItem, HydratedConversationItemContent};
 use crate::store::ThreadSnapshot;
 use crate::transport::RpcError;
 use crate::types::server_requests::{AppListThreadTurnsResponse, AppTurnsSortDirection};
@@ -442,6 +442,90 @@ fn apply_pagination_merge(
     }
 }
 
+fn user_replay_item_key(item: &HydratedConversationItem) -> Option<String> {
+    match &item.content {
+        HydratedConversationItemContent::User(data) => Some(format!(
+            "user:{}:{}",
+            data.text,
+            serde_json::to_string(&data.image_data_uris).unwrap_or_default()
+        )),
+        _ => None,
+    }
+}
+
+fn logical_replay_item_key(item: &HydratedConversationItem) -> Option<String> {
+    match &item.content {
+        HydratedConversationItemContent::User(_) => user_replay_item_key(item),
+        HydratedConversationItemContent::Assistant(data) => {
+            Some(format!("assistant:{}:{:?}", data.text, data.phase))
+        }
+        HydratedConversationItemContent::Reasoning(data) => Some(format!(
+            "reasoning:{}:{}",
+            serde_json::to_string(&data.summary).unwrap_or_default(),
+            serde_json::to_string(&data.content).unwrap_or_default()
+        )),
+        _ => None,
+    }
+}
+
+fn is_stream_text_item(item: &HydratedConversationItem) -> bool {
+    matches!(
+        item.content,
+        HydratedConversationItemContent::Assistant(_)
+            | HydratedConversationItemContent::Reasoning(_)
+    )
+}
+
+fn prune_replayed_live_span(
+    thread: &mut ThreadSnapshot,
+    group_user_keys: &[String],
+    incoming_item_ids: &HashSet<String>,
+) {
+    if group_user_keys.is_empty() {
+        return;
+    }
+
+    let mut in_replayed_live_span = false;
+    thread.items.retain(|item| {
+        if let Some(key) = user_replay_item_key(item) {
+            if group_user_keys.contains(&key) {
+                if item.source_turn_id.is_none() {
+                    in_replayed_live_span = true;
+                    return false;
+                }
+                in_replayed_live_span = incoming_item_ids.contains(&item.id);
+            } else {
+                in_replayed_live_span = false;
+            }
+            return true;
+        }
+
+        if in_replayed_live_span && item.source_turn_id.is_none() && is_stream_text_item(item) {
+            return false;
+        }
+
+        true
+    });
+}
+
+fn replace_existing_items_by_id(
+    thread: &mut ThreadSnapshot,
+    incoming: impl IntoIterator<Item = HydratedConversationItem>,
+) -> HashSet<String> {
+    let mut replaced = HashSet::new();
+    for item in incoming {
+        if let Some(existing) = thread
+            .items
+            .iter_mut()
+            .find(|existing| existing.id == item.id)
+        {
+            replaced.insert(item.id.clone());
+            *existing = item;
+        }
+    }
+    replaced
+}
+
 fn merge_paged_turns(
     thread: &mut ThreadSnapshot,
     page: &AppListThreadTurnsResponse,
@@ -486,13 +570,78 @@ fn merge_paged_turns(
     let mut new_items: Vec<HydratedConversationItem> = Vec::new();
     for group in turns_in_page {
         let group_turn_id = group.first().and_then(|item| item.source_turn_id.clone());
-        if let Some(id) = group_turn_id {
-            if existing_turn_ids.contains(&id) {
+        let incoming_item_ids: HashSet<String> = group.iter().map(|item| item.id.clone()).collect();
+
+        // Preferred path for new Alleycat/Pi bridges: live stream items and
+        // later replay items carry the same upstream item id. Replace the
+        // sourceless live copy with the authoritative paged copy so metadata
+        // such as `source_turn_id` is repaired without any content guessing.
+        let replaced_item_ids = replace_existing_items_by_id(thread, group.iter().cloned());
+
+        let group_user_keys = group
+            .iter()
+            .filter_map(user_replay_item_key)
+            .collect::<Vec<_>>();
+        let group_replays_existing_user = group_user_keys.iter().any(|key| {
+            thread
+                .items
+                .iter()
+                .filter_map(user_replay_item_key)
+                .any(|existing_key| existing_key == *key)
+        });
+        let group_has_persisted_text = group.iter().any(|item| {
+            item.source_turn_id.is_some()
+                && matches!(
+                    item.content,
+                    HydratedConversationItemContent::Assistant(_)
+                        | HydratedConversationItemContent::Reasoning(_)
+                )
+        });
+        if let Some(id) = group_turn_id.as_deref() {
+            if existing_turn_ids.contains(id) {
+                // A reconnect repair page is authoritative for completed turn
+                // text. Drop stale streaming assistant/reasoning placeholders
+                // absent from the replay, while preserving the historical
+                // turn-id dedupe for non-stream/user items.
+                if thread.active_turn_id.is_none()
+                    && group_replays_existing_user
+                    && group_has_persisted_text
+                {
+                    prune_replayed_live_span(thread, &group_user_keys, &incoming_item_ids);
+                    thread.items.retain(|item| {
+                        incoming_item_ids.contains(&item.id)
+                            || !is_stream_text_item(item)
+                            || item.source_turn_id.as_deref() != Some(id)
+                    });
+                }
                 continue;
             }
         }
+        if thread.active_turn_id.is_none()
+            && group_replays_existing_user
+            && group_has_persisted_text
+        {
+            prune_replayed_live_span(thread, &group_user_keys, &incoming_item_ids);
+        }
         for item in group {
-            if existing_item_ids.contains(&item.id) {
+            if existing_item_ids.contains(&item.id) || replaced_item_ids.contains(&item.id) {
+                continue;
+            }
+            // Compatibility path for older/non-Codex bridges that synthesized
+            // optimistic/live item ids before the underlying agent persisted
+            // history. A later `thread/turns/list` can return the same logical
+            // content with a different persisted id. Prefer the replay copy
+            // when it carries a turn id, and avoid duplicate user / assistant /
+            // reasoning bubbles after reconnect repair pages.
+            if let Some(key) = logical_replay_item_key(&item)
+                && let Some(existing) = thread.items.iter_mut().find(|existing| {
+                    existing.source_turn_id.is_none()
+                        && logical_replay_item_key(existing).as_deref() == Some(&key)
+                })
+            {
+                if item.source_turn_id.is_some() && existing.source_turn_id.is_none() {
+                    *existing = item;
+                }
                 continue;
             }
             new_items.push(item);
@@ -805,6 +954,29 @@ mod tests {
         }
     }
 
+    fn assistant_item(
+        turn_id: Option<&str>,
+        item_id: &str,
+        text: &str,
+    ) -> HydratedConversationItem {
+        use crate::conversation_uniffi::{
+            HydratedAssistantMessageData, HydratedConversationItemContent,
+        };
+        HydratedConversationItem {
+            id: item_id.to_string(),
+            content: HydratedConversationItemContent::Assistant(HydratedAssistantMessageData {
+                text: text.to_string(),
+                agent_nickname: None,
+                agent_role: None,
+                phase: None,
+            }),
+            source_turn_id: turn_id.map(ToOwned::to_owned),
+            source_turn_index: None,
+            timestamp: None,
+            is_from_user_turn_boundary: false,
+        }
+    }
+
     fn test_thread_snapshot() -> ThreadSnapshot {
         let info = ThreadInfo {
             id: "thread-1".to_string(),
@@ -917,6 +1089,142 @@ mod tests {
     }
 
     #[test]
+    fn merge_paged_turns_replaces_same_item_id_with_authoritative_replay_item() {
+        let mut thread = test_thread_snapshot();
+        let mut live_item = item_with_turn("turn-live", "stable-user-id");
+        live_item.source_turn_id = None;
+        thread.items = vec![live_item];
+        let page = AppListThreadTurnsResponse {
+            turns: vec![item_with_turn("turn-1", "stable-user-id")],
+            next_cursor: None,
+            backwards_cursor: None,
+        };
+        merge_paged_turns(&mut thread, &page, AppTurnsSortDirection::Descending);
+        assert_eq!(thread.items.len(), 1);
+        assert_eq!(thread.items[0].id, "stable-user-id");
+        assert_eq!(thread.items[0].source_turn_id.as_deref(), Some("turn-1"));
+    }
+
+    #[test]
+    fn merge_paged_turns_replaces_same_logical_live_item_with_replay_item() {
+        let mut thread = test_thread_snapshot();
+        let mut live_item = item_with_turn("turn-live", "live-user-id");
+        live_item.source_turn_id = None;
+        let replay_item = item_with_turn("turn-1", "persisted-user-id");
+        thread.items = vec![live_item];
+        let page = AppListThreadTurnsResponse {
+            turns: vec![replay_item],
+            next_cursor: None,
+            backwards_cursor: None,
+        };
+        merge_paged_turns(&mut thread, &page, AppTurnsSortDirection::Descending);
+        assert_eq!(thread.items.len(), 1);
+        assert_eq!(thread.items[0].id, "persisted-user-id");
+        assert_eq!(thread.items[0].source_turn_id.as_deref(), Some("turn-1"));
+    }
+
+    #[test]
+    fn merge_paged_turns_removes_sourceless_stream_text_when_replay_repairs_turn() {
+        let mut thread = test_thread_snapshot();
+        let mut live_user = item_with_turn("turn-live", "live-user-id");
+        live_user.source_turn_id = None;
+        thread.items = vec![
+            live_user,
+            assistant_item(None, "live-assistant-id", "partial"),
+        ];
+        let page = AppListThreadTurnsResponse {
+            turns: vec![
+                item_with_turn("turn-1", "persisted-user-id"),
+                assistant_item(Some("turn-1"), "persisted-assistant-id", "final"),
+            ],
+            next_cursor: None,
+            backwards_cursor: None,
+        };
+        merge_paged_turns(&mut thread, &page, AppTurnsSortDirection::Descending);
+        let ids: Vec<String> = thread.items.iter().map(|item| item.id.clone()).collect();
+        assert_eq!(ids, vec!["persisted-user-id", "persisted-assistant-id"]);
+    }
+
+    #[test]
+    fn merge_paged_turns_repair_preserves_text_from_other_turns() {
+        let mut thread = test_thread_snapshot();
+        let mut live_user = item_with_turn("turn-live", "live-user-id");
+        live_user.source_turn_id = None;
+        thread.items = vec![
+            item_with_turn("turn-0", "older-user-id"),
+            assistant_item(Some("turn-0"), "older-assistant-id", "older final"),
+            live_user,
+            assistant_item(None, "live-assistant-id", "partial"),
+        ];
+        let page = AppListThreadTurnsResponse {
+            turns: vec![
+                item_with_turn("turn-1", "persisted-user-id"),
+                assistant_item(Some("turn-1"), "persisted-assistant-id", "final"),
+            ],
+            next_cursor: None,
+            backwards_cursor: None,
+        };
+        merge_paged_turns(&mut thread, &page, AppTurnsSortDirection::Descending);
+        let ids: Vec<String> = thread.items.iter().map(|item| item.id.clone()).collect();
+        assert!(
+            ids.contains(&"older-assistant-id".to_string()),
+            "repair for turn-1 must preserve assistant text from turn-0; ids={ids:?}"
+        );
+        assert!(
+            !ids.contains(&"live-assistant-id".to_string()),
+            "repair for turn-1 should prune the stale live assistant placeholder; ids={ids:?}"
+        );
+    }
+
+    #[test]
+    fn merge_paged_turns_keeps_active_stream_text_while_loading_pages() {
+        let mut thread = test_thread_snapshot();
+        thread.active_turn_id = Some("active-turn".to_string());
+        let mut live_user = item_with_turn("turn-live", "live-user-id");
+        live_user.source_turn_id = None;
+        thread.items = vec![
+            live_user,
+            assistant_item(Some("active-turn"), "active-assistant-id", "partial"),
+        ];
+        let page = AppListThreadTurnsResponse {
+            turns: vec![
+                item_with_turn("turn-1", "persisted-user-id"),
+                assistant_item(Some("turn-1"), "persisted-assistant-id", "final"),
+            ],
+            next_cursor: None,
+            backwards_cursor: None,
+        };
+        merge_paged_turns(&mut thread, &page, AppTurnsSortDirection::Descending);
+        assert!(
+            thread
+                .items
+                .iter()
+                .any(|item| item.id == "active-assistant-id")
+        );
+    }
+
+    #[test]
+    fn merge_paged_turns_prunes_stale_stream_text_for_existing_turn_replay() {
+        let mut thread = test_thread_snapshot();
+        thread.items = vec![
+            item_with_turn("turn-1", "persisted-user-id"),
+            assistant_item(Some("turn-1"), "persisted-assistant-id", "final"),
+            assistant_item(Some("turn-1"), "late-stream-assistant-id", "late duplicate"),
+        ];
+        let page = AppListThreadTurnsResponse {
+            turns: vec![
+                item_with_turn("turn-1", "persisted-user-id"),
+                assistant_item(Some("turn-1"), "persisted-assistant-id", "final"),
+            ],
+            next_cursor: None,
+            backwards_cursor: None,
+        };
+        merge_paged_turns(&mut thread, &page, AppTurnsSortDirection::Descending);
+        let ids: Vec<String> = thread.items.iter().map(|item| item.id.clone()).collect();
+        assert_eq!(ids, vec!["persisted-user-id", "persisted-assistant-id"]);
+    }
+
+    #[test]
     fn apply_pagination_merge_preserves_existing_on_empty_turns() {
         let mut existing = test_thread_snapshot();
         existing.items = vec![item_with_turn("turn-1", "i1")];
@@ -991,11 +1299,11 @@ mod tests {
             model_provider: "openai".to_string(),
             service_tier: None,
             cwd: test_abs_path("/tmp"),
+            runtime_workspace_roots: Vec::new(),
             instruction_sources: Vec::new(),
             approval_policy: upstream::AskForApproval::Never,
             approvals_reviewer: upstream::ApprovalsReviewer::User,
             sandbox: upstream::SandboxPolicy::DangerFullAccess,
-            permission_profile: None,
             active_permission_profile: None,
             reasoning_effort: None,
         };

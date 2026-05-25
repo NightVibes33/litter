@@ -2,14 +2,16 @@
 //!
 //! The relay wraps app-server JSON-RPC frames in `RemoteControlEnvelope`
 //! records. This crate exposes the typed REST surface plus an `AsyncRead` /
-//! `AsyncWrite` adapter that lets the existing upstream
-//! `RemoteAppServerClient::connect_json_line_stream` run over Slingshot.
+//! `AsyncWrite` adapter that drives upstream's `RemoteAppServerClient` over
+//! Slingshot via the litter-owned [`json_line_wire::connect_json_line_stream`]
+//! helper.
 
 pub mod api;
 pub mod device_key;
 pub mod enrollment;
 pub mod envelope;
 pub mod errors;
+pub mod json_line_wire;
 pub mod stream;
 pub mod types;
 
@@ -33,7 +35,8 @@ pub use types::{
 use std::io::Error as IoError;
 use std::io::ErrorKind;
 
-use codex_app_server_client::{AppServerClient, RemoteAppServerClient, RemoteAppServerConnectArgs};
+use codex_app_server_client::{AppServerClient, RemoteAppServerConnectArgs};
+use crate::json_line_wire::connect_json_line_stream;
 
 /// Connect an upstream app-server client through one Slingshot environment.
 pub async fn connect_app_server_client(
@@ -44,7 +47,7 @@ pub async fn connect_app_server_client(
     let stream_id = uuid::Uuid::new_v4().to_string();
     let stream = SlingshotJsonLineStream::connect(api, environment_id.clone(), stream_id).await?;
     let label = format!("slingshot://{environment_id}");
-    let remote = RemoteAppServerClient::connect_json_line_stream(stream, args, label)
+    let remote = connect_json_line_stream(stream, args, label)
         .await
         .map_err(|error| {
             IoError::new(

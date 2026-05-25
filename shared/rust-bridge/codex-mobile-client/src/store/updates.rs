@@ -120,4 +120,8 @@ pub enum AppStoreUpdateRecord {
         call_id: String,
         widget: HydratedWidgetData,
     },
+    /// Any change to the terminal-session snapshot list (open/close/exit
+    /// or active id change). Payload-free: subscribers re-read
+    /// `AppSnapshot.terminal_sessions` / `active_terminal_id`.
+    TerminalSessionsChanged,
 }

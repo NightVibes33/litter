@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-This repository is a fork of the original Litter project and also vendors or builds against several upstream projects. Each upstream keeps its own copyright and license terms. Exact vendored SideStore, Feather, minimuxer, Zsign-Package, and LocalDevVPN source refs are recorded in `ThirdParty/UPSTREAMS.md`.
+This repository is a fork of the original Litter project and also vendors or builds against several upstream projects. Each upstream keeps its own copyright and license terms. Exact vendored SideStore, Feather, minimuxer, Zsign-Package, LocalDevVPN, and Ghostty source refs are recorded in `ThirdParty/UPSTREAMS.md`.
 
 ## Original Litter Upstream
 
@@ -61,6 +61,16 @@ Litter vendors OpenAI Codex source for the shared mobile client and local Codex 
 - Vendored path: `shared/third_party/codex`
 - License: Apache License 2.0, see `shared/third_party/codex/LICENSE`
 - Notice: see `shared/third_party/codex/NOTICE`
+
+## Ghostty
+
+Litter vendors Ghostty as a pinned submodule for the mobile terminal renderer work.
+
+- Upstream: https://github.com/ghostty-org/ghostty
+- Vendored path: `shared/third_party/ghostty`
+- Pinned commit: `a968e120dd084bd886239d1cac938f0177f019d9`
+- Local patch path: `patches/ghostty/litter-mobile-embed.patch`
+- License: see `shared/third_party/ghostty/LICENSE` when the submodule is checked out.
 
 ## Nyxian / emexDE
 

@@ -125,7 +125,9 @@ struct SSHAgentPickerSheet: View {
                         selectedKinds.insert(agent.kind)
                     }
                 } label: {
-                    HStack {
+                    HStack(spacing: 10) {
+                        AgentIconView(kind: agent.kind, size: 22)
+                            .opacity(agent.status == .available ? 1 : 0.45)
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
                                 Text(runtimeDisplayName(agent.kind))

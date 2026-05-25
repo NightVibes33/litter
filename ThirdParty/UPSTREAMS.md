@@ -46,3 +46,11 @@ These source drops are kept small and source-only. Generated build products, IPA
 - LocalDevVPN vendored commit: `c4566ce08931cef414c9f656e7e33c66bdb2454e`
 - LocalDevVPN tunnel-provider path: `ThirdParty/SideStore/LocalDevVPN-TunnelProv`
 - License: minimuxer is AGPL-3.0, see `ThirdParty/SideStore/minimuxer/LICENSE`; rusty_libimobiledevice, plist_plus, and libtatsu are LGPL-2.1-or-later; LocalDevVPN keeps its upstream terms.
+
+## Ghostty
+
+- Ghostty renderer repo: https://github.com/ghostty-org/ghostty.git
+- Ghostty submodule commit: `a968e120dd084bd886239d1cac938f0177f019d9`
+- Ghostty submodule path: `shared/third_party/ghostty`
+- Litter mobile embedding patch: `patches/ghostty/litter-mobile-embed.patch`
+- License: see `shared/third_party/ghostty/LICENSE` when the submodule is checked out.

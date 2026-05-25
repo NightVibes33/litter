@@ -1,6 +1,5 @@
 import SwiftUI
 import PhotosUI
-import UniformTypeIdentifiers
 import UIKit
 import os
 
@@ -21,7 +20,6 @@ struct HomeComposerView: View {
 
     @Environment(AppModel.self) private var appModel
     @Environment(AppState.self) private var appState
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     @State private var inputText = ""
     @State private var attachments: [ConversationAttachment] = []
@@ -58,7 +56,7 @@ struct HomeComposerView: View {
     private var attachSheetDetentHeight: CGFloat {
         let showsFile = true
         let showsCamera = !LitterPlatform.isCatalyst
-        let count = 1 + (showsFile ? 1 : 0) + (showsCamera ? 1 : 0)
+        let count = 2 + (showsCamera ? 1 : 0)
         return count >= 3 ? 260 : 210
     }
 
@@ -271,6 +269,7 @@ struct HomeComposerView: View {
                 let payload = AppComposerPayload(
                     text: text,
                     additionalInputs: additionalInputs,
+                    fileAttachments: files,
                     approvalPolicy: appState.launchApprovalPolicy(for: threadKey),
                     sandboxPolicy: appState.turnSandboxPolicy(for: threadKey),
                     model: modelOverride,
@@ -321,6 +320,17 @@ struct HomeComposerView: View {
             appendImageAttachment(image)
         }
         selectedPhoto = nil
+    }
+
+    private func applyPickedFile(_ picked: PickedComposerFile) {
+        switch picked {
+        case .image(let image):
+            attachedImage = image
+        case .file(let file):
+            if !attachedFiles.contains(file) {
+                attachedFiles.append(file)
+            }
+        }
     }
 
     private func stopVoiceRecording() {

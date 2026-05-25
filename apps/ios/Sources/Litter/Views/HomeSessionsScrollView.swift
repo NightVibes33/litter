@@ -368,6 +368,18 @@ final class HomeSessionsScrollUIView: UIView {
         relayout(animated: layoutAnimated)
         updatePageBackgroundVisibility()
 
+        // Repair stuck pinch-blur state. iOS can finish our paused
+        // `UIViewPropertyAnimator` during NavigationStack push/pop
+        // (terminal → back), leaving a row's `UIVisualEffectView`
+        // showing the full end-state blur. SwiftUI re-runs `apply()`
+        // after the pop, so this is the earliest reliable point to
+        // reset the animator on every visible row.
+        if !isPinching {
+            for container in containers.values {
+                container.forceResetPinchBlurIfIdle()
+            }
+        }
+
         // Just landed on the page-fit zoom from a different one — bring
         // the scroll position to the nearest page boundary so the user
         // doesn't end up resting between two cards. Done after relayout
@@ -922,13 +934,15 @@ private struct HomeCatFooterView: View {
             if let imageURL = showingLoop ? loopURL : (entranceURL ?? loopURL) {
                 let width = min(max(0, proxy.size.width - 48), 340)
                 VStack {
-                    AlphaAnimatedImageView(
-                        fileURL: imageURL,
-                        repeatCount: showingLoop ? 0 : 1,
-                        onFinished: showingLoop ? nil : {
-                            showingLoop = true
-                        }
-                    )
+                    CatTransmissionPressView {
+                        AlphaAnimatedImageView(
+                            fileURL: imageURL,
+                            repeatCount: showingLoop ? 0 : 1,
+                            onFinished: showingLoop ? nil : {
+                                showingLoop = true
+                            }
+                        )
+                    }
                         .frame(width: width, height: width * 9.0 / 16.0)
                         .accessibilityHidden(true)
                 }
@@ -937,7 +951,6 @@ private struct HomeCatFooterView: View {
                 .padding(.bottom, 20)
             }
         }
-        .allowsHitTesting(false)
     }
 }
 
@@ -1295,6 +1308,29 @@ final class HomeRowContainer: UIView {
         setNeedsLayout()
     }
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        // `pinchBlur`'s intensity is driven by a paused
+        // `UIViewPropertyAnimator` whose `fractionComplete` is scrubbed
+        // between `effect = nil` and `systemThinMaterialDark`. When the
+        // hosting NavigationStack pushes a new screen (e.g. terminal)
+        // and pops back, iOS can finish/invalidate paused property
+        // animators, leaving the blur snapped to its full effect — a
+        // milky band sits over the affected rows. When we re-attach to
+        // a window with no pinch in progress, reset the animator from
+        // scratch so it scrubs cleanly back to nil.
+        guard window != nil,
+              !LitterPlatform.rendersAsMacApp,
+              !UIAccessibility.isReduceTransparencyEnabled,
+              scrollHost?.pinchActive != true
+        else { return }
+        fadeLink?.invalidate()
+        fadeLink = nil
+        tearDownPinchBlurAnimator()
+        pinchBlur.effect = nil
+        pinchBlurAnimator = makePinchBlurAnimator()
+    }
+
     private func updatePinchBlurAvailability() {
         if UIAccessibility.isReduceTransparencyEnabled {
             pinchBlur.removeFromSuperview()
@@ -1488,6 +1524,28 @@ final class HomeRowContainer: UIView {
     /// No-op kept for the scroll host's `.began` call site; the
     /// direction-aware curve was replaced with a symmetric one.
     func resetPinchBlurPeak() {}
+
+    /// Force the pinch blur back to a clean, nil-effect state when no
+    /// pinch is in progress. Called from the scroll host's `apply()`
+    /// after every SwiftUI update — covers the case where iOS finishes
+    /// our paused `UIViewPropertyAnimator` out from under us during a
+    /// NavigationStack push/pop (e.g. into the terminal screen and
+    /// back), which otherwise snaps the blur to its end state and
+    /// leaves a milky band over the row.
+    func forceResetPinchBlurIfIdle() {
+        if LitterPlatform.rendersAsMacApp { return }
+        if UIAccessibility.isReduceTransparencyEnabled { return }
+        // A live fade-out is still scrubbing the animator's
+        // fractionComplete back to 0 — don't yank the animator out
+        // from under it.
+        if fadeLink != nil { return }
+        // If the scroll host says a pinch is active, the animator is
+        // being scrubbed in real time. Leave it alone.
+        if scrollHost?.pinchActive == true { return }
+        tearDownPinchBlurAnimator()
+        pinchBlur.effect = nil
+        pinchBlurAnimator = makePinchBlurAnimator()
+    }
 
     /// Smoothly wind the blur back to zero on pinch release. Uses
     /// a CADisplayLink-driven tween because UIViewPropertyAnimator's

@@ -1,20 +1,56 @@
 import Foundation
 import WidgetKit
 
-/// Single `TimelineProvider` shared by all three complications. The provider
-/// emits one entry representing "right now", plus a cadence of future entries
-/// for the runtime clock to keep ticking for the next 30 minutes.
-struct LitterComplicationProvider: TimelineProvider {
+/// `AppIntentTimelineProvider` shared by all three complications. Resolves
+/// the configured `ServerSelectionIntent.server`:
+///
+/// - `nil` → use the aggregate `complication.snapshot.v1` (legacy/default).
+/// - non-nil → look up that server's slice in
+///   `complication.per-server.v1` and fall back to the aggregate if the
+///   selected server has no entry yet.
+///
+/// The legacy `TimelineProvider`-shape behavior (one entry now + 30 ticks
+/// while running) is preserved unchanged.
+struct LitterComplicationProvider: AppIntentTimelineProvider {
+    typealias Intent = ServerSelectionIntent
+    typealias Entry = LitterComplicationEntry
+
     func placeholder(in context: Context) -> LitterComplicationEntry {
         .placeholder
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (LitterComplicationEntry) -> Void) {
-        completion(LitterComplicationStore.current())
+    func snapshot(for configuration: ServerSelectionIntent, in context: Context) async -> LitterComplicationEntry {
+        resolveCurrent(for: configuration)
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<LitterComplicationEntry>) -> Void) {
-        let base = LitterComplicationStore.current()
+    func timeline(for configuration: ServerSelectionIntent, in context: Context) async -> Timeline<LitterComplicationEntry> {
+        let base = resolveCurrent(for: configuration)
+        return makeTimeline(base: base)
+    }
+
+    func recommendations() -> [AppIntentRecommendation<ServerSelectionIntent>] {
+        []
+    }
+
+    // MARK: - Resolution
+
+    private func resolveCurrent(for configuration: ServerSelectionIntent) -> LitterComplicationEntry {
+        if let serverId = configuration.server?.id,
+           let payload = perServerPayload(for: serverId) {
+            return LitterComplicationStore.entry(from: payload)
+        }
+        return LitterComplicationStore.current()
+    }
+
+    private func perServerPayload(for serverId: String) -> LitterComplicationPayload? {
+        let map = LitterPerServerComplicationStore.current()
+        guard let data = map[serverId] else { return nil }
+        return try? JSONDecoder().decode(LitterComplicationPayload.self, from: data)
+    }
+
+    // MARK: - Timeline shape
+
+    private func makeTimeline(base: LitterComplicationEntry) -> Timeline<LitterComplicationEntry> {
         let now = Date()
         var entries: [LitterComplicationEntry] = []
 
@@ -35,10 +71,10 @@ struct LitterComplicationProvider: TimelineProvider {
                     )
                 )
             }
-            completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(60 * 30))))
+            return Timeline(entries: entries, policy: .after(now.addingTimeInterval(60 * 30)))
         } else {
             entries.append(base)
-            completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(60 * 15))))
+            return Timeline(entries: entries, policy: .after(now.addingTimeInterval(60 * 15)))
         }
     }
 }

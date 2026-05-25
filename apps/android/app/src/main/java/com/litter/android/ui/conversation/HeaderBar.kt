@@ -66,6 +66,7 @@ import com.litter.android.ui.LocalAppModel
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.common.modelPickerDisplayName
 import com.litter.android.ui.common.matchesModelSelection
+import com.litter.android.ui.common.reportsEffectiveThreadPermissions
 import com.litter.android.ui.scaled
 import kotlinx.coroutines.launch
 import uniffi.codex_mobile_client.AppModeKind
@@ -248,13 +249,15 @@ fun HeaderBar(
                         // when this thread is running at full-access (approval =
                         // never + sandbox = danger-full-access). Mirrors iOS
                         // HeaderView.swift:74-78 `headerPermissionPreset == .fullAccess`.
-                        val permissionPreset = thread?.let { t ->
-                            val approval = appModel.launchState.approvalPolicyValue(t.key)
-                                ?: t.effectiveApprovalPolicy
-                            val sandbox = appModel.launchState.turnSandboxPolicy(t.key)
-                                ?: t.effectiveSandboxPolicy
-                            uniffi.codex_mobile_client.threadPermissionPreset(approval, sandbox)
-                        }
+                        val permissionPreset = thread
+                            ?.takeIf { it.agentRuntimeKind.reportsEffectiveThreadPermissions }
+                            ?.let { t ->
+                                val approval = appModel.launchState.approvalPolicyValue(t.key)
+                                    ?: t.effectiveApprovalPolicy
+                                val sandbox = appModel.launchState.turnSandboxPolicy(t.key)
+                                    ?: t.effectiveSandboxPolicy
+                                uniffi.codex_mobile_client.threadPermissionPreset(approval, sandbox)
+                            }
                         if (permissionPreset ==
                             uniffi.codex_mobile_client.AppThreadPermissionPreset.FULL_ACCESS) {
                             Spacer(Modifier.width(6.dp))

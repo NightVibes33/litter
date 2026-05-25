@@ -25,6 +25,11 @@ data class ComposerImageAttachment(
     fun toUserInput(): AppUserInput.Image = AppUserInput.Image(url = dataUri)
 }
 
+data class ComposerFileAttachment(
+    val label: String,
+    val path: String,
+)
+
 /**
  * UI-facing config for creating or resuming threads.
  * Converts to mobile-owned Rust request types.
@@ -91,6 +96,7 @@ data class AppThreadLaunchConfig(
 data class AppComposerPayload(
     val text: String,
     val additionalInputs: List<AppUserInput> = emptyList(),
+    val fileAttachments: List<ComposerFileAttachment> = emptyList(),
     val approvalPolicy: AppAskForApproval? = null,
     val sandboxPolicy: AppSandboxPolicy? = null,
     val model: String? = null,
@@ -99,8 +105,9 @@ data class AppComposerPayload(
 ) {
     fun toAppStartTurnRequest(threadId: String): AppStartTurnRequest {
         val input = additionalInputs.toMutableList()
-        if (text.isNotBlank()) {
-            input.add(0, AppUserInput.Text(text = text, textElements = emptyList()))
+        val composedText = desktopStylePromptText(text, fileAttachments)
+        if (composedText.isNotBlank()) {
+            input.add(0, AppUserInput.Text(text = composedText, textElements = emptyList()))
         }
 
         return AppStartTurnRequest(
@@ -114,3 +121,29 @@ data class AppComposerPayload(
         )
     }
 }
+
+private fun desktopStylePromptText(
+    text: String,
+    fileAttachments: List<ComposerFileAttachment>,
+): String {
+    val attachments = fileAttachments.mapNotNull { attachment ->
+        val label = sanitizeFileContextValue(attachment.label)
+        val path = sanitizeFileContextValue(attachment.path)
+        if (path.isEmpty()) {
+            null
+        } else {
+            ComposerFileAttachment(label = label.ifEmpty { path }, path = path)
+        }
+    }
+    if (attachments.isEmpty()) return text
+
+    val files = attachments.joinToString(separator = "\n\n") { attachment ->
+        "## ${attachment.label}: ${attachment.path}"
+    }
+    return "# Files mentioned by the user:\n\n$files\n\n## My request for Codex:\n$text"
+}
+
+private fun sanitizeFileContextValue(value: String): String =
+    value.replace('\r', ' ')
+        .replace('\n', ' ')
+        .trim()

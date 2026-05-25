@@ -73,6 +73,14 @@ val AgentRuntimeKind.isBeta: Boolean
         metadata?.presentation?.isBeta ?: true
     }
 
+/** Whether this runtime accepts client-side thread permission overrides. */
+val AgentRuntimeKind.supportsThreadPermissionOverrides: Boolean
+    get() = metadata?.capabilities?.supportsThreadPermissionOverrides ?: true
+
+/** Whether this runtime reports effective permissions as authoritative state. */
+val AgentRuntimeKind.reportsEffectiveThreadPermissions: Boolean
+    get() = metadata?.capabilities?.reportsEffectiveThreadPermissions ?: true
+
 /** Picker callers that only know `name` / `displayName` from a probe. */
 fun isBetaAgentName(name: String, displayName: String): Boolean {
     val key = name.trim().lowercase()

@@ -444,6 +444,7 @@ struct ConversationView: View {
         return AppComposerPayload(
             text: text,
             additionalInputs: additionalInputs,
+            fileAttachments: fileAttachments,
             approvalPolicy: appState.launchApprovalPolicy(for: activeThreadKey),
             sandboxPolicy: appState.turnSandboxPolicy(for: activeThreadKey),
             model: pendingModelOverride,
@@ -1495,6 +1496,7 @@ private struct ConversationInputBar: View {
 
     @Binding var inputText: String
     @Binding var attachedImage: UIImage?
+    @State private var attachedFiles: [ComposerFileAttachment] = []
     @State private var showAttachMenu = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
@@ -1761,6 +1763,21 @@ private struct ConversationInputBar: View {
             }
         } catch {
             slashErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func removeFileAttachment(_ file: ComposerFileAttachment) {
+        attachedFiles.removeAll { $0 == file }
+    }
+
+    private func applyPickedFile(_ picked: PickedComposerFile) {
+        switch picked {
+        case .image(let image):
+            attachedImage = image
+        case .file(let file):
+            if !attachedFiles.contains(file) {
+                attachedFiles.append(file)
+            }
         }
     }
 
@@ -2309,6 +2326,8 @@ private struct ConversationInputBar: View {
         switch status {
         case .active: return "active"
         case .paused: return "paused"
+        case .blocked: return "blocked"
+        case .usageLimited: return "limited by usage"
         case .budgetLimited: return "limited by budget"
         case .complete: return "complete"
         }
@@ -2321,7 +2340,7 @@ private struct ConversationInputBar: View {
                 let next: AppThreadGoalStatus
                 switch current {
                 case .active: next = .paused
-                case .paused, .budgetLimited: next = .active
+                case .paused, .blocked, .usageLimited, .budgetLimited: next = .active
                 case .complete: return
                 }
                 taskBag.run { await applyGoalUpdate(status: next) }

@@ -50,4 +50,24 @@ final class StreamingAssistantRenderCacheTests: XCTestCase {
         XCTAssertFalse(editedSegments.isEmpty)
         XCTAssertNotEqual(initialSegments.first?.id, editedSegments.first?.id)
     }
+
+    func testMathDelimitersUseRenderableSegments() {
+        let segments = StreamingAssistantRenderCache.shared.segments(
+            itemId: "assistant-math",
+            text: "Inline \\(a+b\\)\n\n\\[\nc+d\n\\]"
+        )
+
+        XCTAssertEqual(segments.count, 2)
+
+        guard case .markdown(let inline, _) = segments[0].kind else {
+            return XCTFail("Expected inline math markdown segment")
+        }
+        XCTAssertEqual(inline, "Inline $a+b$")
+
+        guard case .codeBlock(let language, let code, _) = segments[1].kind else {
+            return XCTFail("Expected display math code block segment")
+        }
+        XCTAssertEqual(language, "math")
+        XCTAssertEqual(code, "c+d")
+    }
 }

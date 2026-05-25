@@ -47,6 +47,11 @@ jobs:
       - name: Install build dependencies
         run: brew install xcodegen meson ninja llvm lld
 
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

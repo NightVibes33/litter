@@ -83,6 +83,8 @@ impl From<AppThreadSourceKind> for upstream::ThreadSourceKind {
 pub enum AppThreadGoalStatus {
     Active,
     Paused,
+    Blocked,
+    UsageLimited,
     BudgetLimited,
     Complete,
 }
@@ -92,6 +94,8 @@ impl From<upstream::ThreadGoalStatus> for AppThreadGoalStatus {
         match value {
             upstream::ThreadGoalStatus::Active => Self::Active,
             upstream::ThreadGoalStatus::Paused => Self::Paused,
+            upstream::ThreadGoalStatus::Blocked => Self::Blocked,
+            upstream::ThreadGoalStatus::UsageLimited => Self::UsageLimited,
             upstream::ThreadGoalStatus::BudgetLimited => Self::BudgetLimited,
             upstream::ThreadGoalStatus::Complete => Self::Complete,
         }
@@ -103,6 +107,8 @@ impl From<AppThreadGoalStatus> for upstream::ThreadGoalStatus {
         match value {
             AppThreadGoalStatus::Active => Self::Active,
             AppThreadGoalStatus::Paused => Self::Paused,
+            AppThreadGoalStatus::Blocked => Self::Blocked,
+            AppThreadGoalStatus::UsageLimited => Self::UsageLimited,
             AppThreadGoalStatus::BudgetLimited => Self::BudgetLimited,
             AppThreadGoalStatus::Complete => Self::Complete,
         }

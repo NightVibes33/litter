@@ -3,6 +3,22 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+fun String.asBuildFlag(): Boolean =
+    equals("1") || equals("true", ignoreCase = true) || equals("yes", ignoreCase = true)
+
+val androidAbis = System.getenv("ANDROID_ABIS")
+    ?.split(",")
+    ?.map { it.trim() }
+    ?.filter { it.isNotBlank() }
+    ?: listOf("arm64-v8a", "x86_64")
+
+val ghosttyHeader = file("src/main/cpp/include/ghostty.h")
+val ghosttyLibrariesAvailable = ghosttyHeader.isFile &&
+    androidAbis.all { abi -> file("src/main/jniLibs/$abi/libghostty.so").isFile }
+val enableGhosttyJni = System.getenv("LITTER_ENABLE_GHOSTTY_ANDROID")?.asBuildFlag()
+    ?: (findProperty("litter.enableGhosttyAndroid") as? String)?.asBuildFlag()
+    ?: ghosttyLibrariesAvailable
+
 android {
     namespace = "com.litter.android.core.bridge"
     compileSdk = 35
@@ -11,6 +27,10 @@ android {
     defaultConfig {
         minSdk = 26
         consumerProguardFiles("consumer-rules.pro")
+
+        ndk {
+            abiFilters += androidAbis
+        }
     }
 
     sourceSets {
@@ -26,6 +46,14 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    if (enableGhosttyJni) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+            }
+        }
     }
 }
 

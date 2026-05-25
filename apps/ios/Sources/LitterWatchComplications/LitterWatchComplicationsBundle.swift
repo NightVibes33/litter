@@ -15,5 +15,6 @@ struct LitterWatchComplicationsBundle: WidgetBundle {
         LitterCircularComplication()
         LitterCornerComplication()
         LitterRectangularComplication()
+        LitterRunningTurnWidget()
     }
 }

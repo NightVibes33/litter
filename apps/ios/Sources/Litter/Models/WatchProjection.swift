@@ -30,13 +30,18 @@ enum WatchProjection {
                 status = .idle
             }
 
+            // Prefer the assistant's last reply over the current tool label —
+            // on a small screen the user wants to see what the AI *said*
+            // more than which tool is executing. Tool name is still
+            // exposed separately as `lastTool` so the UI can render it as
+            // a small secondary chip.
             let subtitle: String?
             if status == .needsApproval, let first = threadApprovals.first {
                 subtitle = "awaiting approval: \(approvalLabel(first))"
+            } else if let lastResp = summary.lastResponsePreview, !lastResp.isEmpty {
+                subtitle = compact(lastResp, max: 100)
             } else if let lastTool = summary.lastToolLabel, !lastTool.isEmpty {
                 subtitle = compact(lastTool, max: 48)
-            } else if let lastResp = summary.lastResponsePreview, !lastResp.isEmpty {
-                subtitle = compact(lastResp, max: 60)
             } else if let lastUser = summary.lastUserMessage, !lastUser.isEmpty {
                 subtitle = compact(lastUser, max: 60)
             } else if !summary.preview.isEmpty {
@@ -44,6 +49,24 @@ enum WatchProjection {
             } else {
                 subtitle = nil
             }
+
+            // Separate field for the active tool. Only set when an assistant
+            // reply is the subtitle (otherwise the tool *is* the subtitle and
+            // duplicating it would be noisy).
+            let lastTool: String? = {
+                guard let tool = summary.lastToolLabel, !tool.isEmpty else { return nil }
+                guard summary.lastResponsePreview?.isEmpty == false else { return nil }
+                return compact(tool, max: 36)
+            }()
+
+            let stats = summary.stats
+            let pct: Int? = {
+                guard let tu = summary.tokenUsage,
+                      let window = tu.contextWindow,
+                      window > 0
+                else { return nil }
+                return Int(min(100, max(0, (Double(tu.totalTokens) / Double(window)) * 100)))
+            }()
 
             return WatchTask(
                 id: "\(summary.key.serverId):\(summary.key.threadId)",
@@ -56,7 +79,19 @@ enum WatchProjection {
                 relativeTime: relativeTime(from: summary.updatedAt),
                 steps: thread.map { deriveSteps(from: $0.hydratedConversationItems) } ?? [],
                 transcript: thread.map { transcript(for: $0) } ?? [],
-                pendingApprovalId: threadApprovals.first?.id
+                pendingApprovalId: threadApprovals.first?.id,
+                model: summary.model.isEmpty ? nil : summary.model,
+                cwd: summary.cwd.isEmpty ? nil : summary.cwd,
+                turnCount: stats.map { Int($0.turnCount) },
+                toolCallCount: stats.map { Int($0.toolCallCount) },
+                diffAdditions: stats.map { Int($0.diffAdditions) },
+                diffDeletions: stats.map { Int($0.diffDeletions) },
+                contextPercent: pct,
+                hasTurnActive: summary.hasActiveTurn,
+                lastTool: lastTool,
+                diffs: thread
+                    .map { deriveDiffs(from: $0.hydratedConversationItems) }
+                    .flatMap { $0.isEmpty ? nil : $0 }
             )
         }
 
@@ -68,6 +103,67 @@ enum WatchProjection {
             return (indexOfUpdatedAt(lhs, in: summaries) ?? Int.max)
                  < (indexOfUpdatedAt(rhs, in: summaries) ?? Int.max)
         }
+    }
+
+    /// Re-sort an already-projected task list so that, within each status
+    /// group, threads appear in the iPhone home's pin order. Use this on
+    /// top of `tasks(...)` when pinned mode is active. Tasks not in
+    /// `pinned` sort to the end of their group, ordered by their existing
+    /// position (stable).
+    static func applyPinOrder(
+        _ tasks: [WatchTask],
+        pinned: [PinnedThreadKey]
+    ) -> [WatchTask] {
+        guard !pinned.isEmpty else { return tasks }
+        let pinIndex: [PinnedThreadKey: Int] = Dictionary(
+            uniqueKeysWithValues: pinned.enumerated().map { ($1, $0) }
+        )
+        // Pair each task with its (statusRank, pinOrder, originalIndex) so a
+        // stable sort preserves intra-group ordering for unpinned trailers.
+        let decorated = tasks.enumerated().map { idx, task -> (key: (Int, Int, Int), task: WatchTask) in
+            let pin = PinnedThreadKey(serverId: task.serverId, threadId: task.threadId)
+            return ((rank(task.status), pinIndex[pin] ?? Int.max, idx), task)
+        }
+        return decorated
+            .sorted { lhs, rhs in
+                if lhs.key.0 != rhs.key.0 { return lhs.key.0 < rhs.key.0 }
+                if lhs.key.1 != rhs.key.1 { return lhs.key.1 < rhs.key.1 }
+                return lhs.key.2 < rhs.key.2
+            }
+            .map(\.task)
+    }
+
+    /// Apply the iPhone home's visibility rules to a summary list so the
+    /// watch shows exactly what the phone home shows.
+    ///
+    /// - Hidden threads are excluded.
+    /// - If any threads are pinned, show only those (in pin order). Pinned
+    ///   entries not yet in `summaries` are skipped (the iPhone uses a
+    ///   "Loading thread" placeholder; the watch just waits for the next push).
+    /// - Otherwise show the 10 most-recent summaries.
+    ///
+    /// Mirrors `HomeDashboardModel.mergedHomeSessions` in
+    /// `apps/ios/Sources/Litter/Views/HomeDashboardModel.swift`.
+    static func homeFilteredSummaries(
+        summaries: [AppSessionSummary],
+        pinned: [PinnedThreadKey],
+        hidden: [PinnedThreadKey]
+    ) -> [AppSessionSummary] {
+        let hiddenSet = Set(hidden)
+        let candidates = summaries.filter {
+            !hiddenSet.contains(PinnedThreadKey(threadKey: $0.key))
+        }
+        if !pinned.isEmpty {
+            let byKey = Dictionary(uniqueKeysWithValues: candidates.map {
+                (PinnedThreadKey(threadKey: $0.key), $0)
+            })
+            return pinned.compactMap { byKey[$0] }
+        }
+        return Array(
+            candidates
+                .sorted { ($0.updatedAt ?? 0) > ($1.updatedAt ?? 0) }
+                .prefix(10)
+        )
     }
 
     static func approval(_ approval: PendingApproval) -> WatchApproval {
@@ -200,6 +296,62 @@ enum WatchProjection {
         return formatter.string(from: updatedDate)
     }
 
+    // MARK: - Diff projection
+
+    /// Max number of per-file diffs we ship per task. Bounds the watch
+    /// payload so a turn that touches dozens of files doesn't blow the
+    /// WatchConnectivity application-context size cap.
+    static let maxDiffFilesPerTask = 6
+    /// Per-file diff text budget, in characters. Anything longer is
+    /// tail-truncated with a "…" sentinel and `truncated = true` so the
+    /// watch can render a hint instead of silently lying.
+    static let maxDiffCharsPerFile = 1200
+
+    /// Walk the hydrated conversation items and produce one `WatchFileDiff`
+    /// per distinct file path — collapsing repeated edits to the most recent
+    /// diff. Ordered most-recent-first, capped to `maxDiffFilesPerTask`,
+    /// each diff truncated to `maxDiffCharsPerFile`.
+    static func deriveDiffs(from items: [HydratedConversationItem]) -> [WatchFileDiff] {
+        // Scan newest → oldest so the first time we see a path wins (most
+        // recent edit for that file). Skip empty diffs — they carry no
+        // information and would just waste a slot.
+        var seenPaths = Set<String>()
+        var diffs: [WatchFileDiff] = []
+        for item in items.reversed() {
+            guard case .fileChange(let data) = item.content else { continue }
+            for change in data.changes {
+                let path = change.path.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !path.isEmpty, !seenPaths.contains(path) else { continue }
+                let rawDiff = change.diff
+                guard !rawDiff.isEmpty else { continue }
+                seenPaths.insert(path)
+                let (text, truncated) = truncateDiff(rawDiff, max: maxDiffCharsPerFile)
+                diffs.append(
+                    WatchFileDiff(
+                        path: path,
+                        kind: change.kind,
+                        additions: Int(change.additions),
+                        deletions: Int(change.deletions),
+                        diff: text,
+                        truncated: truncated
+                    )
+                )
+                if diffs.count >= maxDiffFilesPerTask { return diffs }
+            }
+        }
+        return diffs
+    }
+
+    private static func truncateDiff(_ s: String, max: Int) -> (String, Bool) {
+        if s.count <= max { return (s, false) }
+        let head = String(s.prefix(max))
+        // Drop the partial trailing line so the truncation marker sits on
+        // its own row instead of fusing onto a half-rendered diff line.
+        let lastNewline = head.lastIndex(of: "\n")
+        let body = lastNewline.map { String(head[..<$0]) } ?? head
+        return (body + "\n… (truncated)", true)
+    }
+
     private static func deriveSteps(from items: [HydratedConversationItem]) -> [WatchTaskStep] {
         var steps: [WatchTaskStep] = []
         for item in items.suffix(12) {
@@ -316,5 +468,45 @@ enum WatchProjection {
             .replacingOccurrences(of: "\n", with: " ")
         if trimmed.count <= max { return trimmed }
         return String(trimmed.prefix(max - 1)) + "…"
+    }
+
+    // MARK: - Theme projection
+
+    /// Build a resolved palette the watch can apply directly. Honors
+    /// `ThemeManager.appearanceMode` plus `ThemeStore.colorScheme` (which
+    /// already resolves `.system` against the live trait collection).
+    @MainActor
+    static func theme(from manager: ThemeManager) -> WatchThemePayload {
+        let mode: WatchThemePayload.AppearanceMode = {
+            switch manager.appearanceMode {
+            case .system: return .system
+            case .light:  return .light
+            case .dark:   return .dark
+            }
+        }()
+        let cs = ThemeStore.shared.colorScheme
+        let t = cs == .dark ? manager.darkTheme : manager.lightTheme
+        let bottom = ResolvedTheme.adjustBrightness(
+            t.background,
+            by: cs == .dark ? -0.02 : 0.01
+        )
+        return WatchThemePayload(
+            appearanceMode: mode,
+            isDark: cs == .dark,
+            accent: t.accent,
+            accentStrong: t.accentStrong,
+            textPrimary: t.textPrimary,
+            textSecondary: t.textSecondary,
+            textMuted: t.textMuted,
+            surface: t.surface,
+            surfaceLight: t.surfaceLight,
+            border: t.border,
+            danger: t.danger,
+            success: t.success,
+            warning: t.warning,
+            textOnAccent: t.textOnAccent,
+            backgroundTop: t.background,
+            backgroundBottom: bottom
+        )
     }
 }

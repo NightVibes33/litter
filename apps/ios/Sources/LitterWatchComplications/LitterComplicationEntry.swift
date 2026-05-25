@@ -60,21 +60,41 @@ struct LitterComplicationEntry: TimelineEntry {
     )
 }
 
+/// Wire-format payload shared between the iOS writer
+/// (`WatchCompanionBridge.currentComplicationSnapshot`) and the
+/// complication readers. Kept Codable so the aggregate and per-server
+/// slices use the exact same decoder.
+struct LitterComplicationPayload: Codable, Equatable {
+    let mode: LitterComplicationEntry.Mode
+    let lastTurnStartMsEpoch: Int64?
+    let taskId: String?
+    let progress: Double
+    let title: String
+    let toolLine: String
+    let serverCount: Int
+}
+
 /// Reads complication data out of the shared App Group.
 enum LitterComplicationStore {
     static let appGroup = "group.com.sigkitten.litter"
     private static let key = "complication.snapshot.v1"
 
     static func current() -> LitterComplicationEntry {
+        guard let payload = currentPayload() else { return .placeholder }
+        return entry(from: payload)
+    }
+
+    static func currentPayload() -> LitterComplicationPayload? {
         guard
             let defaults = UserDefaults(suiteName: appGroup),
-            let data = defaults.data(forKey: key),
-            let payload = try? JSONDecoder().decode(Payload.self, from: data)
-        else {
-            return .placeholder
-        }
-        return LitterComplicationEntry(
-            date: .now,
+            let data = defaults.data(forKey: key)
+        else { return nil }
+        return try? JSONDecoder().decode(LitterComplicationPayload.self, from: data)
+    }
+
+    static func entry(from payload: LitterComplicationPayload, at date: Date = .now) -> LitterComplicationEntry {
+        LitterComplicationEntry(
+            date: date,
             mode: payload.mode,
             lastTurnStartMsEpoch: payload.lastTurnStartMsEpoch,
             taskId: payload.taskId,
@@ -89,7 +109,7 @@ enum LitterComplicationStore {
     /// on task start/step change/task end.
     static func write(_ entry: LitterComplicationEntry) {
         guard let defaults = UserDefaults(suiteName: appGroup) else { return }
-        let payload = Payload(
+        let payload = LitterComplicationPayload(
             mode: entry.mode,
             lastTurnStartMsEpoch: entry.lastTurnStartMsEpoch,
             taskId: entry.taskId,
@@ -100,15 +120,5 @@ enum LitterComplicationStore {
         )
         guard let data = try? JSONEncoder().encode(payload) else { return }
         defaults.set(data, forKey: key)
-    }
-
-    private struct Payload: Codable {
-        let mode: LitterComplicationEntry.Mode
-        let lastTurnStartMsEpoch: Int64?
-        let taskId: String?
-        let progress: Double
-        let title: String
-        let toolLine: String
-        let serverCount: Int
     }
 }

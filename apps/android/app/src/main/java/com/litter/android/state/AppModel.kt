@@ -74,9 +74,10 @@ class AppModel private constructor(context: android.content.Context) {
     data class ComposerDraft(
         val text: String = "",
         val attachment: ComposerImageAttachment? = null,
+        val fileAttachments: List<ComposerFileAttachment> = emptyList(),
     ) {
         val isEmpty: Boolean
-            get() = text.isEmpty() && attachment == null
+            get() = text.isEmpty() && attachment == null && fileAttachments.isEmpty()
 
         companion object {
             val EMPTY = ComposerDraft()
@@ -122,6 +123,9 @@ class AppModel private constructor(context: android.content.Context) {
     val appContext: android.content.Context = context
     init {
         UniffiInit.ensure(context)
+        Thread({
+            AndroidProotBootstrap.bootstrap(context)
+        }, "litter-proot-bootstrap").start()
         registerBundledCliTools()
         LLog.bootstrap(context)
         store = AppStore()
@@ -1083,6 +1087,7 @@ class AppModel private constructor(context: android.content.Context) {
             }
             is AppStoreUpdateRecord.DynamicWidgetStreaming ->
                 applyStreamingWidget(update.key, update.itemId, update.widget)
+            is AppStoreUpdateRecord.TerminalSessionsChanged -> refreshSnapshot()
         }
     }
 

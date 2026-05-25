@@ -56,7 +56,16 @@ impl AgentMetadataStore {
     pub fn get(&self, name: &str) -> Option<AppAgentMetadata> {
         let key = name.to_ascii_lowercase();
         let guard = self.inner.read().expect("agent metadata lock");
-        guard.get(&key).cloned()
+        guard.get(&key).cloned().or_else(|| {
+            guard
+                .values()
+                .find(|metadata| {
+                    crate::alleycat::agent_runtime_kind(&metadata.name, &metadata.display_name)
+                        .as_deref()
+                        == Some(key.as_str())
+                })
+                .cloned()
+        })
     }
 
     /// All known agents in presentation-sort order. Agents without an
@@ -117,5 +126,13 @@ mod tests {
         store.upsert(metadata("middle", 0));
         let sorted: Vec<String> = store.all_sorted().into_iter().map(|m| m.name).collect();
         assert_eq!(sorted, vec!["middle", "alpha", "zeta"]);
+    }
+
+    #[test]
+    fn get_resolves_runtime_kind_aliases() {
+        let store = AgentMetadataStore::new();
+        store.upsert(metadata("pi.dev", 0));
+        let fetched = store.get("pi").expect("canonical alias should resolve");
+        assert_eq!(fetched.name, "pi.dev");
     }
 }

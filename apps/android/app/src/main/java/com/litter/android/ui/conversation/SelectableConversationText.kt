@@ -2,6 +2,9 @@ package com.litter.android.ui.conversation
 
 import android.util.TypedValue
 import android.text.method.LinkMovementMethod
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.widget.TextView
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
@@ -10,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import com.litter.android.state.AppModel
 import com.litter.android.ui.LitterTextStyle
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.LitterThemeManager
@@ -21,6 +25,9 @@ import io.noties.markwon.ext.latex.JLatexMathPlugin
 import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.syntax.SyntaxHighlightPlugin
 import io.noties.prism4j.Prism4j
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun SelectableConversationText(
@@ -117,6 +124,65 @@ internal fun configureSelectableMarkdownTextView(
     textView.movementMethod = LinkMovementMethod.getInstance()
     textView.setLinkTextColor(linkColor)
     textView.setTextIsSelectable(true)
+    textView.customSelectionActionModeCallback = RunInTerminalSelectionMenu(textView)
+}
+
+/**
+ * Adds a "Run in Terminal" item to the text-selection ActionMode of the
+ * markwon-rendered conversation text. Available only when the Rust store has
+ * an active terminal session.
+ */
+private class RunInTerminalSelectionMenu(
+    private val textView: TextView,
+) : ActionMode.Callback {
+    override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+        if (hasActiveTerminalSession()) {
+            menu.add(Menu.NONE, MENU_ID_RUN_IN_TERMINAL, Menu.CATEGORY_SECONDARY, "Run in Terminal")
+        }
+        return true
+    }
+
+    override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
+        val existing = menu.findItem(MENU_ID_RUN_IN_TERMINAL)
+        val hasSession = hasActiveTerminalSession()
+        if (hasSession && existing == null) {
+            menu.add(Menu.NONE, MENU_ID_RUN_IN_TERMINAL, Menu.CATEGORY_SECONDARY, "Run in Terminal")
+            return true
+        }
+        if (!hasSession && existing != null) {
+            menu.removeItem(MENU_ID_RUN_IN_TERMINAL)
+            return true
+        }
+        return false
+    }
+
+    override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+        if (item.itemId != MENU_ID_RUN_IN_TERMINAL) return false
+        val start = textView.selectionStart.coerceAtLeast(0)
+        val end = textView.selectionEnd.coerceAtMost(textView.text.length)
+        if (start >= end) {
+            mode.finish()
+            return true
+        }
+        val selected = textView.text.subSequence(start, end).toString()
+        val bytes = selected.toByteArray(Charsets.UTF_8)
+        CoroutineScope(Dispatchers.Main.immediate).launch {
+            runCatching {
+                AppModel.shared.store.writeToActiveTerminal(bytes)
+            }
+        }
+        mode.finish()
+        return true
+    }
+
+    override fun onDestroyActionMode(mode: ActionMode) {}
+
+    companion object {
+        private const val MENU_ID_RUN_IN_TERMINAL = 0x6c697474 // 'litt'
+
+        private fun hasActiveTerminalSession(): Boolean =
+            AppModel.shared.store.activeTerminalId() != null
+    }
 }
 
 @Composable

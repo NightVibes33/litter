@@ -210,6 +210,7 @@ pub(super) fn queued_follow_up_inputs_from_json_value(
         .filter_map(serde_json::Value::as_str)
         .map(|url| upstream::UserInput::Image {
             url: url.to_string(),
+            detail: None,
         });
     inputs.extend(remote_images);
 
@@ -226,7 +227,7 @@ pub(super) fn queued_follow_up_inputs_from_json_value(
                 .and_then(serde_json::Value::as_str)
                 .map(std::path::PathBuf::from)
         })
-        .map(|path| upstream::UserInput::LocalImage { path });
+        .map(|path| upstream::UserInput::LocalImage { path, detail: None });
     inputs.extend(local_images);
 
     let mentions = message
@@ -294,10 +295,10 @@ pub(super) fn queued_follow_up_message_json_from_inputs(
                 }
                 text_elements = current_elements.clone();
             }
-            upstream::UserInput::Image { url } => {
+            upstream::UserInput::Image { url, .. } => {
                 remote_image_urls.push(url.clone());
             }
-            upstream::UserInput::LocalImage { path } => {
+            upstream::UserInput::LocalImage { path, .. } => {
                 let placeholder = format!("[Image #{}]", local_images.len() + 1);
                 local_images.push(serde_json::json!({
                     "placeholder": placeholder,

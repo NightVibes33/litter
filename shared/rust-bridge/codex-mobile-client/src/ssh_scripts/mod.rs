@@ -53,6 +53,10 @@ pub(crate) mod posix {
     /// `{{PROFILE_INIT}}`, `{{SESSION_ID}}`.
     pub(crate) const OPENCODE_LOGS: &str = include_str!("posix/opencode_logs.sh");
 
+    /// Stop a remote opencode session by the pid saved at spawn time.
+    /// Placeholders: `{{PROFILE_INIT}}`, `{{SESSION_ID}}`.
+    pub(crate) const OPENCODE_CLEANUP: &str = include_str!("posix/opencode_cleanup.sh");
+
     /// Scan `~/.claude/projects` for thread/session metadata.
     pub(crate) const CLAUDE_SESSION_SCAN: &str = include_str!("posix/claude_session_scan.sh");
 

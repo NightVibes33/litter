@@ -3,6 +3,7 @@ package com.litter.android.ui.conversation
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -87,6 +88,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.sp
 import com.litter.android.state.AppModel
 import com.litter.android.state.ComposerImageAttachment
+import com.litter.android.state.ComposerFileAttachment
 import com.litter.android.state.AppComposerPayload
 import com.litter.android.state.VoiceTranscriptionManager
 import com.litter.android.state.ampReasoningEffortLocked
@@ -134,6 +136,15 @@ private val SLASH_COMMANDS = listOf(
     SlashCommand("experimental", "Toggle experimental features"),
 )
 
+private val SUPPORTED_IMAGE_FILE_MIME_TYPES = arrayOf(
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+)
+
+private val ALL_FILE_MIME_TYPES = arrayOf("*/*")
+
 /**
  * Bottom composer bar with text input, send, voice, slash commands,
  * @file search, and inline pending user input.
@@ -180,10 +191,17 @@ fun ComposerBar(
     var attachedImage by remember(threadKey) {
         mutableStateOf(appModel.composerDraft(threadKey).attachment)
     }
-    LaunchedEffect(threadKey, text, attachedImage) {
+    var attachedFiles by remember(threadKey) {
+        mutableStateOf(appModel.composerDraft(threadKey).fileAttachments)
+    }
+    LaunchedEffect(threadKey, text, attachedImage, attachedFiles) {
         appModel.setComposerDraft(
             threadKey,
-            AppModel.ComposerDraft(text = text, attachment = attachedImage),
+            AppModel.ComposerDraft(
+                text = text,
+                attachment = attachedImage,
+                fileAttachments = attachedFiles,
+            ),
         )
     }
     var showAttachMenu by remember { mutableStateOf(false) }
@@ -200,6 +218,18 @@ fun ComposerBar(
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         attachedImage = readAttachmentFromUri(context, uri)
+    }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        when (val picked = readPickedComposerAttachment(context, uri)) {
+            is PickedComposerAttachment.Image -> attachedImage = picked.attachment
+            is PickedComposerAttachment.File -> {
+                if (picked.attachment !in attachedFiles) {
+                    attachedFiles = attachedFiles + picked.attachment
+                }
+            }
+            null -> Unit
+        }
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
         bitmap ?: return@rememberLauncherForActivityResult
@@ -313,6 +343,7 @@ fun ComposerBar(
             selection = TextRange(prefill.text.length),
         )
         attachedImage = null
+        attachedFiles = emptyList()
         appModel.clearComposerPrefill(prefill.requestId)
     }
 
@@ -381,10 +412,11 @@ fun ComposerBar(
             if (dispatchSlashCommand(invocation.command.name, invocation.args)) {
                 textFieldValue = TextFieldValue("")
                 attachedImage = null
+                attachedFiles = emptyList()
                 true
             } else false
         } ?: false
-        if (!handledAsSlash && (text.isNotBlank() || attachedImage != null)) {
+        if (!handledAsSlash && (text.isNotBlank() || attachedImage != null || attachedFiles.isNotEmpty())) {
             val launchState = appModel.launchState.snapshot.value
             val pendingModel = launchState.selectedModel.trim().ifEmpty { null }
             val thread = appModel.snapshot.value?.threads?.find { it.key == threadKey }
@@ -396,9 +428,11 @@ fun ComposerBar(
             }
             val tier = if (HeaderOverrides.pendingFastMode) ServiceTier.FAST else null
             val attachmentToSend = attachedImage
+            val filesToSend = attachedFiles
             val payload = AppComposerPayload(
                 text = text.trim(),
                 additionalInputs = listOfNotNull(attachmentToSend?.toUserInput()),
+                fileAttachments = filesToSend,
                 approvalPolicy = appModel.launchState.approvalPolicyValue(threadKey),
                 sandboxPolicy = appModel.launchState.turnSandboxPolicy(threadKey),
                 model = pendingModel,
@@ -407,6 +441,7 @@ fun ComposerBar(
             )
             textFieldValue = TextFieldValue("")
             attachedImage = null
+            attachedFiles = emptyList()
             scope.launch {
                 try {
                     appModel.startTurn(threadKey, payload)
@@ -416,11 +451,12 @@ fun ComposerBar(
                         selection = TextRange(payload.text.length),
                     )
                     attachedImage = attachmentToSend
+                    attachedFiles = filesToSend
                 }
             }
         }
     }
-    val canSend = text.isNotBlank() || attachedImage != null
+    val canSend = text.isNotBlank() || attachedImage != null || attachedFiles.isNotEmpty()
 
     Column(
         modifier = Modifier
@@ -466,6 +502,24 @@ fun ComposerBar(
             }
         }
 
+        if (attachedFiles.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                attachedFiles.forEach { file ->
+                    ComposerFileAttachmentRow(
+                        attachment = file,
+                        onRemove = {
+                            attachedFiles = attachedFiles.filterNot { it == file }
+                        },
+                    )
+                }
+            }
+        }
+
         goal?.let { current ->
             val goalActions = remember(current.threadId, current.status) {
                 GoalCardActions(
@@ -474,6 +528,8 @@ fun ComposerBar(
                             val next = when (current.status) {
                                 AppThreadGoalStatus.ACTIVE -> AppThreadGoalStatus.PAUSED
                                 AppThreadGoalStatus.PAUSED,
+                                AppThreadGoalStatus.BLOCKED,
+                                AppThreadGoalStatus.USAGE_LIMITED,
                                 AppThreadGoalStatus.BUDGET_LIMITED -> AppThreadGoalStatus.ACTIVE
                                 AppThreadGoalStatus.COMPLETE -> return@launch
                             }
@@ -743,7 +799,7 @@ fun ComposerBar(
                 ) {
                     Icon(
                         Icons.Default.Add,
-                        contentDescription = "Attach image",
+                        contentDescription = "Attach",
                         tint = LitterTheme.textPrimary,
                     )
                 }
@@ -822,6 +878,7 @@ fun ComposerBar(
                                     if (dispatchSlashCommand(cmd.name, args = null)) {
                                         textFieldValue = TextFieldValue("")
                                         attachedImage = null
+                                        attachedFiles = emptyList()
                                     }
                                 },
                             )
@@ -907,7 +964,7 @@ fun ComposerBar(
                         val voicePhase = voiceSnapshot?.voiceSession?.phase
                         val voiceInputLevel = voiceSession?.inputLevel ?: 0f
 
-                        if (realtimeAvailable && text.isEmpty() && attachedImage == null) {
+                        if (realtimeAvailable && text.isEmpty() && attachedImage == null && attachedFiles.isEmpty()) {
                             Spacer(Modifier.width(8.dp))
                             com.litter.android.ui.voice.InlineVoiceButton(
                                 phase = voicePhase,
@@ -1020,7 +1077,7 @@ fun ComposerBar(
                         runCatching { inlineFocusRequester.requestFocus() }
                     }
                 },
-                canSend = text.isNotBlank() || attachedImage != null,
+                canSend = canSend,
             )
         }
 
@@ -1097,6 +1154,14 @@ fun ComposerBar(
                     onClick = {
                         showAttachMenu = false
                         photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                )
+
+                AttachmentActionRow(
+                    title = "Choose File",
+                    onClick = {
+                        showAttachMenu = false
+                        filePicker.launch(ALL_FILE_MIME_TYPES)
                     },
                 )
 
@@ -1461,6 +1526,58 @@ private fun AttachmentActionRow(
     }
 }
 
+@Composable
+private fun ComposerFileAttachmentRow(
+    attachment: ComposerFileAttachment,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(LitterTheme.codeBackground.copy(alpha = 0.72f))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "FILE",
+            color = LitterTheme.accent,
+            fontSize = LitterTextStyle.caption2.scaled,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = BerkeleyMono,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = attachment.label,
+                color = LitterTheme.textPrimary,
+                fontSize = LitterTextStyle.caption.scaled,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = attachment.path,
+                color = LitterTheme.textMuted,
+                fontSize = LitterTextStyle.caption2.scaled,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "Remove file",
+                tint = LitterTheme.textMuted,
+                modifier = Modifier.size(14.dp),
+            )
+        }
+    }
+}
+
 private fun insertComposerTranscript(current: TextFieldValue, transcript: String): TextFieldValue {
     val insertion = transcript.trim()
     if (insertion.isEmpty()) return current
@@ -1486,6 +1603,45 @@ private fun composerInsertionText(insertion: String, text: String, start: Int, e
         replacement += " "
     }
     return replacement
+}
+
+private sealed interface PickedComposerAttachment {
+    data class Image(val attachment: ComposerImageAttachment) : PickedComposerAttachment
+    data class File(val attachment: ComposerFileAttachment) : PickedComposerAttachment
+}
+
+private fun readPickedComposerAttachment(
+    context: android.content.Context,
+    uri: Uri,
+): PickedComposerAttachment? {
+    val resolver = context.contentResolver
+    val displayName = resolver.displayName(uri) ?: uri.lastPathSegment ?: "selected-file"
+    val mimeType = resolver.getType(uri).orEmpty()
+    if (isSupportedImageFile(displayName, mimeType)) {
+        readAttachmentFromUri(context, uri)?.let { return PickedComposerAttachment.Image(it) }
+    }
+    return PickedComposerAttachment.File(
+        ComposerFileAttachment(
+            label = displayName.substringBeforeLast('.', displayName),
+            path = uri.toString(),
+        ),
+    )
+}
+
+private fun android.content.ContentResolver.displayName(uri: Uri): String? =
+    query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (!cursor.moveToFirst()) return@use null
+        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (index < 0) null else cursor.getString(index)
+    }
+
+private fun isSupportedImageFile(displayName: String, mimeType: String): Boolean {
+    val normalizedMimeType = mimeType.lowercase()
+    if (SUPPORTED_IMAGE_FILE_MIME_TYPES.any { it == normalizedMimeType }) {
+        return true
+    }
+    val extension = displayName.substringAfterLast('.', missingDelimiterValue = "").lowercase()
+    return extension in setOf("png", "jpg", "jpeg", "gif", "webp")
 }
 
 private fun readAttachmentFromUri(context: android.content.Context, uri: Uri): ComposerImageAttachment? {
@@ -1543,6 +1699,8 @@ private fun goalStatusLabel(status: AppThreadGoalStatus): String =
     when (status) {
         AppThreadGoalStatus.ACTIVE -> "active"
         AppThreadGoalStatus.PAUSED -> "paused"
+        AppThreadGoalStatus.BLOCKED -> "blocked"
+        AppThreadGoalStatus.USAGE_LIMITED -> "limited by usage"
         AppThreadGoalStatus.BUDGET_LIMITED -> "limited by budget"
         AppThreadGoalStatus.COMPLETE -> "complete"
     }
@@ -1570,12 +1728,16 @@ private fun GoalPanel(goal: AppThreadGoal, actions: GoalCardActions) {
     val tint = when (goal.status) {
         AppThreadGoalStatus.ACTIVE -> LitterTheme.accent
         AppThreadGoalStatus.PAUSED -> LitterTheme.textMuted
+        AppThreadGoalStatus.BLOCKED,
+        AppThreadGoalStatus.USAGE_LIMITED,
         AppThreadGoalStatus.BUDGET_LIMITED -> LitterTheme.warning
         AppThreadGoalStatus.COMPLETE -> LitterTheme.success
     }
     val statusLabel = when (goal.status) {
         AppThreadGoalStatus.ACTIVE -> "active"
         AppThreadGoalStatus.PAUSED -> "paused"
+        AppThreadGoalStatus.BLOCKED -> "blocked"
+        AppThreadGoalStatus.USAGE_LIMITED -> "usage limit"
         AppThreadGoalStatus.BUDGET_LIMITED -> "limited"
         AppThreadGoalStatus.COMPLETE -> "complete"
     }
@@ -1601,6 +1763,8 @@ private fun GoalPanel(goal: AppThreadGoal, actions: GoalCardActions) {
     val pauseResumeLabel: String? = when (goal.status) {
         AppThreadGoalStatus.ACTIVE -> "Pause goal"
         AppThreadGoalStatus.PAUSED -> "Resume goal"
+        AppThreadGoalStatus.BLOCKED -> "Resume goal (override block)"
+        AppThreadGoalStatus.USAGE_LIMITED -> "Resume goal (override usage cap)"
         AppThreadGoalStatus.BUDGET_LIMITED -> "Resume goal (override cap)"
         AppThreadGoalStatus.COMPLETE -> null
     }

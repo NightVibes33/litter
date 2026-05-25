@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -95,6 +96,7 @@ fun ConversationInfoScreen(
     serverId: String? = null,
     onBack: () -> Unit,
     onChangeWallpaper: () -> Unit,
+    onOpenShell: (() -> Unit)? = null,
 ) {
     val appModel = LocalAppModel.current
     val snapshot by appModel.snapshot.collectAsState()
@@ -207,6 +209,13 @@ fun ConversationInfoScreen(
                             label = "Wallpaper",
                             onClick = onChangeWallpaper,
                         )
+                        if (onOpenShell != null) {
+                            ActionCircleButton(
+                                icon = Icons.Outlined.Terminal,
+                                label = "Shell",
+                                onClick = onOpenShell,
+                            )
+                        }
                     }
                 }
             }

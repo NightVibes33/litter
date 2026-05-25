@@ -245,7 +245,7 @@ pub fn parse_directory_listing(stdout: &str, is_windows: bool) -> Vec<String> {
             .map(|l| l.to_string())
             .collect()
     } else {
-        // `/bin/ls -1ap` marks directories with trailing `/`
+        // `ls -1ap` marks directories with trailing `/`
         stdout
             .lines()
             .map(|l| l.trim())

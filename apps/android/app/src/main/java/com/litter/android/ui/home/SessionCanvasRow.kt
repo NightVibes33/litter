@@ -462,6 +462,8 @@ private fun GoalLine(goal: uniffi.codex_mobile_client.AppThreadGoal) {
     val tint = when (goal.status) {
         uniffi.codex_mobile_client.AppThreadGoalStatus.ACTIVE -> LitterTheme.accent
         uniffi.codex_mobile_client.AppThreadGoalStatus.PAUSED -> LitterTheme.textMuted
+        uniffi.codex_mobile_client.AppThreadGoalStatus.BLOCKED,
+        uniffi.codex_mobile_client.AppThreadGoalStatus.USAGE_LIMITED,
         uniffi.codex_mobile_client.AppThreadGoalStatus.BUDGET_LIMITED -> LitterTheme.warning
         uniffi.codex_mobile_client.AppThreadGoalStatus.COMPLETE -> LitterTheme.success
     }

@@ -1,8 +1,8 @@
 import Foundation
 
-/// Reads the persisted `WatchSnapshotPayload` written by the iOS app into the
-/// shared App Group. Mirrors `LitterComplicationStore` so the watch app can
-/// show last-known state on cold launch even when the phone is unreachable.
+/// Persists the most recent `WatchSnapshotPayload` into the watch app group.
+/// Mirrors `LitterComplicationStore` so the watch app can show last-known state
+/// on cold launch even when the phone is unreachable.
 enum WatchSnapshotStore {
     static let appGroup = "group.com.sigkitten.litter"
     static let payloadKey = "watch.snapshot.v1"
@@ -20,5 +20,15 @@ enum WatchSnapshotStore {
         let raw = defaults.double(forKey: timestampKey)
         let date = raw > 0 ? Date(timeIntervalSince1970: raw) : Date()
         return (payload, date)
+    }
+
+    static func save(_ payload: WatchSnapshotPayload, date: Date = Date()) {
+        guard
+            let defaults = UserDefaults(suiteName: appGroup),
+            let data = try? JSONEncoder().encode(payload)
+        else { return }
+
+        defaults.set(data, forKey: payloadKey)
+        defaults.set(date.timeIntervalSince1970, forKey: timestampKey)
     }
 }

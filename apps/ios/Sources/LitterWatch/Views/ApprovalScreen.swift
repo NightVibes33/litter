@@ -6,6 +6,7 @@ import WatchKit
 /// watchOS 11 double-tap gesture to "allow".
 struct ApprovalScreen: View {
     @EnvironmentObject var store: WatchAppStore
+    @EnvironmentObject var theme: WatchThemeStore
 
     var body: some View {
         Group {
@@ -19,12 +20,14 @@ struct ApprovalScreen: View {
                 )
             }
         }
-        .containerBackground(WatchTheme.bg.gradient, for: .navigation)
+        .containerBackground(theme.backgroundGradient, for: .navigation)
     }
 }
 
 private struct ApprovalBody: View {
     @EnvironmentObject var store: WatchAppStore
+    @EnvironmentObject var theme: WatchThemeStore
+    @Environment(\.watchSize) private var watchSize
     let approval: WatchApproval
 
     var body: some View {
@@ -33,20 +36,20 @@ private struct ApprovalBody: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.circle")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(WatchTheme.ginger)
+                        .foregroundStyle(theme.warning)
                     WatchEyebrow(text: approvalLabel, size: 9)
                 }
 
                 Text(approval.command)
-                    .font(WatchTheme.mono(14, weight: .bold))
-                    .foregroundStyle(WatchTheme.gingerLight)
+                    .font(WatchTheme.scaled(14, for: watchSize, weight: .bold))
+                    .foregroundStyle(theme.accent)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if !approval.target.isEmpty {
                     Text(approval.target)
                         .font(WatchTheme.mono(10))
-                        .foregroundStyle(WatchTheme.dim)
+                        .foregroundStyle(theme.textSecondary)
                         .lineLimit(2)
                         .truncationMode(.middle)
                 }
@@ -54,16 +57,16 @@ private struct ApprovalBody: View {
                 if !approval.diffSummary.isEmpty {
                     Text(approval.diffSummary)
                         .font(WatchTheme.mono(10))
-                        .foregroundStyle(WatchTheme.successSoft)
+                        .foregroundStyle(theme.successSoft)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 5)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(WatchTheme.surfaceDeep)
+                                .fill(theme.surface)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(WatchTheme.border, lineWidth: 1)
+                                        .stroke(theme.border, lineWidth: 1)
                                 )
                         )
                 }
@@ -71,12 +74,12 @@ private struct ApprovalBody: View {
                 HStack(spacing: 4) {
                     Button { tap(approve: false) } label: {
                         Text("deny")
-                            .font(WatchTheme.mono(12, weight: .bold))
-                            .foregroundStyle(WatchTheme.text)
-                            .frame(maxWidth: .infinity, minHeight: 34)
+                            .font(WatchTheme.scaled(12, for: watchSize, weight: .bold))
+                            .foregroundStyle(theme.textPrimary)
+                            .frame(maxWidth: .infinity, minHeight: approvalButtonHeight)
                             .background(
-                                Capsule().fill(WatchTheme.surfaceHi)
-                                    .overlay(Capsule().stroke(WatchTheme.borderHi, lineWidth: 1))
+                                Capsule().fill(theme.surfaceLight)
+                                    .overlay(Capsule().stroke(theme.borderHi, lineWidth: 1))
                             )
                     }
                     .buttonStyle(.plain)
@@ -84,17 +87,17 @@ private struct ApprovalBody: View {
 
                     Button { tap(approve: true) } label: {
                         Text(store.approvalInFlight ? "sending…" : "allow")
-                            .font(WatchTheme.mono(12, weight: .bold))
-                            .foregroundStyle(WatchTheme.onAccent)
-                            .frame(maxWidth: .infinity, minHeight: 34)
+                            .font(WatchTheme.scaled(12, for: watchSize, weight: .bold))
+                            .foregroundStyle(theme.textOnAccent)
+                            .frame(maxWidth: .infinity, minHeight: approvalButtonHeight)
                             .background(
                                 Capsule().fill(
                                     LinearGradient(
-                                        colors: [WatchTheme.gingerLight, WatchTheme.ginger],
+                                        colors: [theme.accent, theme.accentStrong],
                                         startPoint: .top, endPoint: .bottom
                                     )
                                 )
-                                .shadow(color: WatchTheme.ginger.opacity(0.5), radius: 5)
+                                .shadow(color: theme.accent.opacity(0.5), radius: 5)
                             )
                     }
                     .buttonStyle(.plain)
@@ -107,7 +110,7 @@ private struct ApprovalBody: View {
                 if let error = store.approvalError {
                     Text(error)
                         .font(WatchTheme.mono(9))
-                        .foregroundStyle(WatchTheme.danger)
+                        .foregroundStyle(theme.danger)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 2)
@@ -132,6 +135,14 @@ private struct ApprovalBody: View {
         store.respond(approve: approve)
     }
 
+    private var approvalButtonHeight: CGFloat {
+        switch watchSize {
+        case .compact:  return 30
+        case .regular:  return 34
+        case .expanded: return 38
+        }
+    }
+
     private var approvalLabel: String {
         switch approval.kind {
         case .command:        return "run command"
@@ -152,10 +163,15 @@ private struct ApprovalBody: View {
                 s.lastSyncDate = .now
                 return s
             }())
+            .environmentObject(WatchThemeStore.shared)
     }
 }
 
 #Preview("empty") {
-    NavigationStack { ApprovalScreen().environmentObject(WatchAppStore()) }
+    NavigationStack {
+        ApprovalScreen()
+            .environmentObject(WatchAppStore())
+            .environmentObject(WatchThemeStore.shared)
+    }
 }
 #endif

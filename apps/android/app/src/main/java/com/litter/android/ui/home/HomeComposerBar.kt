@@ -4,10 +4,13 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,9 +35,12 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,10 +61,13 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litter.android.state.AppComposerPayload
+import com.litter.android.state.ComposerFileAttachment
 import com.litter.android.state.ComposerImageAttachment
 import com.litter.android.state.LocalAccountLoginRequiredException
 import com.litter.android.state.VoiceTranscriptionManager
@@ -73,12 +82,21 @@ import uniffi.codex_mobile_client.AuthStatusRequest
 import uniffi.codex_mobile_client.ReasoningEffort
 import uniffi.codex_mobile_client.ThreadKey
 
+private val SUPPORTED_IMAGE_FILE_MIME_TYPES = arrayOf(
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+)
+
+private val ALL_FILE_MIME_TYPES = arrayOf("*/*")
+
 /**
  * Lightweight composer for the home screen. When the user sends, it creates a
  * new thread on (project.serverId, project.cwd), submits the initial turn,
  * and stays on home — the thread streams in the task list.
  */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomeComposerBar(
     project: AppProject?,
@@ -93,9 +111,11 @@ fun HomeComposerBar(
     var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
     val text = textFieldValue.text
     var attachedImage by remember { mutableStateOf<ComposerImageAttachment?>(null) }
+    var attachedFiles by remember { mutableStateOf<List<ComposerFileAttachment>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
     var isFocused by remember { mutableStateOf(false) }
+    var showAttachMenu by remember { mutableStateOf(false) }
     var showExpanded by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
@@ -123,8 +143,23 @@ fun HomeComposerBar(
             attachedImage = readAttachmentFromUri(context, it)
         }
     }
+    val filePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        uri?.let {
+            when (val picked = readPickedComposerAttachment(context, it)) {
+                is PickedComposerAttachment.Image -> attachedImage = picked.attachment
+                is PickedComposerAttachment.File -> {
+                    if (picked.attachment !in attachedFiles) {
+                        attachedFiles = attachedFiles + picked.attachment
+                    }
+                }
+                null -> Unit
+            }
+        }
+    }
 
-    val hasSendContent = text.isNotBlank() || attachedImage != null
+    val hasSendContent = text.isNotBlank() || attachedImage != null || attachedFiles.isNotEmpty()
     val canSend = !isSubmitting && hasSendContent
 
     // IME visibility is authoritative for "the user is interacting with the
@@ -137,6 +172,7 @@ fun HomeComposerBar(
     val isActive = imeVisible ||
         text.isNotBlank() ||
         attachedImage != null ||
+        attachedFiles.isNotEmpty() ||
         isRecording ||
         isTranscribing
     // Only propagate `false` once the composer has actually become active
@@ -162,8 +198,10 @@ fun HomeComposerBar(
         } else {
             val payloadText = text.trim()
             val attachmentToSend = attachedImage
+            val filesToSend = attachedFiles
             textFieldValue = TextFieldValue("")
             attachedImage = null
+            attachedFiles = emptyList()
             isSubmitting = true
             errorMessage = null
             scope.launch {
@@ -188,6 +226,7 @@ fun HomeComposerBar(
                     val payload = AppComposerPayload(
                         text = payloadText,
                         additionalInputs = listOfNotNull(attachmentToSend?.toUserInput()),
+                        fileAttachments = filesToSend,
                         approvalPolicy = appModel.launchState.approvalPolicyValue(threadKey),
                         sandboxPolicy = appModel.launchState.turnSandboxPolicy(threadKey),
                         model = selectedModel,
@@ -204,6 +243,7 @@ fun HomeComposerBar(
                         selection = TextRange(payloadText.length),
                     )
                     attachedImage = attachmentToSend
+                    attachedFiles = filesToSend
                 } catch (e: Exception) {
                     errorMessage = e.message ?: "Failed to start thread"
                     textFieldValue = TextFieldValue(
@@ -211,6 +251,7 @@ fun HomeComposerBar(
                         selection = TextRange(payloadText.length),
                     )
                     attachedImage = attachmentToSend
+                    attachedFiles = filesToSend
                 } finally {
                     isSubmitting = false
                 }
@@ -282,6 +323,24 @@ fun HomeComposerBar(
             }
         }
 
+        if (attachedFiles.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                attachedFiles.forEach { file ->
+                    HomeFileAttachmentRow(
+                        attachment = file,
+                        onRemove = {
+                            attachedFiles = attachedFiles.filterNot { it == file }
+                        },
+                    )
+                }
+            }
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -290,16 +349,12 @@ fun HomeComposerBar(
         ) {
             if (!isRecording && !isTranscribing && !isSubmitting) {
                 IconButton(
-                    onClick = {
-                        photoPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
-                        )
-                    },
+                    onClick = { showAttachMenu = true },
                     modifier = Modifier.size(36.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
-                        contentDescription = "Attach image",
+                        contentDescription = "Attach",
                         tint = LitterTheme.textPrimary,
                     )
                 }
@@ -466,7 +521,120 @@ fun HomeComposerBar(
                         runCatching { focusRequester.requestFocus() }
                     }
                 },
-                canSend = text.isNotBlank() || attachedImage != null,
+                canSend = hasSendContent,
+            )
+        }
+
+        if (showAttachMenu) {
+            ModalBottomSheet(
+                onDismissRequest = { showAttachMenu = false },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                containerColor = LitterTheme.background,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = "Attach",
+                        color = LitterTheme.textPrimary,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+
+                    HomeAttachmentActionRow(
+                        title = "Photo Library",
+                        onClick = {
+                            showAttachMenu = false
+                            photoPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            )
+                        },
+                    )
+
+                    HomeAttachmentActionRow(
+                        title = "Choose File",
+                        onClick = {
+                            showAttachMenu = false
+                            filePicker.launch(ALL_FILE_MIME_TYPES)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeAttachmentActionRow(
+    title: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(LitterTheme.surface, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            color = LitterTheme.textPrimary,
+            fontSize = LitterTextStyle.body.scaled,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun HomeFileAttachmentRow(
+    attachment: ComposerFileAttachment,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(LitterTheme.codeBackground.copy(alpha = 0.72f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "FILE",
+            color = LitterTheme.accent,
+            fontSize = LitterTextStyle.caption2.scaled,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = attachment.label,
+                color = LitterTheme.textPrimary,
+                fontSize = LitterTextStyle.caption.scaled,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = attachment.path,
+                color = LitterTheme.textMuted,
+                fontSize = LitterTextStyle.caption2.scaled,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Remove file",
+                tint = LitterTheme.textMuted,
+                modifier = Modifier.size(14.dp),
             )
         }
     }
@@ -510,6 +678,45 @@ private fun reasoningEffortFromServerValue(value: String): ReasoningEffort? =
         "max" -> ReasoningEffort.MAX
         else -> null
     }
+
+private sealed interface PickedComposerAttachment {
+    data class Image(val attachment: ComposerImageAttachment) : PickedComposerAttachment
+    data class File(val attachment: ComposerFileAttachment) : PickedComposerAttachment
+}
+
+private fun readPickedComposerAttachment(
+    context: Context,
+    uri: Uri,
+): PickedComposerAttachment? {
+    val resolver = context.contentResolver
+    val displayName = resolver.displayName(uri) ?: uri.lastPathSegment ?: "selected-file"
+    val mimeType = resolver.getType(uri).orEmpty()
+    if (isSupportedImageFile(displayName, mimeType)) {
+        readAttachmentFromUri(context, uri)?.let { return PickedComposerAttachment.Image(it) }
+    }
+    return PickedComposerAttachment.File(
+        ComposerFileAttachment(
+            label = displayName.substringBeforeLast('.', displayName),
+            path = uri.toString(),
+        ),
+    )
+}
+
+private fun android.content.ContentResolver.displayName(uri: Uri): String? =
+    query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        if (!cursor.moveToFirst()) return@use null
+        val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (index < 0) null else cursor.getString(index)
+    }
+
+private fun isSupportedImageFile(displayName: String, mimeType: String): Boolean {
+    val normalizedMimeType = mimeType.lowercase()
+    if (SUPPORTED_IMAGE_FILE_MIME_TYPES.any { it == normalizedMimeType }) {
+        return true
+    }
+    val extension = displayName.substringAfterLast('.', missingDelimiterValue = "").lowercase()
+    return extension in setOf("png", "jpg", "jpeg", "gif", "webp")
+}
 
 private fun readAttachmentFromUri(context: Context, uri: Uri): ComposerImageAttachment? {
     val resolver = context.contentResolver

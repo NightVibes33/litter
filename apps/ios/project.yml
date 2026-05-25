@@ -89,6 +89,13 @@ targets:
         buildPhase: resources
       - path: Sources/LitterLiveActivity/CodexTurnLiveActivity.swift
       - path: Sources/LitterWatch/Models/WatchModels.swift
+      - path: Sources/LitterWatch/Models/WatchSize.swift
+      - path: Sources/LitterWatch/Models/WatchHapticDetector.swift
+      - path: Sources/LitterWatch/Models/WatchSnapshotStore.swift
+      - path: Sources/LitterWatch/Models/WatchDeepLinkRouter.swift
+      - path: Sources/LitterWatchComplications/LitterServerListPayload.swift
+      - path: Sources/LitterWatchComplications/LitterComplicationEntry.swift
+      - path: Sources/LitterWatchComplications/LitterRunningTurnPayload.swift
     resources:
       - path: Sources/Litter/Resources/Fonts
       - path: Sources/Litter/Resources/Themes
@@ -96,6 +103,12 @@ targets:
       - path: Sources/Litter/Resources/TipJarProducts.storekit
       - path: Sources/Litter/Resources/home_cat.png
       - path: Sources/Litter/Resources/home_cat_entrance.png
+      - path: Sources/Litter/Resources/cat_transmission_01.png
+      - path: Sources/Litter/Resources/cat_transmission_02.png
+      - path: Sources/Litter/Resources/cat_transmission_03.png
+      - path: Sources/Litter/Resources/cat_transmission_04.png
+      - path: Sources/Litter/Resources/cat_transmission_05.png
+      - path: Sources/Litter/Resources/cat_transmission_06.png
     dependencies:
       - sdk: CarPlay.framework
       - sdk: CoreGraphics.framework
@@ -397,6 +410,7 @@ targets:
           APP_CODE_SIGN_IDENTITY: ""
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
+          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
   LitterMac:
     type: application
     platform: auto
@@ -458,6 +472,12 @@ targets:
       - path: Sources/Litter/Resources/TipJarProducts.storekit
       - path: Sources/Litter/Resources/home_cat.png
       - path: Sources/Litter/Resources/home_cat_entrance.png
+      - path: Sources/Litter/Resources/cat_transmission_01.png
+      - path: Sources/Litter/Resources/cat_transmission_02.png
+      - path: Sources/Litter/Resources/cat_transmission_03.png
+      - path: Sources/Litter/Resources/cat_transmission_04.png
+      - path: Sources/Litter/Resources/cat_transmission_05.png
+      - path: Sources/Litter/Resources/cat_transmission_06.png
     dependencies:
       - sdk: Security.framework
       - sdk: SystemConfiguration.framework
@@ -497,6 +517,7 @@ targets:
           APP_CODE_SIGN_IDENTITY: ""
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
+          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
         # Direct-distribution (notarized .dmg) lane. Re-points
         # CODE_SIGN_ENTITLEMENTS at the unsandboxed entitlements file so the
         # Mac build can spawn a local `codex app-server`. Same automatic
@@ -509,6 +530,7 @@ targets:
           APP_CODE_SIGN_IDENTITY: ""
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
+          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
           ENABLE_HARDENED_RUNTIME: YES
           CODE_SIGN_ENTITLEMENTS: Sources/Litter/Litter-Catalyst-DeveloperID.entitlements
   LitterLiveActivity:

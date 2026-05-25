@@ -8,6 +8,7 @@ import WatchKit
 struct VoiceScreen: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var store: WatchAppStore
+    @EnvironmentObject var theme: WatchThemeStore
 
     @State private var status: Status = .idle
     @State private var lastPrompt: String?
@@ -26,7 +27,7 @@ struct VoiceScreen: View {
                 HStack(spacing: 6) {
                     Image(systemName: "mic.fill")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(WatchTheme.ginger)
+                        .foregroundStyle(theme.accent)
                     WatchEyebrow(
                         text: store.focusedTask.map { "dictate · \($0.serverName)" } ?? "dictate",
                         size: 9
@@ -41,17 +42,17 @@ struct VoiceScreen: View {
                         Circle()
                             .fill(
                                 RadialGradient(
-                                    colors: [WatchTheme.gingerLight, WatchTheme.ginger, WatchTheme.amber],
+                                    colors: [theme.accentSoft, theme.accent, theme.accentStrong],
                                     center: .init(x: 0.35, y: 0.3),
                                     startRadius: 2,
                                     endRadius: 56
                                 )
                             )
-                            .shadow(color: WatchTheme.ginger.opacity(0.5), radius: 14)
+                            .shadow(color: theme.accent.opacity(0.5), radius: 14)
                             .frame(width: 92, height: 92)
                         Image(systemName: "mic.fill")
                             .font(.system(size: 36, weight: .heavy))
-                            .foregroundStyle(WatchTheme.onAccent)
+                            .foregroundStyle(theme.textOnAccent)
                     }
                 }
                 .buttonStyle(.plain)
@@ -62,17 +63,17 @@ struct VoiceScreen: View {
                     case .idle:
                         Text("tap to speak")
                             .font(WatchTheme.mono(11, weight: .bold))
-                            .foregroundStyle(WatchTheme.gingerLight)
+                            .foregroundStyle(theme.accent)
                     case .sending:
                         Text("sending…")
                             .font(WatchTheme.mono(11))
-                            .foregroundStyle(WatchTheme.dim)
+                            .foregroundStyle(theme.textSecondary)
                     case .sent:
                         (
                             Text("sent ")
-                                .foregroundStyle(WatchTheme.successSoft)
+                                .foregroundStyle(theme.successSoft)
                             + Text(lastPrompt ?? "")
-                                .foregroundStyle(WatchTheme.dim)
+                                .foregroundStyle(theme.textSecondary)
                         )
                         .font(WatchTheme.mono(10))
                         .multilineTextAlignment(.center)
@@ -80,9 +81,9 @@ struct VoiceScreen: View {
                     case .queued:
                         (
                             Text("queued ")
-                                .foregroundStyle(WatchTheme.gingerLight)
+                                .foregroundStyle(theme.accent)
                             + Text(lastPrompt ?? "")
-                                .foregroundStyle(WatchTheme.dim)
+                                .foregroundStyle(theme.textSecondary)
                         )
                         .font(WatchTheme.mono(10))
                         .multilineTextAlignment(.center)
@@ -90,7 +91,7 @@ struct VoiceScreen: View {
                     case .failed(let reason):
                         Text(reason)
                             .font(WatchTheme.mono(10))
-                            .foregroundStyle(WatchTheme.danger)
+                            .foregroundStyle(theme.danger)
                             .multilineTextAlignment(.center)
                     }
                 }
@@ -99,7 +100,7 @@ struct VoiceScreen: View {
                 if !store.isReachable {
                     Text("iphone unreachable — will queue")
                         .font(WatchTheme.mono(9))
-                        .foregroundStyle(WatchTheme.dim)
+                        .foregroundStyle(theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 4)
                 }
@@ -109,7 +110,7 @@ struct VoiceScreen: View {
         }
         .containerBackground(
             RadialGradient(
-                colors: [WatchTheme.ginger.opacity(0.18), .black],
+                colors: [theme.accent.opacity(0.18), theme.backgroundBottom],
                 center: .init(x: 0.5, y: 0.7),
                 startRadius: 6, endRadius: 200
             ),
@@ -193,6 +194,7 @@ enum WatchDictation {
     NavigationStack {
         VoiceScreen()
             .environmentObject(WatchAppStore.previewStore())
+            .environmentObject(WatchThemeStore.shared)
     }
 }
 #endif

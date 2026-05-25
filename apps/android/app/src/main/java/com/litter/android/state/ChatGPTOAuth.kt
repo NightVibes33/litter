@@ -214,8 +214,9 @@ object ChatGPTOAuth {
         context: Context,
         previousAccountId: String?,
     ): ChatGPTOAuthTokenBundle {
-        val stored = ChatGPTOAuthTokenStore(context).load()
-            ?: throw ChatGPTOAuthException("No stored ChatGPT login is available to refresh.")
+        val stored = withContext(Dispatchers.IO) {
+            ChatGPTOAuthTokenStore(context).load()
+        } ?: throw ChatGPTOAuthException("No stored ChatGPT login is available to refresh.")
         val refreshToken = stored.refreshToken?.takeIf { it.isNotBlank() }
             ?: throw ChatGPTOAuthException("No ChatGPT refresh token is available.")
         val body = listOf(
@@ -230,7 +231,9 @@ object ChatGPTOAuth {
         ) {
             throw ChatGPTOAuthException("ChatGPT refresh returned a different account than expected.")
         }
-        ChatGPTOAuthTokenStore(context).save(refreshed)
+        withContext(Dispatchers.IO) {
+            ChatGPTOAuthTokenStore(context).save(refreshed)
+        }
         return refreshed
     }
 

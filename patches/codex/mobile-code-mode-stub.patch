@@ -12,7 +12,7 @@ index 19d6c3ab45..8d2a211b0d 100644
  
  [dev-dependencies]
 diff --git a/codex-rs/code-mode/src/lib.rs b/codex-rs/code-mode/src/lib.rs
-index bf0ce699cc..bfb1aff123 100644
+index 3da8c77325..258dccc0ec 100644
 --- a/codex-rs/code-mode/src/lib.rs
 +++ b/codex-rs/code-mode/src/lib.rs
 @@ -1,6 +1,14 @@
@@ -32,16 +32,17 @@ index bf0ce699cc..bfb1aff123 100644
  pub use description::CODE_MODE_PRAGMA_PREFIX;
 diff --git a/codex-rs/code-mode/src/runtime_stub.rs b/codex-rs/code-mode/src/runtime_stub.rs
 new file mode 100644
-index 0000000000..8050fe3e5c
+index 0000000000..11285658a1
 --- /dev/null
 +++ b/codex-rs/code-mode/src/runtime_stub.rs
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,92 @@
 +use std::collections::HashMap;
 +
 +use codex_protocol::ToolName;
 +use serde::Serialize;
 +use serde_json::Value as JsonValue;
 +
++use crate::description::CodeModeToolKind;
 +use crate::response::FunctionCallOutputContentItem;
 +
 +pub const DEFAULT_EXEC_YIELD_TIME_MS: u64 = 10_000;
@@ -64,6 +65,27 @@ index 0000000000..8050fe3e5c
 +    pub cell_id: String,
 +    pub yield_time_ms: u64,
 +    pub terminate: bool,
++}
++
++#[derive(Clone, Debug)]
++pub struct WaitToPendingRequest {
++    pub cell_id: String,
++}
++
++#[derive(Debug, PartialEq)]
++pub enum ExecuteToPendingOutcome {
++    Pending {
++        cell_id: String,
++        content_items: Vec<FunctionCallOutputContentItem>,
++        pending_tool_call_ids: Vec<String>,
++    },
++    Completed(RuntimeResponse),
++}
++
++#[derive(Debug, PartialEq)]
++pub enum WaitToPendingOutcome {
++    LiveCell(ExecuteToPendingOutcome),
++    MissingCell(RuntimeResponse),
 +}
 +
 +#[derive(Debug, PartialEq, Serialize)]
@@ -103,6 +125,7 @@ index 0000000000..8050fe3e5c
 +    pub cell_id: String,
 +    pub runtime_tool_call_id: String,
 +    pub tool_name: ToolName,
++    pub tool_kind: CodeModeToolKind,
 +    pub input: Option<JsonValue>,
 +}
 diff --git a/codex-rs/code-mode/src/service_stub.rs b/codex-rs/code-mode/src/service_stub.rs

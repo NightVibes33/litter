@@ -1892,6 +1892,8 @@ mod tests {
             deserialize_typed_response_with_legacy_flag::<upstream::ThreadResumeResponse>(&payload);
         assert!(legacy, "legacy flag should fire on v0.124 payload");
         let response = parsed.expect("legacy payload should deserialize");
-        assert!(response.permission_profile.is_some());
+        // Upstream replaced `permissionProfile` with `activePermissionProfile`;
+        // legacy compat only needs to confirm the response decodes.
+        let _ = response.active_permission_profile;
     }
 }

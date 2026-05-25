@@ -9,6 +9,7 @@ use std::io::Result as IoResult;
 use super::{RpcError, TransportError};
 use codex_app_server_client::{
     AppServerClient, AppServerEvent, RemoteAppServerClient, RemoteAppServerConnectArgs,
+    RemoteAppServerEndpoint,
 };
 use codex_app_server_protocol::{
     ClientNotification, ClientRequest, JSONRPCErrorError, RequestId, Result as JsonRpcResult,
@@ -37,8 +38,10 @@ impl AppServerAdapter {
         channel_capacity: usize,
     ) -> Result<Self, TransportError> {
         let args = RemoteAppServerConnectArgs {
-            websocket_url: websocket_url.clone(),
-            auth_token: None,
+            endpoint: RemoteAppServerEndpoint::WebSocket {
+                websocket_url: websocket_url.clone(),
+                auth_token: None,
+            },
             client_name,
             client_version,
             experimental_api,

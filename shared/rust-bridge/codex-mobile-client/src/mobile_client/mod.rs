@@ -1053,15 +1053,41 @@ impl MobileClient {
         runtime_kind: AgentRuntimeKind,
         request: &mut upstream::ClientRequest,
     ) {
+        let supports_permission_overrides =
+            self.runtime_supports_thread_permission_overrides(&runtime_kind);
         match request {
             upstream::ClientRequest::ThreadStart { params, .. } => {
-                self.normalize_thread_model_for_runtime(server_id, runtime_kind, &mut params.model);
+                self.normalize_thread_model_for_runtime(
+                    server_id,
+                    runtime_kind.clone(),
+                    &mut params.model,
+                );
+                if !supports_permission_overrides {
+                    params.approval_policy = None;
+                    params.sandbox = None;
+                }
             }
             upstream::ClientRequest::ThreadResume { params, .. } => {
-                self.normalize_thread_model_for_runtime(server_id, runtime_kind, &mut params.model);
+                self.normalize_thread_model_for_runtime(
+                    server_id,
+                    runtime_kind.clone(),
+                    &mut params.model,
+                );
+                if !supports_permission_overrides {
+                    params.approval_policy = None;
+                    params.sandbox = None;
+                }
             }
             upstream::ClientRequest::ThreadFork { params, .. } => {
-                self.normalize_thread_model_for_runtime(server_id, runtime_kind, &mut params.model);
+                self.normalize_thread_model_for_runtime(
+                    server_id,
+                    runtime_kind.clone(),
+                    &mut params.model,
+                );
+                if !supports_permission_overrides {
+                    params.approval_policy = None;
+                    params.sandbox = None;
+                }
             }
             upstream::ClientRequest::TurnStart { params, .. } => {
                 if let Some(selected_model) = params.model.as_deref().and_then(non_empty_trimmed)
@@ -1069,6 +1095,10 @@ impl MobileClient {
                         self.resolve_model_for_runtime(server_id, runtime_kind, selected_model)
                 {
                     params.model = Some(resolved);
+                }
+                if !supports_permission_overrides {
+                    params.approval_policy = None;
+                    params.sandbox_policy = None;
                 }
             }
             _ => {}
@@ -1655,6 +1685,17 @@ impl MobileClient {
         Ok(agents)
     }
 
+    fn runtime_supports_thread_permission_overrides(&self, runtime_kind: &str) -> bool {
+        self.agent_metadata
+            .get(runtime_kind)
+            .and_then(|metadata| metadata.capabilities)
+            .map(|capabilities| capabilities.supports_thread_permission_overrides)
+            // Legacy daemon/client metadata did not expose this capability; keep
+            // existing behaviour until a daemon explicitly says overrides are
+            // unsupported for the runtime.
+            .unwrap_or(true)
+    }
+
     pub async fn connect_remote_over_alleycat(
         &self,
         server_id: String,
@@ -1803,14 +1844,7 @@ impl MobileClient {
                 endpoint.clone(),
             );
             let (remote_client, alleycat_session) =
-                match crate::alleycat::connect_app_server_client(
-                    &endpoint,
-                    params.clone(),
-                    agent.name.clone(),
-                    agent.wire,
-                )
-                .await
-                {
+                match reconnect_transport.connect_initial().await {
                     Ok(result) => result,
                     Err(error) => {
                         warn!(
@@ -2862,15 +2896,27 @@ impl MobileClient {
         let Some(existing) = self.app_store.thread_snapshot(key) else {
             return;
         };
+        let was_active = existing.active_turn_id.is_some();
         let mut target = existing.clone();
         // Clear the field on the target so reconcile_active_turn can decide
         // whether to restore it from `existing` based on the turn list.
         target.active_turn_id = None;
         reconcile_active_turn(Some(&existing), &mut target, &response.data);
+        let active_turn_cleared = was_active && target.active_turn_id.is_none();
         if target.active_turn_id != existing.active_turn_id
             || target.info.status != existing.info.status
         {
             self.app_store.upsert_thread_snapshot(target);
+        }
+        if active_turn_cleared
+            && let Err(error) = self
+                .load_thread_turns_page(server_id, thread_id, None, Some(PROBE_LIMIT))
+                .await
+        {
+            warn!(
+                "force_authoritative: completed-turn repair page failed server={} thread={}: {}",
+                server_id, thread_id, error
+            );
         }
     }
 
@@ -3044,6 +3090,20 @@ impl MobileClient {
                 params.model.clone(),
                 params.effort,
             );
+        }
+        if let Some(thread) = thread_snapshot.as_ref()
+            && !self.runtime_supports_thread_permission_overrides(&thread.agent_runtime_kind)
+        {
+            if params.approval_policy.is_some() || params.sandbox_policy.is_some() {
+                info!(
+                    server_id = %server_id,
+                    thread_id = %params.thread_id,
+                    runtime = %thread.agent_runtime_kind,
+                    "MobileClient: dropping non-authoritative turn permission overrides"
+                );
+            }
+            params.approval_policy = None;
+            params.sandbox_policy = None;
         }
         let has_active_turn = thread_snapshot
             .as_ref()
@@ -3779,6 +3839,13 @@ pub(super) fn run_connect_warmup(
     label: &'static str,
 ) {
     MobileClient::spawn_detached(async move {
+        let runtime_kinds = session.runtime_kinds();
+        if !runtime_kinds_support_account_sync(&runtime_kinds) {
+            trace!(
+                "MobileClient: {label} account sync skipped server_id={server_id} runtime_kinds={runtime_kinds:?}"
+            );
+            return;
+        }
         match refresh_account_from_app_server(
             session,
             Arc::clone(&app_store),
@@ -3793,6 +3860,12 @@ pub(super) fn run_connect_warmup(
             }
         }
     });
+}
+
+pub(super) fn runtime_kinds_support_account_sync(runtime_kinds: &[AgentRuntimeKind]) -> bool {
+    runtime_kinds
+        .iter()
+        .any(|runtime_kind| runtime_kind == "codex")
 }
 
 /// Re-establish per-thread subscriptions on the server after a remote

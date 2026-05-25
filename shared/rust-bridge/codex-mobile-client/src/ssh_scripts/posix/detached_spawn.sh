@@ -18,9 +18,9 @@ mkfifo {{INPUT}}
 nohup sh -c 'exec 0<>"$1"; while :; do sleep 3600; done' sh {{INPUT}} </dev/null >/dev/null 2>&1 &
 echo $! > {{KEEPER_PID}}
 if command -v setsid >/dev/null 2>&1; then
-  nohup setsid /bin/sh -c {{COMMAND}} < {{INPUT}} > {{OUT_LOG}} 2> {{ERR_LOG}} &
+  nohup setsid /usr/bin/env sh -c {{COMMAND}} < {{INPUT}} > {{OUT_LOG}} 2> {{ERR_LOG}} &
 else
-  nohup /bin/sh -c {{COMMAND}} < {{INPUT}} > {{OUT_LOG}} 2> {{ERR_LOG}} &
+  nohup /usr/bin/env sh -c {{COMMAND}} < {{INPUT}} > {{OUT_LOG}} 2> {{ERR_LOG}} &
 fi
 agent_pid=$!
 echo "$agent_pid" > {{AGENT_PID}}

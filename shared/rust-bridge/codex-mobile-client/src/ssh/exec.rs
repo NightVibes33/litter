@@ -4,7 +4,7 @@
 //! - [`SshClient::open_exec_child`] — streaming; returns an
 //!   [`SshExecChild`] for caller-managed I/O.
 //! - [`SshClient::exec_shell`] — picks the right shell wrapper. POSIX runs
-//!   the command through `/bin/sh -c '…'`; PowerShell uses
+//!   the command through `/usr/bin/env sh -c '…'`; PowerShell uses
 //!   `-EncodedCommand` (UTF-16LE base64) to avoid every cmd.exe escaping
 //!   pothole, then strips CLIXML noise from the response.
 //! - [`SshClient::upload`] — write a file to the remote via `cat > path`,
@@ -26,7 +26,7 @@ use super::{
 };
 
 pub(crate) fn build_posix_exec_command(command: &str) -> String {
-    format!("/bin/sh -c {}", shell_quote(command))
+    format!("/usr/bin/env sh -c {}", shell_quote(command))
 }
 
 impl SshClient {

@@ -30,9 +30,7 @@ struct AlleycatAddServerSheet: View {
     @State private var didRequestInitialScan = false
     @State private var cameraDenied = false
     // pasteJSON / showPaste are used by the Mac paste-JSON UI
-    // (Catalyst + iOS-on-Mac) and the iOS DEBUG disclosure group.
-    // Keep them declared unconditionally so the runtime branch in
-    // `pairingSection` compiles on every platform.
+    // (Catalyst + iOS-on-Mac) and the iOS QR fallback.
     @State private var pasteJSON: String = ""
     @State private var showPaste: Bool = false
 
@@ -130,11 +128,9 @@ struct AlleycatAddServerSheet: View {
 
     private var pairingSection: some View {
         Section {
-            // Mac (Catalyst + iOS-on-Mac) shows paste-JSON only — the
-            // QR scanner UX is awkward on a desktop-class display, and
-            // the host running `npx kittylitter` already prints the JSON
-            // payload. iOS shows the QR scanner with a DEBUG-only paste
-            // disclosure for testing.
+            // Mac (Catalyst + iOS-on-Mac) shows paste-JSON only; iOS shows
+            // QR scanning first, with paste available as a production fallback
+            // for users who already copied the pairing payload.
             if LitterPlatform.rendersAsMacApp {
                 pasteJSONPairingControls
             } else {
@@ -154,11 +150,43 @@ struct AlleycatAddServerSheet: View {
             .foregroundColor(LitterTheme.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
 
+        pasteJSONEntryControls(minHeight: 110)
+    }
+
+    @ViewBuilder
+    private var qrPairingControls: some View {
+        Button {
+            requestCameraAndScan()
+        } label: {
+            HStack {
+                Image(systemName: "qrcode.viewfinder")
+                    .foregroundColor(LitterTheme.accent)
+                Text(parsedParams == nil ? "Scan Pairing QR" : "Rescan QR")
+                    .litterFont(.subheadline)
+                    .foregroundColor(LitterTheme.accent)
+            }
+        }
+
+        DisclosureGroup(
+            isExpanded: $showPaste,
+            content: {
+                pasteJSONEntryControls(minHeight: 90)
+            },
+            label: {
+                Text("Paste Pairing JSON")
+                    .litterFont(.footnote)
+                    .foregroundColor(LitterTheme.textSecondary)
+            }
+        )
+    }
+
+    @ViewBuilder
+    private func pasteJSONEntryControls(minHeight: CGFloat) -> some View {
         TextEditor(text: $pasteJSON)
             .litterFont(.caption)
             .foregroundColor(LitterTheme.textPrimary)
             .scrollContentBackground(.hidden)
-            .frame(minHeight: 110)
+            .frame(minHeight: minHeight)
             .overlay(alignment: .topLeading) {
                 if pasteJSON.isEmpty {
                     Text(#"{"v":1,"node_id":"...","token":"...","relay":"https://..."}"#)
@@ -188,55 +216,6 @@ struct AlleycatAddServerSheet: View {
             .foregroundColor(LitterTheme.accent)
             .disabled(pasteJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-    }
-
-    @ViewBuilder
-    private var qrPairingControls: some View {
-        Button {
-            requestCameraAndScan()
-        } label: {
-            HStack {
-                Image(systemName: "qrcode.viewfinder")
-                    .foregroundColor(LitterTheme.accent)
-                Text(parsedParams == nil ? "Scan Pairing QR" : "Rescan QR")
-                    .litterFont(.subheadline)
-                    .foregroundColor(LitterTheme.accent)
-            }
-        }
-
-        #if DEBUG
-        DisclosureGroup(
-            isExpanded: $showPaste,
-            content: {
-                TextEditor(text: $pasteJSON)
-                    .litterFont(.caption)
-                    .foregroundColor(LitterTheme.textPrimary)
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 90)
-                    .overlay(alignment: .topLeading) {
-                        if pasteJSON.isEmpty {
-                            Text(#"{"v":1,"node_id":"...","token":"...","relay":"https://..."}"#)
-                                .litterFont(.caption)
-                                .foregroundColor(LitterTheme.textMuted)
-                                .padding(.top, 8)
-                                .padding(.leading, 4)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                Button("Parse JSON") {
-                    handleScannedPayload(pasteJSON)
-                }
-                .litterFont(.footnote)
-                .foregroundColor(LitterTheme.accent)
-                .disabled(pasteJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            },
-            label: {
-                Text("Paste JSON (debug)")
-                    .litterFont(.footnote)
-                    .foregroundColor(LitterTheme.textSecondary)
-            }
-        )
-        #endif
     }
 
     private static let pairCommandLabel = "npx kittylitter"
@@ -282,7 +261,9 @@ struct AlleycatAddServerSheet: View {
                         guard agent.available else { return }
                         toggleAgentSelection(agent)
                     } label: {
-                        HStack {
+                        HStack(spacing: 10) {
+                            AgentIconView(kind: agent.name.lowercased(), size: 22)
+                                .opacity(agent.available ? 1 : 0.45)
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(agent.displayName)

@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use codex_app_server_client::{
     AppServerClient, AppServerEvent, RemoteAppServerClient, RemoteAppServerConnectArgs,
+    RemoteAppServerEndpoint,
 };
 use codex_app_server_protocol::{
     ClientNotification, ClientRequest, JSONRPCErrorError, RequestId, Result as JsonRpcResult,
@@ -685,6 +686,7 @@ impl ServerSession {
             config: Arc::new(resolved_config),
             cli_overrides,
             loader_overrides: LoaderOverrides::default(),
+            strict_config: false,
             cloud_requirements,
             feedback,
             log_db: None,
@@ -704,6 +706,7 @@ impl ServerSession {
                 },
                 capabilities: Some(InitializeCapabilities {
                     experimental_api: true,
+                    request_attestation: false,
                     opt_out_notification_methods: None,
                 }),
             },
@@ -1172,8 +1175,10 @@ pub(crate) fn remote_connect_args(config: &ServerConfig) -> (String, RemoteAppSe
     };
 
     let args = RemoteAppServerConnectArgs {
-        websocket_url: url.clone(),
-        auth_token: None,
+        endpoint: RemoteAppServerEndpoint::WebSocket {
+            websocket_url: url.clone(),
+            auth_token: None,
+        },
         client_name: "Litter".to_string(),
         client_version: "1.0".to_string(),
         experimental_api: true,
@@ -1212,8 +1217,16 @@ pub(crate) async fn connect_remote_client_over_app_server_proxy(
     // The SSH exec proxy supplies the connected byte stream. The WebSocket
     // client still needs a syntactically valid URI for the HTTP Upgrade
     // request, so use a synthetic loopback-ish URL and keep the real transport
-    // in the label passed to `connect_websocket_stream`.
-    proxy_args.websocket_url = APP_SERVER_PROXY_WEBSOCKET_URL.to_string();
+    // in the label passed to `connect_websocket_stream`. Preserve any auth_token
+    // that was carried in `args.endpoint` so the Bearer header is still sent.
+    let preserved_auth_token = match &proxy_args.endpoint {
+        RemoteAppServerEndpoint::WebSocket { auth_token, .. } => auth_token.clone(),
+        RemoteAppServerEndpoint::UnixSocket { .. } => None,
+    };
+    proxy_args.endpoint = RemoteAppServerEndpoint::WebSocket {
+        websocket_url: APP_SERVER_PROXY_WEBSOCKET_URL.to_string(),
+        auth_token: preserved_auth_token,
+    };
     let stream = ssh_client
         .open_app_server_proxy_stream(codex_path, remote_shell, None)
         .await
@@ -1923,10 +1936,13 @@ fn next_request_id() -> i64 {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Mutex, OnceLock};
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use async_trait::async_trait;
     use serde_json::json;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, duplex};
 
     fn env_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -1939,6 +1955,176 @@ mod tests {
             .expect("clock should be after unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("litter-{label}-{nanos}"))
+    }
+
+    fn test_remote_args(label: &str) -> RemoteAppServerConnectArgs {
+        RemoteAppServerConnectArgs {
+            endpoint: RemoteAppServerEndpoint::WebSocket {
+                websocket_url: format!("test://{label}"),
+                auth_token: None,
+            },
+            client_name: "LitterTest".to_string(),
+            client_version: "0".to_string(),
+            experimental_api: true,
+            opt_out_notification_methods: Vec::new(),
+            channel_capacity: 16,
+        }
+    }
+
+    enum TestJsonLineServer {
+        DropOnFirstRequest,
+        Respond(JsonValue),
+    }
+
+    async fn app_server_client_for_json_line_server(
+        behavior: TestJsonLineServer,
+        label: &str,
+    ) -> AppServerClient {
+        let (client_io, server_io) = duplex(64 * 1024);
+        tokio::spawn(async move {
+            let (reader, mut writer) = tokio::io::split(server_io);
+            let mut lines = BufReader::new(reader).lines();
+            let Some(Ok(initialize_line)) = lines.next_line().await.transpose() else {
+                return;
+            };
+            let initialize: JsonValue = serde_json::from_str(&initialize_line)
+                .expect("client should send JSON-RPC initialize");
+            let initialize_id = initialize.get("id").cloned().unwrap_or(JsonValue::Null);
+            let initialize_response = json!({
+                "jsonrpc": "2.0",
+                "id": initialize_id,
+                "result": {}
+            });
+            let _ = writer
+                .write_all(format!("{initialize_response}\n").as_bytes())
+                .await;
+            let _ = writer.flush().await;
+
+            // The client sends an `initialized` notification after the
+            // initialize response. It does not require a response.
+            let _ = lines.next_line().await;
+
+            match behavior {
+                TestJsonLineServer::DropOnFirstRequest => {
+                    // Consume one request and then close the stream without a
+                    // response, simulating the app-server process/bridge dying
+                    // after the mobile client has already enqueued an RPC.
+                    let _ = lines.next_line().await;
+                }
+                TestJsonLineServer::Respond(response) => {
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        let request: JsonValue = serde_json::from_str(&line)
+                            .expect("client should send JSON-RPC request");
+                        let Some(id) = request.get("id").cloned() else {
+                            continue;
+                        };
+                        let response = json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "result": response
+                        });
+                        if writer
+                            .write_all(format!("{response}\n").as_bytes())
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                        let _ = writer.flush().await;
+                    }
+                }
+            }
+        });
+        AppServerClient::Remote(
+            codex_slingshot::json_line_wire::connect_json_line_stream(
+                client_io,
+                test_remote_args(label),
+                label.to_string(),
+            )
+            .await
+            .expect("test JSON-line server should initialize"),
+        )
+    }
+
+    struct TestReconnectTransport {
+        reconnects: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl RemoteTransport for TestReconnectTransport {
+        async fn reconnect(
+            &self,
+            _args: &RemoteAppServerConnectArgs,
+            _websocket_url: &str,
+        ) -> Result<Reconnected, TransportError> {
+            self.reconnects.fetch_add(1, Ordering::SeqCst);
+            let client = app_server_client_for_json_line_server(
+                TestJsonLineServer::Respond(json!({"source": "reconnected"})),
+                "reconnected-test-bridge",
+            )
+            .await;
+            Ok(Reconnected {
+                client,
+                keepalive: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn remote_runtime_worker_reconnects_and_retries_request_after_stream_drop() {
+        let initial_client = app_server_client_for_json_line_server(
+            TestJsonLineServer::DropOnFirstRequest,
+            "drop-test-bridge",
+        )
+        .await;
+        let reconnects = Arc::new(AtomicUsize::new(0));
+        let reconnect_transport: Arc<dyn RemoteTransport> = Arc::new(TestReconnectTransport {
+            reconnects: Arc::clone(&reconnects),
+        });
+        let (command_tx, command_rx) = mpsc::channel(4);
+        let (event_tx, _) = broadcast::channel(4);
+        let (health_tx, mut health_rx) = watch::channel(ConnectionHealth::Connected);
+        let worker = spawn_remote_runtime_worker(
+            "pi".to_string(),
+            initial_client,
+            None,
+            command_rx,
+            event_tx,
+            health_tx,
+            test_remote_args("drop-test-bridge"),
+            "drop-test-bridge".to_string(),
+            Some(reconnect_transport),
+        );
+
+        let request: ClientRequest = serde_json::from_value(json!({
+            "id": 1,
+            "method": "model/list",
+            "params": {"limit": 5}
+        }))
+        .expect("valid app-server request");
+        let (response_tx, response_rx) = oneshot::channel();
+        command_tx
+            .send(SessionCommand::Request {
+                request,
+                response_tx,
+            })
+            .await
+            .expect("worker should accept request");
+
+        let response = tokio::time::timeout(std::time::Duration::from_secs(2), response_rx)
+            .await
+            .expect("dropped stream request should reconnect instead of hanging")
+            .expect("worker should return a response")
+            .expect("request should succeed after reconnect");
+        assert_eq!(response, json!({"source": "reconnected"}));
+        assert_eq!(reconnects.load(Ordering::SeqCst), 1);
+        assert_eq!(*health_rx.borrow_and_update(), ConnectionHealth::Connected);
+
+        command_tx
+            .send(SessionCommand::Shutdown)
+            .await
+            .expect("worker should accept shutdown");
+        worker.await.expect("worker should shut down cleanly");
     }
 
     #[test]

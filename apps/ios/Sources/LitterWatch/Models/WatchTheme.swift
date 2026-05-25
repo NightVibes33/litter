@@ -1,4 +1,32 @@
 import SwiftUI
+#if canImport(WatchKit)
+import WatchKit
+#endif
+
+extension WatchSize {
+    /// Live size from the current device. Falls back to `.regular` off-device
+    /// (host tests, previews without an explicit override).
+    static var current: WatchSize {
+        #if canImport(WatchKit) && os(watchOS)
+        let width = WKInterfaceDevice.current().screenBounds.width
+        return from(width: width)
+        #else
+        return .regular
+        #endif
+    }
+}
+
+private struct WatchSizeKey: EnvironmentKey {
+    static let defaultValue: WatchSize = .regular
+}
+
+extension EnvironmentValues {
+    /// Coarse watch-size bucket — read in views to scale fonts/padding.
+    var watchSize: WatchSize {
+        get { self[WatchSizeKey.self] }
+        set { self[WatchSizeKey.self] = newValue }
+    }
+}
 
 /// Design tokens for the Litter Apple Watch experience.
 ///
@@ -40,6 +68,13 @@ enum WatchTheme {
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         let name = weight == .bold || weight == .heavy ? monoBold : mono
         return Font.custom(name, size: size).weight(weight)
+    }
+
+    /// Watch-size-aware mono font. Multiplies `size` by the per-bucket scale
+    /// (compact 0.9, regular 1.0, expanded 1.1) so small-screen layouts stay
+    /// dense and Ultra-class screens get a touch more breathing room.
+    static func scaled(_ size: CGFloat, for watchSize: WatchSize, weight: Font.Weight = .regular) -> Font {
+        mono(size * watchSize.fontScale, weight: weight)
     }
 
     // MARK: - Radii / spacing

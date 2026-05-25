@@ -38,6 +38,25 @@ Current automated checks:
 | Thread start/resume fallback sandbox | `workspace-write` with `danger-full-access` fallback when linux sandbox missing | Same |
 | Thread turn pagination (v0.125+ remote) | Conversation opens with last 5 turns; "Load earlier messages" button fetches older 5-turn pages via `thread/turns/list` | Same |
 | Thread turn pagination fallback (v0.124 remote) | Capability flips off via response inspection; embedded turns load fully; "Load earlier" button hidden | Same |
+
+## Terminal UX Matrix
+
+The terminal screen renders through Ghostty on both platforms; this section
+tracks parity between iOS (UIKit + Metal) and Android (Compose + SurfaceView).
+
+| Area | iOS | Android |
+|---|---|---|
+| Full-screen surface | No bottom composer; the Ghostty surface fills the body | Same |
+| Accessory bar | Esc/Tab/Ctrl/arrows/Paste/Clear/Send-to-AI dock above the keyboard via `inputAccessoryView` | Compose row anchored above the IME using `imePadding` |
+| Tap-to-toggle keyboard | Single tap (no selection, no link) toggles the keyboard | Same |
+| Long-press selection | Long-press seeds word selection; drag extends; handles paint via `TerminalSelectionOverlayView` | Long-press seeds word selection; drag extends; handles painted by a sibling Compose Canvas |
+| Edit menu (Copy / Paste / Select All) | `UIEditMenuInteraction` anchored at the selection union rect | Compose floating action menu above the selection |
+| Pinch-to-zoom font | `UIPinchGestureRecognizer` clamps to 10–24 pt and re-grids on settle | `ScaleGestureDetector` updates `TerminalConfigPrefs.fontSize` live and re-grids on scale-end |
+| BEL haptic | `UIImpactFeedbackGenerator(.medium)` + system sound, throttled 250 ms | `performHapticFeedback(LONG_PRESS, IGNORE_VIEW_SETTING)`, throttled 250 ms |
+| OSC8 hyperlink tap | Detected through Rust `linkAtPoint`; opens via `UIApplication.shared.open` | Detected through Rust `linkAtPoint`; opens via `Intent.ACTION_VIEW` |
+| Cell-grid math | Driven by Ghostty `surfaceMetrics`; falls back to font-size-aware estimate on first frame | Same path via `nativeSurfaceSize` |
+| Resize on rotation / keyboard show-hide | `layoutSubviews` plus `UIResponder.keyboardWillChangeFrame` triggers | `onSizeChanged` re-fires through Compose's `imePadding` insets |
+| Mouse-tracking apps (vim / htop) | Single-finger drag forwards to Ghostty when `mouseCaptured` | Same |
 | Alleycat remote host | Discovery toolbar QR button opens `AlleycatAddServerSheet`; CameraX + ML Kit scan parses the Alleycat payload via `AlleycatBridge.parsePairPayload`; debug builds expose paste-JSON path; after token-authenticated pairing the sheet calls `serverBridge.listAlleycatAgents`, lets the user choose Codex/Pi/OpenCode, connects with `serverBridge.connectRemoteOverAlleycat`, and persists the token through `AlleycatCredentialStore`; `SavedServerStore.rememberAlleycat` writes `{node_id, relay?, agent}` records, reconnect attaches the encrypted-store token directly, and legacy Alleycat records require a new QR scan. | Same |
 
 ## Plugin `@`-mention parity (follow-up)

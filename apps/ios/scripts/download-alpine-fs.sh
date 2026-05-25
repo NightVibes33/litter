@@ -42,8 +42,22 @@ echo "==> Verifying checksum for $FAKEFS_TGZ"
 ( cd "$TMP_DIR" && grep " $FAKEFS_TGZ\$" "$SUMS" | shasum -a 256 -c - )
 
 echo "==> Installing fs"
-rm -rf "$RESOURCES_DIR/fs"
+# Atomic-ish replace: rename the old fs dir out of the way (fast, won't
+# race with Xcode indexer / meson builds that may be reading inside),
+# then `rm -rf` the renamed dir. If even rename fails, fall back to
+# in-place rm with a retry.
 mkdir -p "$RESOURCES_DIR"
+if [ -d "$RESOURCES_DIR/fs" ]; then
+    staging="$RESOURCES_DIR/.fs.old-$$"
+    if mv "$RESOURCES_DIR/fs" "$staging" 2>/dev/null; then
+        rm -rf "$staging" || true
+    else
+        for _ in 1 2 3; do
+            rm -rf "$RESOURCES_DIR/fs" && break
+            sleep 1
+        done
+    fi
+fi
 tar -xzf "$TMP_DIR/$FAKEFS_TGZ" -C "$RESOURCES_DIR"
 
 ARCH="$(cat "$RESOURCES_DIR/fs/data/etc/apk/arch" 2>/dev/null || true)"

@@ -13,7 +13,7 @@ This file records project attribution for the public Litter fork. It is based on
 
 ## Accepted Upstream Contributors
 
-The following people appear as accepted authors in `dnakov/litter` on `upstream/main` as fetched on 2026-05-17. Duplicate local email identities were normalized where the history clearly used the same public name.
+The following people appear as accepted authors in `dnakov/litter` on `upstream/main` as fetched on 2026-05-25. Duplicate local email identities were normalized where the history clearly used the same public name.
 
 - Daniel Nakov / dnakov
 - sigkitten
@@ -30,6 +30,7 @@ The following people appear as accepted authors in `dnakov/litter` on `upstream/
 - shuv
 - sliced-paraiba
 - zulfaza
+- Niklas Sheth
 
 Upstream commit trailers also include AI-assisted co-author entries for Claude Sonnet 4.6. They are recorded here as tool attribution only, not as a human contributor account.
 
@@ -38,6 +39,7 @@ Upstream commit trailers also include AI-assisted co-author entries for Claude S
 Litter also includes or builds against third-party projects. Their copyright and license notices remain with those upstream projects. See `THIRD_PARTY_NOTICES.md` and the license files in each vendored path.
 
 - OpenAI Codex source under `shared/third_party/codex`.
+- Ghostty renderer source under `shared/third_party/ghostty`.
 - ProjectNyxian/Nyxian and emexDE-derived BuildKit source under `ThirdParty/Nyxian`.
 - ProjectNyxian/LLVM-On-iOS compiler support references.
 - SideStore Team and contributors for the SideStore sideloading workflow, Anisette server list convention, update-source expectations, and LocalDevVPN-based install/refresh model Litter documents and targets.

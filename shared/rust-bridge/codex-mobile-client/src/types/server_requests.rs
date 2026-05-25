@@ -174,9 +174,10 @@ fn user_input_into_upstream(value: AppUserInput) -> Result<upstream::UserInput, 
                 .map(text_element_into_upstream)
                 .collect::<Result<Vec<_>, _>>()?,
         },
-        AppUserInput::Image { url } => upstream::UserInput::Image { url },
+        AppUserInput::Image { url } => upstream::UserInput::Image { url, detail: None },
         AppUserInput::LocalImage { path } => upstream::UserInput::LocalImage {
             path: path_buf_from_mobile(path),
+            detail: None,
         },
         AppUserInput::Skill { name, path } => upstream::UserInput::Skill {
             name,
@@ -359,6 +360,7 @@ impl TryFrom<AppStartThreadRequest> for upstream::ThreadStartParams {
             model_provider: None,
             service_tier: None,
             cwd: normalize_cwd(value.cwd),
+            runtime_workspace_roots: None,
             approval_policy: value.approval_policy.map(ask_for_approval_into_upstream),
             approvals_reviewer: None,
             sandbox: value.sandbox.map(sandbox_mode_into_upstream),
@@ -430,6 +432,7 @@ impl TryFrom<AppResumeThreadRequest> for upstream::ThreadResumeParams {
             model_provider: None,
             service_tier: None,
             cwd: normalize_cwd(value.cwd),
+            runtime_workspace_roots: None,
             approval_policy: value.approval_policy.map(ask_for_approval_into_upstream),
             approvals_reviewer: None,
             sandbox: value.sandbox.map(sandbox_mode_into_upstream),
@@ -471,6 +474,7 @@ impl TryFrom<AppForkThreadRequest> for upstream::ThreadForkParams {
             model_provider: None,
             service_tier: None,
             cwd: normalize_cwd(value.cwd),
+            runtime_workspace_roots: None,
             approval_policy: value.approval_policy.map(ask_for_approval_into_upstream),
             approvals_reviewer: None,
             sandbox: value.sandbox.map(sandbox_mode_into_upstream),
@@ -826,6 +830,7 @@ impl TryFrom<AppStartTurnRequest> for upstream::TurnStartParams {
                 .collect::<Result<Vec<_>, _>>()?,
             responsesapi_client_metadata: None,
             cwd: None,
+            runtime_workspace_roots: None,
             approval_policy: value.approval_policy.map(ask_for_approval_into_upstream),
             approvals_reviewer: None,
             sandbox_policy: value
@@ -1085,6 +1090,7 @@ impl From<AppListExperimentalFeaturesRequest> for upstream::ExperimentalFeatureL
         Self {
             cursor: value.cursor,
             limit: value.limit,
+            thread_id: None,
         }
     }
 }

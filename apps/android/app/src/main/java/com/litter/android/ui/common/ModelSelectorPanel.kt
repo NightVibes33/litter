@@ -102,6 +102,8 @@ fun ModelSelectorPanel(
     val selectedRuntime = launchState.selectedAgentRuntimeKind
         ?: thread?.agentRuntimeKind
         ?: visibleModels.firstOrNull { it.id == selectedModel || it.model == selectedModel }?.agentRuntimeKind
+    val selectedRuntimeSupportsPermissionOverrides =
+        selectedRuntime?.supportsThreadPermissionOverrides ?: true
     val runtimeBuckets = remember(visibleModels) {
         visibleModels
             .groupBy { it.agentRuntimeKind }
@@ -381,54 +383,56 @@ fun ModelSelectorPanel(
                 )
             }
 
-            val currentPreset = run {
-                val approval = appModel.launchState.approvalPolicyValue(threadKey)
-                    ?: thread?.effectiveApprovalPolicy
-                val sandbox = appModel.launchState.turnSandboxPolicy(threadKey)
-                    ?: thread?.effectiveSandboxPolicy
-                if (approval != null && sandbox != null) {
-                    threadPermissionPreset(approval, sandbox)
-                } else {
-                    null
-                }
-            }
-            val isFullAccess = currentPreset == AppThreadPermissionPreset.FULL_ACCESS
-            FilterChip(
-                selected = isFullAccess,
-                onClick = {
-                    if (isFullAccess) {
-                        appModel.launchState.updateThreadPermissions(
-                            threadKey,
-                            approvalPolicy = "on-request",
-                            sandboxMode = "workspace-write",
-                        )
+            if (selectedRuntimeSupportsPermissionOverrides) {
+                val currentPreset = run {
+                    val approval = appModel.launchState.approvalPolicyValue(threadKey)
+                        ?: thread?.effectiveApprovalPolicy
+                    val sandbox = appModel.launchState.turnSandboxPolicy(threadKey)
+                        ?: thread?.effectiveSandboxPolicy
+                    if (approval != null && sandbox != null) {
+                        threadPermissionPreset(approval, sandbox)
                     } else {
-                        appModel.launchState.updateThreadPermissions(
-                            threadKey,
-                            approvalPolicy = "never",
-                            sandboxMode = "danger-full-access",
-                        )
+                        null
                     }
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = if (isFullAccess) Icons.Default.LockOpen else Icons.Default.Lock,
-                        contentDescription = null,
-                        modifier = Modifier.size(12.dp),
-                    )
-                },
-                label = {
-                    Text(
-                        if (isFullAccess) "Full Access" else "Supervised",
-                        fontSize = 10f.scaled,
-                    )
-                },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = LitterTheme.danger,
-                    selectedLabelColor = Color.White,
-                    selectedLeadingIconColor = Color.White,
-                ),
-            )
+                }
+                val isFullAccess = currentPreset == AppThreadPermissionPreset.FULL_ACCESS
+                FilterChip(
+                    selected = isFullAccess,
+                    onClick = {
+                        if (isFullAccess) {
+                            appModel.launchState.updateThreadPermissions(
+                                threadKey,
+                                approvalPolicy = "on-request",
+                                sandboxMode = "workspace-write",
+                            )
+                        } else {
+                            appModel.launchState.updateThreadPermissions(
+                                threadKey,
+                                approvalPolicy = "never",
+                                sandboxMode = "danger-full-access",
+                            )
+                        }
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = if (isFullAccess) Icons.Default.LockOpen else Icons.Default.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                        )
+                    },
+                    label = {
+                        Text(
+                            if (isFullAccess) "Full Access" else "Supervised",
+                            fontSize = 10f.scaled,
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = LitterTheme.danger,
+                        selectedLabelColor = Color.White,
+                        selectedLeadingIconColor = Color.White,
+                    ),
+                )
+            }
             Spacer(Modifier.weight(1f))
             Text(
                 "Fast mode",

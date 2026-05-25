@@ -264,6 +264,7 @@ pub(crate) async fn run_minigame(
         // ThreadStartParams.service_tier is Option<Option<ServiceTier>> (double-option wire format)
         service_tier: Some(Some(service_tier_into_upstream_string(ServiceTier::Fast))),
         cwd: None,
+        runtime_workspace_roots: None,
         approval_policy: None,
         approvals_reviewer: None,
         sandbox: None,
@@ -322,6 +323,7 @@ pub(crate) async fn run_minigame(
         }],
         responsesapi_client_metadata: None,
         cwd: None,
+        runtime_workspace_roots: None,
         approval_policy: None,
         approvals_reviewer: None,
         sandbox_policy: None,

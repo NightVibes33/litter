@@ -1803,7 +1803,11 @@ mod tests {
     }
 
     #[test]
-    fn thread_read_response_deserializes_optional_effective_permissions() {
+    fn thread_read_response_ignores_legacy_permission_fields() {
+        // Upstream removed `approvalPolicy` / `sandbox` from
+        // `ThreadReadResponse`; servers running older builds may still
+        // include them as extra JSON keys. Confirm the response still
+        // deserializes cleanly (extra fields are silently ignored).
         let response: upstream::ThreadReadResponse = serde_json::from_value(serde_json::json!({
             "thread": {
                 "id": "thread-1",
@@ -1825,19 +1829,10 @@ mod tests {
                 "turns": []
             },
             "approvalPolicy": "never",
-            "sandbox": {
-                "type": "dangerFullAccess"
-            }
+            "sandbox": { "type": "dangerFullAccess" }
         }))
-        .expect("thread/read response should deserialize optional permissions");
+        .expect("thread/read response should tolerate legacy fields");
 
-        assert_eq!(
-            response.approval_policy,
-            Some(upstream::AskForApproval::Never)
-        );
-        assert_eq!(
-            response.sandbox,
-            Some(upstream::SandboxPolicy::DangerFullAccess)
-        );
+        assert_eq!(response.thread.id, "thread-1");
     }
 }

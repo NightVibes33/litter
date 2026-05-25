@@ -1,6 +1,7 @@
 name: Auto-release kittylitter
 
-# Fires on every push to `main` that touches the wrapper crate's Cargo.toml.
+# Fires on every push to `main` that touches the wrapper crate's Cargo.toml
+# or the release automation that determines how the current version ships.
 # If the version field has changed (i.e. there's no existing GitHub Release
 # with the tag `v<version>`) it dispatches release.yml, which is the
 # cargo-dist-generated workflow that does the full build + sign + npm
@@ -15,6 +16,9 @@ on:
     branches: [main]
     paths:
       - 'services/kittylitter/Cargo.toml'
+      - 'dist-workspace.toml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/auto-release.yml'
   workflow_dispatch:
 
 permissions:

@@ -7,7 +7,11 @@ struct LitterCornerComplication: Widget {
     let kind = "LitterCornerComplication"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: LitterComplicationProvider()) { entry in
+        AppIntentConfiguration(
+            kind: kind,
+            intent: ServerSelectionIntent.self,
+            provider: LitterComplicationProvider()
+        ) { entry in
             LitterCornerView(entry: entry)
                 .widgetAccentable()
                 .containerBackground(.clear, for: .widget)

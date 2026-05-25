@@ -432,7 +432,9 @@ enum LitterPreviewData {
                 lastError: nil,
                 transcriptEntries: [],
                 handoffThreadKey: nil
-            )
+            ),
+            terminalSessions: [],
+            activeTerminalId: nil
         )
     }
 

@@ -80,6 +80,12 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        // Keep the proot rootfs as gzip bytes; Rust extracts it into
+        // app-private storage during bootstrap.
+        noCompress += "tgz"
+    }
+
     sourceSets {
         getByName("main") {
             java.srcDir("../../../shared/rust-bridge/generated/kotlin")
@@ -90,6 +96,12 @@ android {
     bundle {
         storeArchive {
             enable = false
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }

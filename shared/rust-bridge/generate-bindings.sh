@@ -19,7 +19,7 @@ OUT_KOTLIN="$WORKSPACE_DIR/generated/kotlin"
 
 cd "$WORKSPACE_DIR"
 
-if [[ -z "${RUSTC_WRAPPER:-}" ]] && command -v sccache >/dev/null 2>&1; then
+if [[ -z "${RUSTC_WRAPPER:-}" ]] && [[ "${CARGO_INCREMENTAL:-}" != "1" ]] && command -v sccache >/dev/null 2>&1; then
     export RUSTC_WRAPPER="$(command -v sccache)"
 fi
 

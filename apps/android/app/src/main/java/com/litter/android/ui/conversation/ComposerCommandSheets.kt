@@ -49,6 +49,8 @@ import androidx.compose.ui.unit.sp
 import com.litter.android.ui.LocalAppModel
 import com.litter.android.ui.LitterTextStyle
 import com.litter.android.ui.LitterTheme
+import com.litter.android.ui.common.reportsEffectiveThreadPermissions
+import com.litter.android.ui.common.supportsThreadPermissionOverrides
 import com.litter.android.ui.scaled
 import kotlinx.coroutines.launch
 import uniffi.codex_mobile_client.AbsolutePath
@@ -146,11 +148,15 @@ private fun AppSandboxPolicy.displayTitle(): String =
 @Composable
 fun ComposerPermissionsSheet(threadKey: ThreadKey? = null, onDismiss: () -> Unit) {
     val appModel = LocalAppModel.current
-    appModel.launchState.snapshot.collectAsState()
+    val launchState by appModel.launchState.snapshot.collectAsState()
     val selectedApproval = appModel.launchState.selectedApprovalPolicy(threadKey)
     val selectedSandbox = appModel.launchState.selectedSandboxMode(threadKey)
     val effectiveThread = appModel.snapshot.value?.threads?.firstOrNull { it.key == threadKey }
+    val selectedRuntime = effectiveThread?.agentRuntimeKind ?: launchState.selectedAgentRuntimeKind
+    val currentRuntimeSupportsPermissionOverrides =
+        selectedRuntime?.supportsThreadPermissionOverrides ?: true
     val hasAuthoritativeThreadPermissions = if (
+        (selectedRuntime?.reportsEffectiveThreadPermissions ?: true) &&
         threadPermissionsAreAuthoritative(
             approvalPolicy = effectiveThread?.effectiveApprovalPolicy,
             sandboxPolicy = effectiveThread?.effectiveSandboxPolicy,
@@ -201,19 +207,39 @@ fun ComposerPermissionsSheet(threadKey: ThreadKey? = null, onDismiss: () -> Unit
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
-                        text = "Changes apply on your next turn and later turns.",
+                        text = if (currentRuntimeSupportsPermissionOverrides) {
+                            "Changes apply on your next turn and later turns."
+                        } else {
+                            "This runtime controls its own permissions."
+                        },
                         color = LitterTheme.textMuted,
                         fontSize = LitterTextStyle.caption2.scaled,
                     )
                 }
                 Text(
-                    text = if (usesThreadDefaults) "Using defaults" else "Custom override",
-                    color = if (usesThreadDefaults) LitterTheme.textSecondary else LitterTheme.accentStrong,
+                    text = if (!currentRuntimeSupportsPermissionOverrides) {
+                        "Runtime managed"
+                    } else if (usesThreadDefaults) {
+                        "Using defaults"
+                    } else {
+                        "Custom override"
+                    },
+                    color = if (!currentRuntimeSupportsPermissionOverrides || usesThreadDefaults) {
+                        LitterTheme.textSecondary
+                    } else {
+                        LitterTheme.accentStrong
+                    },
                     fontSize = LitterTextStyle.caption2.scaled,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .background(
-                            color = (if (usesThreadDefaults) LitterTheme.surfaceLight else LitterTheme.accentStrong).copy(alpha = 0.16f),
+                            color = (
+                                if (!currentRuntimeSupportsPermissionOverrides || usesThreadDefaults) {
+                                    LitterTheme.surfaceLight
+                                } else {
+                                    LitterTheme.accentStrong
+                                }
+                            ).copy(alpha = 0.16f),
                             shape = RoundedCornerShape(999.dp),
                         )
                         .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -243,30 +269,43 @@ fun ComposerPermissionsSheet(threadKey: ThreadKey? = null, onDismiss: () -> Unit
             }
         }
 
-        PermissionSettingsSection(
-            title = "Approval policy",
-            subtitle = "Choose when Codex asks for approval",
-        ) {
-            PermissionDropdownField(
-                options = composerApprovalOptions,
-                selectedValue = selectedApproval,
-                onSelect = { value ->
-                    appModel.launchState.updateThreadPermissions(threadKey, value, selectedSandbox)
-                },
-            )
-        }
+        if (currentRuntimeSupportsPermissionOverrides) {
+            PermissionSettingsSection(
+                title = "Approval policy",
+                subtitle = "Choose when Codex asks for approval",
+            ) {
+                PermissionDropdownField(
+                    options = composerApprovalOptions,
+                    selectedValue = selectedApproval,
+                    onSelect = { value ->
+                        appModel.launchState.updateThreadPermissions(threadKey, value, selectedSandbox)
+                    },
+                )
+            }
 
-        PermissionSettingsSection(
-            title = "Sandbox settings",
-            subtitle = "Choose how much Codex can do when running commands",
-        ) {
-            PermissionDropdownField(
-                options = composerSandboxOptions,
-                selectedValue = selectedSandbox,
-                onSelect = { value ->
-                    appModel.launchState.updateThreadPermissions(threadKey, selectedApproval, value)
-                },
-            )
+            PermissionSettingsSection(
+                title = "Sandbox settings",
+                subtitle = "Choose how much Codex can do when running commands",
+            ) {
+                PermissionDropdownField(
+                    options = composerSandboxOptions,
+                    selectedValue = selectedSandbox,
+                    onSelect = { value ->
+                        appModel.launchState.updateThreadPermissions(threadKey, selectedApproval, value)
+                    },
+                )
+            }
+        } else {
+            PermissionSettingsSection(
+                title = "Runtime managed",
+                subtitle = "This runtime does not accept client-side permission overrides.",
+            ) {
+                Text(
+                    text = "Use the runtime's own controls for approval and sandbox behavior.",
+                    color = LitterTheme.textSecondary,
+                    fontSize = LitterTextStyle.caption.scaled,
+                )
+            }
         }
     }
 }

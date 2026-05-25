@@ -23,9 +23,9 @@ final class CarPlayVoiceManager {
     private var lastTranscriptHistoryID: String?
     private var lastTranscriptLive: String?
     private var lastSessionsSignature: String?
-    private var isShowingNowPlaying = false
+    private var isShowingActiveSession = false
     private var isShowingTranscript = false
-    private var lastNowPlayingPushFailureAt: Date?
+    private var lastActiveSessionPushFailureAt: Date?
 
     init(voiceActions: VoiceActions, appModel: AppModel, interfaceController: CPInterfaceController) {
         self.voiceActions = voiceActions
@@ -515,35 +515,45 @@ final class CarPlayVoiceManager {
 
     private func pushActiveSession(_ session: VoiceSessionState) {
         guard let interfaceController else { return }
-        let nowPlaying = CPNowPlayingTemplate.shared
-        let isAlreadyShowingNowPlaying = isShowingNowPlaying
-            || interfaceController.templates.contains(where: { $0 === nowPlaying })
         configureNowPlayingTemplate(session)
         updateNowPlayingInfo(session)
         lastPhase = session.phase
         lastTranscriptHistoryID = session.transcriptHistory.last?.id
         lastTranscriptLive = session.transcriptText
-        if isAlreadyShowingNowPlaying {
-            isShowingNowPlaying = true
-            lastNowPlayingPushFailureAt = nil
+        if let template = transcriptTemplate,
+           isShowingActiveSession,
+           interfaceController.templates.contains(where: { $0 === template }) {
+            template.updateSections(transcriptSections(session))
+            lastActiveSessionPushFailureAt = nil
             return
         }
-        if let lastNowPlayingPushFailureAt,
-           Date().timeIntervalSince(lastNowPlayingPushFailureAt) < 5 {
+        if let lastActiveSessionPushFailureAt,
+           Date().timeIntervalSince(lastActiveSessionPushFailureAt) < 5 {
             return
         }
-        pushTemplate(nowPlaying, context: "now playing") { [weak self] success in
-            self?.isShowingNowPlaying = success
-            self?.lastNowPlayingPushFailureAt = success ? nil : Date()
+        let template = buildTranscriptTemplate(session)
+        transcriptTemplate = template
+        pushTemplate(template, context: "active voice session") { [weak self] success in
+            self?.isShowingActiveSession = success
+            self?.isShowingTranscript = success
+            if !success {
+                self?.transcriptTemplate = nil
+            }
+            self?.lastActiveSessionPushFailureAt = success ? nil : Date()
         }
     }
 
     private func openTranscript() {
         guard let session = voiceActions.activeVoiceSession, !isShowingTranscript else { return }
+        if isShowingActiveSession {
+            isShowingTranscript = true
+            return
+        }
         let template = buildTranscriptTemplate(session)
         transcriptTemplate = template
         pushTemplate(template, context: "active transcript") { [weak self] success in
             self?.isShowingTranscript = success
+            self?.isShowingActiveSession = success
             if !success {
                 self?.transcriptTemplate = nil
             }
@@ -562,9 +572,18 @@ final class CarPlayVoiceManager {
         let session = voiceActions.activeVoiceSession
 
         if let session {
-            if !isShowingNowPlaying {
+            if !isShowingActiveSession {
                 pushActiveSession(session)
             } else {
+                guard let template = transcriptTemplate,
+                      interfaceController?.templates.contains(where: { $0 === template }) == true else {
+                    isShowingActiveSession = false
+                    isShowingTranscript = false
+                    transcriptTemplate = nil
+                    pushActiveSession(session)
+                    refreshVoiceTab()
+                    return
+                }
                 let historyID = session.transcriptHistory.last?.id
                 if session.phase != lastPhase
                     || historyID != lastTranscriptHistoryID
@@ -576,8 +595,8 @@ final class CarPlayVoiceManager {
                 }
             }
             refreshVoiceTab()
-        } else if isShowingNowPlaying {
-            isShowingNowPlaying = false
+        } else if isShowingActiveSession {
+            isShowingActiveSession = false
             isShowingTranscript = false
             transcriptTemplate = nil
             lastPhase = nil
@@ -637,8 +656,9 @@ final class CarPlayVoiceManager {
 
     private func openActiveSession() {
         guard let session = voiceActions.activeVoiceSession else { return }
-        if !isShowingNowPlaying {
+        if !isShowingActiveSession {
             pushActiveSession(session)
+            return
         }
         openTranscript()
     }
