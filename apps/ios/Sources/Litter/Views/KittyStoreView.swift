@@ -1084,6 +1084,14 @@ struct KittyStoreView: View {
                 }
                 let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey])
                 let size = values?.fileSize.map(Int64.init)
+                if let expectedSize = version.size, expectedSize > 0, let size, size != expectedSize {
+                    try? FileManager.default.removeItem(at: fileURL)
+                    throw NSError(
+                        domain: "KittyStoreSourceSize",
+                        code: 65,
+                        userInfo: [NSLocalizedDescriptionKey: "Downloaded IPA size mismatch. Expected \(LitterDownloadSupport.formatBytes(expectedSize)), got \(LitterDownloadSupport.formatBytes(size))."]
+                    )
+                }
                 importedIPA = KittyStoreImportedFile(displayName: fileName, stagedPath: fileURL.path, size: size, isDirectory: false)
                 sourceIPADownloadInProgress = false
                 if let shortSHA = version.shortSHA256 {
