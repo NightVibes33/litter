@@ -421,7 +421,7 @@ string jvalue::as_string() const
 #ifdef _WIN32
 		::snprintf(buf, 256, "%lld", m_value.v_date);
 #else
-		::snprintf(buf, 256, "%ld", m_value.v_date);
+		::snprintf(buf, 256, "%ld", m_value.v_date);	
 #endif
 		return buf;
 	}

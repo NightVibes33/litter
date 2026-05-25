@@ -17,12 +17,6 @@ enum class LitterFeature(
         description = "Show the realtime voice launcher on the home screen.",
         defaultEnabled = true,
     ),
-    IPC(
-        id = "ipc",
-        displayName = "IPC",
-        description = "Attach to desktop IPC over SSH for faster sync, approvals, and resume. Requires reconnecting the server.",
-        defaultEnabled = false,
-    ),
     THINKING_MINIGAME(
         id = "thinking_minigame",
         displayName = "Thinking minigame",
@@ -68,14 +62,6 @@ object ExperimentalFeatures {
         }
         overrides = next.toMap()
         persist(context)
-    }
-
-    fun ipcSocketPathOverride(): String? {
-        return if (isEnabled(LitterFeature.IPC)) {
-            null
-        } else {
-            ""
-        }
     }
 
     private fun persist(context: Context) {

@@ -1,8 +1,8 @@
 diff --git a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
-index 5f293ff8f6..5acc126ae7 100644
+index 458722b3a2..6a3a29ca7c 100644
 --- a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
 +++ b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
-@@ -975,6 +975,10 @@ pub struct ThreadReadParams {
+@@ -977,6 +977,10 @@ pub struct ThreadReadParams {
  #[ts(export_to = "v2/")]
  pub struct ThreadReadResponse {
      pub thread: Thread,
@@ -14,20 +14,20 @@ index 5f293ff8f6..5acc126ae7 100644
  
  #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 diff --git a/codex-rs/app-server/src/request_processors/thread_processor.rs b/codex-rs/app-server/src/request_processors/thread_processor.rs
-index deeb2e9d62..d6a1ecc5a1 100644
+index 615e37f2c9..fda8f7feb7 100644
 --- a/codex-rs/app-server/src/request_processors/thread_processor.rs
 +++ b/codex-rs/app-server/src/request_processors/thread_processor.rs
-@@ -1898,7 +1898,21 @@ impl ThreadRequestProcessor {
+@@ -1905,7 +1905,21 @@ impl ThreadRequestProcessor {
              .read_thread_view(thread_uuid, include_turns)
              .await
              .map_err(thread_read_view_error)?;
 -        Ok(ThreadReadResponse { thread })
-+        let live_config_snapshot = if let Ok(thread) = self.thread_manager.get_thread(thread_uuid).await
-+        {
-+            Some(thread.config_snapshot().await)
-+        } else {
-+            None
-+        };
++        let live_config_snapshot =
++            if let Ok(thread) = self.thread_manager.get_thread(thread_uuid).await {
++                Some(thread.config_snapshot().await)
++            } else {
++                None
++            };
 +        Ok(ThreadReadResponse {
 +            thread,
 +            approval_policy: live_config_snapshot

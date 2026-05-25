@@ -150,6 +150,9 @@ final class PetOverlayController {
         }
         if activeThread?.info.status == .systemError { return .failed }
         if activeThread?.hasActiveTurn == true { return .running }
+        if snapshot.threads.contains(where: \.hasActiveTurn) {
+            return .running
+        }
         if snapshot.threads.contains(where: { $0.info.status == .systemError }) {
             return .failed
         }
@@ -167,6 +170,9 @@ final class PetOverlayController {
         }
         if activeThread?.info.status == .systemError { return "Run failed" }
         if activeThread?.hasActiveTurn == true { return "Working..." }
+        if snapshot.threads.contains(where: \.hasActiveTurn) {
+            return "Working..."
+        }
         if snapshot.threads.contains(where: { $0.info.status == .systemError }) {
             return "Thread failed"
         }

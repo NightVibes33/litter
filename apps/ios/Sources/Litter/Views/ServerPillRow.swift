@@ -8,6 +8,7 @@ struct ServerPillRow: View {
     let onRestartAppServer: (HomeDashboardServer) -> Void
     let onRename: (HomeDashboardServer) -> Void
     let onRemove: (HomeDashboardServer) -> Void
+    let onShowMountedFolders: (HomeDashboardServer) -> Void
     let onAdd: () -> Void
 
     var body: some View {
@@ -21,7 +22,8 @@ struct ServerPillRow: View {
                         onReconnect: { onReconnect(server) },
                         onRestartAppServer: { onRestartAppServer(server) },
                         onRename: { onRename(server) },
-                        onRemove: { onRemove(server) }
+                        onRemove: { onRemove(server) },
+                        onShowMountedFolders: { onShowMountedFolders(server) }
                     )
                 }
                 AddServerPill(onTap: onAdd)

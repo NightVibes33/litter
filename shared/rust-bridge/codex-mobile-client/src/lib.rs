@@ -14,8 +14,10 @@ pub mod ish_runtime;
 // generated Swift/Kotlin has `IshRunResult` / `IshBootstrapError` /
 // `ishBootstrap` / `ishDefaultCwd` / `ishRun` symbols on every lane.
 pub mod ish_types;
+pub mod proot_types;
 
 pub use ish_types::{IshBootstrapError, IshRunResult};
+pub use proot_types::ProotBootstrapError;
 
 /// One-time iSH bootstrap. Swift passes the bundle's `fs/` resource dir, the
 /// app's Application Support dir, and the Documents dir; Rust does the
@@ -54,6 +56,33 @@ pub fn ish_bootstrap(
 #[uniffi::export]
 pub fn ish_default_cwd() -> String {
     "/root".to_string()
+}
+
+/// One-time Android proot bootstrap. Kotlin passes the app's native library
+/// directory, the copied Alpine rootfs archive path, and the app data
+/// directory; Rust extracts the rootfs and verifies that `libproot.so` can
+/// enter it.
+#[uniffi::export]
+pub fn proot_bootstrap(
+    proot_lib_dir: String,
+    rootfs_archive: String,
+    data_dir: String,
+) -> Result<(), ProotBootstrapError> {
+    #[cfg(target_os = "android")]
+    {
+        return proot_runtime::bootstrap(
+            std::path::Path::new(&proot_lib_dir),
+            std::path::Path::new(&rootfs_archive),
+            std::path::Path::new(&data_dir),
+        );
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (proot_lib_dir, rootfs_archive, data_dir);
+        Err(ProotBootstrapError::Unsupported {
+            detail: "proot is Android-only".into(),
+        })
+    }
 }
 
 /// Run `cmd` through the persistent iSH `/bin/sh`. An empty `cwd` means "no
@@ -113,6 +142,8 @@ pub(crate) mod ssh_scripts;
 mod android_context;
 #[cfg(target_os = "android")]
 pub mod android_exec;
+#[cfg(target_os = "android")]
+pub mod proot_runtime;
 
 #[cfg(any(
     all(target_os = "ios", not(target_abi = "macabi")),
@@ -131,7 +162,6 @@ pub mod discovery;
 pub mod discovery_uniffi;
 pub mod ffi;
 pub mod hydration;
-pub mod immer_patch;
 mod local_runtime_instructions;
 pub mod local_server;
 pub mod logging;
@@ -149,11 +179,13 @@ pub mod recorder;
 pub mod remote_path;
 pub mod saved_apps;
 pub mod session;
+pub(crate) mod slingshot_url;
 pub mod ssh;
 pub mod ssh_bridge;
 pub mod ssh_detached_launcher;
 pub mod ssh_launcher;
 pub mod store;
+pub mod terminal;
 pub mod transport;
 pub mod types;
 pub mod widget_guidelines;

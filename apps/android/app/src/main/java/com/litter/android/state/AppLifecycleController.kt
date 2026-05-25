@@ -25,6 +25,14 @@ class AppLifecycleController {
     private var pushProxyRegistrationId: String? = null
     private var pushProxyGeneration: Long = 0
 
+    /**
+     * Wall-clock timestamp (epoch ms) of the most recent [onPause].
+     * Used to decide whether the existing alleycat `Connection` is
+     * almost certainly dead by the time we resume — see
+     * [LONG_RESUME_THRESHOLD_MS] and `onLongResume`.
+     */
+    private var lastBackgroundedAt: Long? = null
+
     /** FCM device push token. */
     var devicePushToken: String? = null
         private set
@@ -40,9 +48,17 @@ class AppLifecycleController {
         val servers = SavedServerStore.remembered(context).map { it.toRecord(context) }
         appModel.reconnectController.setMultiClankerAndQuicEnabled(true)
         appModel.reconnectController.syncSavedServers(servers)
+        // Hint iroh-backed sessions about a potential network change before
+        // running reconnect — alleycat can recover via path migration.
+        appModel.reconnectController.notifyNetworkChange()
         val results = appModel.reconnectController.reconnectSavedServers()
         restoreLocalStateAfterReconnect(appModel, results)
+        val retryResults = appModel.reconnectController.reconnectSavedServers()
+        restoreLocalStateAfterReconnect(appModel, retryResults)
         appModel.refreshSnapshot()
+        // If reconnecting saved alleycat servers triggered the iroh
+        // endpoint bind, persist any freshly-generated device key.
+        appModel.persistAlleycatSecretKeyIfNeeded()
     }
 
     /**
@@ -72,12 +88,54 @@ class AppLifecycleController {
         val servers = SavedServerStore.remembered(context).map { it.toRecord(context) }
         appModel.reconnectController.setMultiClankerAndQuicEnabled(true)
         appModel.reconnectController.syncSavedServers(servers)
+
+        // If we were suspended longer than iroh's per-path idle timeout,
+        // the existing alleycat Connection is almost certainly dead. Kill
+        // it before the user can issue a request — otherwise the worker's
+        // first request would wait the full 30s connection-idle timeout
+        // for iroh to declare the path dead. Fires BEFORE
+        // `onAppBecameActive` so the close lands before the
+        // network-change hint and saved-server reconnect.
+        val backgroundedAt = lastBackgroundedAt
+        lastBackgroundedAt = null
+        if (backgroundedAt != null) {
+            val durationMs = System.currentTimeMillis() - backgroundedAt
+            if (durationMs > LONG_RESUME_THRESHOLD_MS) {
+                LLog.i(
+                    "AppLifecycleController",
+                    "long resume — abandoning live alleycat connections backgroundDurationSec=${durationMs / 1000}",
+                )
+                appModel.reconnectController.onLongResume()
+            }
+        }
+
         val results = appModel.reconnectController.onAppBecameActive()
         restoreLocalStateAfterReconnect(appModel, results)
+        val retryResults = appModel.reconnectController.reconnectSavedServers()
+        restoreLocalStateAfterReconnect(appModel, retryResults)
         backgroundedTurnKeys.clear()
         keysToRefresh.forEach { key ->
-            appModel.refreshThreadSnapshot(key)
+            // Force-authoritative: a turn that completed during a long
+            // suspension fired `TurnCompleted` while no client connection
+            // was attached, so the local snapshot still shows the turn
+            // as in-progress. Pull back `excludeTurns = false` so
+            // `reconcile_active_turn` can clear the stale
+            // `active_turn_id` — otherwise the user sees a "thinking"
+            // spinner whose `turn/interrupt` attempts get rejected with
+            // "no active turn to interrupt".
+            try {
+                appModel.forceRefreshThreadAuthoritative(key)
+            } catch (error: Exception) {
+                LLog.w(
+                    "AppLifecycleController",
+                    "force-authoritative refresh failed; falling back to refreshThreadSnapshot: ${error.message}",
+                )
+                appModel.refreshThreadSnapshot(key)
+            }
         }
+        // Capture any freshly-generated alleycat device secret key from
+        // this foreground's reconnect cycle.
+        appModel.persistAlleycatSecretKeyIfNeeded()
     }
 
     /**
@@ -86,6 +144,7 @@ class AppLifecycleController {
      */
     fun onPause(context: Context, appModel: AppModel) {
         appModel.reconnectController.onAppEnteredBackground()
+        lastBackgroundedAt = System.currentTimeMillis()
         backgroundedTurnKeys.clear()
         val snap = appModel.snapshot.value ?: return
         for (thread in snap.threads) {
@@ -96,6 +155,18 @@ class AppLifecycleController {
         if (backgroundedTurnKeys.isNotEmpty()) {
             registerPushProxy(context)
         }
+    }
+
+    private companion object {
+        /**
+         * Threshold for triggering proactive `Connection::close()` on
+         * resume. Tied to iroh's per-path idle timeout (default 15s):
+         * if we were suspended longer, the existing path is almost
+         * certainly dead and waiting on iroh's connection-level idle
+         * timer would make the next user request hang for the
+         * remainder of that window.
+         */
+        const val LONG_RESUME_THRESHOLD_MS = 15_000L
     }
 
     private fun registerPushProxy(context: Context) {

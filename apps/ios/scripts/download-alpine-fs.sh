@@ -46,6 +46,10 @@ rm -rf "$RESOURCES_DIR/fs"
 mkdir -p "$RESOURCES_DIR"
 tar -xzf "$TMP_DIR/$FAKEFS_TGZ" -C "$RESOURCES_DIR"
 
+ARCH="$(cat "$RESOURCES_DIR/fs/data/etc/apk/arch" 2>/dev/null || true)"
+ALPINE_RELEASE="$(cat "$RESOURCES_DIR/fs/data/etc/alpine-release" 2>/dev/null || true)"
+printf 'alpine-fs=%s;arch=%s;alpine=%s\n' "$VERSION" "$ARCH" "$ALPINE_RELEASE" > "$RESOURCES_DIR/fs/.litter-rootfs-id"
+
 echo
 echo "alpine-fs $VERSION installed:"
 du -sh "$RESOURCES_DIR/fs"

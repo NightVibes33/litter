@@ -228,12 +228,8 @@ struct HomeComposerView: View {
         Task {
             defer { isSubmitting = false }
             do {
-                let pendingModelForRouting = appState.preferredModel.trimmingCharacters(in: .whitespacesAndNewlines)
-                let modelOverrideForRouting = pendingModelForRouting.isEmpty ? nil : pendingModelForRouting
-                if !appModel.shouldUseLocalModelRoute(modelSelection: modelOverrideForRouting) {
-                    guard try await appModel.ensureLocalAuthForThreadStart(serverId: project.serverId) else {
-                        return
-                    }
+                guard try await appModel.ensureLocalAuthForThreadStart(serverId: project.serverId) else {
+                    return
                 }
                 inputText = ""
                 attachments.removeAll()

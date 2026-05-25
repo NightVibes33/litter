@@ -306,16 +306,9 @@ struct SavedServer: Codable, Identifiable, Equatable {
     }
 
     private static func sshBridgeRuntimeLabel(_ kind: AgentRuntimeKind) -> String {
-        switch kind {
-        case .codex:
-            return "codex"
-        case .claude:
-            return "claude"
-        case .pi:
-            return "pi"
-        case .opencode:
-            return "opencode"
-        }
+        // The runtime kind IS the wire label now — alleycat advertises
+        // each agent by its lowercase id.
+        kind
     }
 
     /// UDP port the alleycat relay was bound on, parsed from the

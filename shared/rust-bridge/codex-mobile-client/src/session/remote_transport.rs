@@ -13,15 +13,31 @@ use codex_app_server_client::{AppServerClient, RemoteAppServerConnectArgs};
 
 use crate::transport::TransportError;
 
+/// Transport-scoped state that must outlive the worker's `client` binding
+/// (e.g. the iroh `Connection` backing an Alleycat stream). The worker
+/// swaps the keepalive Arc on each successful reconnect so the previous
+/// resource is dropped only AFTER the new one is installed.
+///
+/// The `close()` hook is called once before the worker drops the
+/// keepalive on graceful teardown (`SessionCommand::Shutdown` or
+/// `disconnect()`), so transports can issue a typed close frame to the
+/// peer. Default impl is a no-op for transports (e.g. SSH) where the
+/// underlying TCP stream is closed by `AppServerClient::shutdown`.
+pub(crate) trait SessionKeepalive: Send + Sync + 'static {
+    /// Send a graceful close to the peer. May be called concurrently with
+    /// the worker's own teardown — implementations must be idempotent and
+    /// non-panicking.
+    fn close(&self) {}
+}
+
 /// Result of a successful reconnect.
 pub(crate) struct Reconnected {
     /// Fresh client wired to the newly-established transport.
     pub client: AppServerClient,
-    /// Transport-scoped state that must outlive the worker's `client` binding
-    /// (e.g. the iroh `Endpoint` backing an Alleycat stream). The worker swaps
-    /// this in on each successful reconnect so the previous keepalive is only
-    /// dropped after the new one is installed.
-    pub keepalive: Option<Arc<dyn Send + Sync>>,
+    /// Optional transport-scoped resource (see [`SessionKeepalive`]). The
+    /// worker keeps the previous keepalive alive until the new client is
+    /// installed; on graceful shutdown it calls `close()` before dropping.
+    pub keepalive: Option<Arc<dyn SessionKeepalive>>,
 }
 
 /// Reconnect strategy for a remote `AppServerClient`.
@@ -42,6 +58,26 @@ pub(crate) trait RemoteTransport: Send + Sync + 'static {
         args: &RemoteAppServerConnectArgs,
         websocket_url: &str,
     ) -> Result<Reconnected, TransportError>;
+
+    /// Hint that the host network may have changed (e.g. iOS resumed the
+    /// app from background suspension). Transports that have an iroh
+    /// `Endpoint` use this to call `Endpoint::network_change()` so QUIC
+    /// can re-probe paths and refresh relay connections without waiting
+    /// for the idle timeout. Default: no-op for TCP-based transports
+    /// where the OS already surfaces network changes.
+    async fn notify_network_change(&self) {}
+
+    /// Tear down the currently-installed underlying connection — used
+    /// when the application has out-of-band knowledge that the connection
+    /// is dead even though iroh hasn't observed it yet (e.g. the OS
+    /// suspended us for longer than iroh's per-path idle timeout). For
+    /// alleycat this calls `Connection::close()` on the live session;
+    /// the worker's `client.next_event()` then yields `None` and the
+    /// existing reconnect path opens a fresh `Connection` on the shared
+    /// `Endpoint`. Default: no-op for transports where the OS has
+    /// already surfaced any genuinely-dead state via the underlying
+    /// stream's read/write errors.
+    async fn close_current_connection(&self) {}
 }
 
 #[cfg(test)]
@@ -67,25 +103,26 @@ mod tests {
         }
     }
 
-    /// The worker maintains `let mut keepalive: Option<Arc<dyn Send + Sync>>`
+    impl SessionKeepalive for DropCounter {}
+
+    /// The worker maintains `let mut keepalive: Option<Arc<dyn SessionKeepalive>>`
     /// and on a successful reconnect runs `*keepalive = next.keepalive`.
     /// Verify that assigning a new `Some(...)` drops the previous Arc, and
     /// that holding `None` leaves the previous Arc untouched.
     #[test]
     fn keepalive_assignment_drops_previous_arc() {
         let drop_count = Arc::new(AtomicUsize::new(0));
-        let initial = Arc::new(DropCounter {
+        let initial: Arc<dyn SessionKeepalive> = Arc::new(DropCounter {
             counter: Arc::clone(&drop_count),
         });
-        let mut keepalive: Option<Arc<dyn Send + Sync>> =
-            Some(initial.clone() as Arc<dyn Send + Sync>);
+        let mut keepalive: Option<Arc<dyn SessionKeepalive>> = Some(Arc::clone(&initial));
 
         // Drop the local strong reference; only `keepalive` keeps it alive now.
         drop(initial);
         assert_eq!(drop_count.load(Ordering::SeqCst), 0);
 
         // SSH-style reconnect: keepalive is None, slot must NOT be cleared.
-        let next_ssh: Option<Arc<dyn Send + Sync>> = None;
+        let next_ssh: Option<Arc<dyn SessionKeepalive>> = None;
         if next_ssh.is_some() {
             keepalive = next_ssh;
         }
@@ -97,10 +134,10 @@ mod tests {
 
         // Alleycat-style reconnect: keepalive carries a fresh Arc; old one drops.
         let next_alleycat_drop_count = Arc::new(AtomicUsize::new(0));
-        let next_alleycat = Arc::new(DropCounter {
+        let next_alleycat: Arc<dyn SessionKeepalive> = Arc::new(DropCounter {
             counter: Arc::clone(&next_alleycat_drop_count),
         });
-        keepalive = Some(next_alleycat as Arc<dyn Send + Sync>);
+        keepalive = Some(next_alleycat);
         assert_eq!(
             drop_count.load(Ordering::SeqCst),
             1,

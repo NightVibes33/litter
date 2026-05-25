@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/ProjectNyxian/Nyxian",
+  "commit": "d955607acf4e8112c28d1db01837fc3e11631de3",
+  "archiveUrl": "https://codeload.github.com/ProjectNyxian/Nyxian/tar.gz/d955607acf4e8112c28d1db01837fc3e11631de3",
+  "preservedLocalPaths": [
+    "LitterBuildKitNative"
+  ],
+  "excludedFromVendorArchive": [
+    ".git",
+    ".github",
+    "*.framework",
+    "*.xcframework",
+    "*.ipa",
+    "*.mobileprovision",
+    "*.p12",
+    "*.cer"
+  ],
+  "submodules": {
+    "LLVM-On-iOS": "https://github.com/ProjectNyxian/LLVM-On-iOS.git",
+    "libroot": "https://github.com/Opa334/libroot.git",
+    "TrollStore": "https://github.com/opa334/TrollStore"
+  }
+}

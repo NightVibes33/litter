@@ -2,7 +2,9 @@
 //!
 //! Upstream writes plugin references in a markdown-link-like format:
 //!
-//!     [@Display Name](plugin://plugin-name@marketplace)
+//! ```text
+//! [@Display Name](plugin://plugin-name@marketplace)
+//! ```
 //!
 //! Example titles seen in the wild:
 //!   [@Computer Use](plugin://computer-use@openai-bundled)

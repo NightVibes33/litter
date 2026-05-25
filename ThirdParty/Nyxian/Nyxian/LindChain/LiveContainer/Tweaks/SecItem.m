@@ -39,7 +39,7 @@ NSMutableDictionary *SecItemPrepare(CFDictionaryRef query)
         queryCopy[(__bridge id)kSecAttrAccount] = [NSString stringWithFormat:@"%@@%@", accessGroup, account];
     } else
         [queryCopy removeObjectForKey:(__bridge id)kSecAttrAccessGroup];
-
+    
     return queryCopy;
 }
 

@@ -264,6 +264,8 @@ extension ReasoningEffort {
             self = .high
         case "xhigh":
             self = .xHigh
+        case "max":
+            self = .max
         default:
             return nil
         }
@@ -277,6 +279,7 @@ extension ReasoningEffort {
         case .medium: return "medium"
         case .high: return "high"
         case .xHigh: return "xhigh"
+        case .max: return "max"
         }
     }
 }

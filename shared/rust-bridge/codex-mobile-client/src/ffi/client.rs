@@ -50,6 +50,135 @@ macro_rules! req {
     };
 }
 
+const AMP_VISIBLE_MODES: [&str; 3] = ["smart", "rush", "deep"];
+
+fn normalize_amp_mode_name(value: &str) -> String {
+    value
+        .trim()
+        .trim_start_matches("amp/")
+        .trim_start_matches("amp:")
+        .to_ascii_lowercase()
+}
+
+fn amp_mode_description(mode: &str) -> &'static str {
+    match mode {
+        "smart" => "Balanced Amp mode for everyday coding tasks.",
+        "rush" => "Faster Amp mode for quick edits and short answers.",
+        "deep" => "Deeper Amp mode for complex implementation and debugging.",
+        _ => "Amp agent mode.",
+    }
+}
+
+fn amp_mode_reasoning_efforts(
+    mode: &str,
+) -> (Vec<types::ReasoningEffortOption>, types::ReasoningEffort) {
+    let efforts = match mode {
+        "smart" => vec![
+            types::ReasoningEffort::High,
+            types::ReasoningEffort::XHigh,
+            types::ReasoningEffort::Max,
+        ],
+        "deep" => vec![
+            types::ReasoningEffort::Low,
+            types::ReasoningEffort::Medium,
+            types::ReasoningEffort::XHigh,
+        ],
+        _ => Vec::new(),
+    };
+    let default = match mode {
+        "smart" => types::ReasoningEffort::High,
+        "deep" => types::ReasoningEffort::Medium,
+        _ => types::ReasoningEffort::None,
+    };
+    (
+        efforts
+            .into_iter()
+            .map(|reasoning_effort| types::ReasoningEffortOption {
+                reasoning_effort,
+                description: String::new(),
+            })
+            .collect(),
+        default,
+    )
+}
+
+fn amp_mode_models() -> Vec<types::ModelInfo> {
+    AMP_VISIBLE_MODES
+        .into_iter()
+        .map(|mode| {
+            let (supported_reasoning_efforts, default_reasoning_effort) =
+                amp_mode_reasoning_efforts(mode);
+            types::ModelInfo {
+                id: mode.to_string(),
+                model: mode.to_string(),
+                upgrade: None,
+                upgrade_model: None,
+                upgrade_copy: None,
+                model_link: None,
+                migration_markdown: None,
+                availability_nux_message: None,
+                display_name: mode.to_string(),
+                description: amp_mode_description(mode).to_string(),
+                hidden: false,
+                supported_reasoning_efforts,
+                default_reasoning_effort,
+                input_modalities: vec![types::InputModality::Text],
+                supports_personality: false,
+                is_default: mode == "smart",
+                agent_runtime_kind: "amp".to_string(),
+            }
+        })
+        .collect()
+}
+
+fn append_missing_amp_mode_models(models: &mut Vec<types::ModelInfo>) {
+    for mode in amp_mode_models() {
+        let mode_name = mode.id.clone();
+        let prefixed_mode = format!("amp/{mode_name}");
+        let exists = models.iter().any(|existing| {
+            if existing.agent_runtime_kind != "amp".to_string() {
+                return false;
+            }
+            let id = existing.id.trim().to_ascii_lowercase();
+            let model = existing.model.trim().to_ascii_lowercase();
+            id == mode_name || id == prefixed_mode || model == mode_name || model == prefixed_mode
+        });
+        if !exists {
+            models.push(mode);
+        }
+    }
+}
+
+fn normalize_model_info_for_runtime(
+    model_info: &mut types::ModelInfo,
+    runtime_kind: types::AgentRuntimeKind,
+) -> bool {
+    let is_amp = runtime_kind == "amp";
+    model_info.agent_runtime_kind = runtime_kind;
+    if is_amp {
+        let id_mode = normalize_amp_mode_name(&model_info.id);
+        let mode = if id_mode.is_empty() {
+            normalize_amp_mode_name(&model_info.model)
+        } else {
+            id_mode
+        };
+        if !AMP_VISIBLE_MODES.contains(&mode.as_str()) {
+            return false;
+        }
+        let (supported_reasoning_efforts, default_reasoning_effort) =
+            amp_mode_reasoning_efforts(&mode);
+        model_info.id = mode.clone();
+        model_info.model = mode.clone();
+        model_info.display_name = mode.clone();
+        model_info.description = amp_mode_description(&mode).to_string();
+        model_info.hidden = false;
+        model_info.supported_reasoning_efforts = supported_reasoning_efforts;
+        model_info.default_reasoning_effort = default_reasoning_effort;
+        model_info.is_default = mode == "smart";
+    }
+    true
+}
+
 fn apply_thread_goal_to_store(
     client: &MobileClient,
     key: &types::ThreadKey,
@@ -76,7 +205,7 @@ async fn hydrate_thread_goal_if_available(
     let response: Result<upstream::ThreadGoalGetResponse, ClientError> = rpc_runtime(
         client,
         server_id,
-        types::AgentRuntimeKind::Codex,
+        "codex".to_string(),
         req!(
             server_id,
             ThreadGoalGet,
@@ -173,6 +302,27 @@ impl AppClient {
         }
     }
 
+    // ── Agent metadata cache ─────────────────────────────────────────────
+    //
+    // Populated whenever `list_alleycat_agents` succeeds against any
+    // server. Platforms read from here to render agent labels, icons,
+    // BETA badges, sort order, and capability-driven UI (e.g. Amp's
+    // reasoning-effort lock) without baking knowledge of specific
+    // agents into Swift / Kotlin.
+
+    /// Look up the cached metadata for a single agent by `name`. Returns
+    /// `None` when no probe has populated it yet (cold start) or when
+    /// the alleycat host doesn't ship that agent.
+    pub fn agent_metadata(&self, name: String) -> Option<crate::store::AppAgentMetadata> {
+        self.inner.agent_metadata.get(&name)
+    }
+
+    /// All cached agents in presentation-sort order. Empty list on
+    /// cold start.
+    pub fn all_agent_metadata(&self) -> Vec<crate::store::AppAgentMetadata> {
+        self.inner.agent_metadata.all_sorted()
+    }
+
     // ── Thread lifecycle ─────────────────────────────────────────────────
 
     pub async fn start_thread(
@@ -188,7 +338,7 @@ impl AppClient {
             let mut params = params;
             let runtime_kind = c.runtime_for_thread_start(
                 &server_id,
-                params.agent_runtime_kind,
+                params.agent_runtime_kind.clone(),
                 params.model.as_deref(),
             );
             params.developer_instructions =
@@ -204,7 +354,7 @@ impl AppClient {
             let response: upstream::ThreadStartResponse = rpc_runtime(
                 c.as_ref(),
                 &server_id,
-                runtime_kind,
+                runtime_kind.clone(),
                 req!(server_id, ThreadStart, params),
             )
             .await?;
@@ -274,6 +424,75 @@ impl AppClient {
         };
     }
 
+    /// Register the directory where Slingshot controller enrollment
+    /// credentials are persisted. Platforms should pass their private
+    /// preferences/application-support directory at launch.
+    pub fn set_slingshot_credentials_directory(&self, directory: String) {
+        let mut guard = self
+            .inner
+            .slingshot_credentials_directory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *guard = if directory.is_empty() {
+            None
+        } else {
+            Some(directory)
+        };
+    }
+
+    /// Pre-load the persisted iroh device secret key bytes (32 bytes).
+    /// Call from the platform at app launch BEFORE any alleycat
+    /// operation so the shared `Endpoint` reuses the same `EndpointId`
+    /// across cold launches. Pass `None` (or an empty/invalid-length
+    /// vector) to clear and force fresh-key generation on next bind.
+    pub fn set_alleycat_secret_key(&self, secret_key_bytes: Option<Vec<u8>>) {
+        self.inner.set_alleycat_secret_key(secret_key_bytes);
+    }
+
+    /// Read back the secret key bytes the alleycat endpoint is bound to,
+    /// or `None` if the endpoint hasn't been initialized yet. Platform
+    /// calls this AFTER the first alleycat operation has triggered a
+    /// bind, then persists the bytes to keychain /
+    /// EncryptedSharedPreferences so subsequent launches reuse them.
+    pub fn alleycat_secret_key(&self) -> Option<Vec<u8>> {
+        self.inner.alleycat_secret_key()
+    }
+
+    /// Force the shared alleycat iroh `Endpoint` to bind now (instead
+    /// of lazily on first use). Returns the secret key bytes the
+    /// endpoint was bound with — either the bytes the platform pushed
+    /// via `set_alleycat_secret_key` or freshly-generated bytes the
+    /// platform should now persist. Returns `None` if the bind itself
+    /// fails (e.g. UDP socket unavailable). Idempotent: subsequent
+    /// calls return the same bytes from the already-bound endpoint.
+    ///
+    /// Use this from the platform when you've already loaded a
+    /// persisted key from secure storage and want a deterministic
+    /// "load → bind → save" sequence at launch (avoids racing the
+    /// lazy-init path against the lifecycle reconnect chain).
+    pub async fn ensure_alleycat_endpoint(&self) -> Option<Vec<u8>> {
+        match self.inner.alleycat_endpoint().await {
+            Ok(endpoint) => Some(endpoint.secret_key().to_bytes().to_vec()),
+            Err(error) => {
+                tracing::warn!("ensure_alleycat_endpoint: bind failed: {error}");
+                None
+            }
+        }
+    }
+
+    /// Gracefully close the shared alleycat iroh `Endpoint`. Call from
+    /// the platform on app termination so iroh sends a clean
+    /// CONNECTION_CLOSE to peers instead of logging "Aborting
+    /// ungracefully" when the static `MobileClient` slot is finally
+    /// dropped at process exit. Best-effort: iOS doesn't always fire
+    /// `applicationWillTerminate` reliably, so this hook may be
+    /// unreachable on swipe-up-to-kill — that's acceptable, the cost
+    /// is one log line on iroh's side and the daemon waiting up to
+    /// `max_idle_timeout` to reap that one final zombie.
+    pub async fn shutdown_alleycat_endpoint(&self) {
+        self.inner.shutdown_alleycat_endpoint().await;
+    }
+
     pub async fn fork_thread(
         &self,
         server_id: String,
@@ -336,7 +555,7 @@ impl AppClient {
             let response: upstream::ThreadGoalGetResponse = rpc_runtime(
                 c.as_ref(),
                 &server_id,
-                types::AgentRuntimeKind::Codex,
+                "codex".to_string(),
                 req!(server_id, ThreadGoalGet, params.into()),
             )
             .await?;
@@ -358,7 +577,7 @@ impl AppClient {
             let response: upstream::ThreadGoalSetResponse = rpc_runtime(
                 c.as_ref(),
                 &server_id,
-                types::AgentRuntimeKind::Codex,
+                "codex".to_string(),
                 req!(server_id, ThreadGoalSet, params.into()),
             )
             .await?;
@@ -382,7 +601,7 @@ impl AppClient {
             let response: upstream::ThreadGoalClearResponse = rpc_runtime(
                 c.as_ref(),
                 &server_id,
-                types::AgentRuntimeKind::Codex,
+                "codex".to_string(),
                 req!(server_id, ThreadGoalClear, params.into()),
             )
             .await?;
@@ -433,16 +652,13 @@ impl AppClient {
                 Some(requested) if !requested.is_empty() => requested
                     .into_iter()
                     .filter(|kind| {
-                        *kind == types::AgentRuntimeKind::Codex
-                            || available_runtime_kinds.contains(kind)
+                        *kind == "codex".to_string() || available_runtime_kinds.contains(kind)
                     })
                     .collect::<Vec<_>>(),
                 _ => available_runtime_kinds,
             };
-            if !has_requested_runtime_kinds
-                && !runtime_kinds.contains(&types::AgentRuntimeKind::Codex)
-            {
-                runtime_kinds.push(types::AgentRuntimeKind::Codex);
+            if !has_requested_runtime_kinds && !runtime_kinds.contains(&"codex".to_string()) {
+                runtime_kinds.push("codex".to_string());
             }
             runtime_kinds.sort();
             runtime_kinds.dedup();
@@ -464,7 +680,7 @@ impl AppClient {
             let mut codex_visited = false;
             let mut tasks = Vec::new();
             for runtime_kind in runtime_kinds {
-                if runtime_kind == types::AgentRuntimeKind::Codex {
+                if runtime_kind == "codex".to_string() {
                     if codex_visited {
                         continue;
                     }
@@ -495,7 +711,7 @@ impl AppClient {
                                 rpc_runtime::<upstream::ThreadListResponse>(
                                     client.as_ref(),
                                     &server_id,
-                                    runtime_kind,
+                                    runtime_kind.clone(),
                                     req!(server_id, ThreadList, request_params.clone()),
                                 ),
                             )
@@ -528,7 +744,7 @@ impl AppClient {
                         );
                         let page = client.upsert_thread_list_page_for_runtime(
                             &server_id,
-                            runtime_kind,
+                            runtime_kind.clone(),
                             &response.data,
                         );
                         ids.extend(page.into_iter().map(|thread| thread.id));
@@ -557,7 +773,7 @@ impl AppClient {
                 server_id,
                 results
                     .iter()
-                    .map(|(runtime, ids, completed)| (*runtime, ids.len(), *completed))
+                    .map(|(runtime, ids, completed)| (runtime.clone(), ids.len(), *completed))
                     .collect::<Vec<_>>()
             );
             // Only prune if every runtime finished cleanly. A partial
@@ -658,13 +874,28 @@ impl AppClient {
         params: types::AppStartRealtimeSessionRequest,
     ) -> Result<(), ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
+            let thread_id = params.thread_id.clone();
             let params = convert_params::<_, upstream::ThreadRealtimeStartParams>(params)?;
-            let _: upstream::ThreadRealtimeStartResponse = rpc(
+            let response: Result<upstream::ThreadRealtimeStartResponse, ClientError> = rpc(
                 c.as_ref(),
                 &server_id,
-                req!(server_id, ThreadRealtimeStart, params),
+                req!(server_id, ThreadRealtimeStart, params.clone()),
             )
-            .await?;
+            .await;
+            if let Err(error) = response {
+                if !is_stale_thread_error(&error.to_string()) {
+                    return Err(error);
+                }
+                c.force_refresh_thread_authoritative(&server_id, &thread_id)
+                    .await
+                    .map_err(|recover_error| ClientError::Rpc(recover_error.to_string()))?;
+                let _: upstream::ThreadRealtimeStartResponse = rpc(
+                    c.as_ref(),
+                    &server_id,
+                    req!(server_id, ThreadRealtimeStart, params),
+                )
+                .await?;
+            }
             Ok(())
         })
     }
@@ -782,17 +1013,33 @@ impl AppClient {
             for runtime_kind in runtime_kinds {
                 let mut request_params = params.clone();
                 loop {
-                    let page: upstream::ModelListResponse = rpc_runtime(
+                    let page: upstream::ModelListResponse = match rpc_runtime(
                         c.as_ref(),
                         &server_id,
-                        runtime_kind,
+                        runtime_kind.clone(),
                         req!(server_id, ModelList, request_params.clone()),
                     )
-                    .await?;
+                    .await
+                    {
+                        Ok(page) => page,
+                        Err(error) if runtime_kind == "amp" => {
+                            tracing::warn!(
+                                "model/list failed for Amp runtime on server {}: {}; using built-in Amp modes",
+                                server_id,
+                                error
+                            );
+                            append_missing_amp_mode_models(&mut models);
+                            break;
+                        }
+                        Err(error) => return Err(error),
+                    };
                     for model in page.data {
                         let mut model_info = types::ModelInfo::from(model);
-                        model_info.agent_runtime_kind = runtime_kind;
-                        let dedupe_key = (runtime_kind, model_info.id.clone());
+                        if !normalize_model_info_for_runtime(&mut model_info, runtime_kind.clone())
+                        {
+                            continue;
+                        }
+                        let dedupe_key = (runtime_kind.clone(), model_info.id.clone());
                         if seen_model_ids.insert(dedupe_key) {
                             models.push(model_info);
                         }
@@ -801,6 +1048,9 @@ impl AppClient {
                         break;
                     };
                     request_params.cursor = Some(next_cursor);
+                }
+                if runtime_kind == "amp" {
+                    append_missing_amp_mode_models(&mut models);
                 }
             }
             c.app_store.update_server_models(&server_id, Some(models));
@@ -900,7 +1150,7 @@ impl AppClient {
                 req!(server_id, GetAccountRateLimits, None),
             )
             .await?;
-            c.apply_account_rate_limits_response(&server_id, &response);
+            c.apply_account_rate_limits_response(&server_id, "codex".to_string(), &response);
             Ok(())
         })
     }
@@ -1166,22 +1416,23 @@ impl AppClient {
         path: String,
     ) -> Result<types::DirectoryListResult, ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
-            let normalized = {
+            let requested_path = {
                 let p = path.trim();
                 if p.is_empty() {
                     "/".to_string()
                 } else {
-                    p.to_string()
+                    crate::remote_path::normalize_thread_cwd(p).unwrap_or_else(|| p.to_string())
                 }
             };
-            let rp = crate::remote_path::RemotePath::parse(&normalized);
+            let rp = crate::remote_path::RemotePath::parse(&requested_path);
+            let normalized = rp.as_str().to_string();
             let is_windows = rp.is_windows();
 
             let (command, cwd): (Vec<&str>, &str) = if is_windows {
                 // `dir /b /ad` in cwd — avoids path quoting issues
                 (vec!["cmd.exe", "/c", "dir", "/b", "/ad"], &normalized)
             } else {
-                (vec!["/bin/ls", "-1ap", &normalized], &normalized)
+                (vec!["/usr/bin/env", "ls", "-1ap", &normalized], &normalized)
             };
 
             let resp = exec_command_simple(c.as_ref(), &server_id, &command, Some(cwd)).await?;
@@ -1211,11 +1462,13 @@ impl AppClient {
         path: String,
     ) -> Result<(), ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
-            let normalized = path.trim().to_string();
-            if normalized.is_empty() {
+            let requested_path = crate::remote_path::normalize_thread_cwd(path.trim())
+                .unwrap_or_else(|| path.trim().to_string());
+            if requested_path.is_empty() {
                 return Err(ClientError::Rpc("path is empty".to_string()));
             }
-            let rp = crate::remote_path::RemotePath::parse(&normalized);
+            let rp = crate::remote_path::RemotePath::parse(&requested_path);
+            let normalized = rp.as_str().to_string();
             let is_windows = rp.is_windows();
 
             // `mkdir -p` on POSIX is idempotent. On Windows we fall back to
@@ -1234,7 +1487,7 @@ impl AppClient {
                     &normalized,
                 ]
             } else {
-                vec!["/bin/mkdir", "-p", &normalized]
+                vec!["/usr/bin/env", "mkdir", "-p", &normalized]
             };
 
             let resp = exec_command_simple(c.as_ref(), &server_id, &command, None).await?;
@@ -1523,7 +1776,9 @@ pub(crate) async fn exec_command_simple(
         disable_output_cap: false,
         disable_timeout: false,
         timeout_ms: None,
-        cwd: cwd.map(std::path::PathBuf::from),
+        cwd: cwd
+            .and_then(crate::remote_path::normalize_thread_cwd)
+            .map(std::path::PathBuf::from),
         env: None,
         size: None,
         sandbox_policy: Some(upstream::SandboxPolicy::DangerFullAccess),
@@ -1647,7 +1902,10 @@ async fn exec_command_simple_owned(
         disable_output_cap: false,
         disable_timeout: false,
         timeout_ms: Some(15_000),
-        cwd: cwd.map(std::path::PathBuf::from),
+        cwd: cwd
+            .as_deref()
+            .and_then(crate::remote_path::normalize_thread_cwd)
+            .map(std::path::PathBuf::from),
         env: None,
         size: None,
         sandbox_policy: None,
@@ -1766,7 +2024,7 @@ fn ensure_pet_runtime_available(client: &MobileClient, server_id: &str) -> Resul
         .get_session(server_id)
         .map_err(|error| ClientError::Rpc(error.to_string()))?
         .runtime_kinds();
-    if runtime_kinds.contains(&types::AgentRuntimeKind::Codex) {
+    if runtime_kinds.contains(&"codex".to_string()) {
         return Ok(());
     }
     Err(ClientError::Rpc(
@@ -2635,6 +2893,7 @@ fn inherited_settings_for_origin(
             "medium" => Some(ReasoningEffort::Medium),
             "high" => Some(ReasoningEffort::High),
             "xhigh" | "x-high" => Some(ReasoningEffort::XHigh),
+            "max" => Some(ReasoningEffort::Max),
             _ => None,
         }
     });
@@ -2673,12 +2932,14 @@ Widget construction guidelines (for reference when making UI decisions):\n\n\
 #[cfg(test)]
 mod tests {
     use super::{
-        ImageViewSource, choose_saved_app_update_server_id, image_read_command,
-        is_mobile_hidden_skill, normalized_image_path, splice_generative_ui_preamble,
+        ImageViewSource, append_missing_amp_mode_models, choose_saved_app_update_server_id,
+        image_read_command, is_mobile_hidden_skill, normalize_model_info_for_runtime,
+        normalized_image_path, splice_generative_ui_preamble,
     };
     use crate::store::snapshot::ServerTransportDiagnostics;
     use crate::store::{AppSnapshot, ServerHealthSnapshot, ServerSnapshot};
     use crate::types::models::{AbsolutePath, AppDynamicToolSpec, SkillMetadata, SkillScope};
+    use crate::types::{AgentRuntimeKind, ModelInfo, ReasoningEffort, ReasoningEffortOption};
     use crate::widget_guidelines::GENERATIVE_UI_PREAMBLE;
     use std::collections::HashMap;
 
@@ -2718,18 +2979,39 @@ mod tests {
             port: 0,
             wake_mac: None,
             is_local,
-            supports_ipc: false,
-            has_ipc: false,
             health,
             account: None,
             requires_openai_auth: false,
             rate_limits: None,
+            rate_limits_by_runtime: std::collections::HashMap::new(),
             available_models: None,
             agent_runtimes: Vec::new(),
             connection_progress: None,
             transport: ServerTransportDiagnostics::default(),
             codex_version: None,
             supports_turn_pagination: true,
+        }
+    }
+
+    fn test_model(id: &str, runtime_kind: AgentRuntimeKind) -> ModelInfo {
+        ModelInfo {
+            id: id.to_string(),
+            model: id.to_string(),
+            upgrade: None,
+            upgrade_model: None,
+            upgrade_copy: None,
+            model_link: None,
+            migration_markdown: None,
+            availability_nux_message: None,
+            display_name: id.to_string(),
+            description: String::new(),
+            hidden: false,
+            supported_reasoning_efforts: Vec::new(),
+            default_reasoning_effort: ReasoningEffort::Medium,
+            input_modalities: Vec::new(),
+            supports_personality: false,
+            is_default: false,
+            agent_runtime_kind: runtime_kind,
         }
     }
 
@@ -2741,6 +3023,89 @@ mod tests {
                 .collect::<HashMap<_, _>>(),
             ..AppSnapshot::default()
         }
+    }
+
+    #[test]
+    fn amp_mode_fallback_adds_builtin_modes() {
+        let mut models = vec![test_model("gpt-5.2", "codex".to_string())];
+
+        append_missing_amp_mode_models(&mut models);
+
+        let amp_ids = models
+            .iter()
+            .filter(|model| model.agent_runtime_kind == "amp".to_string())
+            .map(|model| model.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(amp_ids, vec!["smart", "rush", "deep"]);
+        assert_eq!(
+            models
+                .iter()
+                .find(|model| model.id == "smart")
+                .map(|model| model.is_default),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn amp_mode_fallback_preserves_advertised_modes() {
+        let mut models = vec![test_model("smart", "amp".to_string())];
+
+        append_missing_amp_mode_models(&mut models);
+        append_missing_amp_mode_models(&mut models);
+
+        let smart_count = models
+            .iter()
+            .filter(|model| {
+                model.agent_runtime_kind == "amp".to_string()
+                    && (model.id == "smart" || model.id == "amp/smart")
+            })
+            .count();
+        assert_eq!(smart_count, 1);
+        assert!(models.iter().any(|model| model.id == "rush"));
+        assert!(models.iter().any(|model| model.id == "deep"));
+        assert!(!models.iter().any(|model| model.id == "large"));
+    }
+
+    #[test]
+    fn amp_model_normalization_uses_amp_mode_efforts() {
+        let mut model = test_model("amp/smart", "codex".to_string());
+        model.supported_reasoning_efforts = vec![ReasoningEffortOption {
+            reasoning_effort: ReasoningEffort::Low,
+            description: "High".to_string(),
+        }];
+        model.default_reasoning_effort = ReasoningEffort::Low;
+
+        assert!(normalize_model_info_for_runtime(
+            &mut model,
+            "amp".to_string()
+        ));
+
+        assert_eq!(model.agent_runtime_kind, "amp".to_string());
+        assert_eq!(model.id, "smart");
+        assert_eq!(model.display_name, "smart");
+        assert_eq!(
+            model
+                .supported_reasoning_efforts
+                .iter()
+                .map(|option| option.reasoning_effort.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                ReasoningEffort::High,
+                ReasoningEffort::XHigh,
+                ReasoningEffort::Max
+            ]
+        );
+        assert_eq!(model.default_reasoning_effort, ReasoningEffort::High);
+    }
+
+    #[test]
+    fn amp_model_normalization_filters_hidden_large_mode() {
+        let mut model = test_model("large", "codex".to_string());
+
+        assert!(!normalize_model_info_for_runtime(
+            &mut model,
+            "amp".to_string()
+        ));
     }
 
     #[test]
@@ -2905,12 +3270,15 @@ mod tests {
             upstream::PluginSummary {
                 id: id.into(),
                 name: name.into(),
+                share_context: None,
                 source: upstream::PluginSource::Remote,
                 installed,
                 enabled,
                 install_policy,
                 auth_policy: upstream::PluginAuthPolicy::OnUse,
+                availability: upstream::PluginAvailability::default(),
                 interface: display.map(|d| iface(d, "")),
+                keywords: Vec::new(),
             }
         }
 

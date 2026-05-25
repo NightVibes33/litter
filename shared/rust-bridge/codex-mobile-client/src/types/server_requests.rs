@@ -28,6 +28,10 @@ fn path_buf_from_mobile(value: AbsolutePath) -> PathBuf {
     PathBuf::from(value.value)
 }
 
+fn normalize_cwd(value: Option<String>) -> Option<String> {
+    value.and_then(|cwd| crate::remote_path::normalize_thread_cwd(&cwd))
+}
+
 pub(crate) fn ask_for_approval_into_upstream(value: AppAskForApproval) -> upstream::AskForApproval {
     match value {
         AppAskForApproval::UnlessTrusted => upstream::AskForApproval::UnlessTrusted,
@@ -75,6 +79,10 @@ pub(crate) fn reasoning_effort_into_upstream(value: ReasoningEffort) -> CoreReas
         ReasoningEffort::Medium => CoreReasoningEffort::Medium,
         ReasoningEffort::High => CoreReasoningEffort::High,
         ReasoningEffort::XHigh => CoreReasoningEffort::XHigh,
+        // The committed codex submodule does not expose a Max effort. Keep the
+        // mobile value for runtime-specific UI, but degrade to the strongest
+        // upstream effort available for Codex requests.
+        ReasoningEffort::Max => CoreReasoningEffort::XHigh,
     }
 }
 
@@ -242,7 +250,7 @@ pub struct PendingApproval {
     pub reason: Option<String>,
 }
 
-/// Rust-only raw request seed retained for IPC hydration and approval responses.
+/// Rust-only raw request seed retained for approval responses.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PendingApprovalSeed {
     pub request_id: codex_app_server_protocol::RequestId,
@@ -260,6 +268,25 @@ pub(crate) struct PendingApprovalWithSeed {
 pub(crate) struct PendingApprovalKey {
     pub server_id: String,
     pub request_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PendingUserInputKey {
+    pub server_id: String,
+    pub request_id: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PendingUserInputResponseKind {
+    ToolRequestUserInput,
+    McpServerElicitation,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PendingUserInputSeed {
+    pub request_id: codex_app_server_protocol::RequestId,
+    pub response_kind: PendingUserInputResponseKind,
+    pub raw_params: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -331,7 +358,7 @@ impl TryFrom<AppStartThreadRequest> for upstream::ThreadStartParams {
             model: value.model,
             model_provider: None,
             service_tier: None,
-            cwd: value.cwd,
+            cwd: normalize_cwd(value.cwd),
             approval_policy: value.approval_policy.map(ask_for_approval_into_upstream),
             approvals_reviewer: None,
             sandbox: value.sandbox.map(sandbox_mode_into_upstream),
@@ -402,7 +429,7 @@ impl TryFrom<AppResumeThreadRequest> for upstream::ThreadResumeParams {
             model: value.model,
             model_provider: None,
             service_tier: None,
-            cwd: value.cwd,
+            cwd: normalize_cwd(value.cwd),
             approval_policy: value.approval_policy.map(ask_for_approval_into_upstream),
             approvals_reviewer: None,
             sandbox: value.sandbox.map(sandbox_mode_into_upstream),
@@ -443,7 +470,7 @@ impl TryFrom<AppForkThreadRequest> for upstream::ThreadForkParams {
             model: value.model,
             model_provider: None,
             service_tier: None,
-            cwd: value.cwd,
+            cwd: normalize_cwd(value.cwd),
             approval_policy: value.approval_policy.map(ask_for_approval_into_upstream),
             approvals_reviewer: None,
             sandbox: value.sandbox.map(sandbox_mode_into_upstream),
@@ -500,6 +527,7 @@ impl TryFrom<AppListThreadTurnsRequest> for upstream::ThreadTurnsListParams {
             cursor: value.cursor,
             limit: value.limit,
             sort_direction: value.sort_direction.map(Into::into),
+            items_view: None,
         })
     }
 }
@@ -610,8 +638,11 @@ impl From<AppThreadGoalSetRequest> for upstream::ThreadGoalSetParams {
             thread_id: value.thread_id,
             objective: value.objective,
             status: value.status.map(Into::into),
-            // Mobile can express leave-unchanged (None) or set-to-N (Some).
-            // Clearing a budget is not exposed from this surface.
+            // Mobile shape uses a flat `Option<i64>` which can only express
+            // "leave unchanged" (None) or "set to N" (Some). Wrap with
+            // `.map(Some)` so existing call sites that omit token_budget
+            // continue to leave the budget alone. Clearing a budget is not
+            // exposed from the mobile surface.
             token_budget: value.token_budget.map(Some),
         }
     }
@@ -671,7 +702,7 @@ impl From<AppListThreadsRequest> for upstream::ThreadListParams {
                 .source_kinds
                 .map(|kinds| kinds.into_iter().map(Into::into).collect()),
             archived: value.archived,
-            cwd: value.cwd.map(upstream::ThreadListCwdFilter::One),
+            cwd: normalize_cwd(value.cwd).map(upstream::ThreadListCwdFilter::One),
             search_term: value.search_term,
             use_state_db_only: value.use_state_db_only,
         }
@@ -724,7 +755,6 @@ impl From<AppListSkillsRequest> for upstream::SkillsListParams {
         Self {
             cwds: value.cwds.into_iter().map(PathBuf::from).collect(),
             force_reload: value.force_reload,
-            per_cwd_extra_user_roots: None,
         }
     }
 }
@@ -1151,7 +1181,7 @@ impl TryFrom<AppExecCommandRequest> for upstream::CommandExecParams {
             disable_output_cap: value.disable_output_cap,
             disable_timeout: value.disable_timeout,
             timeout_ms: value.timeout_ms,
-            cwd: value.cwd.map(PathBuf::from),
+            cwd: normalize_cwd(value.cwd).map(PathBuf::from),
             env: None,
             size: None,
             sandbox_policy: value
@@ -1301,5 +1331,87 @@ mod tests {
         };
         let upstream_params: upstream::ThreadForkParams = request.try_into().unwrap();
         assert!(upstream_params.exclude_turns);
+    }
+
+    #[test]
+    fn start_thread_request_normalizes_windows_cwd() {
+        let request = AppStartThreadRequest {
+            agent_runtime_kind: None,
+            model: None,
+            cwd: Some(r"C:\Users\npace\Users\npace\dev".to_string()),
+            approval_policy: None,
+            sandbox: None,
+            developer_instructions: None,
+            persist_extended_history: false,
+            dynamic_tools: None,
+            ephemeral: None,
+        };
+        let upstream_params: upstream::ThreadStartParams = request.try_into().unwrap();
+        assert_eq!(upstream_params.cwd.as_deref(), Some(r"C:\Users\npace\dev"));
+    }
+
+    #[test]
+    fn resume_thread_request_drops_unexpanded_windows_home_fragment() {
+        let request = AppResumeThreadRequest {
+            thread_id: "t1".to_string(),
+            model: None,
+            cwd: Some(r"Users\npace".to_string()),
+            approval_policy: None,
+            sandbox: None,
+            developer_instructions: None,
+            persist_extended_history: false,
+            exclude_turns: false,
+        };
+        let upstream_params: upstream::ThreadResumeParams = request.try_into().unwrap();
+        assert_eq!(upstream_params.cwd, None);
+    }
+
+    #[test]
+    fn command_exec_request_normalizes_cwd() {
+        let request = AppExecCommandRequest {
+            command: vec!["cmd.exe".to_string(), "/c".to_string(), "dir".to_string()],
+            process_id: None,
+            tty: false,
+            stream_stdin: false,
+            stream_stdout_stderr: false,
+            output_bytes_cap: None,
+            disable_output_cap: false,
+            disable_timeout: false,
+            timeout_ms: None,
+            cwd: Some(r"C:\Users\npace\Users\npace".to_string()),
+            sandbox_policy: None,
+        };
+        let upstream_params: upstream::CommandExecParams = request.try_into().unwrap();
+        assert_eq!(
+            upstream_params
+                .cwd
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            Some(r"C:\Users\npace".to_string())
+        );
+    }
+
+    #[test]
+    fn thread_list_request_normalizes_cwd_filter() {
+        let request = AppListThreadsRequest {
+            cursor: None,
+            limit: None,
+            sort_key: None,
+            sort_direction: None,
+            model_providers: None,
+            source_kinds: None,
+            archived: None,
+            cwd: Some(r"C:\Users\npace\Users\npace".to_string()),
+            search_term: None,
+            use_state_db_only: false,
+            runtime_kinds: None,
+        };
+        let upstream_params: upstream::ThreadListParams = request.into();
+        assert_eq!(
+            upstream_params.cwd,
+            Some(upstream::ThreadListCwdFilter::One(
+                r"C:\Users\npace".to_string()
+            ))
+        );
     }
 }

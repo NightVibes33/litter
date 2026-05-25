@@ -192,6 +192,21 @@ final class WallpaperManager {
         return nil
     }
 
+    func resolveScope(for threadKey: ThreadKey?) -> WallpaperScope? {
+        guard let key = threadKey else { return nil }
+
+        let threadScopeKey = scopeKey(for: .thread(key))
+        if let cfg = prefs.threads[threadScopeKey], cfg.type != .none {
+            return .thread(key)
+        }
+
+        if let cfg = prefs.servers[key.serverId], cfg.type != .none {
+            return .server(key.serverId)
+        }
+
+        return nil
+    }
+
     func resolveConfigForServer(_ serverId: String) -> WallpaperConfig? {
         if let cfg = prefs.servers[serverId], cfg.type != .none {
             return cfg

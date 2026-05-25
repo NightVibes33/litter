@@ -147,6 +147,17 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        // Best-effort graceful shutdown of the iroh endpoint before the
+        // Activity is fully destroyed. `runBlocking` keeps the close
+        // handshake bounded so we don't ANR if the network stack is
+        // unresponsive; `withTimeoutOrNull` caps it.
+        appModel?.let { model ->
+            kotlinx.coroutines.runBlocking {
+                kotlinx.coroutines.withTimeoutOrNull(2_500) {
+                    model.client.shutdownAlleycatEndpoint()
+                }
+            }
+        }
         appModel?.stop()
         super.onDestroy()
     }

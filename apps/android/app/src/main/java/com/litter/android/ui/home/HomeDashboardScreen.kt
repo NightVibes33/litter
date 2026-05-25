@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
@@ -98,7 +100,6 @@ import com.litter.android.state.SavedThreadsStore
 import com.litter.android.state.connectionModeLabel
 import com.litter.android.state.displayTitle
 import com.litter.android.state.isConnected
-import com.litter.android.state.isIpcConnected
 import com.litter.android.state.statusColor
 import com.litter.android.state.statusLabel
 import com.litter.android.ui.ExperimentalFeatures
@@ -112,7 +113,7 @@ import com.litter.android.ui.scaled
 import com.sigkitten.litter.android.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.AppProject
 import uniffi.codex_mobile_client.AppServerSnapshot
 import uniffi.codex_mobile_client.AppSessionSummary
@@ -159,6 +160,13 @@ fun HomeDashboardScreen(
     // view so the user can pin any thread.
     val allSessions = remember(snap) {
         snap?.let { HomeDashboardSupport.recentSessions(it, limit = Int.MAX_VALUE) } ?: emptyList()
+    }
+    // Fork lineage map computed from the unfiltered snapshot so a fork
+    // whose parent lives on the same server resolves even when later
+    // server-scoping drops sessions. Only multi-branch lineages are kept;
+    // singletons resolve to `null` at the call site.
+    val lineageMap = remember(allSessions) {
+        HomeDashboardSupport.computeLineageMap(allSessions)
     }
 
     // Pinned + hidden state. Refreshed when the user mutates via the UI.
@@ -221,6 +229,10 @@ fun HomeDashboardScreen(
     }
 
     var confirmAction by remember { mutableStateOf<ConfirmAction?>(null) }
+    // Hoisted reply-sheet target. Both the row swipe and the long-press
+    // "Reply" menu item set this; the QuickReplySheet renders once at this
+    // scope so the two paths stay aligned.
+    var replyTargetSession by remember { mutableStateOf<AppSessionSummary?>(null) }
     var isComposerActive by remember { mutableStateOf(false) }
     // When the user taps a composer chip (model / project), a modal sheet
     // opens and the IME dismisses — which would otherwise cascade through
@@ -415,6 +427,11 @@ fun HomeDashboardScreen(
                     // `SessionReplySwipe` would have the two pointer handlers
                     // fighting over the same drag stream.
                     val sessionApps = savedAppsByThread[session.key.threadId].orEmpty()
+                    val sessionPinKey = PinnedThreadKey(
+                        serverId = session.key.serverId,
+                        threadId = session.key.threadId,
+                    )
+                    val sessionIsPinned = pinnedKeys.contains(sessionPinKey)
                     SessionReplySwipe(
                         session = session,
                         appModel = appModel,
@@ -438,6 +455,7 @@ fun HomeDashboardScreen(
                         onError = { msg ->
                             confirmAction = ConfirmAction.ReplyError(msg)
                         },
+                        onReply = { replyTargetSession = session },
                         modifier = Modifier.animateItem(),
                     ) {
                         SessionCanvasRow(
@@ -445,12 +463,69 @@ fun HomeDashboardScreen(
                             zoomLevel = zoomLevel,
                             isHydrating = isHydrating,
                             isLocal = snap?.servers?.firstOrNull { it.serverId == session.key.serverId }?.isLocal == true,
+                            lineage = lineageMap[session.key]?.takeIf { it.hasMultipleBranches },
+                            isPinned = sessionIsPinned,
                             onClick = {
                                 appModel.launchState.updateCurrentCwd(session.cwd)
                                 onOpenConversation(session.key)
                             },
                             onDelete = {
                                 confirmAction = ConfirmAction.ArchiveSession(session)
+                            },
+                            onReply = { replyTargetSession = session },
+                            onPin = {
+                                pinThreadOnHome(session.key)
+                            },
+                            onUnpin = {
+                                SavedThreadsStore.remove(context, sessionPinKey)
+                                pinnedKeys = SavedThreadsStore.pinnedKeys(context)
+                            },
+                            onCancelTurn = {
+                                // `interruptTurn` requires both threadId and
+                                // turnId; the active turn id lives on the
+                                // thread snapshot, not on the session
+                                // summary, so look it up just-in-time.
+                                scope.launch {
+                                    val turnId = appModel.threadSnapshot(session.key)?.activeTurnId
+                                        ?: return@launch
+                                    runCatching {
+                                        appModel.client.interruptTurn(
+                                            session.key.serverId,
+                                            uniffi.codex_mobile_client.AppInterruptTurnRequest(
+                                                threadId = session.key.threadId,
+                                                turnId = turnId,
+                                            ),
+                                        )
+                                    }
+                                }
+                            },
+                            onFork = {
+                                // Long-press → "Fork" on a home session card.
+                                // Head-of-thread fork: duplicates the full
+                                // thread server-side (no rollback) and
+                                // navigates to the new copy. Mirrors iOS
+                                // `forkSessionFromHome` in LitterApp.swift.
+                                scope.launch {
+                                    try {
+                                        val sourceKey = appModel.hydrateThreadPermissions(session.key) ?: session.key
+                                        val newKey = appModel.client.forkThread(
+                                            sourceKey.serverId,
+                                            appModel.launchState.threadForkRequest(
+                                                sourceThreadId = sourceKey.threadId,
+                                                cwdOverride = session.cwd,
+                                                threadKey = sourceKey,
+                                            ),
+                                        )
+                                        appModel.store.setActiveThread(newKey)
+                                        appModel.refreshThreadSnapshot(newKey)
+                                        appModel.launchState.updateCurrentCwd(session.cwd)
+                                        onOpenConversation(newKey)
+                                    } catch (e: Exception) {
+                                        confirmAction = ConfirmAction.ReplyError(
+                                            e.message ?: "Failed to fork thread",
+                                        )
+                                    }
+                                }
                             },
                         )
                     }
@@ -916,12 +991,29 @@ fun HomeDashboardScreen(
         }
 
         if (showOnboardingCoachmarks) {
+            EmptyHomeFatCat(modifier = Modifier.matchParentSize())
             OnboardingCoachmarks(
                 targets = relativeCoachmarkTargets,
                 modifier = Modifier.matchParentSize(),
             )
         }
 
+    }
+
+    replyTargetSession?.let { target ->
+        QuickReplySheet(
+            thread = target,
+            onDismiss = { replyTargetSession = null },
+            onSend = { threadKey, text ->
+                runCatching {
+                    sendQuickReplyTurn(appModel, threadKey, text)
+                }.onFailure { err ->
+                    confirmAction = ConfirmAction.ReplyError(
+                        err.message ?: "Failed to send reply",
+                    )
+                }
+            },
+        )
     }
 
     confirmAction?.let { action ->
@@ -1081,6 +1173,72 @@ private fun HomeCatFooter(
 
 private const val HOME_CAT_ENTRANCE_DURATION_MS = 11_100L
 
+@Composable
+private fun EmptyHomeFatCat(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var showingLoop by remember { mutableStateOf(false) }
+    val resourceId = if (showingLoop) R.drawable.home_cat else R.drawable.home_cat_entrance
+    val drawable = remember(context, resourceId) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            ImageDecoder.decodeDrawable(
+                ImageDecoder.createSource(context.resources, resourceId),
+            )
+        } else {
+            ContextCompat.getDrawable(context, resourceId)
+        }
+    }
+
+    LaunchedEffect(showingLoop) {
+        if (!showingLoop) {
+            kotlinx.coroutines.delay(HOME_CAT_ENTRANCE_DURATION_MS)
+            showingLoop = true
+        }
+    }
+
+    DisposableEffect(drawable) {
+        (drawable as? Animatable)?.start()
+        onDispose {
+            (drawable as? Animatable)?.stop()
+        }
+    }
+
+    BoxWithConstraints(modifier = modifier) {
+        val w = maxWidth
+        val h = maxHeight
+        val catWidth = (w * 0.55f).coerceIn(180.dp, 260.dp)
+        val catHeight = catWidth * (202f / 360f)
+        val offsetX = (w - catWidth) / 2f
+        val offsetY = (h * 0.42f) - (catHeight / 2f)
+        Box(
+            modifier = Modifier
+                .offset(x = offsetX, y = offsetY)
+                .size(width = catWidth, height = catHeight),
+        ) {
+            AndroidView(
+                factory = { ctx ->
+                    ImageView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                        )
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        isClickable = false
+                        isFocusable = false
+                        setImageDrawable(drawable)
+                        (drawable as? Animatable)?.start()
+                    }
+                },
+                update = { view ->
+                    view.setImageDrawable(drawable)
+                    (drawable as? Animatable)?.start()
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
 /**
  * Merge rule:
  * - If the user has pinned anything, the home list is just their pins
@@ -1122,7 +1280,7 @@ private fun placeholderPinnedSession(
         serverId = pinned.serverId,
         threadId = pinned.threadId,
     ),
-    agentRuntimeKind = uniffi.codex_mobile_client.AgentRuntimeKind.CODEX,
+    agentRuntimeKind = "codex",
     serverDisplayName = server.displayName,
     serverHost = server.host,
     title = "Loading thread",
@@ -1131,6 +1289,7 @@ private fun placeholderPinnedSession(
     model = "",
     modelProvider = "",
     parentThreadId = null,
+    forkedFromId = null,
     agentNickname = null,
     agentRole = null,
     agentDisplayLabel = null,
@@ -1149,6 +1308,7 @@ private fun placeholderPinnedSession(
     lastTurnEndMs = null,
     stats = null,
     tokenUsage = null,
+    goal = null,
 )
 
 private sealed class ConfirmAction {

@@ -19,6 +19,19 @@ enum LitterPlatform {
         return ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] == nil
     }()
 
+    /// `true` whenever the process renders as a Mac app — Catalyst or
+    /// "Designed for iPad" on Apple Silicon. AppKit-bridge bugs hit
+    /// both modes (NSVisualEffectView ignoring `fractionComplete=0`,
+    /// NavigationSplitView Liquid Glass material being clobbered by
+    /// gradient backdrops, menu-equivalent shortcuts not firing in-view),
+    /// so UI workarounds gate on this rather than the compile-time
+    /// `targetEnvironment(macCatalyst)` flag — the iOS lane in
+    /// "Designed for iPad" mode hits the same AppKit bridge.
+    static let rendersAsMacApp: Bool = {
+        if isCatalyst { return true }
+        return ProcessInfo.processInfo.isiOSAppOnMac
+    }()
+
     static let supportsLocalRuntime = !isCatalyst
     static let supportsVoiceRuntime = !isCatalyst
 
@@ -62,31 +75,15 @@ enum LitterPlatform {
                 applicationSupportDir: appSupport.path,
                 documentsDir: docs.path
             )
+            Task { @MainActor in
+                await UserMountStore.shared.loadAndRemountAll()
+            }
         } catch {
             guard isAlreadyBootstrapped(error) else { throw error }
             NSLog("[ish] bootstrap already completed")
         }
-
-        let preflight = ishRuntimePreflight()
-        guard preflight.exitCode == 0 else {
-            let rawOutput = String(data: preflight.output, encoding: .utf8) ?? ""
-            let output = rawOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? localShellDiagnostic(exitCode: preflight.exitCode)
-                : rawOutput
-            NSLog("[ish] preflight failed rc=\(preflight.exitCode): \(output)")
-            throw LocalRuntimeReadinessError.preflightFailed(
-                exitCode: preflight.exitCode,
-                output: output
-            )
-        }
-
-        let repair = await IshFS.repairCoreDevices()
-        if repair.exitCode != 0 {
-            NSLog("[ish] core device repair failed rc=\(repair.exitCode): \(repair.output)")
-        }
-        await LitterBuildKit.shared.installBundledAssetsIfAvailable()
-        await LitterBuildKit.shared.installFakefsCommandShims()
         await LitterBuildKit.shared.startFakefsRequestMonitor()
+
     }
 
     private static func isAlreadyBootstrapped(_ error: Error) -> Bool {
@@ -97,12 +94,6 @@ enum LitterPlatform {
             }
         }
         return false
-    }
-
-    private static func localShellDiagnostic(exitCode: Int32) -> String {
-        exitCode == -6
-            ? "iSH runtime is not bootstrapped; local shell is unavailable"
-            : "local shell failed before producing output (exit code \(exitCode))"
     }
 #endif
 
@@ -173,7 +164,6 @@ enum LitterPlatform {
 enum LocalRuntimeReadinessError: LocalizedError {
     case bundledRootfsMissing
     case sandboxDirectoriesUnavailable
-    case preflightFailed(exitCode: Int32, output: String)
 
     var errorDescription: String? {
         switch self {
@@ -181,15 +171,6 @@ enum LocalRuntimeReadinessError: LocalizedError {
             return "Local shell unavailable: bundled iSH filesystem is missing"
         case .sandboxDirectoriesUnavailable:
             return "Local shell unavailable: app sandbox directories are unavailable"
-        case .preflightFailed(let exitCode, let output):
-            if exitCode == -6 {
-                return "Local shell unavailable: iSH runtime is not bootstrapped"
-            }
-            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                return "Local shell unavailable: iSH preflight failed with exit code \(exitCode)"
-            }
-            return "Local shell unavailable: iSH preflight failed with exit code \(exitCode): \(trimmed)"
         }
     }
 }

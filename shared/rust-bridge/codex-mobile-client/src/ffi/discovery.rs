@@ -5,13 +5,67 @@ use crate::ffi::shared::{blocking_async, shared_mobile_client, shared_runtime};
 use crate::ffi::ssh::{
     mark_progress_failure, normalize_ssh_host, run_guided_ssh_connect, ssh_auth, ssh_auth_kind,
 };
-use crate::mobile_client::ManagedSshBootstrapFlow;
+use crate::mobile_client::{ManagedSshBootstrapFlow, slingshot_user_agent};
 use crate::session::connection::{InProcessConfig, ServerConfig};
+use crate::slingshot_url::build_slingshot_connection_url;
+use crate::slingshot_url::normalize_slingshot_base_url;
+use crate::slingshot_url::parse_slingshot_connection_url;
 use crate::ssh::SshCredentials;
 use crate::store::{AppConnectionProgressSnapshot, ServerHealthSnapshot};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::{debug, info, trace, warn};
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct AppSlingshotEnvironment {
+    pub id: String,
+    pub connection_url: String,
+    pub display_name: String,
+    pub raw_display_name: Option<String>,
+    pub name: Option<String>,
+    pub host_name: Option<String>,
+    pub online: bool,
+    pub busy: bool,
+    pub operating_system: String,
+    pub architecture: Option<String>,
+    pub app_server_version: Option<String>,
+    pub last_seen_at: Option<String>,
+}
+
+impl AppSlingshotEnvironment {
+    fn from_environment(value: codex_slingshot::SlingshotEnvironment, base_url: &str) -> Self {
+        let operating_system = match value.operating_system {
+            codex_slingshot::OperatingSystem::Known(known) => match known {
+                codex_slingshot::KnownOperatingSystem::Macos => "macos".to_string(),
+                codex_slingshot::KnownOperatingSystem::Windows => "windows".to_string(),
+                codex_slingshot::KnownOperatingSystem::Linux => "linux".to_string(),
+            },
+            codex_slingshot::OperatingSystem::Unknown(raw) => raw,
+        };
+        let display_name = value
+            .name
+            .clone()
+            .or_else(|| value.raw_display_name.clone())
+            .or_else(|| value.host_name.clone())
+            .unwrap_or_else(|| value.id.clone());
+        let connection_url = build_slingshot_connection_url(&value.id, base_url)
+            .unwrap_or_else(|| format!("slingshot://{}", value.id));
+        Self {
+            id: value.id,
+            connection_url,
+            display_name,
+            raw_display_name: value.raw_display_name,
+            name: value.name,
+            host_name: value.host_name,
+            online: value.online,
+            busy: value.busy,
+            operating_system,
+            architecture: value.architecture,
+            app_server_version: value.app_server_version,
+            last_seen_at: value.last_seen_at.map(|date| date.to_rfc3339()),
+        }
+    }
+}
 
 #[derive(uniffi::Object)]
 pub struct DiscoveryBridge {
@@ -172,6 +226,65 @@ impl ServerBridge {
         })
     }
 
+    pub async fn list_slingshot_environments(
+        &self,
+        base_url: String,
+        access_token: String,
+        account_id: String,
+    ) -> Result<Vec<AppSlingshotEnvironment>, ClientError> {
+        blocking_async!(self.rt, self.inner, |_c| {
+            let normalized_base_url = normalize_slingshot_base_url(base_url.trim());
+            let base_url = url::Url::parse(&normalized_base_url).map_err(|e| {
+                ClientError::InvalidParams(format!("invalid Slingshot base URL: {e}"))
+            })?;
+            let api = codex_slingshot::SlingshotApi::new(codex_slingshot::SlingshotConfig {
+                base_url,
+                auth_token: access_token,
+                user_agent: slingshot_user_agent(),
+                account_id: Some(account_id),
+                originator: Some("Codex Desktop".to_string()),
+                client_id: None,
+            });
+            api.list_environments()
+                .await
+                .map(|envs| {
+                    envs.into_iter()
+                        .map(|env| {
+                            AppSlingshotEnvironment::from_environment(env, &normalized_base_url)
+                        })
+                        .collect()
+                })
+                .map_err(|e| ClientError::Transport(e.to_string()))
+        })
+    }
+
+    pub async fn connect_remote_slingshot_url_server(
+        &self,
+        server_id: String,
+        display_name: String,
+        connection_url: String,
+        access_token: String,
+        account_id: String,
+        step_up_token: String,
+    ) -> Result<String, ClientError> {
+        let slingshot = parse_slingshot_connection_url(&connection_url).ok_or_else(|| {
+            ClientError::InvalidParams("invalid Slingshot connection URL".to_string())
+        })?;
+        blocking_async!(self.rt, self.inner, |c| {
+            c.connect_remote_over_slingshot(
+                server_id,
+                display_name,
+                slingshot.base_url,
+                access_token,
+                account_id,
+                slingshot.environment_id,
+                step_up_token,
+            )
+            .await
+            .map_err(|e| ClientError::Transport(e.to_string()))
+        })
+    }
+
     pub async fn list_alleycat_agents(
         &self,
         params: crate::ffi::alleycat::AppAlleycatPairPayload,
@@ -246,20 +359,18 @@ impl ServerBridge {
         unlock_macos_keychain: bool,
         accept_unknown_host: bool,
         working_dir: Option<String>,
-        ipc_socket_path_override: Option<String>,
     ) -> Result<String, ClientError> {
         let normalized_host = normalize_ssh_host(&host);
         let auth = ssh_auth(password, private_key_pem, passphrase)?;
         info!(
-            "ServerBridge: connect_remote_over_ssh start server_id={} host={} normalized_host={} ssh_port={} username={} auth={} working_dir={} ipc_socket_path_override={}",
+            "ServerBridge: connect_remote_over_ssh start server_id={} host={} normalized_host={} ssh_port={} username={} auth={} working_dir={}",
             server_id,
             host.as_str(),
             normalized_host.as_str(),
             port,
             username.as_str(),
             ssh_auth_kind(&auth),
-            working_dir.as_deref().unwrap_or("<none>"),
-            ipc_socket_path_override.as_deref().unwrap_or("<none>")
+            working_dir.as_deref().unwrap_or("<none>")
         );
         let credentials = SshCredentials {
             host: normalized_host.clone(),
@@ -282,13 +393,7 @@ impl ServerBridge {
         let task_server_id = config.server_id.clone();
         tokio::spawn(async move {
             let result = mobile_client
-                .connect_remote_over_ssh(
-                    config,
-                    credentials,
-                    accept_unknown_host,
-                    working_dir,
-                    ipc_socket_path_override,
-                )
+                .connect_remote_over_ssh(config, credentials, accept_unknown_host, working_dir)
                 .await
                 .map_err(|e| ClientError::Transport(e.to_string()));
             match &result {
@@ -309,8 +414,8 @@ impl ServerBridge {
 
     /// Start a guided SSH connect: spawns the bootstrap task and returns
     /// immediately so the UI can show step-by-step progress via
-    /// `AppConnectionProgressSnapshot`. Pair with `SshBridge::ssh_respond_to_install_prompt`
-    /// when the remote needs Codex installed.
+    /// `AppConnectionProgressSnapshot`. Codex must already be installed on the
+    /// remote host and discoverable as `codex`.
     #[allow(clippy::too_many_arguments)]
     pub async fn start_remote_over_ssh_connect(
         &self,
@@ -325,20 +430,18 @@ impl ServerBridge {
         unlock_macos_keychain: bool,
         accept_unknown_host: bool,
         working_dir: Option<String>,
-        ipc_socket_path_override: Option<String>,
     ) -> Result<String, ClientError> {
         let normalized_host = normalize_ssh_host(&host);
         let auth = ssh_auth(password, private_key_pem, passphrase)?;
         info!(
-            "ServerBridge: start_remote_over_ssh_connect start server_id={} host={} normalized_host={} ssh_port={} username={} auth={} working_dir={} ipc_socket_path_override={}",
+            "ServerBridge: start_remote_over_ssh_connect start server_id={} host={} normalized_host={} ssh_port={} username={} auth={} working_dir={}",
             server_id,
             host.as_str(),
             normalized_host.as_str(),
             port,
             username.as_str(),
             ssh_auth_kind(&auth),
-            working_dir.as_deref().unwrap_or("<none>"),
-            ipc_socket_path_override.as_deref().unwrap_or("<none>")
+            working_dir.as_deref().unwrap_or("<none>")
         );
         let credentials = SshCredentials {
             host: normalized_host.clone(),
@@ -367,17 +470,12 @@ impl ServerBridge {
                 );
                 return Ok(server_id);
             }
-            flows.insert(
-                server_id.clone(),
-                ManagedSshBootstrapFlow {
-                    install_decision: None,
-                },
-            );
+            flows.insert(server_id.clone(), ManagedSshBootstrapFlow {});
         }
 
         mobile_client
             .app_store
-            .upsert_server(&config, ServerHealthSnapshot::Connecting, true);
+            .upsert_server(&config, ServerHealthSnapshot::Connecting);
         let initial_progress = AppConnectionProgressSnapshot::ssh_bootstrap();
         mobile_client
             .app_store
@@ -394,12 +492,10 @@ impl ServerBridge {
             );
             let task_result = run_guided_ssh_connect(
                 Arc::clone(&mobile_client),
-                Arc::clone(&flows),
                 config,
                 credentials,
                 accept_unknown_host,
                 working_dir,
-                ipc_socket_path_override,
                 &mut progress,
             )
             .await;

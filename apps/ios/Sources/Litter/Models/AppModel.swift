@@ -68,7 +68,7 @@ final class AppModel {
 
         let rc = ReconnectController()
         rc.setCredentialProvider(provider: SwiftSshCredentialProvider())
-        rc.setIpcSocketPathOverride(path: ExperimentalFeatures.shared.ipcSocketPathOverride())
+        rc.setSlingshotCredentialProvider(provider: SwiftSlingshotCredentialProvider())
         rc.setMultiClankerAndQuicEnabled(enabled: true)
         return RustBridges(
             store: AppStore(),
@@ -104,8 +104,6 @@ final class AppModel {
     private(set) var snapshotRevision: UInt64 = 0
     private(set) var lastError: String?
     private(set) var composerPrefillRequest: ComposerPrefillRequest?
-    private(set) var localConversationPendingApproval: LocalModelAgentApprovalState?
-    private(set) var localConversationPhase: LocalModelRunPhase = .idle
 
     @ObservationIgnored private var subscription: AppStoreSubscription?
     @ObservationIgnored private var updateTask: Task<Void, Never>?
@@ -123,8 +121,6 @@ final class AppModel {
     @ObservationIgnored private var pendingCommandRowMutationTask: Task<Void, Never>?
     @ObservationIgnored private var cachedThreadSnapshots: [ThreadKey: AppThreadSnapshot] = [:]
     @ObservationIgnored private var loadingTurnPageThreadKeys: Set<ThreadKey> = []
-    @ObservationIgnored private var localConversationTasks: [ThreadKey: Task<Void, Never>] = [:]
-    @ObservationIgnored private var localConversationApprovalContinuations: [String: CheckedContinuation<LocalModelToolApprovalDecision, Never>] = [:]
 
     init(
         store: AppStore? = nil,
@@ -146,6 +142,20 @@ final class AppModel {
         // dynamic-tool finalize hook can auto-upsert on `show_widget` calls.
         // Without this, auto-save silently no-ops.
         self.client.setSavedAppsDirectory(directory: SavedAppsDirectory.path)
+        self.client.setSlingshotCredentialsDirectory(directory: MobilePreferencesDirectory.path)
+
+        // Route Swift presentation lookups through the Rust-owned
+        // `AgentMetadataStore`. Any view rendering an agent label /
+        // icon / capability flag goes through this single shared
+        // client, so a probe response in one screen surfaces metadata
+        // everywhere.
+        let metadataClient = self.client
+        AgentRuntimeMetadataProvider.lookup = { [weak metadataClient] name in
+            metadataClient?.agentMetadata(name: name)
+        }
+        AgentRuntimeMetadataProvider.all = { [weak metadataClient] in
+            metadataClient?.allAgentMetadata() ?? []
+        }
     }
 
     deinit {
@@ -155,8 +165,6 @@ final class AppModel {
         pendingSnapshotRefreshTask?.cancel()
         pendingThreadStateTask?.cancel()
         pendingCommandRowMutationTask?.cancel()
-        localConversationTasks.values.forEach { $0.cancel() }
-        localConversationApprovalContinuations.values.forEach { $0.resume(returning: .denied) }
     }
 
     func start() {
@@ -196,12 +204,6 @@ final class AppModel {
         pendingCommandRowMutationTask?.cancel()
         pendingCommandRowMutationTask = nil
         pendingCommandRowMutations.removeAll()
-        localConversationTasks.values.forEach { $0.cancel() }
-        localConversationTasks.removeAll()
-        localConversationApprovalContinuations.values.forEach { $0.resume(returning: .denied) }
-        localConversationApprovalContinuations.removeAll()
-        localConversationPendingApproval = nil
-        localConversationPhase = .idle
         subscription = nil
     }
 
@@ -272,7 +274,7 @@ final class AppModel {
             )
         }
 
-        // No overrides — let Rust decide whether to use IPC passively or do a thread/read RPC.
+        // No overrides: let Rust do a normal external resume/read path.
         try await store.externalResumeThread(key: key, hostId: nil)
         return key
     }
@@ -305,20 +307,52 @@ final class AppModel {
             )
         }
 
-        // No overrides — let Rust decide whether to use IPC passively or do a thread/read RPC.
+        // No overrides: let Rust do a normal external resume/read path.
         try await store.externalResumeThread(key: key, hostId: nil)
         return key
     }
 
+    /// Force a fresh resume so the store reconciles `active_turn_id`
+    /// against the server's authoritative view. Use after a long resume /
+    /// push wake — the in-flight turn the local snapshot shows as running
+    /// may have completed during the background window with no
+    /// `TurnCompleted` event delivered.
+    ///
+    /// On v0.125+ remotes this runs `thread/resume` with
+    /// `excludeTurns: true` and then a tiny `thread/turns/list` probe
+    /// (`limit: 5`, `itemsView: notLoaded`) — turn skeletons only — to feed
+    /// `reconcile_active_turn`. Pulling the full embedded turn list here
+    /// would OOM on long threads. Legacy remotes that don't implement
+    /// `thread/turns/list` still get the embedded turn list via
+    /// `excludeTurns: false`, since there is no other way to learn turn
+    /// status there.
+    func forceRefreshThreadAuthoritative(key: ThreadKey) async throws {
+        try await store.forceRefreshThreadAuthoritative(key: key)
+    }
+
     func refreshThreadIncludingTurns(key: ThreadKey) async throws -> ThreadKey {
         do {
+            // 1. Refresh thread metadata only — title, status, model,
+            //    active_turn_id, etc. The full historical turn list is
+            //    append-only on the server, so we don't need to re-pull it
+            //    here. Sending `include_turns: true` would have the server
+            //    reconstruct the entire rollout in one response, which is
+            //    unbounded and OOMs the device on long threads.
             let nextKey = try await client.readThread(
                 serverId: key.serverId,
                 params: AppReadThreadRequest(
                     threadId: key.threadId,
-                    includeTurns: true
+                    includeTurns: false
                 )
             )
+            // 2. Reload the most-recent N turns via the paginated path. On
+            //    v0.125+ remotes this hits `thread/turns/list` (bounded by
+            //    `initialTurnPageSize`). On older remotes that don't
+            //    implement `thread/turns/list`, the Rust client transparently
+            //    falls back to `thread/resume(excludeTurns: false)` which
+            //    pulls the embedded turn list — preserving the prior
+            //    reload-button behavior for legacy servers.
+            await loadInitialTurns(threadId: nextKey)
             if let threadSnapshot = try await store.threadSnapshot(key: nextKey) {
                 applyThreadSnapshot(threadSnapshot)
             } else {
@@ -424,6 +458,97 @@ final class AppModel {
             )
         )
         await refreshSnapshot()
+    }
+
+    func activateStoredLocalChatGPTAccount(serverId: String, accountID: String) async throws {
+        guard let server = snapshot?.serverSnapshot(for: serverId) else {
+            throw LocalAccountLoginFlowError.localServerUnavailable
+        }
+        guard server.isLocal else {
+            throw LocalAccountLoginFlowError.remoteServer
+        }
+
+        try ChatGPTOAuthTokenStore.shared.setActiveAccountID(accountID)
+        if server.account != nil {
+            _ = try? await client.logoutAccount(serverId: serverId)
+        }
+        await restoreStoredLocalAuthState(serverId: serverId)
+        guard snapshot?.serverSnapshot(for: serverId)?.account != nil else {
+            throw LocalAccountLoginFlowError.loginDidNotAttach
+        }
+    }
+
+    func removeStoredLocalChatGPTAccount(serverId: String, accountID: String) async throws {
+        guard let server = snapshot?.serverSnapshot(for: serverId) else {
+            throw LocalAccountLoginFlowError.localServerUnavailable
+        }
+        guard server.isLocal else {
+            throw LocalAccountLoginFlowError.remoteServer
+        }
+
+        try ChatGPTOAuthTokenStore.shared.clear(accountID: accountID)
+        if server.account != nil {
+            _ = try? await client.logoutAccount(serverId: serverId)
+        }
+        await restoreStoredLocalAuthState(serverId: serverId)
+        await refreshSnapshot()
+    }
+
+    func nextStoredLocalChatGPTAccount(serverId: String) throws -> StoredChatGPTAccountSummary? {
+        guard let server = snapshot?.serverSnapshot(for: serverId), server.isLocal else {
+            return nil
+        }
+        let accounts = try ChatGPTOAuthTokenStore.shared.storedAccounts()
+        return nextStoredChatGPTAccount(in: accounts)
+    }
+
+    func chatGPTAccountSwitchSuggestion(for error: Error, serverId: String) -> StoredChatGPTAccountSummary? {
+        guard isChatGPTAccountLimitError(error) else { return nil }
+        guard let server = snapshot?.serverSnapshot(for: serverId), server.isLocal else { return nil }
+        guard case .chatgpt? = server.account else { return nil }
+        let accounts = (try? ChatGPTOAuthTokenStore.shared.storedAccounts()) ?? []
+        return nextStoredChatGPTAccount(in: accounts)
+    }
+
+    @discardableResult
+    func switchToNextStoredLocalChatGPTAccount(serverId: String) async throws -> StoredChatGPTAccountSummary {
+        guard let server = snapshot?.serverSnapshot(for: serverId) else {
+            throw LocalAccountLoginFlowError.localServerUnavailable
+        }
+        guard server.isLocal else {
+            throw LocalAccountLoginFlowError.remoteServer
+        }
+        let accounts = try ChatGPTOAuthTokenStore.shared.storedAccounts()
+        guard let nextAccount = nextStoredChatGPTAccount(in: accounts) else {
+            throw ChatGPTOAuthError.missingStoredTokens
+        }
+        try await activateStoredLocalChatGPTAccount(serverId: serverId, accountID: nextAccount.accountID)
+        return nextAccount
+    }
+
+    private func nextStoredChatGPTAccount(in accounts: [StoredChatGPTAccountSummary]) -> StoredChatGPTAccountSummary? {
+        guard accounts.count > 1 else { return nil }
+        let activeIndex = accounts.firstIndex(where: \.isActive) ?? 0
+        return accounts[(activeIndex + 1) % accounts.count]
+    }
+
+    private func isChatGPTAccountLimitError(_ error: Error) -> Bool {
+        let message = "\(error.localizedDescription) \(String(describing: error))".lowercased()
+        let markers = [
+            "insufficient_quota",
+            "quota",
+            "credit",
+            "credits",
+            "usage limit",
+            "limit reached",
+            "rate_limit",
+            "rate limit",
+            "too many requests",
+            "429",
+            "exhausted",
+            "billing"
+        ]
+        return markers.contains { message.contains($0) }
     }
 
     func ensureLocalAuthForThreadStart(serverId: String) async throws -> Bool {
@@ -627,7 +752,7 @@ final class AppModel {
         storedTokens: ChatGPTOAuthTokenBundle
     ) async -> Bool {
         let refreshedTokens = try? await ChatGPTOAuth.refreshStoredTokens(
-            previousAccountID: nil,
+            previousAccountID: storedTokens.accountID,
             storedTokens: storedTokens
         )
         if let refreshedTokens,
@@ -645,7 +770,7 @@ final class AppModel {
 
         try? await Task.sleep(for: .seconds(2))
         if let retriedRefresh = try? await ChatGPTOAuth.refreshStoredTokens(
-            previousAccountID: nil,
+            previousAccountID: storedTokens.accountID,
             storedTokens: storedTokens
         ) {
             return await loginStoredLocalChatGPTAuth(serverId: serverId, tokens: retriedRefresh)
@@ -895,6 +1020,8 @@ final class AppModel {
             SavedAppsStore.shared.reload()
         case .dynamicWidgetStreaming(let key, let itemId, _, let widget):
             applyStreamingWidget(key: key, itemId: itemId, widget: widget)
+        case .terminalSessionsChanged:
+            await refreshSnapshot()
         }
     }
 
@@ -1763,12 +1890,23 @@ final class AppModel {
 
     func availableModels(for serverId: String) -> [ModelInfo] {
         var models = snapshot?.serverSnapshot(for: serverId)?.availableModels ?? []
-        models.append(contentsOf: AIProviderStore.shared.localModelInfos())
         return models
     }
 
     func rateLimits(for serverId: String) -> RateLimitSnapshot? {
         snapshot?.serverSnapshot(for: serverId)?.rateLimits
+    }
+
+    /// Per-runtime rate limits. Returns the snapshot reported by the agent
+    /// runtime that owns the thread the user is currently looking at — e.g.
+    /// Claude Code threads return Claude usage, Codex threads return Codex
+    /// usage. Returns `nil` when the runtime hasn't reported any.
+    func rateLimits(forServer serverId: String, runtime: AgentRuntimeKind) -> RateLimitSnapshot? {
+        snapshot?
+            .serverSnapshot(for: serverId)?
+            .rateLimitsByRuntime
+            .first(where: { $0.runtimeKind == runtime })?
+            .rateLimits
     }
 
     func loadConversationMetadataIfNeeded(serverId: String) async {
@@ -1812,11 +1950,6 @@ final class AppModel {
     }
 
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
-        if let localModel = localModelForTurn(payload) {
-            try await startLocalModelTurn(key: key, payload: payload, model: localModel)
-            return
-        }
-
         await restoreStoredLocalAuthIfNeeded(serverId: key.serverId, reason: "startTurn")
 
         do {
@@ -1830,331 +1963,17 @@ final class AppModel {
         }
     }
 
-    func resolveLocalConversationApproval(_ decision: LocalModelToolApprovalDecision) {
-        guard let approval = localConversationPendingApproval else { return }
-        localConversationPendingApproval = nil
-        localConversationApprovalContinuations.removeValue(forKey: approval.id)?.resume(returning: decision)
-    }
-
-    func cancelLocalModelTurn(key: ThreadKey) {
-        localConversationTasks[key]?.cancel()
-        localConversationTasks.removeValue(forKey: key)
-        localConversationApprovalContinuations.values.forEach { $0.resume(returning: .denied) }
-        localConversationApprovalContinuations.removeAll()
-        localConversationPendingApproval = nil
-        localConversationPhase = .cancelled
-        Task { await LocalLlamaRuntime.shared.cancel() }
-        let modelName = threadSnapshot(for: key)?.model ?? threadSnapshot(for: key)?.info.model ?? "local"
-        setLocalThreadStatus(key: key, status: .idle, activeTurnId: nil, modelName: modelName)
-    }
-
-    func shouldUseLocalModelRoute(modelSelection: String?) -> Bool {
-        if AIProviderStore.shared.localModel(forSelection: modelSelection) != nil { return true }
-        guard modelSelection?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else {
-            return false
-        }
-        return AIProviderStore.shared.preferredLocalModelForMainConversation() != nil
-    }
-
-    private func localModelForTurn(_ payload: AppComposerPayload) -> LocalModelRecord? {
-        if let selected = AIProviderStore.shared.localModel(forSelection: payload.model) {
-            return selected
-        }
-        guard payload.model?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else {
-            return nil
-        }
-        return AIProviderStore.shared.preferredLocalModelForMainConversation()
-    }
-
-    private func startLocalModelTurn(key: ThreadKey, payload: AppComposerPayload, model: LocalModelRecord) async throws {
-        let text = payload.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        guard model.canRunLocally else {
-            throw NSError(
-                domain: "LocalModelConversation",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Validate \(model.fileName) before using it in the main conversation."]
-            )
-        }
-        if threadSnapshot(for: key) == nil {
-            await refreshThreadSnapshot(key: key)
-        }
-        guard threadSnapshot(for: key) != nil else {
-            throw NSError(
-                domain: "LocalModelConversation",
-                code: 2,
-                userInfo: [NSLocalizedDescriptionKey: "The conversation was not loaded yet. Reopen the thread and try the local model again."]
-            )
-        }
-        let contextPaths = try localContextPaths(from: payload.additionalInputs, key: key)
-
-        localConversationTasks[key]?.cancel()
-        let turnId = "local-\(UUID().uuidString)"
-        let assistantItemId = "\(turnId)-assistant"
-        let timestamp = Date().timeIntervalSince1970
-
-        setLocalThreadStatus(key: key, status: .active, activeTurnId: turnId, modelName: model.fileName)
-        _ = applyThreadItemUpsert(key: key, item: HydratedConversationItem(
-            id: "\(turnId)-user",
-            content: .user(HydratedUserMessageData(text: text, imageDataUris: [])),
-            sourceTurnId: turnId,
-            sourceTurnIndex: nil,
-            timestamp: timestamp,
-            isFromUserTurnBoundary: true
-        ))
-        _ = applyThreadItemUpsert(key: key, item: HydratedConversationItem(
-            id: assistantItemId,
-            content: .assistant(HydratedAssistantMessageData(
-                text: "",
-                agentNickname: "Local",
-                agentRole: "On-device GGUF",
-                phase: nil
-            )),
-            sourceTurnId: turnId,
-            sourceTurnIndex: nil,
-            timestamp: timestamp,
-            isFromUserTurnBoundary: false
-        ))
-
-        localConversationTasks[key] = Task { [weak self] in
-            await self?.runLocalModelTurn(key: key, turnId: turnId, assistantItemId: assistantItemId, prompt: text, model: model, contextPaths: contextPaths)
-        }
-    }
-
-    private func localContextPaths(from inputs: [AppUserInput], key: ThreadKey) throws -> [String] {
-        var paths: [String] = []
-        for input in inputs {
-            switch input {
-            case .mention(_, let path):
-                let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.hasPrefix("/") {
-                    paths.append(trimmed)
-                } else {
-                    throw LocalLlamaRuntimeError.unsupportedAttachment("Local GGUF turns only accept file mentions with absolute fakefs paths. Use hosted/OpenAI-compatible routing for plugin mentions.")
-                }
-            case .text:
-                break
-            case .image, .localImage, .skill:
-                throw LocalLlamaRuntimeError.unsupportedAttachment("On-device GGUF turns currently support text and absolute fakefs file mentions only.")
-            }
-        }
-        if paths.isEmpty {
-            let cwd = threadSnapshot(for: key)?.info.cwd?.trimmingCharacters(in: .whitespacesAndNewlines)
-            paths.append(cwd?.isEmpty == false ? cwd! : "/root")
-        }
-        return Array(NSOrderedSet(array: paths).compactMap { $0 as? String }.prefix(12))
-    }
-
-    private func runLocalModelTurn(
-        key: ThreadKey,
-        turnId: String,
-        assistantItemId: String,
-        prompt: String,
-        model: LocalModelRecord,
-        contextPaths: [String]
-    ) async {
-        var assistantText = ""
-        do {
-            localConversationPhase = .preparingContext
-            let contextBundle = await LocalModelContextBuilder.buildBundle(paths: contextPaths, maxFiles: 18, maxBytesPerFile: 10_000)
-            let settings = AIProviderStore.shared.effectiveRuntimeSettings(for: model)
-            let options = LocalLlamaGenerationOptions.from(
-                settings: settings,
-                capability: .current(),
-                turboQuantAvailable: AIProviderStore.shared.turboQuantAvailability.isAvailable
-            )
-            let request = LocalLlamaGenerationRequest(
-                model: model,
-                projector: nil,
-                messages: localConversationMessages(for: key, prompt: prompt, model: model, excludingTurnId: turnId, context: contextBundle.text),
-                maxTokens: settings.maxOutputTokens,
-                temperature: settings.temperature,
-                tools: settings.toolUseMode == .off ? [] : LocalModelToolLoop.defaultToolSpecs,
-                toolPolicy: .readOnly,
-                options: options,
-                approvalHandler: { [weak self] approval in
-                    await self?.requestLocalConversationApproval(approval) ?? .denied
-                }
-            )
-
-            for try await event in await LocalLlamaRuntime.shared.generateEvents(request) {
-                try Task.checkCancellation()
-                switch event {
-                case .started:
-                    localConversationPhase = .generating
-                case .token(let token):
-                    localConversationPhase = .generating
-                    assistantText += token
-                    updateLocalAssistantItem(key: key, itemId: assistantItemId, turnId: turnId, text: assistantText)
-                case .retry(let attempt, let reason):
-                    localConversationPhase = .retrying(reason)
-                    appendLocalToolNote(key: key, turnId: turnId, title: "retry \(attempt)", output: reason, success: false)
-                case .toolCall(let call):
-                    localConversationPhase = .runningTool(call.name)
-                    appendLocalToolNote(key: key, turnId: turnId, title: call.name, output: call.arguments.description, success: true)
-                case .approvalRequired(let approval):
-                    localConversationPhase = .waitingForApproval(approval.call.name)
-                case .toolResult(let result):
-                    localConversationPhase = result.success ? .generating : .recovering(result.output)
-                    appendLocalToolNote(key: key, turnId: turnId, title: result.toolName, output: result.output, success: result.success)
-                case .completed(let text):
-                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        assistantText = text
-                        updateLocalAssistantItem(key: key, itemId: assistantItemId, turnId: turnId, text: text)
-                    }
-                }
-            }
-            localConversationPhase = .completed
-            setLocalThreadStatus(key: key, status: .idle, activeTurnId: nil, modelName: model.fileName)
-        } catch is CancellationError {
-            localConversationPhase = .cancelled
-            setLocalThreadStatus(key: key, status: .idle, activeTurnId: nil, modelName: model.fileName)
-        } catch {
-            localConversationPhase = .failed(error.localizedDescription)
-            lastError = error.localizedDescription
-            updateLocalAssistantItem(key: key, itemId: assistantItemId, turnId: turnId, text: assistantText.isEmpty ? error.localizedDescription : assistantText)
-            appendLocalToolNote(key: key, turnId: turnId, title: "local model error", output: error.localizedDescription, success: false)
-            setLocalThreadStatus(key: key, status: .systemError, activeTurnId: nil, modelName: model.fileName)
-        }
-        localConversationTasks.removeValue(forKey: key)
-    }
-
-    private func localConversationMessages(
-        for key: ThreadKey,
-        prompt: String,
-        model: LocalModelRecord,
-        excludingTurnId: String,
-        context: String
-    ) -> [LocalLlamaMessage] {
-        var messages: [LocalLlamaMessage] = [
-            LocalLlamaMessage(
-                role: .system,
-                text: LocalModelPromptTemplate.systemPrompt(
-                    for: model,
-                    context: context,
-                    skills: InstalledSkillCatalog.localModelSkillContext()
-                )
-            )
-        ]
-        for item in (threadSnapshot(for: key)?.hydratedConversationItems ?? []).suffix(18) {
-            if item.sourceTurnId == excludingTurnId { continue }
-            switch item.content {
-            case .user(let data):
-                messages.append(LocalLlamaMessage(role: .user, text: String(data.text.prefix(6_000))))
-            case .assistant(let data):
-                messages.append(LocalLlamaMessage(role: .assistant, text: String(data.text.prefix(6_000))))
-            default:
-                break
-            }
-        }
-        messages.append(LocalLlamaMessage(role: .user, text: prompt))
-        return messages
-    }
-
-    private func requestLocalConversationApproval(_ request: LocalModelToolApprovalRequest) async -> LocalModelToolApprovalDecision {
-        localConversationPhase = .waitingForApproval(request.call.name)
-        let diff = await localDiffPreview(for: request)
-        return await withCheckedContinuation { continuation in
-            localConversationApprovalContinuations[request.id] = continuation
-            localConversationPendingApproval = LocalModelAgentApprovalState(request: request, diffPreview: diff)
-        }
-    }
-
-    private func localDiffPreview(for request: LocalModelToolApprovalRequest) async -> String? {
-        guard request.risk == .write,
-              let path = request.call.arguments["path"] else { return nil }
-        let oldText = (try? await IshFS.readTextFile(path: path, maxBytes: 24_000)) ?? ""
-        if request.call.name == "replace_text",
-           let oldFragment = request.call.arguments["old_text"],
-           let newFragment = request.call.arguments["new_text"] {
-            return LocalModelDiffPreview.make(old: oldText, new: oldText.replacingOccurrences(of: oldFragment, with: newFragment), path: path)
-        }
-        guard let newText = request.call.arguments["text"] else { return nil }
-        return LocalModelDiffPreview.make(old: oldText, new: newText, path: path)
-    }
-
-    private func updateLocalAssistantItem(key: ThreadKey, itemId: String, turnId: String, text: String) {
-        let item = HydratedConversationItem(
-            id: itemId,
-            content: .assistant(HydratedAssistantMessageData(
-                text: text,
-                agentNickname: "Local",
-                agentRole: "On-device GGUF",
-                phase: nil
-            )),
-            sourceTurnId: turnId,
-            sourceTurnIndex: nil,
-            timestamp: Date().timeIntervalSince1970,
-            isFromUserTurnBoundary: false
-        )
-        _ = applyThreadItemUpsert(key: key, item: item)
-    }
-
-    private func appendLocalToolNote(key: ThreadKey, turnId: String, title: String, output: String, success: Bool) {
-        let item = HydratedConversationItem(
-            id: "\(turnId)-tool-\(UUID().uuidString)",
-            content: .commandExecution(HydratedCommandExecutionData(
-                command: title,
-                cwd: "/root",
-                status: success ? .completed : .failed,
-                output: output,
-                exitCode: success ? 0 : 1,
-                durationMs: nil,
-                processId: nil,
-                actions: []
-            )),
-            sourceTurnId: turnId,
-            sourceTurnIndex: nil,
-            timestamp: Date().timeIntervalSince1970,
-            isFromUserTurnBoundary: false
-        )
-        _ = applyThreadItemUpsert(key: key, item: item)
-    }
-
-    private func setLocalThreadStatus(
-        key: ThreadKey,
-        status: ThreadSummaryStatus,
-        activeTurnId: String?,
-        modelName: String
-    ) {
-        guard var snapshot, let index = snapshot.threads.firstIndex(where: { $0.key == key }) else { return }
-        var thread = snapshot.threads[index]
-        thread.info.status = status
-        thread.info.model = modelName
-        thread.model = modelName
-        thread.activeTurnId = activeTurnId
-        snapshot.threads[index] = thread
-        self.snapshot = snapshot
-        cacheThreadSnapshot(thread)
-        lastError = nil
-    }
-
     func hydrateThreadPermissions(for key: ThreadKey, appState: AppState) async -> ThreadKey? {
-        let canResumeViaIpc = snapshot?.serverSnapshot(for: key.serverId)?.canResumeViaIpc == true
-
         if let existing = threadSnapshot(for: key) {
             appState.hydratePermissions(from: existing)
-            if !hasAuthoritativePermissions(existing), !canResumeViaIpc {
+            if !hasAuthoritativePermissions(existing) {
                 scheduleBackgroundThreadPermissionHydration(for: key, appState: appState)
             }
             return key
         }
 
         if snapshot?.sessionSummary(for: key) != nil {
-            if !canResumeViaIpc {
-                scheduleBackgroundThreadPermissionHydration(for: key, appState: appState)
-            } else {
-                LLog.info(
-                    "transport",
-                    "hydrateThreadPermissions skipping background thread/read for IPC-resumable thread",
-                    fields: ["serverId": key.serverId, "threadId": key.threadId]
-                )
-            }
-            return key
-        }
-
-        if canResumeViaIpc {
+            scheduleBackgroundThreadPermissionHydration(for: key, appState: appState)
             return key
         }
 
@@ -2186,14 +2005,6 @@ final class AppModel {
     ) {
         Task { [weak self] in
             guard let self else { return }
-            if self.snapshot?.serverSnapshot(for: key.serverId)?.canResumeViaIpc == true {
-                LLog.info(
-                    "transport",
-                    "scheduleBackgroundThreadPermissionHydration skipping thread/read for IPC-resumable thread",
-                    fields: ["serverId": key.serverId, "threadId": key.threadId]
-                )
-                return
-            }
             do {
                 let nextKey = try await client.readThread(
                     serverId: key.serverId,
@@ -2247,10 +2058,14 @@ final class AppModel {
                         serverId: currentKey.serverId,
                         params: AppListThreadsRequest(
                             cursor: nil,
-                            limit: nil,
+                            limit: 80,
+                            sortKey: .updatedAt,
+                            sortDirection: .desc,
                             archived: nil,
                             cwd: nil,
-                            searchTerm: nil
+                            searchTerm: nil,
+                            useStateDbOnly: false,
+                            runtimeKinds: nil
                         )
                     )
                 } catch {

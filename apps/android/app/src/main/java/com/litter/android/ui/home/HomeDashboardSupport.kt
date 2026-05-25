@@ -11,11 +11,35 @@ import com.litter.android.ui.LitterThemeManager
 import com.litter.android.ui.common.runtimeLabel
 import com.litter.android.ui.scaled
 import uniffi.codex_mobile_client.Account
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.AppServerHealth
 import uniffi.codex_mobile_client.AppServerSnapshot
 import uniffi.codex_mobile_client.AppSessionSummary
 import uniffi.codex_mobile_client.AppSnapshotRecord
+import uniffi.codex_mobile_client.ThreadKey
+
+/**
+ * Lightweight projection of a thread for use in lineage breadcrumbs and
+ * sibling pills. Mirrors iOS `ThreadLineageMember`.
+ */
+data class ThreadLineageMember(val key: ThreadKey, val title: String)
+
+/**
+ * Fork lineage info for a single thread. Computed once per snapshot pass by
+ * walking `forkedFromId` within a server. Singletons (`branchTotal == 1`)
+ * are filtered out before attaching to a session — the render layer treats
+ * `lineage == null` as "no fork relationships". Mirrors iOS `ThreadLineage`.
+ */
+data class ThreadLineage(
+    val rootKey: ThreadKey,
+    val parentKey: ThreadKey?,
+    val ancestors: List<ThreadLineageMember>,
+    val members: List<ThreadLineageMember>,
+    val branchIndex: Int,
+    val branchTotal: Int,
+) {
+    val hasMultipleBranches: Boolean get() = branchTotal > 1
+}
 
 /**
  * TextStyle matching the conversation body size at the current text scale,
@@ -66,6 +90,99 @@ object HomeDashboardSupport {
                 val hostKey = "${server.host.lowercase()}:${server.port}"
                 seen.add(hostKey)
             }
+    }
+
+    /**
+     * Resolve a session's display title using the same rules as the iOS
+     * `HomeDashboardSupport.sessionTitle` helper — non-empty trimmed title
+     * unless it is the placeholder "Untitled session", otherwise fall back
+     * to the cwd's last path component or "New thread".
+     */
+    fun sessionTitle(session: AppSessionSummary): String {
+        val trimmed = session.title.trim()
+        if (trimmed.isNotEmpty() && trimmed != "Untitled session") return trimmed
+        val cwd = session.cwd.trim().trimEnd('/')
+        if (cwd.isNotEmpty()) {
+            val tail = cwd.substringAfterLast('/')
+            return tail.ifEmpty { cwd }
+        }
+        return "New thread"
+    }
+
+    /**
+     * Walk `forkedFromId` over a snapshot of session summaries to derive a
+     * `ThreadLineage` for every thread. Lineage is scoped per server — a
+     * fork id always refers to a thread on the same server. Sub-agent
+     * parentage is intentionally NOT traversed: it is a separate
+     * relationship and surfaces through `agentNickname` / `agentRole`,
+     * not via fork affordances. Mirrors iOS `ThreadLineageMap.compute`.
+     */
+    fun computeLineageMap(sessions: List<AppSessionSummary>): Map<ThreadKey, ThreadLineage> {
+        if (sessions.isEmpty()) return emptyMap()
+
+        val byServerThreadId = HashMap<String, HashMap<String, AppSessionSummary>>()
+        for (session in sessions) {
+            byServerThreadId.getOrPut(session.key.serverId) { HashMap() }[session.key.threadId] = session
+        }
+
+        fun root(session: AppSessionSummary): ThreadKey {
+            var current = session
+            val visited = HashSet<String>()
+            visited.add(current.key.threadId)
+            while (true) {
+                val parentId = current.forkedFromId?.trim()
+                if (parentId.isNullOrEmpty() || !visited.add(parentId)) return current.key
+                val parent = byServerThreadId[current.key.serverId]?.get(parentId)
+                    ?: return ThreadKey(serverId = current.key.serverId, threadId = parentId)
+                current = parent
+            }
+        }
+
+        fun ancestorChain(session: AppSessionSummary): List<ThreadLineageMember> {
+            val chain = ArrayDeque<ThreadLineageMember>()
+            var current = session
+            val visited = HashSet<String>()
+            visited.add(current.key.threadId)
+            while (true) {
+                val parentId = current.forkedFromId?.trim()
+                if (parentId.isNullOrEmpty() || !visited.add(parentId)) break
+                val parent = byServerThreadId[current.key.serverId]?.get(parentId) ?: break
+                chain.addFirst(ThreadLineageMember(parent.key, sessionTitle(parent)))
+                current = parent
+            }
+            return chain.toList()
+        }
+
+        val rootByKey = HashMap<ThreadKey, ThreadKey>()
+        for (session in sessions) {
+            rootByKey[session.key] = root(session)
+        }
+
+        val groupsByRoot = HashMap<ThreadKey, MutableList<AppSessionSummary>>()
+        for (session in sessions) {
+            val r = rootByKey[session.key] ?: session.key
+            groupsByRoot.getOrPut(r) { mutableListOf() }.add(session)
+        }
+
+        val result = HashMap<ThreadKey, ThreadLineage>()
+        for ((rootKey, group) in groupsByRoot) {
+            val sorted = group.sortedByDescending { it.updatedAt ?: 0L }
+            val members = sorted.map { ThreadLineageMember(it.key, sessionTitle(it)) }
+            for ((idx, session) in sorted.withIndex()) {
+                val parentKey = session.forkedFromId?.trim()?.takeIf { it.isNotEmpty() }
+                    ?.let { ThreadKey(serverId = session.key.serverId, threadId = it) }
+                val ancestors = ancestorChain(session)
+                result[session.key] = ThreadLineage(
+                    rootKey = rootKey,
+                    parentKey = parentKey,
+                    ancestors = ancestors,
+                    members = members,
+                    branchIndex = idx + 1,
+                    branchTotal = members.size,
+                )
+            }
+        }
+        return result
     }
 
     /**

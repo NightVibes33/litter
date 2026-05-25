@@ -1,16 +1,139 @@
+diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
+index 39e6e85..b3ee7c9 100644
+--- a/codex-rs/core/src/client.rs
++++ b/codex-rs/core/src/client.rs
+@@ -507,2 +507,3 @@ impl ModelClient {
+         session_config: ApiRealtimeSessionConfig,
++        api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
+         extra_headers: ApiHeaderMap,
+@@ -517,7 +518,36 @@ impl ModelClient {
+         let transport = ReqwestTransport::new(build_reqwest_client());
+-        let response =
+-            ApiRealtimeCallClient::new(transport, client_setup.api_provider, client_setup.api_auth)
+-                .create_with_session_and_headers(sdp, session_config, extra_headers)
+-                .await
+-                .map_err(map_api_error)?;
++        let response = match ApiRealtimeCallClient::new(
++            transport,
++            client_setup.api_provider,
++            client_setup.api_auth,
++        )
++        .create_with_session_and_headers(
++            sdp.clone(),
++            session_config.clone(),
++            extra_headers.clone(),
++        )
++        .await
++        {
++            Ok(response) => response,
++            Err(err) => {
++                let mapped_error = map_api_error(err);
++                let Some((api_provider, api_auth)) = api_fallback else {
++                    return Err(mapped_error);
++                };
++                warn!(
++                    error = %mapped_error,
++                    "realtime WebRTC call creation failed with current auth; retrying with API key"
++                );
++                let mut fallback_sideband_headers = extra_headers.clone();
++                fallback_sideband_headers
++                    .extend(sideband_websocket_auth_headers(api_auth.as_ref()));
++                let transport = ReqwestTransport::new(build_reqwest_client());
++                let response = ApiRealtimeCallClient::new(transport, api_provider, api_auth)
++                    .create_with_session_and_headers(sdp, session_config, extra_headers)
++                    .await
++                    .map_err(map_api_error)?;
++                sideband_headers = fallback_sideband_headers;
++                response
++            }
++        };
+         Ok(RealtimeWebrtcCallStart {
 diff --git a/codex-rs/core/src/realtime_conversation.rs b/codex-rs/core/src/realtime_conversation.rs
-index 249b3ae15f..ac6e5884f7 100644
+index 249b3ae..fa9f5d9 100644
 --- a/codex-rs/core/src/realtime_conversation.rs
 +++ b/codex-rs/core/src/realtime_conversation.rs
-@@ -644,9 +644,10 @@ async fn prepare_realtime_start(
-             )?
+@@ -21,2 +21,3 @@ use codex_api::RealtimeWebsocketEvents;
+ use codex_api::RealtimeWebsocketWriter;
++use codex_api::SharedAuthProvider;
+ use codex_api::map_api_error;
+@@ -28,2 +29,3 @@ use codex_login::default_client::default_headers;
+ use codex_login::read_openai_api_key_from_env;
++use codex_model_provider::BearerAuthProvider;
+ use codex_model_provider_info::ModelProviderInfo;
+@@ -228,2 +230,3 @@ struct RealtimeStart {
+     api_provider: ApiProvider,
++    webrtc_api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
+     extra_headers: Option<HeaderMap>,
+@@ -280,2 +283,3 @@ impl RealtimeConversationManager {
+             api_provider,
++            webrtc_api_fallback,
+             extra_headers,
+@@ -314,2 +318,3 @@ impl RealtimeConversationManager {
+                     session_config.clone(),
++                    webrtc_api_fallback,
+                     extra_headers.unwrap_or_default(),
+@@ -601,2 +606,3 @@ struct PreparedRealtimeConversationStart {
+     api_provider: ApiProvider,
++    webrtc_api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
+     extra_headers: Option<HeaderMap>,
+@@ -624,2 +630,3 @@ async fn prepare_realtime_start(
+     let mut api_provider = provider.to_api_provider(Some(AuthMode::ApiKey))?;
++    let call_api_provider = api_provider.clone();
+     if let Some(realtime_ws_base_url) = &config.experimental_realtime_ws_base_url {
+@@ -637,15 +644,35 @@ async fn prepare_realtime_start(
+     let requested_realtime_session_id = session_config.session_id.clone();
+-    let extra_headers = match transport {
++    let (extra_headers, webrtc_api_fallback) = match transport {
+         ConversationStartTransport::Websocket => {
+             let realtime_api_key = realtime_api_key(auth.as_ref(), &provider)?;
+-            realtime_request_headers(
+-                requested_realtime_session_id.as_deref(),
+-                Some(realtime_api_key.as_str()),
+-            )?
++            (
++                realtime_request_headers(
++                    requested_realtime_session_id.as_deref(),
++                    Some(realtime_api_key.as_str()),
++                )?,
++                None,
++            )
          }
          ConversationStartTransport::Webrtc { .. } => {
-+            let realtime_api_key = realtime_api_key(auth.as_ref(), &provider).ok();
-             realtime_request_headers(
-                 requested_realtime_session_id.as_deref(),
+-            realtime_request_headers(
+-                requested_realtime_session_id.as_deref(),
 -                /*api_key*/ None,
-+                realtime_api_key.as_deref(),
-             )?
+-            )?
++            let realtime_api_key = realtime_api_key(auth.as_ref(), &provider).ok();
++            let current_auth_uses_codex_backend = matches!(
++                auth.as_ref().map(CodexAuth::auth_mode),
++                Some(AuthMode::Chatgpt | AuthMode::ChatgptAuthTokens | AuthMode::AgentIdentity)
++            );
++            let webrtc_api_fallback = if current_auth_uses_codex_backend {
++                realtime_api_key.as_ref().map(|api_key| {
++                    let api_auth: SharedAuthProvider =
++                        Arc::new(BearerAuthProvider::new(api_key.clone()));
++                    (call_api_provider.clone(), api_auth)
++                })
++            } else {
++                None
++            };
++            (
++                realtime_request_headers(
++                    requested_realtime_session_id.as_deref(),
++                    realtime_api_key.as_deref(),
++                )?,
++                webrtc_api_fallback,
++            )
          }
-     };
+@@ -654,2 +681,3 @@ async fn prepare_realtime_start(
+         api_provider,
++        webrtc_api_fallback,
+         extra_headers,
+@@ -775,2 +803,3 @@ async fn handle_start_inner(
+         api_provider,
++        webrtc_api_fallback,
+         extra_headers,
+@@ -788,2 +817,3 @@ async fn handle_start_inner(
+         api_provider,
++        webrtc_api_fallback,
+         extra_headers,

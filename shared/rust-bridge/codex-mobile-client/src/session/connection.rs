@@ -18,28 +18,85 @@ use codex_app_server_protocol::{
     ClientNotification, ClientRequest, JSONRPCErrorError, RequestId, Result as JsonRpcResult,
     ServerNotification, ServerRequest,
 };
-use codex_ipc::{IpcClient, ReconnectingIpcClient, TypedBroadcast};
 use serde_json::Value as JsonValue;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 use tracing::{debug, info, warn};
 
 use crate::logging::{LogLevelName, log_rust};
-use crate::session::remote_transport::{Reconnected, RemoteTransport};
-use crate::ssh::{SshBootstrapResult, SshClient};
+use crate::session::remote_transport::{Reconnected, RemoteTransport, SessionKeepalive};
+use crate::ssh::{RemoteShell, SshBootstrapResult, SshBootstrapTransport, SshClient};
 use crate::transport::{RpcError, TransportError};
 use crate::types::AgentRuntimeKind;
 
 const REMOTE_RECONNECT_MAX_ATTEMPTS: u32 = 5;
 const REMOTE_RECONNECT_DELAY: Duration = Duration::from_secs(1);
+const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
+const APP_SERVER_PROXY_WEBSOCKET_URL: &str = "ws://codex-app-server-proxy.localhost/rpc";
 
 #[derive(Clone)]
 pub(crate) struct SshReconnectTransport {
     pub(crate) ssh_client: Arc<SshClient>,
+    pub(crate) mode: SshReconnectMode,
+    pub(crate) codex_path: String,
+    pub(crate) remote_shell: RemoteShell,
+    pub(crate) working_dir: Option<String>,
+    pub(crate) ssh_pid: Option<Arc<StdMutex<Option<u32>>>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct SlingshotReconnectTransport {
+    pub(crate) api: codex_slingshot::SlingshotApi,
+    pub(crate) environment_id: String,
+}
+
+#[derive(Clone)]
+pub(crate) enum SshReconnectMode {
+    AppServerProxy {
+        codex_path: String,
+        remote_shell: RemoteShell,
+    },
+    WebSocketTunnel {
+        local_port: u16,
+        remote_port: Arc<StdMutex<u16>>,
+        prefer_ipv6: bool,
+    },
+}
+
+impl SshReconnectTransport {
+    pub(crate) fn from_bootstrap(
+        ssh_client: Arc<SshClient>,
+        bootstrap: &SshBootstrapResult,
+        working_dir: Option<String>,
+        prefer_ipv6: bool,
+        ssh_pid: Arc<StdMutex<Option<u32>>>,
+    ) -> Self {
+        let mode = match bootstrap.transport {
+            SshBootstrapTransport::AppServerProxy => SshReconnectMode::AppServerProxy {
+                codex_path: bootstrap.codex_path.clone(),
+                remote_shell: bootstrap.shell,
+            },
+            SshBootstrapTransport::WebSocketTunnel => SshReconnectMode::WebSocketTunnel {
+                local_port: bootstrap.tunnel_local_port,
+                remote_port: Arc::new(StdMutex::new(bootstrap.server_port)),
+                prefer_ipv6,
+            },
+        };
+        Self {
+            ssh_client,
+            mode,
+            codex_path: bootstrap.codex_path.clone(),
+            remote_shell: bootstrap.shell,
+            working_dir,
+            ssh_pid: Some(ssh_pid),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct WebSocketReconnectState {
     pub(crate) local_port: u16,
     pub(crate) remote_port: Arc<StdMutex<u16>>,
     pub(crate) prefer_ipv6: bool,
-    pub(crate) working_dir: Option<String>,
-    pub(crate) ssh_pid: Option<Arc<StdMutex<Option<u32>>>>,
 }
 
 fn append_android_debug_log(line: &str) {
@@ -50,6 +107,13 @@ fn append_android_debug_log(line: &str) {
         line.to_string(),
         None,
     );
+}
+
+fn openai_base_url_from_env() -> Option<String> {
+    std::env::var(OPENAI_BASE_URL_ENV_KEY)
+        .ok()
+        .map(|value| value.trim().trim_end_matches('/').to_string())
+        .filter(|value| !value.is_empty())
 }
 
 // ---------------------------------------------------------------------------
@@ -328,24 +392,21 @@ pub struct ServerConfig {
 
 /// Session-wide bookkeeping passed to `connect_remote_multiplexed`.
 ///
-/// These fields back side-channels (IPC streams, SSH client retained for log
-/// commands and disconnect cleanup) that live on `ServerSession` for the
+/// These fields back side-channels (SSH client retained for log commands and
+/// disconnect cleanup) that live on `ServerSession` for the
 /// lifetime of the session. They are independent of any single runtime's RPC
 /// transport — that's described per-runtime by `RuntimeRemoteSessionResource`.
 #[derive(Default)]
 pub struct RemoteSessionExtras {
     pub ssh_client: Option<Arc<SshClient>>,
     pub ssh_pid: Option<Arc<StdMutex<Option<u32>>>>,
-    pub ipc_stream_client: Option<Arc<ReconnectingIpcClient>>,
-    pub ipc_ssh_client: Option<Arc<SshClient>>,
-    pub ipc_stream_bridge_pid: Option<Arc<StdMutex<Option<u32>>>>,
 }
 
 pub struct RuntimeRemoteSessionResource {
     pub runtime_kind: AgentRuntimeKind,
     pub client: AppServerClient,
     pub(crate) transport: Option<Arc<dyn RemoteTransport>>,
-    pub(crate) keepalive: Option<Arc<dyn Send + Sync>>,
+    pub(crate) keepalive: Option<Arc<dyn SessionKeepalive>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -442,12 +503,10 @@ pub struct ServerSession {
     health_rx: watch::Receiver<ConnectionHealth>,
     command_tx: mpsc::Sender<SessionCommand>,
     runtime_command_txs: std::collections::HashMap<AgentRuntimeKind, mpsc::Sender<SessionCommand>>,
+    runtime_transports: Vec<Arc<dyn RemoteTransport>>,
     event_tx: broadcast::Sender<ServerEvent>,
-    ipc_stream_client: Option<Arc<ReconnectingIpcClient>>,
     ssh_client: Option<Arc<SshClient>>,
     ssh_pid: Option<Arc<StdMutex<Option<u32>>>>,
-    ipc_ssh_client: Option<Arc<SshClient>>,
-    ipc_stream_bridge_pid: Option<Arc<StdMutex<Option<u32>>>>,
     worker_handle: tokio::task::JoinHandle<()>,
 }
 
@@ -558,12 +617,12 @@ impl ServerSession {
             }
         }
 
-        let cli_overrides = vec![
+        let mut cli_overrides = vec![
             ("features.goals".to_string(), true.into()),
             ("features.realtime_conversation".to_string(), true.into()),
             (
                 "experimental_realtime_ws_model".to_string(),
-                "gpt-realtime-1.5".to_string().into(),
+                "gpt-realtime-2".to_string().into(),
             ),
             ("realtime.version".to_string(), "v2".to_string().into()),
             (
@@ -571,6 +630,9 @@ impl ServerSession {
                 "conversational".to_string().into(),
             ),
         ];
+        if let Some(base_url) = openai_base_url_from_env() {
+            cli_overrides.push(("openai_base_url".to_string(), base_url.into()));
+        }
 
         let mut base_builder = ConfigBuilder::default().cli_overrides(cli_overrides.clone());
         if let Some(ref codex_home) = in_process.codex_home {
@@ -735,12 +797,10 @@ impl ServerSession {
             health_rx,
             command_tx,
             runtime_command_txs: std::collections::HashMap::new(),
+            runtime_transports: Vec::new(),
             event_tx,
-            ipc_stream_client: None,
             ssh_client: None,
             ssh_pid: None,
-            ipc_ssh_client: None,
-            ipc_stream_bridge_pid: None,
             worker_handle,
         })
     }
@@ -753,7 +813,7 @@ impl ServerSession {
         let (_, args) = remote_connect_args(&config);
         let client = connect_remote_client(&args).await?;
         let resource = RuntimeRemoteSessionResource {
-            runtime_kind: AgentRuntimeKind::Codex,
+            runtime_kind: "codex".to_string(),
             client,
             transport: None,
             keepalive: None,
@@ -769,11 +829,11 @@ impl ServerSession {
     ) -> Result<Self, TransportError> {
         let requested_runtime_kinds = resources
             .iter()
-            .map(|resource| resource.runtime_kind)
+            .map(|resource| resource.runtime_kind.clone())
             .collect::<Vec<_>>();
         let first_runtime_kind = resources
             .first()
-            .map(|resource| resource.runtime_kind)
+            .map(|resource| resource.runtime_kind.clone())
             .ok_or_else(|| {
                 TransportError::ConnectionFailed("no runtime streams available".to_string())
             })?;
@@ -784,6 +844,7 @@ impl ServerSession {
         let (url, args) = remote_connect_args(&config);
         let (event_tx, _) = broadcast::channel::<ServerEvent>(256);
         let mut runtime_command_txs = std::collections::HashMap::new();
+        let mut runtime_transports: Vec<Arc<dyn RemoteTransport>> = Vec::new();
         let mut worker_handles = Vec::new();
         let mut primary_tx = None;
 
@@ -796,9 +857,13 @@ impl ServerSession {
             if primary_tx.is_none() || resource.runtime_kind == first_runtime_kind {
                 primary_tx = Some(command_tx.clone());
             }
+            let runtime_kind = resource.runtime_kind.clone();
             runtime_command_txs.insert(resource.runtime_kind, command_tx);
+            if let Some(transport) = resource.transport.as_ref() {
+                runtime_transports.push(Arc::clone(transport));
+            }
             worker_handles.push(spawn_remote_runtime_worker(
-                resource.runtime_kind,
+                runtime_kind,
                 resource.client,
                 resource.keepalive,
                 command_rx,
@@ -831,14 +896,37 @@ impl ServerSession {
             health_rx,
             command_tx,
             runtime_command_txs,
+            runtime_transports,
             event_tx,
-            ipc_stream_client: extras.ipc_stream_client,
             ssh_client: extras.ssh_client,
             ssh_pid: extras.ssh_pid,
-            ipc_ssh_client: extras.ipc_ssh_client,
-            ipc_stream_bridge_pid: extras.ipc_stream_bridge_pid,
             worker_handle,
         })
+    }
+
+    /// Hint each remote-runtime transport that the host network may have
+    /// changed. iroh-backed transports (alleycat) use this to call
+    /// `Endpoint::network_change()` so QUIC re-evaluates paths instead of
+    /// waiting for the idle timeout. TCP-based transports default to a
+    /// no-op since the OS already surfaces those changes.
+    pub async fn notify_network_change(&self) {
+        for transport in &self.runtime_transports {
+            transport.notify_network_change().await;
+        }
+    }
+
+    /// Force every remote-runtime transport to abandon its current
+    /// underlying connection. Use only when the application has
+    /// out-of-band knowledge the connection is dead (e.g. resumed from a
+    /// long iOS suspension where iroh's `network_change` hint can't
+    /// substitute for closing the connection — see
+    /// `RemoteTransport::close_current_connection`). The worker observes
+    /// the close via `client.next_event()` and rebuilds via the existing
+    /// reconnect path.
+    pub async fn close_current_connections(&self) {
+        for transport in &self.runtime_transports {
+            transport.close_current_connection().await;
+        }
     }
 
     /// Get the server configuration.
@@ -857,16 +945,16 @@ impl ServerSession {
 
     pub fn runtime_kinds(&self) -> Vec<AgentRuntimeKind> {
         if self.runtime_command_txs.is_empty() {
-            return vec![AgentRuntimeKind::Codex];
+            return vec!["codex".to_string()];
         }
-        let mut kinds = self.runtime_command_txs.keys().copied().collect::<Vec<_>>();
+        let mut kinds = self.runtime_command_txs.keys().cloned().collect::<Vec<_>>();
         kinds.sort();
         kinds
     }
 
     /// Send a typed `ClientRequest` and await the raw JSON response.
     pub async fn request_client(&self, request: ClientRequest) -> Result<JsonValue, RpcError> {
-        self.request_client_for_runtime(AgentRuntimeKind::Codex, request)
+        self.request_client_for_runtime("codex".to_string(), request)
             .await
     }
 
@@ -967,39 +1055,9 @@ impl ServerSession {
         self.event_tx.subscribe()
     }
 
-    pub fn has_ipc(&self) -> bool {
-        self.ipc_stream_client
-            .as_ref()
-            .is_some_and(|client| client.is_connected())
-    }
-
-    pub fn ipc_stream_client(&self) -> Option<IpcClient> {
-        self.ipc_stream_client
-            .as_ref()
-            .and_then(|client| client.client())
-    }
-
-    pub fn ipc_broadcasts(&self) -> Option<broadcast::Receiver<TypedBroadcast>> {
-        self.ipc_stream_client
-            .as_ref()
-            .map(|client| client.subscribe_broadcasts())
-    }
-
-    pub fn ipc_connection_state(&self) -> Option<watch::Receiver<bool>> {
-        self.ipc_stream_client
-            .as_ref()
-            .map(|client| client.subscribe_connection_state())
-    }
-
-    pub fn invalidate_ipc(&self) {
-        if let Some(ipc_client) = self.ipc_stream_client.as_ref() {
-            ipc_client.invalidate();
-        }
-    }
-
     /// Respond to a server-initiated request.
     pub async fn respond(&self, id: JsonValue, result: JsonValue) -> Result<(), RpcError> {
-        self.respond_for_runtime(AgentRuntimeKind::Codex, id, result)
+        self.respond_for_runtime("codex".to_string(), id, result)
             .await
     }
 
@@ -1064,25 +1122,7 @@ impl ServerSession {
         for tx in self.runtime_command_txs.values() {
             let _ = tx.send(SessionCommand::Shutdown).await;
         }
-        if let Some(ipc_client) = self.ipc_stream_client.as_ref() {
-            ipc_client.shutdown().await;
-        }
-        if let Some(ipc_ssh_client) = self.ipc_ssh_client.as_ref() {
-            ipc_ssh_client.disconnect().await;
-        }
         if let Some(ssh_client) = self.ssh_client.as_ref() {
-            if let Some(ipc_bridge_pid) = self.ipc_stream_bridge_pid.as_ref() {
-                let pid = match ipc_bridge_pid.lock() {
-                    Ok(mut guard) => guard.take(),
-                    Err(error) => {
-                        warn!("ServerSession: recovering poisoned ipc_stream_bridge_pid lock");
-                        error.into_inner().take()
-                    }
-                };
-                if let Some(pid) = pid {
-                    let _ = ssh_client.exec(&format!("kill {pid} 2>/dev/null")).await;
-                }
-            }
             if let Some(pid) = self.ssh_pid.as_ref() {
                 let pid = match pid.lock() {
                     Ok(mut guard) => guard.take(),
@@ -1161,9 +1201,43 @@ pub(crate) async fn connect_remote_client(
     ))
 }
 
+pub(crate) async fn connect_remote_client_over_app_server_proxy(
+    ssh_client: &SshClient,
+    args: &RemoteAppServerConnectArgs,
+    codex_path: &str,
+    remote_shell: RemoteShell,
+) -> Result<AppServerClient, TransportError> {
+    let label = "app-server-proxy:default".to_string();
+    let mut proxy_args = args.clone();
+    // The SSH exec proxy supplies the connected byte stream. The WebSocket
+    // client still needs a syntactically valid URI for the HTTP Upgrade
+    // request, so use a synthetic loopback-ish URL and keep the real transport
+    // in the label passed to `connect_websocket_stream`.
+    proxy_args.websocket_url = APP_SERVER_PROXY_WEBSOCKET_URL.to_string();
+    let stream = ssh_client
+        .open_app_server_proxy_stream(codex_path, remote_shell, None)
+        .await
+        .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
+    Ok(AppServerClient::Remote(
+        RemoteAppServerClient::connect_websocket_stream(stream, proxy_args, label)
+            .await
+            .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?,
+    ))
+}
+
+pub(crate) async fn connect_remote_client_over_slingshot(
+    api: codex_slingshot::SlingshotApi,
+    environment_id: String,
+    args: &RemoteAppServerConnectArgs,
+) -> Result<AppServerClient, TransportError> {
+    codex_slingshot::connect_app_server_client(api, environment_id, args.clone())
+        .await
+        .map_err(|e| TransportError::ConnectionFailed(e.to_string()))
+}
+
 async fn reconnect_remote_client(
     client: &mut AppServerClient,
-    keepalive: &mut Option<Arc<dyn Send + Sync>>,
+    keepalive: &mut Option<Arc<dyn SessionKeepalive>>,
     args: &RemoteAppServerConnectArgs,
     websocket_url: &str,
     health_tx: &watch::Sender<ConnectionHealth>,
@@ -1228,16 +1302,16 @@ async fn reconnect_remote_client(
     false
 }
 
-fn ssh_reconnect_remote_host(transport: &SshReconnectTransport) -> &'static str {
-    if transport.prefer_ipv6 {
+fn ssh_reconnect_remote_host(state: &WebSocketReconnectState) -> &'static str {
+    if state.prefer_ipv6 {
         "::1"
     } else {
         "127.0.0.1"
     }
 }
 
-fn ssh_reconnect_remote_port(transport: &SshReconnectTransport) -> u16 {
-    match transport.remote_port.lock() {
+fn ssh_reconnect_remote_port(state: &WebSocketReconnectState) -> u16 {
+    match state.remote_port.lock() {
         Ok(guard) => *guard,
         Err(error) => {
             warn!("remote reconnect: recovering poisoned remote_port lock");
@@ -1246,8 +1320,8 @@ fn ssh_reconnect_remote_port(transport: &SshReconnectTransport) -> u16 {
     }
 }
 
-fn update_ssh_reconnect_remote_port(transport: &SshReconnectTransport, port: u16) {
-    match transport.remote_port.lock() {
+fn update_ssh_reconnect_remote_port(state: &WebSocketReconnectState, port: u16) {
+    match state.remote_port.lock() {
         Ok(mut guard) => *guard = port,
         Err(error) => {
             warn!("remote reconnect: recovering poisoned remote_port lock");
@@ -1269,13 +1343,19 @@ fn update_ssh_reconnect_pid(transport: &SshReconnectTransport, pid: Option<u32>)
     }
 }
 
-async fn rebootstrap_remote_client_over_ssh(
+async fn rebootstrap_websocket_client_over_ssh(
     transport: &SshReconnectTransport,
+    state: &WebSocketReconnectState,
     websocket_url: &str,
 ) -> bool {
     let bootstrap = match transport
         .ssh_client
-        .bootstrap_codex_server(transport.working_dir.as_deref(), transport.prefer_ipv6)
+        .bootstrap_codex_websocket_server_with_binary_and_shell(
+            &crate::ssh::RemoteCodexBinary::Codex(transport.codex_path.clone()),
+            transport.working_dir.as_deref(),
+            state.prefer_ipv6,
+            transport.remote_shell,
+        )
         .await
     {
         Ok(bootstrap) => bootstrap,
@@ -1288,17 +1368,18 @@ async fn rebootstrap_remote_client_over_ssh(
         }
     };
 
-    finalize_ssh_rebootstrap(transport, bootstrap, websocket_url).await
+    finalize_websocket_rebootstrap(transport, state, bootstrap, websocket_url).await
 }
 
-async fn finalize_ssh_rebootstrap(
+async fn finalize_websocket_rebootstrap(
     transport: &SshReconnectTransport,
+    state: &WebSocketReconnectState,
     bootstrap: SshBootstrapResult,
     websocket_url: &str,
 ) -> bool {
-    let remote_host = ssh_reconnect_remote_host(transport);
-    let existing_local_port = transport.local_port;
-    let previous_remote_port = ssh_reconnect_remote_port(transport);
+    let remote_host = ssh_reconnect_remote_host(state);
+    let existing_local_port = state.local_port;
+    let previous_remote_port = ssh_reconnect_remote_port(state);
 
     if bootstrap.tunnel_local_port != existing_local_port {
         let _ = transport
@@ -1325,8 +1406,41 @@ async fn finalize_ssh_rebootstrap(
         return false;
     }
 
-    update_ssh_reconnect_remote_port(transport, bootstrap.server_port);
+    update_ssh_reconnect_remote_port(state, bootstrap.server_port);
     update_ssh_reconnect_pid(transport, bootstrap.pid);
+    true
+}
+
+async fn rebootstrap_app_server_proxy_over_ssh(
+    transport: &SshReconnectTransport,
+    codex_path: &str,
+    remote_shell: RemoteShell,
+    websocket_url: &str,
+) -> bool {
+    let bootstrap = match transport
+        .ssh_client
+        .bootstrap_codex_app_server_proxy_with_binary_and_shell(
+            &crate::ssh::RemoteCodexBinary::Codex(codex_path.to_string()),
+            transport.working_dir.as_deref(),
+            remote_shell,
+        )
+        .await
+    {
+        Ok(bootstrap) => bootstrap,
+        Err(error) => {
+            warn!(
+                "remote reconnect app-server proxy bootstrap failed: {} error={}",
+                websocket_url, error
+            );
+            return false;
+        }
+    };
+
+    update_ssh_reconnect_pid(transport, bootstrap.pid);
+    info!(
+        "remote reconnect app-server proxy bootstrap completed: {} pid={:?}",
+        websocket_url, bootstrap.pid
+    );
     true
 }
 
@@ -1337,57 +1451,145 @@ impl RemoteTransport for SshReconnectTransport {
         args: &RemoteAppServerConnectArgs,
         websocket_url: &str,
     ) -> Result<Reconnected, TransportError> {
-        let remote_host = ssh_reconnect_remote_host(self);
-        let remote_port = ssh_reconnect_remote_port(self);
-        if let Err(error) = self
-            .ssh_client
-            .ensure_forward_port_to(self.local_port, remote_host, remote_port)
+        match &self.mode {
+            SshReconnectMode::AppServerProxy {
+                codex_path,
+                remote_shell,
+            } => match connect_remote_client_over_app_server_proxy(
+                &self.ssh_client,
+                args,
+                codex_path,
+                *remote_shell,
+            )
             .await
-        {
-            warn!(
-                "remote reconnect forward restore failed: {} local_port={} remote={}:{} error={}",
-                websocket_url, self.local_port, remote_host, remote_port, error
-            );
-        }
-
-        match connect_remote_client(args).await {
-            Ok(client) => Ok(Reconnected {
-                client,
-                keepalive: None,
-            }),
-            Err(error) => {
-                if rebootstrap_remote_client_over_ssh(self, websocket_url).await {
-                    match connect_remote_client(args).await {
-                        Ok(client) => {
-                            info!(
-                                "remote reconnect succeeded after ssh rebootstrap: {}",
-                                websocket_url
-                            );
-                            Ok(Reconnected {
-                                client,
-                                keepalive: None,
-                            })
+            {
+                Ok(client) => Ok(Reconnected {
+                    client,
+                    keepalive: None,
+                }),
+                Err(error) => {
+                    if rebootstrap_app_server_proxy_over_ssh(
+                        self,
+                        codex_path,
+                        *remote_shell,
+                        websocket_url,
+                    )
+                    .await
+                    {
+                        match connect_remote_client_over_app_server_proxy(
+                            &self.ssh_client,
+                            args,
+                            codex_path,
+                            *remote_shell,
+                        )
+                        .await
+                        {
+                            Ok(client) => {
+                                info!(
+                                    "remote reconnect succeeded after app-server proxy bootstrap: {}",
+                                    websocket_url
+                                );
+                                Ok(Reconnected {
+                                    client,
+                                    keepalive: None,
+                                })
+                            }
+                            Err(retry_error) => {
+                                warn!(
+                                    "remote reconnect after app-server proxy bootstrap still failed: {} - {}",
+                                    websocket_url, retry_error
+                                );
+                                Err(retry_error)
+                            }
                         }
-                        Err(retry_error) => {
-                            warn!(
-                                "remote reconnect after ssh rebootstrap still failed: {} - {}",
-                                websocket_url, retry_error
-                            );
-                            Err(retry_error)
+                    } else {
+                        Err(error)
+                    }
+                }
+            },
+            SshReconnectMode::WebSocketTunnel { .. } => {
+                let state = match &self.mode {
+                    SshReconnectMode::WebSocketTunnel {
+                        local_port,
+                        remote_port,
+                        prefer_ipv6,
+                    } => WebSocketReconnectState {
+                        local_port: *local_port,
+                        remote_port: Arc::clone(remote_port),
+                        prefer_ipv6: *prefer_ipv6,
+                    },
+                    SshReconnectMode::AppServerProxy { .. } => unreachable!(),
+                };
+                let remote_host = ssh_reconnect_remote_host(&state);
+                let remote_port = ssh_reconnect_remote_port(&state);
+                if let Err(error) = self
+                    .ssh_client
+                    .ensure_forward_port_to(state.local_port, remote_host, remote_port)
+                    .await
+                {
+                    warn!(
+                        "remote reconnect forward restore failed: {} local_port={} remote={}:{} error={}",
+                        websocket_url, state.local_port, remote_host, remote_port, error
+                    );
+                }
+
+                match connect_remote_client(args).await {
+                    Ok(client) => Ok(Reconnected {
+                        client,
+                        keepalive: None,
+                    }),
+                    Err(error) => {
+                        if rebootstrap_websocket_client_over_ssh(self, &state, websocket_url).await
+                        {
+                            match connect_remote_client(args).await {
+                                Ok(client) => {
+                                    info!(
+                                        "remote reconnect succeeded after ssh rebootstrap: {}",
+                                        websocket_url
+                                    );
+                                    Ok(Reconnected {
+                                        client,
+                                        keepalive: None,
+                                    })
+                                }
+                                Err(retry_error) => {
+                                    warn!(
+                                        "remote reconnect after ssh rebootstrap still failed: {} - {}",
+                                        websocket_url, retry_error
+                                    );
+                                    Err(retry_error)
+                                }
+                            }
+                        } else {
+                            Err(error)
                         }
                     }
-                } else {
-                    Err(error)
                 }
             }
         }
     }
 }
 
+#[async_trait::async_trait]
+impl RemoteTransport for SlingshotReconnectTransport {
+    async fn reconnect(
+        &self,
+        args: &RemoteAppServerConnectArgs,
+        _websocket_url: &str,
+    ) -> Result<Reconnected, TransportError> {
+        connect_remote_client_over_slingshot(self.api.clone(), self.environment_id.clone(), args)
+            .await
+            .map(|client| Reconnected {
+                client,
+                keepalive: None,
+            })
+    }
+}
+
 fn spawn_remote_runtime_worker(
     runtime_kind: AgentRuntimeKind,
     mut client: AppServerClient,
-    initial_keepalive: Option<Arc<dyn Send + Sync>>,
+    initial_keepalive: Option<Arc<dyn SessionKeepalive>>,
     mut command_rx: mpsc::Receiver<SessionCommand>,
     event_tx: broadcast::Sender<ServerEvent>,
     health_tx: watch::Sender<ConnectionHealth>,
@@ -1396,7 +1598,7 @@ fn spawn_remote_runtime_worker(
     reconnect_transport: Option<Arc<dyn RemoteTransport>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut keepalive: Option<Arc<dyn Send + Sync>> = initial_keepalive;
+        let mut keepalive: Option<Arc<dyn SessionKeepalive>> = initial_keepalive;
         loop {
             tokio::select! {
                 command = command_rx.recv() => {
@@ -1500,12 +1702,19 @@ fn spawn_remote_runtime_worker(
                     {
                         continue;
                     }
-                    route_app_server_event(&event_tx, &health_tx, runtime_kind, &event);
+                    route_app_server_event(&event_tx, &health_tx, runtime_kind.clone(), &event);
                 }
             }
         }
+        // Send a graceful close to the peer (e.g. iroh `Connection::close`)
+        // before dropping the keepalive Arc. Idempotent on already-errored
+        // connections, and avoids "Aborting ungracefully" log spam from
+        // iroh when the worker exits via `SessionCommand::Shutdown`.
+        if let Some(keepalive) = keepalive.as_ref() {
+            keepalive.close();
+        }
         // Hold the keepalive Arc for the entire worker lifetime so transport-scoped
-        // resources (e.g. an iroh Endpoint) are dropped only after the worker exits.
+        // resources (e.g. an iroh Connection) are dropped only after the worker exits.
         drop(keepalive);
     })
 }
@@ -1522,7 +1731,11 @@ fn route_app_server_event(
 ) {
     match event {
         AppServerEvent::ServerNotification(notification) => {
-            info!("remote event notification {:?}", notification);
+            // Log only the variant kind (via strum Display) — formatting the
+            // full `{:?}` body is a per-event allocation in the hundreds of KB
+            // for hot variants like `TurnDiffUpdated` and was contributing to
+            // memory pressure during streaming.
+            info!("remote event notification {}", notification);
             let _ = event_tx.send(ServerEvent::Notification {
                 runtime_kind,
                 notification: notification.clone(),
@@ -1556,13 +1769,13 @@ fn route_in_process_event(
     match event {
         InProcessServerEvent::ServerNotification(notification) => {
             let _ = event_tx.send(ServerEvent::Notification {
-                runtime_kind: AgentRuntimeKind::Codex,
+                runtime_kind: "codex".to_string(),
                 notification,
             });
         }
         InProcessServerEvent::ServerRequest(request) => {
             let _ = event_tx.send(ServerEvent::Request {
-                runtime_kind: AgentRuntimeKind::Codex,
+                runtime_kind: "codex".to_string(),
                 request,
             });
         }
@@ -1574,16 +1787,12 @@ fn route_in_process_event(
 
 #[cfg(test)]
 impl ServerSession {
-    pub(crate) fn test_stub(
-        config: ServerConfig,
-        ipc_client: Option<ReconnectingIpcClient>,
-    ) -> Self {
-        Self::test_stub_with_handlers(config, ipc_client, None, None, None)
+    pub(crate) fn test_stub(config: ServerConfig) -> Self {
+        Self::test_stub_with_handlers(config, None, None, None)
     }
 
     pub(crate) fn test_stub_with_handlers(
         config: ServerConfig,
-        ipc_client: Option<ReconnectingIpcClient>,
         request_handler: Option<TestRequestHandler>,
         resolve_handler: Option<TestResolveHandler>,
         reject_handler: Option<TestRejectHandler>,
@@ -1635,20 +1844,16 @@ impl ServerSession {
                 }
             }
         });
-        let shared_ipc_client = ipc_client.map(Arc::new);
-
         Self {
             config,
             health_tx,
             health_rx,
             command_tx,
             runtime_command_txs: std::collections::HashMap::new(),
+            runtime_transports: Vec::new(),
             event_tx,
-            ipc_stream_client: shared_ipc_client,
             ssh_client: None,
             ssh_pid: None,
-            ipc_ssh_client: None,
-            ipc_stream_bridge_pid: None,
             worker_handle,
         }
     }
@@ -1681,12 +1886,10 @@ impl ServerSession {
             health_rx,
             command_tx,
             runtime_command_txs,
+            runtime_transports: Vec::new(),
             event_tx,
-            ipc_stream_client: None,
             ssh_client: None,
             ssh_pid: None,
-            ipc_ssh_client: None,
-            ipc_stream_bridge_pid: None,
             worker_handle,
         }
     }
@@ -2105,6 +2308,34 @@ mod tests {
         assert_eq!(config.channel_capacity, 256);
         assert!(config.codex_home.is_none());
         assert!(config.working_directory.is_none());
+    }
+
+    #[test]
+    fn openai_base_url_from_env_trims_empty_and_trailing_slashes() {
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        let original = std::env::var_os(OPENAI_BASE_URL_ENV_KEY);
+
+        unsafe {
+            std::env::set_var(OPENAI_BASE_URL_ENV_KEY, " http://localhost:11434/v1/// ");
+        }
+        assert_eq!(
+            openai_base_url_from_env(),
+            Some("http://localhost:11434/v1".to_string())
+        );
+
+        unsafe {
+            std::env::set_var(OPENAI_BASE_URL_ENV_KEY, "   ");
+        }
+        assert_eq!(openai_base_url_from_env(), None);
+
+        match original {
+            Some(value) => unsafe {
+                std::env::set_var(OPENAI_BASE_URL_ENV_KEY, value);
+            },
+            None => unsafe {
+                std::env::remove_var(OPENAI_BASE_URL_ENV_KEY);
+            },
+        }
     }
 
     #[test]

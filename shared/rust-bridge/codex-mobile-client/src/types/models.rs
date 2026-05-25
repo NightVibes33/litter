@@ -18,7 +18,7 @@ use crate::RpcClientError;
 const MAX_REASONABLE_EPOCH_SECONDS: i64 = 10_000_000_000;
 
 fn default_agent_runtime_kind() -> AgentRuntimeKind {
-    AgentRuntimeKind::Codex
+    "codex".to_owned()
 }
 
 fn normalize_epoch_seconds(timestamp: i64) -> i64 {
@@ -113,8 +113,13 @@ pub struct ThreadInfo {
     pub agent_nickname: Option<String>,
     /// Agent role for subagent threads.
     pub agent_role: Option<String>,
-    /// Parent thread id for spawned/forked threads when known.
+    /// Parent thread id for sub-agent–spawned threads. Sub-agent only — for
+    /// user-initiated forks see `forked_from_id`.
     pub parent_thread_id: Option<String>,
+    /// Source thread id when this thread was created via
+    /// `forkThread` / `forkThreadFromMessage`. Distinct from
+    /// `parent_thread_id`, which is sub-agent–only.
+    pub forked_from_id: Option<String>,
     /// Best-effort subagent lifecycle status string.
     pub agent_status: Option<String>,
     /// Unix timestamp (seconds) when the thread was created.
@@ -190,6 +195,11 @@ impl From<upstream::Thread> for ThreadInfo {
                 None,
             ),
         };
+        // Fork lineage is distinct from sub-agent parentage: `forked_from_id`
+        // is set by upstream `forkThread`/`forkThreadFromMessage`, never by
+        // sub-agent spawns. Carry it through as its own field so mobile
+        // can render fork affordances without conflating with sub-agents.
+        let forked_from_id = thread.forked_from_id.clone();
 
         Self {
             id: thread.id,
@@ -210,6 +220,7 @@ impl From<upstream::Thread> for ThreadInfo {
             agent_nickname,
             agent_role,
             parent_thread_id,
+            forked_from_id,
             agent_status: None,
             created_at: Some(normalize_epoch_seconds(thread.created_at)),
             updated_at: Some(normalize_epoch_seconds(thread.updated_at)),
@@ -734,6 +745,7 @@ pub enum ReasoningEffort {
     Medium,
     High,
     XHigh,
+    Max,
 }
 
 impl From<codex_protocol::openai_models::ReasoningEffort> for ReasoningEffort {
@@ -745,6 +757,11 @@ impl From<codex_protocol::openai_models::ReasoningEffort> for ReasoningEffort {
             codex_protocol::openai_models::ReasoningEffort::Medium => Self::Medium,
             codex_protocol::openai_models::ReasoningEffort::High => Self::High,
             codex_protocol::openai_models::ReasoningEffort::XHigh => Self::XHigh,
+            // Newer/local codex checkouts may expose Max before the pinned
+            // submodule advances. Do not name that upstream variant here, so
+            // clean checkouts at the committed gitlink still compile.
+            #[allow(unreachable_patterns)]
+            _ => Self::Max,
         }
     }
 }
@@ -1225,7 +1242,7 @@ impl From<upstream::Model> for ModelInfo {
             input_modalities: value.input_modalities.into_iter().map(Into::into).collect(),
             supports_personality: value.supports_personality,
             is_default: value.is_default,
-            agent_runtime_kind: AgentRuntimeKind::Codex,
+            agent_runtime_kind: "codex".to_string(),
         }
     }
 }
@@ -1497,6 +1514,7 @@ mod tests {
             agent_nickname: None,
             agent_role: None,
             parent_thread_id: None,
+            forked_from_id: None,
             agent_status: None,
             created_at: Some(1700000000),
             updated_at: Some(1700001000),
@@ -1519,6 +1537,7 @@ mod tests {
             agent_nickname: None,
             agent_role: None,
             parent_thread_id: None,
+            forked_from_id: None,
             agent_status: None,
             cwd: None,
             created_at: None,
@@ -1566,6 +1585,7 @@ mod tests {
             agent_nickname: None,
             agent_role: None,
             parent_thread_id: None,
+            forked_from_id: None,
             agent_status: None,
             created_at: Some(1000),
             updated_at: Some(2000),
@@ -1582,6 +1602,7 @@ mod tests {
         let response: upstream::ThreadReadResponse = serde_json::from_value(serde_json::json!({
             "thread": {
                 "id": thread_id,
+                "sessionId": "session-1",
                 "preview": "hi",
                 "ephemeral": false,
                 "modelProvider": "openai",
@@ -1646,6 +1667,7 @@ mod tests {
         let upstream_thread: codex_app_server_protocol::Thread =
             serde_json::from_value(serde_json::json!({
                 "id": thread_id,
+                "sessionId": "session-1",
                 "preview": "hi",
                 "ephemeral": false,
                 "modelProvider": "openai",
@@ -1685,6 +1707,7 @@ mod tests {
     fn thread_info_from_upstream_normalizes_millisecond_timestamps() {
         let upstream_thread: upstream::Thread = serde_json::from_value(serde_json::json!({
             "id": "thread-1",
+            "sessionId": "session-1",
             "preview": "hi",
             "ephemeral": false,
             "modelProvider": "openai",
@@ -1714,6 +1737,7 @@ mod tests {
         let response: upstream::ThreadResumeResponse = serde_json::from_value(serde_json::json!({
             "thread": {
                 "id": "thread-1",
+                "sessionId": "session-1",
                 "preview": "hi",
                 "ephemeral": false,
                 "modelProvider": "openai",
@@ -1755,10 +1779,7 @@ mod tests {
         }))
         .expect("thread/resume response should deserialize typed enums");
 
-        assert_eq!(
-            response.service_tier,
-            Some(codex_protocol::config_types::ServiceTier::Fast)
-        );
+        assert_eq!(response.service_tier, Some("fast".to_string()));
         assert_eq!(
             response.reasoning_effort,
             Some(codex_protocol::openai_models::ReasoningEffort::Medium)
@@ -1786,6 +1807,7 @@ mod tests {
         let response: upstream::ThreadReadResponse = serde_json::from_value(serde_json::json!({
             "thread": {
                 "id": "thread-1",
+                "sessionId": "session-1",
                 "preview": "hi",
                 "ephemeral": false,
                 "modelProvider": "openai",

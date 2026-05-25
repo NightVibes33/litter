@@ -1,0 +1,45 @@
+/*
+ SPDX-License-Identifier: AGPL-3.0-or-later
+
+ Copyright (C) 2025 - 2026 mach-port-t
+
+ This file is part of Nyxian.
+
+ Nyxian is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ Nyxian is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Affero General Public License for more details.
+
+ You should have received a copy of the GNU Affero General Public License
+ along with Nyxian. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#ifndef NXPROJECTTABLECELL_H
+#define NXPROJECTTABLECELL_H
+
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+
+#if !JAILBREAK_ENV
+
+#import <LindChain/Services/applicationmgmtd/LDEApplicationObject.h>
+
+#endif /* !JAILBREAK_ENV */
+
+@interface NXProjectTableCell : UITableViewCell
+
+- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier;
+- (void)prepareForReuse;
+
+- (void)configureWithDisplayName:(NSString*)displayName withBundleIdentifier:(NSString*)bundleIdentifier withAppIcon:(UIImage*)image showAppIcon:(BOOL)showAppIcon showBundleID:(BOOL)showBundleID showArrow:(BOOL)showArrow;
+
++ (NSString *)reuseIdentifier;
+
+@end
+
+#endif /* NXPROJECTTABLECELL_H */

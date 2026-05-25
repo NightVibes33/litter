@@ -4,7 +4,7 @@
 class ZSign
 {
 public:
-
+	
 	static bool SlotGetCodeSlotsData(uint8_t* pSlotBase, uint8_t*& pCodeSlots, uint32_t& uCodeSlotsLength);
 	static bool SlotBuildEntitlements(const string& strEntitlements, string& strOutput);
 	static bool SlotBuildDerEntitlements(const string& strEntitlements, string& strOutput);
@@ -26,16 +26,16 @@ public:
 										bool isExecuteArch,
 										bool isAdhoc,
 										string& strOutput);
-
+	
 	static bool SlotBuildCMSSignature(ZSignAsset* pSignAsset,
 										const string& strCodeDirectorySlot,
 										const string& strAltnateCodeDirectorySlot,
 										string& strOutput);
 
-	static bool GetCodeSignatureCodeSlotsData(uint8_t* pCSBase,
-												uint8_t*& pCodeSlots1,
-												uint32_t& uCodeSlots1Length,
-												uint8_t*& pCodeSlots256,
+	static bool GetCodeSignatureCodeSlotsData(uint8_t* pCSBase, 
+												uint8_t*& pCodeSlots1, 
+												uint32_t& uCodeSlots1Length, 
+												uint8_t*& pCodeSlots256, 
 												uint32_t& uCodeSlots256Length);
 	static bool GetCodeSignatureExistsCodeSlotsData(uint8_t* pCSBase,
 													uint8_t*& pCodeSlots1Data,
@@ -56,3 +56,4 @@ public:
 	static void SlotParseGeneralTailer(uint8_t* pSlotBase, uint32_t uSlotLength);
 	static uint32_t SlotParseGeneralHeader(const char* szSlotName, uint8_t* pSlotBase, CS_BlobIndex* pbi);
 };
+

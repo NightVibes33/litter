@@ -115,7 +115,7 @@ int LCPatchExecSlice(const char *path, struct mach_header_64 *header, bool doInj
     }
     long freeLoadCommandCountLeft = (void*)header + textSectionOffest - (void*)command;
     int tweakLoaderLoadDylibCmdSize = 0x48;
-
+    
     // Insert command priority: LC_CODE_SIGNATURE > LC_ID_DYLIB > LC_LOAD_DYLIB
     if(!codeSignatureCommandFound) {
         freeLoadCommandCountLeft -= 0x10;
@@ -137,7 +137,7 @@ int LCPatchExecSlice(const char *path, struct mach_header_64 *header, bool doInj
             ans |= PATCH_EXEC_RESULT_NO_SPACE_FOR_TWEAKLOADER;
         }
     }
-
+    
     // Ensure No duplicated dylibs, often caused by incorrect tweak injection
     // https://github.com/LiveContainer/LiveContainer/issues/582
     // https://github.com/apple-oss-distributions/dyld/blob/93bd81f9d7fcf004fcebcb66ec78983882b41e71/mach_o/Header.cpp#L678
@@ -165,7 +165,7 @@ int LCPatchExecSlice(const char *path, struct mach_header_64 *header, bool doInj
         }
         command2 = (struct load_command *)((void *)command2 + command2->cmdsize);
     }
-
+    
     return ans;
 }
 
@@ -397,7 +397,7 @@ bool checkCodeSignature(const char* path) {
             return;
         }
         checked = true;
-
+        
         struct code_signature_command* codeSignatureCommand = findSignatureCommand(header);
         if(!codeSignatureCommand) {
             return;
@@ -412,7 +412,7 @@ bool checkCodeSignature(const char* path) {
             ans = false;
             return;
         }
-
+        
         fchecklv_t checkInfo;
         char     messageBuffer[512];
         messageBuffer[0]                = '\0';
@@ -420,7 +420,7 @@ bool checkCodeSignature(const char* path) {
         checkInfo.lv_error_message      = messageBuffer;
         checkInfo.lv_file_start= sliceOffset;
         int checkLVresult = fcntl(fd, F_CHECK_LV, &checkInfo);
-
+        
         if (checkLVresult == 0) {
             ans = true;
             return;

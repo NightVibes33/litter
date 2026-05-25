@@ -62,7 +62,21 @@ class LitterFirebaseMessagingService : FirebaseMessagingService() {
         try {
             AppLifecycleController().reconnectServer(this, appModel, key.serverId)
             val resolvedKey = appModel.ensureThreadLoaded(key, maxAttempts = 2) ?: key
-            appModel.refreshThreadSnapshot(resolvedKey)
+            // Force-authoritative: the in-flight turn the local snapshot
+            // shows as running may have completed while the app was
+            // frozen, with no `TurnCompleted` event delivered. Without
+            // pulling back `excludeTurns = false` the reducer keeps the
+            // stale `active_turn_id` and the notification stays "in
+            // progress" forever.
+            try {
+                appModel.forceRefreshThreadAuthoritative(resolvedKey)
+            } catch (error: Exception) {
+                LLog.w(
+                    "LitterFirebaseMessagingService",
+                    "force-authoritative refresh failed; falling back to refreshThreadSnapshot: ${error.message}",
+                )
+                appModel.refreshThreadSnapshot(resolvedKey)
+            }
             val thread = appModel.snapshot.value
                 ?.threads
                 ?.firstOrNull { it.key == resolvedKey || it.key == key }

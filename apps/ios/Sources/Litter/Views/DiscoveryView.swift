@@ -11,6 +11,10 @@ struct DiscoveryView: View {
     @State private var sshAgentContext: SSHBridgeAgentContext?
     @State private var showManualEntry = false
     @State private var showAlleycatSheet = false
+    @State private var showSlingshotHosts = false
+    @State private var slingshotEnvironments: [AppSlingshotEnvironment] = []
+    @State private var slingshotIsLoading = false
+    @State private var slingshotError: String?
     @State private var manualConnectionMode: ManualConnectionMode = .ssh
     @State private var manualCodexURL = ""
     @State private var manualHost = ""
@@ -27,6 +31,7 @@ struct DiscoveryView: View {
     @Environment(AppState.self) private var appState
     private let autoStartDiscovery: Bool
     private let initialServers: [DiscoveredServer]
+    private let slingshotBaseURL = "https://chatgpt.com/backend-api"
 
     init(
         onServerSelected: ((DiscoveredServer) -> Void)? = nil,
@@ -149,6 +154,9 @@ struct DiscoveryView: View {
         .sheet(isPresented: $showManualEntry) {
             manualEntrySheet
         }
+        .sheet(isPresented: $showSlingshotHosts) {
+            slingshotHostsSheet
+        }
         .sheet(isPresented: $showAlleycatSheet) {
             AlleycatAddServerSheet(appModel: appModel, startScanningOnAppear: true) { result in
                 showAlleycatSheet = false
@@ -232,48 +240,6 @@ struct DiscoveryView: View {
         } message: {
             Text("Enter a new name for this server.")
         }
-        .alert(
-            "Install Codex?",
-            isPresented: pendingInstallPresented,
-            presenting: pendingInstallServerSnapshot
-        ) { snapshot in
-            Button("Install") {
-                Task {
-                    LLog.trace(
-                        "discovery",
-                        "responding to install prompt",
-                        fields: [
-                            "serverId": snapshot.serverId,
-                            "install": true,
-                            "detail": snapshot.connectionProgressDetail ?? ""
-                        ]
-                    )
-                    _ = try? await appModel.ssh.sshRespondToInstallPrompt(
-                        serverId: snapshot.serverId,
-                        install: true
-                    )
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                Task {
-                    LLog.trace(
-                        "discovery",
-                        "responding to install prompt",
-                        fields: [
-                            "serverId": snapshot.serverId,
-                            "install": false,
-                            "detail": snapshot.connectionProgressDetail ?? ""
-                        ]
-                    )
-                    _ = try? await appModel.ssh.sshRespondToInstallPrompt(
-                        serverId: snapshot.serverId,
-                        install: false
-                    )
-                }
-            }
-        } message: { snapshot in
-            Text(snapshot.connectionProgressDetail ?? "Codex was not found on the remote host. Install the latest stable release into ~/.litter?")
-        }
     }
 
     // MARK: - Chooser
@@ -292,16 +258,32 @@ struct DiscoveryView: View {
                     subtitle: "Run npx kittylitter on the host, then scan the QR code it prints.",
                     badge: "RECOMMENDED",
                     icon: "qrcode.viewfinder",
+                    supportedAgents: Self.kittylitterAgents,
+                    isRecommended: true,
                     accessibilityID: "discovery.chooser.kittylitter"
                 ) {
                     showAlleycatSheet = true
                 }
 
                 chooserCard(
+                    title: "Connected Computer",
+                    subtitle: "Connect to a computer already signed in and running Codex for this ChatGPT account.",
+                    badge: nil,
+                    icon: "desktopcomputer",
+                    supportedAgents: [AgentRuntimeKind.codex],
+                    isRecommended: false,
+                    accessibilityID: "discovery.chooser.slingshot"
+                ) {
+                    showSlingshotHosts = true
+                }
+
+                chooserCard(
                     title: "SSH or Codex URL",
-                    subtitle: "Connect over SSH (auto-bootstraps codex on the host) or paste a ws:// codex URL.",
+                    subtitle: "Connect over SSH or paste a ws:// codex URL.",
                     badge: nil,
                     icon: "terminal",
+                    supportedAgents: [AgentRuntimeKind.codex],
+                    isRecommended: false,
                     accessibilityID: "discovery.chooser.manual"
                 ) {
                     showManualEntry = true
@@ -316,61 +298,123 @@ struct DiscoveryView: View {
         .scrollIndicators(.hidden)
     }
 
+    /// Canonical agent list shown on the kittylitter chooser card.
+    /// Mirrors the splash carousel order so cold-start branding stays
+    /// consistent. New agents added in the alleycat manifest still
+    /// surface on connected hosts via the real metadata store; this list
+    /// only seeds the pre-pair preview.
+    private static let kittylitterAgents: [AgentRuntimeKind] = [
+        "codex",
+        "pi",
+        "amp",
+        "opencode",
+        "claude",
+        "droid",
+        "hermes",
+        "devin",
+        "grok",
+    ]
+
     private func chooserCard(
         title: String,
         subtitle: String,
         badge: String?,
         icon: String,
+        supportedAgents: [AgentRuntimeKind],
+        isRecommended: Bool,
         accessibilityID: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundColor(LitterTheme.accent)
-                    .frame(width: 32, alignment: .center)
-                    .padding(.top, 2)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .litterFont(.subheadline, weight: .semibold)
-                        .foregroundColor(LitterTheme.textPrimary)
-                    if let badge {
-                        Text(badge)
-                            .litterFont(.caption2, weight: .semibold)
-                            .foregroundColor(LitterTheme.accentStrong)
-                            .tracking(0.5)
-                    }
-                    Text(subtitle)
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textSecondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            Circle()
+                                .fill(LitterTheme.accent.opacity(isRecommended ? 0.16 : 0.10))
+                        )
                         .padding(.top, 2)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(title)
+                                .litterFont(.subheadline, weight: .semibold)
+                                .foregroundColor(LitterTheme.textPrimary)
+                            if let badge {
+                                Text(badge)
+                                    .litterFont(.caption2, weight: .semibold)
+                                    .foregroundColor(LitterTheme.accentStrong)
+                                    .tracking(0.5)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill(LitterTheme.accent.opacity(0.14))
+                                    )
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(LitterTheme.accent.opacity(0.45), lineWidth: 0.6)
+                                    )
+                            }
+                        }
+                        Text(subtitle)
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(LitterTheme.textMuted)
+                        .padding(.top, 10)
                 }
 
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(LitterTheme.textMuted)
-                    .padding(.top, 4)
+                if !supportedAgents.isEmpty {
+                    supportedAgentsStrip(supportedAgents)
+                }
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(LitterTheme.surface.opacity(0.6))
+                    .fill(LitterTheme.surface.opacity(isRecommended ? 0.85 : 0.6))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(LitterTheme.accent.opacity(0.18), lineWidth: 0.8)
+                    .stroke(
+                        LitterTheme.accent.opacity(isRecommended ? 0.45 : 0.18),
+                        lineWidth: isRecommended ? 1.0 : 0.8
+                    )
             )
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityID)
+    }
+
+    @ViewBuilder
+    private func supportedAgentsStrip(_ agents: [AgentRuntimeKind]) -> some View {
+        HStack(spacing: 8) {
+            Text("Works with")
+                .litterFont(.caption2)
+                .foregroundColor(LitterTheme.textMuted)
+                .tracking(0.4)
+                .fixedSize(horizontal: true, vertical: false)
+            HStack(spacing: 5) {
+                ForEach(agents, id: \.self) { agent in
+                    AgentIconView(kind: agent, size: 18)
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                }
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     // MARK: - Sections (legacy discovery list, retained for sheet plumbing)
@@ -475,9 +519,6 @@ struct DiscoveryView: View {
                         .foregroundColor(LitterTheme.textSecondary)
                 }
                 Spacer()
-                if serverSnapshot?.isIpcConnected == true, ExperimentalFeatures.shared.isEnabled(.ipc) {
-                    statusTag(label: "ipc", color: LitterTheme.accentStrong)
-                }
                 if let progressTag = progressTag(for: serverSnapshot) {
                     statusTag(label: progressTag.label, color: progressTag.color)
                 } else if let health = serverSnapshot?.health,
@@ -538,9 +579,6 @@ struct DiscoveryView: View {
         }
         if server.canConnectViaSSH {
             parts.append(" - ssh \(server.resolvedSSHPort)")
-        }
-        if snapshot?.isIpcConnected == true, ExperimentalFeatures.shared.isEnabled(.ipc) {
-            parts.append(" - ipc")
         }
         return parts.joined()
     }
@@ -870,11 +908,38 @@ struct DiscoveryView: View {
                 SavedServerStore.remember(server.withConnectionPreference(.directCodex, codexPort: port))
             case .remoteURL(let url):
                 startedAsyncBootstrap = false
-                connectedServerId = try await appModel.serverBridge.connectRemoteUrlServer(
-                    serverId: server.id,
-                    displayName: server.name,
-                    websocketUrl: url.absoluteString
-                )
+                if url.scheme?.lowercased() == "slingshot" {
+                    let tokens = try await ChatGPTOAuth.loadStoredOrRefreshedTokens()
+                    do {
+                        connectedServerId = try await appModel.serverBridge.connectRemoteSlingshotUrlServer(
+                            serverId: server.id,
+                            displayName: server.name,
+                            connectionUrl: url.absoluteString,
+                            accessToken: tokens.accessToken,
+                            accountId: tokens.accountID,
+                            stepUpToken: ""
+                        )
+                    } catch {
+                        guard ChatGPTOAuth.isRemoteControlAuthorizationRequired(error) else {
+                            throw error
+                        }
+                        let stepUpToken = try await ChatGPTOAuth.remoteControlEnrollmentStepUpToken()
+                        connectedServerId = try await appModel.serverBridge.connectRemoteSlingshotUrlServer(
+                            serverId: server.id,
+                            displayName: server.name,
+                            connectionUrl: url.absoluteString,
+                            accessToken: tokens.accessToken,
+                            accountId: tokens.accountID,
+                            stepUpToken: stepUpToken
+                        )
+                    }
+                } else {
+                    connectedServerId = try await appModel.serverBridge.connectRemoteUrlServer(
+                        serverId: server.id,
+                        displayName: server.name,
+                        websocketUrl: url.absoluteString
+                    )
+                }
                 SavedServerStore.remember(server)
             case .sshThenRemote(let host, let credentials):
                 startedAsyncBootstrap = true
@@ -976,11 +1041,17 @@ struct DiscoveryView: View {
             )
             let availability = try await appModel.ssh.sshProbeRemoteAgents(sessionId: session.sessionId)
             let bridgeAgents = availability.filter {
+                // SSH bridge bootstrap can launch claude / pi / opencode
+                // on the remote; everything else (codex, amp, droid,
+                // hermes, anything new) only reaches the host via the
+                // alleycat pairing path.
+                guard $0.status == .available else { return false }
+                if let supports = $0.kind.metadata?.capabilities?.supportsSshBridge {
+                    return supports && $0.kind != "codex"
+                }
                 switch $0.kind {
-                case .claude, .pi, .opencode:
-                    return $0.status == .available
-                case .codex:
-                    return false
+                case "claude", "pi", "opencode": return true
+                default: return false
                 }
             }
             connectingServer = nil
@@ -1085,7 +1156,6 @@ struct DiscoveryView: View {
                 "authMethod": authMethod
             ]
         )
-        let ipcSocketPathOverride = ExperimentalFeatures.shared.ipcSocketPathOverride()
         switch credentials {
         case .password(let username, let password, let unlockMacosKeychain):
             return try await appModel.serverBridge.startRemoteOverSshConnect(
@@ -1099,8 +1169,7 @@ struct DiscoveryView: View {
                 passphrase: nil,
                 unlockMacosKeychain: unlockMacosKeychain,
                 acceptUnknownHost: true,
-                workingDir: nil,
-                ipcSocketPathOverride: ipcSocketPathOverride
+                workingDir: nil
             )
         case .key(let username, let privateKey, let passphrase):
             return try await appModel.serverBridge.startRemoteOverSshConnect(
@@ -1114,9 +1183,209 @@ struct DiscoveryView: View {
                 passphrase: passphrase,
                 unlockMacosKeychain: false,
                 acceptUnknownHost: true,
-                workingDir: nil,
-                ipcSocketPathOverride: ipcSocketPathOverride
+                workingDir: nil
             )
+        }
+    }
+
+    // MARK: - Connected Computers
+
+    private var slingshotHostsSheet: some View {
+        NavigationStack {
+            ZStack {
+                LitterTheme.backgroundGradient.ignoresSafeArea()
+                List {
+                    Section {
+                        if slingshotIsLoading && slingshotEnvironments.isEmpty {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .tint(LitterTheme.accent)
+                                Text("Loading connected computers...")
+                                    .litterFont(.footnote)
+                                    .foregroundColor(LitterTheme.textSecondary)
+                            }
+                        } else if let slingshotError {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(slingshotError)
+                                    .litterFont(.footnote)
+                                    .foregroundColor(LitterTheme.textSecondary)
+                                Button("Retry") {
+                                    Task { await loadSlingshotEnvironments() }
+                                }
+                                .foregroundColor(LitterTheme.accent)
+                                .litterFont(.footnote, weight: .semibold)
+                            }
+                        } else if slingshotEnvironments.isEmpty {
+                            Text("No connected computers were found for this account.")
+                                .litterFont(.footnote)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        } else {
+                            ForEach(slingshotEnvironments, id: \.id) { environment in
+                                Button {
+                                    showSlingshotHosts = false
+                                    Task { await connectSlingshotEnvironment(environment) }
+                                } label: {
+                                    slingshotEnvironmentRow(environment)
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(!environment.online)
+                            }
+                        }
+                    } header: {
+                        Text("Connected Computers")
+                            .foregroundColor(LitterTheme.textSecondary)
+                    } footer: {
+                        Text("These computers come from ChatGPT using your signed-in account. Start Codex on the computer first so it appears here.")
+                            .litterFont(.caption2)
+                            .foregroundColor(LitterTheme.textMuted)
+                    }
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .navigationTitle("Connected Computers")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Refresh") {
+                        Task { await loadSlingshotEnvironments() }
+                    }
+                    .disabled(slingshotIsLoading)
+                    .foregroundColor(LitterTheme.accent)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { showSlingshotHosts = false }
+                        .foregroundColor(LitterTheme.accent)
+                }
+            }
+            .task {
+                if slingshotEnvironments.isEmpty && !slingshotIsLoading {
+                    await loadSlingshotEnvironments()
+                }
+            }
+        }
+    }
+
+    private func slingshotEnvironmentRow(_ environment: AppSlingshotEnvironment) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: slingshotIconName(for: environment))
+                .foregroundColor(environment.online ? LitterTheme.accent : LitterTheme.textMuted)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(environment.displayName)
+                    .litterFont(.subheadline)
+                    .foregroundColor(environment.online ? LitterTheme.textPrimary : LitterTheme.textSecondary)
+                Text(slingshotSubtitle(for: environment))
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textSecondary)
+            }
+            Spacer()
+            statusTag(
+                label: environment.online ? (environment.busy ? "busy" : "online") : "offline",
+                color: environment.online ? (environment.busy ? .orange : LitterTheme.accent) : LitterTheme.textMuted
+            )
+        }
+        .padding(.vertical, 2)
+    }
+
+    @MainActor
+    private func loadSlingshotEnvironments() async {
+        guard !slingshotIsLoading else { return }
+        slingshotIsLoading = true
+        slingshotError = nil
+        defer { slingshotIsLoading = false }
+
+        do {
+            let tokens = try await ChatGPTOAuth.loadStoredOrRefreshedTokens()
+            let environments = try await appModel.serverBridge.listSlingshotEnvironments(
+                baseUrl: slingshotBaseURL,
+                accessToken: tokens.accessToken,
+                accountId: tokens.accountID
+            )
+            slingshotEnvironments = environments.sorted { lhs, rhs in
+                if lhs.online != rhs.online { return lhs.online && !rhs.online }
+                if lhs.busy != rhs.busy { return !lhs.busy && rhs.busy }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+        } catch {
+            slingshotError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func connectSlingshotEnvironment(_ environment: AppSlingshotEnvironment) async {
+        guard environment.online else {
+            connectError = "\(environment.displayName) is offline."
+            return
+        }
+        guard let server = slingshotServer(for: environment) else {
+            connectError = "Could not prepare this connected computer."
+            return
+        }
+        await connectToServer(server)
+    }
+
+    private func slingshotServer(for environment: AppSlingshotEnvironment) -> DiscoveredServer? {
+        guard URL(string: environment.connectionUrl) != nil else {
+            return nil
+        }
+        return DiscoveredServer(
+            id: "slingshot-\(environment.id)",
+            name: environment.displayName,
+            hostname: environment.id,
+            port: nil,
+            codexPorts: [],
+            sshPort: nil,
+            source: .manual,
+            hasCodexServer: true,
+            websocketURL: environment.connectionUrl,
+            preferredConnectionMode: .directCodex,
+            os: environment.operatingSystem,
+            sshBanner: nil
+        )
+    }
+
+    private func slingshotSubtitle(for environment: AppSlingshotEnvironment) -> String {
+        var parts: [String] = []
+        if let hostName = environment.hostName?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+           !hostName.isEmpty {
+            parts.append(hostName)
+        }
+
+        var platformParts: [String] = []
+        let operatingSystem = environment.operatingSystem.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+        if !operatingSystem.isEmpty {
+            platformParts.append(operatingSystem)
+        }
+        if let architecture = environment.architecture?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+           !architecture.isEmpty {
+            platformParts.append(architecture)
+        }
+        let platform = platformParts.joined(separator: " ")
+        if !platform.isEmpty {
+            parts.append(platform)
+        }
+
+        if let version = environment.appServerVersion?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+           !version.isEmpty {
+            parts.append("Codex \(version)")
+        }
+        if parts.isEmpty {
+            parts.append(environment.id)
+        }
+        return parts.joined(separator: " - ")
+    }
+
+    private func slingshotIconName(for environment: AppSlingshotEnvironment) -> String {
+        switch environment.operatingSystem.lowercased() {
+        case "linux":
+            return "server.rack"
+        case "windows":
+            return "desktopcomputer"
+        case "macos", "darwin":
+            return "desktopcomputer"
+        default:
+            return "laptopcomputer"
         }
     }
 
@@ -1371,17 +1640,6 @@ struct DiscoveryView: View {
                     connectionChoiceServer = nil
                 }
             }
-        )
-    }
-
-    private var pendingInstallServerSnapshot: AppServerSnapshot? {
-        appModel.snapshot?.servers.first(where: { $0.connectionProgress?.pendingInstall == true })
-    }
-
-    private var pendingInstallPresented: Binding<Bool> {
-        Binding(
-            get: { pendingInstallServerSnapshot != nil },
-            set: { _ in }
         )
     }
 

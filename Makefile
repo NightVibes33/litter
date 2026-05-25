@@ -16,6 +16,11 @@ endif
 ROOT := $(shell pwd)
 STAMPS := $(ROOT)/.build-stamps
 RUST_DIR := $(ROOT)/shared/rust-bridge
+KITTYLITTER_DIR := $(ROOT)/services/kittylitter
+ALLEYCAT_DEV_DIR ?= $(HOME)/dev/alleycat
+KITTYLITTER_DEV_DIR := $(STAMPS)/kittylitter-dev
+KITTYLITTER_DEV_MANIFEST := $(KITTYLITTER_DEV_DIR)/Cargo.toml
+KITTYLITTER_VERSION := $(shell awk -F'"' '/^version = / { print $$2; exit }' $(KITTYLITTER_DIR)/Cargo.toml)
 SUBMODULE_DIR := $(ROOT)/shared/third_party/codex
 IOS_DIR := $(ROOT)/apps/ios
 IOS_SCRIPTS := $(IOS_DIR)/scripts
@@ -132,6 +137,15 @@ endif
 PACKAGE_CARGO_ENV := CARGO_INCREMENTAL=0
 
 DEV_CARGO_ENV := env -u CARGO_INCREMENTAL
+KITTYLITTER_CARGO_ENV := $(DEV_CARGO_ENV)
+ifeq ($(firstword $(MAKECMDGOALS)),kittylitter)
+  KITTYLITTER_GOAL_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
+  .PHONY: $(KITTYLITTER_GOAL_ARGS)
+  $(KITTYLITTER_GOAL_ARGS):
+	@:
+endif
+KITTYLITTER_ARGS := $(strip $(KITTYLITTER_GOAL_ARGS) $(ARGS))
+UPDATE_ALLEYCAT_MAIN := $(ROOT)/tools/scripts/update-alleycat-main.sh
 
 PATCH_FILES := \
 	$(PATCHES_DIR)/ios-exec-hook.patch \
@@ -151,12 +165,10 @@ STAMP_SYNC := $(STAMPS)/sync
 STAMP_BINDINGS_S := $(STAMPS)/bindings-swift
 STAMP_BINDINGS_K := $(STAMPS)/bindings-kotlin
 STAMP_XCGEN := $(STAMPS)/xcgen
-STAMP_LLAMA_IOS := $(STAMPS)/llama-ios-turboquant-main
-
 # Pinned release tag of the prebuilt Alpine rootfs tarball (still hosted
 # on the dnakov/litter-ish releases page). The iSH kernel itself is built
 # from the `ish` Rust crate. Bump and re-run `make alpine-fs` to upgrade.
-ALPINE_FS_VERSION := v0.1.0
+ALPINE_FS_VERSION := v0.1.1
 STAMP_ALPINE_FS := $(STAMPS)/alpine-fs-$(ALPINE_FS_VERSION)
 
 empty :=
@@ -174,25 +186,26 @@ $(shell mkdir -p $(STAMPS))
 .PHONY: all ios ios-sim ios-sim-fast ios-sim-run ios-device ios-device-fast ios-device-run ios-device-stop ios-run verify-ios-project catalyst catalyst-run catalyst-fast catalyst-fast-run mac-direct mac-direct-run mac-direct-fast mac-direct-fast-run \
 	android android-fast android-tools android-emulator-fast android-emulator-run android-device-run android-release android-debug android-install android-emulator-install \
 	rust-ios rust-ios-package rust-ios-device-release rust-mac-release rust-ios-device-fast rust-ios-sim-fast rust-ios-macabi-fast rust-android rust-check rust-test rust-host-dev \
+	alleycat-main \
 	bindings bindings-swift bindings-kotlin \
-	sync patch unpatch xcgen alpine-fs llama-ios ish-dev-random nyxian-vendor nyxian-source-verify nyxian-buildkit-assets nyxian-buildkit-assets-verify buildkit-assets-package buildkit-assets-upload \
+	sync patch unpatch xcgen alpine-fs ish-dev-random nyxian-vendor nyxian-source-verify nyxian-buildkit-assets nyxian-buildkit-assets-verify buildkit-assets-package buildkit-assets-upload sidestore-minimuxer \
 	ios-build ios-build-sim ios-build-sim-fast ios-build-device ios-build-device-fast \
 	watch watch-sim watch-sim-run watch-device watch-typecheck \
 	test test-rust test-ios test-android \
 	ios-release-prep mac-release-prep testflight mac-testflight mac-direct-dist appstore-release play-upload play-release \
 	clean clean-rust clean-ios clean-android \
-	rebuild-bindings tui tui-run help
+	rebuild-bindings kittylitter kittylitter-restart tui tui-run help
 
 all: ios android
 
 # ios-build-* targets declare their real prerequisites so that `make -j`
 # can run rust-ios-package, alpine-fs download, and xcgen in parallel.
-ios-build-sim: rust-ios-package alpine-fs llama-ios xcgen
-ios-build-device: rust-ios-package alpine-fs llama-ios xcgen
+ios-build-sim: rust-ios-package alpine-fs xcgen
+ios-build-device: rust-ios-package alpine-fs xcgen
 
 # Fast lanes use lightweight raw staticlib outputs instead of full packaging.
-ios-build-sim-fast: rust-ios-sim-fast alpine-fs llama-ios xcgen
-ios-build-device-fast: rust-ios-device-fast alpine-fs llama-ios xcgen
+ios-build-sim-fast: rust-ios-sim-fast alpine-fs xcgen
+ios-build-device-fast: rust-ios-device-fast alpine-fs xcgen
 
 ios: ios-build-sim
 ios-sim: ios-build-sim
@@ -372,35 +385,38 @@ android-release: rust-android android-tools
 
 rust-ios: rust-ios-package
 
-rust-ios-package: $(STAMP_SYNC)
+alleycat-main:
+	@$(UPDATE_ALLEYCAT_MAIN) --all
+
+rust-ios-package: alleycat-main $(STAMP_SYNC)
 	@echo "==> Packaging Rust for iOS (device + simulator + xcframework)..."
 	@cd $(ROOT) && $(PACKAGE_CARGO_ENV) $(IOS_SCRIPTS)/build-rust.sh --preserve-current $(CARGO_FEATURES)
 
-rust-ios-device-release: $(STAMP_SYNC)
+rust-ios-device-release: alleycat-main $(STAMP_SYNC)
 	@echo "==> Building Rust for iOS release archive prep (device staticlib + headers)..."
 	@cd $(ROOT) && $(PACKAGE_CARGO_ENV) $(IOS_SCRIPTS)/build-rust.sh --preserve-current --device-only $(CARGO_FEATURES)
 
-rust-mac-release: $(STAMP_SYNC)
+rust-mac-release: alleycat-main $(STAMP_SYNC)
 	@echo "==> Building Rust for Mac Catalyst release archive prep (macabi staticlib + headers)..."
 	@cd $(ROOT) && $(PACKAGE_CARGO_ENV) $(IOS_SCRIPTS)/build-rust.sh --preserve-current --macabi-only $(CARGO_FEATURES)
 
-rust-ios-device-fast: $(STAMP_SYNC)
+rust-ios-device-fast: alleycat-main $(STAMP_SYNC)
 	@echo "==> Building Rust for fast iOS device iteration (raw staticlib + headers)..."
 	@cd $(ROOT) && $(DEV_CARGO_ENV) $(IOS_SCRIPTS)/build-rust.sh --preserve-current --fast-device $(CARGO_FEATURES)
 
-rust-ios-sim-fast: $(STAMP_SYNC)
+rust-ios-sim-fast: alleycat-main $(STAMP_SYNC)
 	@echo "==> Building Rust for fast iOS simulator iteration (raw staticlib + headers)..."
 	@cd $(ROOT) && $(DEV_CARGO_ENV) $(IOS_SCRIPTS)/build-rust.sh --preserve-current --fast-sim $(CARGO_FEATURES)
 
-rust-ios-macabi-fast: $(STAMP_SYNC)
+rust-ios-macabi-fast: alleycat-main $(STAMP_SYNC)
 	@echo "==> Building Rust for fast Mac Catalyst iteration (raw macabi staticlib + headers, host arch only)..."
 	@cd $(ROOT) && $(DEV_CARGO_ENV) $(IOS_SCRIPTS)/build-rust.sh --preserve-current --fast-macabi $(CARGO_FEATURES)
 
-rust-check:
+rust-check: alleycat-main
 	@echo "==> cargo check (host, shared crates)..."
 	@cd $(ROOT) && $(DEV_CARGO_ENV) cargo check --manifest-path $(RUST_DIR)/Cargo.toml -p codex-mobile-client
 
-rust-test: rust-shellcheck
+rust-test: alleycat-main rust-shellcheck
 	@echo "==> cargo test (host, shared crates)..."
 	@cd $(ROOT) && $(DEV_CARGO_ENV) cargo test --manifest-path $(RUST_DIR)/Cargo.toml -p codex-mobile-client --lib
 
@@ -429,7 +445,7 @@ rust-shellcheck:
 rust-host-dev: rust-check rust-test
 
 rust-android: $(STAMP_RUST_ANDROID)
-$(STAMP_RUST_ANDROID): $(STAMP_SYNC) $(STAMP_BINDINGS_K) $(ANDROID_RUST_SOURCES) tools/scripts/build-android-rust.sh Makefile
+$(STAMP_RUST_ANDROID): $(STAMP_SYNC) $(STAMP_BINDINGS_K) $(ANDROID_RUST_SOURCES) tools/scripts/build-android-rust.sh Makefile | alleycat-main
 	@echo "==> Building Rust for Android..."
 	@cd $(ROOT) && $(ANDROID_ENV) ANDROID_ABIS="$(ANDROID_ABIS)" ANDROID_RUST_PROFILE="$(ANDROID_RUST_PROFILE)" $(DEV_CARGO_ENV) ./tools/scripts/build-android-rust.sh
 	@touch $@
@@ -446,6 +462,7 @@ help:
 		'make rust-ios-sim-fast  fast Rust iOS simulator lane (raw staticlib only)' \
 		'make rust-ios-device-fast fast Rust iOS device lane (raw staticlib only)' \
 		'make rust-ios-macabi-fast fast Rust Mac Catalyst lane (host-arch macabi staticlib only)' \
+		'make alleycat-main      refresh Alleycat git deps to latest dnakov/alleycat main' \
 		'make catalyst           full Mac Catalyst build (release+LTO macabi staticlib + xcodebuild)' \
 		'make catalyst-run       full Mac Catalyst build + launch' \
 		'make catalyst-fast      fast Mac Catalyst dev build (ios-dev profile, host arch)' \
@@ -480,7 +497,7 @@ unpatch:
 bindings: bindings-swift bindings-kotlin
 
 bindings-swift: $(STAMP_BINDINGS_S)
-$(STAMP_BINDINGS_S): $(STAMP_SYNC) $(BOUNDARY_SOURCES)
+$(STAMP_BINDINGS_S): $(STAMP_SYNC) $(BOUNDARY_SOURCES) | alleycat-main
 	@echo "==> Generating Swift bindings..."
 	@cd $(RUST_DIR) && ./generate-bindings.sh --swift-only
 	@mkdir -p $(IOS_GENERATED)/Headers
@@ -491,15 +508,9 @@ $(STAMP_BINDINGS_S): $(STAMP_SYNC) $(BOUNDARY_SOURCES)
 	@touch $@
 
 bindings-kotlin: $(STAMP_BINDINGS_K)
-$(STAMP_BINDINGS_K): $(STAMP_SYNC) $(BOUNDARY_SOURCES)
+$(STAMP_BINDINGS_K): $(STAMP_SYNC) $(BOUNDARY_SOURCES) | alleycat-main
 	@echo "==> Generating Kotlin bindings..."
 	@cd $(RUST_DIR) && ./generate-bindings.sh --kotlin-only
-	@touch $@
-
-llama-ios: $(STAMP_LLAMA_IOS)
-$(STAMP_LLAMA_IOS): $(IOS_SCRIPTS)/build-llama-xcframework.sh
-	@echo "==> Building llama.cpp iOS XCFramework..."
-	@bash $(IOS_SCRIPTS)/build-llama-xcframework.sh
 	@touch $@
 
 ish-dev-random:
@@ -522,6 +533,9 @@ buildkit-assets-package:
 
 buildkit-assets-upload:
 	@tools/scripts/upload-buildkit-assets-release.sh
+
+sidestore-minimuxer:
+	@tools/scripts/build-sidestore-minimuxer.sh
 
 xcgen:
 	@echo "==> Regenerating Xcode project..."
@@ -674,7 +688,7 @@ android-emulator-install: android-emulator-fast
 
 test: test-rust test-ios test-android
 
-test-rust:
+test-rust: alleycat-main
 	@echo "==> Running Rust tests..."
 	@cd $(ROOT) && $(DEV_CARGO_ENV) cargo test --manifest-path $(RUST_DIR)/Cargo.toml -p codex-mobile-client --lib
 
@@ -689,7 +703,7 @@ test-android:
 	@echo "==> Running Android tests..."
 	@cd $(ANDROID_DIR) && ./gradlew :app:testDebugUnitTest
 
-ios-release-prep: rust-ios-device-release alpine-fs llama-ios xcgen
+ios-release-prep: rust-ios-device-release alpine-fs xcgen
 
 mac-release-prep: rust-mac-release xcgen
 
@@ -759,6 +773,61 @@ screenshots-ios:
 screenshots-android:
 	@echo "── Capturing Android screenshots ──"
 	cd $(ANDROID_DIR) && bundle exec fastlane screenshots
+
+$(KITTYLITTER_DEV_MANIFEST): $(KITTYLITTER_DIR)/Cargo.toml $(KITTYLITTER_DIR)/src/main.rs
+	@if [ ! -f "$(ALLEYCAT_DEV_DIR)/crates/alleycat/Cargo.toml" ]; then \
+		echo "error: ALLEYCAT_DEV_DIR=$(ALLEYCAT_DEV_DIR) does not look like an alleycat checkout"; \
+		echo "override with: make kittylitter ALLEYCAT_DEV_DIR=/path/to/alleycat"; \
+		exit 1; \
+	fi
+	@mkdir -p "$(KITTYLITTER_DEV_DIR)/src"
+	@printf '%s\n' \
+		'[workspace]' \
+		'' \
+		'[package]' \
+		'name = "kittylitter-dev"' \
+		'version = "$(KITTYLITTER_VERSION)"' \
+		'edition = "2024"' \
+		'publish = false' \
+		'' \
+		'[[bin]]' \
+		'name = "kittylitter"' \
+		'path = "src/main.rs"' \
+		'' \
+		'[dependencies]' \
+		'alleycat = { path = "$(ALLEYCAT_DEV_DIR)/crates/alleycat" }' \
+		'anyhow = "1"' \
+		> "$(KITTYLITTER_DEV_MANIFEST)"
+	@printf '%s\n' \
+		'fn main() -> anyhow::Result<()> {' \
+		'    alleycat::App {' \
+		'        binary_name: "kittylitter",' \
+		'        qualifier: "com",' \
+		'        organization: "sigkitten",' \
+		'        application: "kittylitter",' \
+		'        label: "com.sigkitten.kittylitter",' \
+		'        version: env!("CARGO_PKG_VERSION"),' \
+		'    }' \
+		'    .run()' \
+		'}' \
+		> "$(KITTYLITTER_DEV_DIR)/src/main.rs"
+
+kittylitter: $(KITTYLITTER_DEV_MANIFEST)
+	@echo "── Running kittylitter $(KITTYLITTER_ARGS) via $(ALLEYCAT_DEV_DIR) ──"
+	@cd $(ROOT) && $(KITTYLITTER_CARGO_ENV) cargo run --manifest-path "$(KITTYLITTER_DEV_MANIFEST)" --bin kittylitter -- $(KITTYLITTER_ARGS)
+
+kittylitter-restart: $(KITTYLITTER_DEV_MANIFEST)
+	@echo "── Building kittylitter via $(ALLEYCAT_DEV_DIR) ──"
+	@cd $(ROOT) && $(KITTYLITTER_CARGO_ENV) cargo build --manifest-path "$(KITTYLITTER_DEV_MANIFEST)" --bin kittylitter
+	@echo "── Restarting installed kittylitter daemon ──"
+	@cd $(ROOT) && $(KITTYLITTER_CARGO_ENV) cargo run --manifest-path "$(KITTYLITTER_DEV_MANIFEST)" --bin kittylitter -- stop >/dev/null 2>&1 || true
+	@if launchctl print "gui/$$(id -u)/com.sigkitten.kittylitter" >/dev/null 2>&1; then \
+		launchctl kickstart -k "gui/$$(id -u)/com.sigkitten.kittylitter"; \
+		sleep 3; \
+		cd "$(ROOT)" && $(KITTYLITTER_CARGO_ENV) cargo run --manifest-path "$(KITTYLITTER_DEV_MANIFEST)" --bin kittylitter -- agents list; \
+	else \
+		echo "kittylitter autostart is not installed; start it with: make kittylitter serve"; \
+	fi
 
 tui:
 	@echo "── Building codex-tui ──"

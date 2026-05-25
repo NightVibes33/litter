@@ -11,7 +11,7 @@ import uniffi.codex_mobile_client.AppReadOnlyAccess
 import uniffi.codex_mobile_client.AppDynamicToolSpec
 import uniffi.codex_mobile_client.AppSandboxMode
 import uniffi.codex_mobile_client.AppSandboxPolicy
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.ThreadKey
 import uniffi.codex_mobile_client.generativeUiDynamicToolSpecs
 
@@ -159,7 +159,7 @@ class AppLaunchState(context: Context) {
 
     fun approvalPolicyValue(threadKey: ThreadKey? = null): AppAskForApproval? =
         if (threadKey != null) {
-            permissionOverride(threadKey)?.let { permission ->
+            outboundPermissionOverride(threadKey)?.let { permission ->
                 permission.rawApprovalPolicy ?: askForApprovalFromWireValue(permission.approvalPolicy)
             }
         } else {
@@ -168,7 +168,7 @@ class AppLaunchState(context: Context) {
 
     fun sandboxModeValue(threadKey: ThreadKey? = null): AppSandboxMode? =
         if (threadKey != null) {
-            permissionOverride(threadKey)?.let { permission ->
+            outboundPermissionOverride(threadKey)?.let { permission ->
                 permission.rawSandboxPolicy?.toLaunchSandboxMode()
                     ?: sandboxModeFromWireValue(permission.sandboxMode)
             }
@@ -178,7 +178,7 @@ class AppLaunchState(context: Context) {
 
     fun turnSandboxPolicy(threadKey: ThreadKey? = null): AppSandboxPolicy? =
         if (threadKey != null) {
-            permissionOverride(threadKey)?.let { permission ->
+            outboundPermissionOverride(threadKey)?.let { permission ->
                 permission.rawSandboxPolicy ?: sandboxModeFromWireValue(permission.sandboxMode)?.toTurnSandboxPolicy()
             }
         } else {
@@ -221,6 +221,9 @@ class AppLaunchState(context: Context) {
 
     fun permissionOverride(threadKey: ThreadKey?): ThreadPermissionOverride? =
         threadKey?.let { snapshot.value.threadPermissionOverrides[permissionKey(it)] }
+
+    private fun outboundPermissionOverride(threadKey: ThreadKey?): ThreadPermissionOverride? =
+        permissionOverride(threadKey)?.takeIf { it.isUserOverride }
 
     fun selectedApprovalPolicy(threadKey: ThreadKey? = null): String =
         if (threadKey != null) {

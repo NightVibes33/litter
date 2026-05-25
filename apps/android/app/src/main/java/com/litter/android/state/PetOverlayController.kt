@@ -8,7 +8,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.core.content.ContextCompat
 import uniffi.codex_mobile_client.AppPetSummary
 import uniffi.codex_mobile_client.AppSnapshotRecord
 import uniffi.codex_mobile_client.AppServerTransportState
@@ -258,7 +257,7 @@ object PetOverlayController {
             action = PetOverlayService.ACTION_SYNC
         }
         if (shouldShowSystemOverlay(appContext)) {
-            ContextCompat.startForegroundService(appContext, intent)
+            appContext.startService(intent)
         } else {
             appContext.stopService(intent)
         }
@@ -296,6 +295,9 @@ object PetOverlayController {
         if (activeThread?.hasActiveTurn == true) {
             return PetAvatarState.RUNNING
         }
+        if (snapshot.threads.any { it.hasActiveTurn }) {
+            return PetAvatarState.RUNNING
+        }
         if (snapshot.threads.any { it.info.status == ThreadSummaryStatus.SYSTEM_ERROR }) {
             return PetAvatarState.FAILED
         }
@@ -315,6 +317,7 @@ object PetOverlayController {
         }
         if (activeThread?.info?.status == ThreadSummaryStatus.SYSTEM_ERROR) return "Run failed"
         if (activeThread?.hasActiveTurn == true) return "Working..."
+        if (snapshot.threads.any { it.hasActiveTurn }) return "Working..."
         if (snapshot.threads.any { it.info.status == ThreadSummaryStatus.SYSTEM_ERROR }) return "Thread failed"
         val connected = snapshot.servers.any { it.transportState == AppServerTransportState.CONNECTED }
         return if (connected) null else "Waiting for server"

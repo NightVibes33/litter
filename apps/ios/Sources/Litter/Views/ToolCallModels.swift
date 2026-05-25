@@ -1,5 +1,52 @@
 import Foundation
 
+enum ConversationDetailDisplayMode: String, CaseIterable, Identifiable, Equatable {
+    case expanded
+    case collapsed
+    case hidden
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .expanded: return "Show"
+        case .collapsed: return "Collapse"
+        case .hidden: return "Hide"
+        }
+    }
+
+    var detailText: String {
+        switch self {
+        case .expanded: return "Details are open by default"
+        case .collapsed: return "Details stay behind a disclosure"
+        case .hidden: return "Details are removed from the transcript"
+        }
+    }
+
+    var rendersRows: Bool { self != .hidden }
+
+    static func resolve(_ rawValue: String) -> ConversationDetailDisplayMode {
+        ConversationDetailDisplayMode(rawValue: rawValue) ?? .collapsed
+    }
+
+    func defaultExpanded(isFailed: Bool = false) -> Bool {
+        switch self {
+        case .expanded:
+            return true
+        case .collapsed:
+            return isFailed
+        case .hidden:
+            return false
+        }
+    }
+}
+
+enum ConversationDisplayPreferenceKey {
+    static let reasoning = "conversationReasoningDisplayMode"
+    static let commands = "conversationCommandDisplayMode"
+    static let tools = "conversationToolDisplayMode"
+}
+
 enum ToolCallKind: String, Equatable {
     case commandExecution
     case commandOutput

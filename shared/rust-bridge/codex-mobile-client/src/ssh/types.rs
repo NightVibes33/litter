@@ -5,13 +5,15 @@
 use std::io;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
+use std::pin::Pin;
 use std::process::ExitStatus;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
 use russh::ChannelWriteHalf;
 use russh::Sig;
 use russh::client::Msg;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::{Mutex, watch};
 
 /// Credentials for establishing an SSH connection.
@@ -37,34 +39,21 @@ pub enum SshAuth {
 /// Result of a successful `bootstrap_codex_server` call.
 #[derive(Debug, Clone)]
 pub struct SshBootstrapResult {
+    /// Legacy TCP app-server port. Socket/proxy based bootstraps use 0.
     pub server_port: u16,
+    /// Legacy local tunnel port. Socket/proxy based bootstraps use 0.
     pub tunnel_local_port: u16,
     pub server_version: Option<String>,
     pub pid: Option<u32>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct ResolvedCodexRelease {
-    pub tag_name: String,
-    pub asset_name: String,
-    pub binary_name: String,
-    pub download_url: String,
+    pub(crate) codex_path: String,
+    pub(crate) shell: RemoteShell,
+    pub(crate) transport: SshBootstrapTransport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RemotePlatform {
-    MacosArm64,
-    MacosX64,
-    LinuxArm64,
-    LinuxX64,
-    WindowsX64,
-    WindowsArm64,
-}
-
-impl RemotePlatform {
-    pub(crate) fn is_windows(self) -> bool {
-        matches!(self, Self::WindowsX64 | Self::WindowsArm64)
-    }
+pub(crate) enum SshBootstrapTransport {
+    AppServerProxy,
+    WebSocketTunnel,
 }
 
 /// The remote host's shell type, detected after SSH connect.
@@ -106,24 +95,6 @@ impl RemoteShell {
             RemoteShell::PowerShell => crate::ssh_scripts::powershell::KILL_PORT_LISTENER,
         }
     }
-
-    /// Template for the `FRESH`/`STALE` codex-update sentinel probe.
-    pub(crate) fn update_sentinel_check_template(self) -> &'static str {
-        match self {
-            RemoteShell::Posix => crate::ssh_scripts::posix::UPDATE_SENTINEL_CHECK,
-            RemoteShell::PowerShell => crate::ssh_scripts::powershell::UPDATE_SENTINEL_CHECK,
-        }
-    }
-}
-
-/// Outcome of running the Codex install/update flow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CodexInstallOutcome {
-    /// A new tag/version was downloaded or `npm install` ran.
-    Installed,
-    /// The tarball install saw `$HOME/.litter/codex/$tag/codex` already present;
-    /// we just refreshed the symlink.
-    AlreadyAtLatestTag,
 }
 
 /// Outcome of running a remote command.
@@ -137,6 +108,46 @@ pub struct ExecResult {
 pub type SshExecStdin = Box<dyn AsyncWrite + Send + Unpin>;
 pub type SshExecStdout = Box<dyn AsyncRead + Send + Unpin>;
 pub type SshExecStderr = Box<dyn AsyncRead + Send + Unpin>;
+
+/// Bidirectional stream backed by a remote exec child's stdout/stdin.
+pub struct SshExecIo {
+    stdout: SshExecStdout,
+    stdin: SshExecStdin,
+}
+
+impl SshExecIo {
+    pub(crate) fn new(stdout: SshExecStdout, stdin: SshExecStdin) -> Self {
+        Self { stdout, stdin }
+    }
+}
+
+impl AsyncRead for SshExecIo {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stdout).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for SshExecIo {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.stdin).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stdin).poll_flush(cx)
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.stdin).poll_shutdown(cx)
+    }
+}
 
 /// Streaming SSH exec child.
 ///

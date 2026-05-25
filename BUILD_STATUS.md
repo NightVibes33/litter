@@ -11,7 +11,7 @@ Last verified public build:
 Current BuildKit state:
 
 - Public repo contains the app-side BuildKit bridge, focused Nyxian/LLVM BuildKit source import, LiveContainer/ZSign source with a trimmed iOS arm64 OpenSSL.xcframework slice, fakefs command shims, fakefs doctor, native ABI wrapper source, private asset manifest contract, private GitHub Release downloader, and authenticated CI asset injection.
-- Full on-device Swift/IPA building requires a private `LitterBuildKitAssets` bundle with CoreCompiler, Swift support libraries, `LitterBuildKitNative.framework`, and a user-owned `iPhoneOS26.4.sdk`. Runner mode additionally requires a packaged Nyxian runner; in-process mode now handles Swift jobs and minimal unsigned IPA packaging inside `LitterBuildKitNative.framework`.
+- Full on-device Swift/IPA building requires a private `LitterBuildKitAssets` bundle with CoreCompiler, Swift support libraries, Swift resource files, `LitterBuildKitNative.framework`, and a user-owned `iPhoneOS26.4.sdk`. Runner mode additionally requires a packaged Nyxian runner; in-process mode now handles Swift jobs and minimal unsigned IPA packaging inside `LitterBuildKitNative.framework`.
 - Apple SDK assets must not be committed to this public repository.
 
 Latest implementation note:
@@ -38,4 +38,4 @@ Current runner asset workflow:
 - BuildKit asset CI now checks for a verified private release before rebuilding Swift/LLVM, restores both finished and partial compiler caches, and saves partial outputs after failed long builds so retries do not restart from zero.
 - BuildKit source rebuilds are now opt-in with `force_rebuild=true`; normal runs skip successfully if no reusable private release/cache exists instead of spending hours compiling Swift/LLVM by default.
 - The native wrapper now also stages flattened `CoreCompiler` headers, fixing the final packaging failure from run `25644535373` after CoreCompiler itself succeeded.
-- Unsigned IPA CI now installs only Xcodegen up front; CMake/Ninja install only when the llama.cpp XCFramework cache is missing.
+- Unsigned IPA CI no longer builds or restores llama.cpp; on-device GGUF inference is disabled and local/private models should use a PC-hosted OpenAI-compatible endpoint.

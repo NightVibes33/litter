@@ -93,17 +93,23 @@ static NSString *LBNFindRunner(NSString *buildKitRoot, NSString *toolchainRoot)
     return nil;
 }
 
-static NSString *LBNWriteRequestFile(NSDictionary *request, NSString *buildDir, NSString **error)
+static NSString *LBNWriteRequestFile(NSDictionary *request, NSString *requestDir, NSString **error)
 {
     NSFileManager *fm = NSFileManager.defaultManager;
-    NSError *dirError = nil;
-    if(![fm createDirectoryAtPath:buildDir withIntermediateDirectories:YES attributes:nil error:&dirError])
+    if(requestDir.length == 0)
     {
-        if(error) { *error = dirError.localizedDescription ?: @"could not create build directory"; }
+        if(error) { *error = @"native request directory was empty"; }
         return nil;
     }
 
-    NSString *path = [buildDir stringByAppendingPathComponent:@"request.json"];
+    NSError *dirError = nil;
+    if(![fm createDirectoryAtPath:requestDir withIntermediateDirectories:YES attributes:nil error:&dirError])
+    {
+        if(error) { *error = dirError.localizedDescription ?: @"could not create native request directory"; }
+        return nil;
+    }
+
+    NSString *path = [requestDir stringByAppendingPathComponent:@"request.json"];
     NSError *jsonError = nil;
     NSData *data = [NSJSONSerialization dataWithJSONObject:request options:NSJSONWritingPrettyPrinted error:&jsonError];
     if(data == nil)
@@ -202,6 +208,7 @@ const char *litter_buildkit_run_json(const char *request_json)
         NSString *buildKitRoot = LBNString(request, @"buildKitRoot");
         NSString *toolchainRoot = LBNString(request, @"toolchainRoot");
         NSString *sdkRoot = LBNString(request, @"sdkRoot");
+        NSString *hostWorkDir = LBNString(request, @"hostWorkDir");
 
         if(command.length == 0 || buildDir.length == 0 || buildKitRoot.length == 0 || toolchainRoot.length == 0 || sdkRoot.length == 0)
         {
@@ -209,7 +216,8 @@ const char *litter_buildkit_run_json(const char *request_json)
         }
 
         NSString *writeError = nil;
-        NSString *requestPath = LBNWriteRequestFile(request, buildDir, &writeError);
+        NSString *requestDirectory = hostWorkDir.length > 0 ? hostWorkDir : buildDir;
+        NSString *requestPath = LBNWriteRequestFile(request, requestDirectory, &writeError);
         if(requestPath == nil)
         {
             return LBNResponse(73, @"request-write-failed", writeError ?: @"Could not write native BuildKit request file.\n");
@@ -241,7 +249,6 @@ const char *litter_buildkit_run_json(const char *request_json)
             @"--toolchain-root", toolchainRoot,
             @"--sdk-root", sdkRoot
         ];
-        NSString *hostWorkDir = LBNString(request, @"hostWorkDir");
         NSString *hostProjectPath = LBNString(request, @"hostProjectPath");
         NSString *hostInputPath = LBNString(request, @"hostInputPath");
         if(hostWorkDir.length > 0) { runnerArgs = [runnerArgs arrayByAddingObjectsFromArray:@[@"--host-work-dir", hostWorkDir]]; }

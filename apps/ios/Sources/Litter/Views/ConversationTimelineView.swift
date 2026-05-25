@@ -22,6 +22,10 @@ enum ConversationLiveDetailRetentionPolicy {
 }
 
 struct ConversationTurnTimeline: View {
+    @AppStorage(ConversationDisplayPreferenceKey.reasoning) private var reasoningDisplayModeRaw = ConversationDetailDisplayMode.collapsed.rawValue
+    @AppStorage(ConversationDisplayPreferenceKey.commands) private var commandDisplayModeRaw = ConversationDetailDisplayMode.collapsed.rawValue
+    @AppStorage(ConversationDisplayPreferenceKey.tools) private var toolDisplayModeRaw = ConversationDetailDisplayMode.collapsed.rawValue
+
     let items: [ConversationItem]
     let isLive: Bool
     let serverId: String
@@ -43,6 +47,7 @@ struct ConversationTurnTimeline: View {
     private var timelineContent: some View {
         let rows = rowDescriptors
         let retainedRichDetailItemIDs = ConversationLiveDetailRetentionPolicy.retainedRichDetailItemIDs(for: items)
+        let commandDisplayMode = ConversationDetailDisplayMode.resolve(commandDisplayModeRaw)
         let latestCommandExecutionItemId = rows.reversed().compactMap { row -> String? in
             guard case .item(let item) = row,
                   case .commandExecution(let data) = item.content,
@@ -56,7 +61,8 @@ struct ConversationTurnTimeline: View {
                     row,
                     isLastRow: index == rows.indices.last,
                     isPreferredExpandedCommandRow: row.preferredExpandedCommandRow(
-                        latestCommandExecutionItemId: latestCommandExecutionItemId
+                        latestCommandExecutionItemId: latestCommandExecutionItemId,
+                        commandDisplayMode: commandDisplayMode
                     ),
                     retainedRichDetailItemIDs: retainedRichDetailItemIDs
                 )
@@ -76,11 +82,30 @@ struct ConversationTurnTimeline: View {
         ConversationTimelineRowDescriptor.mergeConsecutiveExplorationRows(
             ConversationTimelineRowDescriptor.build(from: items)
         )
+        .filter {
+            $0.isVisible(
+                reasoningDisplayMode: reasoningDisplayMode,
+                commandDisplayMode: commandDisplayMode,
+                toolDisplayMode: toolDisplayMode
+            )
+        }
     }
 
     private var streamingAssistantItemId: String? {
         guard isLive else { return nil }
         return items.last(where: \.isAssistantItem)?.id
+    }
+
+    private var reasoningDisplayMode: ConversationDetailDisplayMode {
+        ConversationDetailDisplayMode.resolve(reasoningDisplayModeRaw)
+    }
+
+    private var commandDisplayMode: ConversationDetailDisplayMode {
+        ConversationDetailDisplayMode.resolve(commandDisplayModeRaw)
+    }
+
+    private var toolDisplayMode: ConversationDetailDisplayMode {
+        ConversationDetailDisplayMode.resolve(toolDisplayModeRaw)
     }
 
     // Returns AnyView rather than `some View` with @ViewBuilder so the result
@@ -106,6 +131,9 @@ struct ConversationTurnTimeline: View {
                     isLiveTurn: isLive,
                     isStreamingMessage: item.id == streamingAssistantItemId,
                     shouldPreserveRichDetail: retainedRichDetailItemIDs.contains(item.id),
+                    reasoningDisplayMode: reasoningDisplayMode,
+                    commandDisplayMode: commandDisplayMode,
+                    toolDisplayMode: toolDisplayMode,
                     messageActionsDisabled: messageActionsDisabled,
                     onStreamingSnapshotRendered: item.id == streamingAssistantItemId ? onStreamingSnapshotRendered : nil,
                     onLiveContentLayoutChanged: onLiveContentLayoutChanged,
@@ -122,7 +150,8 @@ struct ConversationTurnTimeline: View {
                 ConversationExplorationGroupRow(
                     id: id,
                     items: items,
-                    showsCollapsedPreview: isLastRow
+                    showsCollapsedPreview: isLastRow,
+                    displayMode: commandDisplayMode
                 )
             )
         case .subagentGroup(_, let merged, _):
@@ -157,13 +186,38 @@ private enum ConversationTimelineRowDescriptor: Identifiable, Equatable {
         return item.isAssistantItem
     }
 
-    func preferredExpandedCommandRow(latestCommandExecutionItemId: String?) -> Bool {
+    func preferredExpandedCommandRow(
+        latestCommandExecutionItemId: String?,
+        commandDisplayMode: ConversationDetailDisplayMode
+    ) -> Bool {
+        guard commandDisplayMode == .collapsed else {
+            return commandDisplayMode == .expanded
+        }
         guard case .item(let item) = self,
               case .commandExecution(let data) = item.content,
               !data.isPureExploration else {
             return false
         }
         return item.id == latestCommandExecutionItemId
+    }
+
+    func isVisible(
+        reasoningDisplayMode: ConversationDetailDisplayMode,
+        commandDisplayMode: ConversationDetailDisplayMode,
+        toolDisplayMode: ConversationDetailDisplayMode
+    ) -> Bool {
+        switch self {
+        case .item(let item):
+            return item.isVisible(
+                reasoningDisplayMode: reasoningDisplayMode,
+                commandDisplayMode: commandDisplayMode,
+                toolDisplayMode: toolDisplayMode
+            )
+        case .exploration:
+            return commandDisplayMode.rendersRows
+        case .subagentGroup:
+            return toolDisplayMode.rendersRows
+        }
     }
 
     static func build(from items: [ConversationItem]) -> [ConversationTimelineRowDescriptor] {
@@ -377,6 +431,9 @@ private struct ConversationTimelineItemRow: View, Equatable {
     let isLiveTurn: Bool
     let isStreamingMessage: Bool
     let shouldPreserveRichDetail: Bool
+    let reasoningDisplayMode: ConversationDetailDisplayMode
+    let commandDisplayMode: ConversationDetailDisplayMode
+    let toolDisplayMode: ConversationDetailDisplayMode
     let messageActionsDisabled: Bool
     let onStreamingSnapshotRendered: (() -> Void)?
     let onLiveContentLayoutChanged: (() -> Void)?
@@ -403,6 +460,9 @@ private struct ConversationTimelineItemRow: View, Equatable {
             lhs.agentDirectoryVersion == rhs.agentDirectoryVersion &&
             lhs.isPreferredExpandedCommandRow == rhs.isPreferredExpandedCommandRow &&
             lhs.isLiveTurn == rhs.isLiveTurn &&
+            lhs.reasoningDisplayMode == rhs.reasoningDisplayMode &&
+            lhs.commandDisplayMode == rhs.commandDisplayMode &&
+            lhs.toolDisplayMode == rhs.toolDisplayMode &&
             lhs.messageActionsDisabled == rhs.messageActionsDisabled
         return result
     }
@@ -420,36 +480,43 @@ private struct ConversationTimelineItemRow: View, Equatable {
         case .codeReview(let data):
             return AnyView(ConversationCodeReviewRow(data: data))
         case .reasoning(let data):
-            return AnyView(ConversationReasoningRow(data: data))
+            guard reasoningDisplayMode.rendersRows else { return AnyView(EmptyView()) }
+            return AnyView(ConversationReasoningRow(data: data, displayMode: reasoningDisplayMode))
         case .todoList(let data):
             return AnyView(ConversationTodoListRow(data: data))
         case .proposedPlan(let data):
             return AnyView(ConversationProposedPlanRow(data: data))
         case .commandExecution(let data):
+            guard commandDisplayMode.rendersRows else { return AnyView(EmptyView()) }
             return AnyView(commandExecutionRow(data))
         case .fileChange(let data):
+            guard toolDisplayMode.rendersRows else { return AnyView(EmptyView()) }
             return AnyView(toolCallRow(makeFileChangeModel(data)))
         case .turnDiff(let data):
+            guard toolDisplayMode.rendersRows else { return AnyView(EmptyView()) }
             return AnyView(ConversationTurnDiffRow(data: data))
         case .mcpToolCall(let data):
+            guard toolDisplayMode.rendersRows else { return AnyView(EmptyView()) }
             if let view = data.computerUse {
                 return AnyView(
                     ComputerUseToolCallView(
                         data: data,
                         view: view,
-                        externalExpanded: !isLiveTurn && shouldPreserveRichDetail
+                        externalExpanded: toolDefaultExpanded(isFailed: data.status == .failed)
                     )
                 )
             } else {
                 return AnyView(toolCallRow(makeMcpModel(data)))
             }
         case .dynamicToolCall(let data):
+            guard toolDisplayMode.rendersRows else { return AnyView(EmptyView()) }
             if CrossServerTools.isRichTool(data.tool) {
                 return AnyView(CrossServerToolResultView(data: data))
             } else {
                 return AnyView(toolCallRow(makeDynamicToolModel(data)))
             }
         case .multiAgentAction(let data):
+            guard toolDisplayMode.rendersRows else { return AnyView(EmptyView()) }
             return AnyView(
                 SubagentCardView(
                     data: data,
@@ -457,14 +524,17 @@ private struct ConversationTimelineItemRow: View, Equatable {
                 )
             )
         case .webSearch(let data):
+            guard toolDisplayMode.rendersRows else { return AnyView(EmptyView()) }
             return AnyView(toolCallRow(makeWebSearchModel(data)))
         case .imageView(let data):
+            guard toolDisplayMode.rendersRows else { return AnyView(EmptyView()) }
             return AnyView(toolCallRow(makeImageViewModel(data)))
         case .imageGeneration(let data):
+            guard toolDisplayMode.rendersRows else { return AnyView(EmptyView()) }
             return AnyView(
                 ImageGenerationToolCallView(
                     data: data,
-                    externalExpanded: !isLiveTurn && shouldPreserveRichDetail
+                    externalExpanded: toolDefaultExpanded(isFailed: data.status == .failed)
                 )
             )
         case .widget(let data):
@@ -504,9 +574,8 @@ private struct ConversationTimelineItemRow: View, Equatable {
     private func commandExecutionRow(_ data: ConversationCommandExecutionData) -> some View {
         ConversationCommandExecutionRow(
             data: data,
-            isPreferredExpanded: isPreferredExpandedCommandRow
-                || data.isInProgress
-                || (!isLiveTurn && shouldPreserveRichDetail)
+            isPreferredExpanded: commandDefaultExpanded(data),
+            displayMode: commandDisplayMode
         )
     }
 
@@ -515,8 +584,28 @@ private struct ConversationTimelineItemRow: View, Equatable {
         ToolCallCardView(
             model: model,
             serverId: serverId,
-            externalExpanded: !isLiveTurn && shouldPreserveRichDetail
+            externalExpanded: toolDefaultExpanded(isFailed: model.status == .failed)
         )
+    }
+
+    private func toolDefaultExpanded(isFailed: Bool) -> Bool {
+        if toolDisplayMode == .collapsed,
+           !isLiveTurn,
+           shouldPreserveRichDetail {
+            return true
+        }
+        return toolDisplayMode.defaultExpanded(isFailed: isFailed)
+    }
+
+    private func commandDefaultExpanded(_ data: ConversationCommandExecutionData) -> Bool {
+        switch commandDisplayMode {
+        case .expanded:
+            return true
+        case .collapsed:
+            return data.isInProgress || data.status == .failed
+        case .hidden:
+            return false
+        }
     }
 
     private func userRow(_ data: ConversationUserMessageData) -> some View {
@@ -794,6 +883,7 @@ private struct ConversationExplorationGroupRow: View {
     let id: String
     let items: [ConversationItem]
     let showsCollapsedPreview: Bool
+    let displayMode: ConversationDetailDisplayMode
 
     @State private var expanded = false
 
@@ -884,6 +974,9 @@ private struct ConversationExplorationGroupRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .opacity(displayMode.rendersRows ? 1 : 0)
+        .frame(height: displayMode.rendersRows ? nil : 0)
+        .clipped()
         .onChange(of: showsCollapsedPreview) { _, newValue in
             guard !newValue else { return }
             expanded = false
@@ -1057,16 +1150,56 @@ private struct ExplorationDisplayEntry: Identifiable {
 
 private struct ConversationReasoningRow: View {
     let data: ConversationReasoningData
+    let displayMode: ConversationDetailDisplayMode
+
+    @State private var expanded: Bool
+
+    init(data: ConversationReasoningData, displayMode: ConversationDetailDisplayMode) {
+        self.data = data
+        self.displayMode = displayMode
+        _expanded = State(initialValue: displayMode.defaultExpanded())
+    }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            Text(reasoningText)
-                .litterFont(.footnote)
-                .italic()
-                .foregroundColor(LitterTheme.textSecondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 20)
+        VStack(alignment: .leading, spacing: expanded ? 8 : 0) {
+            Button(action: toggleExpanded) {
+                HStack(spacing: 8) {
+                    Image(systemName: "brain.head.profile")
+                        .litterFont(size: 12, weight: .semibold)
+                        .foregroundColor(LitterTheme.textSecondary)
+                    Text("Thinking")
+                        .litterFont(.caption, weight: .semibold)
+                        .foregroundColor(LitterTheme.textSecondary)
+                    if !expanded {
+                        Text(collapsedSummary)
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textMuted)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .litterFont(size: 11, weight: .medium)
+                        .foregroundColor(LitterTheme.textMuted)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                Text(reasoningText)
+                    .litterFont(.footnote)
+                    .italic()
+                    .foregroundColor(LitterTheme.textSecondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.sectionReveal)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .animation(.spring(duration: 0.32, bounce: 0.12), value: expanded)
+        .onChange(of: displayMode) { _, newValue in
+            expanded = newValue.defaultExpanded()
         }
     }
 
@@ -1074,6 +1207,19 @@ private struct ConversationReasoningRow: View {
         (data.summary + data.content)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: "\n\n")
+    }
+
+    private var collapsedSummary: String {
+        let itemCount = (data.summary + data.content).filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.count
+        return itemCount == 1 ? "Internal reasoning" : "\(itemCount) reasoning notes"
+    }
+
+    private func toggleExpanded() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            expanded.toggle()
+        }
     }
 }
 
@@ -1263,12 +1409,18 @@ private struct ConversationTurnDiffRow: View {
 private struct ConversationCommandExecutionRow: View {
     let data: ConversationCommandExecutionData
     let isPreferredExpanded: Bool
+    let displayMode: ConversationDetailDisplayMode
 
     @State private var expanded: Bool
 
-    init(data: ConversationCommandExecutionData, isPreferredExpanded: Bool) {
+    init(
+        data: ConversationCommandExecutionData,
+        isPreferredExpanded: Bool,
+        displayMode: ConversationDetailDisplayMode
+    ) {
         self.data = data
         self.isPreferredExpanded = isPreferredExpanded
+        self.displayMode = displayMode
         _expanded = State(initialValue: isPreferredExpanded)
     }
 
@@ -1298,6 +1450,9 @@ private struct ConversationCommandExecutionRow: View {
         .animation(.spring(duration: 0.35, bounce: 0.15), value: expanded)
         .onChange(of: isPreferredExpanded) { _, newValue in
             expanded = newValue
+        }
+        .onChange(of: displayMode) { _, newValue in
+            expanded = newValue == .expanded || data.isInProgress || data.status == .failed
         }
     }
 

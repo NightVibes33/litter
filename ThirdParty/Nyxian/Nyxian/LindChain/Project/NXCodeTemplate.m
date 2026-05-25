@@ -30,7 +30,7 @@ BOOL NXCodeTemplateMakeProjectStructure(NXProjectScheme scheme,
                                         NSURL *projectURL)
 {
     assert(scheme != nil && language != nil);
-
+    
     NSFileManager *defaultManager = [NSFileManager defaultManager];
     [NXUser shared].projectName = projectName;
     NSURL *templateURL = [[[NSBundle.mainBundle.bundleURL URLByAppendingPathComponent:@"/Shared/Templates"] URLByAppendingPathComponent:scheme] URLByAppendingPathComponent:language];
@@ -38,40 +38,40 @@ BOOL NXCodeTemplateMakeProjectStructure(NXProjectScheme scheme,
     {
         templateURL = [templateURL URLByAppendingPathComponent:interface];
     }
-
+    
     NSError *error = NULL;
     NSArray<NSURL*> *folderEntries = [defaultManager contentsOfDirectoryAtURL:templateURL includingPropertiesForKeys:nil options:0 error:&error];
     if(error)
     {
         return NO;
     }
-
+    
     NSDictionary<NSString*,NSString*> *variables = @{
         @"LDEDisplayName": projectName
     };
-
+    
     for(NSURL *srcURL in folderEntries)
     {
         NSURL *dstURL = [projectURL URLByAppendingPathComponent:[srcURL lastPathComponent]];
-
+        
         NSString *fileName = [dstURL lastPathComponent];
         fileName = NXSubstituteContent(fileName, variables, NO);
         dstURL = [[dstURL URLByDeletingLastPathComponent] URLByAppendingPathComponent:fileName];
-
-
+        
+        
         NSError *error = NULL;
         NSString *codeFileContent = [NSString stringWithContentsOfURL:srcURL encoding:NSUTF8StringEncoding error:&error];
         if(error)
         {
             return NO;
         }
-
+        
         codeFileContent = NXSubstituteContent(codeFileContent, variables, NO);
-
+        
         NSString *authoredCodeFileContent = [[[NXUser shared] generateHeaderForFileName: [dstURL lastPathComponent]] stringByAppendingString:codeFileContent];
         [authoredCodeFileContent writeToURL:dstURL atomically:YES encoding:NSUTF8StringEncoding error:&error];
     }
-
+    
     return YES;
 }
 
@@ -88,7 +88,7 @@ NSArray<NSString*> *NXCompilerFlagsForCodeTemplateLanguage(NXProjectSchemeKind s
         @"-L$(BSROOT)/lib",
         @"-lclang_rt.ios",
     ];
-
+    
     if(schemeKind == NXProjectSchemeKindApp)
     {
         return [baseFlags arrayByAddingObjectsFromArray:@[
@@ -124,7 +124,7 @@ NSArray<NSString*> *NXCompilerFlagsForCodeTemplateLanguage(NXProjectSchemeKind s
             ]];
         }
     }
-
+    
     return baseFlags;
 }
 
@@ -145,7 +145,7 @@ NSArray<NSString*> *NXSwiftFlagsForCodeTemplateLanguage(NXProjectSchemeKind sche
         @"-module-cache-path",
         @"$(BSROOT)/ModuleCache",
     ];
-
+    
     if(schemeKind == NXProjectSchemeKindApp ||
        languageKind != NXProjectLanguageKindSwift)  /* parse as library because swift is not the main language */
     {

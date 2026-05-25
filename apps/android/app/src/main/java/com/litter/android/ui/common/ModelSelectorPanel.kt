@@ -1,18 +1,24 @@
 package com.litter.android.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -36,10 +42,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.litter.android.state.ampReasoningEffortLocked
 import com.litter.android.ui.LitterTextStyle
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.LocalAppModel
@@ -47,7 +57,7 @@ import com.litter.android.ui.scaled
 import uniffi.codex_mobile_client.AppModeKind
 import uniffi.codex_mobile_client.AppThreadPermissionPreset
 import uniffi.codex_mobile_client.AppThreadSnapshot
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.ModelInfo
 import uniffi.codex_mobile_client.ReasoningEffort
 import uniffi.codex_mobile_client.threadPermissionPreset
@@ -81,45 +91,100 @@ fun ModelSelectorPanel(
     val appModel = LocalAppModel.current
     val launchState by appModel.launchState.snapshot.collectAsState()
     var modelSearchQuery by rememberSaveable { mutableStateOf("") }
-    val modelSearchIndex = remember(availableModels) {
-        ModelSearchIndex(availableModels)
-    }
-    val filteredModels = remember(modelSearchIndex, modelSearchQuery) {
-        modelSearchIndex.results(modelSearchQuery)
+    val visibleModels = remember(availableModels) {
+        availableModels.filter { it.isVisibleModelOption() }
     }
     val selectedModel = launchState.selectedModel
         .takeIf { it.isNotBlank() }
         ?: thread?.model
-        ?: availableModels.firstOrNull { it.isDefault }?.id
-        ?: availableModels.firstOrNull()?.id
+        ?: visibleModels.firstOrNull { it.isDefault }?.id
+        ?: visibleModels.firstOrNull()?.id
     val selectedRuntime = launchState.selectedAgentRuntimeKind
         ?: thread?.agentRuntimeKind
-        ?: availableModels.firstOrNull { it.id == selectedModel || it.model == selectedModel }?.agentRuntimeKind
-    val selectedModelDefinition by remember(selectedModel, selectedRuntime, availableModels) {
-        derivedStateOf {
-            availableModels.firstOrNull { it.matchesModelSelection(selectedModel, selectedRuntime) }
-                ?: availableModels.firstOrNull { it.isDefault }
-                ?: availableModels.firstOrNull()
-        }
+        ?: visibleModels.firstOrNull { it.id == selectedModel || it.model == selectedModel }?.agentRuntimeKind
+    val runtimeBuckets = remember(visibleModels) {
+        visibleModels
+            .groupBy { it.agentRuntimeKind }
+            .map { (kind, models) -> RuntimeModelBucket(kind = kind, count = models.size) }
+            .sortedBy { it.kind.runtimeSortIndex }
     }
-    val supportedEfforts = remember(selectedModelDefinition) {
-        selectedModelDefinition?.supportedReasoningEfforts ?: emptyList()
-    }
-    val selectedEffort = launchState.reasoningEffort
-        .takeIf { pending ->
-            pending.isNotBlank() &&
-                supportedEfforts.any { effortLabel(it.reasoningEffort) == pending }
-        }
-        ?: thread?.reasoningEffort
-            ?.takeIf { current ->
-                supportedEfforts.any { effortLabel(it.reasoningEffort) == current }
-            }
-        ?: selectedModelDefinition?.defaultReasoningEffort?.let(::effortLabel)
+    var selectedRuntimeFilterName by rememberSaveable { mutableStateOf<String?>(null) }
+    var initializedRuntimeFilter by rememberSaveable { mutableStateOf(false) }
+    val selectedRuntimeFilter = runtimeBuckets.firstOrNull {
+        it.kind == selectedRuntimeFilterName
+    }?.kind
 
-    LaunchedEffect(launchState.reasoningEffort, selectedModelDefinition, supportedEfforts) {
+    LaunchedEffect(selectedRuntime, runtimeBuckets) {
+        if (!initializedRuntimeFilter) {
+            if (selectedRuntime != null && runtimeBuckets.any { it.kind == selectedRuntime }) {
+                selectedRuntimeFilterName = selectedRuntime
+            }
+            initializedRuntimeFilter = true
+        } else if (
+            selectedRuntimeFilterName != null &&
+            runtimeBuckets.none { it.kind == selectedRuntimeFilterName }
+        ) {
+            selectedRuntimeFilterName = null
+        }
+    }
+
+    val runtimeScopedModels = remember(visibleModels, selectedRuntimeFilter) {
+        selectedRuntimeFilter?.let { runtime ->
+            visibleModels.filter { it.agentRuntimeKind == runtime }
+        } ?: visibleModels
+    }
+    val modelSearchIndex = remember(runtimeScopedModels) {
+        ModelSearchIndex(runtimeScopedModels)
+    }
+    val filteredModels = remember(modelSearchIndex, modelSearchQuery) {
+        modelSearchIndex.results(modelSearchQuery)
+    }
+    val selectedModelDefinition by remember(selectedModel, selectedRuntime, visibleModels) {
+        derivedStateOf {
+            visibleModels.firstOrNull { it.matchesModelSelection(selectedModel, selectedRuntime) }
+                ?: visibleModels.firstOrNull { it.isDefault }
+                ?: visibleModels.firstOrNull()
+        }
+    }
+    val selectedModelIsAmp = selectedModelDefinition?.agentRuntimeKind == "amp"
+    val ampEffortLocked = selectedModelIsAmp && thread?.ampReasoningEffortLocked == true
+    val supportedEfforts = remember(selectedModelDefinition, ampEffortLocked) {
+        if (ampEffortLocked) {
+            emptyList()
+        } else {
+            selectedModelDefinition?.supportedReasoningEfforts ?: emptyList()
+        }
+    }
+    val selectedEffort = if (supportedEfforts.isEmpty()) {
+        null
+    } else {
+        launchState.reasoningEffort
+            .takeIf { pending ->
+                pending.isNotBlank() &&
+                    supportedEfforts.any { effortLabel(it.reasoningEffort) == pending }
+            }
+            ?: thread?.reasoningEffort
+                ?.takeIf { current ->
+                    supportedEfforts.any { effortLabel(it.reasoningEffort) == current }
+                }
+            ?: selectedModelDefinition?.defaultReasoningEffort?.let(::effortLabel)
+    }
+
+    LaunchedEffect(launchState.reasoningEffort, selectedModelDefinition, supportedEfforts, ampEffortLocked) {
         val pendingEffort = launchState.reasoningEffort.trim()
         val defaultEffort = selectedModelDefinition?.defaultReasoningEffort
-        if (pendingEffort.isEmpty() || defaultEffort == null || supportedEfforts.isEmpty()) {
+        if (pendingEffort.isEmpty()) {
+            return@LaunchedEffect
+        }
+        if (ampEffortLocked) {
+            appModel.launchState.updateReasoningEffort(null)
+            return@LaunchedEffect
+        }
+        if (supportedEfforts.isEmpty()) {
+            appModel.launchState.updateReasoningEffort(null)
+            return@LaunchedEffect
+        }
+        if (defaultEffort == null) {
             return@LaunchedEffect
         }
         if (supportedEfforts.none { effortLabel(it.reasoningEffort) == pendingEffort }) {
@@ -144,6 +209,31 @@ fun ModelSelectorPanel(
             color = LitterTheme.textSecondary,
             fontSize = LitterTextStyle.caption2.scaled,
         )
+
+        if (runtimeBuckets.size > 1) {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
+            ) {
+                item(key = "all") {
+                    RuntimeFilterChip(
+                        label = "All",
+                        count = visibleModels.size,
+                        selected = selectedRuntimeFilterName == null,
+                        onClick = { selectedRuntimeFilterName = null },
+                    )
+                }
+                items(runtimeBuckets, key = { it.kind }) { bucket ->
+                    RuntimeFilterChip(
+                        label = bucket.kind.runtimeLabel,
+                        count = bucket.count,
+                        selected = selectedRuntimeFilter == bucket.kind,
+                        onClick = { selectedRuntimeFilterName = bucket.kind },
+                        leadingIcon = { ModelRuntimeIcon(bucket.kind) },
+                    )
+                }
+            }
+        }
 
         OutlinedTextField(
             value = modelSearchQuery,
@@ -185,13 +275,17 @@ fun ModelSelectorPanel(
             },
         )
 
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier.padding(vertical = 4.dp),
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 320.dp)
+                .padding(vertical = 4.dp),
         ) {
-            items(filteredModels, key = { it.id }) { model ->
+            items(filteredModels, key = { "${it.agentRuntimeKind}:${it.id}" }) { model ->
                 val isSelected = model.matchesModelSelection(selectedModel, selectedRuntime)
-                FilterChip(
+                ModelOptionRow(
+                    model = model,
                     selected = isSelected,
                     onClick = {
                         appModel.launchState.updateSelectedModel(
@@ -199,27 +293,18 @@ fun ModelSelectorPanel(
                             agentRuntimeKind = model.agentRuntimeKind,
                         )
                         appModel.launchState.updateReasoningEffort(
-                            effortLabel(model.defaultReasoningEffort),
+                            if (ampEffortLocked && model.agentRuntimeKind == "amp") {
+                                null
+                            } else {
+                                model.defaultReasoningEffortSelection()
+                            },
                         )
                     },
-                    leadingIcon = {
-                        ModelRuntimeIcon(model.agentRuntimeKind)
-                    },
-                    label = {
-                        Text(
-                            text = model.displayName.ifBlank { model.id },
-                            fontSize = LitterTextStyle.caption2.scaled,
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = LitterTheme.accent,
-                        selectedLabelColor = Color.Black,
-                    ),
                 )
             }
         }
 
-        if (availableModels.isEmpty()) {
+        if (visibleModels.isEmpty()) {
             Text(
                 text = "Loading models...",
                 color = LitterTheme.textMuted,
@@ -235,32 +320,41 @@ fun ModelSelectorPanel(
             )
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Effort",
-                    color = LitterTheme.textSecondary,
-                    fontSize = LitterTextStyle.caption2.scaled,
-                )
-                Spacer(Modifier.width(4.dp))
-            }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(supportedEfforts) { option ->
-                    val effort = effortLabel(option.reasoningEffort)
-                    FilterChip(
-                        selected = selectedEffort == effort,
-                        onClick = {
-                            appModel.launchState.updateReasoningEffort(effort)
-                        },
-                        label = { Text(effort, fontSize = 10f.scaled) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = LitterTheme.accent,
-                            selectedLabelColor = Color.Black,
-                        ),
+        if (ampEffortLocked) {
+            Text(
+                text = "Reasoning effort is locked after the first message.",
+                color = LitterTheme.textSecondary,
+                fontSize = LitterTextStyle.caption2.scaled,
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+            )
+        } else if (supportedEfforts.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Effort",
+                        color = LitterTheme.textSecondary,
+                        fontSize = LitterTextStyle.caption2.scaled,
                     )
+                    Spacer(Modifier.width(4.dp))
+                }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(supportedEfforts) { option ->
+                        val effort = effortLabel(option.reasoningEffort)
+                        FilterChip(
+                            selected = selectedEffort == effort,
+                            onClick = {
+                                appModel.launchState.updateReasoningEffort(effort)
+                            },
+                            label = { Text(effort, fontSize = 10f.scaled) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = LitterTheme.accent,
+                                selectedLabelColor = Color.Black,
+                            ),
+                        )
+                    }
                 }
             }
         }
@@ -359,7 +453,40 @@ internal fun effortLabel(value: ReasoningEffort): String = when (value) {
     ReasoningEffort.MEDIUM -> "medium"
     ReasoningEffort.HIGH -> "high"
     ReasoningEffort.X_HIGH -> "xhigh"
+    ReasoningEffort.MAX -> "max"
 }
+
+private fun ModelInfo.defaultReasoningEffortSelection(): String? =
+    if (supportedReasoningEfforts.isEmpty()) null else effortLabel(defaultReasoningEffort)
+
+private val AmpVisibleModes = setOf("smart", "rush", "deep")
+
+private fun normalizedAmpModeName(value: String): String =
+    value.trim()
+        .lowercase(Locale.ROOT)
+        .removePrefix("amp/")
+        .removePrefix("amp:")
+
+private fun ModelInfo.ampModeName(): String =
+    normalizedAmpModeName(id)
+        .ifEmpty {
+            normalizedAmpModeName(model)
+        }
+
+internal fun ModelInfo.modelPickerDisplayName(): String =
+    if (agentRuntimeKind == "amp") {
+        ampModeName().ifEmpty { displayName.ifBlank { id } }
+    } else {
+        displayName.ifBlank { id }
+    }
+
+private fun ModelInfo.isVisibleModelOption(): Boolean =
+    agentRuntimeKind != "amp" || ampModeName() in AmpVisibleModes
+
+private data class RuntimeModelBucket(
+    val kind: AgentRuntimeKind,
+    val count: Int,
+)
 
 private const val MaxModelSearchResults = 80
 
@@ -377,9 +504,9 @@ private class ModelSearchIndex(models: List<ModelInfo>) {
                 append('\n')
                 append(model.model)
                 append('\n')
-                append(model.agentRuntimeKind.name)
+                append(model.agentRuntimeKind)
                 append('\n')
-                append(model.displayName)
+                append(model.modelPickerDisplayName())
                 append('\n')
                 append(model.description)
             }.lowercase(Locale.ROOT),
@@ -389,10 +516,7 @@ private class ModelSearchIndex(models: List<ModelInfo>) {
     fun results(query: String): List<ModelInfo> {
         val normalizedQuery = query.trim().lowercase(Locale.ROOT)
         if (normalizedQuery.isEmpty()) {
-            return rows.asSequence()
-                .take(MaxModelSearchResults)
-                .map { it.model }
-                .toList()
+            return rows.map { it.model }
         }
 
         val matches = ArrayList<ModelInfo>(minOf(MaxModelSearchResults, rows.size))
@@ -419,10 +543,112 @@ internal fun ModelInfo.matchesModelSelection(
 }
 
 @Composable
-private fun ModelRuntimeIcon(kind: AgentRuntimeKind) {
-    Image(
-        painter = painterResource(kind.runtimeDrawable),
-        contentDescription = kind.runtimeLabel,
-        modifier = Modifier.size(16.dp),
+private fun RuntimeFilterChip(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+    leadingIcon: (@Composable () -> Unit)? = null,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        leadingIcon = leadingIcon,
+        label = {
+            Text(
+                text = "$label $count",
+                fontSize = LitterTextStyle.caption2.scaled,
+                maxLines = 1,
+            )
+        },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = LitterTheme.accent,
+            selectedLabelColor = Color.Black,
+        ),
     )
+}
+
+@Composable
+private fun ModelOptionRow(
+    model: ModelInfo,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(8.dp)
+    val background = if (selected) {
+        LitterTheme.accent.copy(alpha = 0.14f)
+    } else {
+        LitterTheme.surface.copy(alpha = 0.55f)
+    }
+    val borderColor = if (selected) {
+        LitterTheme.accent
+    } else {
+        LitterTheme.textMuted.copy(alpha = 0.32f)
+    }
+    val title = model.modelPickerDisplayName()
+    val detail = model.description
+        .takeIf { it.isNotBlank() }
+        ?: model.model.takeIf { it.isNotBlank() && it != title && it != model.id }
+    val runtimeLabel = model.agentRuntimeKind.runtimeLabel
+        .takeUnless { model.agentRuntimeKind == "amp" }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(background)
+            .border(0.8.dp, borderColor, shape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        ModelRuntimeIcon(model.agentRuntimeKind)
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = title,
+                    color = LitterTheme.textPrimary,
+                    fontSize = LitterTextStyle.caption.scaled,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (runtimeLabel != null) {
+                    Text(
+                        text = runtimeLabel,
+                        color = LitterTheme.textSecondary,
+                        fontSize = LitterTextStyle.caption2.scaled,
+                        maxLines = 1,
+                    )
+                }
+            }
+            if (detail != null) {
+                Text(
+                    text = detail,
+                    color = LitterTheme.textMuted,
+                    fontSize = LitterTextStyle.caption2.scaled,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (selected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Selected model",
+                tint = LitterTheme.accent,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ModelRuntimeIcon(kind: AgentRuntimeKind) {
+    AgentIconView(kind = kind, sizeDp = 16)
 }

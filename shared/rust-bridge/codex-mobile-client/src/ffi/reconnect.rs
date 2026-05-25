@@ -5,8 +5,8 @@ use crate::ffi::shared::{shared_mobile_client, shared_runtime};
 use crate::mobile_client::MobileClient;
 use crate::next_request_id;
 use crate::reconnect::{
-    ReconnectResult, SavedServerRecord, SshCredentialProvider, compute_reconnect_plan,
-    execute_reconnect_plan,
+    ReconnectResult, SavedServerRecord, SlingshotCredentialProvider, SshCredentialProvider,
+    compute_reconnect_plan_with_slingshot, execute_reconnect_plan,
 };
 use crate::session::connection::{InProcessConfig, ServerConfig};
 use crate::store::ServerHealthSnapshot;
@@ -67,7 +67,8 @@ pub struct ReconnectController {
     rt: Arc<Runtime>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
     credential_provider: Arc<tokio::sync::Mutex<Option<Arc<dyn SshCredentialProvider>>>>,
-    ipc_socket_path_override: Arc<std::sync::Mutex<Option<String>>>,
+    slingshot_credential_provider:
+        Arc<tokio::sync::Mutex<Option<Arc<dyn SlingshotCredentialProvider>>>>,
     multi_clanker_and_quic_enabled: Arc<std::sync::Mutex<bool>>,
     reconnect_guard: Arc<tokio::sync::Mutex<()>>,
 }
@@ -81,7 +82,7 @@ impl ReconnectController {
             rt: shared_runtime(),
             saved_servers: Arc::new(RwLock::new(Vec::new())),
             credential_provider: Arc::new(tokio::sync::Mutex::new(None)),
-            ipc_socket_path_override: Arc::new(std::sync::Mutex::new(None)),
+            slingshot_credential_provider: Arc::new(tokio::sync::Mutex::new(None)),
             multi_clanker_and_quic_enabled: Arc::new(std::sync::Mutex::new(false)),
             reconnect_guard: Arc::new(tokio::sync::Mutex::new(())),
         }
@@ -104,10 +105,22 @@ impl ReconnectController {
         }
     }
 
-    pub fn set_ipc_socket_path_override(&self, path: Option<String>) {
-        match self.ipc_socket_path_override.lock() {
-            Ok(mut guard) => *guard = path,
-            Err(e) => *e.into_inner() = path,
+    pub fn set_slingshot_credential_provider(
+        &self,
+        provider: Box<dyn SlingshotCredentialProvider>,
+    ) {
+        let provider: Arc<dyn SlingshotCredentialProvider> = Arc::from(provider);
+        let fast = {
+            let cp = Arc::clone(&self.slingshot_credential_provider);
+            cp.try_lock().ok().map(|mut g| {
+                *g = Some(Arc::clone(&provider));
+            })
+        };
+        if fast.is_none() {
+            let cp = Arc::clone(&self.slingshot_credential_provider);
+            self.rt.spawn(async move {
+                *cp.lock().await = Some(provider);
+            });
         }
     }
 
@@ -129,7 +142,7 @@ impl ReconnectController {
         let inner = Arc::clone(&self.inner);
         let saved_servers = Arc::clone(&self.saved_servers);
         let credential_provider = Arc::clone(&self.credential_provider);
-        let ipc_socket_path_override = Arc::clone(&self.ipc_socket_path_override);
+        let slingshot_credential_provider = Arc::clone(&self.slingshot_credential_provider);
         let multi_clanker_and_quic_enabled = match self.multi_clanker_and_quic_enabled.lock() {
             Ok(guard) => *guard,
             Err(e) => *e.into_inner(),
@@ -145,7 +158,7 @@ impl ReconnectController {
                     inner,
                     saved_servers,
                     credential_provider,
-                    ipc_socket_path_override,
+                    slingshot_credential_provider,
                     multi_clanker_and_quic_enabled,
                     reconnect_guard,
                 )
@@ -162,7 +175,7 @@ impl ReconnectController {
         let inner = Arc::clone(&self.inner);
         let saved_servers = Arc::clone(&self.saved_servers);
         let credential_provider = Arc::clone(&self.credential_provider);
-        let ipc_socket_path_override = Arc::clone(&self.ipc_socket_path_override);
+        let slingshot_credential_provider = Arc::clone(&self.slingshot_credential_provider);
         let multi_clanker_and_quic_enabled = match self.multi_clanker_and_quic_enabled.lock() {
             Ok(guard) => *guard,
             Err(e) => *e.into_inner(),
@@ -177,7 +190,7 @@ impl ReconnectController {
                     Arc::clone(&inner),
                     saved_servers,
                     credential_provider,
-                    ipc_socket_path_override,
+                    slingshot_credential_provider,
                     multi_clanker_and_quic_enabled,
                     server_id,
                 )
@@ -244,6 +257,12 @@ impl ReconnectController {
 
     pub async fn on_app_became_active(&self) -> Vec<ReconnectResult> {
         self.note_app_became_active();
+        // Hint iroh-backed sessions that the host network may have changed
+        // before we run the reconnect plan. This lets healthy alleycat
+        // sessions migrate paths/refresh relays without going through the
+        // (heavier) full reconnect path; reconnect_saved_servers is still
+        // run for transports that can't recover on their own.
+        self.notify_network_change().await;
         let results = self.reconnect_saved_servers().await;
         self.probe_active_remote_servers().await;
         results
@@ -253,6 +272,51 @@ impl ReconnectController {
         self.inner
             .app_store
             .note_app_lifecycle_phase(AppLifecyclePhaseSnapshot::Active);
+    }
+
+    /// Tell every session that the host network may have changed. iOS
+    /// suspends app processes (which freezes UDP sockets and relay
+    /// keepalives) and there's no in-process API to detect that — without
+    /// this hint, iroh would only notice paths are dead via the QUIC idle
+    /// timeout (10 min). Calling this on `appDidBecomeActive` lets iroh
+    /// re-probe paths immediately. Cheap when nothing changed.
+    pub async fn notify_network_change(&self) {
+        let inner = Arc::clone(&self.inner);
+        let _ = self
+            .rt
+            .spawn(async move {
+                inner.notify_network_change().await;
+            })
+            .await
+            .inspect_err(|error| {
+                warn!("ReconnectController: notify_network_change task failed: {error}");
+            });
+    }
+
+    /// Lifecycle hook for "I just resumed from a long background or a
+    /// push wake." iroh's `network_change` hint operates on the endpoint
+    /// discovery layer; it can't observe that our connection-level path
+    /// has been silently dead since the OS suspended us. After more than
+    /// ~iroh's per-path idle (15s), the existing `Connection` is almost
+    /// certainly toast and waiting on the 30s connection-idle timer for
+    /// the worker to notice would make the next user request hang up to
+    /// 30s. This hook short-circuits that wait by closing every active
+    /// alleycat `Connection` and letting the worker rebuild via the
+    /// existing reconnect path.
+    ///
+    /// Cheap: alleycat-only (no-op for SSH/WebSocket transports), and
+    /// the new `Connection` is opened on the same shared `Endpoint`.
+    pub async fn on_long_resume(&self) {
+        let inner = Arc::clone(&self.inner);
+        let _ = self
+            .rt
+            .spawn(async move {
+                inner.abandon_alleycat_connections().await;
+            })
+            .await
+            .inspect_err(|error| {
+                warn!("ReconnectController: on_long_resume task failed: {error}");
+            });
     }
 
     pub fn on_app_became_inactive(&self) {
@@ -268,6 +332,7 @@ impl ReconnectController {
     }
 
     pub async fn on_network_reachable(&self) -> Vec<ReconnectResult> {
+        self.notify_network_change().await;
         self.reconnect_saved_servers().await
     }
 }
@@ -276,7 +341,9 @@ async fn reconnect_saved_servers_inner(
     inner: Arc<MobileClient>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
     credential_provider: Arc<tokio::sync::Mutex<Option<Arc<dyn SshCredentialProvider>>>>,
-    ipc_socket_path_override: Arc<std::sync::Mutex<Option<String>>>,
+    slingshot_credential_provider: Arc<
+        tokio::sync::Mutex<Option<Arc<dyn SlingshotCredentialProvider>>>,
+    >,
     multi_clanker_and_quic_enabled: bool,
     reconnect_guard: Arc<tokio::sync::Mutex<()>>,
 ) -> Vec<ReconnectResult> {
@@ -337,12 +404,11 @@ async fn reconnect_saved_servers_inner(
         }
     }
 
-    let ipc_override = match ipc_socket_path_override.lock() {
-        Ok(g) => g.clone(),
-        Err(e) => e.into_inner().clone(),
-    };
-
     let credential_provider = credential_provider.lock().await;
+    let slingshot_credential_provider = slingshot_credential_provider.lock().await;
+    let slingshot_credential = slingshot_credential_provider
+        .as_ref()
+        .and_then(|provider| provider.load_credential());
 
     let mut plans = Vec::new();
     for server in &servers {
@@ -354,22 +420,23 @@ async fn reconnect_saved_servers_inner(
             let ssh_port = crate::reconnect::resolved_ssh_port(server);
             p.load_credential(server.hostname.clone(), ssh_port)
         });
-        if let Some(plan) = compute_reconnect_plan(
+        if let Some(plan) = compute_reconnect_plan_with_slingshot(
             server,
             credential.as_ref(),
+            slingshot_credential.as_ref(),
             is_connected,
             multi_clanker_and_quic_enabled,
         ) {
             plans.push(plan);
         }
     }
+    drop(slingshot_credential_provider);
     drop(credential_provider);
 
     let mut join_set = JoinSet::new();
     for plan in plans {
         let client = Arc::clone(&inner);
-        let ipc = ipc_override.clone();
-        join_set.spawn(async move { execute_reconnect_plan(&plan, &client, ipc).await });
+        join_set.spawn(async move { execute_reconnect_plan(&plan, &client).await });
     }
 
     let mut results = Vec::new();
@@ -391,7 +458,9 @@ async fn reconnect_server_inner(
     inner: Arc<MobileClient>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
     credential_provider: Arc<tokio::sync::Mutex<Option<Arc<dyn SshCredentialProvider>>>>,
-    ipc_socket_path_override: Arc<std::sync::Mutex<Option<String>>>,
+    slingshot_credential_provider: Arc<
+        tokio::sync::Mutex<Option<Arc<dyn SlingshotCredentialProvider>>>,
+    >,
     multi_clanker_and_quic_enabled: bool,
     server_id: String,
 ) -> ReconnectResult {
@@ -448,23 +517,25 @@ async fn reconnect_server_inner(
 
     if let Some(server) = saved_server {
         let credential_provider = credential_provider.lock().await;
+        let slingshot_credential_provider = slingshot_credential_provider.lock().await;
         let credential = credential_provider.as_ref().and_then(|p| {
             let ssh_port = crate::reconnect::resolved_ssh_port(&server);
             p.load_credential(server.hostname.clone(), ssh_port)
         });
+        let slingshot_credential = slingshot_credential_provider
+            .as_ref()
+            .and_then(|provider| provider.load_credential());
+        drop(slingshot_credential_provider);
         drop(credential_provider);
 
-        if let Some(plan) = compute_reconnect_plan(
+        if let Some(plan) = compute_reconnect_plan_with_slingshot(
             &server,
             credential.as_ref(),
+            slingshot_credential.as_ref(),
             false,
             multi_clanker_and_quic_enabled,
         ) {
-            let ipc_override = match ipc_socket_path_override.lock() {
-                Ok(g) => g.clone(),
-                Err(e) => e.into_inner().clone(),
-            };
-            return execute_reconnect_plan(&plan, &inner, ipc_override).await;
+            return execute_reconnect_plan(&plan, &inner).await;
         }
     }
 
@@ -520,7 +591,10 @@ mod tests {
             pending_approvals: Vec::new(),
             pending_approval_seeds: HashMap::new(),
             pending_user_inputs: Vec::new(),
+            pending_user_input_seeds: HashMap::new(),
             voice_session: AppVoiceSessionSnapshot::default(),
+            terminal_sessions: Vec::new(),
+            active_terminal_id: None,
         }
     }
 
@@ -532,12 +606,11 @@ mod tests {
             port: 0,
             wake_mac: None,
             is_local: false,
-            supports_ipc: false,
-            has_ipc: false,
             health,
             account: None,
             requires_openai_auth: false,
             rate_limits: None,
+            rate_limits_by_runtime: std::collections::HashMap::new(),
             available_models: None,
             agent_runtimes: Vec::new(),
             connection_progress: None,
@@ -566,29 +639,27 @@ mod tests {
     #[test]
     fn local_display_name_prefers_snapshot_name() {
         let mut snapshot = empty_snapshot();
-        snapshot.servers.insert(
-            "local".to_string(),
-            ServerSnapshot {
+        snapshot
+            .servers
+            .insert("local".to_string(), ServerSnapshot {
                 server_id: "local".to_string(),
                 display_name: "Desk Mac".to_string(),
                 host: "127.0.0.1".to_string(),
                 port: 0,
                 wake_mac: None,
                 is_local: true,
-                supports_ipc: false,
-                has_ipc: false,
                 health: ServerHealthSnapshot::Disconnected,
                 account: None,
                 requires_openai_auth: false,
                 rate_limits: None,
+                rate_limits_by_runtime: std::collections::HashMap::new(),
                 available_models: None,
                 agent_runtimes: Vec::new(),
                 connection_progress: None,
                 transport: ServerTransportDiagnostics::default(),
                 codex_version: None,
                 supports_turn_pagination: true,
-            },
-        );
+            });
 
         assert_eq!(
             resolved_local_display_name(&snapshot, &[], "local"),
@@ -631,29 +702,27 @@ mod tests {
     #[test]
     fn local_display_name_ignores_legacy_placeholder() {
         let mut snapshot = empty_snapshot();
-        snapshot.servers.insert(
-            "local".to_string(),
-            ServerSnapshot {
+        snapshot
+            .servers
+            .insert("local".to_string(), ServerSnapshot {
                 server_id: "local".to_string(),
                 display_name: "This Device".to_string(),
                 host: "127.0.0.1".to_string(),
                 port: 0,
                 wake_mac: None,
                 is_local: true,
-                supports_ipc: false,
-                has_ipc: false,
                 health: ServerHealthSnapshot::Disconnected,
                 account: None,
                 requires_openai_auth: false,
                 rate_limits: None,
+                rate_limits_by_runtime: std::collections::HashMap::new(),
                 available_models: None,
                 agent_runtimes: Vec::new(),
                 connection_progress: None,
                 transport: ServerTransportDiagnostics::default(),
                 codex_version: None,
                 supports_turn_pagination: true,
-            },
-        );
+            });
 
         let saved = SavedServerRecord {
             id: "local".to_string(),

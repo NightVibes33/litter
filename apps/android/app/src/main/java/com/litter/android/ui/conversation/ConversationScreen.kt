@@ -67,7 +67,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litter.android.state.contextPercent
 import com.litter.android.state.hasActiveTurn
-import com.litter.android.state.canResumeViaIpc
 import com.litter.android.state.isActiveStatus
 import com.litter.android.ui.BerkeleyMono
 import com.litter.android.ui.ChatWallpaperBackground
@@ -83,6 +82,7 @@ import com.litter.android.ui.rememberStickyFollowTail
 import kotlinx.coroutines.launch
 import uniffi.codex_mobile_client.HydratedConversationItemContent
 import uniffi.codex_mobile_client.AppRenameThreadRequest
+import uniffi.codex_mobile_client.PendingUserInputRequest
 import uniffi.codex_mobile_client.ThreadKey
 
 /**
@@ -201,8 +201,8 @@ fun ConversationScreen(
             val resolvedThreadKey = appModel.hydrateThreadPermissions(threadKey) ?: threadKey
             appModel.activateThread(resolvedThreadKey)
             // Always call externalResumeThread so the server attaches a
-            // streaming listener for this connection.  Rust handles IPC vs
-            // direct routing and skips the RPC when IPC is already live.
+            // streaming listener for this connection. Rust skips the RPC when
+            // state is already fresh.
             try {
                 appModel.externalResumeThread(resolvedThreadKey)
             } catch (_: Exception) {
@@ -275,9 +275,15 @@ fun ConversationScreen(
         collaborationModesLoading = false
     }
 
-    // Pending user input for this thread
-    val pendingInput = remember(snapshot, threadKey) {
-        snapshot?.pendingUserInputs?.firstOrNull { it.threadId == threadKey.threadId }
+    // Pending user input for this thread. The dismissal ledger is shared with
+    // the global ApprovalOverlay via [LocalDismissedUserInputs] so dismissing
+    // from either surface hides the request everywhere.
+    val dismissedUserInputs = com.litter.android.ui.LocalDismissedUserInputs.current
+    val pendingInput = remember(snapshot, threadKey, dismissedUserInputs.ids) {
+        snapshot?.pendingUserInputs?.firstOrNull {
+            it.isRelevantToThread(threadKey) &&
+                !dismissedUserInputs.isDismissed(it.id)
+        }
     }
 
     val activeTaskSummary = remember(items) {
@@ -558,26 +564,38 @@ fun ConversationScreen(
                                                     } else {
                                                         null
                                                     },
-                                                    onEditMessage = { turnIndex ->
-                                                        scope.launch {
-                                                            val prefill = appModel.store.editMessage(threadKey, turnIndex)
-                                                            appModel.queueComposerPrefill(threadKey, prefill)
+                                                    onEditMessage = { messageId ->
+                                                        // Resolve the user-message position in the
+                                                        // currently-loaded transcript. The Rust
+                                                        // `editMessage` / `forkThreadFromMessage` APIs
+                                                        // expect an index into `thread.items` filtered
+                                                        // to user messages — recomputing here keeps
+                                                        // the index correct under pagination, where a
+                                                        // cached `sourceTurnIndex` from a prior hydrate
+                                                        // would be stale.
+                                                        loadedUserItemIndex(items, messageId)?.let { turnIndex ->
+                                                            scope.launch {
+                                                                val prefill = appModel.store.editMessage(threadKey, turnIndex)
+                                                                appModel.queueComposerPrefill(threadKey, prefill)
+                                                            }
                                                         }
                                                     },
-                                                    onForkFromMessage = { turnIndex ->
-                                                        scope.launch {
-                                                            try {
-                                                                val newKey = appModel.store.forkThreadFromMessage(
-                                                                    threadKey,
-                                                                    turnIndex,
-                                                                    appModel.launchState.forkThreadFromMessageRequest(
-                                                                        cwdOverride = thread.info.cwd,
-                                                                        threadKey = threadKey,
-                                                                    ),
-                                                                )
-                                                                appModel.store.setActiveThread(newKey)
-                                                                appModel.refreshThreadSnapshot(newKey)
-                                                            } catch (_: Exception) {}
+                                                    onForkFromMessage = { messageId ->
+                                                        loadedUserItemIndex(items, messageId)?.let { turnIndex ->
+                                                            scope.launch {
+                                                                try {
+                                                                    val newKey = appModel.store.forkThreadFromMessage(
+                                                                        threadKey,
+                                                                        turnIndex,
+                                                                        appModel.launchState.forkThreadFromMessageRequest(
+                                                                            cwdOverride = thread.info.cwd,
+                                                                            threadKey = threadKey,
+                                                                        ),
+                                                                    )
+                                                                    appModel.store.setActiveThread(newKey)
+                                                                    appModel.refreshThreadSnapshot(newKey)
+                                                                } catch (_: Exception) {}
+                                                            }
                                                         }
                                                     },
                                                     onOpenSavedApp = onOpenSavedApp,
@@ -786,7 +804,10 @@ fun ConversationScreen(
                         isThinking = isThinking,
                         activeTaskSummary = activeTaskSummary,
                         queuedFollowUps = thread?.queuedFollowUps ?: emptyList(),
-                        rateLimits = server?.rateLimits,
+                        goal = thread?.goal,
+                        rateLimits = thread?.agentRuntimeKind?.let { runtimeKind ->
+                            server?.rateLimitsByRuntime?.firstOrNull { it.runtimeKind == runtimeKind }?.rateLimits
+                        },
                         showCollaborationModeChip = pinnedContext?.diffSummary == null,
                         onOpenCollaborationModePicker = { showCollaborationModeSelector = true },
                         onToggleModelSelector = { showModelSelector = !showModelSelector },
@@ -819,6 +840,9 @@ fun ConversationScreen(
                         onShowSkillsSheet = { showSkillsSheet = true },
                         onSlashError = { slashErrorMessage = it },
                         pendingUserInput = pendingInput,
+                        onDismissPendingUserInput = {
+                            pendingInput?.let { dismissedUserInputs.dismiss(it.id) }
+                        },
                     )
 
                     Spacer(Modifier.navigationBarsPadding())
@@ -1044,6 +1068,13 @@ fun ConversationScreen(
     }
 }
 
+private fun PendingUserInputRequest.isRelevantToThread(threadKey: ThreadKey): Boolean {
+    if (serverId != threadKey.serverId) return false
+
+    val requestThreadId = threadId.trim()
+    return requestThreadId.isEmpty() || requestThreadId == threadKey.threadId
+}
+
 private fun fallbackCollaborationModePresets(): List<uniffi.codex_mobile_client.AppCollaborationModePreset> =
     listOf(
         uniffi.codex_mobile_client.AppCollaborationModePreset(
@@ -1142,6 +1173,7 @@ private fun collaborationModeEffortLabel(
         uniffi.codex_mobile_client.ReasoningEffort.MEDIUM -> "Medium"
         uniffi.codex_mobile_client.ReasoningEffort.HIGH -> "High"
         uniffi.codex_mobile_client.ReasoningEffort.X_HIGH -> "XHigh"
+        uniffi.codex_mobile_client.ReasoningEffort.MAX -> "Max"
     }
 
 private data class PinnedContextData(
@@ -1498,6 +1530,28 @@ private fun SessionDiffSectionHeader(
             fontWeight = FontWeight.Bold,
         )
     }
+}
+
+/**
+ * Resolve the user-message position in the currently-loaded transcript.
+ * `forkThreadFromMessage` / `editMessage` on the Rust side expect an index
+ * into the thread's items filtered to user messages — see
+ * `rollback_depth_for_turn` in `mobile_client/thread_projection.rs`.
+ * Recomputing from the live `items` keeps the index correct under
+ * pagination (older turns can shift positions; a cached `sourceTurnIndex`
+ * from a prior hydrate would be stale).
+ */
+private fun loadedUserItemIndex(
+    items: List<uniffi.codex_mobile_client.HydratedConversationItem>,
+    messageId: String,
+): UInt? {
+    var idx = 0u
+    for (candidate in items) {
+        if (candidate.content !is HydratedConversationItemContent.User) continue
+        if (candidate.id == messageId) return idx
+        idx++
+    }
+    return null
 }
 
 private fun lastUserAndAssistantText(

@@ -40,6 +40,10 @@ private enum DirectoryPickerStrings {
     static let newFolderPlaceholder = String(localized: "directory_picker_new_folder_placeholder")
     static let create = String(localized: "directory_picker_create")
     static let createFolderFailed = String(localized: "directory_picker_create_folder_failed")
+    static let goToPath = String(localized: "directory_picker_go_to_path")
+    static let goToPathTitle = String(localized: "directory_picker_go_to_path_title")
+    static let pathPlaceholder = String(localized: "directory_picker_path_placeholder")
+    static let go = String(localized: "directory_picker_go")
 
     static func connectedServer(_ label: String) -> String {
         String.localizedStringWithFormat(String(localized: "directory_picker_connected_server"), label)
@@ -80,8 +84,9 @@ private final class DirectoryPickerSheetModel {
     var recentEntries: [RecentDirectoryEntry] = []
     var isLoading = true
     var errorMessage: String?
-    var showHiddenDirectories = false
+    var showHiddenDirectories = true
     var searchQuery = ""
+    var homePath = ""
 
     @ObservationIgnored private var lastLoadedServerId = ""
 
@@ -99,10 +104,6 @@ private final class DirectoryPickerSheetModel {
 
     var canNavigateUp: Bool {
         guard !currentPath.isEmpty, !RemotePath.parse(path: currentPath).isRoot() else { return false }
-        // Clamp the local picker at the user-facing `~` anchor. Everything
-        // above it is iOS container internals the user has no business
-        // poking at.
-        if isLocal, currentPath == HomeAnchor.path { return false }
         return true
     }
 
@@ -128,6 +129,7 @@ private final class DirectoryPickerSheetModel {
         // relabel the anchor segment itself to "~" so the trail reads
         // `~ / projects / foo` instead of `var / mobile / … / codex / projects / foo`.
         let home = HomeAnchor.path
+        guard currentPath == home || currentPath.hasPrefix(home + "/") else { return raw }
         let homeRoot = DirectoryPathBreadcrumb(id: home, label: "~", path: home)
         let suffix = raw.drop { $0.path != home }.dropFirst()
         return [homeRoot] + Array(suffix)
@@ -175,6 +177,7 @@ private final class DirectoryPickerSheetModel {
             allEntries = []
             errorMessage = DirectoryPickerStrings.noServerSelected
             currentPath = ""
+            homePath = ""
             return
         }
 
@@ -182,9 +185,11 @@ private final class DirectoryPickerSheetModel {
         errorMessage = nil
         allEntries = []
         currentPath = ""
+        homePath = ""
 
         let home = await resolveHome(for: targetServerId, appModel: appModel, isLocalServer: isLocalServer)
         guard targetServerId == selectedServerId else { return }
+        homePath = home
         currentPath = home
         await listDirectory(for: targetServerId, path: home, appModel: appModel, isLocalServer: isLocalServer)
     }
@@ -399,7 +404,9 @@ struct DirectoryPickerView: View {
     @State private var model = DirectoryPickerSheetModel()
     @State private var showClearRecentsConfirmation = false
     @State private var showNewFolderAlert = false
+    @State private var showGoToPathAlert = false
     @State private var newFolderName = ""
+    @State private var pathInput = ""
     @State private var newFolderError: String?
 
     private var selectedServerOption: DirectoryPickerServerOption? {
@@ -500,6 +507,30 @@ struct DirectoryPickerView: View {
         } message: {
             Text(PathDisplay.display(model.currentPath, isLocal: selectedServerIsLocal))
         }
+        .alert(DirectoryPickerStrings.goToPathTitle, isPresented: $showGoToPathAlert) {
+            TextField(DirectoryPickerStrings.pathPlaceholder, text: $pathInput)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+            Button(DirectoryPickerStrings.cancel, role: .cancel) { pathInput = "" }
+            Button(DirectoryPickerStrings.go) {
+                let target = PathDisplay.expand(
+                    pathInput,
+                    isLocal: selectedServerIsLocal,
+                    remoteHome: model.homePath
+                )
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                pathInput = ""
+                guard !target.isEmpty else { return }
+                Task {
+                    await model.navigateToPath(
+                        target,
+                        selectedServerId: selectedServerId,
+                        appModel: appModel,
+                        isLocalServer: selectedServerIsLocal
+                    )
+                }
+            }
+        }
         .alert(DirectoryPickerStrings.createFolderFailed, isPresented: Binding(
             get: { newFolderError != nil },
             set: { if !$0 { newFolderError = nil } }
@@ -596,6 +627,19 @@ struct DirectoryPickerView: View {
                             .litterFont(.caption)
                     }
                     .disabled(!model.canNavigateUp)
+
+                    Button {
+                        if selectedServerIsLocal {
+                            pathInput = PathDisplay.display(model.currentPath, isLocal: true)
+                        } else {
+                            pathInput = model.currentPath
+                        }
+                        showGoToPathAlert = true
+                    } label: {
+                        Label(DirectoryPickerStrings.goToPath, systemImage: "arrow.right.to.line")
+                            .litterFont(.caption)
+                    }
+                    .disabled(selectedServerSnapshot?.canBrowseDirectories != true)
 
                     Button {
                         newFolderName = ""

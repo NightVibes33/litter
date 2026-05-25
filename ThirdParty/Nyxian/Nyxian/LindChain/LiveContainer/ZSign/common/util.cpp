@@ -158,27 +158,27 @@ int ZUtil::builtin_clzll(uint64_t x)
 	}
 
 	int count = 0;
-	if (x <= 0x00000000FFFFFFFF) {
-		count += 32;
+	if (x <= 0x00000000FFFFFFFF) { 
+		count += 32; 
 		x <<= 32;
 	}
-	if (x <= 0x0000FFFFFFFFFFFF) {
-		count += 16;
+	if (x <= 0x0000FFFFFFFFFFFF) { 
+		count += 16; 
 		x <<= 16;
 	}
-	if (x <= 0x00FFFFFFFFFFFFFF) {
-		count += 8;
+	if (x <= 0x00FFFFFFFFFFFFFF) { 
+		count += 8;  
 		x <<= 8;
 	}
-	if (x <= 0x0FFFFFFFFFFFFFFF) {
-		count += 4;
+	if (x <= 0x0FFFFFFFFFFFFFFF) { 
+		count += 4;  
 		x <<= 4;
 	}
-	if (x <= 0x3FFFFFFFFFFFFFFF) {
-		count += 2;
+	if (x <= 0x3FFFFFFFFFFFFFFF) { 
+		count += 2;  
 		x <<= 2;
 	}
-	if (x <= 0x7FFFFFFFFFFFFFFF) {
+	if (x <= 0x7FFFFFFFFFFFFFFF) { 
 		count += 1;
 	}
 

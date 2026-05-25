@@ -5,6 +5,7 @@ fn main() -> anyhow::Result<()> {
         organization: "sigkitten",
         application: "kittylitter",
         label: "com.sigkitten.kittylitter",
+        version: env!("CARGO_PKG_VERSION"),
     }
     .run()
 }

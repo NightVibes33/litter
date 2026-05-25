@@ -9,6 +9,16 @@ private let conversationViewSignpostLog = OSLog(
     category: "ConversationView"
 )
 
+private struct PendingChatGPTAccountSwitchRetry: Identifiable {
+    let id = UUID()
+    let failureMessage: String
+    let nextAccountName: String
+    let text: String
+    let attachments: [ConversationAttachment]
+    let skillMentions: [SkillMentionSelection]
+    let pluginMentions: [PluginMentionSelection]
+}
+
 enum ConversationStreamingViewportPolicy {
     static func shouldMaintainBottomAnchor(
         isStreaming: Bool,
@@ -40,6 +50,8 @@ struct ConversationView: View {
     let followScrollToken: Int
     let pinnedContextItems: [ConversationItem]
     let composer: ConversationComposerSnapshot
+    @Binding var composerInputText: String
+    @Binding var composerAttachedImage: UIImage?
     var topInset: CGFloat = 0
     var bottomInset: CGFloat = 0
     var onOpenConversation: ((ThreadKey) -> Void)? = nil
@@ -52,6 +64,7 @@ struct ConversationView: View {
     @AppStorage("conversationTextSizeStep") private var conversationTextSizeStep = ConversationTextSize.large.rawValue
     @AppStorage("fastMode") private var fastMode = false
     @State private var messageActionError: String?
+    @State private var pendingChatGPTAccountRetry: PendingChatGPTAccountSwitchRetry?
     @State private var hasLoggedFirstRender = false
     @State private var localSendScrollToken = 0
 
@@ -78,6 +91,9 @@ struct ConversationView: View {
     }
 
     private var pendingReasoningOverride: String? {
+        if thread.ampReasoningEffortLocked {
+            return nil
+        }
         let trimmed = appState.reasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
@@ -147,6 +163,8 @@ struct ConversationView: View {
                 ConversationBottomChrome(
                     pinnedContextItems: pinnedContextItems,
                     composer: composer,
+                    composerInputText: $composerInputText,
+                    composerAttachedImage: $composerAttachedImage,
                     onSend: sendMessage,
                     onFileSearch: searchComposerFiles,
                     bottomInset: bottomInset,
@@ -165,24 +183,29 @@ struct ConversationView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .alert("Conversation Action Error", isPresented: Binding(
-            get: { messageActionError != nil },
-            set: { if !$0 { messageActionError = nil } }
-        )) {
-            Button("OK", role: .cancel) { messageActionError = nil }
-        } message: {
-            Text(messageActionError ?? "Unknown error")
-        }
-        .sheet(item: Binding<LocalModelAgentApprovalState?>(
-            get: { appModel.localConversationPendingApproval },
-            set: { nextValue in
-                if nextValue == nil, appModel.localConversationPendingApproval != nil {
-                    appModel.resolveLocalConversationApproval(.denied)
+        .alert(pendingChatGPTAccountRetry == nil ? "Conversation Action Error" : "Switch ChatGPT Account?", isPresented: Binding(
+            get: { messageActionError != nil || pendingChatGPTAccountRetry != nil },
+            set: {
+                if !$0 {
+                    messageActionError = nil
+                    pendingChatGPTAccountRetry = nil
                 }
             }
-        )) { approval in
-            LocalModelApprovalSheet(approval: approval) { decision in
-                appModel.resolveLocalConversationApproval(decision)
+        )) {
+            if let retry = pendingChatGPTAccountRetry {
+                Button("Switch & Retry") {
+                    pendingChatGPTAccountRetry = nil
+                    retryMessageWithNextChatGPTAccount(retry)
+                }
+                Button("Cancel", role: .cancel) { pendingChatGPTAccountRetry = nil }
+            } else {
+                Button("OK", role: .cancel) { messageActionError = nil }
+            }
+        } message: {
+            if let retry = pendingChatGPTAccountRetry {
+                Text("\(retry.failureMessage)\n\nSwitch to \(retry.nextAccountName) and retry this message?")
+            } else {
+                Text(messageActionError ?? "Unknown error")
             }
         }
         .onAppear {
@@ -223,7 +246,7 @@ struct ConversationView: View {
                     activeThreadKey.threadId,
                     text.count
                 )
-                let payload = try makeComposerPayload(
+                let payload = try await makeComposerPayload(
                     text: text,
                     attachments: attachments,
                     skillMentions: skillMentions,
@@ -242,7 +265,13 @@ struct ConversationView: View {
                     activeThreadKey.threadId,
                     error.localizedDescription
                 )
-                messageActionError = error.localizedDescription
+                handleTurnStartError(
+                    error,
+                    text: text,
+                    attachments: attachments,
+                    skillMentions: skillMentions,
+                    pluginMentions: pluginMentions
+                )
             }
         }
     }
@@ -252,11 +281,56 @@ struct ConversationView: View {
         localSendScrollToken &+= 1
         taskBag.run {
             do {
-                let payload = try makeComposerPayload(
+                let payload = try await makeComposerPayload(
                     text: text,
                     attachments: [],
                     skillMentions: [],
                     pluginMentions: []
+                )
+                try await appModel.startTurn(key: activeThreadKey, payload: payload)
+            } catch {
+                handleTurnStartError(
+                    error,
+                    text: text,
+                    attachments: [],
+                    skillMentions: [],
+                    pluginMentions: []
+                )
+            }
+        }
+    }
+
+    private func handleTurnStartError(
+        _ error: Error,
+        text: String,
+        attachments: [ConversationAttachment],
+        skillMentions: [SkillMentionSelection],
+        pluginMentions: [PluginMentionSelection]
+    ) {
+        if let suggestion = appModel.chatGPTAccountSwitchSuggestion(for: error, serverId: activeThreadKey.serverId) {
+            pendingChatGPTAccountRetry = PendingChatGPTAccountSwitchRetry(
+                failureMessage: error.localizedDescription,
+                nextAccountName: suggestion.displayName,
+                text: text,
+                attachments: attachments,
+                skillMentions: skillMentions,
+                pluginMentions: pluginMentions
+            )
+            return
+        }
+        messageActionError = error.localizedDescription
+    }
+
+    private func retryMessageWithNextChatGPTAccount(_ retry: PendingChatGPTAccountSwitchRetry) {
+        localSendScrollToken &+= 1
+        taskBag.run {
+            do {
+                _ = try await appModel.switchToNextStoredLocalChatGPTAccount(serverId: activeThreadKey.serverId)
+                let payload = try await makeComposerPayload(
+                    text: retry.text,
+                    attachments: retry.attachments,
+                    skillMentions: retry.skillMentions,
+                    pluginMentions: retry.pluginMentions
                 )
                 try await appModel.startTurn(key: activeThreadKey, payload: payload)
             } catch {
@@ -269,10 +343,28 @@ struct ConversationView: View {
         appModel.snapshot?.resolvedAgentTargetLabel(for: target, serverId: activeThreadKey.serverId)
     }
 
+    /// Resolve the user-message position in the currently-loaded transcript.
+    /// `forkThreadFromMessage` / `editMessage` on the Rust side expect an
+    /// index into `thread.items` filtered to user messages — see
+    /// `rollback_depth_for_turn` in `mobile_client/thread_projection.rs`.
+    /// Recomputing from the live `items` keeps the index correct under
+    /// pagination (older turns can shift positions; cached `sourceTurnIndex`
+    /// from a prior hydrate would be stale).
+    private func loadedUserItemIndex(for item: ConversationItem) -> Int? {
+        var idx = 0
+        for candidate in items {
+            guard candidate.isUserItem else { continue }
+            if candidate.id == item.id { return idx }
+            idx += 1
+        }
+        return nil
+    }
+
     private func editMessage(_ item: ConversationItem) {
         taskBag.run {
             do {
-                guard let selectedTurnIndex = item.sourceTurnIndex, item.isUserItem, item.isFromUserTurnBoundary else {
+                guard item.isUserItem, item.isFromUserTurnBoundary,
+                      let selectedTurnIndex = loadedUserItemIndex(for: item) else {
                     throw NSError(
                         domain: "Litter",
                         code: 1020,
@@ -293,7 +385,8 @@ struct ConversationView: View {
     private func forkFromMessage(_ item: ConversationItem) {
         taskBag.run {
             do {
-                guard let selectedTurnIndex = item.sourceTurnIndex, item.isUserItem, item.isFromUserTurnBoundary else {
+                guard item.isUserItem, item.isFromUserTurnBoundary,
+                      let selectedTurnIndex = loadedUserItemIndex(for: item) else {
                     throw NSError(
                         domain: "Litter",
                         code: 1016,
@@ -337,7 +430,7 @@ struct ConversationView: View {
         attachments: [ConversationAttachment],
         skillMentions: [SkillMentionSelection],
         pluginMentions: [PluginMentionSelection]
-    ) throws -> AppComposerPayload {
+    ) async throws -> AppComposerPayload {
         var additionalInputs = skillMentions.map { mention in
             AppUserInput.skill(name: mention.name, path: AbsolutePath(value: mention.path))
         }
@@ -347,6 +440,7 @@ struct ConversationView: View {
             )
         }
         additionalInputs.append(contentsOf: ConversationAttachmentSupport.buildTurnInputs(attachments: attachments))
+        additionalInputs.append(contentsOf: await ConversationAttachmentSupport.buildLinkedTurnInputs(text: text))
         return AppComposerPayload(
             text: text,
             additionalInputs: additionalInputs,
@@ -391,6 +485,8 @@ private struct ConversationBottomChrome: View {
     @Environment(AppModel.self) private var appModel
     let pinnedContextItems: [ConversationItem]
     let composer: ConversationComposerSnapshot
+    @Binding var composerInputText: String
+    @Binding var composerAttachedImage: UIImage?
     let onSend: (String, [ConversationAttachment], [SkillMentionSelection], [PluginMentionSelection]) -> Void
     let onFileSearch: (String) async throws -> [FileSearchResult]
     var bottomInset: CGFloat = 0
@@ -415,7 +511,9 @@ private struct ConversationBottomChrome: View {
                 showModeChip: !hasPinnedDiff,
                 onOpenModePicker: openCollaborationModePicker,
                 onOpenConversation: onOpenConversation,
-                onResumeSessions: onResumeSessions
+                onResumeSessions: onResumeSessions,
+                inputText: $composerInputText,
+                attachedImage: $composerAttachedImage
             )
             .background(.clear, ignoresSafeAreaEdges: .bottom)
         }
@@ -1395,7 +1493,8 @@ private struct ConversationInputBar: View {
     let onOpenConversation: ((ThreadKey) -> Void)?
     let onResumeSessions: ((String) -> Void)?
 
-    @State private var inputText = ""
+    @Binding var inputText: String
+    @Binding var attachedImage: UIImage?
     @State private var showAttachMenu = false
     @State private var showPhotoPicker = false
     @State private var showCamera = false
@@ -1443,7 +1542,8 @@ private struct ConversationInputBar: View {
     @StateObject private var taskBag = ViewTaskBag()
 
     private var pendingUserInputRequest: PendingUserInputRequest? {
-        snapshot.pendingUserInputRequest
+        guard let request = snapshot.pendingUserInputRequest else { return nil }
+        return appState.isPendingUserInputDismissed(id: request.id) ? nil : request
     }
 
     private var pendingModelOverride: String? {
@@ -1591,6 +1691,7 @@ private struct ConversationInputBar: View {
                 showAttachMenu: $showAttachMenu,
                 onRemoveAttachment: removeAttachment,
                 onRespondToPendingUserInput: respondToPendingUserInput,
+                onDismissPendingUserInput: dismissPendingUserInput,
                 onImplementPlan: { taskBag.run { await implementPlan() } },
                 onDismissPlanImplementation: dismissPlanImplementationPrompt,
                 onSteerQueuedFollowUp: steerQueuedFollowUp,
@@ -1711,6 +1812,9 @@ private struct ConversationInputBar: View {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         let pendingAttachments = attachments
         guard !text.isEmpty || !pendingAttachments.isEmpty else { return }
+        if let request = snapshot.pendingUserInputRequest {
+            appState.dismissPendingUserInput(id: request.id)
+        }
         if pendingAttachments.isEmpty,
            let invocation = parseSlashCommandInvocation(text) {
             inputText = ""
@@ -1728,6 +1832,11 @@ private struct ConversationInputBar: View {
         let pluginMentions = collectPluginMentionsForSubmission(text)
         pluginMentionSelections = []
         onSend(text, pendingAttachments, skillMentions, pluginMentions)
+    }
+
+    private func dismissPendingUserInput() {
+        guard let request = snapshot.pendingUserInputRequest else { return }
+        appState.dismissPendingUserInput(id: request.id)
     }
 
     private func collectPluginMentionsForSubmission(_ text: String) -> [PluginMentionSelection] {
@@ -1795,10 +1904,6 @@ private struct ConversationInputBar: View {
             return
         }
         let threadKey = snapshot.threadKey
-        if activeTurnId.hasPrefix("local-") {
-            appModel.cancelLocalModelTurn(key: threadKey)
-            return
-        }
         LLog.info(
             "conversation",
             "interrupt turn",
@@ -2212,7 +2317,13 @@ private struct ConversationInputBar: View {
     private func makeGoalCardActions() -> GoalCardActions {
         GoalCardActions(
             togglePause: {
-                let next: AppThreadGoalStatus = (snapshot.goal?.status == .paused) ? .active : .paused
+                guard let current = snapshot.goal?.status else { return }
+                let next: AppThreadGoalStatus
+                switch current {
+                case .active: next = .paused
+                case .paused, .budgetLimited: next = .active
+                case .complete: return
+                }
                 taskBag.run { await applyGoalUpdate(status: next) }
             },
             markComplete: {
@@ -2222,7 +2333,15 @@ private struct ConversationInputBar: View {
                 taskBag.run { await applyGoalUpdate(objective: objective) }
             },
             setBudget: { value in
-                taskBag.run { await applyGoalUpdate(tokenBudget: value) }
+                let goal = snapshot.goal
+                let resumeFromLimit = goal?.status == .budgetLimited
+                    && (value ?? 0) > (goal?.tokensUsed ?? 0)
+                taskBag.run {
+                    await applyGoalUpdate(
+                        status: resumeFromLimit ? .active : nil,
+                        tokenBudget: value
+                    )
+                }
             },
             clear: {
                 taskBag.run { await clearGoal() }
@@ -2715,6 +2834,8 @@ private func collaborationModeEffortLabel(_ effort: ReasoningEffort) -> String {
         return "High"
     case .xHigh:
         return "XHigh"
+    case .max:
+        return "Max"
     }
 }
 
@@ -3094,6 +3215,7 @@ private func index(in text: String, offset: Int) -> String.Index? {
 struct PendingUserInputPromptView: View {
     let request: PendingUserInputRequest
     let onSubmit: ([String: [String]]) -> Void
+    let onDismiss: () -> Void
 
     @State private var selectedAnswers: [String: String] = [:]
     @State private var otherAnswers: [String: String] = [:]
@@ -3133,6 +3255,13 @@ struct PendingUserInputPromptView: View {
                     .litterFont(.caption, weight: .semibold)
                     .foregroundColor(LitterTheme.textPrimary)
                 Spacer()
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark.circle.fill")
+                        .litterFont(.body)
+                        .foregroundColor(LitterTheme.textMuted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss input request")
             }
 
             if let requesterLabel {

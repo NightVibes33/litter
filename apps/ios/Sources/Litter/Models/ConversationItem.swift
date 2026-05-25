@@ -389,6 +389,30 @@ struct ConversationItem: Identifiable, Equatable {
         return nil
     }
 
+    func isVisible(
+        reasoningDisplayMode: ConversationDetailDisplayMode,
+        commandDisplayMode: ConversationDetailDisplayMode,
+        toolDisplayMode: ConversationDetailDisplayMode
+    ) -> Bool {
+        switch content {
+        case .reasoning:
+            return reasoningDisplayMode.rendersRows
+        case .commandExecution:
+            return commandDisplayMode.rendersRows
+        case .fileChange,
+             .turnDiff,
+             .mcpToolCall,
+             .dynamicToolCall,
+             .multiAgentAction,
+             .webSearch,
+             .imageView,
+             .imageGeneration:
+            return toolDisplayMode.rendersRows
+        default:
+            return true
+        }
+    }
+
     mutating func refreshRenderDigest() {
         renderDigest = Self.computeRenderDigest(
             id: id,

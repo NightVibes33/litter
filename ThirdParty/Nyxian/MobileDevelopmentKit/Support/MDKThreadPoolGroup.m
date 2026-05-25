@@ -53,7 +53,7 @@
     [super dispatchExecution:code withCompletion:^{
         /* checking and running completion if it exists */
         if(completion) completion();
-
+        
         /* leaving entered group */
         dispatch_group_leave(self->_group);
     }];

@@ -10,20 +10,36 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.net.URI
 import kotlinx.coroutines.CancellationException
 
 internal class ChatGPTOAuthLoopbackServer private constructor(
     private val redirectUri: Uri,
-    private val serverSocket: ServerSocket,
+    private val serverSockets: List<ServerSocket>,
     private val appReturnUri: Uri,
 ) : AutoCloseable {
     fun awaitCallback(): Uri {
-        val socket = try {
-            serverSocket.accept()
-        } catch (error: SocketException) {
-            throw CancellationException("ChatGPT login loopback server closed.", error)
+        while (true) {
+            for (serverSocket in serverSockets) {
+                val socket = try {
+                    serverSocket.accept()
+                } catch (_: SocketTimeoutException) {
+                    null
+                } catch (error: SocketException) {
+                    if (serverSockets.all { it.isClosed }) {
+                        throw CancellationException("ChatGPT login loopback server closed.", error)
+                    }
+                    null
+                }
+                if (socket != null) {
+                    return handleCallbackSocket(socket)
+                }
+            }
         }
+    }
+
+    private fun handleCallbackSocket(socket: Socket): Uri {
         socket.use { client ->
             val requestTarget = readRequestTarget(client)
                 ?: throw ChatGPTOAuthException("ChatGPT login callback was malformed.")
@@ -38,10 +54,14 @@ internal class ChatGPTOAuthLoopbackServer private constructor(
     }
 
     override fun close() {
-        runCatching { serverSocket.close() }
+        serverSockets.forEach { socket ->
+            runCatching { socket.close() }
+        }
     }
 
     companion object {
+        private const val ACCEPT_POLL_TIMEOUT_MS = 250
+
         fun create(
             redirectUri: String,
             appReturnUri: Uri,
@@ -52,28 +72,46 @@ internal class ChatGPTOAuthLoopbackServer private constructor(
             val port = parsedRedirect.port.takeIf { it > 0 }
                 ?: throw ChatGPTOAuthException("ChatGPT login redirect URI is missing a port.")
 
-            val socket = ServerSocket().apply {
-                reuseAddress = true
-                bind(
-                    InetSocketAddress(
-                        InetAddress.getByName(
-                            if (host.equals("localhost", ignoreCase = true)) {
-                                "127.0.0.1"
-                            } else {
-                                host
-                            },
+            val sockets = mutableListOf<ServerSocket>()
+            val errors = mutableListOf<String>()
+            for (bindHost in bindHostsForRedirectHost(host)) {
+                val socket = ServerSocket().apply {
+                    reuseAddress = true
+                    soTimeout = ACCEPT_POLL_TIMEOUT_MS
+                }
+                try {
+                    socket.bind(
+                        InetSocketAddress(
+                            InetAddress.getByName(bindHost),
+                            port,
                         ),
-                        port,
-                    ),
-                    1,
+                        1,
+                    )
+                    sockets += socket
+                } catch (error: Exception) {
+                    runCatching { socket.close() }
+                    errors += "$bindHost: ${error.localizedMessage ?: error.message ?: error::class.java.simpleName}"
+                }
+            }
+
+            if (sockets.isEmpty()) {
+                throw ChatGPTOAuthException(
+                    "ChatGPT login could not bind a localhost callback server. ${errors.joinToString("; ")}",
                 )
             }
 
             return ChatGPTOAuthLoopbackServer(
                 redirectUri = parsedRedirect,
-                serverSocket = socket,
+                serverSockets = sockets,
                 appReturnUri = appReturnUri,
             )
+        }
+
+        internal fun bindHostsForRedirectHost(host: String): List<String> {
+            if (!host.equals("localhost", ignoreCase = true)) {
+                return listOf(host)
+            }
+            return listOf("127.0.0.1", "::1")
         }
 
         internal fun requestTargetFromLine(requestLine: String): String? {

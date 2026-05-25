@@ -48,42 +48,42 @@ static void *MDKWorkerThreadMain(void *arg)
 {
     /* getting thread worker */
     MDKWorkerThread *worker = (MDKWorkerThread *)arg;
-
+    
     /* pin current thread to a certain groups of CPUs */
     thread_affinity_policy_data_t policy = { .affinity_tag = worker->cpuIndex + 1 };
     thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_AFFINITY_POLICY, (thread_policy_t)&policy, THREAD_AFFINITY_POLICY_COUNT);
-
+    
     /* execution flow loop, gives me mach syscall server vibes ^^ */
     while(!atomic_load(&worker->shouldExit))
     {
         pthread_mutex_lock(&worker->mutex);
-
+        
         /* waiting on work */
         while(!atomic_load(&worker->hasWork) && !atomic_load(&worker->shouldExit))
         {
             pthread_cond_wait(&worker->cond, &worker->mutex);
         }
-
+        
         /* checking if we shall exit */
         if(atomic_load(&worker->shouldExit))
         {
             pthread_mutex_unlock(&worker->mutex);
             break;
         }
-
+        
         /* setting blocks up  */
         void (^code)(void) = worker->currentBlock;
         void (^completion)(void) = worker->completionBlock;
-
+        
         /* clear worker references to allow ARC to release captured objects */
         worker->currentBlock = nil;
         worker->completionBlock = nil;
-
+        
         /* storing that we are working on API request rawrrr x3 */
         atomic_store(&worker->hasWork, false);
-
+        
         pthread_mutex_unlock(&worker->mutex);
-
+        
         /* checking if there is code to execute */
         if(code)
         {
@@ -94,7 +94,7 @@ static void *MDKWorkerThreadMain(void *arg)
             completion();
         }
     }
-
+    
     return NULL;
 }
 
@@ -156,11 +156,11 @@ static void *MDKWorkerThreadMain(void *arg)
 - (void)dispatchExecution:(void (^)(void))code withCompletion:(void (^)(void))completion
 {
     dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER);
-
+    
     pthread_mutex_lock(&_freeStackMutex);
     int workerIndex = _freeStack[--_freeTop];
     pthread_mutex_unlock(&_freeStackMutex);
-
+    
     MDKWorkerThread *worker = &_workers[workerIndex];
     dispatch_semaphore_t sem = self.semaphore;
     pthread_mutex_lock(&worker->mutex);

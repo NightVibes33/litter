@@ -68,11 +68,7 @@ struct ChatWallpaperBackground: View {
     }
 
     private var wallpaperScope: WallpaperScope? {
-        guard let key = threadKey else { return nil }
-        // Check if there's a thread-specific config first
-        let threadScopeKey = "\(key.serverId)::\(key.threadId)"
-        // We just need to determine scope for image loading
-        return .thread(key)
+        wallpaperManager.resolveScope(for: threadKey)
     }
 }
 

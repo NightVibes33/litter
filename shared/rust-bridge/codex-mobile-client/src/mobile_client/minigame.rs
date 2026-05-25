@@ -458,7 +458,7 @@ mod tests {
     fn build_developer_instructions_contains_required_directives() {
         let instructions = build_developer_instructions(Some("test"), None);
         assert!(instructions.contains("show_widget"));
-        assert!(instructions.contains("i_have_seen_read_me: true"));
+        assert!(instructions.contains("`i_have_seen_read_me`: true"));
         assert!(instructions.contains("mg-"));
         assert!(instructions.contains("window.sendPrompt"));
     }

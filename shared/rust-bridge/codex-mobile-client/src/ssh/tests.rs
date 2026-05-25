@@ -170,6 +170,9 @@ fn test_bootstrap_result_clone() {
         tunnel_local_port: 12345,
         server_version: Some("1.0.0".into()),
         pid: Some(42),
+        codex_path: "/usr/local/bin/codex".into(),
+        shell: RemoteShell::Posix,
+        transport: SshBootstrapTransport::WebSocketTunnel,
     };
     let r2 = r.clone();
     assert_eq!(r2.server_port, 8390);
@@ -214,15 +217,31 @@ fn test_posix_resolver_probes_package_manager_bins() {
     assert!(script.contains("npm config get prefix"));
     assert!(script.contains("pnpm bin -g"));
     assert!(script.contains("bun pm bin -g"));
+    assert!(script.contains("packages/standalone/current/codex"));
     assert!(script.contains("${BUN_INSTALL:-$HOME/.bun}/bin/codex"));
     assert!(script.contains("PNPM_HOME"));
     assert!(script.contains("NVM_BIN"));
     assert!(script.contains("$HOME/.volta/bin/codex"));
     assert!(script.contains("$HOME/.local/bin/codex"));
+    assert!(script.contains("Codex.app/Contents/Resources/codex"));
     assert!(script.contains("/opt/homebrew/bin/codex"));
     assert!(script.contains("/usr/local/bin/codex"));
-    assert!(script.find("command -v codex 2>/dev/null || true") < script.find("pnpm bin -g"));
+    assert!(script.contains("/usr/bin/codex"));
+    assert!(
+        script.find("_litter_consider_path_candidates codex codex") < script.find("pnpm bin -g")
+    );
+    assert!(script.contains("_litter_best_path"));
     assert!(!script.contains("codex-app-server"));
+}
+
+#[test]
+fn test_powershell_resolver_prefers_latest_version() {
+    let script = resolve_codex_binary_script_powershell();
+    assert!(script.contains("Get-Command codex -All"));
+    assert!(script.contains("packages\\standalone\\current\\codex.exe"));
+    assert!(script.contains("AppData\\Roaming\\npm\\codex.cmd"));
+    assert!(script.contains("$bestVersion"));
+    assert!(script.contains("CompareTo"));
 }
 
 #[test]

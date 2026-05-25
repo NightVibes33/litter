@@ -1,6 +1,8 @@
 package com.litter.android.state
 
 import uniffi.codex_mobile_client.SshAuthMethodRecord
+import uniffi.codex_mobile_client.SlingshotCredentialProvider
+import uniffi.codex_mobile_client.SlingshotCredentialRecord
 import uniffi.codex_mobile_client.SshCredentialProvider
 import uniffi.codex_mobile_client.SshCredentialRecord
 
@@ -17,6 +19,18 @@ class KotlinSshCredentialProvider(private val store: SshCredentialStore) : SshCr
             privateKeyPem = saved.privateKey,
             passphrase = saved.passphrase,
             unlockMacosKeychain = saved.unlockMacosKeychain,
+        )
+    }
+}
+
+class KotlinSlingshotCredentialProvider(
+    private val store: ChatGPTOAuthTokenStore,
+) : SlingshotCredentialProvider {
+    override fun loadCredential(): SlingshotCredentialRecord? {
+        val tokens = store.load() ?: return null
+        return SlingshotCredentialRecord(
+            accessToken = tokens.accessToken,
+            accountId = tokens.accountId,
         )
     }
 }

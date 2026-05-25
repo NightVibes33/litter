@@ -4,6 +4,79 @@
 //! iOS/Android. When manipulating paths on a remote Windows machine we need
 //! string-based handling that knows the remote OS's conventions.
 
+/// Normalize a user-facing cwd before it is sent to the app-server.
+///
+/// Upstream resolves relative cwd values against the app-server's configured
+/// cwd. If mobile feeds a Windows fragment like `Users\npace` back into a
+/// thread on an app-server rooted at `C:\Users\npace`, upstream turns it into
+/// `C:\Users\npace\Users\npace`. Drop unexpanded fragments and collapse the
+/// duplicated Windows home shape before the request leaves the mobile bridge.
+pub fn normalize_thread_cwd(path: &str) -> Option<String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if looks_like_unexpanded_home_fragment(trimmed) {
+        return None;
+    }
+    let parsed = RemotePath::parse(trimmed);
+    let normalized = parsed.as_str();
+    if parsed.is_windows() {
+        Some(collapse_duplicated_windows_user_home(normalized))
+    } else {
+        Some(normalized.to_string())
+    }
+}
+
+fn looks_like_unexpanded_home_fragment(path: &str) -> bool {
+    if path.starts_with('/') {
+        return false;
+    }
+    let normalized = path.replace('/', "\\");
+    if normalized == "~" || normalized.starts_with("~\\") {
+        return true;
+    }
+    let parts: Vec<&str> = normalized
+        .split('\\')
+        .filter(|part| !part.is_empty())
+        .collect();
+    parts.len() >= 2 && parts[0].eq_ignore_ascii_case("Users")
+}
+
+fn collapse_duplicated_windows_user_home(path: &str) -> String {
+    let mut current = path.to_string();
+    loop {
+        let collapsed = collapse_one_duplicated_windows_user_home(&current);
+        if collapsed == current {
+            return current;
+        }
+        current = collapsed;
+    }
+}
+
+fn collapse_one_duplicated_windows_user_home(path: &str) -> String {
+    let parts: Vec<&str> = path.split('\\').filter(|part| !part.is_empty()).collect();
+    if parts.len() < 5 {
+        return path.to_string();
+    }
+    let drive = parts[0];
+    if !(drive.len() == 2
+        && drive.as_bytes()[0].is_ascii_alphabetic()
+        && drive.as_bytes()[1] == b':')
+    {
+        return path.to_string();
+    }
+    if !parts[1].eq_ignore_ascii_case("Users")
+        || !parts[3].eq_ignore_ascii_case("Users")
+        || !parts[2].eq_ignore_ascii_case(parts[4])
+    {
+        return path.to_string();
+    }
+    let mut collapsed = vec![parts[0], parts[1], parts[2]];
+    collapsed.extend_from_slice(&parts[5..]);
+    collapsed.join("\\")
+}
+
 /// A remote filesystem path that knows whether it lives on a POSIX or
 /// Windows host.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,7 +94,7 @@ impl RemotePath {
         let p = path.trim();
         let bytes = p.as_bytes();
         if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
-            Self::Windows(p.to_string())
+            Self::Windows(normalize_windows_path(p))
         } else {
             Self::Posix(p.to_string())
         }
@@ -151,6 +224,16 @@ impl RemotePath {
     }
 }
 
+fn normalize_windows_path(path: &str) -> String {
+    let normalized = path.replace('/', "\\");
+    let bytes = normalized.as_bytes();
+    if bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        format!("{normalized}\\")
+    } else {
+        normalized
+    }
+}
+
 /// Parse the stdout of a directory listing command into sorted directory names.
 pub fn parse_directory_listing(stdout: &str, is_windows: bool) -> Vec<String> {
     let mut dirs: Vec<String> = if is_windows {
@@ -199,9 +282,79 @@ mod tests {
     }
 
     #[test]
+    fn parse_windows_normalizes_forward_slashes() {
+        assert_eq!(
+            RemotePath::parse("D:/Projects/kitty").as_str(),
+            r"D:\Projects\kitty"
+        );
+    }
+
+    #[test]
+    fn parse_windows_drive_only_normalizes_to_root() {
+        assert_eq!(RemotePath::parse("D:").as_str(), r"D:\");
+    }
+
+    #[test]
     fn parse_trims_whitespace() {
         assert!(RemotePath::parse("  C:\\Users  ").is_windows());
         assert!(!RemotePath::parse("  /home  ").is_windows());
+    }
+
+    #[test]
+    fn normalize_thread_cwd_collapses_duplicated_windows_home() {
+        assert_eq!(
+            normalize_thread_cwd(r"C:\Users\npace\Users\npace").as_deref(),
+            Some(r"C:\Users\npace")
+        );
+    }
+
+    #[test]
+    fn normalize_thread_cwd_collapses_duplicated_windows_home_with_suffix() {
+        assert_eq!(
+            normalize_thread_cwd(r"C:\Users\npace\Users\npace\dev\litter").as_deref(),
+            Some(r"C:\Users\npace\dev\litter")
+        );
+    }
+
+    #[test]
+    fn normalize_thread_cwd_collapses_repeated_duplicated_windows_home() {
+        assert_eq!(
+            normalize_thread_cwd(r"C:\Users\npace\Users\npace\Users\npace\dev").as_deref(),
+            Some(r"C:\Users\npace\dev")
+        );
+    }
+
+    #[test]
+    fn normalize_thread_cwd_normalizes_windows_forward_slashes() {
+        assert_eq!(
+            normalize_thread_cwd("C:/Users/npace/dev/litter").as_deref(),
+            Some(r"C:\Users\npace\dev\litter")
+        );
+    }
+
+    #[test]
+    fn normalize_thread_cwd_preserves_other_paths() {
+        assert_eq!(
+            normalize_thread_cwd(r"C:\Users\npace\Users\other").as_deref(),
+            Some(r"C:\Users\npace\Users\other")
+        );
+        assert_eq!(
+            normalize_thread_cwd("/home/npace/dev").as_deref(),
+            Some("/home/npace/dev")
+        );
+        assert_eq!(
+            normalize_thread_cwd("/Users/npace/dev").as_deref(),
+            Some("/Users/npace/dev")
+        );
+        assert_eq!(normalize_thread_cwd("   "), None);
+    }
+
+    #[test]
+    fn normalize_thread_cwd_rejects_unexpanded_windows_home_fragments() {
+        assert_eq!(normalize_thread_cwd(r"Users\npace"), None);
+        assert_eq!(normalize_thread_cwd(r"Users\npace\dev"), None);
+        assert_eq!(normalize_thread_cwd(r"~\dev"), None);
+        assert_eq!(normalize_thread_cwd("~/dev"), None);
     }
 
     // -- separator --
@@ -272,6 +425,14 @@ mod tests {
         assert_eq!(RemotePath::parse(r"C:\").parent().as_str(), r"C:\");
     }
 
+    #[test]
+    fn parent_windows_forward_slashes() {
+        assert_eq!(
+            RemotePath::parse("D:/Projects/kitty").parent().as_str(),
+            r"D:\Projects"
+        );
+    }
+
     // -- segments --
 
     #[test]
@@ -303,6 +464,19 @@ mod tests {
                 (r"C:\".to_string(), r"C:\".to_string()),
                 ("Users".to_string(), r"C:\Users".to_string()),
                 ("npace".to_string(), r"C:\Users\npace".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn segments_windows_forward_slashes() {
+        let segs = RemotePath::parse("D:/Projects/kitty").segments();
+        assert_eq!(
+            segs,
+            vec![
+                (r"D:\".to_string(), r"D:\".to_string()),
+                ("Projects".to_string(), r"D:\Projects".to_string()),
+                ("kitty".to_string(), r"D:\Projects\kitty".to_string()),
             ]
         );
     }

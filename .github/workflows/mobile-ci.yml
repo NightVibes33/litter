@@ -1,0 +1,327 @@
+name: Mobile CI
+
+on:
+  pull_request:
+    paths:
+      - 'Makefile'
+      - '.gitmodules'
+      - 'apps/android/**'
+      - 'apps/ios/**'
+      - 'patches/codex/**'
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/codex/**'
+      - 'tools/scripts/**'
+      - '.github/workflows/mobile-ci.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'Makefile'
+      - '.gitmodules'
+      - 'apps/android/**'
+      - 'apps/ios/**'
+      - 'patches/codex/**'
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/codex/**'
+      - 'tools/scripts/**'
+      - '.github/workflows/mobile-ci.yml'
+
+concurrency:
+  group: mobile-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared-prep:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      SCCACHE_BUCKET: rust-cache
+      SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
+      SCCACHE_REGION: auto
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: ci/mobile-prep
+      AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_R2_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure sccache
+        run: |
+          if [ -n "${SCCACHE_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BUCKET=" >> "$GITHUB_ENV"
+            echo "SCCACHE_ENDPOINT=" >> "$GITHUB_ENV"
+            echo "SCCACHE_S3_KEY_PREFIX=" >> "$GITHUB_ENV"
+            echo "AWS_ACCESS_KEY_ID=" >> "$GITHUB_ENV"
+            echo "AWS_SECRET_ACCESS_KEY=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Setup sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Sync codex submodule
+        run: ./apps/ios/scripts/sync-codex.sh --preserve-current
+
+      - name: Restore generated mobile bindings cache
+        id: mobile-bindings-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            shared/rust-bridge/generated
+          key: mobile-bindings-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/generate-bindings.sh', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/uniffi-bindgen/**', 'patches/codex/**', 'shared/third_party/codex/codex-rs/app-server-protocol/src/protocol/**', 'shared/third_party/codex/codex-rs/protocol/src/**') }}
+
+      - name: Generate shared mobile bindings
+        if: steps.mobile-bindings-cache.outputs.cache-hit != 'true'
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: |
+          cd shared/rust-bridge
+          ./generate-bindings.sh
+
+      - name: Package shared mobile sources
+        run: |
+          mkdir -p apps/ios/GeneratedRust/Headers .ci-prep/shared
+
+          cp shared/rust-bridge/generated/swift/codex_mobile_client.swift \
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+          cp shared/rust-bridge/generated/swift/codex_mobile_clientFFI.h \
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
+          cp shared/rust-bridge/generated/swift/codex_mobile_clientFFI.modulemap \
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
+          cp shared/rust-bridge/generated/swift/module.modulemap \
+            apps/ios/GeneratedRust/Headers/module.modulemap
+
+          tar -czf .ci-prep/shared/generated-mobile-sources.tgz -C . \
+            shared/rust-bridge/generated \
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift \
+            apps/ios/GeneratedRust/Headers
+
+      - name: Upload shared prep artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared-prep
+          path: .ci-prep/shared
+          if-no-files-found: error
+
+  android:
+    needs: shared-prep
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SCCACHE_BUCKET: rust-cache
+      SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
+      SCCACHE_REGION: auto
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: ci/mobile-android
+      AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_R2_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platforms and NDK
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;30.0.14904198"
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libcap-dev clang cmake
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - name: Configure sccache
+        run: |
+          if [ -n "${SCCACHE_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BUCKET=" >> "$GITHUB_ENV"
+            echo "SCCACHE_ENDPOINT=" >> "$GITHUB_ENV"
+            echo "SCCACHE_S3_KEY_PREFIX=" >> "$GITHUB_ENV"
+            echo "AWS_ACCESS_KEY_ID=" >> "$GITHUB_ENV"
+            echo "AWS_SECRET_ACCESS_KEY=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Setup sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Download shared prep artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-prep
+          path: .ci-prep/shared
+
+      - name: Restore shared prep
+        run: |
+          ./apps/ios/scripts/sync-codex.sh --preserve-current
+
+          SHARED_PREP_ROOT=.ci-prep/shared
+          if [ -d "$SHARED_PREP_ROOT/shared" ]; then
+            SHARED_PREP_ROOT="$SHARED_PREP_ROOT/shared"
+          fi
+
+          tar -xzf "$SHARED_PREP_ROOT/generated-mobile-sources.tgz" -C .
+          mkdir -p .build-stamps
+          touch .build-stamps/sync .build-stamps/bindings-kotlin
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build Rust JNI libs
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/30.0.14904198
+        run: make rust-android
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble debug
+        run: apps/android/gradlew -p apps/android :app:assembleDebug
+
+  ios:
+    needs: shared-prep
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      SCCACHE_BUCKET: rust-cache
+      SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
+      SCCACHE_REGION: auto
+      SCCACHE_S3_USE_SSL: "true"
+      SCCACHE_S3_KEY_PREFIX: ci/mobile-ios
+      AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_R2_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+
+      - name: Install build dependencies
+        run: brew install xcodegen meson ninja llvm lld
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim,i686-unknown-linux-musl
+
+      - name: Configure sccache
+        run: |
+          if [ -n "${SCCACHE_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BUCKET=" >> "$GITHUB_ENV"
+            echo "SCCACHE_ENDPOINT=" >> "$GITHUB_ENV"
+            echo "SCCACHE_S3_KEY_PREFIX=" >> "$GITHUB_ENV"
+            echo "AWS_ACCESS_KEY_ID=" >> "$GITHUB_ENV"
+            echo "AWS_SECRET_ACCESS_KEY=" >> "$GITHUB_ENV"
+          fi
+
+      - name: Setup sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
+        uses: mozilla-actions/sccache-action@v0.0.9
+
+      - name: Download shared prep artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: shared-prep
+          path: .ci-prep/shared
+
+      - name: Restore shared prep
+        run: |
+          ./apps/ios/scripts/sync-codex.sh --preserve-current
+
+          SHARED_PREP_ROOT=.ci-prep/shared
+          if [ -d "$SHARED_PREP_ROOT/shared" ]; then
+            SHARED_PREP_ROOT="$SHARED_PREP_ROOT/shared"
+          fi
+
+          tar -xzf "$SHARED_PREP_ROOT/generated-mobile-sources.tgz" -C .
+          mkdir -p .build-stamps
+          touch .build-stamps/sync .build-stamps/bindings-swift
+
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build Rust for iOS simulator
+        run: env -u CARGO_INCREMENTAL ./apps/ios/scripts/build-rust.sh --preserve-current --fast-sim --skip-bindings
+
+      - name: Download Alpine rootfs
+        run: make alpine-fs
+
+      - name: Generate Xcode project
+        run: ./apps/ios/scripts/regenerate-project.sh
+
+      - name: Select simulator destination
+        run: |
+          SIMULATOR_UDID="$(
+            xcrun simctl list devices available | awk -F '[()]' '
+              /^-- iOS / { ios=1; next }
+              /^--/ { ios=0 }
+              ios && /iPhone 17 Pro/ { print $2; exit }
+              ios && /iPhone/ && first == "" { first=$2 }
+              END {
+                if (first != "") {
+                  print first
+                }
+              }
+            '
+          )"
+          if [ -z "$SIMULATOR_UDID" ]; then
+            echo "No available iPhone simulator found"
+            xcrun simctl list devices available
+            exit 1
+          fi
+          echo "IOS_SIMULATOR_UDID=$SIMULATOR_UDID" >> "$GITHUB_ENV"
+
+      - name: Build (Litter)
+        run: |
+          xcodebuild \
+            -project apps/ios/Litter.xcodeproj \
+            -scheme Litter \
+            -configuration Debug \
+            -destination "id=$IOS_SIMULATOR_UDID" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            build

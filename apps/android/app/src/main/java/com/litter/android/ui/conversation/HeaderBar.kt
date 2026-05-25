@@ -59,12 +59,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litter.android.state.accentColor
 import com.litter.android.state.displayModelLabel
-import com.litter.android.state.isIpcConnected
 import com.litter.android.state.resolvedModel
 import com.litter.android.state.statusColor
 import com.litter.android.ui.LitterTextStyle
 import com.litter.android.ui.LocalAppModel
 import com.litter.android.ui.LitterTheme
+import com.litter.android.ui.common.modelPickerDisplayName
 import com.litter.android.ui.common.matchesModelSelection
 import com.litter.android.ui.scaled
 import kotlinx.coroutines.launch
@@ -99,7 +99,7 @@ fun HeaderBar(
     val pendingRuntime = launchState.selectedAgentRuntimeKind
     val pendingModelLabel = server?.availableModels
         ?.firstOrNull { it.matchesModelSelection(pendingModelId, pendingRuntime) }
-        ?.displayName
+        ?.modelPickerDisplayName()
         ?.ifBlank { pendingModelId }
         ?: pendingModelId.ifBlank { null }
     val currentModelId = pendingModelId.ifBlank {
@@ -119,6 +119,8 @@ fun HeaderBar(
             val threadReasoning = thread?.reasoningEffort?.trim().orEmpty()
             if (threadReasoning.isNotEmpty()) {
                 threadReasoning
+            } else if (selectedModelDefinition?.supportedReasoningEfforts?.isEmpty() == true) {
+                ""
             } else {
                 selectedModelDefinition?.defaultReasoningEffort?.let(::effortLabelLocal) ?: "default"
             }
@@ -196,14 +198,16 @@ fun HeaderBar(
                             fontSize = LitterTextStyle.caption2.scaled,
                         )
                     }
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = reasoningLabel,
-                        color = LitterTheme.textSecondary,
-                        fontSize = LitterTextStyle.caption.scaled,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (reasoningLabel.isNotBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = reasoningLabel,
+                            color = LitterTheme.textSecondary,
+                            fontSize = LitterTextStyle.caption.scaled,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Spacer(Modifier.width(2.dp))
                     Icon(
                         Icons.Default.KeyboardArrowDown,
@@ -259,20 +263,6 @@ fun HeaderBar(
                                 contentDescription = "Full access permissions",
                                 tint = LitterTheme.danger,
                                 modifier = Modifier.size(10.dp),
-                            )
-                        }
-                        if (server?.isIpcConnected == true) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "IPC",
-                                color = LitterTheme.accentStrong,
-                                fontSize = 10f.scaled,
-                                modifier = Modifier
-                                    .background(
-                                        LitterTheme.accentStrong.copy(alpha = 0.14f),
-                                        RoundedCornerShape(999.dp),
-                                    )
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
                             )
                         }
                     }
@@ -386,4 +376,5 @@ private fun effortLabelLocal(value: uniffi.codex_mobile_client.ReasoningEffort):
         uniffi.codex_mobile_client.ReasoningEffort.MEDIUM -> "medium"
         uniffi.codex_mobile_client.ReasoningEffort.HIGH -> "high"
         uniffi.codex_mobile_client.ReasoningEffort.X_HIGH -> "xhigh"
+        uniffi.codex_mobile_client.ReasoningEffort.MAX -> "max"
     }

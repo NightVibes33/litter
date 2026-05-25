@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 @MainActor
 final class StreamingAssistantRenderCache {
@@ -212,12 +211,12 @@ final class StreamingAssistantRenderCache {
                 )
                 blockIndex += 1
             case .inlineImage(let data):
-                guard let image = UIImage(data: data) else { continue }
                 let contentHash = data.hashValue
+                let cacheKey = "\(itemId)-\(namespace)-image-\(blockIndex)-\(data.count)-\(contentHash)"
                 segments.append(
                     MessageRenderCache.AssistantSegment(
-                        id: "\(itemId)-\(namespace)-image-\(blockIndex)-\(data.count)-\(contentHash)",
-                        kind: .image(image)
+                        id: cacheKey,
+                        kind: .image(data: data, cacheKey: cacheKey)
                     )
                 )
                 blockIndex += 1

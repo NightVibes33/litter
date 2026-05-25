@@ -18,6 +18,23 @@ final class ConversationAttachmentSupportTests: XCTestCase {
         XCTAssertEqual(url, "data:image/png;base64,abc")
     }
 
+    func testLinkedFakefsPathsParsesMarkdownAndRawLinks() {
+        let text = "Open [IPA](litter-file:///root/.litter/builds/App%20One.ipa), see /root/litter/main.swift and <ish-file://root/projects/Demo/README.md>."
+
+        let paths = ConversationAttachmentSupport.linkedFakefsPaths(in: text)
+
+        XCTAssertEqual(paths, [
+            "/root/.litter/builds/App One.ipa",
+            "/root/projects/Demo/README.md",
+            "/root/litter/main.swift"
+        ])
+    }
+
+    func testNormalizeLinkedFakefsPathSupportsTildeAndCustomHostForm() {
+        XCTAssertEqual(ConversationAttachmentSupport.normalizeLinkedFakefsPath("~/hello.swift"), "/root/hello.swift")
+        XCTAssertEqual(ConversationAttachmentSupport.normalizeLinkedFakefsPath("litter-file://root/tmp/test.png"), "/root/tmp/test.png")
+    }
+
     func testPreparedAttachmentCreatesImageUserInput() throws {
         let attachment = try XCTUnwrap(
             PreparedImageAttachment(

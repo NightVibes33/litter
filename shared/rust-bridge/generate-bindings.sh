@@ -23,6 +23,8 @@ if [[ -z "${RUSTC_WRAPPER:-}" ]] && command -v sccache >/dev/null 2>&1; then
     export RUSTC_WRAPPER="$(command -v sccache)"
 fi
 
+"$WORKSPACE_DIR/../../tools/scripts/update-alleycat-main.sh" --shared
+
 PROFILE="debug"
 GENERATE_SWIFT=1
 GENERATE_KOTLIN=1

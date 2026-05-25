@@ -16,7 +16,10 @@ The public source now includes a buildable wrapper implementation:
 
 The wrapper intentionally does not embed Apple SDK files or Swift compiler
 payloads. The private asset pack must supply `CoreCompiler.framework`,
-`CoreCompilerSupportLibs`, and a user-owned `iPhoneOS26.4.sdk`. It can run in
+`CoreCompilerSupportLibs`, `Toolchains/Nyxian/SwiftResourceDir`, and a
+user-owned `iPhoneOS26.4.sdk`. In-process mode passes `SwiftResourceDir` as
+Swift `-resource-dir` so stdlib modules and target runtime library paths resolve
+on device. The wrapper can run in
 `runner` mode with an executable at `Toolchains/Nyxian/bin/litter-buildkit-runner`
 or in `inprocess` mode by compiling `LitterBuildKitInProcess.mm` into the
 framework with `LITTER_BUILDKIT_NATIVE_MODE=inprocess`.

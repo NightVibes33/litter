@@ -130,7 +130,7 @@ bool ZBundle::GenerateCodeResources(const string& strFolder, jvalue& jvCodeRes)
 
 	setFiles.erase("_CodeSignature/CodeResources");
 	setFiles.erase(strBundleExe);
-
+	
 	jvCodeRes.clear();
 	jvCodeRes["files"] = jvalue(jvalue::E_OBJECT);
 	jvCodeRes["files2"] = jvalue(jvalue::E_OBJECT);
@@ -666,9 +666,9 @@ bool ZBundle::ConfigureFolderSign(ZSignAsset *pSignAsset,
     ZLog::PrintV(">>> TeamId: \t%s\n", m_pSignAsset->m_strTeamId.c_str());
     ZLog::PrintV(">>> SubjectCN: \t%s\n", m_pSignAsset->m_strSubjectCN.c_str());
     ZLog::PrintV(">>> ReadCache: \t%s\n", m_bForceSign ? "NO" : "YES");
-
+    
     config = jvRoot;
-
+    
     return true;
 }
 

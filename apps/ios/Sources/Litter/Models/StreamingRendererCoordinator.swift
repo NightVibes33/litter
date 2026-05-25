@@ -21,8 +21,16 @@ final class StreamingRendererCoordinator {
             }
             activeItemId = itemId
         }
-        let r = renderers[itemId] ?? makeRenderer(for: itemId)
-        r.append(delta)
+        // Only append to an existing renderer. The first delta arrives via
+        // `ThreadItemChanged` (placeholder insert) and never reaches this
+        // path — the snapshot's text is updated instead. If we lazy-created
+        // a renderer here, it would start empty and get only second-and-
+        // later deltas; SwiftUI's later rebuild of the bubble would then
+        // return that truncated renderer (its `currentText` seed is ignored
+        // when a renderer already exists), dropping the first delta.
+        // Letting this be a no-op when no renderer exists means the bubble
+        // view's init seeds the renderer from the snapshot's full text.
+        renderers[itemId]?.append(delta)
     }
 
     // MARK: - Renderer access

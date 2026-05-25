@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$IOS_DIR/../.." && pwd)"
 DEST="$IOS_DIR/Sources/Litter/Resources/BuildKitAssets"
 ASSET_DIR="${LITTER_BUILDKIT_ASSET_DIR:-}"
 ASSET_ZIP="${LITTER_BUILDKIT_ASSET_ZIP:-}"
@@ -59,5 +60,6 @@ fi
 
 rm -rf "$DEST"
 mkdir -p "$(dirname "$DEST")"
-cp -R "$ASSET_DIR" "$DEST"
+cp -R -L "$ASSET_DIR" "$DEST"
+"$ROOT_DIR/tools/scripts/verify-nyxian-buildkit-assets.sh" "$DEST"
 echo "==> Private BuildKit assets prepared at $DEST"

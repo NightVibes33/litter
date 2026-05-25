@@ -7,6 +7,6 @@ The wrapper itself is a 3-line `main()` that re-exports `alleycat::run("kittylit
 ## Cutting a release
 
 1. Push the alleycat changes to `dnakov/alleycat`.
-2. Bump the `alleycat` dependency in `Cargo.toml` to a pinned git rev (replace the `path = ...` form with the `git = ..., rev = ...` form in the comment above it).
+2. Keep the `alleycat` dependency on `branch = "main"` and refresh it with `./tools/scripts/update-alleycat-main.sh --kittylitter`.
 3. Bump `version` in this crate's `Cargo.toml` and the version of the kittylitter binary tracking it.
 4. Tag `vX.Y.Z` on the litter repo. The `release.yml` workflow at the repo root builds and publishes.

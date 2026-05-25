@@ -1,0 +1,18 @@
+/target
+
+/minimuxer.xcframework
+/minimuxer.xcframework.zip
+/include
+
+/generated.zip
+/generated/*
+!/generated/minimuxer-Bridging-Header.h
+!/generated/minimuxer-helpers.swift
+
+# generated sources
+*.a
+*.swift
+*.h
+module.modulemap*
+SwiftMuxer
+.DS_Store

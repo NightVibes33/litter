@@ -1,8 +1,5 @@
-use std::sync::Arc;
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use codex_ipc::{RawFrameDirection, install_raw_frame_trace_observer};
 use tracing::Level;
 
 static TRACING_SUBSCRIBER_INSTALLED: OnceLock<()> = OnceLock::new();
@@ -275,32 +272,6 @@ pub(crate) fn log_rust(
     }
 }
 
-pub(crate) fn install_ipc_wire_trace_logger() {
-    install_tracing_subscriber();
-    install_raw_frame_trace_observer(Arc::new(|direction, payload| {
-        let timestamp_ms = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_millis())
-            .unwrap_or_default();
-        let summary = summarize_ipc_frame(payload);
-        let direction_label = match direction {
-            RawFrameDirection::In => "in",
-            RawFrameDirection::Out => "out",
-        };
-        tracing::event!(
-            target: "mobile",
-            Level::TRACE,
-            subsystem = "ipc",
-            category = "wire",
-            direction = direction_label,
-            ts_ms = timestamp_ms,
-            bytes = payload.len(),
-            summary = %summary,
-            "IPC raw frame"
-        );
-    }));
-}
-
 pub(crate) fn summarize_json_for_log(payload: &str) -> String {
     let compact = serde_json::from_str::<serde_json::Value>(payload)
         .ok()
@@ -339,43 +310,6 @@ fn format_bytes(bytes: usize) -> String {
     } else {
         format!("{value:.1} {}", UNITS[unit_index])
     }
-}
-
-fn summarize_ipc_frame(payload: &str) -> String {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(payload) else {
-        return "invalid-json".to_string();
-    };
-
-    let envelope_type = value
-        .get("type")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("unknown");
-
-    let method = value
-        .get("method")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| {
-            value
-                .get("request")
-                .and_then(|request| request.get("method"))
-                .and_then(serde_json::Value::as_str)
-        })
-        .unwrap_or("-");
-
-    let request_id = value
-        .get("requestId")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("-");
-
-    let result_type = value
-        .get("resultType")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("-");
-
-    format!(
-        "type={} method={} request_id={} result_type={}",
-        envelope_type, method, request_id, result_type
-    )
 }
 
 #[cfg(test)]

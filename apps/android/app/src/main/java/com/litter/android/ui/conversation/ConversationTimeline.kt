@@ -7,6 +7,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -120,8 +122,8 @@ fun ConversationTimelineItem(
     isLiveTurn: Boolean = false,
     isStreamingMessage: Boolean = false,
     onStreamingSnapshotRendered: (() -> Unit)? = null,
-    onEditMessage: ((UInt) -> Unit)? = null,
-    onForkFromMessage: ((UInt) -> Unit)? = null,
+    onEditMessage: ((String) -> Unit)? = null,
+    onForkFromMessage: ((String) -> Unit)? = null,
     onOpenSavedApp: ((String) -> Unit)? = null,
     onWidgetPrompt: ((String) -> Unit)? = null,
 ) {
@@ -138,7 +140,7 @@ fun ConversationTimelineItem(
     when (val content = item.content) {
         is HydratedConversationItemContent.User -> UserMessageRow(
             data = content.v1,
-            turnIndex = item.sourceTurnIndex ?: 0u,
+            itemId = item.id,
             onEdit = onEditMessage,
             onFork = onForkFromMessage,
         )
@@ -262,9 +264,9 @@ private fun HydratedConversationItemContent.shouldAutoFollowRenderedContent(): B
 @Composable
 private fun UserMessageRow(
     data: uniffi.codex_mobile_client.HydratedUserMessageData,
-    turnIndex: UInt,
-    onEdit: ((UInt) -> Unit)?,
-    onFork: ((UInt) -> Unit)?,
+    itemId: String,
+    onEdit: ((String) -> Unit)?,
+    onFork: ((String) -> Unit)?,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -301,18 +303,18 @@ private fun UserMessageRow(
                 LimitedUserMessageText(data.text)
                 // Inline images from data URIs
                 for (uri in data.imageDataUris) {
-                    val bitmap = remember(uri) {
+                    val bytes = remember(uri) {
                         try {
                             val base64Part = uri.substringAfter("base64,", "")
-                            if (base64Part.isNotEmpty()) {
-                                val bytes = Base64.decode(base64Part, Base64.DEFAULT)
-                                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                            } else null
+                            if (base64Part.isNotEmpty()) Base64.decode(base64Part, Base64.DEFAULT) else null
                         } catch (_: Exception) { null }
                     }
-                    bitmap?.let {
-                        Image(
-                            bitmap = it.asImageBitmap(),
+                    bytes?.let {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(it)
+                                .crossfade(false)
+                                .build(),
                             contentDescription = "Attached image",
                             modifier = Modifier
                                 .padding(top = 4.dp)
@@ -329,13 +331,13 @@ private fun UserMessageRow(
                 if (onEdit != null) {
                     DropdownMenuItem(
                         text = { Text("Edit Message") },
-                        onClick = { showMenu = false; onEdit(turnIndex) },
+                        onClick = { showMenu = false; onEdit(itemId) },
                     )
                 }
                 if (onFork != null) {
                     DropdownMenuItem(
                         text = { Text("Fork From Here") },
-                        onClick = { showMenu = false; onFork(turnIndex) },
+                        onClick = { showMenu = false; onFork(itemId) },
                     )
                 }
                 DropdownMenuItem(
@@ -491,28 +493,33 @@ private fun AssistantRenderBlocks(
         return
     }
 
+    val context = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         blocks.forEachIndexed { index, block ->
             when (block) {
                 is AppMessageRenderBlock.Markdown -> MarkdownText(text = block.markdown)
-                is AppMessageRenderBlock.CodeBlock -> CodeBlockSegment(
-                    language = block.language,
-                    code = block.code,
-                )
-                is AppMessageRenderBlock.InlineImage -> {
-                    val bitmap = remember(block.data) {
-                        BitmapFactory.decodeByteArray(block.data, 0, block.data.size)
-                    }
-                    bitmap?.let {
-                        Image(
-                            bitmap = it.asImageBitmap(),
-                            contentDescription = "Assistant image ${index + 1}",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 300.dp)
-                                .clip(RoundedCornerShape(10.dp)),
+                is AppMessageRenderBlock.CodeBlock -> {
+                    if (isMathLanguage(block.language)) {
+                        MarkdownText(text = mathMarkdownBlock(block.code))
+                    } else {
+                        CodeBlockSegment(
+                            language = block.language,
+                            code = block.code,
                         )
                     }
+                }
+                is AppMessageRenderBlock.InlineImage -> {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(block.data)
+                            .crossfade(false)
+                            .build(),
+                        contentDescription = "Assistant image ${index + 1}",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp)
+                            .clip(RoundedCornerShape(10.dp)),
+                    )
                 }
             }
         }
@@ -966,17 +973,7 @@ private fun ComputerUseToolCallRow(
 
 @Composable
 private fun ScreenshotPreview(bytes: ByteArray) {
-    val bitmap = remember(bytes) {
-        try {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        } catch (_: Throwable) {
-            null
-        }
-    }
-    if (bitmap == null) {
-        InlineTextSection("Screenshot", "Unavailable", tone = LitterTheme.textMuted)
-        return
-    }
+    val context = LocalContext.current
     Column {
         Text(
             text = "SCREENSHOT",
@@ -985,8 +982,11 @@ private fun ScreenshotPreview(bytes: ByteArray) {
             fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.height(4.dp))
-        Image(
-            bitmap = bitmap,
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(bytes)
+                .crossfade(false)
+                .build(),
             contentDescription = "Computer Use screenshot",
             contentScale = ContentScale.Fit,
             modifier = Modifier
@@ -1144,14 +1144,8 @@ private fun ImageGenerationRow(
 private fun GeneratedImageSection(
     data: uniffi.codex_mobile_client.HydratedImageGenerationData,
 ) {
-    val bitmap = remember(data.imagePng) {
-        val bytes = data.imagePng ?: return@remember null
-        try {
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-        } catch (_: Throwable) {
-            null
-        }
-    }
+    val context = LocalContext.current
+    val pngBytes = data.imagePng
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionLabel("Image")
@@ -1163,9 +1157,12 @@ private fun GeneratedImageSection(
             contentAlignment = Alignment.Center,
         ) {
             when {
-                bitmap != null -> {
-                    Image(
-                        bitmap = bitmap,
+                pngBytes != null -> {
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(pngBytes)
+                            .crossfade(false)
+                            .build(),
                         contentDescription = "Generated image",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier

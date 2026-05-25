@@ -1,0 +1,35 @@
+# Custom CI steps injected into release.yml's `build-local-artifacts` job
+# by cargo-dist's `github-build-setup` hook (configured in
+# dist-workspace.toml). Runs before `dist build`, on every Rust target
+# matrix entry, so the kittylitter release lane reuses the same Cloudflare
+# R2 sccache backend the mobile/iOS/macOS lanes do.
+#
+# Each entry is a GitHub Actions step. The `run:` blocks below export the
+# sccache env vars to `$GITHUB_ENV` so the subsequent `dist build` step
+# inherits them and cargo picks up `RUSTC_WRAPPER=sccache`.
+#
+# Lives at .github/dist-build-setup.yml (not under .github/workflows/) so
+# GitHub doesn't try to interpret it as a workflow file. cargo-dist
+# resolves the path via `.github/workflows/ + ../dist-build-setup.yml`.
+
+- name: Configure sccache env for R2 backend
+  shell: bash
+  run: |
+    {
+      echo "RUSTC_WRAPPER=sccache"
+      echo "SCCACHE_BUCKET=rust-cache"
+      echo "SCCACHE_REGION=auto"
+      echo "SCCACHE_S3_USE_SSL=true"
+      echo "SCCACHE_S3_KEY_PREFIX=ci/kittylitter-release"
+      echo "SCCACHE_LOG=warn"
+      echo "SCCACHE_ENDPOINT=${{ secrets.SCCACHE_R2_ENDPOINT }}"
+      echo "AWS_ACCESS_KEY_ID=${{ secrets.SCCACHE_R2_ACCESS_KEY_ID }}"
+      echo "AWS_SECRET_ACCESS_KEY=${{ secrets.SCCACHE_R2_SECRET_ACCESS_KEY }}"
+    } >> "$GITHUB_ENV"
+
+- name: Install sccache
+  uses: mozilla-actions/sccache-action@v0.0.9
+
+- name: Resolve Alleycat to latest main
+  shell: bash
+  run: ./tools/scripts/update-alleycat-main.sh --kittylitter

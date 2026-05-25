@@ -12,7 +12,7 @@ typedef int	vm_prot_t;
  */
 #define	CPU_ARCH_MASK				0xff000000		/* mask for architecture bits */
 #define CPU_ARCH_ABI64				0x01000000		/* 64 bit ABI */
-#define CPU_ARCH_ABI64_32 			0x02000000
+#define CPU_ARCH_ABI64_32 			0x02000000		
 
 /*
  *	Machine types known by all.
@@ -558,7 +558,7 @@ struct CS_CodeDirectory {
 	uint32_t spare3;				/* unused (must be zero) */
 	uint64_t codeLimit64;			/* limit to main image signature range, 64 bits */
 	//char end_withCodeLimit64[0];
-
+	
 	/* Version 0x20400 */
 	uint64_t execSegBase;			/* offset of executable segment */
 	uint64_t execSegLimit;			/* limit of executable segment */

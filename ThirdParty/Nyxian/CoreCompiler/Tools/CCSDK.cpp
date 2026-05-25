@@ -76,40 +76,40 @@ CCSDKRef CCSDKCreateWithFileURL(CFAllocatorRef allocator,
                                 CFURLRef fileURL)
 {
     assert(fileURL != nullptr);
-
+    
     CCSDKRef sdkRef = (CCSDKRef)_CFRuntimeCreateInstance(allocator, CCSDKGetTypeID(), sizeof(struct opaque_ccsdk) - sizeof(CFRuntimeBase), NULL);
     if(sdkRef == nullptr)
     {
         return nullptr;
     }
-
+    
     CFStringRef pathStr = CFURLGetString(fileURL);
     if(pathStr == nullptr)
     {
         CFRelease(sdkRef);
         return nullptr;
     }
-
+    
     const char *cPathStr = CFStringGetCStringPtr(pathStr, kCFStringEncodingUTF8);
     if(cPathStr == nullptr)
     {
         CFRelease(sdkRef);
         return nullptr;
     }
-
+    
     auto result = clang::parseDarwinSDKInfo(
         *llvm::vfs::getRealFileSystem(),
         std::string(cPathStr)
     );
-
+    
     if(!result || !*result)
     {
         CFRelease(sdkRef);
         return nullptr;
     }
-
+    
     sdkRef->sdkInfo = std::make_unique<clang::DarwinSDKInfo>(std::move(**result));
-
+    
     return sdkRef;
 }
 
@@ -121,12 +121,12 @@ CFStringRef CCSDKCopyVersion(CCSDKRef sdk)
     {
         return nullptr;
     }
-
+    
     const char *versionCStr = versionStr.c_str();
     if(versionCStr == nullptr)
     {
         return nullptr;
     }
-
+    
     return CFStringCreateWithCString(CFGetAllocator(sdk), versionCStr, kCFStringEncodingUTF8);
 }

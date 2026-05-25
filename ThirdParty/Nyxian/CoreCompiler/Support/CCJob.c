@@ -80,16 +80,16 @@ CCJobRef CCJobCreate(CFAllocatorRef allocator,
                      CFArrayRef CC1Arguments)
 {
     assert(CC1Arguments != nil);
-
+    
     CCJobRef jobRef = (CCJobRef)_CFRuntimeCreateInstance(allocator, CCJobGetTypeID(), sizeof(struct opaque_ccjob) - sizeof(CFRuntimeBase), NULL);
     if(jobRef == nil)
     {
         return nil;
     }
-
+    
     jobRef->type = type;
     jobRef->arguments = CFRetain(CC1Arguments);
-
+    
     return jobRef;
 }
 
@@ -116,7 +116,7 @@ CC_EXPORT Boolean CCJobExecuteJob(CCJobRef job,
             {
                 return false;
             }
-
+            
             CCFileRef file = CCASTUnitGetFile(ASTUnit);
             if(file != nil)
             {
@@ -126,17 +126,17 @@ CC_EXPORT Boolean CCJobExecuteJob(CCJobRef job,
                     *outMainSource = mainSource;
                 }
             }
-
+            
             CFArrayRef diagnostics = CCASTUnitCopyDiagnostics(ASTUnit);
             if(diagnostics)
             {
                 *outDiagnostic = diagnostics;
             }
-
+            
             Boolean didErrorOccur = CCASTUnitErrorOccured(ASTUnit);
-
+            
             CFRelease(ASTUnit);
-
+            
             return !didErrorOccur;
         }
         case CCJobTypeSwiftCompiler:

@@ -1,0 +1,271 @@
+/*
+ SPDX-License-Identifier: AGPL-3.0-or-later
+
+ Copyright (C) 2025 - 2026 mach-port-t
+
+ This file is part of Nyxian.
+
+ Nyxian is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ Nyxian is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Affero General Public License for more details.
+
+ You should have received a copy of the GNU Affero General Public License
+ along with Nyxian. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#include <LindChain/ProcEnvironment/Surface/sys/compat/pectl.h>
+#import <LindChain/ProcEnvironment/Object/MachOObject.h>
+#import <LindChain/ProcEnvironment/Process/PEProcessManager.h>
+#import <LindChain/ProcEnvironment/Process/PEBootstrapRegistry.h>
+#import <LindChain/ProcEnvironment/Process/PELaunchServiceRegistry.h>
+#import <LindChain/ProcEnvironment/Server/Server.h>
+#import <Foundation/Foundation.h>
+#import <LindChain/Services/containerd/PEContainer.h>
+
+extern mach_port_t xpc_endpoint_copy_listener_port_4sim(NSObject<OS_xpc_object>*);
+extern NSObject<OS_xpc_object> *xpc_endpoint_create_mach_port_4sim(mach_port_t port);
+
+DEFINE_SYSCALL_HANDLER(pectl)
+{
+    uint8_t action = (uint8_t)args[0];
+    
+    switch(action)
+    {
+        case PECTL_LS_GET_ENDPOINT:
+        {
+            if(!entitlement_got_entitlement(proc_getentitlements(sys_proc_snapshot_), PEEntitlementLaunchServicesGetEndpoint))
+            {
+                sys_return_failure(EPERM);
+            }
+            
+            userspace_pointer_t userspace_str = (userspace_pointer_t)args[1];
+            
+            char *service_name = mach_syscall_copy_str_in(sys_task_, userspace_str, MAXHOSTNAMELEN);
+            if(service_name == NULL)
+            {
+                sys_return_failure(ENOMEM);
+            }
+            
+            NSString *service_nsname = [NSString stringWithCString:service_name encoding:NSUTF8StringEncoding];
+            free(service_name);
+            if(service_nsname == nil)
+            {
+                sys_return_failure(ENOMEM);
+            }
+            
+            NSXPCListenerEndpoint *endpoint = [[PEBootstrapRegistry shared] getEndpointWithServiceIdentifier:service_nsname];
+            if(endpoint == nil)
+            {
+                sys_return_failure(EACCES);
+            }
+            
+            mach_port_t port = xpc_endpoint_copy_listener_port_4sim(endpoint._endpoint);
+            if(port == MACH_PORT_NULL)
+            {
+                sys_return_failure(EACCES);
+            }
+            
+            kern_return_t kr = mach_port_mod_refs(mach_task_self(), port, MACH_PORT_RIGHT_SEND, 1);
+            if(kr != KERN_SUCCESS)
+            {
+                sys_return_failure(EACCES);
+            }
+            
+            kr = mach_syscall_payload_create(NULL, sizeof(mach_port_t), (vm_address_t*)out_ports);
+            if(kr != KERN_SUCCESS)
+            {
+                mach_port_deallocate(mach_task_self(), port);
+                sys_return_failure(ENOMEM);
+            }
+            
+            (*out_ports)[0] = port;
+            *out_ports_cnt = 1;
+            
+            sys_return;
+        }
+        case PECTL_LS_SET_ENDPOINT:
+        {
+            sys_need_in_ports(1, MACH_MSG_TYPE_MOVE_SEND);
+            
+            if(!entitlement_got_entitlement(proc_getentitlements(sys_proc_snapshot_), PEEntitlementLaunchServicesSetEndpoint))
+            {
+                sys_return_failure(EPERM);
+            }
+            
+            NSXPCListenerEndpoint *endpoint = [[NSXPCListenerEndpoint alloc] init];
+            endpoint._endpoint = xpc_endpoint_create_mach_port_4sim(sys_in_ports[0]);
+            if(endpoint == nil || endpoint._endpoint == nil)
+            {
+                sys_return_failure(EACCES);
+            }
+            
+            userspace_pointer_t userspace_str = (userspace_pointer_t)args[1];
+            
+            char *service_name = mach_syscall_copy_str_in(sys_task_, userspace_str, MAXHOSTNAMELEN);
+            if(service_name == NULL)
+            {
+                sys_return_failure(ENOMEM);
+            }
+            
+            NSString *service_nsname = [NSString stringWithCString:service_name encoding:NSUTF8StringEncoding];
+            free(service_name);
+            if(service_nsname == nil)
+            {
+                sys_return_failure(ENOMEM);
+            }
+            
+            /*
+             * getting existing launch service, because we
+             * have ti make sure that its not a attacker
+             * attempting to overwrite a launchservice
+             * endpoint to control it, as Nyxian it self
+             * requires such launch service to be able to
+             * read data from the other container, which
+             * is the reason for this extra layer of trust.
+             */
+            PELaunchService *service = [[PELaunchServiceRegistry shared] serviceForIdentifier:service_nsname];
+            if(service != nil)
+            {
+                PEProcess *process = service.process;
+                
+                /*
+                 * in-case there is no process it is
+                 * reserved for the service and cannot
+                 * be overriden by a attacker.
+                 */
+                if(process == nil)
+                {
+                    sys_return_failure(EPERM);
+                }
+                
+                /*
+                 * making sure that the right process
+                 * registers the endpoint for the
+                 * service domain.
+                 */
+                if(process.pid != proc_getpid(sys_proc_snapshot_))
+                {
+                    sys_return_failure(EPERM);
+                }
+            }
+            
+            [[PEBootstrapRegistry shared] setEndpoint:endpoint forServiceIdentifier:service_nsname];
+            sys_in_ports[0] = MACH_PORT_NULL;   /* prevent mach port reference leak */
+            
+            sys_return;
+        }
+        case PECTL_PE_SET_BAMSET:
+        {
+            /* getting boolean */
+            bool active = args[0];
+            
+            /* getting process */
+            PEProcess *process = [[PEProcessManager shared] processForProcessIdentifier:proc_getpid(sys_proc_snapshot_)];
+            if(process)
+            {
+                process.audioBackgroundModeUsage = active;
+            }
+            else
+            {
+                sys_return_failure(EACCES);
+            }
+            
+            sys_return;
+        }
+        case PECTL_CS_GET_PUBKEY:
+        {
+            userspace_pointer_t key_user_ptr = (userspace_pointer_t)args[0];
+            userspace_pointer_t key_len_ptr = (userspace_pointer_t)args[1];
+            
+            size_t key_len = 0;
+            if(!mach_syscall_copy_in(sys_task_, sizeof(size_t), &key_len, key_len_ptr))
+            {
+                sys_return_failure(EFAULT);
+            }
+            
+            if(key_len < ksurface->pub_key_len)
+            {
+                sys_return_failure(E2BIG);
+            }
+            
+            if(!mach_syscall_copy_out(sys_task_, ksurface->pub_key_len, ksurface->pub_key, key_user_ptr) ||
+               !mach_syscall_copy_out(sys_task_, sizeof(size_t), &key_len, key_len_ptr))
+            {
+                sys_return_failure(EFAULT);
+            }
+            
+            sys_return;
+        }
+        case PECTL_CS_GET_PRVKEY:
+        {
+            /* will be unimplemented for god knows how long */
+            sys_return_failure(EPERM);
+        }
+        case PECTL_CS_SIGN_PATH:
+        {
+            /*
+             * checking entitlements weither the process is entitled enough to
+             * sign unsigned binaries for opening or executing them, this is
+             * done by checking if it is entitled to spawn processes, this
+             * entitlement is meant to be a arbitary spawn entitlement against
+             * equevalents like PEEntitlementProcessSpawnSignedOnly which is
+             * used to only allow the spawn of binaries which are already signed.
+             * all this is done to ensure the user does consent do these things!
+             */
+            if(!entitlement_got_entitlement(proc_getentitlements(sys_proc_), PEEntitlementProcessSpawn))
+            {
+                sys_return_failure(EPERM);
+            }
+            
+            /* getting path */
+            userspace_pointer_t userspace_str = (userspace_pointer_t)args[1];
+            
+            char *path = mach_syscall_copy_str_in(sys_task_, userspace_str, MAXHOSTNAMELEN);
+            if(path == NULL)
+            {
+                sys_return_failure(ENOMEM);
+            }
+            
+            NSString *nsPath = [NSString stringWithCString:path encoding:NSUTF8StringEncoding];
+            free(path);
+            if(nsPath == nil)
+            {
+                sys_return_failure(ENOMEM);
+            }
+            
+            /* asking containerd for a object */
+            FDObject *object = [[PEContainer shared] fdObjectForItemAtPath:nsPath withFlags:O_RDWR withMode:0];
+            if(object == nil)
+            {
+                sys_return_failure(ENOENT);
+            }
+            
+            /*
+             * create mach object object out of the file descriptor
+             * on return the file descriptor is destroyed by default
+             * by ARC on the PEObject
+             */
+            MachOObject *machOObject = [MachOObject objectForFDObject:object];
+            if(machOObject == NULL)
+            {
+                sys_return_failure(ENOEXEC);
+            }
+            
+            /* signing that shit */
+            if(![machOObject signAndWriteBack])
+            {
+                sys_return_failure(ENOEXEC);
+            }
+            
+            sys_return;
+        }
+        default:
+            sys_return_failure(ENOSYS);
+    }
+}

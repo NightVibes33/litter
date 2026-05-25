@@ -17,7 +17,7 @@ enum PathDisplay {
     static func display(_ raw: String, isLocal: Bool) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return isLocal ? "~" : trimmed }
-        guard isLocal else { return abbreviateHomePath(trimmed) }
+        guard isLocal else { return remoteDisplay(trimmed) }
         let home = HomeAnchor.path
         if trimmed == home { return "~" }
         if trimmed.hasPrefix(home + "/") {
@@ -33,23 +33,26 @@ enum PathDisplay {
         return trimmed
     }
 
-    /// Inverse of `display` for the local case. Accepts user-entered
-    /// display strings (`~/foo`, `/tmp/x`) and produces an absolute path
-    /// on the iOS sandbox. No-op for remote paths.
-    static func expand(_ display: String, isLocal: Bool) -> String {
-        guard isLocal else { return display }
-        if display == "~" { return HomeAnchor.path }
-        if display.hasPrefix("~/") {
-            return HomeAnchor.path + "/" + display.dropFirst(2)
+    /// Inverse of `display`. Accepts user-entered display strings (`~/foo`,
+    /// `/tmp/x`, or remote `~\foo`) and produces an absolute path for the
+    /// selected host.
+    static func expand(_ display: String, isLocal: Bool, remoteHome: String? = nil) -> String {
+        let trimmed = display.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isLocal else {
+            return expandRemoteDisplay(trimmed, remoteHome: remoteHome)
+        }
+        if trimmed == "~" { return HomeAnchor.path }
+        if trimmed.hasPrefix("~/") {
+            return HomeAnchor.path + "/" + trimmed.dropFirst(2)
         }
         let tmp = realTmp()
         if !tmp.isEmpty {
-            if display == "/tmp" { return tmp }
-            if display.hasPrefix("/tmp/") {
-                return tmp + "/" + display.dropFirst(5)
+            if trimmed == "/tmp" { return tmp }
+            if trimmed.hasPrefix("/tmp/") {
+                return tmp + "/" + trimmed.dropFirst(5)
             }
         }
-        return display
+        return trimmed
     }
 
     private static func realTmp() -> String {
@@ -58,5 +61,53 @@ enum PathDisplay {
         // matching that adds `/`.
         if raw.hasSuffix("/") { return String(raw.dropLast()) }
         return raw
+    }
+
+    private static func remoteDisplay(_ trimmed: String) -> String {
+        let remote = RemotePath.parse(path: trimmed)
+        guard remote.isWindows() else {
+            return abbreviateHomePath(trimmed)
+        }
+        return abbreviateWindowsHome(remote) ?? remote.asString()
+    }
+
+    private static func expandRemoteDisplay(_ display: String, remoteHome: String?) -> String {
+        guard let home = remoteHome?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !home.isEmpty else {
+            return display
+        }
+        let remoteHomePath = RemotePath.parse(path: home)
+        let normalizedHome = remoteHomePath.asString()
+        if remoteHomePath.isWindows() {
+            guard display == "~" || display.hasPrefix("~\\") || display.hasPrefix("~/") else {
+                return display
+            }
+            if display == "~" { return normalizedHome }
+            let suffix = String(display.dropFirst(2)).replacingOccurrences(of: "/", with: "\\")
+            return appendWindowsSuffix(suffix, to: normalizedHome)
+        }
+        guard display == "~" || display.hasPrefix("~/") else {
+            return display
+        }
+        if display == "~" { return normalizedHome }
+        let suffix = String(display.dropFirst(2))
+        return normalizedHome.hasSuffix("/") ? normalizedHome + suffix : normalizedHome + "/" + suffix
+    }
+
+    private static func appendWindowsSuffix(_ suffix: String, to home: String) -> String {
+        let trimmedHome = home.hasSuffix("\\") ? String(home.dropLast()) : home
+        guard !suffix.isEmpty else { return trimmedHome }
+        return trimmedHome + "\\" + suffix
+    }
+
+    private static func abbreviateWindowsHome(_ remote: RemotePath) -> String? {
+        let segments = remote.segments()
+        guard segments.count >= 3 else { return nil }
+        guard segments[1].label.caseInsensitiveCompare("Users") == .orderedSame else {
+            return nil
+        }
+        let remainder = segments.dropFirst(3).map(\.label)
+        guard !remainder.isEmpty else { return "~" }
+        return "~\\" + remainder.joined(separator: "\\")
     }
 }

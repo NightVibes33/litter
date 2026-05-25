@@ -3,12 +3,19 @@
 #import <MobileDevelopmentKit/MDKDriver.h>
 #import <MobileDevelopmentKit/MDKJob.h>
 #import <MobileDevelopmentKit/MDKDiagnostic.h>
+#import <MobileDevelopmentKit/MDKLinker.h>
 
 #include <zlib.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <sys/stat.h>
+
+#ifdef LBN_ENABLE_KITTYSTORE_SIGNER
+#include "common/archive.h"
+#include "bundle.h"
+#include "openssl.h"
+#endif
 
 static NSString *LBIString(NSDictionary *dictionary, NSString *key)
 {
@@ -99,6 +106,200 @@ static NSString *LBIDiagnosticText(NSArray<MDKDiagnostic *> *diagnostics)
     return text;
 }
 
+static NSString *LBIJobTypeName(CCJobType type)
+{
+    switch(type)
+    {
+        case CCJobTypeCompiler: return @"compiler";
+        case CCJobTypeSwiftCompiler: return @"swift-compiler";
+        case CCJobTypeLinker: return @"linker";
+        case CCJobTypeDriver: return @"driver";
+        case CCJobTypeSwiftDriver: return @"swift-driver";
+        case CCJobTypeUnknown: return @"unknown";
+        default: return [NSString stringWithFormat:@"unknown-%u", type];
+    }
+}
+
+static BOOL LBIExecuteJob(MDKJob *job, NSArray<MDKDiagnostic *> **diagnostics, NSString **mainSource)
+{
+    if(job.type == CCJobTypeLinker)
+    {
+        if(mainSource != nil) { *mainSource = nil; }
+        return [MDKLinker executeJob:job outDiagnostics:diagnostics];
+    }
+    return [job executeJobWithOutDiagnostics:diagnostics withOutMainSource:mainSource];
+}
+
+static NSArray<NSString *> *LBINormalizedLinkerArguments(NSArray<NSString *> *arguments, BOOL *didNormalize)
+{
+    NSMutableArray<NSString *> *linkerArguments = [NSMutableArray array];
+    BOOL normalized = NO;
+    BOOL rewriteSysrootValue = NO;
+
+    for(NSString *argument in arguments ?: @[])
+    {
+        if(rewriteSysrootValue)
+        {
+            [linkerArguments addObject:argument];
+            rewriteSysrootValue = NO;
+            continue;
+        }
+
+        if([argument hasPrefix:@"-fuse-ld="])
+        {
+            normalized = YES;
+            continue;
+        }
+
+        if([argument isEqualToString:@"-isysroot"] || [argument isEqualToString:@"--sysroot"])
+        {
+            normalized = YES;
+            [linkerArguments addObject:@"-syslibroot"];
+            rewriteSysrootValue = YES;
+            continue;
+        }
+
+        if([argument hasPrefix:@"--sysroot="])
+        {
+            normalized = YES;
+            [linkerArguments addObject:@"-syslibroot"];
+            [linkerArguments addObject:[argument substringFromIndex:10]];
+            continue;
+        }
+
+        if([argument isEqualToString:@"-Wl"] || [argument isEqualToString:@"-Xlinker"])
+        {
+            normalized = YES;
+            continue;
+        }
+
+        if([argument hasPrefix:@"-Wl,"])
+        {
+            normalized = YES;
+            NSString *payload = [argument substringFromIndex:4];
+            BOOL rewritePayloadSysrootValue = NO;
+            for(NSString *part in [payload componentsSeparatedByString:@","])
+            {
+                if(part.length == 0 || [part isEqualToString:@"-Wl"]) { continue; }
+                if(rewritePayloadSysrootValue)
+                {
+                    [linkerArguments addObject:part];
+                    rewritePayloadSysrootValue = NO;
+                    continue;
+                }
+                if([part isEqualToString:@"-isysroot"] || [part isEqualToString:@"--sysroot"])
+                {
+                    [linkerArguments addObject:@"-syslibroot"];
+                    rewritePayloadSysrootValue = YES;
+                    continue;
+                }
+                if([part hasPrefix:@"--sysroot="])
+                {
+                    [linkerArguments addObject:@"-syslibroot"];
+                    [linkerArguments addObject:[part substringFromIndex:10]];
+                    continue;
+                }
+                [linkerArguments addObject:part];
+            }
+        }
+        else
+        {
+            [linkerArguments addObject:argument];
+        }
+    }
+
+    if(didNormalize != nil) { *didNormalize = normalized; }
+    return [linkerArguments copy];
+}
+
+static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInteger depth)
+{
+    if(depth > 8)
+    {
+        [log appendString:@"Nested driver expansion exceeded the safety limit.\n"];
+        return 70;
+    }
+
+    int exitCode = 0;
+    for(MDKJob *job in jobs)
+    {
+        NSArray<NSString *> *jobArguments = job.arguments ?: @[];
+
+        BOOL didNormalizeLinkerArguments = NO;
+        NSArray<NSString *> *normalizedLinkerArguments = LBINormalizedLinkerArguments(jobArguments, &didNormalizeLinkerArguments);
+        if(didNormalizeLinkerArguments && job.type == CCJobTypeDriver)
+        {
+            [log appendFormat:@"job type=%@(%u) normalizing swift linker driver=yes\n", LBIJobTypeName(job.type), job.type];
+            [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
+            [log appendFormat:@"linker args: %@\n", [normalizedLinkerArguments componentsJoinedByString:@" "]];
+
+            NSArray<MDKDiagnostic *> *diagnostics = nil;
+            NSString *mainSource = nil;
+            MDKJob *linkerJob = [MDKJob jobWithType:CCJobTypeLinker withArguments:normalizedLinkerArguments];
+            BOOL ok = LBIExecuteJob(linkerJob, &diagnostics, &mainSource);
+            [log appendFormat:@"job type=linker(%u) source=%@ ok=%@\n", linkerJob.type, mainSource ?: @"", ok ? @"yes" : @"no"];
+            if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
+            if(!ok)
+            {
+                if(exitCode == 0) { exitCode = 1; }
+                break;
+            }
+            continue;
+        }
+
+        if(job.type == CCJobTypeDriver)
+        {
+            [log appendFormat:@"job type=%@(%u) expanding=yes\n", LBIJobTypeName(job.type), job.type];
+            [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
+
+            MDKDriver *driver = [MDKDriver driverWithArguments:jobArguments withType:CCDriverTypeClang];
+            if(driver == nil)
+            {
+                [log appendString:@"Could not create Nyxian Clang driver for nested driver job.\n"];
+                exitCode = exitCode == 0 ? 70 : exitCode;
+                continue;
+            }
+
+            NSArray<MDKJob *> *nestedJobs = [driver generateJobs];
+            if(nestedJobs.count == 0)
+            {
+                [log appendString:@"Nested Nyxian Clang driver produced no jobs.\n"];
+                exitCode = exitCode == 0 ? 70 : exitCode;
+                continue;
+            }
+
+            int nestedExitCode = LBIExecuteJobs(nestedJobs, log, depth + 1);
+            [log appendFormat:@"job type=%@(%u) expanded ok=%@\n", LBIJobTypeName(job.type), job.type, nestedExitCode == 0 ? @"yes" : @"no"];
+            if(nestedExitCode != 0) { exitCode = nestedExitCode; }
+            continue;
+        }
+
+        MDKJob *jobToExecute = job;
+        NSArray<NSString *> *argumentsToExecute = jobArguments;
+        if(job.type == CCJobTypeLinker && didNormalizeLinkerArguments)
+        {
+            [log appendFormat:@"job type=%@(%u) normalizing linker args=yes\n", LBIJobTypeName(job.type), job.type];
+            [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
+            [log appendFormat:@"linker args: %@\n", [normalizedLinkerArguments componentsJoinedByString:@" "]];
+            argumentsToExecute = normalizedLinkerArguments;
+            jobToExecute = [MDKJob jobWithType:CCJobTypeLinker withArguments:normalizedLinkerArguments];
+        }
+
+        NSArray<MDKDiagnostic *> *diagnostics = nil;
+        NSString *mainSource = nil;
+        BOOL ok = LBIExecuteJob(jobToExecute, &diagnostics, &mainSource);
+        [log appendFormat:@"job type=%@(%u) source=%@ ok=%@\n", LBIJobTypeName(jobToExecute.type), jobToExecute.type, mainSource ?: @"", ok ? @"yes" : @"no"];
+        [log appendFormat:@"job args: %@\n", [argumentsToExecute componentsJoinedByString:@" "]];
+        if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
+        if(!ok)
+        {
+            if(exitCode == 0) { exitCode = 1; }
+            break;
+        }
+    }
+    return exitCode;
+}
+
 static NSString *LBIOutputPath(NSArray<NSString *> *words, NSString *fallbackName)
 {
     for(NSUInteger idx = 0; idx + 1 < words.count; idx++)
@@ -115,12 +316,270 @@ static BOOL LBIFlagTakesValue(NSString *word)
     dispatch_once(&onceToken, ^{
         valueFlags = [NSSet setWithArray:@[
             @"-D", @"-I", @"-F", @"-L", @"-l", @"-framework",
+            @"-include", @"-isystem", @"-iquote", @"-idirafter",
+            @"-isysroot", @"--sysroot", @"-target", @"-arch", @"-x",
+            @"-std", @"-stdlib", @"-mllvm", @"-resource-dir",
             @"-module-name", @"-package-name", @"-emit-module-path",
             @"-emit-dependencies-path", @"-emit-reference-dependencies-path",
             @"-Xcc", @"-Xlinker", @"-Xfrontend"
         ]];
     });
     return [valueFlags containsObject:word];
+}
+
+static BOOL LBIWordsContain(NSArray<NSString *> *words, NSString *value);
+
+static void LBIAppendSwiftSDKCompatibilityFlags(NSMutableArray<NSString *> *arguments)
+{
+    if([arguments containsObject:@"-disable-sdk-module-interface-validation"]) { return; }
+    [arguments addObject:@"-Xfrontend"];
+    [arguments addObject:@"-disable-sdk-module-interface-validation"];
+}
+
+static BOOL LBIArgumentsContainResourceDir(NSArray<NSString *> *arguments)
+{
+    for(NSUInteger idx = 0; idx < arguments.count; idx++)
+    {
+        NSString *argument = arguments[idx];
+        if([argument isEqualToString:@"-resource-dir"] || [argument hasPrefix:@"-resource-dir="]) { return YES; }
+        if([argument isEqualToString:@"-Xcc"] && idx + 1 < arguments.count)
+        {
+            NSString *next = arguments[idx + 1];
+            if([next isEqualToString:@"-resource-dir"] || [next hasPrefix:@"-resource-dir="]) { return YES; }
+        }
+    }
+    return NO;
+}
+
+static BOOL LBIArgumentsContainSwiftResourceDir(NSArray<NSString *> *arguments)
+{
+    NSArray<NSString *> *words = arguments ?: @[];
+    for(NSUInteger idx = 0; idx < words.count; idx++)
+    {
+        NSString *argument = words[idx];
+        if([argument isEqualToString:@"-Xcc"])
+        {
+            idx++;
+            continue;
+        }
+        if([argument isEqualToString:@"-resource-dir"] || [argument hasPrefix:@"-resource-dir="]) { return YES; }
+    }
+    return NO;
+}
+
+static BOOL LBIArgumentsContainSwiftClangResourceDir(NSArray<NSString *> *arguments)
+{
+    for(NSUInteger idx = 0; idx + 1 < arguments.count; idx++)
+    {
+        NSString *argument = arguments[idx];
+        if(![argument isEqualToString:@"-Xcc"]) { continue; }
+        NSString *next = arguments[idx + 1];
+        if([next isEqualToString:@"-resource-dir"] || [next hasPrefix:@"-resource-dir="]) { return YES; }
+    }
+    return NO;
+}
+
+static BOOL LBIHeaderExists(NSString *root, NSString *relative)
+{
+    if(root.length == 0) { return NO; }
+    return [NSFileManager.defaultManager fileExistsAtPath:[root stringByAppendingPathComponent:relative]];
+}
+
+static void LBIAppendClangResourceDir(NSMutableArray<NSString *> *arguments, NSString *resourceDir, NSMutableString *log)
+{
+    if(resourceDir.length == 0)
+    {
+        [log appendString:@"warning: request did not include clangResourceDir; UIKit/Foundation C-family imports may fail.\n"];
+        return;
+    }
+    if(!LBIHeaderExists(resourceDir, @"include/stdarg.h"))
+    {
+        [log appendFormat:@"warning: clang resource dir is missing include/stdarg.h: %@\n", resourceDir];
+    }
+    if(LBIArgumentsContainResourceDir(arguments)) { return; }
+    [arguments addObject:@"-resource-dir"];
+    [arguments addObject:resourceDir];
+}
+
+static void LBIAppendSwiftClangResourceDir(NSMutableArray<NSString *> *arguments, NSString *resourceDir, NSMutableString *log)
+{
+    if(resourceDir.length == 0)
+    {
+        [log appendString:@"warning: request did not include clangResourceDir; Swift SDK module imports may fail.\n"];
+        return;
+    }
+    if(!LBIHeaderExists(resourceDir, @"include/stdarg.h"))
+    {
+        [log appendFormat:@"warning: clang resource dir is missing include/stdarg.h: %@\n", resourceDir];
+    }
+    if(LBIArgumentsContainSwiftClangResourceDir(arguments)) { return; }
+    [arguments addObject:@"-Xcc"];
+    [arguments addObject:@"-resource-dir"];
+    [arguments addObject:@"-Xcc"];
+    [arguments addObject:resourceDir];
+}
+
+static NSString *LBIFirstUsableSwiftResourceDir(NSArray<NSString *> *candidates, NSMutableString *log)
+{
+    NSFileManager *fm = NSFileManager.defaultManager;
+    for(NSString *candidate in candidates ?: @[])
+    {
+        if(candidate.length == 0) { continue; }
+        BOOL isDirectory = NO;
+        if(![fm fileExistsAtPath:candidate isDirectory:&isDirectory] || !isDirectory) { continue; }
+        NSString *iphoneOSDir = [candidate stringByAppendingPathComponent:@"iphoneos"];
+        BOOL iphoneOSIsDirectory = NO;
+        if([fm fileExistsAtPath:iphoneOSDir isDirectory:&iphoneOSIsDirectory] && iphoneOSIsDirectory)
+        {
+            return candidate;
+        }
+        [log appendFormat:@"warning: Swift resource dir candidate is missing iphoneos target directory: %@\n", candidate];
+    }
+    return nil;
+}
+
+static NSString *LBIResolvedSwiftResourceDir(NSString *swiftResourceDir, NSString *toolchainRoot, NSString *buildKitRoot, NSString *sdkRoot, NSMutableString *log)
+{
+    (void)sdkRoot;
+    NSString *documentsRoot = buildKitRoot.length > 0 ? buildKitRoot.stringByDeletingLastPathComponent : @"";
+    return LBIFirstUsableSwiftResourceDir(@[
+        swiftResourceDir ?: @"",
+        toolchainRoot.length > 0 ? [toolchainRoot stringByAppendingPathComponent:@"SwiftResourceDir"] : @"",
+        buildKitRoot.length > 0 ? [buildKitRoot stringByAppendingPathComponent:@"Toolchains/Nyxian/SwiftResourceDir"] : @"",
+        documentsRoot.length > 0 ? [documentsRoot stringByAppendingPathComponent:@"Developer/usr/lib/swift"] : @""
+    ], log);
+}
+
+static BOOL LBIAppendSwiftResourceDir(NSMutableArray<NSString *> *arguments,
+                                      NSString *swiftResourceDir,
+                                      NSString *toolchainRoot,
+                                      NSString *buildKitRoot,
+                                      NSString *sdkRoot,
+                                      NSMutableString *log)
+{
+    if(LBIArgumentsContainSwiftResourceDir(arguments)) { return YES; }
+    NSString *resourceDir = LBIResolvedSwiftResourceDir(swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log);
+    if(resourceDir.length == 0)
+    {
+        [log appendString:@"error: no usable Swift resource directory was found. Expected BuildKit manifest toolchain.swiftResourceDir to contain an iphoneos target directory.\n"];
+        return NO;
+    }
+    [log appendFormat:@"Swift resource dir: %@\n", resourceDir];
+    [arguments addObject:@"-resource-dir"];
+    [arguments addObject:resourceDir];
+    return YES;
+}
+
+static BOOL LBISourceIsCXX(NSString *source)
+{
+    NSString *ext = source.pathExtension.lowercaseString;
+    return [ext isEqualToString:@"cc"] || [ext isEqualToString:@"cpp"] || [ext isEqualToString:@"cxx"] || [ext isEqualToString:@"mm"];
+}
+
+static void LBIAppendCXXStandardLibraryHeaders(NSMutableArray<NSString *> *arguments, NSString *includeDir, NSString *source, NSMutableString *log)
+{
+    if(!LBISourceIsCXX(source) || [arguments containsObject:@"-nostdinc++"]) { return; }
+    if(includeDir.length == 0)
+    {
+        [log appendString:@"warning: request did not include cxxStandardLibraryIncludeDir; C++ standard library imports may fail.\n"];
+        return;
+    }
+    if(!LBIHeaderExists(includeDir, @"vector"))
+    {
+        [log appendFormat:@"warning: libc++ include dir is missing vector: %@\n", includeDir];
+    }
+    [arguments addObject:@"-stdlib=libc++"];
+    [arguments addObject:@"-isystem"];
+    [arguments addObject:includeDir];
+}
+
+static BOOL LBIIsInputWithExtensions(NSString *word, NSSet<NSString *> *extensions)
+{
+    if(word.length == 0 || [word hasPrefix:@"-"]) { return NO; }
+    NSString *ext = word.pathExtension.lowercaseString;
+    return ext.length > 0 && [extensions containsObject:ext];
+}
+
+static NSString *LBIFirstInputWithExtensions(NSArray<NSString *> *words, NSSet<NSString *> *extensions)
+{
+    BOOL skipNext = NO;
+    for(NSString *word in words)
+    {
+        if(skipNext) { skipNext = NO; continue; }
+        if(LBIFlagTakesValue(word) || [word isEqualToString:@"-o"])
+        {
+            skipNext = YES;
+            continue;
+        }
+        if(LBIIsInputWithExtensions(word, extensions)) { return word; }
+    }
+    return nil;
+}
+
+static NSArray<NSString *> *LBIClangUserFlags(NSArray<NSString *> *words, NSSet<NSString *> *inputExtensions)
+{
+    NSMutableArray<NSString *> *flags = [NSMutableArray array];
+    BOOL skipNext = NO;
+    BOOL preserveNext = NO;
+    for(NSUInteger idx = 0; idx < words.count; idx++)
+    {
+        NSString *word = words[idx];
+        if(skipNext) { skipNext = NO; continue; }
+        if([word isEqualToString:@"-o"] || [word isEqualToString:@"-isysroot"] || [word isEqualToString:@"--sysroot"] || [word isEqualToString:@"-target"] || [word isEqualToString:@"-arch"] || [word isEqualToString:@"-resource-dir"])
+        {
+            skipNext = YES;
+            preserveNext = NO;
+            continue;
+        }
+        if(preserveNext)
+        {
+            [flags addObject:word];
+            preserveNext = NO;
+            continue;
+        }
+        if(LBIIsInputWithExtensions(word, inputExtensions)) { continue; }
+        if([word hasPrefix:@"-isysroot"] || [word hasPrefix:@"--sysroot="] || [word hasPrefix:@"-target="] || [word hasPrefix:@"-arch"] || [word hasPrefix:@"-resource-dir="]) { continue; }
+        if([word hasPrefix:@"-"])
+        {
+            [flags addObject:word];
+            preserveNext = LBIFlagTakesValue(word);
+        }
+    }
+    return flags;
+}
+
+static NSString *LBIClangFallbackOutput(NSString *source, NSArray<NSString *> *words)
+{
+    NSString *base = source.lastPathComponent.stringByDeletingPathExtension;
+    if(base.length == 0) { base = @"a"; }
+    if(LBIWordsContain(words, @"-c")) { return [base stringByAppendingPathExtension:@"o"]; }
+    if(LBIWordsContain(words, @"-S")) { return [base stringByAppendingPathExtension:@"s"]; }
+    if(LBIWordsContain(words, @"-E")) { return [base stringByAppendingPathExtension:@"i"]; }
+    return @"a.out";
+}
+
+static NSString *LBIFakefsOutputPath(NSString *requestedOutput, NSString *cwd)
+{
+    if([requestedOutput hasPrefix:@"/"]) { return requestedOutput; }
+    return [(cwd.length > 0 ? cwd : @"/root") stringByAppendingPathComponent:requestedOutput];
+}
+
+static int LBIRunClangDriver(NSArray<NSString *> *arguments, NSMutableString *log)
+{
+    [log appendFormat:@"clang driver args: %@\n", [arguments componentsJoinedByString:@" "]];
+    MDKDriver *driver = [MDKDriver driverWithArguments:arguments withType:CCDriverTypeClang];
+    if(driver == nil)
+    {
+        [log appendString:@"Could not create Nyxian Clang driver.\n"];
+        return 70;
+    }
+    NSArray<MDKJob *> *jobs = [driver generateJobs];
+    if(jobs.count == 0)
+    {
+        [log appendString:@"Nyxian Clang driver produced no jobs.\n"];
+        return 70;
+    }
+    return LBIExecuteJobs(jobs, log, 0);
 }
 
 static NSArray<NSString *> *LBISwiftcUserFlags(NSArray<NSString *> *words)
@@ -175,17 +634,7 @@ static int LBIRunSwiftDriver(NSArray<NSString *> *arguments, NSMutableString *lo
         [log appendString:@"Nyxian Swift driver produced no jobs.\n"];
         return 70;
     }
-    int exitCode = 0;
-    for(MDKJob *job in jobs)
-    {
-        NSArray<MDKDiagnostic *> *diagnostics = nil;
-        NSString *mainSource = nil;
-        BOOL ok = [job executeJobWithOutDiagnostics:&diagnostics withOutMainSource:&mainSource];
-        [log appendFormat:@"job type=%u source=%@ ok=%@\n", job.type, mainSource ?: @"", ok ? @"yes" : @"no"];
-        if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
-        if(!ok) { exitCode = 1; }
-    }
-    return exitCode;
+    return LBIExecuteJobs(jobs, log, 0);
 }
 
 static NSDictionary *LBIProjectManifest(NSString *hostProjectPath, NSMutableString *log)
@@ -450,6 +899,669 @@ static BOOL LBIWriteStoredZip(NSString *appDir, NSString *productName, NSString 
     return ok;
 }
 
+
+#ifdef LBN_ENABLE_KITTYSTORE_SIGNER
+static NSDictionary *LBIJSONDictionaryFromFile(NSString *path, NSMutableString *log)
+{
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if(data.length == 0)
+    {
+        [log appendFormat:@"Signing plan is missing or empty: %@\n", path ?: @""];
+        return nil;
+    }
+    NSError *error = nil;
+    id object = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:&error];
+    if(![object isKindOfClass:NSDictionary.class])
+    {
+        [log appendFormat:@"Signing plan is not a JSON object: %@\n", error.localizedDescription ?: @"unknown decode error"];
+        return nil;
+    }
+    return object;
+}
+
+static NSDictionary *LBIDictionaryValue(NSDictionary *dictionary, NSString *key)
+{
+    id value = dictionary[key];
+    return [value isKindOfClass:NSDictionary.class] ? value : @{};
+}
+
+static NSString *LBINestedString(NSDictionary *dictionary, NSString *section, NSString *key)
+{
+    return LBIString(LBIDictionaryValue(dictionary, section), key);
+}
+
+static BOOL LBIBoolValue(id value)
+{
+    if([value isKindOfClass:NSNumber.class]) { return [value boolValue]; }
+    if([value isKindOfClass:NSString.class])
+    {
+        NSString *lower = [(NSString *)value lowercaseString];
+        return [lower isEqualToString:@"true"] || [lower isEqualToString:@"yes"] || [lower isEqualToString:@"1"];
+    }
+    return NO;
+}
+
+static BOOL LBINestedBool(NSDictionary *dictionary, NSString *section, NSString *key)
+{
+    return LBIBoolValue(LBIDictionaryValue(dictionary, section)[key]);
+}
+
+static NSArray<NSString *> *LBIStringArray(NSDictionary *dictionary, NSString *section, NSString *key)
+{
+    id value = LBIDictionaryValue(dictionary, section)[key];
+    if(![value isKindOfClass:NSArray.class]) { return @[]; }
+    NSMutableArray<NSString *> *result = [NSMutableArray array];
+    for(id item in (NSArray *)value)
+    {
+        if([item isKindOfClass:NSString.class] && [(NSString *)item length] > 0) { [result addObject:item]; }
+    }
+    return result;
+}
+
+static NSString *LBISafeFileComponent(NSString *raw, NSString *fallback)
+{
+    NSString *value = raw.length > 0 ? raw : fallback;
+    NSMutableString *safe = [NSMutableString stringWithCapacity:value.length];
+    NSCharacterSet *allowed = [NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_"];
+    for(NSUInteger idx = 0; idx < value.length; idx++)
+    {
+        unichar ch = [value characterAtIndex:idx];
+        [safe appendFormat:@"%C", [allowed characterIsMember:ch] ? ch : '-'];
+    }
+    while([safe hasPrefix:@"."] || [safe hasPrefix:@"-"]) { [safe deleteCharactersInRange:NSMakeRange(0, 1)]; }
+    return safe.length > 0 ? safe : fallback;
+}
+
+static NSString *LBIKittyStoreFindApp(NSString *workRoot)
+{
+    NSString *payload = [workRoot stringByAppendingPathComponent:@"Payload"];
+    NSArray<NSString *> *items = [NSFileManager.defaultManager contentsOfDirectoryAtPath:payload error:nil] ?: @[];
+    for(NSString *item in items)
+    {
+        if([item.pathExtension.lowercaseString isEqualToString:@"app"])
+        {
+            return [payload stringByAppendingPathComponent:item];
+        }
+    }
+    return @"";
+}
+
+static NSString *LBIKittyStoreCertificatePath(NSString *hostWorkDir, NSMutableString *log)
+{
+    NSData *certificate = [NSUserDefaults.standardUserDefaults dataForKey:@"LCCertificateData"];
+    if(certificate.length == 0)
+    {
+        [log appendString:@"No saved LCCertificateData was found in app settings. Import and validate a .p12 first.\n"];
+        return @"";
+    }
+    NSString *inputDir = [hostWorkDir stringByAppendingPathComponent:@"Inputs"];
+    [NSFileManager.defaultManager createDirectoryAtPath:inputDir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSString *path = [inputDir stringByAppendingPathComponent:@"KittyStoreSigningCertificate.p12"];
+    if(![certificate writeToFile:path atomically:YES])
+    {
+        [log appendFormat:@"Could not write staged certificate to %@\n", path];
+        return @"";
+    }
+    return path;
+}
+
+static NSString *LBIKittyStoreProvisionPath(NSDictionary *plan, NSString *appDir, NSMutableString *log)
+{
+    NSString *profile = LBINestedString(plan, @"signing", @"provisioningProfile");
+    if(profile.length > 0 && ![profile isEqualToString:@"embedded"] && [NSFileManager.defaultManager fileExistsAtPath:profile])
+    {
+        return profile;
+    }
+    NSString *embedded = [appDir stringByAppendingPathComponent:@"embedded.mobileprovision"];
+    if([NSFileManager.defaultManager fileExistsAtPath:embedded]) { return embedded; }
+    [log appendFormat:@"Provisioning profile is missing. Plan profile=%@, embedded=%@\n", profile ?: @"", embedded];
+    return @"";
+}
+
+static NSString *LBIKittyStoreWriteEntitlements(NSDictionary *plan, NSString *hostWorkDir, NSMutableString *log)
+{
+    id raw = LBIDictionaryValue(plan, @"modify")[@"entitlements"];
+    id plistObject = nil;
+    NSData *plistData = nil;
+    if([raw isKindOfClass:NSDictionary.class])
+    {
+        plistObject = raw;
+    }
+    else if([raw isKindOfClass:NSString.class])
+    {
+        NSString *text = [(NSString *)raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if(text.length == 0 || [text isEqualToString:@"{}"] || [text isEqualToString:@"{ }"]) { return @""; }
+        if([text hasPrefix:@"<"])
+        {
+            plistData = [text dataUsingEncoding:NSUTF8StringEncoding];
+        }
+        else if([text hasPrefix:@"{"])
+        {
+            NSData *jsonData = [text dataUsingEncoding:NSUTF8StringEncoding];
+            plistObject = jsonData ? [NSJSONSerialization JSONObjectWithData:jsonData options:0 error:nil] : nil;
+        }
+    }
+    if(plistData.length == 0 && plistObject != nil)
+    {
+        if([plistObject isKindOfClass:NSDictionary.class] && [(NSDictionary *)plistObject count] == 0) { return @""; }
+        plistData = [NSPropertyListSerialization dataWithPropertyList:plistObject format:NSPropertyListXMLFormat_v1_0 options:0 error:nil];
+    }
+    if(plistData.length == 0) { return @""; }
+    NSString *inputDir = [hostWorkDir stringByAppendingPathComponent:@"Inputs"];
+    [NSFileManager.defaultManager createDirectoryAtPath:inputDir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSString *path = [inputDir stringByAppendingPathComponent:@"KittyStoreEntitlements.plist"];
+    if(![plistData writeToFile:path atomically:YES])
+    {
+        [log appendString:@"Could not write custom entitlements plist; provisioning profile entitlements will be used.\n"];
+        return @"";
+    }
+    [log appendFormat:@"Using custom entitlements: %@\n", path];
+    return path;
+}
+
+static void LBIKittyStoreModifyInfoPlist(NSDictionary *plan, NSString *appDir, NSMutableString *log)
+{
+    NSString *infoPath = [appDir stringByAppendingPathComponent:@"Info.plist"];
+    NSMutableDictionary *info = [NSMutableDictionary dictionaryWithContentsOfFile:infoPath];
+    if(info.count == 0)
+    {
+        [log appendFormat:@"Could not read Info.plist at %@\n", infoPath];
+        return;
+    }
+    NSString *displayName = LBINestedString(plan, @"app", @"name");
+    NSString *bundleID = LBINestedString(plan, @"app", @"bundleIdentifier");
+    NSString *version = LBINestedString(plan, @"app", @"version");
+    if(displayName.length > 0)
+    {
+        info[@"CFBundleDisplayName"] = displayName;
+        info[@"CFBundleName"] = displayName;
+    }
+    if(bundleID.length > 0) { info[@"CFBundleIdentifier"] = bundleID; }
+    if(version.length > 0)
+    {
+        info[@"CFBundleShortVersionString"] = version;
+        info[@"CFBundleVersion"] = version;
+    }
+    NSDictionary *properties = LBIDictionaryValue(plan, @"properties");
+    NSString *appAppearance = LBIString(properties, @"appAppearance");
+    if(appAppearance.length > 0 && ![appAppearance.lowercaseString isEqualToString:@"default"]) { info[@"UIUserInterfaceStyle"] = appAppearance; }
+    NSString *minimumRequirement = LBIString(properties, @"minimumAppRequirement");
+    if(minimumRequirement.length > 0 && ![minimumRequirement.lowercaseString isEqualToString:@"default"]) { info[@"MinimumOSVersion"] = minimumRequirement; }
+    if(LBIBoolValue(properties[@"fileSharing"])) { info[@"UISupportsDocumentBrowser"] = @YES; }
+    if(LBIBoolValue(properties[@"iTunesFileSharing"])) { info[@"UIFileSharingEnabled"] = @YES; }
+    if(LBIBoolValue(properties[@"proMotion"])) { info[@"CADisableMinimumFrameDurationOnPhone"] = @YES; }
+    if(LBIBoolValue(properties[@"gameMode"])) { info[@"GCSupportsGameMode"] = @YES; }
+    if(LBIBoolValue(properties[@"iPadFullscreen"])) { info[@"UIRequiresFullScreen"] = @YES; }
+    if(LBIBoolValue(properties[@"removeURLScheme"])) { [info removeObjectForKey:@"CFBundleURLTypes"]; }
+    if([info writeToFile:infoPath atomically:YES])
+    {
+        [log appendString:@"Applied KittyStore Info.plist property changes.\n"];
+    }
+    else
+    {
+        [log appendFormat:@"Could not write Info.plist at %@\n", infoPath];
+    }
+}
+
+static BOOL LBIKittyStoreRelativePathIsSafe(NSString *path)
+{
+    NSString *trimmed = [path stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if(trimmed.length == 0 || [trimmed hasPrefix:@"/"]) { return NO; }
+    for(NSString *component in trimmed.pathComponents)
+    {
+        if([component isEqualToString:@".."] || [component isEqualToString:@"/"]) { return NO; }
+    }
+    return YES;
+}
+
+static void LBIKittyStoreRemoveAppFiles(NSDictionary *plan, NSString *appDir, NSMutableString *log)
+{
+    for(NSString *name in LBIStringArray(plan, @"modify", @"removeFiles"))
+    {
+        NSString *trimmed = [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if(trimmed.length == 0) { continue; }
+        if(!LBIKittyStoreRelativePathIsSafe(trimmed))
+        {
+            [log appendFormat:@"Skipped unsafe app-relative removal path: %@\n", trimmed];
+            continue;
+        }
+        NSString *target = [appDir stringByAppendingPathComponent:trimmed];
+        if(![NSFileManager.defaultManager fileExistsAtPath:target])
+        {
+            [log appendFormat:@"App-relative removal target not found: %@\n", trimmed];
+            continue;
+        }
+        NSError *error = nil;
+        if([NSFileManager.defaultManager removeItemAtPath:target error:&error])
+        {
+            [log appendFormat:@"Removed app-relative file before signing: %@\n", trimmed];
+        }
+        else
+        {
+            [log appendFormat:@"Could not remove app-relative file %@: %@\n", trimmed, error.localizedDescription ?: @"unknown error"];
+        }
+    }
+}
+
+static BOOL LBICopyIntoAppSubdir(NSString *source, NSString *appDir, NSString *subdir, NSMutableString *log)
+{
+    if(source.length == 0) { return NO; }
+    BOOL isDir = NO;
+    if(![NSFileManager.defaultManager fileExistsAtPath:source isDirectory:&isDir])
+    {
+        [log appendFormat:@"KittyStore input missing: %@\n", source];
+        return NO;
+    }
+    NSString *destDir = [appDir stringByAppendingPathComponent:subdir];
+    [NSFileManager.defaultManager createDirectoryAtPath:destDir withIntermediateDirectories:YES attributes:nil error:nil];
+    NSString *dest = [destDir stringByAppendingPathComponent:source.lastPathComponent];
+    [NSFileManager.defaultManager removeItemAtPath:dest error:nil];
+    NSError *error = nil;
+    if(![NSFileManager.defaultManager copyItemAtPath:source toPath:dest error:&error])
+    {
+        [log appendFormat:@"Could not copy %@ into %@: %@\n", source.lastPathComponent, subdir, error.localizedDescription ?: @"unknown error"];
+        return NO;
+    }
+    [log appendFormat:@"Copied %@ into %@.\n", source.lastPathComponent, subdir];
+    return YES;
+}
+
+
+static NSString *LBIArchiveString(const unsigned char *bytes, NSUInteger length)
+{
+    NSUInteger actual = 0;
+    while(actual < length && bytes[actual] != 0) { actual++; }
+    NSString *raw = [[NSString alloc] initWithBytes:bytes length:actual encoding:NSUTF8StringEncoding] ?: @"";
+    return [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
+static BOOL LBIArchiveRelativePathIsSafe(NSString *path)
+{
+    if(path.length == 0 || [path hasPrefix:@"/"]) { return NO; }
+    for(NSString *component in path.pathComponents)
+    {
+        if([component isEqualToString:@".."] || [component isEqualToString:@"/"]) { return NO; }
+    }
+    return YES;
+}
+
+static unsigned long long LBITarOctalSize(const unsigned char *bytes, NSUInteger length)
+{
+    unsigned long long value = 0;
+    for(NSUInteger i = 0; i < length; i++)
+    {
+        unsigned char ch = bytes[i];
+        if(ch == 0 || ch == ' ') { continue; }
+        if(ch < '0' || ch > '7') { break; }
+        value = (value << 3) + (unsigned long long)(ch - '0');
+    }
+    return value;
+}
+
+static BOOL LBIWriteDataToPath(NSData *data, NSString *path, NSMutableString *log)
+{
+    NSString *parent = path.stringByDeletingLastPathComponent;
+    [NSFileManager.defaultManager createDirectoryAtPath:parent withIntermediateDirectories:YES attributes:nil error:nil];
+    NSError *error = nil;
+    if(![data writeToFile:path options:NSDataWritingAtomic error:&error])
+    {
+        [log appendFormat:@"Could not write extracted tweak file %@: %@\n", path.lastPathComponent, error.localizedDescription ?: @"unknown error"];
+        return NO;
+    }
+    return YES;
+}
+
+static NSData *LBIGunzipData(NSData *data, NSString *scratchRoot, NSMutableString *log)
+{
+    NSString *gzPath = [scratchRoot stringByAppendingPathComponent:[NSString stringWithFormat:@"data-%@.tar.gz", [NSUUID UUID].UUIDString]];
+    if(!LBIWriteDataToPath(data, gzPath, log)) { return nil; }
+    gzFile file = gzopen(gzPath.fileSystemRepresentation, "rb");
+    if(file == NULL)
+    {
+        [log appendString:@"Could not open gzip payload from .deb tweak.\n"];
+        return nil;
+    }
+    NSMutableData *output = [NSMutableData data];
+    unsigned char buffer[256 * 1024];
+    int readBytes = 0;
+    while((readBytes = gzread(file, buffer, sizeof(buffer))) > 0)
+    {
+        [output appendBytes:buffer length:(NSUInteger)readBytes];
+    }
+    int closeStatus = gzclose(file);
+    if(closeStatus != Z_OK)
+    {
+        [log appendFormat:@"Could not decompress gzip payload from .deb tweak (zlib status %d).\n", closeStatus];
+        return nil;
+    }
+    return output;
+}
+
+static BOOL LBIExtractTarData(NSData *tarData, NSString *destinationRoot, NSMutableString *log)
+{
+    const unsigned char *bytes = (const unsigned char *)tarData.bytes;
+    NSUInteger length = tarData.length;
+    NSUInteger offset = 0;
+    BOOL extractedAny = NO;
+    while(offset + 512 <= length)
+    {
+        const unsigned char *header = bytes + offset;
+        BOOL empty = YES;
+        for(NSUInteger i = 0; i < 512; i++)
+        {
+            if(header[i] != 0) { empty = NO; break; }
+        }
+        if(empty) { break; }
+
+        NSString *name = LBIArchiveString(header, 100);
+        NSString *prefix = LBIArchiveString(header + 345, 155);
+        if(prefix.length > 0) { name = [prefix stringByAppendingPathComponent:name]; }
+        unsigned long long fileSize = LBITarOctalSize(header + 124, 12);
+        char type = (char)header[156];
+        NSUInteger dataOffset = offset + 512;
+        unsigned long long padded = ((fileSize + 511ULL) / 512ULL) * 512ULL;
+        if(dataOffset + (NSUInteger)fileSize > length)
+        {
+            [log appendFormat:@"Tweak tar payload is truncated at %@.\n", name];
+            return NO;
+        }
+
+        if(LBIArchiveRelativePathIsSafe(name))
+        {
+            NSString *outputPath = [destinationRoot stringByAppendingPathComponent:name];
+            if(type == '5')
+            {
+                [NSFileManager.defaultManager createDirectoryAtPath:outputPath withIntermediateDirectories:YES attributes:nil error:nil];
+                extractedAny = YES;
+            }
+            else if(type == '\0' || type == '0')
+            {
+                NSData *fileData = [tarData subdataWithRange:NSMakeRange(dataOffset, (NSUInteger)fileSize)];
+                if(!LBIWriteDataToPath(fileData, outputPath, log)) { return NO; }
+                extractedAny = YES;
+            }
+        }
+        else
+        {
+            [log appendFormat:@"Skipped unsafe tweak tar path: %@\n", name];
+        }
+        offset = dataOffset + (NSUInteger)padded;
+    }
+    return extractedAny;
+}
+
+static BOOL LBIExtractDebDataPayload(NSString *debPath, NSString *destinationRoot, NSMutableString *log)
+{
+    NSData *debData = [NSData dataWithContentsOfFile:debPath options:NSDataReadingMappedIfSafe error:nil];
+    const unsigned char *bytes = (const unsigned char *)debData.bytes;
+    NSUInteger length = debData.length;
+    if(length < 8 || memcmp(bytes, "!<arch>\n", 8) != 0)
+    {
+        [log appendFormat:@"Tweak input is not a Debian ar archive: %@\n", debPath.lastPathComponent];
+        return NO;
+    }
+    NSUInteger offset = 8;
+    while(offset + 60 <= length)
+    {
+        const unsigned char *header = bytes + offset;
+        NSString *name = LBIArchiveString(header, 16);
+        while([name hasSuffix:@"/"]) { name = [name substringToIndex:name.length - 1]; }
+        NSString *sizeText = LBIArchiveString(header + 48, 10);
+        unsigned long long size = strtoull(sizeText.UTF8String, NULL, 10);
+        NSUInteger dataOffset = offset + 60;
+        if(dataOffset + (NSUInteger)size > length)
+        {
+            [log appendFormat:@"Debian archive member %@ is truncated.\n", name];
+            return NO;
+        }
+        NSData *memberData = [debData subdataWithRange:NSMakeRange(dataOffset, (NSUInteger)size)];
+        if([name hasPrefix:@"data.tar"])
+        {
+            NSData *tarData = memberData;
+            if([name hasSuffix:@".gz"])
+            {
+                tarData = LBIGunzipData(memberData, destinationRoot, log);
+                if(tarData.length == 0) { return NO; }
+            }
+            else if(![name isEqualToString:@"data.tar"])
+            {
+                [log appendFormat:@"Unsupported .deb data payload %@. Supported tweak payloads are data.tar and data.tar.gz.\n", name];
+                return NO;
+            }
+            BOOL ok = LBIExtractTarData(tarData, destinationRoot, log);
+            if(ok) { [log appendFormat:@"Extracted tweak payload from %@.\n", debPath.lastPathComponent]; }
+            return ok;
+        }
+        offset = dataOffset + (NSUInteger)size + ((size % 2ULL) ? 1 : 0);
+    }
+    [log appendFormat:@"No data.tar payload was found in tweak %@.\n", debPath.lastPathComponent];
+    return NO;
+}
+
+static void LBIKittyStoreCollectTweakPayload(NSString *root, NSString *appDir, vector<string> &dylibs, NSMutableString *log)
+{
+    NSDirectoryEnumerator<NSURL *> *enumerator = [NSFileManager.defaultManager enumeratorAtURL:[NSURL fileURLWithPath:root]
+                                                                    includingPropertiesForKeys:@[NSURLIsDirectoryKey]
+                                                                                       options:0
+                                                                                  errorHandler:nil];
+    for(NSURL *url in enumerator)
+    {
+        NSNumber *isDirectoryValue = nil;
+        [url getResourceValue:&isDirectoryValue forKey:NSURLIsDirectoryKey error:nil];
+        BOOL isDirectory = isDirectoryValue.boolValue;
+        NSString *ext = url.pathExtension.lowercaseString;
+        if(isDirectory && ([ext isEqualToString:@"framework"] || [ext isEqualToString:@"appex"] || [ext isEqualToString:@"plugin"]))
+        {
+            if([ext isEqualToString:@"framework"]) { LBICopyIntoAppSubdir(url.path, appDir, @"Frameworks", log); }
+            else { LBICopyIntoAppSubdir(url.path, appDir, @"PlugIns", log); }
+            [enumerator skipDescendants];
+            continue;
+        }
+        if(!isDirectory && [ext isEqualToString:@"dylib"])
+        {
+            dylibs.push_back(string(url.path.UTF8String));
+            [log appendFormat:@"Queued tweak dylib injection: %@\n", url.lastPathComponent];
+        }
+    }
+}
+
+static void LBIKittyStoreCollectInputs(NSDictionary *plan, NSString *appDir, NSString *workRoot, vector<string> &dylibs, vector<string> &removeDylibs, NSMutableString *log)
+{
+    auto addDylib = ^(NSString *path) {
+        if(path.length == 0) { return; }
+        if(![NSFileManager.defaultManager fileExistsAtPath:path])
+        {
+            [log appendFormat:@"Dylib input missing: %@\n", path];
+            return;
+        }
+        dylibs.push_back(string(path.UTF8String));
+        [log appendFormat:@"Queued dylib injection: %@\n", path.lastPathComponent];
+    };
+    for(NSString *path in LBIStringArray(plan, @"modify", @"existingDylibs"))
+    {
+        addDylib(path);
+    }
+    for(NSString *name in LBIStringArray(plan, @"modify", @"removeDylibs"))
+    {
+        NSString *trimmed = [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if(trimmed.length == 0) { continue; }
+        removeDylibs.push_back(string(trimmed.UTF8String));
+        [log appendFormat:@"Queued dylib removal: %@\n", trimmed];
+    }
+    for(NSString *path in LBIStringArray(plan, @"modify", @"frameworksAndPlugins"))
+    {
+        NSString *ext = path.pathExtension.lowercaseString;
+        if([ext isEqualToString:@"framework"] || [ext isEqualToString:@"dylib"])
+        {
+            if([ext isEqualToString:@"dylib"]) { addDylib(path); }
+            else { LBICopyIntoAppSubdir(path, appDir, @"Frameworks", log); }
+        }
+        else if([ext isEqualToString:@"appex"] || [ext isEqualToString:@"plugin"])
+        {
+            LBICopyIntoAppSubdir(path, appDir, @"PlugIns", log);
+        }
+        else
+        {
+            [log appendFormat:@"Unsupported framework/plugin type for now: %@\n", path.lastPathComponent];
+        }
+    }
+    NSString *tweakRoot = [workRoot stringByAppendingPathComponent:@"TweakInputs"];
+    [NSFileManager.defaultManager createDirectoryAtPath:tweakRoot withIntermediateDirectories:YES attributes:nil error:nil];
+    for(NSString *path in LBIStringArray(plan, @"modify", @"tweaks"))
+    {
+        BOOL isDir = NO;
+        if(![NSFileManager.defaultManager fileExistsAtPath:path isDirectory:&isDir])
+        {
+            [log appendFormat:@"Tweak input missing: %@\n", path];
+            continue;
+        }
+        NSString *ext = path.pathExtension.lowercaseString;
+        if(isDir) { LBIKittyStoreCollectTweakPayload(path, appDir, dylibs, log); }
+        else if([ext isEqualToString:@"dylib"]) { addDylib(path); }
+        else if([ext isEqualToString:@"framework"]) { LBICopyIntoAppSubdir(path, appDir, @"Frameworks", log); }
+        else if([ext isEqualToString:@"appex"] || [ext isEqualToString:@"plugin"]) { LBICopyIntoAppSubdir(path, appDir, @"PlugIns", log); }
+        else if([ext isEqualToString:@"zip"])
+        {
+            NSString *extractDir = [tweakRoot stringByAppendingPathComponent:[NSString stringWithFormat:@"zip-%@", [NSUUID UUID].UUIDString]];
+            if(Zip::Extract(path.UTF8String, extractDir.UTF8String)) { LBIKittyStoreCollectTweakPayload(extractDir, appDir, dylibs, log); }
+            else { [log appendFormat:@"Could not extract tweak zip: %@\n", path.lastPathComponent]; }
+        }
+        else if([ext isEqualToString:@"deb"])
+        {
+            NSString *extractDir = [tweakRoot stringByAppendingPathComponent:[NSString stringWithFormat:@"deb-%@", [NSUUID UUID].UUIDString]];
+            [NSFileManager.defaultManager createDirectoryAtPath:extractDir withIntermediateDirectories:YES attributes:nil error:nil];
+            if(LBIExtractDebDataPayload(path, extractDir, log)) { LBIKittyStoreCollectTweakPayload(extractDir, appDir, dylibs, log); }
+        }
+        else { [log appendFormat:@"Unsupported tweak input type for now: %@\n", path.lastPathComponent]; }
+    }
+}
+
+static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
+{
+    NSString *planPath = LBIString(request, @"hostInputPath");
+    NSString *hostWorkDir = LBIString(request, @"hostWorkDir");
+    NSString *fakefsBuildDir = LBIString(request, @"fakefsBuildDir");
+    if(hostWorkDir.length == 0) { hostWorkDir = LBIString(request, @"buildDir"); }
+    if(fakefsBuildDir.length == 0) { fakefsBuildDir = @"/root/.litter/builds/kittystore"; }
+    NSDictionary *plan = LBIJSONDictionaryFromFile(planPath, log);
+    if(plan.count == 0) { return LBICopyResponse(65, @"kittystore-plan-invalid", log); }
+
+    NSString *ipaPath = LBINestedString(plan, @"app", @"ipa");
+    if(ipaPath.length == 0 || ![NSFileManager.defaultManager fileExistsAtPath:ipaPath])
+    {
+        [log appendFormat:@"IPA input is missing: %@\n", ipaPath ?: @""];
+        return LBICopyResponse(66, @"kittystore-ipa-missing", log);
+    }
+
+    NSString *workRoot = [hostWorkDir stringByAppendingPathComponent:@"KittyStoreZsignWork"];
+    NSString *extractRoot = [workRoot stringByAppendingPathComponent:@"Extracted"];
+    NSString *artifactDir = [hostWorkDir stringByAppendingPathComponent:@"Artifacts"];
+    [NSFileManager.defaultManager removeItemAtPath:workRoot error:nil];
+    [NSFileManager.defaultManager createDirectoryAtPath:artifactDir withIntermediateDirectories:YES attributes:nil error:nil];
+
+    [log appendFormat:@"Feather Zsign extract: %@ -> %@\n", ipaPath, extractRoot];
+    if(!Zip::Extract(ipaPath.UTF8String, extractRoot.UTF8String))
+    {
+        return LBICopyResponse(74, @"kittystore-unzip-failed", log);
+    }
+    NSString *appDir = LBIKittyStoreFindApp(extractRoot);
+    if(appDir.length == 0)
+    {
+        [log appendString:@"Could not find Payload/*.app after IPA extraction.\n"];
+        return LBICopyResponse(65, @"kittystore-payload-missing", log);
+    }
+
+    LBIKittyStoreModifyInfoPlist(plan, appDir, log);
+    LBIKittyStoreRemoveAppFiles(plan, appDir, log);
+    vector<string> dylibs;
+    vector<string> removeDylibs;
+    LBIKittyStoreCollectInputs(plan, appDir, workRoot, dylibs, removeDylibs, log);
+
+    NSString *signingType = LBINestedString(plan, @"signing", @"type").lowercaseString;
+    if(signingType.length == 0 || [signingType isEqualToString:@"standard"]) { signingType = @"default"; }
+    BOOL adhocSign = [signingType isEqualToString:@"adhoc"];
+    NSString *certificatePath = @"";
+    NSString *password = @"";
+    NSString *provisionPath = @"";
+    if(!adhocSign)
+    {
+        certificatePath = LBIKittyStoreCertificatePath(hostWorkDir, log);
+        if(certificatePath.length == 0) { return LBICopyResponse(78, @"kittystore-certificate-missing", log); }
+        password = [NSUserDefaults.standardUserDefaults stringForKey:@"LCCertificatePassword"] ?: @"";
+        provisionPath = LBIKittyStoreProvisionPath(plan, appDir, log);
+        if(provisionPath.length == 0) { return LBICopyResponse(78, @"kittystore-profile-missing", log); }
+    }
+    NSString *entitlementsPath = LBIKittyStoreWriteEntitlements(plan, hostWorkDir, log);
+
+    ZSignAsset zsa;
+    if(adhocSign)
+    {
+        [log appendString:@"Running Feather Zsign ad-hoc signing; certificate and provisioning profile are not required.\n"];
+        if(!zsa.Init("", "", "", entitlementsPath.UTF8String, "", true, false, false))
+        {
+            [log appendString:@"Feather Zsign could not prepare ad-hoc signing assets. Check the custom entitlements plist.\n"];
+            return LBICopyResponse(78, @"kittystore-adhoc-invalid", log);
+        }
+    }
+    else if(!zsa.Init("", certificatePath.UTF8String, provisionPath.UTF8String, entitlementsPath.UTF8String, password.UTF8String, false, false, false))
+    {
+        [log appendString:@"Feather Zsign could not load the certificate/profile. The .p12 password may be wrong, the cert may lack a private key, or the profile may not match.\n"];
+        return LBICopyResponse(78, @"kittystore-certificate-invalid", log);
+    }
+
+    NSString *bundleID = LBINestedString(plan, @"app", @"bundleIdentifier");
+    NSString *version = LBINestedString(plan, @"app", @"version");
+    NSString *displayName = LBINestedString(plan, @"app", @"name");
+    ZBundle bundle;
+    bundle.m_bEnableDocuments = LBINestedBool(plan, @"properties", @"fileSharing") || LBINestedBool(plan, @"properties", @"iTunesFileSharing");
+    BOOL removeProvision = LBINestedBool(plan, @"properties", @"removeProvisioning");
+    BOOL forceSign = [signingType isEqualToString:@"force"] || adhocSign;
+    BOOL weakInject = NO;
+    NSString *injectPath = LBINestedString(plan, @"properties", @"injectPath");
+    if(injectPath.length > 0 && ![injectPath isEqualToString:@"@executable_path"])
+    {
+        [log appendFormat:@"Feather Zsign bundle injection uses @executable_path for dylib load commands; requested injectPath %@ is recorded but not applied by this backend.\n", injectPath];
+    }
+    [log appendFormat:@"Running Feather Zsign bundle signer. type=%@ force=%@ weakInject=%@\n", signingType, forceSign ? @"yes" : @"no", weakInject ? @"yes" : @"no"];
+    bool signedOK = bundle.SignFolder(&zsa,
+                                      string(extractRoot.UTF8String),
+                                      string(bundleID.UTF8String),
+                                      string(version.UTF8String),
+                                      string(displayName.UTF8String),
+                                      dylibs,
+                                      removeDylibs,
+                                      forceSign,
+                                      weakInject,
+                                      false,
+                                      removeProvision);
+    if(!signedOK)
+    {
+        [log appendString:@"Feather Zsign failed while signing the extracted app bundle.\n"];
+        return LBICopyResponse(74, @"kittystore-sign-failed", log);
+    }
+
+    NSString *safeName = LBISafeFileComponent(displayName.length > 0 ? displayName : appDir.lastPathComponent.stringByDeletingPathExtension, @"Signed");
+    NSString *outputHost = [artifactDir stringByAppendingPathComponent:[safeName stringByAppendingString:@"-signed.ipa"]];
+    string archiveRoot = string(extractRoot.UTF8String);
+    if(!bundle.m_strAppFolder.empty())
+    {
+        size_t pos = bundle.m_strAppFolder.rfind("Payload");
+        if(pos != string::npos && pos > 0) { archiveRoot = bundle.m_strAppFolder.substr(0, pos - 1); }
+    }
+    [log appendFormat:@"Feather Zsign archive: %@\n", outputHost];
+    if(!Zip::Archive(archiveRoot, string(outputHost.UTF8String), 6))
+    {
+        return LBICopyResponse(74, @"kittystore-archive-failed", log);
+    }
+
+    NSString *fakefsPath = LBIString(plan, @"outputFakefsPath");
+    if(fakefsPath.length == 0) { fakefsPath = [fakefsBuildDir stringByAppendingPathComponent:outputHost.lastPathComponent]; }
+    [log appendFormat:@"Signed IPA artifact: %@ -> %@\n", outputHost, fakefsPath];
+    NSArray *artifacts = @[@{@"hostPath": outputHost, @"fakefsPath": fakefsPath}];
+    return LBICopyResponseWithArtifacts(0, @"kittystore-sign-ok", log, artifacts);
+}
+#endif
+
 extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *requestPath)
 {
     @autoreleasepool
@@ -457,18 +1569,45 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
         NSString *command = LBIString(request, @"command");
         NSString *args = LBIString(request, @"args");
         NSString *buildDir = LBIString(request, @"buildDir");
+        NSString *fakefsBuildDir = LBIString(request, @"fakefsBuildDir");
+        if(fakefsBuildDir.length == 0) { fakefsBuildDir = buildDir; }
         NSString *cwd = LBIString(request, @"cwd");
+        NSString *buildKitRoot = LBIString(request, @"buildKitRoot");
+        NSString *toolchainRoot = LBIString(request, @"toolchainRoot");
         NSString *sdkRoot = LBIString(request, @"sdkRoot");
+        NSString *swiftResourceDir = LBIString(request, @"swiftResourceDir");
+        NSString *clangResourceDir = LBIString(request, @"clangResourceDir");
+        NSString *cxxStandardLibraryIncludeDir = LBIString(request, @"cxxStandardLibraryIncludeDir");
         NSString *hostInputPath = LBIString(request, @"hostInputPath");
         NSString *hostProjectPath = LBIString(request, @"hostProjectPath");
         NSString *hostWorkDir = LBIString(request, @"hostWorkDir");
         NSMutableString *log = [NSMutableString stringWithFormat:@"Litter in-process Nyxian BuildKit\nrequest=%@\ncommand=%@\n", requestPath, command];
 
+        if([command isEqualToString:@"litter-kittystore-sign"])
+        {
+#ifdef LBN_ENABLE_KITTYSTORE_SIGNER
+            return LBIKittyStoreSign(request, log);
+#else
+            [log appendString:@"This native BuildKit framework was built without LBN_ENABLE_KITTYSTORE_SIGNER. Rebuild private BuildKit assets with the vendored Feather/Zsign source enabled.\n"];
+            return LBICopyResponse(78, @"kittystore-signer-not-built", log);
+#endif
+        }
+
+        if([command isEqualToString:@"litter-kittystore-install"] || [command isEqualToString:@"litter-kittystore-refresh"])
+        {
+            [log appendString:@"SideStore minimuxer source is vendored, but this native BuildKit framework was not linked with the minimuxer static library. Rebuild the private app with a Minimuxer xcframework/staticlib bridge before install/refresh can run on device.\n"];
+            return LBICopyResponse(78, @"sidestore-minimuxer-not-linked", log);
+        }
+
         if([command isEqualToString:@"litter-swift-check"])
         {
             NSString *source = hostInputPath.length > 0 ? hostInputPath : LBIWords(args).firstObject;
             if(source.length == 0) { return LBICopyResponse(64, @"missing-input", @"No Swift input was supplied.\n"); }
-            NSArray<NSString *> *driverArgs = @[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", source];
+            NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
+            LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+            LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
+            if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
+            [driverArgs addObject:source];
             int code = LBIRunSwiftDriver(driverArgs, log);
             return LBICopyResponse(code, code == 0 ? @"swift-check-ok" : @"swift-check-failed", log);
         }
@@ -489,7 +1628,11 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
 
             if(LBIWordsContain(words, @"-typecheck") || LBIWordsContain(words, @"-parse"))
             {
-                NSArray<NSString *> *driverArgs = @[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", source];
+                NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
+                LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+                LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
+                if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
+                [driverArgs addObject:source];
                 int code = LBIRunSwiftDriver(driverArgs, log);
                 return LBICopyResponse(code, code == 0 ? @"swiftc-check-ok" : @"swiftc-check-failed", log);
             }
@@ -502,7 +1645,11 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             NSString *hostOutput = [artifactDir stringByAppendingPathComponent:requestedOutput.lastPathComponent];
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray array];
             [driverArgs addObjectsFromArray:LBISwiftcUserFlags(words)];
-            [driverArgs addObjectsFromArray:@[@"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-o", hostOutput, source]];
+            [driverArgs addObjectsFromArray:@[@"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-o", hostOutput]];
+            LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+            LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
+            if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
+            [driverArgs addObject:source];
             int code = LBIRunSwiftDriver(driverArgs, log);
             if(code != 0) { return LBICopyResponse(code, @"swiftc-failed", log); }
             chmod(hostOutput.fileSystemRepresentation, 0755);
@@ -511,6 +1658,68 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             [log appendFormat:@"Fakefs output path: %@\n", fakefsPath];
             NSArray *artifacts = @[@{@"hostPath": hostOutput, @"fakefsPath": fakefsPath}];
             return LBICopyResponseWithArtifacts(0, @"swiftc-ok", log, artifacts);
+        }
+
+
+        if([command isEqualToString:@"litter-clang"])
+        {
+            NSArray<NSString *> *words = LBIWords(args);
+            NSSet<NSString *> *sourceExtensions = [NSSet setWithArray:@[@"c", @"cc", @"cpp", @"cxx", @"m", @"mm"]];
+            NSString *source = hostInputPath.length > 0 ? hostInputPath : LBIFirstInputWithExtensions(words, sourceExtensions);
+            if(source.length == 0) { return LBICopyResponse(64, @"clang-missing-input", @"No C, C++, Objective-C, or Objective-C++ input was supplied.\n"); }
+
+            NSString *requestedOutput = LBIOutputPath(words, LBIClangFallbackOutput(source, words));
+            NSString *artifactDir = [hostWorkDir stringByAppendingPathComponent:@"Artifacts"];
+            [NSFileManager.defaultManager createDirectoryAtPath:artifactDir withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *hostOutput = [artifactDir stringByAppendingPathComponent:requestedOutput.lastPathComponent];
+            NSMutableArray<NSString *> *driverArgs = [NSMutableArray array];
+            [driverArgs addObjectsFromArray:LBIClangUserFlags(words, sourceExtensions)];
+            LBIAppendClangResourceDir(driverArgs, clangResourceDir, log);
+            LBIAppendCXXStandardLibraryHeaders(driverArgs, cxxStandardLibraryIncludeDir, source, log);
+            [driverArgs addObjectsFromArray:@[@"-isysroot", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-miphoneos-version-min=18.0", @"-o", hostOutput, source]];
+            int code = LBIRunClangDriver(driverArgs, log);
+            if(code != 0) { return LBICopyResponse(code, @"clang-failed", log); }
+            if(![NSFileManager.defaultManager fileExistsAtPath:hostOutput])
+            {
+                [log appendFormat:@"Clang completed without producing an artifact at %@.\n", hostOutput];
+                return LBICopyResponse(0, @"clang-ok", log);
+            }
+            chmod(hostOutput.fileSystemRepresentation, 0755);
+            NSString *fakefsPath = LBIFakefsOutputPath(requestedOutput, cwd);
+            [log appendFormat:@"Clang output: %@\n", hostOutput];
+            [log appendFormat:@"Fakefs output path: %@\n", fakefsPath];
+            NSArray *artifacts = @[@{@"hostPath": hostOutput, @"fakefsPath": fakefsPath}];
+            return LBICopyResponseWithArtifacts(0, @"clang-ok", log, artifacts);
+        }
+
+        if([command isEqualToString:@"litter-ld"])
+        {
+            NSArray<NSString *> *words = LBIWords(args);
+            NSSet<NSString *> *inputExtensions = [NSSet setWithArray:@[@"o", @"a", @"dylib", @"tbd"]];
+            NSString *input = hostInputPath.length > 0 ? hostInputPath : LBIFirstInputWithExtensions(words, inputExtensions);
+            if(input.length == 0) { return LBICopyResponse(64, @"ld-missing-input", @"No object, archive, dylib, or tbd input was supplied.\n"); }
+
+            NSString *requestedOutput = LBIOutputPath(words, @"a.out");
+            NSString *artifactDir = [hostWorkDir stringByAppendingPathComponent:@"Artifacts"];
+            [NSFileManager.defaultManager createDirectoryAtPath:artifactDir withIntermediateDirectories:YES attributes:nil error:nil];
+            NSString *hostOutput = [artifactDir stringByAppendingPathComponent:requestedOutput.lastPathComponent];
+            NSMutableArray<NSString *> *driverArgs = [NSMutableArray array];
+            [driverArgs addObjectsFromArray:LBIClangUserFlags(words, inputExtensions)];
+            LBIAppendClangResourceDir(driverArgs, clangResourceDir, log);
+            [driverArgs addObjectsFromArray:@[@"-isysroot", sdkRoot, @"-target", @"arm64-apple-ios18.0", @"-miphoneos-version-min=18.0", @"-o", hostOutput, input]];
+            int code = LBIRunClangDriver(driverArgs, log);
+            if(code != 0) { return LBICopyResponse(code, @"ld-failed", log); }
+            if(![NSFileManager.defaultManager fileExistsAtPath:hostOutput])
+            {
+                [log appendFormat:@"Link completed without producing an artifact at %@.\n", hostOutput];
+                return LBICopyResponse(0, @"ld-ok", log);
+            }
+            chmod(hostOutput.fileSystemRepresentation, 0755);
+            NSString *fakefsPath = LBIFakefsOutputPath(requestedOutput, cwd);
+            [log appendFormat:@"Linker output: %@\n", hostOutput];
+            [log appendFormat:@"Fakefs output path: %@\n", fakefsPath];
+            NSArray *artifacts = @[@{@"hostPath": hostOutput, @"fakefsPath": fakefsPath}];
+            return LBICopyResponseWithArtifacts(0, @"ld-ok", log, artifacts);
         }
 
         if([command isEqualToString:@"litter-swift-build"] || [command isEqualToString:@"litter-swift-test"] || [command isEqualToString:@"litter-ipa-build"] || [command isEqualToString:@"litter-ipa-package"])
@@ -527,6 +1736,10 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             [NSFileManager.defaultManager removeItemAtPath:appDir error:nil];
             [NSFileManager.defaultManager createDirectoryAtPath:appDir withIntermediateDirectories:YES attributes:nil error:nil];
             NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-sdk", sdkRoot, @"-target", [@"arm64-apple-ios" stringByAppendingString:deployment], @"-o", executable]];
+            LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
+            LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
+            if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
+            [driverArgs addObjectsFromArray:@[@"-framework", @"UIKit", @"-framework", @"Foundation"]];
             [driverArgs addObjectsFromArray:sources];
             int code = LBIRunSwiftDriver(driverArgs, log);
             if(code != 0) { return LBICopyResponse(code, @"swift-build-failed", log); }
@@ -544,7 +1757,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
                 {
                     return LBICopyResponse(73, @"ipa-package-failed", log);
                 }
-                NSString *fakefsArtifactPath = LBIFakefsIPAOutputPath(manifest, request, cwd, buildDir, ipaPath.lastPathComponent);
+                NSString *fakefsArtifactPath = LBIFakefsIPAOutputPath(manifest, request, cwd, fakefsBuildDir, ipaPath.lastPathComponent);
                 [log appendFormat:@"Unsigned IPA artifact: %@\n", ipaPath];
                 [log appendFormat:@"Fakefs artifact path: %@\n", fakefsArtifactPath];
                 NSArray *artifacts = @[@{@"hostPath": ipaPath, @"fakefsPath": fakefsArtifactPath}];

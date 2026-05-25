@@ -1,4 +1,6 @@
-use crate::alleycat::{AgentInfo, AgentWire, AlleycatError, ParsedPairPayload};
+use crate::alleycat::{
+    AgentCapabilities, AgentInfo, AgentPresentation, AgentWire, AlleycatError, ParsedPairPayload,
+};
 use crate::ffi::ClientError;
 
 #[derive(uniffi::Object)]
@@ -26,6 +28,53 @@ pub struct AppAlleycatAgentInfo {
     pub runtime_kind: Option<crate::types::AgentRuntimeKind>,
     pub wire: AppAlleycatAgentWire,
     pub available: bool,
+    /// UI hints sourced from the alleycat host: title, beta badge,
+    /// sort order, aliases. Absent on legacy hosts — clients fall back
+    /// to generic rendering keyed off `name` / `display_name`.
+    pub presentation: Option<AppAgentPresentation>,
+    /// Behavioral capability flags surfaced to platform UI so it can
+    /// branch without hardcoding agent names. Absent on legacy hosts.
+    pub capabilities: Option<AppAgentCapabilities>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct AppAgentPresentation {
+    pub title: Option<String>,
+    pub is_beta: bool,
+    pub sort_order: i32,
+    pub description: Option<String>,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct AppAgentCapabilities {
+    pub locks_reasoning_effort_after_activity: bool,
+    pub visible_modes: Option<Vec<String>>,
+    pub supports_ssh_bridge: bool,
+    pub uses_direct_codex_port: bool,
+}
+
+impl From<AgentPresentation> for AppAgentPresentation {
+    fn from(value: AgentPresentation) -> Self {
+        AppAgentPresentation {
+            title: value.title,
+            is_beta: value.is_beta,
+            sort_order: value.sort_order,
+            description: value.description,
+            aliases: value.aliases,
+        }
+    }
+}
+
+impl From<AgentCapabilities> for AppAgentCapabilities {
+    fn from(value: AgentCapabilities) -> Self {
+        AppAgentCapabilities {
+            locks_reasoning_effort_after_activity: value.locks_reasoning_effort_after_activity,
+            visible_modes: value.visible_modes,
+            supports_ssh_bridge: value.supports_ssh_bridge,
+            uses_direct_codex_port: value.uses_direct_codex_port,
+        }
+    }
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -109,6 +158,8 @@ impl From<AgentInfo> for AppAlleycatAgentInfo {
             runtime_kind,
             wire: value.wire.into(),
             available: value.available,
+            presentation: value.presentation.map(Into::into),
+            capabilities: value.capabilities.map(Into::into),
         }
     }
 }

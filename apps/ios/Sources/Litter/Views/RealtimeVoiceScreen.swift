@@ -216,6 +216,17 @@ struct RealtimeVoiceScreen: View {
                     .tracking(2)
             }
 
+            if phase == .error,
+               let error = session?.lastError?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !error.isEmpty {
+                Text(error)
+                    .font(LitterFont.styled(.caption))
+                    .foregroundColor(secondaryTextColor)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.horizontal, 16)
+            }
+
             if visibleTranscriptEntries.isEmpty {
                 AudioWaveformView(
                     level: Float(phase == .listening ? inputLevel : outputLevel),

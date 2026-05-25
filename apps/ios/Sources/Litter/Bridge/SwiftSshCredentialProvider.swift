@@ -15,3 +15,15 @@ final class SwiftSshCredentialProvider: SshCredentialProvider {
         )
     }
 }
+
+final class SwiftSlingshotCredentialProvider: SlingshotCredentialProvider {
+    func loadCredential() -> SlingshotCredentialRecord? {
+        guard let tokens = try? ChatGPTOAuthTokenStore.shared.load() else {
+            return nil
+        }
+        return SlingshotCredentialRecord(
+            accessToken: tokens.accessToken,
+            accountId: tokens.accountID
+        )
+    }
+}

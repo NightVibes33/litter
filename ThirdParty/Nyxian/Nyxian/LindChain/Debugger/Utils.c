@@ -27,7 +27,7 @@ struct arm64_thread_full_state* thread_save_state_arm64(thread_act_t thread)
     struct arm64_thread_full_state* s = malloc(sizeof(struct arm64_thread_full_state));
     mach_msg_type_number_t count;
     kern_return_t kr;
-
+    
     count = ARM_THREAD_STATE64_COUNT;
     kr = thread_get_state(thread, ARM_THREAD_STATE64, (thread_state_t) &s->thread, &count);
     s->thread_valid = (kr == KERN_SUCCESS);
@@ -36,19 +36,19 @@ struct arm64_thread_full_state* thread_save_state_arm64(thread_act_t thread)
         free(s);
         return NULL;
     }
-
+    
     count = ARM_EXCEPTION_STATE64_COUNT;
     kr = thread_get_state(thread, ARM_EXCEPTION_STATE64, (thread_state_t) &s->exception, &count);
     s->exception_valid = (kr == KERN_SUCCESS);
-
+    
     count = ARM_NEON_STATE64_COUNT;
     kr = thread_get_state(thread, ARM_NEON_STATE64, (thread_state_t) &s->neon, &count);
     s->neon_valid = (kr == KERN_SUCCESS);
-
+    
     count = ARM_DEBUG_STATE64_COUNT;
     kr = thread_get_state(thread, ARM_DEBUG_STATE64, (thread_state_t) &s->debug, &count);
     s->debug_valid = (kr == KERN_SUCCESS);
-
+    
     return s;
 }
 
@@ -58,27 +58,27 @@ bool thread_restore_state_arm64(thread_act_t thread, struct arm64_thread_full_st
     struct arm64_thread_full_state *s = (void *) state;
     kern_return_t kr;
     bool success = true;
-
+    
     if(s->thread_valid)
     {
         kr = thread_set_state(thread, ARM_THREAD_STATE64, (thread_state_t) &s->thread, ARM_THREAD_STATE64_COUNT);
     }
-
+    
     if(s->exception_valid)
     {
         kr = thread_set_state(thread, ARM_EXCEPTION_STATE64, (thread_state_t) &s->exception, ARM_EXCEPTION_STATE64_COUNT);
     }
-
+    
     if(s->neon_valid)
     {
         kr = thread_set_state(thread, ARM_NEON_STATE64, (thread_state_t) &s->neon, ARM_NEON_STATE64_COUNT);
     }
-
+    
     if(s->debug_valid)
     {
         kr = thread_set_state(thread, ARM_DEBUG_STATE64, (thread_state_t) &s->debug, ARM_DEBUG_STATE64_COUNT);
     }
-
+    
     free(s);
     return success;
 }

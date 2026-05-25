@@ -7,7 +7,7 @@ import uniffi.codex_mobile_client.AppResumeThreadRequest
 import uniffi.codex_mobile_client.AppDynamicToolSpec
 import uniffi.codex_mobile_client.AppStartThreadRequest
 import uniffi.codex_mobile_client.AppStartTurnRequest
-import uniffi.codex_mobile_client.AgentRuntimeKind
+import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.ReasoningEffort
 import uniffi.codex_mobile_client.AppSandboxMode
 import uniffi.codex_mobile_client.AppSandboxPolicy

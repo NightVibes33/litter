@@ -203,6 +203,38 @@ final class HomeDashboardSupportTests: XCTestCase {
         XCTAssertEqual(result.first?.sessionTitle, "Renamed thread")
     }
 
+    func testOfflineAlleycatServerShowsSavedDroidRuntime() {
+        let saved = SavedServer(
+            id: "alleycat:node-abc",
+            name: "Factory Host",
+            hostname: "node-abc",
+            port: 0,
+            codexPorts: [],
+            sshPort: nil,
+            source: .manual,
+            hasCodexServer: true,
+            wakeMAC: nil,
+            preferredConnectionMode: nil,
+            preferredCodexPort: nil,
+            sshPortForwardingEnabled: nil,
+            websocketURL: nil,
+            rememberedByUser: true,
+            alleycatNodeId: "node-abc",
+            alleycatRelay: nil,
+            alleycatAgentName: "codex,droid",
+            alleycatAgentWire: "jsonl"
+        )
+
+        let result = HomeDashboardSupport.sortedConnectedServers(
+            from: [],
+            savedServers: [saved],
+            activeServerId: nil
+        )
+
+        XCTAssertEqual(result.first?.sourceLabel, "alleycat")
+        XCTAssertEqual(result.first?.agentRuntimes.map(\.kind), [.codex, .droid])
+    }
+
     func testHomeDashboardModelIgnoresThreadChangesWhileInactiveAndRefreshesOnReactivate() async {
         let appModel = AppModel()
         let model = HomeDashboardModel()
@@ -259,6 +291,7 @@ final class HomeDashboardSupportTests: XCTestCase {
                 agentNickname: nil,
                 agentRole: nil,
                 parentThreadId: nil,
+                forkedFromId: nil,
                 agentStatus: nil,
                 createdAt: nil,
                 updatedAt: Int64(updatedAt)
@@ -305,6 +338,7 @@ final class HomeDashboardSupportTests: XCTestCase {
                 model: thread.model ?? "",
                 modelProvider: thread.info.modelProvider ?? "",
                 parentThreadId: thread.info.parentThreadId,
+                forkedFromId: nil,
                 agentNickname: thread.info.agentNickname,
                 agentRole: thread.info.agentRole,
                 agentDisplayLabel: AgentLabelFormatter.format(
@@ -326,7 +360,8 @@ final class HomeDashboardSupportTests: XCTestCase {
                 lastTurnStartMs: nil,
                 lastTurnEndMs: nil,
                 stats: nil,
-                tokenUsage: nil
+                tokenUsage: nil,
+                goal: nil
             )
         }
 

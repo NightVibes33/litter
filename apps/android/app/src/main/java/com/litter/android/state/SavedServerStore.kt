@@ -152,6 +152,34 @@ data class SavedServer(
         codexPort = resolvedPreferredCodexPort ?: availableDirectCodexPorts.firstOrNull(),
     )
 
+    fun toDiscoveredServer(): AppDiscoveredServer {
+        val codexPort = if (hasCodexServer) (preferredCodexPort ?: port) else null
+        val resolvedSshPort = sshPort ?: if (hasCodexServer) null else port
+        return AppDiscoveredServer(
+            id = id,
+            displayName = name,
+            host = hostname,
+            port = codexPort?.toUShort() ?: 0u,
+            codexPort = codexPort?.toUShort(),
+            codexPorts = availableDirectCodexPorts.map { it.toUShort() },
+            sshPort = resolvedSshPort?.toUShort(),
+            source = toAppDiscoverySource(source),
+            reachable = true,
+            os = os,
+            sshBanner = sshBanner,
+        )
+    }
+
+    private fun toAppDiscoverySource(source: String): AppDiscoverySource = when (source.lowercase()) {
+        "bonjour" -> AppDiscoverySource.BONJOUR
+        "tailscale" -> AppDiscoverySource.TAILSCALE
+        "lanprobe", "lan_probe" -> AppDiscoverySource.LAN_PROBE
+        "arpscan", "arp_scan" -> AppDiscoverySource.ARP_SCAN
+        "manual" -> AppDiscoverySource.MANUAL
+        "local" -> AppDiscoverySource.LOCAL
+        else -> AppDiscoverySource.MANUAL
+    }
+
     companion object {
         fun normalizeWakeMac(raw: String?): String? {
             val compact = raw

@@ -5,7 +5,6 @@ import SwiftUI
 enum ChatRuntimeMode: String, Codable, CaseIterable, Identifiable {
     case chatGPTAccount
     case computerBridge
-    case localModel
 
     var id: String { rawValue }
 
@@ -13,7 +12,6 @@ enum ChatRuntimeMode: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .chatGPTAccount: return "ChatGPT Account"
         case .computerBridge: return "Computer Bridge"
-        case .localModel: return "On-device Model"
         }
     }
 
@@ -21,7 +19,6 @@ enum ChatRuntimeMode: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .chatGPTAccount: return "ChatGPT"
         case .computerBridge: return "Bridge"
-        case .localModel: return "On-device"
         }
     }
 
@@ -29,18 +26,8 @@ enum ChatRuntimeMode: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .chatGPTAccount: return "person.crop.circle.badge.checkmark"
         case .computerBridge: return "desktopcomputer.and.macbook"
-        case .localModel: return "iphone.gen3.radiowaves.left.and.right"
         }
     }
-}
-
-func isLocalGGUFModelSelection(_ selection: String?) -> Bool {
-    let trimmed = selection?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return trimmed.hasPrefix("local-gguf:")
-}
-
-func isLocalGGUFModelInfo(_ model: ModelInfo) -> Bool {
-    isLocalGGUFModelSelection(model.id) || isLocalGGUFModelSelection(model.model)
 }
 
 @MainActor
@@ -112,6 +99,7 @@ final class AppState {
     var showModelSelector = false
     var showSettings = false
     var pendingThreadNavigation: ThreadKey?
+    private var dismissedPendingUserInputIds: Set<String> = []
     private var threadPermissionOverrides: [String: ThreadPermissionOverride] = [:]
     var approvalPolicy: String {
         didSet {
@@ -137,21 +125,26 @@ final class AppState {
     }
 
     private static func agentRuntimeWireValue(_ kind: AgentRuntimeKind) -> String {
-        switch kind {
-        case .codex: return "codex"
-        case .pi: return "pi"
-        case .opencode: return "opencode"
-        case .claude: return "claude"
-        }
+        // AgentRuntimeKind is itself a `String` now (the alleycat agent id).
+        // No mapping needed — the id IS the persisted wire value.
+        kind
     }
 
     private static func agentRuntimeKind(_ raw: String) -> AgentRuntimeKind? {
-        switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "codex": return .codex
-        case "pi": return .pi
-        case "opencode": return .opencode
-        case "claude": return .claude
-        default: return nil
+        // Fold known aliases into the canonical alleycat id; anything
+        // else round-trips as-is so an alleycat-only agent persists
+        // correctly even without local knowledge.
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if trimmed.isEmpty {
+            return nil
+        }
+        switch trimmed {
+        case "pi.dev", "pidev": return "pi"
+        case "ampcode", "amp-code", "amp_code", "amp code": return "amp"
+        case "open-code", "open_code", "open code": return "opencode"
+        case "claude-code", "claude_code", "claude code": return "claude"
+        case "factory", "factory-droid", "factory_droid", "factory droid": return "droid"
+        default: return trimmed
         }
     }
 
@@ -165,6 +158,14 @@ final class AppState {
 
     func isSessionFolderCollapsed(_ folderPath: String) -> Bool {
         collapsedSessionFolders.contains(folderPath)
+    }
+
+    func dismissPendingUserInput(id: String) {
+        dismissedPendingUserInputIds.insert(id)
+    }
+
+    func isPendingUserInputDismissed(id: String) -> Bool {
+        dismissedPendingUserInputIds.contains(id)
     }
 
     func approvalPolicy(for threadKey: ThreadKey?) -> String {
@@ -183,7 +184,7 @@ final class AppState {
         guard let threadKey else {
             return AppAskForApproval(wireValue: approvalPolicy)
         }
-        guard let permissions = threadPermissionOverrides[permissionKey(for: threadKey)] else {
+        guard let permissions = outboundPermissionOverride(for: threadKey) else {
             return nil
         }
         return permissions.rawApprovalPolicy ?? AppAskForApproval(wireValue: permissions.approvalPolicy)
@@ -193,7 +194,7 @@ final class AppState {
         guard let threadKey else {
             return AppSandboxMode(wireValue: sandboxMode)
         }
-        guard let permissions = threadPermissionOverrides[permissionKey(for: threadKey)] else {
+        guard let permissions = outboundPermissionOverride(for: threadKey) else {
             return nil
         }
         return permissions.rawSandboxPolicy?.launchOverrideMode
@@ -204,7 +205,7 @@ final class AppState {
         guard let threadKey else {
             return TurnSandboxPolicy(mode: sandboxMode)?.ffiValue
         }
-        guard let permissions = threadPermissionOverrides[permissionKey(for: threadKey)] else {
+        guard let permissions = outboundPermissionOverride(for: threadKey) else {
             return nil
         }
         return permissions.rawSandboxPolicy ?? TurnSandboxPolicy(mode: permissions.sandboxMode)?.ffiValue
@@ -251,6 +252,14 @@ final class AppState {
 
     private func permissionKey(for threadKey: ThreadKey) -> String {
         "\(threadKey.serverId)/\(threadKey.threadId)"
+    }
+
+    private func outboundPermissionOverride(for threadKey: ThreadKey) -> ThreadPermissionOverride? {
+        guard let permissions = threadPermissionOverrides[permissionKey(for: threadKey)],
+              permissions.isUserOverride else {
+            return nil
+        }
+        return permissions
     }
 
     private func displayValue(for approvalPolicy: AppAskForApproval?) -> String {

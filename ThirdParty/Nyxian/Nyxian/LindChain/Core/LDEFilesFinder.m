@@ -44,15 +44,15 @@ NSArray<NSString*> *LDEFilesFinder(NSString *searchPath,
                                    NSSet<NSString*> *ignorePaths)
 {
     NSMutableArray *foundFiles = [[NSMutableArray alloc] init];
-
+    
     NSError *error = nil;
     NSArray<NSString*> *subPaths = [[NSFileManager defaultManager] subpathsOfDirectoryAtPath:searchPath error:&error];
     if(error) return foundFiles;
-
+    
     for(NSString *relativePath in subPaths)
     {
         NSString *fullPath = [searchPath stringByAppendingFormat:@"/%@", relativePath];
-
+        
         BOOL isDir = NO;
         if([[NSFileManager defaultManager] fileExistsAtPath:fullPath isDirectory:&isDir] &&
             !isDir  &&
@@ -62,6 +62,6 @@ NSArray<NSString*> *LDEFilesFinder(NSString *searchPath,
             [foundFiles addObject:fullPath];
         }
     }
-
+    
     return foundFiles;
 }

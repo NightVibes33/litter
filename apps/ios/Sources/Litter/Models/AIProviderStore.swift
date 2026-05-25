@@ -1,5 +1,4 @@
 import Combine
-import CryptoKit
 import Foundation
 import Security
 
@@ -8,22 +7,18 @@ final class AIProviderStore: ObservableObject {
     static let shared = AIProviderStore()
 
     @Published private(set) var providers: [AIProviderProfile] = []
-    @Published private(set) var localModels: [LocalModelRecord] = []
-    @Published private(set) var localModelDownloadProgress: LocalModelDownloadProgress?
-    @Published private(set) var validatingLocalModelId: UUID?
     @Published private(set) var globalModelSettings: GlobalModelSettings = .defaults
-    @Published private(set) var localModelRuntimeSettings: [String: LocalModelRuntimeSettings] = [:]
-    @Published private(set) var turboQuantAvailability: TurboQuantAvailability = .unavailable("Runtime capability has not been scanned yet.")
 
     private let providersKey = "ai-provider-profiles-v1"
-    private let localModelsKey = "local-gguf-models-v1"
     private let globalModelSettingsKey = "global-model-settings-v1"
-    private let localModelRuntimeSettingsKey = "local-model-runtime-settings-v1"
+    private let legacyOnDeviceAIKeys = [
+        "local-gguf-models-v1",
+        "local-model-runtime-settings-v1"
+    ]
     private let keychainService = "com.sigkitten.litter.ai-provider-secret"
     private let defaults = UserDefaults.standard
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
-    private var activeModelDownload: TrackedModelDownload?
 
     private init() {
         encoder.dateEncodingStrategy = .iso8601
@@ -34,105 +29,14 @@ final class AIProviderStore: ObservableObject {
 
     func reload() {
         load()
-        Task { await refreshRuntimeCapabilities() }
-    }
-
-    func refreshRuntimeCapabilities() async {
-        let capabilities = await LocalLlamaRuntime.shared.capabilities()
-        turboQuantAvailability = capabilities.turboQuant
-        if !capabilities.turboQuant.isAvailable {
-            sanitizeTurboQuantSettings()
-        }
     }
 
     func updateGlobalModelSettings(_ update: (inout GlobalModelSettings) -> Void) {
         var next = globalModelSettings
         update(&next)
         globalModelSettings = next
+        sanitizeGlobalSettings()
         try? persistGlobalModelSettings()
-        sanitizeTurboQuantSettings()
-    }
-
-    func runtimeSettings(for model: LocalModelRecord, capability: DeviceCapabilityProfile = .current()) -> LocalModelRuntimeSettings {
-        let stored = localModelRuntimeSettings[model.id.uuidString] ?? .defaults(for: capability)
-        return stored.sanitized(for: capability, turboQuantAvailable: turboQuantAvailability.isAvailable)
-    }
-
-    func effectiveRuntimeSettings(for model: LocalModelRecord, capability: DeviceCapabilityProfile = .current()) -> LocalModelRuntimeSettings {
-        runtimeSettings(for: model, capability: capability)
-    }
-
-    func localModelInfos() -> [ModelInfo] {
-        localModels.map { model in
-            ModelInfo(
-                id: model.localSelectionId,
-                model: model.localSelectionId,
-                upgrade: nil,
-                upgradeModel: nil,
-                upgradeCopy: nil,
-                modelLink: model.sourceRepository.map { "https://huggingface.co/\($0)" },
-                migrationMarkdown: nil,
-                availabilityNuxMessage: model.canRunCodexStyle ? nil : model.codexReadinessSummary,
-                displayName: "Local - \(model.fileName)",
-                description: "On-device GGUF - \(model.displaySize) - \(model.codexReadinessSummary)",
-                hidden: false,
-                supportedReasoningEfforts: [
-                    ReasoningEffortOption(reasoningEffort: .medium, description: "Local runtime default")
-                ],
-                defaultReasoningEffort: .medium,
-                inputModalities: model.supportsMultimodalInput ? [.text, .image] : [.text],
-                supportsPersonality: false,
-                isDefault: false,
-                agentRuntimeKind: .codex
-            )
-        }
-    }
-
-    func localModel(forSelection selection: String?) -> LocalModelRecord? {
-        guard let selection = selection?.trimmingCharacters(in: .whitespacesAndNewlines), !selection.isEmpty else {
-            return nil
-        }
-        if selection.hasPrefix("local-gguf:") {
-            return localModels.first { $0.localSelectionId == selection }
-        }
-        return localModels.first { $0.fileName == selection || $0.storageFileName == selection }
-    }
-
-    func preferredLocalModelForMainConversation() -> LocalModelRecord? {
-        if let preferredProviderId = globalModelSettings.preferredProviderId,
-           providers.first(where: { $0.id == preferredProviderId })?.kind == .localGGUF {
-            return localModels.first(where: { $0.canRunCodexStyle })
-                ?? localModels.first(where: { $0.canRunLocally })
-                ?? localModels.first
-        }
-        guard globalModelSettings.routingMode == .localGGUF else { return nil }
-        return localModels.first(where: { $0.canRunCodexStyle })
-            ?? localModels.first(where: { $0.canRunLocally })
-            ?? localModels.first
-    }
-
-    func updateCodexEval(for model: LocalModelRecord, score: Int, summary: String) {
-        guard let index = localModels.firstIndex(where: { $0.id == model.id }) else { return }
-        localModels[index].codexEvalScore = min(100, max(0, score))
-        localModels[index].codexEvalSummary = summary
-        localModels[index].codexEvalDate = Date()
-        try? persistLocalModels()
-    }
-
-    func updateRuntimeSettings(
-        for model: LocalModelRecord,
-        capability: DeviceCapabilityProfile = .current(),
-        _ update: (inout LocalModelRuntimeSettings) -> Void
-    ) {
-        var next = runtimeSettings(for: model, capability: capability)
-        update(&next)
-        localModelRuntimeSettings[model.id.uuidString] = next.sanitized(for: capability, turboQuantAvailable: turboQuantAvailability.isAvailable)
-        try? persistLocalModelRuntimeSettings()
-    }
-
-    func resetRuntimeSettings(for model: LocalModelRecord) {
-        localModelRuntimeSettings.removeValue(forKey: model.id.uuidString)
-        try? persistLocalModelRuntimeSettings()
     }
 
     func upsertProvider(_ provider: AIProviderProfile, apiKey: String?) throws {
@@ -152,7 +56,9 @@ final class AIProviderStore: ObservableObject {
     func deleteProvider(_ provider: AIProviderProfile) throws {
         providers.removeAll { $0.id == provider.id }
         try deleteSecret(providerId: provider.id)
+        sanitizeGlobalSettings()
         try persistProviders()
+        try persistGlobalModelSettings()
     }
 
     func secret(for provider: AIProviderProfile) -> String? {
@@ -160,9 +66,6 @@ final class AIProviderStore: ObservableObject {
     }
 
     func testProvider(_ provider: AIProviderProfile, apiKey: String?) async -> AIProviderHealthReport {
-        guard provider.kind != .localGGUF else {
-            return AIProviderHealthReport(status: .healthy, models: localModels.map(\.fileName))
-        }
         guard let base = provider.normalizedBaseURL else {
             return AIProviderHealthReport(status: .failed("Invalid base URL"), models: [])
         }
@@ -179,452 +82,14 @@ final class AIProviderStore: ObservableObject {
         }
     }
 
-    func importLocalModel(from sourceURL: URL, capability: DeviceCapabilityProfile = .current()) async throws -> LocalModelRecord {
-        let didStartAccessing = sourceURL.startAccessingSecurityScopedResource()
-        defer {
-            if didStartAccessing { sourceURL.stopAccessingSecurityScopedResource() }
-        }
-
-        let modelsDir = try localModelsDirectory()
-        let destination = try availableLocalModelDestination(
-            preferredFileName: sourceURL.lastPathComponent,
-            in: modelsDir
-        )
-        let tempDestination = modelsDir.appendingPathComponent(
-            ".\(sourceURL.lastPathComponent).litter-import-\(UUID().uuidString).tmp"
-        )
-        let size = try await Task.detached(priority: .utility) {
-            let fileManager = FileManager.default
-            do {
-                if fileManager.fileExists(atPath: tempDestination.path) {
-                    try fileManager.removeItem(at: tempDestination)
-                }
-                try fileManager.copyItem(at: sourceURL, to: tempDestination)
-                let attributes = try fileManager.attributesOfItem(atPath: tempDestination.path)
-                let copiedSize = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-                if fileManager.fileExists(atPath: destination.path) {
-                    throw NSError(
-                        domain: "AIProviderStore",
-                        code: 4,
-                        userInfo: [NSLocalizedDescriptionKey: "A local model with that filename already exists."]
-                    )
-                }
-                try fileManager.moveItem(at: tempDestination, to: destination)
-                return copiedSize
-            } catch {
-                try? fileManager.removeItem(at: tempDestination)
-                throw error
-            }
-        }.value
-
-        let fileName = destination.lastPathComponent
-        let safety = capability.safety(forFileSize: size, fileName: fileName)
-        let record = LocalModelRecord(
-            id: UUID(),
-            fileName: fileName,
-            storageFileName: fileName,
-            fileSizeBytes: size,
-            parameterHint: DeviceCapabilityProfile.parameterHint(from: fileName.lowercased()),
-            quantizationHint: DeviceCapabilityProfile.quantizationHint(from: fileName.lowercased()),
-            importedAt: Date(),
-            safety: safety.0,
-            recommendation: safety.1,
-            modalities: [.text]
-        )
-        localModels.removeAll { ($0.storageFileName ?? $0.fileName) == fileName }
-        localModels.append(record)
-        try persistLocalModels()
-        ensureLocalProviderExists()
-        if globalModelSettings.autoValidateDownloads {
-            Task { await validateLocalModel(record) }
-        }
-        return record
-    }
-
-    func searchHuggingFaceModels(query: String) async throws -> [HuggingFaceModelSearchResult] {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return [] }
-        let filtered = try await fetchHuggingFaceSearch(query: trimmed, useGGUFFilter: true)
-        if !filtered.isEmpty { return filtered }
-        return try await fetchHuggingFaceSearch(query: trimmed, useGGUFFilter: false)
-    }
-
-    private func fetchHuggingFaceSearch(query: String, useGGUFFilter: Bool) async throws -> [HuggingFaceModelSearchResult] {
-        var components = URLComponents(string: "https://huggingface.co/api/models")!
-        var items = [
-            URLQueryItem(name: "search", value: query),
-            URLQueryItem(name: "limit", value: "40")
-        ]
-        if useGGUFFilter {
-            items.append(URLQueryItem(name: "filter", value: "gguf"))
-        }
-        components.queryItems = items
-        guard let url = components.url else { return [] }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        try validate(response)
-        let decoded = try JSONDecoder().decode([HuggingFaceModelSearchResult].self, from: data)
-        guard useGGUFFilter else { return decoded }
-        return decoded.filter { result in
-            let tags = (result.tags ?? []).map { $0.lowercased() }
-            return tags.contains("gguf") || result.modelId.lowercased().contains("gguf")
-        }
-    }
-
-    func fetchHuggingFaceModelDetails(repository: String) async throws -> HuggingFaceModelDetails {
-        let cleaned = repository.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else {
-            throw NSError(domain: "AIProviderStore", code: 20, userInfo: [NSLocalizedDescriptionKey: "Missing model repository."])
-        }
-        guard let url = huggingFaceAPIModelURL(repository: cleaned) else {
-            throw NSError(domain: "AIProviderStore", code: 21, userInfo: [NSLocalizedDescriptionKey: "Invalid model repository."])
-        }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        try validate(response)
-        return try JSONDecoder().decode(HuggingFaceModelDetails.self, from: data)
-    }
-
-    func downloadCatalogModel(_ item: LocalModelCatalogItem, capability: DeviceCapabilityProfile = .current()) async throws -> LocalModelRecord {
-        guard let url = item.downloadURL else {
-            throw NSError(domain: "AIProviderStore", code: 30, userInfo: [NSLocalizedDescriptionKey: "Invalid model download URL."])
-        }
-        let projector: DownloadedModelFile?
-        if let projectorURL = item.projectorDownloadURL, let projectorFileName = item.projectorFileName {
-            projector = try await downloadModelFile(url: projectorURL, fileName: projectorFileName)
-        } else {
-            projector = nil
-        }
-        let model = try await downloadModelFile(url: url, fileName: item.recommendedFileName)
-        return try await storeDownloadedModel(
-            model,
-            projector: projector,
-            sourceRepository: item.repository,
-            architecture: item.architecture,
-            nativeContextLength: nil,
-            modalities: item.modalities,
-            capability: capability
-        )
-    }
-
-    func downloadHuggingFaceFile(
-        repository: String,
-        file: HuggingFaceModelDetails.Sibling,
-        projector: HuggingFaceModelDetails.Sibling?,
-        architecture: String?,
-        nativeContextLength: Int? = nil,
-        capability: DeviceCapabilityProfile = .current()
-    ) async throws -> LocalModelRecord {
-        guard let url = huggingFaceResolveURL(repository: repository, fileName: file.rfilename) else {
-            throw NSError(domain: "AIProviderStore", code: 31, userInfo: [NSLocalizedDescriptionKey: "Invalid model file URL."])
-        }
-        let projectorDownload: DownloadedModelFile?
-        if let projector, let projectorURL = huggingFaceResolveURL(repository: repository, fileName: projector.rfilename) {
-            projectorDownload = try await downloadModelFile(url: projectorURL, fileName: projector.rfilename, expectedSHA256: projector.lfs?.sha256)
-        } else {
-            projectorDownload = nil
-        }
-        let model = try await downloadModelFile(url: url, fileName: file.rfilename, expectedSHA256: file.lfs?.sha256)
-        return try await storeDownloadedModel(
-            model,
-            projector: projectorDownload,
-            sourceRepository: repository,
-            architecture: architecture,
-            nativeContextLength: nativeContextLength,
-            modalities: modalities(forArchitecture: architecture, hasProjector: projectorDownload != nil),
-            capability: capability
-        )
-    }
-
-    func cancelLocalModelDownload() {
-        activeModelDownload?.cancel()
-        localModelDownloadProgress = localModelDownloadProgress?.cancelledCopy()
-    }
-
-    func clearLocalModelDownloadProgress() {
-        guard localModelDownloadProgress?.isFinished == true else { return }
-        localModelDownloadProgress = nil
-    }
-
-    func downloadCustomModel(url: URL, capability: DeviceCapabilityProfile = .current()) async throws -> LocalModelRecord {
-        guard url.pathExtension.lowercased() == "gguf" else {
-            throw NSError(domain: "AIProviderStore", code: 32, userInfo: [NSLocalizedDescriptionKey: "Only direct .gguf URLs are supported."])
-        }
-        let model = try await downloadModelFile(url: url, fileName: url.lastPathComponent)
-        return try await storeDownloadedModel(
-            model,
-            projector: nil,
-            sourceRepository: nil,
-            architecture: nil,
-            nativeContextLength: nil,
-            modalities: [.text],
-            capability: capability
-        )
-    }
-
-    func validateLocalModel(_ record: LocalModelRecord) async {
-        guard let index = localModels.firstIndex(where: { $0.id == record.id }) else { return }
-        validatingLocalModelId = record.id
-        localModels[index].validationStatus = .validating
-        try? persistLocalModels()
-        do {
-            _ = try await LocalLlamaRuntime.shared.smokeTest(localModels[index])
-            let eval = await runCodexReadinessEval(localModels[index])
-            if let currentIndex = localModels.firstIndex(where: { $0.id == record.id }) {
-                localModels[currentIndex].validationStatus = .verified(Date())
-                localModels[currentIndex].codexEvalScore = eval.score
-                localModels[currentIndex].codexEvalSummary = eval.summary
-                localModels[currentIndex].codexEvalDate = Date()
-                try? persistLocalModels()
-            }
-        } catch {
-            if let currentIndex = localModels.firstIndex(where: { $0.id == record.id }) {
-                localModels[currentIndex].validationStatus = .failed(error.localizedDescription, Date())
-                try? persistLocalModels()
-            }
-        }
-        if validatingLocalModelId == record.id {
-            validatingLocalModelId = nil
-        }
-    }
-
-    func cancelLocalModelValidation() {
-        Task { await LocalLlamaRuntime.shared.cancel() }
-        validatingLocalModelId = nil
-    }
-
-    private func runCodexReadinessEval(_ model: LocalModelRecord) async -> (score: Int, summary: String) {
-        var score = 40
-        var signals: [String] = ["token generation"]
-        do {
-            let options = LocalLlamaGenerationOptions(
-                contextTokens: max(512, min(DeviceCapabilityProfile.current().recommendedContextTokens, 2_048)),
-                allowToolCalls: true,
-                maxToolRounds: 2,
-                retryPolicy: .disabled,
-                topP: 0.9,
-                topK: 40,
-                repeatLastN: 64,
-                repeatPenalty: 1.08,
-                frequencyPenalty: 0,
-                presencePenalty: 0,
-                seed: -1,
-                preferredThreadCount: max(1, min(4, ProcessInfo.processInfo.processorCount)),
-                batchSize: 1_024,
-                microBatchSize: 512,
-                metalEnabled: DeviceCapabilityProfile.current().hasMetal,
-                cpuFallbackAllowed: false,
-                streamingEnabled: true,
-                kvCacheMode: .automatic
-            )
-            let request = LocalLlamaGenerationRequest(
-                model: model,
-                projector: nil,
-                messages: [
-                    LocalLlamaMessage(role: .system, text: "You are being evaluated for Codex-style local tool use. When asked to inspect files, emit exactly one valid JSON tool request."),
-                    LocalLlamaMessage(role: .user, text: "Inspect /root with list_dir, then summarize what the tool returned in one sentence.")
-                ],
-                maxTokens: 160,
-                temperature: 0.1,
-                tools: LocalModelToolLoop.defaultToolSpecs,
-                toolPolicy: .readOnly,
-                options: options,
-                approvalHandler: nil
-            )
-            var sawToolCall = false
-            var sawToolResult = false
-            var finalText = ""
-            for try await event in await LocalLlamaRuntime.shared.generateEvents(request) {
-                switch event {
-                case .toolCall:
-                    sawToolCall = true
-                case .toolResult(let result):
-                    sawToolResult = result.success
-                case .completed(let text):
-                    finalText = text
-                default:
-                    break
-                }
-            }
-            if sawToolCall { score += 25; signals.append("tool-call JSON") }
-            if sawToolResult { score += 20; signals.append("read-only tool execution") }
-            if !finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { score += 15; signals.append("final answer recovery") }
-            return (min(score, 100), signals.joined(separator: ", "))
-        } catch {
-            return (score, "token generation; tool eval failed: \(error.localizedDescription)")
-        }
-    }
-
-    func removeLocalModel(_ record: LocalModelRecord) throws {
-        localModels.removeAll { $0.id == record.id }
-        localModelRuntimeSettings.removeValue(forKey: record.id.uuidString)
-        let fileURL = record.fileURL
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            try FileManager.default.removeItem(at: fileURL)
-        }
-        if let projectorURL = record.projectorURL, FileManager.default.fileExists(atPath: projectorURL.path) {
-            try FileManager.default.removeItem(at: projectorURL)
-        }
-        try persistLocalModels()
-        try persistLocalModelRuntimeSettings()
-    }
-
-    func localModelsDirectory() throws -> URL {
-        let url = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
-    private func storeDownloadedModel(
-        _ model: DownloadedModelFile,
-        projector: DownloadedModelFile?,
-        sourceRepository: String?,
-        architecture: String?,
-        nativeContextLength: Int?,
-        modalities: [LocalModelModality],
-        capability: DeviceCapabilityProfile
-    ) async throws -> LocalModelRecord {
-        let modelsDir = try localModelsDirectory()
-        let destination = try availableLocalModelDestination(preferredFileName: model.fileName, in: modelsDir)
-        let projectorDestination = try projector.map { try availableLocalModelDestination(preferredFileName: $0.fileName, in: modelsDir) }
-        let requiredBytes = model.sizeBytes + (projector?.sizeBytes ?? 0) + 2_000_000_000
-        guard capability.freeDiskBytes > requiredBytes else {
-            throw NSError(domain: "AIProviderStore", code: 33, userInfo: [NSLocalizedDescriptionKey: "Not enough free storage for this model and runtime cache."])
-        }
-        localModelDownloadProgress = localModelDownloadProgress?.installingCopy("Installing model into local storage")
-        try await Task.detached(priority: .utility) {
-            let fileManager = FileManager.default
-            try fileManager.moveItem(at: model.temporaryURL, to: destination)
-            if let projector, let projectorDestination {
-                try fileManager.moveItem(at: projector.temporaryURL, to: projectorDestination)
-            }
-        }.value
-
-        let fileName = destination.lastPathComponent
-        let safety = capability.safety(forFileSize: model.sizeBytes, fileName: fileName)
-        let record = LocalModelRecord(
-            id: UUID(),
-            fileName: fileName,
-            storageFileName: fileName,
-            fileSizeBytes: model.sizeBytes,
-            parameterHint: DeviceCapabilityProfile.parameterHint(from: fileName.lowercased()),
-            quantizationHint: DeviceCapabilityProfile.quantizationHint(from: fileName.lowercased()),
-            importedAt: Date(),
-            safety: safety.0,
-            recommendation: safety.1,
-            sourceRepository: sourceRepository,
-            sourceURL: model.sourceURL.absoluteString,
-            architecture: architecture,
-            nativeContextLength: nativeContextLength,
-            modalities: modalities,
-            projectorStorageFileName: projectorDestination?.lastPathComponent,
-            sha256: model.sha256,
-            downloadedAt: Date()
-        )
-        localModels.removeAll { ($0.storageFileName ?? $0.fileName) == fileName }
-        localModels.append(record)
-        try persistLocalModels()
-        ensureLocalProviderExists()
-        localModelDownloadProgress = localModelDownloadProgress?.finishedCopy()
-        if globalModelSettings.autoValidateDownloads {
-            Task { await validateLocalModel(record) }
-        }
-        return record
-    }
-
-    private func downloadModelFile(url: URL, fileName: String, expectedSHA256: String? = nil) async throws -> DownloadedModelFile {
-        let download = TrackedModelDownload(url: url, fileName: fileName, allowsCellularAccess: globalModelSettings.allowCellularDownloads)
-        activeModelDownload = download
-        localModelDownloadProgress = .starting(fileName: fileName, sourceURL: url)
-        defer {
-            activeModelDownload = nil
-        }
-
-        do {
-            let (temporaryURL, response) = try await download.start { [weak self] progress in
-                Task { @MainActor in
-                    self?.localModelDownloadProgress = progress
-                }
-            }
-            try validate(response)
-            localModelDownloadProgress = localModelDownloadProgress?.verifyingCopy()
-            let attributes = try FileManager.default.attributesOfItem(atPath: temporaryURL.path)
-            let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
-            let actualSHA = try sha256(of: temporaryURL)
-            if let expectedSHA256, !expectedSHA256.isEmpty, actualSHA.lowercased() != expectedSHA256.lowercased() {
-                try? FileManager.default.removeItem(at: temporaryURL)
-                throw NSError(domain: "AIProviderStore", code: 34, userInfo: [NSLocalizedDescriptionKey: "Downloaded file checksum did not match."])
-            }
-            return DownloadedModelFile(
-                temporaryURL: temporaryURL,
-                sourceURL: url,
-                fileName: fileName,
-                sizeBytes: size,
-                sha256: actualSHA
-            )
-        } catch {
-            localModelDownloadProgress = error is CancellationError ? localModelDownloadProgress?.cancelledCopy() : localModelDownloadProgress?.failedCopy(error.localizedDescription)
-            throw error
-        }
-    }
-
-    private func sha256(of url: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        while true {
-            let data = try handle.read(upToCount: 1024 * 1024) ?? Data()
-            if data.isEmpty { break }
-            hasher.update(data: data)
-        }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-    }
-
-    private func modalities(forArchitecture architecture: String?, hasProjector: Bool) -> [LocalModelModality] {
-        guard hasProjector else { return [.text] }
-        if architecture?.lowercased() == "gemma4" {
-            return [.text, .image, .audio, .video]
-        }
-        return [.text, .image]
-    }
-
-    private func availableLocalModelDestination(preferredFileName: String, in directory: URL) throws -> URL {
-        let fallback = "model.gguf"
-        let cleaned = preferredFileName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fileName = cleaned.isEmpty ? fallback : cleaned
-        let nsName = fileName as NSString
-        let stem = nsName.deletingPathExtension.isEmpty ? fileName : nsName.deletingPathExtension
-        let ext = nsName.pathExtension
-        let existingStorageNames = Set(localModels.map { ($0.storageFileName ?? $0.fileName).lowercased() })
-
-        for index in 0..<100 {
-            let candidate: String
-            if index == 0 {
-                candidate = fileName
-            } else if ext.isEmpty {
-                candidate = "\(stem) \(index + 1)"
-            } else {
-                candidate = "\(stem) \(index + 1).\(ext)"
-            }
-            let url = directory.appendingPathComponent(candidate)
-            if !FileManager.default.fileExists(atPath: url.path), !existingStorageNames.contains(candidate.lowercased()) {
-                return url
-            }
-        }
-
-        throw NSError(
-            domain: "AIProviderStore",
-            code: 3,
-            userInfo: [NSLocalizedDescriptionKey: "Could not find a free local model filename."]
-        )
-    }
-
     private func load() {
-        providers = decode([AIProviderProfile].self, key: providersKey) ?? []
-        localModels = decode([LocalModelRecord].self, key: localModelsKey) ?? []
+        providers = decodeProviders()
         globalModelSettings = decode(GlobalModelSettings.self, key: globalModelSettingsKey) ?? .defaults
-        localModelRuntimeSettings = decode([String: LocalModelRuntimeSettings].self, key: localModelRuntimeSettingsKey) ?? [:]
         ensureDefaultOpenAIProvider()
-        ensureLocalProviderExists()
-        sanitizeTurboQuantSettings()
+        sanitizeGlobalSettings()
+        purgeLegacyOnDeviceAIState()
+        try? persistProviders()
+        try? persistGlobalModelSettings()
     }
 
     private func ensureDefaultOpenAIProvider() {
@@ -633,21 +98,21 @@ final class AIProviderStore: ObservableObject {
         try? persistProviders()
     }
 
-    private func ensureLocalProviderExists() {
-        guard !providers.contains(where: { $0.kind == .localGGUF }) else { return }
-        let now = Date()
-        providers.append(AIProviderProfile(
-            id: UUID(),
-            kind: .localGGUF,
-            displayName: "On-Device Models",
-            baseURL: "local://gguf",
-            defaultModel: localModels.first?.fileName ?? "",
-            isEnabled: true,
-            capabilities: .localGGUF,
-            createdAt: now,
-            updatedAt: now
-        ))
-        try? persistProviders()
+    private func sanitizeGlobalSettings() {
+        if let preferredProviderId = globalModelSettings.preferredProviderId,
+           !providers.contains(where: { $0.id == preferredProviderId }) {
+            globalModelSettings.preferredProviderId = nil
+        }
+    }
+
+    private func purgeLegacyOnDeviceAIState() {
+        for key in legacyOnDeviceAIKeys {
+            defaults.removeObject(forKey: key)
+        }
+        let modelsURL = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
+        if FileManager.default.fileExists(atPath: modelsURL.path) {
+            try? FileManager.default.removeItem(at: modelsURL)
+        }
     }
 
     private func migrateOpenAIKeyIfNeeded() {
@@ -662,40 +127,20 @@ final class AIProviderStore: ObservableObject {
         defaults.set(data, forKey: providersKey)
     }
 
-    private func persistLocalModels() throws {
-        let data = try encoder.encode(localModels)
-        defaults.set(data, forKey: localModelsKey)
-    }
-
     private func persistGlobalModelSettings() throws {
         let data = try encoder.encode(globalModelSettings)
         defaults.set(data, forKey: globalModelSettingsKey)
     }
 
-    private func persistLocalModelRuntimeSettings() throws {
-        let data = try encoder.encode(localModelRuntimeSettings)
-        defaults.set(data, forKey: localModelRuntimeSettingsKey)
-    }
-
-    private func sanitizeTurboQuantSettings() {
-        guard !turboQuantAvailability.isAvailable else { return }
-        if globalModelSettings.turboQuantPreference == .forceTurbo3 || globalModelSettings.turboQuantPreference == .forceTurbo4 {
-            globalModelSettings.turboQuantPreference = .autoWhenAvailable
-            try? persistGlobalModelSettings()
-        }
-        var changed = false
-        for (key, settings) in localModelRuntimeSettings where settings.kvCacheMode.requiresTurboQuant {
-            var next = settings
-            next.kvCacheMode = .automatic
-            localModelRuntimeSettings[key] = next
-            changed = true
-        }
-        if changed { try? persistLocalModelRuntimeSettings() }
-    }
-
     private func decode<T: Decodable>(_ type: T.Type, key: String) -> T? {
         guard let data = defaults.data(forKey: key) else { return nil }
         return try? decoder.decode(type, from: data)
+    }
+
+    private func decodeProviders() -> [AIProviderProfile] {
+        guard let data = defaults.data(forKey: providersKey) else { return [] }
+        guard let wrappers = try? decoder.decode([LossyProviderProfile].self, from: data) else { return [] }
+        return wrappers.compactMap(\.value)
     }
 
     private func fetchModels(baseURL: URL, apiKey: String?) async throws -> [String] {
@@ -731,23 +176,6 @@ final class AIProviderStore: ObservableObject {
         if !trimmed.isEmpty {
             request.setValue("Bearer \(trimmed)", forHTTPHeaderField: "Authorization")
         }
-    }
-
-    private func huggingFaceAPIModelURL(repository: String) -> URL? {
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = "huggingface.co"
-        components.path = "/api/models/\(repository)"
-        components.queryItems = [URLQueryItem(name: "blobs", value: "true")]
-        return components.url
-    }
-
-    private func huggingFaceResolveURL(repository: String, fileName: String) -> URL? {
-        var components = URLComponents()
-        components.scheme = "https"
-        components.host = "huggingface.co"
-        components.path = "/\(repository)/resolve/main/\(fileName)"
-        return components.url
     }
 
     private func validate(_ response: URLResponse) throws {
@@ -813,246 +241,15 @@ final class AIProviderStore: ObservableObject {
     }
 }
 
-private struct DownloadedModelFile {
-    var temporaryURL: URL
-    var sourceURL: URL
-    var fileName: String
-    var sizeBytes: Int64
-    var sha256: String
+private struct LossyProviderProfile: Decodable {
+    let value: AIProviderProfile?
+
+    init(from decoder: Decoder) throws {
+        value = try? AIProviderProfile(from: decoder)
+    }
 }
 
 private struct OpenAIModelsResponse: Decodable {
     struct Model: Decodable { let id: String }
     let data: [Model]
-}
-
-
-struct LocalModelDownloadProgress: Equatable, Identifiable {
-    enum Phase: String, Equatable {
-        case starting
-        case downloading
-        case verifying
-        case installing
-        case finished
-        case cancelled
-        case failed
-    }
-
-    var id: String
-    var fileName: String
-    var sourceURL: URL
-    var phase: Phase
-    var bytesWritten: Int64
-    var totalBytes: Int64
-    var bytesPerSecond: Double
-    var startedAt: Date
-    var updatedAt: Date
-    var message: String?
-
-    var fractionCompleted: Double? {
-        guard totalBytes > 0 else { return nil }
-        return min(1, max(0, Double(bytesWritten) / Double(totalBytes)))
-    }
-
-    var estimatedSecondsRemaining: TimeInterval? {
-        guard totalBytes > 0, bytesPerSecond > 0, bytesWritten < totalBytes else { return nil }
-        return Double(totalBytes - bytesWritten) / bytesPerSecond
-    }
-
-    var elapsedSeconds: TimeInterval {
-        max(0, updatedAt.timeIntervalSince(startedAt))
-    }
-
-    var isFinished: Bool { [.finished, .cancelled, .failed].contains(phase) }
-
-    static func starting(fileName: String, sourceURL: URL) -> LocalModelDownloadProgress {
-        let now = Date()
-        return LocalModelDownloadProgress(
-            id: fileName,
-            fileName: fileName,
-            sourceURL: sourceURL,
-            phase: .starting,
-            bytesWritten: 0,
-            totalBytes: 0,
-            bytesPerSecond: 0,
-            startedAt: now,
-            updatedAt: now,
-            message: nil
-        )
-    }
-
-    func verifyingCopy() -> LocalModelDownloadProgress {
-        copy(phase: .verifying, message: "Verifying checksum")
-    }
-
-    func installingCopy(_ message: String = "Installing model") -> LocalModelDownloadProgress {
-        copy(phase: .installing, message: message)
-    }
-
-    func finishedCopy() -> LocalModelDownloadProgress {
-        copy(phase: .finished, bytesWritten: max(bytesWritten, totalBytes), message: "Model installed")
-    }
-
-    func cancelledCopy() -> LocalModelDownloadProgress {
-        copy(phase: .cancelled, message: "Download cancelled")
-    }
-
-    func failedCopy(_ message: String) -> LocalModelDownloadProgress {
-        copy(phase: .failed, message: message)
-    }
-
-    private func copy(
-        phase: Phase,
-        bytesWritten: Int64? = nil,
-        totalBytes: Int64? = nil,
-        bytesPerSecond: Double? = nil,
-        message: String? = nil
-    ) -> LocalModelDownloadProgress {
-        LocalModelDownloadProgress(
-            id: id,
-            fileName: fileName,
-            sourceURL: sourceURL,
-            phase: phase,
-            bytesWritten: bytesWritten ?? self.bytesWritten,
-            totalBytes: totalBytes ?? self.totalBytes,
-            bytesPerSecond: bytesPerSecond ?? self.bytesPerSecond,
-            startedAt: startedAt,
-            updatedAt: Date(),
-            message: message ?? self.message
-        )
-    }
-}
-
-private final class TrackedModelDownload: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    private let url: URL
-    private let fileName: String
-    private let allowsCellularAccess: Bool
-    private let startedAt = Date()
-    private var session: URLSession?
-    private var task: URLSessionDownloadTask?
-    private var progressHandler: ((LocalModelDownloadProgress) -> Void)?
-    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
-    private var movedTemporaryURL: URL?
-    private var completionResponse: URLResponse?
-    private var lastProgressAt: Date?
-    private var lastBytesWritten: Int64 = 0
-    private var smoothedBytesPerSecond: Double = 0
-    private var didResume = false
-    private let lock = NSLock()
-
-    init(url: URL, fileName: String, allowsCellularAccess: Bool) {
-        self.url = url
-        self.fileName = fileName
-        self.allowsCellularAccess = allowsCellularAccess
-        super.init()
-    }
-
-    func start(progress: @escaping (LocalModelDownloadProgress) -> Void) async throws -> (URL, URLResponse) {
-        try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                lock.lock()
-                self.progressHandler = progress
-                self.continuation = continuation
-                lock.unlock()
-
-                let configuration = URLSessionConfiguration.default
-                configuration.waitsForConnectivity = true
-                configuration.allowsCellularAccess = allowsCellularAccess
-                configuration.timeoutIntervalForRequest = 60
-                configuration.timeoutIntervalForResource = 60 * 60 * 6
-                let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-                let task = session.downloadTask(with: url)
-                self.session = session
-                self.task = task
-                progress(.starting(fileName: fileName, sourceURL: url))
-                task.resume()
-            }
-        } onCancel: {
-            cancel()
-        }
-    }
-
-    func cancel() {
-        task?.cancel()
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didWriteData bytesWritten: Int64,
-        totalBytesWritten: Int64,
-        totalBytesExpectedToWrite: Int64
-    ) {
-        let now = Date()
-        let elapsed = max(0.001, now.timeIntervalSince(startedAt))
-        let interval = max(0.001, now.timeIntervalSince(lastProgressAt ?? startedAt))
-        let delta = max(0, totalBytesWritten - lastBytesWritten)
-        let instantSpeed = Double(delta) / interval
-        smoothedBytesPerSecond = smoothedBytesPerSecond == 0 ? instantSpeed : (smoothedBytesPerSecond * 0.75) + (instantSpeed * 0.25)
-        lastProgressAt = now
-        lastBytesWritten = totalBytesWritten
-        let total = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : 0
-        let speed = smoothedBytesPerSecond > 0 ? smoothedBytesPerSecond : Double(totalBytesWritten) / elapsed
-        progressHandler?(LocalModelDownloadProgress(
-            id: fileName,
-            fileName: fileName,
-            sourceURL: url,
-            phase: .downloading,
-            bytesWritten: totalBytesWritten,
-            totalBytes: total,
-            bytesPerSecond: speed,
-            startedAt: startedAt,
-            updatedAt: now,
-            message: nil
-        ))
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        do {
-            let destination = FileManager.default.temporaryDirectory.appendingPathComponent("litter-model-")
-                .appendingPathExtension(UUID().uuidString)
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
-            }
-            try FileManager.default.moveItem(at: location, to: destination)
-            movedTemporaryURL = destination
-            completionResponse = downloadTask.response
-        } catch {
-            finish(.failure(error))
-        }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error {
-            if (error as NSError).code == NSURLErrorCancelled {
-                finish(.failure(CancellationError()))
-            } else {
-                finish(.failure(error))
-            }
-            return
-        }
-        guard let movedTemporaryURL, let response = completionResponse ?? task.response else {
-            finish(.failure(NSError(domain: "AIProviderStore", code: 35, userInfo: [NSLocalizedDescriptionKey: "The model download did not produce a file."])))
-            return
-        }
-        finish(.success((movedTemporaryURL, response)))
-    }
-
-    private func finish(_ result: Result<(URL, URLResponse), Error>) {
-        lock.lock()
-        guard !didResume else {
-            lock.unlock()
-            return
-        }
-        didResume = true
-        let continuation = continuation
-        self.continuation = nil
-        lock.unlock()
-
-        session?.invalidateAndCancel()
-        switch result {
-        case .success(let value): continuation?.resume(returning: value)
-        case .failure(let error): continuation?.resume(throwing: error)
-        }
-    }
 }

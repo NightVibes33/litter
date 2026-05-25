@@ -57,7 +57,9 @@ struct SSHAgentPickerSheet: View {
         self.onConnected = onConnected
         self.onUseCodex = onUseCodex
         self.onCancel = onCancel
-        _selectedKinds = State(initialValue: Set(Self.availableBridgeKinds(in: context.availability)))
+        _selectedKinds = State(initialValue: Set(
+            Self.availableBridgeKinds(in: context.availability).filter { !$0.isBeta }
+        ))
     }
 
     var body: some View {
@@ -125,9 +127,14 @@ struct SSHAgentPickerSheet: View {
                 } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(runtimeDisplayName(agent.kind))
-                                .litterFont(.subheadline)
-                                .foregroundColor(agent.status == .available ? LitterTheme.textPrimary : LitterTheme.textMuted)
+                            HStack(spacing: 6) {
+                                Text(runtimeDisplayName(agent.kind))
+                                    .litterFont(.subheadline)
+                                    .foregroundColor(agent.status == .available ? LitterTheme.textPrimary : LitterTheme.textMuted)
+                                if agent.kind.isBeta {
+                                    BetaBadge()
+                                }
+                            }
                             Text(statusLabel(agent.status, kind: agent.kind))
                                 .litterFont(.caption)
                                 .foregroundColor(LitterTheme.textSecondary)
@@ -238,27 +245,37 @@ struct SSHAgentPickerSheet: View {
 }
 
 private func isBridgeKind(_ kind: AgentRuntimeKind) -> Bool {
+    // Prefer the capability flag from alleycat metadata; fall back to
+    // the legacy SSH-bridge-supported allowlist when metadata isn't
+    // cached yet (cold start).
+    if let supports = kind.metadata?.capabilities?.supportsSshBridge {
+        return supports
+    }
     switch kind {
-    case .codex, .claude, .pi, .opencode:
+    case "codex", "claude", "pi", "opencode":
         return true
+    default:
+        return false
     }
 }
 
 private func runtimeDisplayName(_ kind: AgentRuntimeKind) -> String {
-    switch kind {
-    case .codex: return "Codex"
-    case .pi: return "Pi"
-    case .opencode: return "OpenCode"
-    case .claude: return "Claude"
-    }
+    kind.displayLabel
 }
 
 private func runtimeSortRank(_ kind: AgentRuntimeKind) -> Int {
+    // SSH-bridge picker keeps its own historical ordering distinct
+    // from the general presentation order: Claude leads because it's
+    // the most common SSH-bootstrap target.
     switch kind {
-    case .claude: return 0
-    case .pi: return 1
-    case .opencode: return 2
-    case .codex: return 3
+    case "claude": return 0
+    case "pi": return 1
+    case "opencode": return 2
+    case "codex": return 3
+    case "amp": return 4
+    case "droid": return 5
+    case "hermes": return 6
+    default: return Int.max
     }
 }
 

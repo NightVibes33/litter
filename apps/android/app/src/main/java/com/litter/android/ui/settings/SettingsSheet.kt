@@ -1,5 +1,7 @@
 package com.litter.android.ui.settings
 
+import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -80,12 +82,15 @@ import com.litter.android.state.DebugSettings
 import com.litter.android.state.MessageRecorder
 import com.litter.android.state.OpenAIApiKeyStore
 import com.litter.android.state.PetOverlayController
+import com.litter.android.state.SavedServer
 import com.litter.android.state.SavedServerStore
+import com.litter.android.state.SshAuthMethod
+import com.litter.android.state.SshCredentialStore
 import com.litter.android.state.connectionModeLabel
 import com.litter.android.state.isConnected
-import com.litter.android.state.isIpcConnected
 import com.litter.android.state.statusColor
 import com.litter.android.state.statusLabel
+import com.litter.android.state.toRecord
 import com.litter.android.ui.LocalAppModel
 import com.litter.android.ui.LitterAppearanceMode
 import com.litter.android.ui.LitterColorThemeType
@@ -98,6 +103,7 @@ import com.litter.android.ui.WallpaperManager
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.LitterThemeIndexEntry
 import com.litter.android.ui.LitterThemeManager
+import com.litter.android.ui.discovery.SSHLoginDialog
 import com.litter.android.util.LLog
 import kotlinx.coroutines.launch
 import uniffi.codex_mobile_client.Account
@@ -182,6 +188,9 @@ private fun SettingsTopLevel(
             ?: snapshot?.servers?.firstOrNull { it.isLocal }
             ?: snapshot?.servers?.firstOrNull()
     }
+
+    var editTarget by remember { mutableStateOf<AppServerSnapshot?>(null) }
+    var sshReconnectTarget by remember { mutableStateOf<SavedServer?>(null) }
 
     LazyColumn(
         modifier = Modifier
@@ -325,11 +334,12 @@ private fun SettingsTopLevel(
             items(servers, key = { it.serverId }) { server ->
                 ServerSettingsRow(
                     server = server,
-                    onRename = if (server.isLocal) null else {
-                        {
-                            renameText = server.displayName
-                            renameTarget = server
-                        }
+                    onRename = {
+                        renameText = server.displayName
+                        renameTarget = server
+                    },
+                    onEdit = {
+                        editTarget = server
                     },
                     onRemove = {
                         scope.launch {
@@ -378,12 +388,82 @@ private fun SettingsTopLevel(
             },
         )
     }
+
+    editTarget?.let { server ->
+        ServerEditSheet(
+            server = server,
+            onDismiss = { editTarget = null },
+            onSave = { editTarget = null },
+            onTriggerSshReconnect = { saved ->
+                editTarget = null
+                sshReconnectTarget = saved
+            },
+        )
+    }
+
+    sshReconnectTarget?.let { saved ->
+        val sshCredentialStore = remember(context) { SshCredentialStore(context.applicationContext) }
+        val sshPort = saved.resolvedSshPort
+        SSHLoginDialog(
+            server = saved,
+            initialCredential = sshCredentialStore.load(saved.hostname, sshPort),
+            onDismiss = { sshReconnectTarget = null },
+            onConnect = { credential, rememberCredentials ->
+                try {
+                    if (rememberCredentials) {
+                        sshCredentialStore.save(saved.hostname, sshPort, credential)
+                    } else {
+                        sshCredentialStore.delete(saved.hostname, sshPort)
+                    }
+
+                    appModel.serverBridge.disconnectServer(saved.id)
+
+                    when (credential.method) {
+                        SshAuthMethod.PASSWORD -> appModel.serverBridge.startRemoteOverSshConnect(
+                            serverId = saved.id,
+                            displayName = saved.name,
+                            host = saved.hostname,
+                            port = sshPort.toUShort(),
+                            username = credential.username,
+                            password = credential.password,
+                            privateKeyPem = null,
+                            passphrase = null,
+                            unlockMacosKeychain = credential.unlockMacosKeychain,
+                            acceptUnknownHost = true,
+                            workingDir = null,
+                        )
+                        SshAuthMethod.KEY -> appModel.serverBridge.startRemoteOverSshConnect(
+                            serverId = saved.id,
+                            displayName = saved.name,
+                            host = saved.hostname,
+                            port = sshPort.toUShort(),
+                            username = credential.username,
+                            password = null,
+                            privateKeyPem = credential.privateKey,
+                            passphrase = credential.passphrase,
+                            unlockMacosKeychain = false,
+                            acceptUnknownHost = true,
+                            workingDir = null,
+                        )
+                    }
+                    appModel.refreshSnapshot()
+                    sshReconnectTarget = null
+                    null
+                } catch (e: Exception) {
+                    LLog.e("SettingsSheet", "SSH reconnect failed: ${e.message}", e)
+                    e.message ?: "SSH reconnect failed"
+                }
+            },
+        )
+    }
+
 }
 
 @Composable
 private fun ServerSettingsRow(
     server: AppServerSnapshot,
     onRename: (() -> Unit)?,
+    onEdit: (() -> Unit)?,
     onRemove: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -409,20 +489,6 @@ private fun ServerSettingsRow(
                     fontSize = 11.sp,
                 )
             }
-            if (server.isIpcConnected) {
-                Text(
-                    "IPC",
-                    color = LitterTheme.accentStrong,
-                    fontSize = 10.sp,
-                    modifier = Modifier
-                        .background(
-                            LitterTheme.accentStrong.copy(alpha = 0.14f),
-                            RoundedCornerShape(4.dp),
-                        )
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-            }
             IconButton(
                 onClick = { showMenu = true },
                 modifier = Modifier.size(28.dp),
@@ -436,6 +502,15 @@ private fun ServerSettingsRow(
         }
 
         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+            if (onEdit != null) {
+                DropdownMenuItem(
+                    text = { Text("Edit") },
+                    onClick = {
+                        showMenu = false
+                        onEdit()
+                    },
+                )
+            }
             if (onRename != null) {
                 DropdownMenuItem(
                     text = { Text("Rename") },
@@ -453,6 +528,545 @@ private fun ServerSettingsRow(
                 },
             )
         }
+    }
+}
+
+private enum class ServerConnectionMode(val label: String, val formHeader: String) {
+    LOCAL("Local", "Local Runtime"),
+    SSH("SSH", "SSH Host"),
+    DIRECT_CODEX("Codex", "Codex Server"),
+    WEBSOCKET("WebSocket", "Codex URL"),
+    SLINGSHOT("Slingshot", "Slingshot"),
+}
+
+private fun isSettingsSlingshotUrl(rawUrl: String): Boolean =
+    runCatching { Uri.parse(rawUrl).scheme?.equals("slingshot", ignoreCase = true) == true }
+        .getOrDefault(false)
+
+private suspend fun loadSettingsSlingshotTokens(context: Context) =
+    ChatGPTOAuth.requireStoredOrRefreshedTokens(
+        context,
+        "Sign in with ChatGPT before connecting with Slingshot.",
+    )
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ServerEditSheet(
+    server: AppServerSnapshot,
+    onDismiss: () -> Unit,
+    onSave: () -> Unit,
+    onTriggerSshReconnect: (SavedServer) -> Unit,
+) {
+    val context = LocalContext.current
+    val appModel = LocalAppModel.current
+    val scope = rememberCoroutineScope()
+
+    val savedServers = remember { SavedServerStore.load(context) }
+    val originalSaved = remember(savedServers, server.serverId) {
+        savedServers.firstOrNull { it.id == server.serverId }
+    }
+
+    val resolvedMode = remember(originalSaved, server.isLocal) {
+        when {
+            server.isLocal -> ServerConnectionMode.LOCAL
+            originalSaved?.websocketURL?.let(::isSettingsSlingshotUrl) == true -> ServerConnectionMode.SLINGSHOT
+            originalSaved?.websocketURL != null -> ServerConnectionMode.WEBSOCKET
+            originalSaved?.preferredConnectionMode == "ssh" || (originalSaved?.sshPort != null && originalSaved?.hasCodexServer == false) -> ServerConnectionMode.SSH
+            else -> ServerConnectionMode.DIRECT_CODEX
+        }
+    }
+    var displayName by remember { mutableStateOf(originalSaved?.name?.trim()?.takeIf { it.isNotEmpty() } ?: server.displayName) }
+    var connectionMode by remember { mutableStateOf(resolvedMode) }
+    var host by remember { mutableStateOf(originalSaved?.hostname?.trim()?.takeIf { it.isNotEmpty() } ?: server.host) }
+    var codexPort by remember { mutableStateOf(originalSaved?.preferredCodexPort?.toString() ?: originalSaved?.port?.takeIf { it > 0 }?.toString() ?: "8390") }
+    var websocketURL by remember { mutableStateOf(originalSaved?.websocketURL ?: "") }
+    var sshPort by remember { mutableStateOf(originalSaved?.sshPort?.toString() ?: "22") }
+    var wakeMAC by remember { mutableStateOf(originalSaved?.wakeMAC ?: "") }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    var isReconnecting by remember { mutableStateOf(false) }
+    var pendingSlingshotReconnect by remember { mutableStateOf<SavedServer?>(null) }
+
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    fun validateAndBuild(): SavedServer? {
+        val name = displayName.trim()
+        if (name.isEmpty()) {
+            validationError = "Server name cannot be empty."
+            return null
+        }
+
+        if (originalSaved?.alleycatNodeId != null || originalSaved?.alleycatAgentWire == "ssh-bridge") {
+            // Paired server — only name is editable
+            return originalSaved.copy(name = name)
+        }
+
+        return when (connectionMode) {
+            ServerConnectionMode.LOCAL -> {
+                SavedServer(
+                    id = server.serverId,
+                    name = name,
+                    hostname = "127.0.0.1",
+                    port = 0,
+                    codexPorts = emptyList(),
+                    sshPort = null,
+                    source = "local",
+                    hasCodexServer = true,
+                    wakeMAC = null,
+                    preferredConnectionMode = null,
+                    preferredCodexPort = null,
+                    sshPortForwardingEnabled = null,
+                    websocketURL = null,
+                    rememberedByUser = true,
+                )
+            }
+            ServerConnectionMode.SSH -> {
+                val resolvedHost = host.trim()
+                if (resolvedHost.isEmpty()) {
+                    validationError = "Host cannot be empty."
+                    return null
+                }
+                val resolvedSSHPort = sshPort.trim().toIntOrNull()
+                if (resolvedSSHPort == null || resolvedSSHPort !in 1..65535) {
+                    validationError = "SSH port must be a valid number."
+                    return null
+                }
+                val wakeInput = wakeMAC.trim()
+                val resolvedWakeMAC = SavedServer.normalizeWakeMac(wakeInput)
+                if (wakeInput.isNotEmpty() && resolvedWakeMAC == null) {
+                    validationError = "Wake MAC must look like aa:bb:cc:dd:ee:ff."
+                    return null
+                }
+                SavedServer(
+                    id = server.serverId,
+                    name = name,
+                    hostname = resolvedHost,
+                    port = 0,
+                    codexPorts = emptyList(),
+                    sshPort = resolvedSSHPort,
+                    source = "manual",
+                    hasCodexServer = false,
+                    wakeMAC = resolvedWakeMAC,
+                    preferredConnectionMode = "ssh",
+                    preferredCodexPort = null,
+                    sshPortForwardingEnabled = null,
+                    websocketURL = null,
+                    rememberedByUser = true,
+                )
+            }
+            ServerConnectionMode.DIRECT_CODEX -> {
+                val resolvedHost = host.trim()
+                if (resolvedHost.isEmpty()) {
+                    validationError = "Host cannot be empty."
+                    return null
+                }
+                val resolvedCodexPort = codexPort.trim().toIntOrNull()
+                if (resolvedCodexPort == null || resolvedCodexPort !in 1..65535) {
+                    validationError = "Codex port must be a valid number."
+                    return null
+                }
+                SavedServer(
+                    id = server.serverId,
+                    name = name,
+                    hostname = resolvedHost,
+                    port = resolvedCodexPort,
+                    codexPorts = listOf(resolvedCodexPort),
+                    sshPort = null,
+                    source = "manual",
+                    hasCodexServer = true,
+                    wakeMAC = null,
+                    preferredConnectionMode = "directCodex",
+                    preferredCodexPort = resolvedCodexPort,
+                    sshPortForwardingEnabled = null,
+                    websocketURL = null,
+                    rememberedByUser = true,
+                )
+            }
+            ServerConnectionMode.WEBSOCKET -> {
+                val rawURL = websocketURL.trim()
+                if (!rawURL.startsWith("ws://", ignoreCase = true) && !rawURL.startsWith("wss://", ignoreCase = true)) {
+                    validationError = "Enter a valid ws:// or wss:// URL."
+                    return null
+                }
+                val uri = runCatching { java.net.URI(rawURL) }.getOrNull()
+                if (uri == null || uri.host.isNullOrEmpty()) {
+                    validationError = "Enter a valid ws:// or wss:// URL."
+                    return null
+                }
+                val resolvedPort = if (uri.port != -1) uri.port else null
+                SavedServer(
+                    id = server.serverId,
+                    name = name,
+                    hostname = uri.host,
+                    port = resolvedPort ?: 0,
+                    codexPorts = if (resolvedPort != null) listOf(resolvedPort) else emptyList(),
+                    sshPort = null,
+                    source = "manual",
+                    hasCodexServer = true,
+                    wakeMAC = null,
+                    preferredConnectionMode = "directCodex",
+                    preferredCodexPort = resolvedPort,
+                    sshPortForwardingEnabled = null,
+                    websocketURL = rawURL,
+                    rememberedByUser = true,
+                )
+            }
+            ServerConnectionMode.SLINGSHOT -> {
+                val saved = originalSaved ?: run {
+                    validationError = "Remove and add this connected computer again."
+                    return null
+                }
+                saved.copy(
+                    name = name,
+                    rememberedByUser = true,
+                )
+            }
+        }
+    }
+
+    fun persist(saved: SavedServer) {
+        val existing = SavedServerStore.load(context).toMutableList()
+        existing.removeAll { it.id == saved.id }
+        existing.add(saved)
+        SavedServerStore.save(context, existing)
+        appModel.reconnectController.setMultiClankerAndQuicEnabled(true)
+        appModel.reconnectController.syncSavedServers(
+            existing.filter { it.rememberedByUser }.map { it.toRecord(context) }
+        )
+        appModel.store.renameServer(saved.id, saved.name)
+    }
+
+    suspend fun reconnect(serverId: String) {
+        val servers = SavedServerStore.load(context).map { it.toRecord(context) }
+        appModel.reconnectController.setMultiClankerAndQuicEnabled(true)
+        appModel.reconnectController.syncSavedServers(servers)
+        val result = appModel.reconnectController.reconnectServer(serverId)
+        if (result.needsLocalAuthRestore) {
+            appModel.restoreStoredLocalAuthState(result.serverId)
+            runCatching { appModel.refreshSessions(listOf(result.serverId)) }
+        }
+        appModel.refreshSnapshot()
+    }
+
+    suspend fun connectSlingshotSaved(saved: SavedServer, stepUpToken: String) {
+        val websocketURL = saved.websocketURL?.takeIf(::isSettingsSlingshotUrl)
+            ?: throw IllegalStateException("Saved server is not a Slingshot connection.")
+
+        val tokens = loadSettingsSlingshotTokens(context)
+        appModel.serverBridge.connectRemoteSlingshotUrlServer(
+            saved.id,
+            saved.name,
+            websocketURL,
+            tokens.accessToken,
+            tokens.accountId,
+            stepUpToken,
+        )
+        appModel.refreshSnapshot()
+    }
+
+    suspend fun reconnectSaved(saved: SavedServer) {
+        if (saved.websocketURL?.let(::isSettingsSlingshotUrl) != true) {
+            reconnect(saved.id)
+            return
+        }
+
+        connectSlingshotSaved(saved, "")
+    }
+
+    val slingshotStepUpLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val saved = pendingSlingshotReconnect
+        pendingSlingshotReconnect = null
+        if (saved == null) {
+            return@rememberLauncherForActivityResult
+        }
+        if (result.resultCode != android.app.Activity.RESULT_OK) {
+            validationError = result.data?.getStringExtra(ChatGPTOAuthActivity.EXTRA_ERROR)
+                ?: "Remote-control authorization was cancelled."
+            isReconnecting = false
+            return@rememberLauncherForActivityResult
+        }
+        val stepUpToken = ChatGPTOAuthActivity.parseRemoteControlStepUpToken(result.data)
+        if (stepUpToken == null) {
+            validationError = "Remote-control authorization returned incomplete credentials."
+            isReconnecting = false
+            return@rememberLauncherForActivityResult
+        }
+
+        scope.launch {
+            isReconnecting = true
+            try {
+                connectSlingshotSaved(saved, stepUpToken)
+                onSave()
+            } catch (e: Exception) {
+                validationError = e.message
+            } finally {
+                isReconnecting = false
+            }
+        }
+    }
+
+    fun launchSlingshotStepUp(saved: SavedServer) {
+        try {
+            pendingSlingshotReconnect = saved
+            slingshotStepUpLauncher.launch(
+                ChatGPTOAuthActivity.createIntent(
+                    context,
+                    ChatGPTOAuth.createRemoteControlEnrollmentAttempt(),
+                ),
+            )
+        } catch (e: Exception) {
+            pendingSlingshotReconnect = null
+            validationError = e.localizedMessage ?: e.message ?: "Unable to authorize remote control."
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = LitterTheme.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // Header
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.weight(1f))
+                Text("Edit Server", color = LitterTheme.textPrimary, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("Done", color = LitterTheme.accent) }
+            }
+
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item {
+                    SectionHeader("Name")
+                    OutlinedTextField(
+                        value = displayName,
+                        onValueChange = { displayName = it },
+                        label = { Text("Server name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(color = LitterTheme.textPrimary, fontSize = 14.sp),
+                    )
+                }
+
+                item {
+                    SectionHeader(connectionMode.formHeader)
+
+                    if (originalSaved?.alleycatNodeId != null || originalSaved?.alleycatAgentWire == "ssh-bridge") {
+                        Text(
+                            "This paired server uses saved pairing metadata. Edit its display name here, or remove and add it again to change the pairing.",
+                            color = LitterTheme.textSecondary,
+                            fontSize = 12.sp,
+                        )
+                    } else if (server.isLocal) {
+                        Text(
+                            "This device's local runtime is managed automatically.",
+                            color = LitterTheme.textSecondary,
+                            fontSize = 12.sp,
+                        )
+                    } else if (connectionMode == ServerConnectionMode.SLINGSHOT) {
+                        Text(
+                            "This connected computer comes from ChatGPT using your signed-in account. Edit its display name here, or remove and add it again to change the computer.",
+                            color = LitterTheme.textSecondary,
+                            fontSize = 12.sp,
+                        )
+                    } else {
+                        // Mode selector
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(LitterTheme.surface.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
+                                .padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            val modes = listOf(
+                                ServerConnectionMode.SSH,
+                                ServerConnectionMode.DIRECT_CODEX,
+                                ServerConnectionMode.WEBSOCKET,
+                            )
+                            modes.forEach { mode ->
+                                val selected = mode == connectionMode
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (selected) LitterTheme.accent else Color.Transparent)
+                                        .clickable { connectionMode = mode }
+                                        .padding(vertical = 9.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        mode.label,
+                                        color = if (selected) LitterTheme.onAccentStrong else LitterTheme.textSecondary,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        when (connectionMode) {
+                            ServerConnectionMode.SSH -> {
+                                OutlinedTextField(
+                                    value = host,
+                                    onValueChange = { host = it },
+                                    label = { Text("hostname or IP") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textStyle = TextStyle(color = LitterTheme.textPrimary, fontSize = 14.sp),
+                                )
+                                OutlinedTextField(
+                                    value = sshPort,
+                                    onValueChange = { sshPort = it },
+                                    label = { Text("SSH port") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textStyle = TextStyle(color = LitterTheme.textPrimary, fontSize = 14.sp),
+                                )
+                                OutlinedTextField(
+                                    value = wakeMAC,
+                                    onValueChange = { wakeMAC = it },
+                                    label = { Text("wake MAC (optional)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textStyle = TextStyle(color = LitterTheme.textPrimary, fontSize = 14.sp),
+                                )
+                            }
+                            ServerConnectionMode.DIRECT_CODEX -> {
+                                OutlinedTextField(
+                                    value = host,
+                                    onValueChange = { host = it },
+                                    label = { Text("hostname or IP") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textStyle = TextStyle(color = LitterTheme.textPrimary, fontSize = 14.sp),
+                                )
+                                OutlinedTextField(
+                                    value = codexPort,
+                                    onValueChange = { codexPort = it },
+                                    label = { Text("Codex port") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textStyle = TextStyle(color = LitterTheme.textPrimary, fontSize = 14.sp),
+                                )
+                            }
+                            ServerConnectionMode.WEBSOCKET -> {
+                                OutlinedTextField(
+                                    value = websocketURL,
+                                    onValueChange = { websocketURL = it },
+                                    label = { Text("ws://host:port or wss://...") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    textStyle = TextStyle(color = LitterTheme.textPrimary, fontSize = 14.sp),
+                                )
+                            }
+                            else -> Unit
+                        }
+
+                        if (connectionMode == ServerConnectionMode.WEBSOCKET) {
+                            Text(
+                                "Prefer SSH when possible. If you run codex manually, bind loopback and tunnel it yourself; do not expose it directly to the internet unless you know what you are doing.",
+                                color = LitterTheme.textMuted,
+                                fontSize = 11.sp,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    if (isReconnecting) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                            CircularProgressIndicator(color = LitterTheme.accent, strokeWidth = 2.dp)
+                        }
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    validationError = null
+                                    val saved = validateAndBuild()
+                                    if (saved != null) {
+                                        persist(saved)
+                                        onSave()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = LitterTheme.accent),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("Save", color = LitterTheme.onAccentStrong)
+                            }
+                            if (server.isLocal || (originalSaved?.alleycatNodeId == null && originalSaved?.alleycatAgentWire != "ssh-bridge")) {
+                                Button(
+                                    onClick = {
+                                        validationError = null
+                                        val saved = validateAndBuild()
+                                        if (saved != null) {
+                                            persist(saved)
+                                            // SSH mode requires interactive credentials, mirroring iOS:
+                                            // hand off to the parent which will open SSHLoginDialog.
+                                            if (connectionMode == ServerConnectionMode.SSH && !server.isLocal) {
+                                                onTriggerSshReconnect(saved)
+                                                return@Button
+                                            }
+                                            scope.launch {
+                                                isReconnecting = true
+                                                try {
+                                                    reconnectSaved(saved)
+                                                    onSave()
+                                                } catch (e: Exception) {
+                                                    isReconnecting = false
+                                                    if (
+                                                        connectionMode == ServerConnectionMode.SLINGSHOT &&
+                                                        ChatGPTOAuth.isRemoteControlAuthorizationRequired(e)
+                                                    ) {
+                                                        launchSlingshotStepUp(saved)
+                                                    } else {
+                                                        validationError = e.message
+                                                    }
+                                                } finally {
+                                                    if (pendingSlingshotReconnect == null) {
+                                                        isReconnecting = false
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = LitterTheme.accentStrong),
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Text(
+                                        if (server.isLocal) "Save & Restart" else "Save & Reconnect",
+                                        color = LitterTheme.background,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item { Spacer(Modifier.height(32.dp)) }
+            }
+        }
+    }
+
+    validationError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { validationError = null },
+            title = { Text("Invalid Server") },
+            text = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { validationError = null }) {
+                    Text("OK")
+                }
+            },
+        )
     }
 }
 
@@ -1318,9 +1932,11 @@ private fun AccountSection(server: uniffi.codex_mobile_client.AppServerSnapshot)
     val scope = rememberCoroutineScope()
     val apiKeyStore = remember(context) { OpenAIApiKeyStore(context.applicationContext) }
     var apiKey by remember { mutableStateOf("") }
+    var openAIBaseUrl by remember { mutableStateOf("") }
     var isAuthWorking by remember { mutableStateOf(false) }
     var authError by remember { mutableStateOf<String?>(null) }
     var hasStoredApiKey by remember { mutableStateOf(apiKeyStore.hasStoredKey()) }
+    var hasStoredBaseUrl by remember { mutableStateOf(apiKeyStore.hasStoredBaseUrl()) }
     val authLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -1380,6 +1996,7 @@ private fun AccountSection(server: uniffi.codex_mobile_client.AppServerSnapshot)
 
     androidx.compose.runtime.LaunchedEffect(server.serverId, server.account) {
         hasStoredApiKey = apiKeyStore.hasStoredKey()
+        hasStoredBaseUrl = apiKeyStore.hasStoredBaseUrl()
     }
 
     Column(
@@ -1411,6 +2028,14 @@ private fun AccountSection(server: uniffi.codex_mobile_client.AppServerSnapshot)
         if (server.isLocal && hasStoredApiKey) {
             Text(
                 "Local OpenAI API key is saved.",
+                color = LitterTheme.accent,
+                fontSize = 11.sp,
+            )
+        }
+
+        if (server.isLocal && hasStoredBaseUrl) {
+            Text(
+                "OpenAI-compatible base URL is saved.",
                 color = LitterTheme.accent,
                 fontSize = 11.sp,
             )
@@ -1500,6 +2125,84 @@ private fun AccountSection(server: uniffi.codex_mobile_client.AppServerSnapshot)
                     )
                 }
             }
+
+            Text(
+                if (hasStoredBaseUrl) {
+                    "Custom OpenAI-compatible endpoint saved for the local Codex server."
+                } else {
+                    "Optional OpenAI-compatible endpoint for local models."
+                },
+                color = LitterTheme.textSecondary,
+                fontSize = 11.sp,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BasicTextField(
+                    value = openAIBaseUrl,
+                    onValueChange = { openAIBaseUrl = it },
+                    textStyle = TextStyle(color = LitterTheme.textPrimary, fontSize = 13.sp),
+                    cursorBrush = SolidColor(LitterTheme.accent),
+                    modifier = Modifier.weight(1f).background(LitterTheme.codeBackground, RoundedCornerShape(6.dp)).padding(8.dp),
+                    decorationBox = { inner -> if (openAIBaseUrl.isEmpty()) Text("http://host:port/v1", color = LitterTheme.textMuted, fontSize = 13.sp); inner() },
+                )
+                Spacer(Modifier.width(8.dp))
+                TextButton(
+                    onClick = {
+                        val normalized = normalizeOpenAIBaseUrl(openAIBaseUrl)
+                        if (normalized == null) {
+                            authError = "Enter a valid http or https base URL."
+                        } else {
+                            scope.launch {
+                                isAuthWorking = true
+                                try {
+                                    apiKeyStore.saveBaseUrl(normalized)
+                                    appModel.restartLocalServer()
+                                    hasStoredBaseUrl = apiKeyStore.hasStoredBaseUrl()
+                                    if (hasStoredBaseUrl) {
+                                        openAIBaseUrl = ""
+                                        authError = null
+                                    } else {
+                                        authError = "Base URL did not persist locally."
+                                    }
+                                } catch (e: Exception) {
+                                    authError = e.message
+                                } finally {
+                                    isAuthWorking = false
+                                }
+                            }
+                        }
+                    },
+                    enabled = openAIBaseUrl.trim().isNotEmpty() && !isAuthWorking,
+                ) {
+                    Text(
+                        if (hasStoredBaseUrl) "Update" else "Save",
+                        color = LitterTheme.accent,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+            if (hasStoredBaseUrl) {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            isAuthWorking = true
+                            try {
+                                apiKeyStore.clearBaseUrl()
+                                appModel.restartLocalServer()
+                                hasStoredBaseUrl = apiKeyStore.hasStoredBaseUrl()
+                                openAIBaseUrl = ""
+                                authError = null
+                            } catch (e: Exception) {
+                                authError = e.message
+                            } finally {
+                                isAuthWorking = false
+                            }
+                        }
+                    },
+                    enabled = !isAuthWorking,
+                ) {
+                    Text("Clear Base URL", color = LitterTheme.danger, fontSize = 12.sp)
+                }
+            }
         } else {
             Text(
                 "Remote servers request their own OAuth login when needed. Settings login and API key entry stay local-only.",
@@ -1510,6 +2213,16 @@ private fun AccountSection(server: uniffi.codex_mobile_client.AppServerSnapshot)
 
         authError?.let { Text(it, color = LitterTheme.danger, fontSize = 11.sp) }
     }
+}
+
+private fun normalizeOpenAIBaseUrl(rawValue: String): String? {
+    val trimmed = rawValue.trim().trimEnd('/')
+    if (trimmed.isEmpty()) return null
+    val uri = runCatching { java.net.URI(trimmed) }.getOrNull() ?: return null
+    val scheme = uri.scheme?.lowercase()
+    if (scheme != "http" && scheme != "https") return null
+    if (uri.host.isNullOrBlank()) return null
+    return trimmed
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

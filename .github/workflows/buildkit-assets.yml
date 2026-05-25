@@ -6,10 +6,10 @@ on:
       xcode_version:
         description: "Xcode version on the macOS runner"
         required: true
-        default: "26.3"
+        default: "26.4"
         type: string
       swift_branch:
-        description: "Swift source tag/branch for LLVM-On-iOS"
+        description: "Swift source release tag for the iOS toolchain build"
         required: true
         default: "swift-6.3.1-RELEASE"
         type: string
@@ -130,7 +130,7 @@ jobs:
           brew list ninja >/dev/null 2>&1 || brew install ninja
 
       - name: Restore finished BuildKit asset cache
-        if: steps.existing_assets.outputs.available != 'true'
+        if: steps.existing_assets.outputs.available != 'true' && inputs.force_rebuild != true
         id: buildkit_cache
         uses: actions/cache@v4
         with:
@@ -139,18 +139,45 @@ jobs:
             ThirdParty/LLVM-On-iOS/SwiftToolchain.zip
             ThirdParty/LLVM-On-iOS/CoreCompilerSupportLibs
             ThirdParty/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/LLVM-On-iOS/build
             ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain-iphoneos
             ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain.zip
             ThirdParty/Nyxian/LLVM-On-iOS/CoreCompilerSupportLibs
             ThirdParty/Nyxian/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/Nyxian/LLVM-On-iOS/build
             ThirdParty/Nyxian/CoreCompiler/CoreCompilerSupportLibs
             artifacts/buildkit/DerivedData-Nyxian
             artifacts/buildkit/LitterBuildKitNative.framework
             artifacts/buildkit/LitterBuildKitAssets
             artifacts/buildkit/LitterBuildKitAssets.zip
-          key: buildkit-assets-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh') }}
+          key: buildkit-assets-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Feather/Zsign-Package/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}
           restore-keys: |
             buildkit-assets-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
+            buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
+
+      - name: Restore partial BuildKit compiler cache
+        if: steps.existing_assets.outputs.available != 'true' && inputs.force_rebuild == true
+        id: buildkit_partial_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ThirdParty/LLVM-On-iOS/SwiftToolchain-iphoneos
+            ThirdParty/LLVM-On-iOS/SwiftToolchain.zip
+            ThirdParty/LLVM-On-iOS/CoreCompilerSupportLibs
+            ThirdParty/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/LLVM-On-iOS/build
+            ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain-iphoneos
+            ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain.zip
+            ThirdParty/Nyxian/LLVM-On-iOS/CoreCompilerSupportLibs
+            ThirdParty/Nyxian/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/Nyxian/LLVM-On-iOS/build
+            ThirdParty/Nyxian/CoreCompiler/CoreCompilerSupportLibs
+            artifacts/buildkit/DerivedData-Nyxian
+            artifacts/buildkit/LitterBuildKitNative.framework
+            artifacts/buildkit/LitterBuildKitAssets
+            artifacts/buildkit/LitterBuildKitAssets.zip
+          key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Feather/Zsign-Package/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}
+          restore-keys: |
             buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
 
       - name: Check cached asset pack
@@ -186,7 +213,7 @@ jobs:
           time tools/scripts/build-nyxian-buildkit-assets.sh
 
       - name: Save partial BuildKit compiler cache
-        if: always() && inputs.force_rebuild == true && steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true'
+        if: always() && !cancelled() && inputs.force_rebuild == true && steps.existing_assets.outputs.available != 'true' && steps.cached_assets.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -194,16 +221,18 @@ jobs:
             ThirdParty/LLVM-On-iOS/SwiftToolchain.zip
             ThirdParty/LLVM-On-iOS/CoreCompilerSupportLibs
             ThirdParty/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/LLVM-On-iOS/build
             ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain-iphoneos
             ThirdParty/Nyxian/LLVM-On-iOS/SwiftToolchain.zip
             ThirdParty/Nyxian/LLVM-On-iOS/CoreCompilerSupportLibs
             ThirdParty/Nyxian/LLVM-On-iOS/LLVM.xcframework
+            ThirdParty/Nyxian/LLVM-On-iOS/build
             ThirdParty/Nyxian/CoreCompiler/CoreCompilerSupportLibs
             artifacts/buildkit/DerivedData-Nyxian
             artifacts/buildkit/LitterBuildKitNative.framework
             artifacts/buildkit/LitterBuildKitAssets
             artifacts/buildkit/LitterBuildKitAssets.zip
-          key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Feather/Zsign-Package/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Verify private BuildKit assets
         if: steps.existing_assets.outputs.available == 'true' || steps.cached_assets.outputs.available == 'true' || steps.build_assets.outcome == 'success'
@@ -248,8 +277,9 @@ jobs:
           fi
           gh secret set LITTER_BUILDKIT_ASSET_URL --repo "$GITHUB_REPOSITORY" --body "$ASSET_URL"
           gh secret set LITTER_BUILDKIT_ASSET_SHA256 --repo "$GITHUB_REPOSITORY" --body "$ASSET_SHA256"
-          gh workflow run ios-unsigned-ipa.yml --repo "$GITHUB_REPOSITORY" --ref main -f build_mode=fast-device
-          echo "Linked BuildKit assets and dispatched unsigned IPA rebuild."
+          DISPATCH_REF="${GITHUB_REF_NAME:-main}"
+          gh workflow run ios-unsigned-ipa.yml --repo "$GITHUB_REPOSITORY" --ref "$DISPATCH_REF" -f build_mode=nyxian-private
+          echo "Linked BuildKit assets and dispatched nyxian-private unsigned IPA rebuild on $DISPATCH_REF."
 
       - name: Print unsigned IPA secret values
         if: inputs.upload_private_release == true && (steps.existing_assets.outputs.available == 'true' || steps.cached_assets.outputs.available == 'true' || steps.build_assets.outcome == 'success')

@@ -165,6 +165,7 @@ Incremental policy:
 - `./tools/scripts/build-android-rust.sh` — cross-compile Rust JNI libs for Android via `cargo-ndk`
 - `./tools/scripts/testflight-feedback.sh` — fetch TestFlight feedback with optional screenshot download; supports `SINCE` / `UNTIL` env filtering for createdDate windows
 - `./tools/scripts/fetch-mobile-store-artifacts.py` — one-shot iOS + Android store triage fetcher; use `--last-hours N` or `--since ... --until ...` to pull TestFlight feedback/crashes/crash logs plus Play reviews/crash issues/reports into one output directory and print a Markdown summary with local artifact links. Reuses `testflight-feedback.sh` for the TestFlight feedback path. Android private testing feedback remains Play Console UI-only and is not available through the public APIs used here.
+- `./tools/scripts/triage-mobile-feedback.py` — rerunnable GitHub + TestFlight + Play triage ledger. It wraps `fetch-mobile-store-artifacts.py`, fetches GitHub issues/PRs, stores raw per-run snapshots under `artifacts/mobile-triage/runs/`, and preserves per-item status/notes in `artifacts/mobile-triage/triage-state.json`. Use `mark '<item-id>' --status done --note ...` after an item is handled, or `--status pr-open --note 'Fix PR #...'` when a fix PR has been opened, so later runs do not put the same item back in the unhandled queue.
 
 ### Hot Reload (InjectionIII)
 - Install: `brew install --cask injectioniii`
@@ -174,7 +175,7 @@ Incremental policy:
 
 ## Autonomous Debugging Runbook
 - Prefer the fast lanes for local iteration before package/release lanes: `make ios-sim-fast`, `make ios-device-fast`, and `make android-emulator-fast`.
-- For store-feedback/crash triage across both platforms, start with `./tools/scripts/fetch-mobile-store-artifacts.py --last-hours 24` (or an explicit `--since` / `--until` window) before doing manual ASC / Play API calls; it writes raw JSON artifacts plus a linked summary under `/tmp/mobile-store-artifacts/...` unless `--output-dir` is provided.
+- For repeated store-feedback/crash triage across GitHub, TestFlight, and Play, start with `./tools/scripts/triage-mobile-feedback.py --last-hours 24` (or an explicit `--since` / `--until` window). Review `artifacts/mobile-triage/triage-board.md`, then mark handled rows with `./tools/scripts/triage-mobile-feedback.py mark '<item-id>' --status done --note 'fixed in ...'` or `--status pr-open --note 'Fix PR #...'`. Use `fetch-mobile-store-artifacts.py` directly only for one-off raw iOS/Android store snapshots or deeper ASC / Play API debugging.
 - For iOS simulator debugging, install the latest built app directly from DerivedData instead of trusting an older installed simulator copy: `xcrun simctl install booted <.../Build/Products/Debug-iphonesimulator/Litter.app>` then `xcrun simctl launch booted com.sigkitten.litter`.
 - For Xcode project regeneration, use `make xcgen` or `./apps/ios/scripts/regenerate-project.sh`. Do not run `xcodegen generate --spec project.yml --project Litter.xcodeproj` from inside `apps/ios`; that produces a nested `apps/ios/Litter.xcodeproj/Litter.xcodeproj`.
 - For Android emulator debugging, build with `make android-emulator-fast`, install with `adb -e install -r apps/android/app/build/outputs/apk/debug/app-debug.apk`, then launch with `adb -e shell am start -n com.sigkitten.litter.android/com.litter.android.MainActivity`.

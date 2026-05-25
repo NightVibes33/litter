@@ -34,68 +34,6 @@ final class BuildKitTests: XCTestCase {
         XCTAssertTrue(manifest.capabilities.contains("unsigned-ipa-build"))
     }
 
-    func testLocalModelBuildKitToolParsingAndRisk() {
-        let calls = LocalModelToolLoop.parseToolCalls(from: "{\"tool\":\"ipa_build\",\"arguments\":{\"project_path\":\"/root/App/LitterBuild.json\"}}")
-
-        XCTAssertEqual(calls.count, 1)
-        XCTAssertEqual(calls.first?.name, "ipa_build")
-        XCTAssertEqual(calls.first?.arguments["project_path"], "/root/App/LitterBuild.json")
-        XCTAssertEqual(calls.first.map(LocalModelToolLoop.risk(for:)), .build)
-    }
-
-    func testLocalModelSwiftSelftestToolParsingAndRisk() {
-        let calls = LocalModelToolLoop.parseToolCalls(from: "{\"tool\":\"swift_selftest\",\"arguments\":{}}")
-
-        XCTAssertEqual(calls.count, 1)
-        XCTAssertEqual(calls.first?.name, "swift_selftest")
-        XCTAssertEqual(calls.first.map(LocalModelToolLoop.risk(for:)), .build)
-    }
-
-    func testLocalModelNyxianStatusToolIsSafeRead() {
-        let calls = LocalModelToolLoop.parseToolCalls(from: "{\"tool\":\"nyxian_status\",\"arguments\":{}}")
-
-        XCTAssertEqual(calls.count, 1)
-        XCTAssertEqual(calls.first?.name, "nyxian_status")
-        XCTAssertEqual(calls.first.map(LocalModelToolLoop.risk(for:)), .safeRead)
-    }
-
-    func testMalformedBuildKitToolRequestsAreDetected() {
-        let malformed = [
-            "please run swift_build with /root/App/LitterBuild.json",
-            "tool swift_test arguments project_path=/root/App/LitterBuild.json",
-            "ipa_package { project_path: /root/App/LitterBuild.json }",
-            "build_status job 123",
-            "build_cancel job 123"
-        ]
-
-        for text in malformed {
-            XCTAssertTrue(LocalModelToolLoop.looksLikeMalformedToolRequest(text), text)
-        }
-    }
-
-    func testLocalModelBuildKitToolRiskCoverage() {
-        let expected: [(String, LocalModelToolRisk)] = [
-            ("buildkit_status", .safeRead),
-            ("nyxian_status", .safeRead),
-            ("fs_doctor", .safeRead),
-            ("env_report", .safeRead),
-            ("swift_check", .safeRead),
-            ("build_status", .safeRead),
-            ("swift_selftest", .build),
-            ("swift_build", .build),
-            ("swift_test", .build),
-            ("ipa_build", .build),
-            ("ipa_package", .build),
-            ("build_cancel", .build),
-            ("dev_bootstrap", .shell)
-        ]
-
-        for (tool, risk) in expected {
-            let call = LocalModelToolCall(id: tool, name: tool, arguments: [:])
-            XCTAssertEqual(LocalModelToolLoop.risk(for: call), risk, tool)
-        }
-    }
-
     func testBuildKitShellWordsPreserveQuotedBotArguments() {
         let words = LitterBuildKit.shellWords(#"'hello world' 'a'\''b' '-D' 'DEBUG' '/root/My App/main.swift'"#)
 

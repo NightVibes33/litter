@@ -62,6 +62,9 @@ pub enum AppStoreUpdateRecord {
         requests: Vec<PendingUserInputRequest>,
     },
     VoiceSessionChanged,
+    /// Emitted when terminal session metadata changes. Output bytes
+    /// stream through TerminalSession subscriptions, not this event.
+    TerminalSessionsChanged,
     /// Emitted whenever the saved-apps on-disk index mutates — the
     /// auto-upsert hook for a finalized `show_widget`, or one of the
     /// handwritten Save-as-App / rename / delete / replace-html /

@@ -45,7 +45,7 @@
 using namespace std;
 
 #define FORMAT_V(x, format) char format[1024] = { 0 }; \
-				va_list va_args; \
+                        	va_list va_args; \
 							va_start(va_args, x); \
 							vsnprintf(format, 1024, x, va_args); \
 							va_end(va_args);

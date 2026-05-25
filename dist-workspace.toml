@@ -27,6 +27,14 @@ install-updater = false
 #   CODESIGN_CERTIFICATE_PASSWORD same as MAC_DEVELOPER_ID_CERT_PASSWORD
 #   CODESIGN_IDENTITY             "Developer ID Application: <Name> (<TEAM>)"
 macos-sign = true
+# Inject sccache (Cloudflare R2 backend, same key/secret as the mobile
+# lanes) into the build-local-artifacts job so kittylitter releases
+# don't recompile iroh/ring/reqwest from scratch on every bump. Path is
+# resolved relative to .github/workflows/, so `../` escapes to .github/
+# (we don't want this fragment under workflows/ because GitHub would
+# otherwise treat it as a standalone workflow). Requires the
+# SCCACHE_R2_* + AWS_* repo secrets that other lanes already use.
+github-build-setup = "../dist-build-setup.yml"
 # Run the npm publish job on tagged releases. Requires NPM_TOKEN.
 publish-jobs = ["npm"]
 # Add a `workflow_dispatch` trigger to release.yml so the auto-release

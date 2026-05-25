@@ -70,13 +70,10 @@ mod tests {
             prompt: Some("Review the changes".into()),
             model: None,
             reasoning_effort: None,
-            agents_states: HashMap::from([(
-                "sub-thread-1".into(),
-                upstream::CollabAgentState {
-                    status: upstream::CollabAgentStatus::Running,
-                    message: Some("Working".into()),
-                },
-            )]),
+            agents_states: HashMap::from([("sub-thread-1".into(), upstream::CollabAgentState {
+                status: upstream::CollabAgentStatus::Running,
+                message: Some("Working".into()),
+            })]),
         };
 
         let upstream::ThreadItem::CollabAgentToolCall { agents_states, .. } = item else {
@@ -285,6 +282,22 @@ impl AppStore {
         })
     }
 
+    /// Force a fresh `thread/resume` (with `exclude_turns: false`) so the
+    /// store can reconcile a stale `active_turn_id` against the server's
+    /// authoritative turn list. Use after a long resume / push wake when
+    /// the in-flight turn we believe is still running may have completed
+    /// during the background window.
+    pub async fn force_refresh_thread_authoritative(
+        &self,
+        key: ThreadKey,
+    ) -> Result<(), ClientError> {
+        blocking_async!(self.rt, self.inner, |c| {
+            c.force_refresh_thread_authoritative(&key.server_id, &key.thread_id)
+                .await
+                .map_err(|e| ClientError::Rpc(e.to_string()))
+        })
+    }
+
     pub async fn load_thread_turns_page(
         &self,
         key: ThreadKey,
@@ -419,9 +432,91 @@ impl AppStore {
                     tokio::time::sleep(tokio::time::Duration::from_millis(delta)).await;
                 }
             }
-            processor.process_notification(server_id, notification);
+            processor.process_notification(server_id, "codex".to_string(), notification);
         }
         Ok(())
+    }
+    /// Open a new terminal session whose strong handle lives on the
+    /// shared `MobileClient`. The reducer-side
+    /// `AppSnapshot.terminal_sessions` entry mirrors lifecycle and holds
+    /// the 64 KiB output tail for re-attach repaint.
+    pub async fn open_terminal_session(
+        &self,
+        kind: crate::terminal::TerminalBackendKind,
+        size: crate::terminal::TerminalSize,
+    ) -> Result<String, ClientError> {
+        self.inner
+            .open_terminal_session(kind, size, None)
+            .await
+            .map_err(|e| ClientError::Rpc(e.to_string()))
+    }
+
+    /// Same as [`Self::open_terminal_session`] but consults `trust_store`
+    /// for the SSH backend host-key pin policy. Local backends ignore the
+    /// trust store.
+    pub async fn open_terminal_session_with_trust_store(
+        &self,
+        kind: crate::terminal::TerminalBackendKind,
+        size: crate::terminal::TerminalSize,
+        trust_store: Arc<crate::terminal::TerminalSshTrustStore>,
+    ) -> Result<String, ClientError> {
+        self.inner
+            .open_terminal_session(kind, size, Some(trust_store))
+            .await
+            .map_err(|e| ClientError::Rpc(e.to_string()))
+    }
+
+    /// Close a terminal session by id. Drops the live handle (the
+    /// underlying backend closes when the last reference is released)
+    /// and marks the snapshot exited. The snapshot is kept (so the UI
+    /// can render the exit code); call `forget_terminal_session` to
+    /// fully remove the record.
+    pub async fn close_terminal_session(&self, id: String) -> Result<(), ClientError> {
+        self.inner
+            .close_terminal_session(&id)
+            .await
+            .map_err(|e| ClientError::Rpc(e.to_string()))
+    }
+
+    /// Remove the snapshot entry for `id`, releasing the output_tail.
+    pub fn forget_terminal_session(&self, id: String) {
+        self.inner.forget_terminal_session(&id);
+    }
+
+    /// Return the live session handle for `id`, or `None` if the session
+    /// has been closed.
+    pub fn terminal_session_handle(
+        &self,
+        id: String,
+    ) -> Option<Arc<crate::terminal::TerminalSession>> {
+        self.inner.terminal_session_handle(&id)
+    }
+
+    /// Return the snapshot entry (including output_tail) for `id`.
+    pub fn terminal_session_snapshot(
+        &self,
+        id: String,
+    ) -> Option<crate::store::TerminalSessionSnapshot> {
+        self.inner.app_store.terminal_session_snapshot(&id)
+    }
+
+    /// Write `bytes` to the currently-active terminal session, if any.
+    /// Returns `Ok(false)` if no active session is set.
+    pub async fn write_to_active_terminal(&self, bytes: Vec<u8>) -> Result<bool, ClientError> {
+        self.inner
+            .write_to_active_terminal(bytes)
+            .await
+            .map_err(|e| ClientError::Rpc(e.to_string()))
+    }
+
+    /// Return the currently-focused terminal session id, if any.
+    pub fn active_terminal_id(&self) -> Option<String> {
+        self.inner.app_store.snapshot().active_terminal_id
+    }
+
+    /// Set the focused terminal session id. Pass `None` to clear focus.
+    pub fn set_active_terminal_id(&self, id: Option<String>) {
+        self.inner.app_store.set_active_terminal_id(id);
     }
 }
 

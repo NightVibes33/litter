@@ -11,6 +11,7 @@ on:
         options:
           - fast-device
           - release-device
+          - nyxian-private
   push:
     branches:
       - main
@@ -19,22 +20,33 @@ on:
       - 'Package.swift'
       - 'apps/ios/**'
       - 'patches/codex/**'
+      - 'shared/third_party/ghostty'
+      - 'patches/ghostty/**'
+      - '.gitmodules'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
       - 'ThirdParty/Nyxian/**'
+      - 'ThirdParty/Feather/**'
+      - 'ThirdParty/SideStore/**'
+      - 'ThirdParty/UPSTREAMS.md'
       - 'ThirdParty/LLVM-On-iOS/**'
+      - 'tools/assets/**'
       - 'tools/scripts/load-sccache-aws-creds.sh'
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
+      - 'tools/scripts/build-sidestore-minimuxer.sh'
+      - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
       - 'tools/scripts/verify-nyxian-source-import.sh'
+      - 'tools/scripts/verify-kittystore-integration.sh'
+      - 'tools/scripts/verify-altstore-source.py'
       - 'tools/scripts/build-nyxian-buildkit-assets.sh'
       - 'tools/scripts/verify-nyxian-buildkit-assets.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ios-unsigned-ipa-${{ github.ref }}
@@ -61,13 +73,17 @@ jobs:
       LITTER_BUILDKIT_ASSET_URL: ${{ secrets.LITTER_BUILDKIT_ASSET_URL }}
       LITTER_BUILDKIT_ASSET_SHA256: ${{ secrets.LITTER_BUILDKIT_ASSET_SHA256 }}
       LITTER_BUILDKIT_ASSET_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
+      LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
+      LITTER_NYXIAN_PRIVATE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
+      LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
+      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -86,12 +102,17 @@ jobs:
           set -euo pipefail
           tools/scripts/verify-nyxian-source-import.sh
 
+      - name: Verify KittyStore SideStore/Feather integration
+        run: |
+          set -euo pipefail
+          tools/scripts/verify-kittystore-integration.sh
+
       - name: Cache Homebrew downloads
         uses: actions/cache@v4
         with:
           path: |
             ~/Library/Caches/Homebrew
-          key: homebrew-ios-${{ runner.os }}-xcodegen-cmake-meson-ninja-v3
+          key: homebrew-ios-${{ runner.os }}-xcodegen-cmake-meson-ninja-llvm-v4
 
       - name: Install Xcode project dependency
         run: |
@@ -99,11 +120,23 @@ jobs:
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           brew list meson >/dev/null 2>&1 || brew install meson
           brew list ninja >/dev/null 2>&1 || brew install ninja
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list autoconf >/dev/null 2>&1 || brew install autoconf
+          brew list automake >/dev/null 2>&1 || brew install automake
+          brew list libtool >/dev/null 2>&1 || brew install libtool
+          brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
+          brew list curl >/dev/null 2>&1 || brew install curl
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-ios,i686-unknown-linux-musl
+
+      - name: Setup Zig (libghostty build)
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -111,7 +144,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ios-cargo-registry-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock') }}
+          key: ios-cargo-registry-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.lock') }}
           restore-keys: |
             ios-cargo-registry-${{ runner.os }}-
 
@@ -126,7 +159,7 @@ jobs:
           path: |
             apps/ios/GeneratedRust
             apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
-          key: ios-rust-generated-v3-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          key: ios-rust-generated-v3-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/build-ghostty.sh', 'apps/ios/scripts/sync-ghostty.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**', 'patches/ghostty/**', 'shared/third_party/ghostty/**') }}
           restore-keys: |
             ios-rust-generated-v3-${{ runner.os }}-
 
@@ -141,7 +174,7 @@ jobs:
             apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
             apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
             apps/ios/GeneratedRust/Headers/module.modulemap
-          key: ios-swift-uniffi-bindings-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/uniffi-bindgen/**', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'patches/codex/**') }}
+          key: ios-swift-uniffi-bindings-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/uniffi-bindgen/**', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**') }}
           restore-keys: |
             ios-swift-uniffi-bindings-v2-${{ runner.os }}-
 
@@ -156,39 +189,6 @@ jobs:
           restore-keys: |
             ios-generated-assets-${{ runner.os }}-
 
-      - name: Restore prebuilt llama.cpp XCFramework
-        id: llama_cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            apps/ios/Frameworks/llama.xcframework
-            apps/ios/Frameworks/llama.version
-            .build-stamps/llama-ios-turboquant-main
-            ~/Library/Caches/litter-build/llama.cpp
-          key: ios-llama-turboquant-xcframework-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/build-llama-xcframework.sh') }}
-          restore-keys: |
-            ios-llama-turboquant-xcframework-v1-${{ runner.os }}-
-
-      - name: Check prebuilt llama.cpp XCFramework
-        id: llama_prebuilt
-        run: |
-          set -euo pipefail
-          if [ -d apps/ios/Frameworks/llama.xcframework ] && [ -f apps/ios/Frameworks/llama.version ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-            echo "Using cached llama.cpp XCFramework."
-            cat apps/ios/Frameworks/llama.version
-            find apps/ios/Frameworks/llama.xcframework -maxdepth 3 -type f -print | sed -n '1,20p'
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "No valid cached llama.cpp XCFramework found."
-          fi
-
-      - name: Install llama.cpp build dependencies
-        if: steps.llama_prebuilt.outputs.available != 'true'
-        run: |
-          set -euo pipefail
-          brew list cmake >/dev/null 2>&1 || brew install cmake
-          brew list ninja >/dev/null 2>&1 || brew install ninja
 
       - name: Ensure Swift UniFFI binding
         run: |
@@ -219,8 +219,40 @@ jobs:
               echo "::warning::Swift UniFFI binding is stale: missing AppThreadGoal."
               stale=1
             fi
+            if ! grep -q "SlingshotCredentialProvider" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing SlingshotCredentialProvider."
+              stale=1
+            fi
+            if ! grep -q "SlingshotCredentialRecord" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing SlingshotCredentialRecord."
+              stale=1
+            fi
+            if ! grep -q "connectRemoteSlingshotUrlServer" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing connectRemoteSlingshotUrlServer()."
+              stale=1
+            fi
+            if ! grep -q "TerminalBackendKind" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing TerminalBackendKind."
+              stale=1
+            fi
+            if ! grep -q "openTerminalSession" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing openTerminalSession()."
+              stale=1
+            fi
+            if ! grep -q "TerminalOutputListener" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing TerminalOutputListener."
+              stale=1
+            fi
             if ! grep -q "ish_runtime_preflight" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
               echo "::warning::Swift UniFFI C header is stale: missing ish_runtime_preflight."
+              stale=1
+            fi
+            if ! grep -q "connect_remote_slingshot_url_server" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
+              echo "::warning::Swift UniFFI C header is stale: missing connect_remote_slingshot_url_server."
+              stale=1
+            fi
+            if ! grep -q "terminal" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
+              echo "::warning::Swift UniFFI C header is stale: missing terminal bindings."
               stale=1
             fi
           fi
@@ -230,7 +262,7 @@ jobs:
           else
             echo "Generated Swift UniFFI binding/header files are missing or stale."
             echo "Regenerating Swift binding only; this does not rebuild the iOS Rust staticlib."
-            rm -f .build-stamps/bindings-swift
+            rm -f .build-stamps/bindings-swift .build-stamps/sync
             time make bindings-swift
           fi
 
@@ -251,8 +283,8 @@ jobs:
         id: rust_prebuilt
         run: |
           set -euo pipefail
-          BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
-          if [ "$BUILD_MODE" != "fast-device" ]; then
+          BUILD_MODE="$LITTER_IOS_BUILD_MODE"
+          if [ "$BUILD_MODE" != "fast-device" ] && [ "$BUILD_MODE" != "nyxian-private" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "Release-device mode intentionally rebuilds Rust."
             exit 0
@@ -285,6 +317,8 @@ jobs:
           }
 
           require_nonempty apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a
+          require_nonempty apps/ios/GeneratedRust/ios-device/libghostty.a
+          require_file apps/ios/GeneratedRust/Headers/ghostty.h
           require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
           require_file apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
           if [ "$missing" -eq 0 ]; then
@@ -314,9 +348,9 @@ jobs:
         if: steps.rust_prebuilt.outputs.available != 'true'
         run: |
           set -euo pipefail
-          BUILD_MODE="${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}"
+          BUILD_MODE="$LITTER_IOS_BUILD_MODE"
           echo "Using build mode: $BUILD_MODE"
-          if [ "$BUILD_MODE" = "fast-device" ]; then
+          if [ "$BUILD_MODE" = "fast-device" ] || [ "$BUILD_MODE" = "nyxian-private" ]; then
             if [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h ] && [ -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
               time ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --skip-bindings
             else
@@ -341,43 +375,33 @@ jobs:
           set -euo pipefail
           time make alpine-fs
 
-      - name: Build llama.cpp XCFramework
-        if: steps.llama_prebuilt.outputs.available != 'true'
+      - name: Compute private BuildKit source fingerprint
+        id: buildkit_fingerprint
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
         run: |
           set -euo pipefail
-          export LLAMA_CPP_FLAVOR=turboquant
-          export LLAMA_CPP_REPO=https://github.com/animehacker/llama-turboquant.git
-          export LLAMA_CPP_VERSION=main
-          time make llama-ios
-
-      - name: Save prebuilt llama.cpp XCFramework
-        if: steps.llama_cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            apps/ios/Frameworks/llama.xcframework
-            apps/ios/Frameworks/llama.version
-            .build-stamps/llama-ios-turboquant-main
-            ~/Library/Caches/litter-build/llama.cpp
-          key: ${{ steps.llama_cache.outputs.cache-primary-key }}
+          echo "native_source_fingerprint=$(tools/scripts/buildkit-native-source-fingerprint.sh)" >> "$GITHUB_OUTPUT"
 
       - name: Restore prepared private BuildKit assets
         id: buildkit_assets_cache
-        if: env.LITTER_BUILDKIT_ASSET_SHA256 != ''
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1' && env.LITTER_BUILDKIT_ASSET_SHA256 != ''
         uses: actions/cache/restore@v4
         with:
           path: apps/ios/Sources/Litter/Resources/BuildKitAssets
-          key: ios-buildkit-assets-v1-${{ runner.os }}-${{ env.LITTER_BUILDKIT_ASSET_SHA256 }}
+          key: ios-buildkit-assets-v3-${{ runner.os }}-${{ env.LITTER_BUILDKIT_ASSET_SHA256 }}-${{ steps.buildkit_fingerprint.outputs.native_source_fingerprint }}
 
       - name: Prepare private BuildKit assets
-        if: steps.buildkit_assets_cache.outputs.cache-hit != 'true'
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1' && steps.buildkit_assets_cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           apps/ios/scripts/prepare-buildkit-assets.sh
 
       - name: Verify private BuildKit assets are prepared
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
         run: |
           set -euo pipefail
+          export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="${{ steps.buildkit_fingerprint.outputs.native_source_fingerprint }}"
+          tools/scripts/verify-nyxian-buildkit-assets.sh apps/ios/Sources/Litter/Resources/BuildKitAssets
           python3 - <<'PY'
           import json
           import pathlib
@@ -392,7 +416,7 @@ jobs:
           manifest = json.loads(manifest_path.read_text())
           toolchain = manifest.get("toolchain", {})
           required = list(manifest.get("requiredPaths", []))
-          for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner"):
+          for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner", "swiftResourceDir"):
               value = toolchain.get(key)
               if value:
                   required.append(value)
@@ -411,6 +435,9 @@ jobs:
               missing.append("symlinks are not allowed in BuildKitAssets")
 
           sdk_path = toolchain.get("sdkPath") or "SDK/iPhoneOS26.4.sdk"
+          swift_resource_dir = toolchain.get("swiftResourceDir") or "Toolchains/Nyxian/SwiftResourceDir"
+          if not (root / swift_resource_dir / "iphoneos").is_dir():
+              missing.append(str(pathlib.Path(swift_resource_dir) / "iphoneos"))
           sdk_settings = pathlib.Path(sdk_path) / "SDKSettings.plist"
           if not (root / sdk_settings).is_file():
               missing.append(str(sdk_settings))
@@ -435,11 +462,16 @@ jobs:
           PY
 
       - name: Save prepared private BuildKit assets
-        if: env.LITTER_BUILDKIT_ASSET_SHA256 != '' && steps.buildkit_assets_cache.outputs.cache-hit != 'true'
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1' && env.LITTER_BUILDKIT_ASSET_SHA256 != '' && steps.buildkit_assets_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: apps/ios/Sources/Litter/Resources/BuildKitAssets
           key: ${{ steps.buildkit_assets_cache.outputs.cache-primary-key }}
+
+      - name: Build SideStore minimuxer bridge
+        run: |
+          set -euo pipefail
+          time tools/scripts/build-sidestore-minimuxer.sh
 
       - name: Generate Xcode project
         run: |
@@ -447,10 +479,65 @@ jobs:
           time make xcgen
 
       - name: Build unsigned archive
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ARCHIVE_PATH="$PWD/build/Litter.xcarchive"
           rm -rf "$ARCHIVE_PATH" build/unsigned-ipa Payload
+          BASE_MARKETING_VERSION="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          match = re.search(r'^\s*MARKETING_VERSION:\s*"?([^"\s]+)"?', Path("apps/ios/project.yml").read_text(), re.M)
+          print(match.group(1) if match else "1.5.0")
+          PY
+          )"
+          MARKETING_VERSION="$(python3 - "$BASE_MARKETING_VERSION" <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          base = sys.argv[1].strip()
+          match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", base)
+          if not match:
+              raise SystemExit(f"::error::Base MARKETING_VERSION must be major.minor.patch, got {base!r}")
+
+          major, minor, patch = match.groups()
+          latest_patch = int(patch)
+          repo = os.environ["GITHUB_REPOSITORY"]
+
+          try:
+              with tempfile.TemporaryDirectory() as temp_dir:
+                  subprocess.run(
+                      [
+                          "gh", "release", "download", "app-source",
+                          "--pattern", "litter-update.json",
+                          "--dir", temp_dir,
+                          "--clobber",
+                          "--repo", repo,
+                      ],
+                      check=True,
+                      capture_output=True,
+                      text=True,
+                  )
+                  stable = json.loads((Path(temp_dir) / "litter-update.json").read_text())
+              stable_version = str(stable.get("version", "")).strip()
+              stable_match = re.fullmatch(rf"{major}\.{minor}\.(\d+)", stable_version)
+              if stable_match:
+                  latest_patch = max(latest_patch, int(stable_match.group(1)))
+              elif stable_version:
+                  print(f"::warning::Stable update feed is on {stable_version}; using {base} as the {major}.{minor}.x base", file=sys.stderr)
+          except Exception as error:
+              print(f"::warning::Could not inspect stable Litter app-source release ({error}); using {base} as the version base", file=sys.stderr)
+
+          print(f"{major}.{minor}.{latest_patch + 1}")
+          PY
+          )"
           xcodebuild archive \
             -project apps/ios/Litter.xcodeproj \
             -scheme Litter \
@@ -461,11 +548,99 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
+            KITTYSTORE_MINIMUXER_LDFLAGS="-lminimuxer-ios -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork" \
+            KITTYSTORE_MINIMUXER_SWIFT_FLAGS="-D KITTYSTORE_MINIMUXER_LINKED"
 
-      - name: Verify archived BuildKit asset payload
+      - name: Verify embedded dynamic frameworks
+        shell: bash
         run: |
           set -euo pipefail
+          APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "::error::No archived .app found for dynamic framework verification" >&2
+            exit 1
+          fi
+          EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Info.plist")"
+          missing=0
+          scan_binary() {
+            local binary="$1"
+            if [ ! -f "$binary" ]; then
+              return 0
+            fi
+            if ! /usr/bin/file "$binary" | /usr/bin/grep -q 'Mach-O'; then
+              return 0
+            fi
+            while IFS= read -r dependency; do
+              local framework
+              local dependency_binary
+              framework="$(printf '%s\n' "$dependency" | /usr/bin/sed -E 's#^@rpath/([^/]+\.framework)/.*#\1#')"
+              dependency_binary="$(/usr/bin/basename "$dependency")"
+              if [ ! -f "$APP_PATH/Frameworks/$framework/$dependency_binary" ]; then
+                echo "::error::$(basename "$binary") links $dependency but $APP_PATH/Frameworks/$framework/$dependency_binary is missing" >&2
+                missing=1
+              else
+                echo "Verified embedded framework for $(basename "$binary"): $framework/$dependency_binary"
+              fi
+            done < <(/usr/bin/otool -L "$binary" | /usr/bin/awk 'NR > 1 { print $1 }' | /usr/bin/grep '^@rpath/.*\.framework/' || true)
+          }
+          scan_binary "$APP_PATH/$EXECUTABLE"
+          if [ -d "$APP_PATH/Frameworks" ]; then
+            for framework_dir in "$APP_PATH"/Frameworks/*.framework; do
+              if [ -d "$framework_dir" ]; then
+                framework_name="$(/usr/bin/basename "$framework_dir" .framework)"
+                scan_binary "$framework_dir/$framework_name"
+              fi
+            done
+            while IFS= read -r dylib; do
+              scan_binary "$dylib"
+            done < <(find "$APP_PATH/Frameworks" -maxdepth 1 -type f -name '*.dylib' -print)
+          fi
+          if [ "$missing" -ne 0 ]; then
+            find "$APP_PATH/Frameworks" -maxdepth 3 -type f -print >&2 || true
+            exit 1
+          fi
+      - name: Build Nyxian LiveProcess extension
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        run: |
+          set -euo pipefail
+          BUILD_ROOT="$PWD/build/NyxianLiveProcess"
+          OUTPUT_ROOT="$PWD/build/nyxian-liveprocess"
+          rm -rf "$BUILD_ROOT" "$OUTPUT_ROOT"
+          mkdir -p "$BUILD_ROOT" "$OUTPUT_ROOT"
+
+          xcodebuild build \
+            -project ThirdParty/Nyxian/Nyxian.xcodeproj \
+            -target LiveProcess \
+            -configuration Release \
+            -sdk iphoneos \
+            SYMROOT="$BUILD_ROOT/Build/Products" \
+            OBJROOT="$BUILD_ROOT/Build/Intermediates" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.LiveProcess" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+
+          LIVEPROCESS_APPEX="$(find "$BUILD_ROOT" -type d -name 'LiveProcess.appex' -print | head -n 1)"
+          if [ -z "$LIVEPROCESS_APPEX" ] || [ ! -d "$LIVEPROCESS_APPEX" ]; then
+            echo "::error::Nyxian LiveProcess.appex was not produced" >&2
+            find "$BUILD_ROOT" -maxdepth 6 -print >&2 || true
+            exit 1
+          fi
+
+          cp -R "$LIVEPROCESS_APPEX" "$OUTPUT_ROOT/LiveProcess.appex"
+          /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$OUTPUT_ROOT/LiveProcess.appex/Info.plist" >/dev/null
+          echo "Nyxian LiveProcess extension staged at $OUTPUT_ROOT/LiveProcess.appex"
+
+      - name: Verify archived BuildKit asset payload
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
+        run: |
+          set -euo pipefail
+          export LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT="${{ steps.buildkit_fingerprint.outputs.native_source_fingerprint }}"
           APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
           if [ -z "$APP_PATH" ]; then
             echo "::error::No .app found in archive" >&2
@@ -654,6 +829,7 @@ jobs:
 
           python3 - "$ASSET_ZIP" <<'PY'
           import json
+          import os
           import pathlib
           import sys
           import zipfile
@@ -673,10 +849,28 @@ jobs:
               manifest = json.loads(archive.read(manifest_name).decode("utf-8"))
               toolchain = manifest.get("toolchain", {})
               required = list(manifest.get("requiredPaths", []))
-              for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner"):
+              for key in ("coreCompilerFramework", "nativeDriverFramework", "supportLibraries", "sdkPath", "nativeRunner", "swiftResourceDir"):
                   value = toolchain.get(key)
                   if value:
                       required.append(value)
+              swift_resource_dir = toolchain.get("swiftResourceDir") or "Toolchains/Nyxian/SwiftResourceDir"
+              required.append(str(pathlib.Path(swift_resource_dir) / "iphoneos"))
+
+              expected_native_fingerprint = os.environ.get("LITTER_BUILDKIT_EXPECT_NATIVE_SOURCE_FINGERPRINT") or ""
+              actual_native_fingerprint = (
+                  manifest.get("nativeDriverSourceFingerprint")
+                  or (manifest.get("source") or {}).get("nativeDriverSourceFingerprint")
+                  or ""
+              )
+              if expected_native_fingerprint:
+                  if not actual_native_fingerprint:
+                      print("::error::LitterBuildKitAssets.zip manifest is missing nativeDriverSourceFingerprint")
+                      sys.exit(1)
+                  if actual_native_fingerprint != expected_native_fingerprint:
+                      print("::error::LitterBuildKitAssets.zip native driver source fingerprint mismatch")
+                      print(f"expected={expected_native_fingerprint}")
+                      print(f"actual={actual_native_fingerprint}")
+                      sys.exit(1)
 
               def has_entry(relative):
                   relative = relative.strip("/")
@@ -703,6 +897,40 @@ jobs:
               print(f"Archived BuildKit assets verified: {manifest.get('bundleIdentifier', 'unknown')} SDK {manifest.get('sdkVersion', 'unknown')}")
           PY
 
+      - name: Verify private BuildKit payload is external
+        if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS != '1'
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No .app found in archive" >&2
+            exit 1
+          fi
+
+          forbidden=0
+          for item in             "$APP_PATH/LitterBuildKitAssets.zip"             "$APP_PATH/Frameworks/CoreCompiler.framework"             "$APP_PATH/Frameworks/LitterBuildKitNative.framework"; do
+            if [ -e "$item" ]; then
+              echo "::error::Launch-safe IPA must not embed private BuildKit payload: $item" >&2
+              forbidden=1
+            fi
+          done
+
+          if find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print -quit | grep -q .; then
+            echo "::error::Launch-safe IPA must not embed compiler support dylibs" >&2
+            find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print >&2
+            forbidden=1
+          fi
+
+          if find "$APP_PATH" -path '*/BuildKitAssets/SDK/*' -print -quit | grep -q .; then
+            echo "::error::Launch-safe IPA must not embed expanded BuildKit SDK payload" >&2
+            forbidden=1
+          fi
+
+          if [ "$forbidden" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Launch-safe IPA keeps private BuildKit compiler payload external. Install assets from BuildKit settings when needed."
+
       - name: Package SideStore/AltStore IPA artifact
         run: |
           set -euo pipefail
@@ -713,35 +941,598 @@ jobs:
             exit 1
           fi
 
+          rm -rf Payload
           mkdir -p Payload build/unsigned-ipa
           cp -R "$APP_PATH" Payload/
-          rm -rf Payload/*.app/_CodeSignature Payload/*.app/embedded.mobileprovision
+          APP_BUNDLE="Payload/$(basename "$APP_PATH")"
 
-          IPA_NAME="Litter-iOS26-Unsigned-SideStore-AltStore.ipa"
-          /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
+          # SideStore/AltStore re-sign the IPA after download. Normal builds stay
+          # extension-free for launch safety. The manual nyxian-private lane keeps
+          # only the LiveProcess NSExtension required by original Nyxian/emexDE.
+          find "$APP_BUNDLE" -name _CodeSignature -type d -prune -exec rm -rf {} +
+          find "$APP_BUNDLE" -name embedded.mobileprovision -type f -delete
+          find "$APP_BUNDLE" -name CodeResources -type f -delete
+          find "$APP_BUNDLE" -name '*.xcent' -type f -delete
 
-          INFO_PLIST="Payload/$(basename "$APP_PATH")/Info.plist"
+          if [ "${LITTER_PRESERVE_NYXIAN_LIVEPROCESS:-0}" = "1" ]; then
+            mkdir -p "$APP_BUNDLE/PlugIns"
+            LIVEPROCESS_SRC="build/nyxian-liveprocess/LiveProcess.appex"
+            if [ ! -d "$LIVEPROCESS_SRC" ]; then
+              echo "::error::nyxian-private build is missing staged LiveProcess.appex" >&2
+              exit 1
+            fi
+            rm -rf "$APP_BUNDLE/PlugIns/LiveProcess.appex"
+            cp -R "$LIVEPROCESS_SRC" "$APP_BUNDLE/PlugIns/LiveProcess.appex"
+            find "$APP_BUNDLE/PlugIns" -mindepth 1 -maxdepth 1 -type d ! -name 'LiveProcess.appex' -prune -exec rm -rf {} +
+            rm -rf "$APP_BUNDLE/Watch" "$APP_BUNDLE/AppClips"
+            find "$APP_BUNDLE" -name _CodeSignature -type d -prune -exec rm -rf {} +
+            find "$APP_BUNDLE" -name embedded.mobileprovision -type f -delete
+            find "$APP_BUNDLE" -name CodeResources -type f -delete
+            find "$APP_BUNDLE" -name '*.xcent' -type f -delete
+            /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$APP_BUNDLE/PlugIns/LiveProcess.appex/Info.plist" >/dev/null
+            if find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision \) -print -quit | grep -q .; then
+              echo "::error::nyxian-private IPA still contains stale signatures or mobileprovisions." >&2
+              find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision \) -print >&2
+              exit 1
+            fi
+            echo "nyxian-private IPA keeps PlugIns/LiveProcess.appex for the Nyxian runtime."
+          else
+            rm -rf "$APP_BUNDLE/PlugIns" "$APP_BUNDLE/Watch" "$APP_BUNDLE/AppClips"
+            if find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print -quit | grep -q .; then
+              echo "::error::Unsigned sideload IPA still contains stale signatures or embedded extensions." >&2
+              find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print >&2
+              exit 1
+            fi
+          fi
+
+          INFO_PLIST="$APP_BUNDLE/Info.plist"
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST" 2>/dev/null || true)"
           VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$INFO_PLIST" 2>/dev/null || true)"
           BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST" 2>/dev/null || true)"
-          cat > build/unsigned-ipa/build-metadata.json <<JSON
-          {
-            "name": "Litter",
-            "bundleIdentifier": "$BUNDLE_ID",
-            "version": "$VERSION",
-            "build": "$BUILD",
-            "commit": "${GITHUB_SHA}",
-            "buildMode": "${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}",
-            "minimumIOSFamily": "26",
-            "xcode": "26.3",
-            "artifact": "$IPA_NAME",
-            "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing"
+
+          python3 - "$VERSION" "$BUILD" <<'PY'
+          import re
+          import sys
+          version, build = sys.argv[1], sys.argv[2]
+          if not re.fullmatch(r"\d+\.\d+\.\d+(?:\.\d+)?", version):
+              raise SystemExit(f"::error::MARKETING_VERSION must be numeric SemVer, got {version!r}")
+          if not re.fullmatch(r"\d+", build):
+              raise SystemExit(f"::error::CURRENT_PROJECT_VERSION must be a numeric build, got {build!r}")
+          PY
+
+          IPA_NAME="Litter-${VERSION}.ipa"
+          /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
+          IPA_PATH="build/unsigned-ipa/$IPA_NAME"
+          IPA_SHA256="$(shasum -a 256 "$IPA_PATH" | awk '{print $1}')"
+          IPA_SIZE="$(stat -f%z "$IPA_PATH")"
+          printf '%s  %s\n' "$IPA_SHA256" "$IPA_NAME" > "${IPA_PATH}.sha256"
+
+          export BUNDLE_ID VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE
+          export BUILD_MODE="$LITTER_IOS_BUILD_MODE"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          metadata = {
+              "name": "Litter",
+              "bundleIdentifier": os.environ["BUNDLE_ID"],
+              "version": os.environ["VERSION"],
+              "build": os.environ["BUILD"],
+              "publicVersion": os.environ["VERSION"],
+              "commit": os.environ["GITHUB_SHA"],
+              "buildMode": os.environ["BUILD_MODE"],
+              "minimumIOSVersion": "18.0",
+              "sdkFamily": "iOS26",
+              "xcode": "26.3",
+              "artifact": os.environ["IPA_NAME"],
+              "sha256": os.environ["IPA_SHA256"],
+              "size": int(os.environ["IPA_SIZE"]),
+              "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing",
+              "nyxianLiveProcessExtension": os.environ.get("LITTER_NYXIAN_PRIVATE_BUILD") == "1",
+              "privateBuildKitAssetsEmbedded": os.environ.get("LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS") == "1",
           }
-          JSON
+          Path("build/unsigned-ipa/build-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          PY
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Litter-Unsigned-iOS26-SideStore-AltStore
+          name: Litter-unsigned-ipa
           path: build/unsigned-ipa
           if-no-files-found: error
+
+      - name: Publish unsigned IPA release asset
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
+          BUILD_MODE: ${{ env.LITTER_IOS_BUILD_MODE }}
+        run: |
+          set -euo pipefail
+          METADATA_PATH="build/unsigned-ipa/build-metadata.json"
+          NOTES_PATH="build/unsigned-ipa/release-notes.md"
+          UPDATE_PATH="build/unsigned-ipa/litter-update.json"
+          SOURCE_PATH="build/unsigned-ipa/litter-altstore-source.json"
+
+          VERSION="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["version"])')"
+          BUILD="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["build"])')"
+          IPA_NAME="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["artifact"])')"
+          IPA_SHA256="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["sha256"])')"
+          IPA_SIZE="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["size"])')"
+          BUNDLE_ID="$(python3 -c 'import json; print(json.load(open("build/unsigned-ipa/build-metadata.json"))["bundleIdentifier"])')"
+          IPA_PATH="build/unsigned-ipa/$IPA_NAME"
+          SHA_PATH="${IPA_PATH}.sha256"
+          RELEASE_TAG="litter-v${VERSION}"
+          RELEASE_TITLE="Litter ${VERSION}"
+          RELEASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
+          IPA_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
+          SOURCE_TAG="app-source"
+          SOURCE_BASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${SOURCE_TAG}"
+          SOURCE_URL="${SOURCE_BASE_URL}/litter-altstore-source.json"
+          APP_ICON_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png"
+          SOURCE_ICON_PATH="tools/assets/ZYN-source-icon.heic"
+          SOURCE_ICON_DEST="build/unsigned-ipa/ZYN-source-icon.heic"
+          SOURCE_ICON_URL="${SOURCE_BASE_URL}/ZYN-source-icon.heic"
+          PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          if [ ! -s "$IPA_PATH" ]; then
+            echo "::error::Missing unsigned IPA at $IPA_PATH" >&2
+            exit 1
+          fi
+          if [ ! -s "$SOURCE_ICON_PATH" ]; then
+            echo "::error::Missing stable source icon at $SOURCE_ICON_PATH" >&2
+            exit 1
+          fi
+          cp "$SOURCE_ICON_PATH" "$SOURCE_ICON_DEST"
+
+          export VERSION BUILD IPA_NAME IPA_SHA256 IPA_SIZE BUNDLE_ID RELEASE_URL IPA_DOWNLOAD_URL SOURCE_URL APP_ICON_URL SOURCE_ICON_URL PUBLISHED_AT BUILD_MODE
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          token = os.environ.get("GH_TOKEN", "")
+          repository = os.environ["GITHUB_REPOSITORY"]
+          api_root = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+          current_release_tag = f"litter-v{os.environ['VERSION']}"
+
+          def request_json(url, accept="application/vnd.github+json"):
+              headers = {
+                  "Accept": accept,
+                  "User-Agent": "litter-altstore-source-builder",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              }
+              if token:
+                  headers["Authorization"] = f"Bearer {token}"
+              req = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(req, timeout=45) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          def request_asset_text(asset):
+              headers = {
+                  "Accept": "application/octet-stream",
+                  "User-Agent": "litter-altstore-source-builder",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              }
+              if token:
+                  headers["Authorization"] = f"Bearer {token}"
+              req = urllib.request.Request(asset["url"], headers=headers)
+              with urllib.request.urlopen(req, timeout=45) as response:
+                  return response.read().decode("utf-8", errors="replace")
+
+          def request_asset_json(asset):
+              try:
+                  return request_json(asset["url"], accept="application/octet-stream")
+              except Exception as error:
+                  print(f"::warning::Could not read {asset.get('name', 'asset')}: {error}")
+                  return {}
+
+          def release_pages():
+              page = 1
+              while page <= 10:
+                  url = f"{api_root}/repos/{repository}/releases?per_page=100&page={page}"
+                  releases = request_json(url)
+                  if not releases:
+                      break
+                  yield from releases
+                  if len(releases) < 100:
+                      break
+                  page += 1
+
+          def git_lines(args):
+              try:
+                  result = subprocess.run(["git", *args], check=True, capture_output=True, text=True)
+                  return [line for line in result.stdout.splitlines() if line.strip()]
+              except Exception:
+                  return []
+
+          def tag_exists(tag):
+              return bool(tag and git_lines(["rev-parse", "--verify", "--quiet", f"refs/tags/{tag}"]))
+
+          def iso_date(value):
+              return value or "1970-01-01T00:00:00Z"
+
+          def semver_key(version):
+              parts = [int(part) for part in re.findall(r"\d+", version)]
+              return tuple((parts + [0, 0, 0, 0])[:4])
+
+          def build_key(build):
+              return int(build) if str(build).isdigit() else -1
+
+          def slug(value):
+              cleaned = re.sub(r"[^A-Za-z0-9]+", "-", str(value)).strip("-").lower()
+              return cleaned or "item"
+
+          def asset_named(release, name):
+              for asset in release.get("assets", []):
+                  if asset.get("name") == name:
+                      return asset
+              return None
+
+          def is_litter_ipa(asset):
+              name = asset.get("name", "").lower()
+              return name.endswith(".ipa") and "litter" in name
+
+          def ipa_asset_for(release, metadata):
+              wanted = str(metadata.get("ipaAssetName") or metadata.get("artifact") or "")
+              if wanted:
+                  asset = asset_named(release, wanted)
+                  if asset and is_litter_ipa(asset):
+                      return asset
+              return next((asset for asset in release.get("assets", []) if is_litter_ipa(asset)), None)
+
+          def parsed_from_tag_or_asset(release, ipa_asset):
+              tag = release.get("tag_name", "")
+              name = ipa_asset.get("name", "") if ipa_asset else ""
+              version = ""
+              build = ""
+              for pattern in (
+                  r"^litter-v(\d+\.\d+\.\d+(?:\.\d+)?)$",
+                  r"^ios-v(\d+\.\d+\.\d+(?:\.\d+)?)-build\.(\d+)$",
+                  r"^Litter-v?(\d+\.\d+\.\d+(?:\.\d+)?)(?:-build\.(\d+))?.*\.ipa$",
+              ):
+                  match = re.match(pattern, tag) or re.match(pattern, name)
+                  if match:
+                      version = match.group(1)
+                      if len(match.groups()) > 1 and match.group(2):
+                          build = match.group(2)
+                      break
+              legacy = re.match(r"^litter-v(\d+)$", tag)
+              if legacy and not build:
+                  build = legacy.group(1)
+              return version, build
+
+          def release_metadata(release):
+              metadata = {}
+              for metadata_name in ("build-metadata.json", "litter-update.json"):
+                  metadata_asset = asset_named(release, metadata_name)
+                  if metadata_asset:
+                      loaded = request_asset_json(metadata_asset)
+                      if loaded:
+                          metadata.update(loaded)
+              return metadata
+
+          def normalized_sha256(value):
+              text = str(value or "").strip()
+              if re.fullmatch(r"[A-Fa-f0-9]{64}", text):
+                  return text.lower()
+              return ""
+
+          def sha256_from_text(value):
+              match = re.search(r"\b([A-Fa-f0-9]{64})\b", value or "")
+              return match.group(1).lower() if match else ""
+
+          def sha256_for_release(release, metadata, ipa_asset):
+              metadata_sha = normalized_sha256(metadata.get("sha256"))
+              if metadata_sha:
+                  return metadata_sha
+
+              ipa_name = str(ipa_asset.get("name") or "")
+              sha_assets = []
+              for asset in release.get("assets", []):
+                  name = str(asset.get("name") or "")
+                  lower = name.lower()
+                  if not lower.endswith(".sha256"):
+                      continue
+                  if ipa_name and (name == f"{ipa_name}.sha256" or ipa_name in name):
+                      sha_assets.insert(0, asset)
+                  else:
+                      sha_assets.append(asset)
+
+              for asset in sha_assets:
+                  try:
+                      parsed = sha256_from_text(request_asset_text(asset))
+                  except Exception as error:
+                      print(f"::warning::Could not read checksum asset {asset.get('name', 'asset')}: {error}")
+                      continue
+                  if parsed:
+                      return parsed
+
+              release_name = release.get("tag_name") or release.get("name") or "release"
+              print(f"::warning::Skipping {release_name} in AltStore source versions because its IPA has no usable sha256 metadata")
+              return ""
+
+          def clean_history_lines(tag, previous_tag, current=False):
+              target = "HEAD" if current else tag
+              if current or tag_exists(tag):
+                  git_range = f"{previous_tag}..{target}" if previous_tag and tag_exists(previous_tag) else target
+                  lines = git_lines(["log", "--no-merges", "--max-count=40", "--pretty=format:- %s (%h)", git_range])
+                  if lines:
+                      return lines
+              return []
+
+          def fallback_body(release, metadata):
+              body = str(metadata.get("releaseNotes") or release.get("body") or "").strip()
+              if body.startswith("Unsigned Litter IPA for SideStore/AltStore re-signing.") and "Update history:" not in body:
+                  return ""
+              return body
+
+          def notes_for(entry, release, metadata, previous_tag, current=False):
+              history = clean_history_lines(release.get("tag_name", ""), previous_tag, current=current)
+              fallback = fallback_body(release, metadata)
+              lines = ["Unsigned Litter IPA for SideStore/AltStore re-signing.", "", "Update history:"]
+              if history:
+                  lines.extend(history)
+              elif fallback:
+                  lines.append(fallback)
+              else:
+                  lines.append(f"- Build refresh for Litter {entry['version']} ({entry['buildVersion']}).")
+              lines.extend([
+                  "",
+                  "Build details:",
+                  f"- App version: {entry['version']}",
+                  f"- Build: {entry['buildVersion']}",
+              ])
+              commit = metadata.get("commit") or os.environ.get("GITHUB_SHA", "")
+              if commit:
+                  lines.append(f"- Commit: {commit}")
+              branch = os.environ.get("GITHUB_REF_NAME", "")
+              if current and branch:
+                  lines.append(f"- Branch: {branch}")
+              build_mode = metadata.get("buildMode") or os.environ.get("BUILD_MODE", "")
+              if build_mode:
+                  lines.append(f"- Build mode: {build_mode}")
+              if metadata.get("nyxianLiveProcessExtension"):
+                  lines.append("- Nyxian LiveProcess extension: embedded")
+              if metadata.get("privateBuildKitAssetsEmbedded"):
+                  lines.append("- Private BuildKit assets: embedded")
+              sha256 = metadata.get("sha256") or os.environ.get("IPA_SHA256", "")
+              if sha256:
+                  lines.append(f"- SHA-256: {sha256}")
+              workflow = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repository}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
+              if current and os.environ.get("GITHUB_RUN_ID"):
+                  lines.append(f"- Workflow run: {workflow}")
+              lines.extend(["", "This IPA is unsigned and must be signed by SideStore, AltStore, Feather, or another signing tool before installation."])
+              return "\n".join(lines) + "\n"
+
+          current_metadata = {
+              "name": "Litter",
+              "bundleIdentifier": os.environ["BUNDLE_ID"],
+              "version": os.environ["VERSION"],
+              "build": os.environ["BUILD"],
+              "publicVersion": os.environ["VERSION"],
+              "commit": os.environ["GITHUB_SHA"],
+              "buildMode": os.environ["BUILD_MODE"],
+              "minimumIOSVersion": "18.0",
+              "artifact": os.environ["IPA_NAME"],
+              "ipaAssetName": os.environ["IPA_NAME"],
+              "ipaDownloadURL": os.environ["IPA_DOWNLOAD_URL"],
+              "sha256": os.environ["IPA_SHA256"],
+              "size": int(os.environ["IPA_SIZE"]),
+              "publishedAt": os.environ["PUBLISHED_AT"],
+              "releaseURL": os.environ["RELEASE_URL"],
+              "iconURL": os.environ["APP_ICON_URL"],
+              "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing",
+              "nyxianLiveProcessExtension": os.environ.get("LITTER_NYXIAN_PRIVATE_BUILD") == "1",
+              "privateBuildKitAssetsEmbedded": os.environ.get("LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS") == "1",
+          }
+          current_release = {
+              "tag_name": current_release_tag,
+              "published_at": os.environ["PUBLISHED_AT"],
+              "created_at": os.environ["PUBLISHED_AT"],
+              "body": "",
+              "assets": [
+                  {
+                      "name": os.environ["IPA_NAME"],
+                      "browser_download_url": os.environ["IPA_DOWNLOAD_URL"],
+                      "size": int(os.environ["IPA_SIZE"]),
+                  }
+              ],
+          }
+
+          releases = [release for release in release_pages() if not release.get("draft")]
+          source_releases = []
+          for release in releases:
+              if release.get("tag_name") == current_release_tag:
+                  continue
+              metadata = release_metadata(release)
+              ipa_asset = ipa_asset_for(release, metadata)
+              if not ipa_asset:
+                  continue
+              bundle_id = str(metadata.get("bundleIdentifier") or os.environ["BUNDLE_ID"])
+              if bundle_id != os.environ["BUNDLE_ID"]:
+                  continue
+              source_releases.append((release, metadata, ipa_asset))
+          source_releases.append((current_release, current_metadata, current_release["assets"][0]))
+
+          ordered_for_history = sorted(source_releases, key=lambda item: iso_date(item[0].get("published_at") or item[0].get("created_at")))
+          previous_tags = {}
+          previous = ""
+          for release, _, _ in ordered_for_history:
+              tag = release.get("tag_name", "")
+              if tag:
+                  previous_tags[tag] = previous
+                  previous = tag
+
+          current_entry = {
+              "version": os.environ["VERSION"],
+              "buildVersion": os.environ["BUILD"],
+              "date": os.environ["PUBLISHED_AT"],
+              "localizedDescription": "",
+              "downloadURL": os.environ["IPA_DOWNLOAD_URL"],
+              "size": int(os.environ["IPA_SIZE"]),
+              "minOSVersion": "18.0",
+              "sha256": os.environ["IPA_SHA256"].lower(),
+          }
+          notes = notes_for(current_entry, current_release, current_metadata, previous_tags.get(current_release_tag, ""), current=True)
+          current_entry["localizedDescription"] = notes
+          current_metadata["releaseNotes"] = notes
+          current_metadata["altStoreSourceURL"] = os.environ["SOURCE_URL"]
+          current_metadata["sideStoreSourceURL"] = os.environ["SOURCE_URL"]
+          Path("build/unsigned-ipa/release-notes.md").write_text(notes)
+          Path("build/unsigned-ipa/build-metadata.json").write_text(json.dumps(current_metadata, indent=2) + "\n")
+
+          update = {
+              "schemaVersion": 1,
+              "name": "Litter",
+              "bundleIdentifier": os.environ["BUNDLE_ID"],
+              "version": os.environ["VERSION"],
+              "build": os.environ["BUILD"],
+              "publicVersion": os.environ["VERSION"],
+              "commit": os.environ["GITHUB_SHA"],
+              "buildMode": os.environ["BUILD_MODE"],
+              "minimumIOSVersion": "18.0",
+              "ipaAssetName": os.environ["IPA_NAME"],
+              "ipaDownloadURL": os.environ["IPA_DOWNLOAD_URL"],
+              "sha256": os.environ["IPA_SHA256"],
+              "size": int(os.environ["IPA_SIZE"]),
+              "publishedAt": os.environ["PUBLISHED_AT"],
+              "releaseNotes": notes,
+              "releaseURL": os.environ["RELEASE_URL"],
+              "iconURL": os.environ["APP_ICON_URL"],
+              "sideStoreSourceURL": os.environ["SOURCE_URL"],
+              "altStoreSourceURL": os.environ["SOURCE_URL"],
+          }
+
+          versions_by_url = {current_entry["downloadURL"]: current_entry}
+          for release, metadata, ipa_asset in source_releases:
+              parsed_version, parsed_build = parsed_from_tag_or_asset(release, ipa_asset)
+              version = str(metadata.get("version") or parsed_version or os.environ["VERSION"])
+              build = str(metadata.get("build") or metadata.get("buildVersion") or parsed_build or "0")
+              download_url = str(metadata.get("ipaDownloadURL") or ipa_asset.get("browser_download_url") or "")
+              if not download_url or download_url in versions_by_url:
+                  continue
+              sha256 = sha256_for_release(release, metadata, ipa_asset)
+              if not sha256:
+                  continue
+              entry = {
+                  "version": version,
+                  "buildVersion": build,
+                  "date": str(metadata.get("publishedAt") or release.get("published_at") or release.get("created_at") or os.environ["PUBLISHED_AT"]),
+                  "localizedDescription": "",
+                  "downloadURL": download_url,
+                  "size": int(metadata.get("size") or ipa_asset.get("size") or 0),
+                  "minOSVersion": str(metadata.get("minimumIOSVersion") or "18.0"),
+                  "sha256": sha256,
+              }
+              entry["localizedDescription"] = notes_for(entry, release, metadata, previous_tags.get(release.get("tag_name", ""), ""), current=False)
+              versions_by_url[download_url] = entry
+
+          versions = list(versions_by_url.values())
+          versions.sort(key=lambda item: (semver_key(item["version"]), build_key(item.get("buildVersion", "0")), item.get("date", "")), reverse=True)
+
+          archive_news = []
+          for entry in versions:
+              download_url = entry.get("downloadURL", "")
+              if not download_url:
+                  continue
+              version = str(entry.get("version") or "unknown")
+              build = str(entry.get("buildVersion") or "0")
+              archive_news.append({
+                  "title": f"Litter {version} IPA",
+                  "identifier": f"litter-ipa-{slug(version)}-{slug(build)}",
+                  "caption": f"Direct IPA download for Litter {version} build {build}.",
+                  "date": str(entry.get("date") or os.environ["PUBLISHED_AT"]),
+                  "tintColor": "06B6D4",
+                  "url": download_url,
+                  "appID": os.environ["BUNDLE_ID"],
+                  "notify": False,
+              })
+
+          source = {
+              "name": "ZYN",
+              "identifier": "com.nightvibes33.zyn.source",
+              "sourceURL": os.environ["SOURCE_URL"],
+              "subtitle": "Litter unsigned IPA source",
+              "description": "The Litter app entry installs the latest compatible build. Historical IPA downloads are listed as source news items so every published IPA remains reachable from this source.",
+              "iconURL": os.environ["SOURCE_ICON_URL"],
+              "developerName": "NightVibes33",
+              "apps": [
+                  {
+                      "name": "Litter",
+                      "bundleIdentifier": os.environ["BUNDLE_ID"],
+                      "developerName": "NightVibes33",
+                      "iconURL": os.environ["APP_ICON_URL"],
+                      "subtitle": "Mobile Codex workspace for iPhone",
+                      "localizedDescription": "Litter for sideloaded iOS installs.",
+                      "category": "developer",
+                      "tintColor": "06B6D4",
+                      "versions": versions,
+                      "appPermissions": {
+                          "entitlements": [
+                              "aps-environment",
+                              "com.apple.developer.carplay-voice-based-conversation",
+                              "com.apple.security.application-groups"
+                          ],
+                          "privacy": {}
+                      }
+                  }
+              ],
+              "news": archive_news
+          }
+          Path("build/unsigned-ipa/litter-update.json").write_text(json.dumps(update, indent=2) + "\n")
+          Path("build/unsigned-ipa/litter-altstore-source.json").write_text(json.dumps(source, indent=2) + "\n")
+          print(f"AltStore source versions: {len(versions)}")
+          print(f"AltStore source IPA download cards: {len(archive_news)}")
+          PY
+
+          python3 tools/scripts/verify-altstore-source.py "$SOURCE_PATH" --require-news-downloads
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              "$IPA_PATH" \
+              "$SHA_PATH" \
+              "$METADATA_PATH" \
+              "$UPDATE_PATH" \
+              "$SOURCE_PATH" \
+              "$NOTES_PATH" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$NOTES_PATH"
+          else
+            gh release create "$RELEASE_TAG" \
+              "$IPA_PATH" \
+              "$SHA_PATH" \
+              "$METADATA_PATH" \
+              "$UPDATE_PATH" \
+              "$SOURCE_PATH" \
+              "$NOTES_PATH" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TITLE" \
+              --notes-file "$NOTES_PATH"
+          fi
+
+          if gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." --prerelease
+          else
+            gh release create "$SOURCE_TAG" \
+              "$UPDATE_PATH" \
+              "$SOURCE_PATH" \
+              "$SOURCE_ICON_DEST" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Litter app source" \
+              --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." \
+              --prerelease
+          fi
+
+          echo "Release download page: ${RELEASE_URL}"
+          echo "Stable app source: ${SOURCE_URL}"

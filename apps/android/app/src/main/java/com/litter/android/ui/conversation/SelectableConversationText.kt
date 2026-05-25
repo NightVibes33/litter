@@ -17,6 +17,8 @@ import com.litter.android.ui.LocalTextScale
 import io.noties.markwon.AbstractMarkwonPlugin
 import io.noties.markwon.Markwon
 import io.noties.markwon.core.MarkwonTheme
+import io.noties.markwon.ext.latex.JLatexMathPlugin
+import io.noties.markwon.inlineparser.MarkwonInlineParserPlugin
 import io.noties.markwon.syntax.SyntaxHighlightPlugin
 import io.noties.prism4j.Prism4j
 
@@ -40,6 +42,8 @@ internal fun SelectableMarkdownText(
 ) {
     val context = LocalContext.current
     val textScale = LocalTextScale.current
+    val resolvedTextSize = bodySize * textScale
+    val textColor = LitterTheme.textBody.toArgb()
     val useMono = LitterThemeManager.monoFontEnabled
     val typeface = remember(context, useMono) {
         if (useMono) {
@@ -53,16 +57,25 @@ internal fun SelectableMarkdownText(
             android.graphics.Typeface.DEFAULT
         }
     }
-    val markwon = rememberConversationMarkwon(context, typeface)
+    val markdownTextSizePx = remember(context, resolvedTextSize, usePhysicalDpTextSize) {
+        resolvedTextSize.toTextSizePx(context, usePhysicalDpTextSize)
+    }
+    val markwon = rememberConversationMarkwon(
+        context = context,
+        typeface = typeface,
+        markdownTextSizePx = markdownTextSizePx,
+        textColor = textColor,
+    )
+    val markdown = remember(text) { normalizeMathMarkdown(text) }
 
     AndroidView(
         factory = { ctx ->
             TextView(ctx).apply {
                 configureSelectableMarkdownTextView(
                     textView = this,
-                    textColor = LitterTheme.textBody.toArgb(),
+                    textColor = textColor,
                     linkColor = LitterTheme.accent.toArgb(),
-                    textSize = bodySize * textScale,
+                    textSize = resolvedTextSize,
                     typeface = typeface,
                     usePhysicalDpTextSize = usePhysicalDpTextSize,
                 )
@@ -72,13 +85,13 @@ internal fun SelectableMarkdownText(
         update = { tv ->
             configureSelectableMarkdownTextView(
                 textView = tv,
-                textColor = LitterTheme.textBody.toArgb(),
+                textColor = textColor,
                 linkColor = LitterTheme.accent.toArgb(),
-                textSize = bodySize * textScale,
+                textSize = resolvedTextSize,
                 typeface = typeface,
                 usePhysicalDpTextSize = usePhysicalDpTextSize,
             )
-            markwon.setMarkdown(tv, text)
+            markwon.setMarkdown(tv, markdown)
         },
         modifier = modifier,
     )
@@ -110,7 +123,9 @@ internal fun configureSelectableMarkdownTextView(
 private fun rememberConversationMarkwon(
     context: android.content.Context,
     typeface: android.graphics.Typeface?,
-): Markwon = remember(context, typeface) {
+    markdownTextSizePx: Float,
+    textColor: Int,
+): Markwon = remember(context, typeface, markdownTextSizePx, textColor) {
     try {
         val prism4j = Prism4j(com.litter.android.ui.Prism4jGrammarLocator())
         Markwon.builder(context)
@@ -125,8 +140,28 @@ private fun rememberConversationMarkwon(
                     io.noties.markwon.syntax.Prism4jThemeDarkula.create(),
                 ),
             )
+            .usePlugin(MarkwonInlineParserPlugin.create())
+            .usePlugin(
+                JLatexMathPlugin.create(markdownTextSizePx, markdownTextSizePx * 1.12f) { builder ->
+                    builder.inlinesEnabled(true)
+                    builder.blocksEnabled(true)
+                    builder.theme().textColor(textColor)
+                },
+            )
             .build()
     } catch (_: Exception) {
         Markwon.create(context)
     }
+}
+
+private fun Float.toTextSizePx(
+    context: android.content.Context,
+    usePhysicalDpTextSize: Boolean,
+): Float {
+    val unit = if (usePhysicalDpTextSize) {
+        TypedValue.COMPLEX_UNIT_DIP
+    } else {
+        TypedValue.COMPLEX_UNIT_SP
+    }
+    return TypedValue.applyDimension(unit, this, context.resources.displayMetrics)
 }

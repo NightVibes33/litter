@@ -11,11 +11,11 @@ public:
 	bool Init(uint8_t* pBase, uint32_t uLength);
 
 public:
-	bool Sign(ZSignAsset* pSignAsset,
-				bool bForce,
-				const string& strBundleId,
-				const string& strInfoSHA1,
-				const string& strInfoSHA256,
+	bool Sign(ZSignAsset* pSignAsset, 
+				bool bForce, 
+				const string& strBundleId, 
+				const string& strInfoSHA1, 
+				const string& strInfoSHA256, 
 				const string& strCodeResourcesData);
 
 	void PrintInfo();
@@ -28,13 +28,13 @@ private:
 	uint32_t	BO(uint32_t uVal);
 	const char* GetFileType(uint32_t uFileType);
 	const char* GetArch(int cpuType, int cpuSubType);
-	bool		BuildCodeSignature(ZSignAsset* pSignAsset,
-									bool bForce,
-									const string& strBundleId,
-									const string& strInfoSHA1,
+	bool		BuildCodeSignature(ZSignAsset* pSignAsset, 
+									bool bForce, 
+									const string& strBundleId, 
+									const string& strInfoSHA1, 
 									const string& strInfoSHA256,
-									const string& strCodeResourcesSHA1,
-									const string& strCodeResourcesSHA256,
+									const string& strCodeResourcesSHA1, 
+									const string& strCodeResourcesSHA256, 
 									string& strOutput);
 
 public:

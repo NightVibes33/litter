@@ -754,6 +754,7 @@ final class WatchProjectionTests: XCTestCase {
             model: "",
             modelProvider: "",
             parentThreadId: nil,
+            forkedFromId: nil,
             agentNickname: nil,
             agentRole: nil,
             agentDisplayLabel: nil,
@@ -771,7 +772,8 @@ final class WatchProjectionTests: XCTestCase {
             lastTurnStartMs: nil,
             lastTurnEndMs: nil,
             stats: nil,
-            tokenUsage: nil
+            tokenUsage: nil,
+            goal: nil
         )
     }
 
@@ -819,6 +821,7 @@ final class WatchProjectionTests: XCTestCase {
                 agentNickname: nil,
                 agentRole: nil,
                 parentThreadId: nil,
+                forkedFromId: nil,
                 agentStatus: nil,
                 createdAt: nil,
                 updatedAt: nil
@@ -991,12 +994,14 @@ final class WatchProjectionTests: XCTestCase {
         HydratedConversationItem(
             id: id,
             content: .dynamicToolCall(HydratedDynamicToolCallData(
+                namespace: nil,
                 tool: tool,
                 status: status,
                 durationMs: nil,
                 success: nil,
                 argumentsJson: nil,
-                contentSummary: contentSummary
+                contentSummary: contentSummary,
+                display: nil
             )),
             sourceTurnId: nil,
             sourceTurnIndex: nil,

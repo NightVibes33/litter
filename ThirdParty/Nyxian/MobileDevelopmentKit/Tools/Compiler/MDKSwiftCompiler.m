@@ -44,7 +44,7 @@
     {
         CFRelease(array);
     }
-
+    
     if(string != nil && outMainSource != nil)
     {
         *outMainSource = (__bridge_transfer NSString*)string;

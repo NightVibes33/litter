@@ -46,6 +46,8 @@ import com.litter.android.ui.sessions.DirectoryPickerSheet
 import com.litter.android.ui.sessions.SessionLaunchSupport
 import com.litter.android.ui.sessions.SessionsUiState
 import uniffi.codex_mobile_client.AppProject
+import uniffi.codex_mobile_client.ApprovalKind
+import uniffi.codex_mobile_client.PendingUserInputRequest
 import uniffi.codex_mobile_client.PinnedThreadKey
 import uniffi.codex_mobile_client.ThreadKey
 import uniffi.codex_mobile_client.deriveProjects
@@ -56,6 +58,26 @@ import uniffi.codex_mobile_client.projectIdFor
  */
 val LocalAppModel = staticCompositionLocalOf<AppModel> {
     error("AppModel not provided")
+}
+
+/**
+ * UI-only ledger of pending-user-input request IDs the user has manually dismissed.
+ * Lives at the app shell so the inline composer prompt and the global approval
+ * overlay agree on what's been hidden.
+ */
+class DismissedUserInputState {
+    var ids by mutableStateOf(setOf<String>())
+        private set
+
+    fun dismiss(id: String) {
+        ids = ids + id
+    }
+
+    fun isDismissed(id: String): Boolean = ids.contains(id)
+}
+
+val LocalDismissedUserInputs = staticCompositionLocalOf<DismissedUserInputState> {
+    error("DismissedUserInputState not provided")
 }
 
 /**
@@ -81,9 +103,11 @@ fun LitterApp(
 
     // Read currentStep so Compose tracks it as a dependency and recomposes on change.
     val textScale = ConversationTextSize.fromStep(TextSizePrefs.currentStep).scale
+    val dismissedUserInputs = remember { DismissedUserInputState() }
     CompositionLocalProvider(
         LocalAppModel provides appModel,
         LocalTextScale provides textScale,
+        LocalDismissedUserInputs provides dismissedUserInputs,
     ) {
         val snapshot by appModel.snapshot.collectAsState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -447,13 +471,28 @@ fun LitterApp(
             }
 
             // Global approval overlay
-            val approvals = snapshot?.pendingApprovals.orEmpty()
-            val userInputs = snapshot?.pendingUserInputs.orEmpty()
+            val approvals = snapshot?.pendingApprovals.orEmpty().filter {
+                it.kind != ApprovalKind.MCP_ELICITATION
+            }
+            val currentThreadKey = when (val route = currentRoute) {
+                is Route.Conversation -> route.key
+                is Route.ConversationInfo -> route.key
+                is Route.WallpaperSelection -> route.key
+                is Route.WallpaperAdjust -> route.key
+                is Route.RealtimeVoice -> route.key
+                else -> null
+            }
+            val userInputs = snapshot?.pendingUserInputs.orEmpty().filter {
+                currentThreadKey != null &&
+                    it.isRelevantToThread(currentThreadKey) &&
+                    !dismissedUserInputs.isDismissed(it.id)
+            }
             if (approvals.isNotEmpty() || userInputs.isNotEmpty()) {
                 ApprovalOverlay(
                     approvals = approvals,
                     userInputs = userInputs,
                     appStore = appModel.store,
+                    onDismissUserInput = { id -> dismissedUserInputs.dismiss(id) },
                 )
             }
         }
@@ -620,6 +659,13 @@ fun LitterApp(
             }
         }
     }
+}
+
+private fun PendingUserInputRequest.isRelevantToThread(threadKey: ThreadKey): Boolean {
+    if (serverId != threadKey.serverId) return false
+
+    val requestThreadId = threadId.trim()
+    return requestThreadId.isEmpty() || requestThreadId == threadKey.threadId
 }
 
 private fun android.content.Context.animationsDisabled(): Boolean {

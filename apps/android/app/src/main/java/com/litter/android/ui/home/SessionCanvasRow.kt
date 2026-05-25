@@ -9,7 +9,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,10 +36,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import uniffi.codex_mobile_client.ThreadKey
 import com.litter.android.state.displayTitle
 import com.litter.android.ui.LitterTheme
+import com.litter.android.ui.WallpaperBackdrop
 import com.litter.android.ui.common.FormattedText
 import com.litter.android.ui.common.StatusDot
 import com.litter.android.ui.common.StatusDotState
@@ -69,6 +77,13 @@ fun SessionCanvasRow(
     isLocal: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
+    onFork: (() -> Unit)? = null,
+    onReply: (() -> Unit)? = null,
+    onCancelTurn: (() -> Unit)? = null,
+    onPin: (() -> Unit)? = null,
+    onUnpin: (() -> Unit)? = null,
+    isPinned: Boolean = false,
+    lineage: ThreadLineage? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -111,6 +126,12 @@ fun SessionCanvasRow(
     }
 
     Box(modifier = modifier) {
+        if (zoomLevel >= 4) {
+            WallpaperBackdrop(
+                threadKey = session.key,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -143,15 +164,35 @@ fun SessionCanvasRow(
             Spacer(Modifier.width(8.dp))
 
             Column(modifier = Modifier.weight(1f)) {
+                // Lineage breadcrumb (zoom 4 only): root → … → parent. Self
+                // is the title beneath, so we don't repeat it. Mirrors iOS
+                // `lineageBreadcrumb`.
+                AnimatedVisibility(
+                    visible = zoomLevel >= 4 && (lineage?.ancestors?.isNotEmpty() == true),
+                    enter = fadeIn(tween(200)) + expandVertically(animationSpec = layerSpring),
+                    exit = fadeOut(tween(120)) + shrinkVertically(animationSpec = layerSpring),
+                ) {
+                    lineage?.let { LineageBreadcrumb(lineage = it) }
+                }
+
                 val titleStyle = markdownMatchedTitleStyle()
-                CompositionLocalProvider(LocalTextStyle provides titleStyle) {
-                    FormattedText(
-                        text = session.displayTitle,
-                        color = if (isActive) LitterTheme.accent else LitterTheme.textPrimary,
-                        fontSize = titleStyle.fontSize,
-                        maxLines = if (zoomLevel >= 4) 4 else 2,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                Row(
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    CompositionLocalProvider(LocalTextStyle provides titleStyle) {
+                        FormattedText(
+                            text = session.displayTitle,
+                            color = if (isActive) LitterTheme.accent else LitterTheme.textPrimary,
+                            fontSize = titleStyle.fontSize,
+                            maxLines = if (zoomLevel >= 4) 4 else 2,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (lineage != null && lineage.hasMultipleBranches) {
+                        ForkRune(lineage = lineage)
+                    }
                 }
 
                 // MetaLine is shown ONLY at zoom 2 (iOS `if zoomLevel == 2`).
@@ -167,6 +208,16 @@ fun SessionCanvasRow(
                         isActive = isActive,
                         toolRunning = toolRunning,
                     )
+                }
+
+                // Goal line at zoom 2+. Mirrors iOS HomeDashboardView.swift
+                // `goalLine`: status dot + objective + token/elapsed chips.
+                AnimatedVisibility(
+                    visible = zoomLevel >= 2 && session.goal != null,
+                    enter = fadeIn(tween(200)) + expandVertically(animationSpec = layerSpring),
+                    exit = fadeOut(tween(120)) + shrinkVertically(animationSpec = layerSpring),
+                ) {
+                    session.goal?.let { GoalLine(goal = it) }
                 }
 
                 AnimatedVisibility(
@@ -203,6 +254,17 @@ fun SessionCanvasRow(
                     }
                 }
 
+                // Sibling pills (zoom 4 only). Each pill is a branch in the
+                // lineage; the one matching this row is highlighted. Mirrors
+                // iOS `siblingPillsRow`.
+                AnimatedVisibility(
+                    visible = zoomLevel >= 4 && (lineage?.hasMultipleBranches == true),
+                    enter = fadeIn(tween(200)) + expandVertically(animationSpec = layerSpring),
+                    exit = fadeOut(tween(120)) + shrinkVertically(animationSpec = layerSpring),
+                ) {
+                    lineage?.let { SiblingPillsRow(lineage = it, currentKey = session.key) }
+                }
+
                 // Working directory line at zoom 4 only, matches iOS
                 // HomeDashboardView.swift:645-652.
                 AnimatedVisibility(
@@ -229,6 +291,51 @@ fun SessionCanvasRow(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
             ) {
+                if (onReply != null) {
+                    DropdownMenuItem(
+                        text = { Text("Reply") },
+                        onClick = {
+                            showMenu = false
+                            onReply()
+                        },
+                    )
+                }
+                if (onFork != null) {
+                    DropdownMenuItem(
+                        text = { Text("Fork") },
+                        enabled = !session.hasActiveTurn,
+                        onClick = {
+                            showMenu = false
+                            onFork()
+                        },
+                    )
+                }
+                if (onCancelTurn != null && session.hasActiveTurn) {
+                    DropdownMenuItem(
+                        text = { Text("Cancel Turn", color = LitterTheme.danger) },
+                        onClick = {
+                            showMenu = false
+                            onCancelTurn()
+                        },
+                    )
+                }
+                if (isPinned && onUnpin != null) {
+                    DropdownMenuItem(
+                        text = { Text("Unpin") },
+                        onClick = {
+                            showMenu = false
+                            onUnpin()
+                        },
+                    )
+                } else if (!isPinned && onPin != null) {
+                    DropdownMenuItem(
+                        text = { Text("Pin") },
+                        onClick = {
+                            showMenu = false
+                            onPin()
+                        },
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Delete") },
                     onClick = {
@@ -344,3 +451,208 @@ private fun ToolLogColumn(
 }
 
 private const val META_FONT_SP = 11f
+
+/**
+ * Single-line goal row: status dot + objective + usage chips. Mirrors the
+ * in-conversation goal card without the gauge — the home card stays
+ * scan-friendly. Matches iOS `HomeDashboardView.goalLine`.
+ */
+@Composable
+private fun GoalLine(goal: uniffi.codex_mobile_client.AppThreadGoal) {
+    val tint = when (goal.status) {
+        uniffi.codex_mobile_client.AppThreadGoalStatus.ACTIVE -> LitterTheme.accent
+        uniffi.codex_mobile_client.AppThreadGoalStatus.PAUSED -> LitterTheme.textMuted
+        uniffi.codex_mobile_client.AppThreadGoalStatus.BUDGET_LIMITED -> LitterTheme.warning
+        uniffi.codex_mobile_client.AppThreadGoalStatus.COMPLETE -> LitterTheme.success
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(5.dp)
+                .background(tint, androidx.compose.foundation.shape.CircleShape),
+        )
+        Text(
+            text = goal.objective,
+            color = LitterTheme.textSecondary.copy(alpha = 0.85f),
+            fontFamily = LitterTheme.monoFont,
+            fontSize = 10f.scaled,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (goal.tokensUsed > 0) {
+            Text(
+                text = "T ${formatHomeGoalTokens(goal.tokensUsed)}",
+                color = LitterTheme.textMuted.copy(alpha = 0.7f),
+                fontFamily = LitterTheme.monoFont,
+                fontSize = 10f.scaled,
+            )
+        }
+        if (goal.timeUsedSeconds > 0) {
+            Text(
+                text = formatHomeGoalSeconds(goal.timeUsedSeconds),
+                color = LitterTheme.textMuted.copy(alpha = 0.7f),
+                fontFamily = LitterTheme.monoFont,
+                fontSize = 10f.scaled,
+            )
+        }
+    }
+}
+
+private fun formatHomeGoalTokens(value: Long): String =
+    when {
+        value >= 1_000_000 -> "%.1fM".format(value / 1_000_000.0)
+        value >= 1_000 -> "%.1fk".format(value / 1_000.0)
+        else -> value.toString()
+    }
+
+private fun formatHomeGoalSeconds(seconds: Long): String {
+    if (seconds < 60) return "${seconds}s"
+    val total = seconds.toInt()
+    val minutes = total / 60
+    val remainSecs = total % 60
+    if (total < 3600) {
+        return if (remainSecs == 0) "${minutes}m" else "${minutes}m ${remainSecs}s"
+    }
+    val hours = total / 3600
+    val remainMins = (total % 3600) / 60
+    return if (remainMins == 0) "${hours}h" else "${hours}h ${remainMins}m"
+}
+
+/**
+ * Compact rune trailing the title at every zoom level. `2/3` reads as
+ * "branch 2 of 3 in this lineage". Mirrors iOS `forkRune`.
+ */
+@Composable
+private fun ForkRune(lineage: ThreadLineage) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .border(
+                width = 1.dp,
+                color = LitterTheme.border.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(percent = 50),
+            )
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(
+            text = "⊢", // ⊢ — visually similar to a branch glyph, no Material extended icons needed.
+            color = LitterTheme.textSecondary.copy(alpha = 0.85f),
+            fontFamily = LitterTheme.monoFont,
+            fontSize = 9f.scaled,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = "${lineage.branchIndex}/${lineage.branchTotal}",
+            color = LitterTheme.accent,
+            fontFamily = LitterTheme.monoFont,
+            fontSize = 9f.scaled,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+/**
+ * Zoom-4 lineage breadcrumb: root → … → parent. Self is the title beneath,
+ * so we don't repeat it. Mirrors iOS `lineageBreadcrumb`.
+ */
+@Composable
+private fun LineageBreadcrumb(lineage: ThreadLineage) {
+    if (lineage.ancestors.isEmpty()) return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        lineage.ancestors.forEachIndexed { idx, ancestor ->
+            if (idx > 0) {
+                Text(
+                    text = " › ",
+                    color = LitterTheme.textMuted.copy(alpha = 0.55f),
+                    fontFamily = LitterTheme.monoFont,
+                    fontSize = 9f.scaled,
+                )
+            }
+            Text(
+                text = ancestor.title,
+                color = LitterTheme.textMuted.copy(alpha = 0.85f),
+                fontFamily = LitterTheme.monoFont,
+                fontSize = 9f.scaled,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = " ›",
+            color = LitterTheme.textMuted.copy(alpha = 0.55f),
+            fontFamily = LitterTheme.monoFont,
+            fontSize = 9f.scaled,
+        )
+    }
+}
+
+/**
+ * Zoom-4 sibling pills. Each pill is a branch in the lineage; the one
+ * matching the current row is highlighted. Mirrors iOS `siblingPillsRow`.
+ */
+@Composable
+private fun SiblingPillsRow(lineage: ThreadLineage, currentKey: ThreadKey) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        lineage.members.forEach { member ->
+            val isCurrent = member.key == currentKey
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(
+                        if (isCurrent) LitterTheme.accent.copy(alpha = 0.12f)
+                        else LitterTheme.surface.copy(alpha = 0.6f),
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = if (isCurrent) LitterTheme.accent.copy(alpha = 0.6f)
+                            else LitterTheme.border.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(percent = 50),
+                    )
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(5.dp)
+                        .background(
+                            if (isCurrent) LitterTheme.accent
+                            else LitterTheme.textMuted.copy(alpha = 0.5f),
+                            androidx.compose.foundation.shape.CircleShape,
+                        ),
+                )
+                Text(
+                    text = member.title,
+                    color = if (isCurrent) LitterTheme.accent
+                        else LitterTheme.textSecondary.copy(alpha = 0.85f),
+                    fontFamily = LitterTheme.monoFont,
+                    fontSize = 10f.scaled,
+                    fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}

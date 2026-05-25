@@ -1,155 +1,169 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env sh
+set -eu
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-NYXIAN_REPO="${NYXIAN_REPO:-https://github.com/ProjectNyxian/Nyxian.git}"
-LLVM_REPO="${LLVM_ON_IOS_REPO:-https://github.com/ProjectNyxian/LLVM-On-iOS.git}"
-NYXIAN_REF="${NYXIAN_REF:-main}"
-LLVM_REF="${LLVM_ON_IOS_REF:-master}"
-TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
-
-if [[ "$(uname -s)" != "Darwin" && "${NYXIAN_VENDOR_ALLOW_NON_DARWIN:-0}" != "1" ]]; then
-  cat >&2 <<'EOF'
-Refusing to refresh Nyxian from this non-macOS shell by default.
-The iSH Alpine fakefs network path is too slow/unreliable for the full upstream tree.
-Run `make nyxian-vendor` on macOS or set NYXIAN_VENDOR_ALLOW_NON_DARWIN=1 if you accept a slow best-effort refresh.
-EOF
-  exit 64
+ROOT_DIR="$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)"
+NYXIAN_REPO="${NYXIAN_REPO:-https://github.com/ProjectNyxian/Nyxian}"
+NYXIAN_COMMIT="${NYXIAN_COMMIT:-d955607acf4e8112c28d1db01837fc3e11631de3}"
+NYXIAN_DEST="${NYXIAN_DEST:-$ROOT_DIR/ThirdParty/Nyxian}"
+TMP_DIR="${TMPDIR:-/tmp}/litter-vendor-nyxian-$$"
+REPO_PATH="$(printf '%s' "$NYXIAN_REPO" | sed -E 's#^https://github.com/##; s#^git@github.com:##; s#\.git$##')"
+ARCHIVE_URL="${NYXIAN_ARCHIVE_URL:-https://codeload.github.com/$REPO_PATH/tar.gz/$NYXIAN_COMMIT}"
+CODELOAD_IP="${LITTER_CODELOAD_RESOLVE_IP:-}"
+if [ -z "$CODELOAD_IP" ]; then
+  CODELOAD_IP="$(getent hosts codeload.github.com 2>/dev/null | awk 'NR==1 {print $1}' || true)"
+fi
+if [ -z "$CODELOAD_IP" ]; then
+  CODELOAD_IP="140.82.114.9"
 fi
 
-EXCLUDES=(
-  --exclude .git
-  --exclude .gitmodules
-  --exclude .github
-  --exclude build
-  --exclude DerivedData
-  --exclude Payload
-  --exclude .package
-  --exclude tmp
-  --exclude .DS_Store
-  --exclude '*.ipa'
-  --exclude '*.tipa'
-  --exclude '*.deb'
-  --exclude '*.xcuserstate'
-  --exclude '*/xcuserdata/*'
-  --exclude 'Nyxian/Assets.xcassets'
-  --exclude TrollStore
-  --exclude libroot
-)
-
-copy_tree() {
-  local src="$1"
-  local dst="$2"
-  local stage="$TMP_DIR/stage-$(basename "$dst")"
-  rm -rf "$stage"
-  mkdir -p "$stage"
-  (
-    cd "$src"
-    tar "${EXCLUDES[@]}" -cf - .
-  ) | (cd "$stage" && tar -xf -)
-  rm -rf "$dst"
-  mkdir -p "$(dirname "$dst")"
-  mv "$stage" "$dst"
+cleanup() {
+  rm -rf "$TMP_DIR"
 }
+trap cleanup EXIT INT TERM
 
-trim_openssl_ios_slice() {
-  local framework_root="$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework"
-  [[ -d "$framework_root" ]] || return 0
-  find "$framework_root" -mindepth 1 -maxdepth 1 -type d \
-    ! -name 'ios-arm64' \
-    ! -name '_CodeSignature' \
-    -exec rm -rf {} +
-  python3 - "$framework_root/Info.plist" <<'PYPLIST'
-import plistlib
-import pathlib
-import sys
-path = pathlib.Path(sys.argv[1])
-data = plistlib.loads(path.read_bytes())
-data["AvailableLibraries"] = [
-    lib for lib in data.get("AvailableLibraries", [])
-    if lib.get("LibraryIdentifier") == "ios-arm64"
-]
-path.write_bytes(plistlib.dumps(data, sort_keys=False))
-PYPLIST
-}
+mkdir -p "$TMP_DIR" "$(dirname "$NYXIAN_DEST")"
+printf '%s\n' "==> Downloading Nyxian $NYXIAN_COMMIT"
+printf '%s\n' "==> Source: $ARCHIVE_URL"
+mkdir -p "$TMP_DIR/archive"
+if curl -L --fail --retry 3 --connect-timeout 30 --resolve "codeload.github.com:443:$CODELOAD_IP" --output "$TMP_DIR/nyxian.tar.gz" "$ARCHIVE_URL"; then
+  tar -xzf "$TMP_DIR/nyxian.tar.gz" -C "$TMP_DIR/archive"
+  SRC_DIR="$(find "$TMP_DIR/archive" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+else
+  echo "warning: archive download failed; falling back to GitHub API/raw import" >&2
+  SRC_DIR="$TMP_DIR/archive/Nyxian-$NYXIAN_COMMIT"
+  mkdir -p "$SRC_DIR"
+  python3 - "$NYXIAN_REPO" "$NYXIAN_COMMIT" "$SRC_DIR" <<'PYRAW'
+import json, sys, time, urllib.parse, urllib.request
+from pathlib import Path
+repo_url, commit, dest = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+parts = urllib.parse.urlparse(repo_url)
+repo_path = parts.path.strip('/')
+if repo_url.startswith('git@github.com:'):
+    repo_path = repo_url.split(':', 1)[1]
+if repo_path.endswith('.git'):
+    repo_path = repo_path[:-4]
+api = f'https://api.github.com/repos/{repo_path}/git/trees/{commit}?recursive=1'
+headers = {'User-Agent': 'litter-vendor-nyxian'}
 
-clone_repo() {
-  local repo="$1"
-  local ref="$2"
-  local dst="$3"
-  git -c http.version=HTTP/1.1 clone --depth 1 --branch "$ref" "$repo" "$dst"
-}
+def fetch(url):
+    last = None
+    for attempt in range(5):
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=60) as response:
+                return response.read()
+        except Exception as exc:
+            last = exc
+            time.sleep(1 + attempt)
+    raise last
 
-LITTER_NATIVE_BACKUP="$TMP_DIR/LitterBuildKitNative"
-if [[ -d "$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative" ]]; then
-  cp -R "$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative" "$LITTER_NATIVE_BACKUP"
+tree = json.loads(fetch(api).decode('utf-8'))
+if tree.get('truncated'):
+    raise SystemExit('GitHub tree response was truncated')
+exclude_dir_parts = {'.git', '.github'}
+exclude_suffixes = ('.xcframework/', '.framework/')
+exclude_file_suffixes = ('.ipa', '.mobileprovision', '.p12', '.cer', '.zip', '.png')
+blobs = [entry['path'] for entry in tree.get('tree', []) if entry.get('type') == 'blob']
+kept = 0
+for rel in blobs:
+    parts = rel.split('/')
+    if any(part in exclude_dir_parts for part in parts):
+        continue
+    rel_slash = rel + '/'
+    if any(suffix in rel_slash for suffix in exclude_suffixes):
+        continue
+    if rel.endswith(exclude_file_suffixes):
+        continue
+    target = dest / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    raw = f'https://raw.githubusercontent.com/{repo_path}/{commit}/{urllib.parse.quote(rel)}'
+    target.write_bytes(fetch(raw))
+    kept += 1
+print(f'imported {kept} upstream blob entries via raw API')
+PYRAW
+fi
+if [ -z "$SRC_DIR" ] || [ ! -d "$SRC_DIR" ]; then
+  echo "error: downloaded Nyxian archive did not contain a source directory" >&2
+  exit 1
 fi
 
-clone_repo "$NYXIAN_REPO" "$NYXIAN_REF" "$TMP_DIR/Nyxian"
-NYXIAN_COMMIT="$(git -C "$TMP_DIR/Nyxian" rev-parse HEAD)"
-copy_tree "$TMP_DIR/Nyxian" "$ROOT_DIR/ThirdParty/Nyxian"
-trim_openssl_ios_slice
-
-if [[ -d "$LITTER_NATIVE_BACKUP" ]]; then
-  rm -rf "$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative"
-  cp -R "$LITTER_NATIVE_BACKUP" "$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative"
+if [ -d "$NYXIAN_DEST/LitterBuildKitNative" ]; then
+  mkdir -p "$TMP_DIR/preserve"
+  cp -R "$NYXIAN_DEST/LitterBuildKitNative" "$TMP_DIR/preserve/LitterBuildKitNative"
 fi
 
-clone_repo "$LLVM_REPO" "$LLVM_REF" "$TMP_DIR/LLVM-On-iOS"
-LLVM_COMMIT="$(git -C "$TMP_DIR/LLVM-On-iOS" rev-parse HEAD)"
-copy_tree "$TMP_DIR/LLVM-On-iOS" "$ROOT_DIR/ThirdParty/LLVM-On-iOS"
-copy_tree "$TMP_DIR/LLVM-On-iOS" "$ROOT_DIR/ThirdParty/Nyxian/LLVM-On-iOS"
+rm -rf "$NYXIAN_DEST"
+mkdir -p "$NYXIAN_DEST"
+python3 - "$SRC_DIR" "$NYXIAN_DEST" <<'PYCOPY'
+import shutil, sys
+from pathlib import Path
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
+exclude_dirs = {'.git', '.github', 'Assets.xcassets', 'Preview Content'}
+exclude_dir_suffixes = ('.framework', '.xcframework')
+exclude_file_suffixes = ('.ipa', '.mobileprovision', '.p12', '.cer', '.zip', '.png')
 
-required_paths=(
-  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj"
-  "$ROOT_DIR/ThirdParty/Nyxian/MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m"
-  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/Core/Builder.swift"
-  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/LCUtils.m"
-  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/ZSign/zsigner.m"
-  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/Info.plist"
-  "$ROOT_DIR/ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/OpenSSL"
-  "$ROOT_DIR/ThirdParty/LLVM-On-iOS/Scripts/build-swift-toolchain.sh"
-)
-for required_path in "${required_paths[@]}"; do
-  if [[ ! -f "$required_path" ]]; then
-    echo "error: vendored tree is missing $required_path" >&2
-    exit 1
-  fi
-done
+def skip(path: Path) -> bool:
+    if any(part in exclude_dirs for part in path.parts):
+        return True
+    if path.is_dir() and path.name.endswith(exclude_dir_suffixes):
+        return True
+    if path.is_file() and path.name.endswith(exclude_file_suffixes):
+        return True
+    return False
 
-NYXIAN_FILE_COUNT="$(find "$ROOT_DIR/ThirdParty/Nyxian" -type f | wc -l | tr -d ' ')"
-LLVM_FILE_COUNT="$(find "$ROOT_DIR/ThirdParty/LLVM-On-iOS" -type f | wc -l | tr -d ' ')"
+for item in src.iterdir():
+    if skip(item):
+        continue
+    target = dst / item.name
+    if item.is_dir():
+        def ignore(directory, names):
+            ignored = []
+            d = Path(directory)
+            for name in names:
+                p = d / name
+                if skip(p):
+                    ignored.append(name)
+            return ignored
+        shutil.copytree(item, target, symlinks=True, ignore=ignore)
+    else:
+        shutil.copy2(item, target, follow_symlinks=False)
+PYCOPY
 
-python3 - "$ROOT_DIR/ThirdParty/Nyxian/VENDOR_LOCK.json" \
-  "$NYXIAN_REPO" "$NYXIAN_REF" "$NYXIAN_COMMIT" "$NYXIAN_FILE_COUNT" \
-  "$LLVM_REPO" "$LLVM_REF" "$LLVM_COMMIT" "$LLVM_FILE_COUNT" <<'PYVENDOR'
-import datetime
-import json
-import pathlib
-import sys
-path = pathlib.Path(sys.argv[1])
-data = {
-    "schemaVersion": 3,
-    "updatedAt": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
-    "vendoringMode": "focused-buildkit-source-import",
-    "nyxian": {"repo": sys.argv[2], "ref": sys.argv[3], "commit": sys.argv[4], "vendoredFileCount": int(sys.argv[5])},
-    "llvmOnIOS": {"repo": sys.argv[6], "ref": sys.argv[7], "commit": sys.argv[8], "vendoredFileCount": int(sys.argv[9])},
-    "litterPreservedPaths": ["ThirdParty/Nyxian/LitterBuildKitNative"],
-    "excludedHeavyOrIrrelevantPaths": ["Nyxian/Assets.xcassets", "TrollStore", "libroot", ".github", ".gitignore", ".gitattributes"],
-    "requiredBuildKitPaths": [
-        "ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj",
-        "ThirdParty/Nyxian/MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m",
-        "ThirdParty/Nyxian/Nyxian/LindChain/Core/Builder.swift",
-        "ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/LCUtils.m",
-        "ThirdParty/Nyxian/Nyxian/LindChain/LiveContainer/ZSign/zsigner.m",
-        "ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/Info.plist",
-        "ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/OpenSSL",
-        "ThirdParty/LLVM-On-iOS/Scripts/build-swift-toolchain.sh",
-    ],
+if [ -d "$TMP_DIR/preserve/LitterBuildKitNative" ]; then
+  rm -rf "$NYXIAN_DEST/LitterBuildKitNative"
+  cp -R "$TMP_DIR/preserve/LitterBuildKitNative" "$NYXIAN_DEST/LitterBuildKitNative"
+fi
+
+cat > "$NYXIAN_DEST/LITTER_NYXIAN_IMPORT.json" <<IMPORTJSON
+{
+  "repository": "$NYXIAN_REPO",
+  "commit": "$NYXIAN_COMMIT",
+  "archiveUrl": "$ARCHIVE_URL",
+  "preservedLocalPaths": [
+    "LitterBuildKitNative"
+  ],
+  "excludedFromVendorArchive": [
+    ".git",
+    ".github",
+    "*.framework",
+    "*.xcframework",
+    "*.ipa",
+    "*.mobileprovision",
+    "*.p12",
+    "*.cer",
+    "*.zip",
+    "*.png",
+    "Assets.xcassets",
+    "Preview Content"
+  ],
+  "submodules": {
+    "LLVM-On-iOS": "https://github.com/ProjectNyxian/LLVM-On-iOS.git",
+    "libroot": "https://github.com/Opa334/libroot.git",
+    "TrollStore": "https://github.com/opa334/TrollStore"
+  }
 }
-path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
-PYVENDOR
+IMPORTJSON
 
-echo "==> Vendored focused Nyxian BuildKit source at $NYXIAN_COMMIT ($NYXIAN_FILE_COUNT files)"
-echo "==> Vendored LLVM-On-iOS at $LLVM_COMMIT ($LLVM_FILE_COUNT files)"
+printf '%s\n' "==> Nyxian source imported into $NYXIAN_DEST"
+printf '%s\n' "==> Preserved Litter bridge: $NYXIAN_DEST/LitterBuildKitNative"

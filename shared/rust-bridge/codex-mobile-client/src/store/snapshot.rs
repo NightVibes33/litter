@@ -6,8 +6,9 @@ use codex_app_server_protocol as upstream;
 use crate::conversation_uniffi::HydratedConversationItem;
 use crate::types::{
     Account, AgentRuntimeInfo, AgentRuntimeKind, AppModeKind, AppPlanProgressSnapshot, ModelInfo,
-    PendingApproval, PendingApprovalKey, PendingApprovalSeed, PendingUserInputRequest,
-    RateLimitSnapshot, RateLimits, ThreadInfo, ThreadKey,
+    PendingApproval, PendingApprovalKey, PendingApprovalSeed, PendingUserInputKey,
+    PendingUserInputRequest, PendingUserInputSeed, RateLimitSnapshot, RateLimits, ThreadInfo,
+    ThreadKey,
 };
 use crate::types::{AppThreadGoal, AppVoiceSessionPhase, AppVoiceTranscriptEntry};
 
@@ -120,20 +121,6 @@ impl ServerHealthSnapshot {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ServerIpcStateSnapshot {
-    Unsupported,
-    Disconnected,
-    Ready,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ServerTransportAuthority {
-    IpcPrimary,
-    DirectOnly,
-    Recovering,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppLifecyclePhaseSnapshot {
     Active,
     Inactive,
@@ -151,58 +138,32 @@ pub enum ServerMutatingCommandKind {
     CollaborationModeSync,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ServerMutatingCommandRoute {
-    Ipc,
-    Direct,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IpcFailureClassification {
-    FollowerCommandTimeoutWhileIpcHealthy,
-    IpcConnectionLost,
-    LifecycleInterrupted,
-    ServerTransportUnhealthy,
-    UnknownTimeout,
-}
-
 #[derive(Debug, Clone)]
 pub struct PendingServerMutatingCommand {
     pub kind: ServerMutatingCommandKind,
     pub thread_id: String,
     pub local_request_id: String,
     pub started_at: Instant,
-    pub route: ServerMutatingCommandRoute,
     pub lifecycle_phase_at_send: AppLifecyclePhaseSnapshot,
 }
 
 #[derive(Debug, Clone)]
 pub struct ServerTransportDiagnostics {
-    pub authority: ServerTransportAuthority,
-    pub actual_ipc_connected: bool,
-    pub last_ipc_broadcast_at: Option<Instant>,
-    pub last_ipc_mutation_ok_at: Option<Instant>,
     pub last_direct_request_ok_at: Option<Instant>,
     pub last_lifecycle_phase: AppLifecyclePhaseSnapshot,
     pub last_lifecycle_transition_at: Option<Instant>,
     pub last_resumed_at: Option<Instant>,
     pub pending_mutation: Option<PendingServerMutatingCommand>,
-    pub last_ipc_failure: Option<IpcFailureClassification>,
 }
 
 impl Default for ServerTransportDiagnostics {
     fn default() -> Self {
         Self {
-            authority: ServerTransportAuthority::DirectOnly,
-            actual_ipc_connected: false,
-            last_ipc_broadcast_at: None,
-            last_ipc_mutation_ok_at: None,
             last_direct_request_ok_at: None,
             last_lifecycle_phase: AppLifecyclePhaseSnapshot::Active,
             last_lifecycle_transition_at: None,
             last_resumed_at: None,
             pending_mutation: None,
-            last_ipc_failure: None,
         }
     }
 }
@@ -215,12 +176,11 @@ pub struct ServerSnapshot {
     pub port: u16,
     pub wake_mac: Option<String>,
     pub is_local: bool,
-    pub supports_ipc: bool,
-    pub has_ipc: bool,
     pub health: ServerHealthSnapshot,
     pub account: Option<Account>,
     pub requires_openai_auth: bool,
     pub rate_limits: Option<RateLimitSnapshot>,
+    pub rate_limits_by_runtime: HashMap<AgentRuntimeKind, RateLimitSnapshot>,
     pub available_models: Option<Vec<ModelInfo>>,
     pub agent_runtimes: Vec<AgentRuntimeInfo>,
     pub connection_progress: Option<AppConnectionProgressSnapshot>,
@@ -232,18 +192,6 @@ pub struct ServerSnapshot {
     /// Derived from `codex_version` at handshake time; can be flipped to
     /// `false` at runtime if a paginated RPC comes back as method-not-found.
     pub supports_turn_pagination: bool,
-}
-
-impl ServerSnapshot {
-    pub fn ipc_state(&self) -> ServerIpcStateSnapshot {
-        if self.is_local || !self.supports_ipc {
-            ServerIpcStateSnapshot::Unsupported
-        } else if self.has_ipc {
-            ServerIpcStateSnapshot::Ready
-        } else {
-            ServerIpcStateSnapshot::Disconnected
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default, uniffi::Record)]
@@ -322,7 +270,7 @@ impl ThreadSnapshot {
         };
         Self {
             key,
-            agent_runtime_kind: AgentRuntimeKind::Codex,
+            agent_runtime_kind: "codex".to_string(),
             collaboration_mode: AppModeKind::Default,
             model: info.model.clone(),
             info,
@@ -356,5 +304,45 @@ pub struct AppSnapshot {
     pub pending_approvals: Vec<PendingApproval>,
     pub(crate) pending_approval_seeds: HashMap<PendingApprovalKey, PendingApprovalSeed>,
     pub pending_user_inputs: Vec<PendingUserInputRequest>,
+    pub(crate) pending_user_input_seeds: HashMap<PendingUserInputKey, PendingUserInputSeed>,
     pub voice_session: AppVoiceSessionSnapshot,
+    /// Live terminal session snapshots, keyed by session id. Holds the
+    /// ring-buffered output tail + lifecycle phase so renderers can
+    /// re-attach after view teardown without losing scrollback. The
+    /// strong [`crate::terminal::TerminalSession`] handles live on
+    /// [`crate::MobileClient::terminal_sessions`]; this snapshot is the
+    /// FFI-visible projection.
+    pub terminal_sessions: Vec<TerminalSessionSnapshot>,
+    /// Id of the currently-focused terminal session, if any. Drives the
+    /// "Run in terminal" code-block action via
+    /// [`crate::ffi::AppStore::write_to_active_terminal`].
+    pub active_terminal_id: Option<String>,
+}
+
+/// Lifecycle phase of a terminal session as seen by the store. Maps
+/// loosely to the platform-side `TerminalSessionController.Phase`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum AppTerminalSessionPhase {
+    Connecting,
+    Running,
+    Exited,
+    Failed,
+}
+
+/// Snapshot of a single terminal session held in the store.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TerminalSessionSnapshot {
+    pub id: String,
+    pub backend_kind: crate::terminal::TerminalBackendKind,
+    pub phase: AppTerminalSessionPhase,
+    pub cols: u16,
+    pub rows: u16,
+    /// Wall-clock milliseconds since `UNIX_EPOCH` of the most recent
+    /// activity (output byte or write). Stored as `u64` so the value
+    /// crosses the UniFFI boundary without precision loss.
+    pub last_activity_ts_ms: u64,
+    /// Tail of the output byte stream, capped at 64 KiB.
+    pub output_tail: Vec<u8>,
+    /// Exit code if the session has exited. `None` otherwise.
+    pub exit_code: Option<i32>,
 }

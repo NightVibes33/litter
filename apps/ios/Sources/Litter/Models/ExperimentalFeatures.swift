@@ -3,7 +3,6 @@ import Observation
 
 enum LitterFeature: String, CaseIterable, Identifiable {
     case realtimeVoice = "realtime_voice"
-    case ipc = "ipc"
     case appleWatch = "apple_watch"
     case thinkingMinigame = "thinking_minigame"
 
@@ -12,7 +11,6 @@ enum LitterFeature: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .realtimeVoice: return "Realtime"
-        case .ipc: return "IPC"
         case .appleWatch: return "Apple Watch"
         case .thinkingMinigame: return "Thinking minigame"
         }
@@ -21,7 +19,6 @@ enum LitterFeature: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .realtimeVoice: return "Show the realtime voice launcher on the home screen."
-        case .ipc: return "Attach to desktop IPC over SSH for faster sync, approvals, and resume. Requires reconnecting the server."
         case .appleWatch: return "Push server, task, and approval state to a paired Apple Watch. Requires the Litter watch app to be installed."
         case .thinkingMinigame: return "Tap the Thinking shimmer while the assistant generates to play a tiny generated minigame."
         }
@@ -30,7 +27,6 @@ enum LitterFeature: String, CaseIterable, Identifiable {
     var defaultEnabled: Bool {
         switch self {
         case .realtimeVoice: return true
-        case .ipc: return false
         case .thinkingMinigame: return false
         case .appleWatch:
             // Off by default in both Debug and Release. The projection pipeline
@@ -76,7 +72,4 @@ final class ExperimentalFeatures {
         persistOverrides()
     }
 
-    func ipcSocketPathOverride() -> String? {
-        isEnabled(.ipc) ? nil : ""
-    }
 }

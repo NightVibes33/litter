@@ -1,0 +1,907 @@
+#import <UIKit/UIKit.h>
+
+@interface UIImage(private)
+- (UIImage *)_imageWithSize:(CGSize)size;
+@end
+
+@interface UIAlertAction(private)
+@property(nonatomic, copy) id shouldDismissHandler;
+@end
+
+@interface UIActivityContinuationManager : UIResponder
+- (NSDictionary*)handleActivityContinuation:(NSDictionary*)activityDict isSuspended:(id)isSuspended;
+@end
+
+@interface UIApplication(private)
+- (void)suspend;
+- (UIActivityContinuationManager*)_getActivityContinuationManager;
+@end
+
+@interface UIContextMenuInteraction(private)
+- (void)_presentMenuAtLocation:(CGPoint)location;
+@end
+
+@interface _UIContextMenuStyle : NSObject <NSCopying>
+@property(nonatomic) NSInteger preferredLayout;
++ (instancetype)defaultStyle;
+@end
+
+@interface UIOpenURLAction : NSObject
+- (NSURL *)url;
+- (instancetype)initWithURL:(NSURL *)arg1;
+@end
+
+@interface FBSSceneTransitionContext : NSObject
+@property (nonatomic,copy) NSSet * actions;
+@end
+
+@interface UIApplicationSceneTransitionContext : FBSSceneTransitionContext
+@property (nonatomic,retain) NSDictionary * payload;
+@end
+
+@interface UITableViewHeaderFooterView(private)
+- (void)setText:(NSString *)text;
+- (NSString *)text;
+@end
+
+@interface UIApplicationSceneSettings : NSObject
+@end
+
+@interface UIApplicationSceneClientSettings : NSObject
+@end
+
+@interface UIMutableApplicationSceneSettings : UIApplicationSceneSettings
+@property (assign,nonatomic) UIDeviceOrientation deviceOrientation;
+- (void)setInterfaceOrientation:(NSInteger)o;
+@end
+
+
+
+@interface UIMutableApplicationSceneClientSettings : UIApplicationSceneClientSettings
+@property (assign,nonatomic) UIDeviceOrientation deviceOrientation;
+@property(nonatomic, assign) NSInteger interfaceOrientation;
+@property(nonatomic, assign) NSInteger statusBarStyle;
+@end
+
+
+@interface FBSSceneParameters : NSObject
+@property(nonatomic, copy) UIApplicationSceneSettings *settings;
+@property(nonatomic, copy) UIApplicationSceneClientSettings *clientSettings;
+- (instancetype)initWithXPCDictionary:(NSDictionary*)dict;
+@end
+
+@interface FBSMutableSceneParameters : FBSSceneParameters
+@property(nonatomic, copy) UIMutableApplicationSceneSettings *settings;
+@end
+
+@interface UIWindow (private)
+- (void)setAutorotates:(BOOL)autorotates forceUpdateInterfaceOrientation:(BOOL)force;
+@end
+
+@class LSApplicationProxy;
+
+@interface LSApplicationWorkspace : NSObject
++ (instancetype)defaultWorkspace;
+- (BOOL)openApplicationWithBundleID:(NSString *)arg1;
+- (NSArray<LSApplicationProxy*>*)allInstalledApplications;
+@end
+
+@interface UICustomViewMenuElement : UIMenuElement
++ (instancetype)elementWithViewProvider:(UIView *(^)(UICustomViewMenuElement *element))provider;
+
+@end
+
+@interface UINavigationBar(private)
+- (UIFont *)_defaultTitleFont;
+@end
+
+@interface _UIPrototypingMenuSlider : UISlider
+@property(nonatomic, assign, readwrite) CGFloat stepSize;
+@end
+
+@interface UISceneActivationRequestOptions(private)
+-(void)_setRequestFullscreen:(BOOL)arg1;
+@end
+
+@interface _UIButtonBarStackView : UIView
+- (void)setSpacing:(CGFloat)spacing;
+@end
+
+@interface UIView(private)
+- (UIViewController *)_viewControllerForAncestor;
+@end
+
+
+@interface DOCConfiguration : NSObject
+- (void)setHostIdentifier:(NSString *)ignored;
+@end
+
+#define PrivClass(NAME) NSClassFromString(@#NAME)
+
+@interface LSResourceProxy : NSObject
+    @property (setter=_setLocalizedName:,nonatomic,copy) NSString *localizedName;
+@end
+
+@interface LSBundleProxy : LSResourceProxy
+@end
+
+@interface LSApplicationProxy : LSBundleProxy
+    @property(nonatomic, assign, readonly) NSString *bundleIdentifier;
+    @property(nonatomic, assign, readonly) NSString *localizedShortName;
+    @property(nonatomic, assign, readonly) NSString *primaryIconName;
+
+    @property (nonatomic,readonly) NSString * applicationIdentifier;
+    @property (nonatomic,readonly) NSString * applicationType;
+    @property (nonatomic,readonly) NSArray * appTags;
+    @property (getter=isLaunchProhibited,nonatomic,readonly) BOOL launchProhibited;
+    @property (getter=isPlaceholder,nonatomic,readonly) BOOL placeholder;
+    @property (getter=isRemovedSystemApp,nonatomic,readonly) BOOL removedSystemApp;
+@end
+
+@interface BSCornerRadiusConfiguration : NSObject
+- (id)initWithTopLeft:(CGFloat)tl bottomLeft:(CGFloat)bl bottomRight:(CGFloat)br topRight:(CGFloat)tr;
+@end
+
+// BoardServices
+@interface BSSettings : NSObject
+@end
+
+@interface BSTransaction : NSObject
+- (void)addChildTransaction:(id)transaction;
+- (void)begin;
+- (void)setCompletionBlock:(dispatch_block_t)block;
+@end
+
+// FrontBoard
+
+@class RBSProcessIdentity, FBProcessExecutableSlice, UIMutableApplicationSceneClientSettings, UIMutableScenePresentationContext, UIScenePresentationManager, _UIScenePresenter;
+
+@interface FBApplicationProcessLaunchTransaction : BSTransaction
+- (instancetype) initWithProcessIdentity:(RBSProcessIdentity *)identity executionContextProvider:(id)providerBlock;
+- (void)_begin;
+@end
+
+/* Generated by RuntimeBrowser
+   Image: /System/Library/PrivateFrameworks/FrontBoard.framework/FrontBoard
+ */
+
+@interface RBSProcessExitContext : NSObject
+
+@property (nonatomic, readonly) int legacyCode;
+
+@end
+
+@interface FBProcessExitContext : NSObject
+
+@property (nonatomic, readonly) RBSProcessExitContext *underlyingContext;
+
+@end
+
+@interface FBProcessExecutionContext : NSObject
+@end
+
+@interface FBMutableProcessExecutionContext : FBProcessExecutionContext
+
+@property (nonatomic,copy) RBSProcessIdentity * identity;
+@property (nonatomic,copy) NSArray * arguments;
+@property (nonatomic,copy) NSDictionary * environment;
+@property (nonatomic,retain) NSURL * standardOutputURL;
+@property (nonatomic,retain) NSURL * standardErrorURL;
+@property (assign,nonatomic) BOOL waitForDebugger;
+@property (assign,nonatomic) BOOL disableASLR;
+@property (assign,nonatomic) BOOL checkForLeaks;
+@property (assign,nonatomic) long long launchIntent;
+//@property (nonatomic,retain) id<FBProcessWatchdogProviding> watchdogProvider;
+@property (nonatomic,copy) NSString * overrideExecutablePath;
+//@property (nonatomic,retain) FBProcessExecutableSlice * overrideExecutableSlice;
+@property (nonatomic,copy) id completion;
+-(id)copyWithZone:(NSZone*)arg1 ;
+@end
+
+/* FBProcess stuff */
+@interface FBProcess : NSObject
+
+@property (nonatomic, readonly) id applicationInfo;
+@property (nonatomic, readonly) unsigned char assertionState;
+@property (nonatomic, readonly) id auditToken;
+@property (getter=isBeingDebugged, nonatomic, readonly) bool beingDebugged;
+@property (nonatomic, readonly, copy) NSString *bundleIdentifier;
+@property (getter=isCurrentProcess, nonatomic, readonly) bool currentProcess;
+@property (readonly, copy) NSString *debugDescription; /* unknown property attribute: ? */
+@property (nonatomic, readonly) id delegate;
+@property (readonly, copy) NSString *description;
+@property (nonatomic, readonly) double execTime;
+@property (nonatomic, readonly) bool executableLivesOnSystemPartition;
+@property (nonatomic, readonly, copy) NSString *executablePath;
+@property (nonatomic, readonly, copy) id executionContext;
+@property (nonatomic, readonly) id exitContext;
+@property (getter=isFinishedLaunching, nonatomic, readonly) bool finishedLaunching;
+@property (getter=isForeground, nonatomic, readonly) bool foreground;
+@property (nonatomic, readonly) id handle;
+@property (readonly) unsigned long long hash;
+@property (nonatomic, readonly) RBSProcessIdentity *identity;
+@property (nonatomic, readonly, copy) NSString *name;
+@property (getter=isPendingExit, nonatomic, readonly) bool pendingExit;
+@property (nonatomic, readonly) int pid;
+@property (getter=isPlatformBinary, nonatomic, readonly) bool platformBinary;
+@property (nonatomic, readonly) id rbsHandle;
+@property (getter=isRunning, nonatomic, readonly) bool running;
+@property (nonatomic, readonly, copy) id state;
+@property (readonly) Class superclass;
+@property (nonatomic, readonly) id target;
+@property (nonatomic, readonly, retain) id taskNameRight;
+@property (nonatomic, readonly) long long versionedPID;
+@property (nonatomic, readonly) id workspace;
+
++ (id)_currentProcess;
++ (id)calloutQueue;
++ (id)createCurrentProcess;
++ (id)createProcessWithExecutionContext:(id)arg1;
++ (id)createProcessWithHandle:(id)arg1;
++ (id)rbInteractionWorkloop;
+
+- (void)_bootstrapAndExec;
+- (void)_bootstrapDidComplete;
+- (void)_configureBundleInfo;
+- (void)_configureIntrinsicsFromHandle:(id)arg1;
+- (id)_createBootstrapContext;
+- (void)_executeBlockAfterBootstrap:(id /* block */)arg1;
+- (void)_executeBlockAfterLaunchCompletes:(id /* block */)arg1;
+- (void)_executeBlockAsCurrentProcess:(id /* block */)arg1;
+- (void)_finishInit;
+- (id)_initWithIdentity:(id)arg1 handle:(id)arg2 executionContext:(id)arg3;
+- (void)_killForReason:(long long)arg1 andReport:(bool)arg2 withDescription:(id)arg3 completion:(id /* block */)arg4;
+- (void)_launchDidComplete:(bool)arg1 finalizeBlock:(id /* block */)arg2;
+- (void)_lock_consumeLock_executeTerminationRequest;
+- (void)_lock_consumeLock_performGracefulKill;
+- (id)_newWatchdogForContext:(id)arg1 completion:(id /* block */)arg2;
+- (void)_noteAssertionStateDidChange;
+- (void)_notePendingExitForReason:(id)arg1;
+- (void)_noteStateDidUpdate:(id)arg1;
+- (id)_observers;
+- (void)_processDidExitWithContext:(id)arg1;
+- (void)_rebuildState;
+- (void)_rebuildState:(id)arg1;
+- (void)_setSceneLifecycleState:(unsigned char)arg1;
+- (bool)_shouldWatchdogWithDeclineReason:(id*)arg1;
+- (bool)_startWatchdogTimerForContext:(id)arg1;
+- (void)_terminateWithRequest:(id)arg1 completion:(id /* block */)arg2;
+- (void)_terminateWithRequest:(id)arg1 forWatchdog:(id)arg2;
+- (void)_updateStateWithBlock:(id /* block */)arg1;
+- (bool)_watchdog:(id)arg1 shouldTerminateWithDeclineReason:(out id*)arg2;
+- (id)_watchdog:(id)arg1 terminationRequestForViolatedProvision:(id)arg2 error:(id)arg3;
+- (id)_watchdogProvider;
+- (long long)_watchdogReportType;
+- (void)add:(id)arg1;
+- (void)addObserver:(id)arg1;
+- (id)applicationInfo;
+- (unsigned char)assertionState;
+- (id)auditToken;
+- (void)bootstrapLock:(id /* block */)arg1;
+- (bool)bootstrapWithDelegate:(id)arg1;
+- (id)bundleIdentifier;
+- (void)dealloc;
+- (id)debugDescription;
+- (id)delegate;
+- (id)description;
+- (id)descriptionBuilderWithMultilinePrefix:(id)arg1;
+- (id)descriptionWithMultilinePrefix:(id)arg1;
+- (double)execTime;
+- (bool)executableLivesOnSystemPartition;
+- (id)executablePath;
+- (id)executionContext;
+- (FBProcessExitContext*)exitContext;
+- (bool)finishedLaunching;
+- (id)handle;
+- (bool)hasEntitlement:(id)arg1;
+- (id)identity;
+- (id)init;
+- (void)invalidate;
+- (bool)isApplicationProcess;
+- (bool)isBeingDebugged;
+- (bool)isCurrentProcess;
+- (bool)isExtensionProcess;
+- (bool)isFinishedLaunching;
+- (bool)isForeground;
+- (bool)isPendingExit;
+- (bool)isPlatformBinary;
+- (bool)isRunning;
+- (bool)isSystemApplicationProcess;
+- (bool)matchesProcess:(id)arg1;
+- (id)name;
+- (void)noteProcessPublished;
+- (int)pid;
+- (id)processPredicate;
+- (id)rbsHandle;
+- (void)remove:(id)arg1;
+- (void)removeObserver:(id)arg1;
+- (void)setWatchdogProvider:(id)arg1;
+- (id)state;
+- (id)succinctDescription;
+- (id)succinctDescriptionBuilder;
+- (id)target;
+- (id)taskNameRight;
+- (long long)taskState;
+- (id)valueForEntitlement:(id)arg1;
+- (long long)versionedPID;
+- (long long)visibility;
+- (id)workspace;
+
+@end
+
+@class FBScene;
+
+/* Generated by RuntimeBrowser
+   Image: /System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices
+ */
+
+@interface FBSMutableSceneSettings : NSObject
+
+@end
+
+@interface FBSSceneUpdate : NSObject
+
+// Image: /System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices
+
+- (void)inspect:(id /* block */)arg1;
+- (id)mutableSettings;
+- (id)parentUpdate;
+- (id)previousSettings;
+- (id)settings;
+- (id)settingsDiff;
+- (id)transitionContext;
+
+// Image: /System/Library/PrivateFrameworks/UIKitCore.framework/UIKitCore
+
+- (void)inspectStorage:(id /* block */)arg1;
+
+@end
+
+@interface FBSceneClientHandle : NSObject
+@end
+
+@interface FBSceneUpdateContext : NSObject
+@end
+
+@interface FBSSceneClientSettingsDiff : NSObject
+@end
+
+@interface FBSSceneClientSettings : NSObject
+@end
+
+@protocol FBSceneObserver <NSObject>
+
+@optional
+
+- (void)scene:(FBScene *)arg1 clientDidConnect:(FBSceneClientHandle *)arg2;
+- (void)scene:(FBScene *)arg1 didApplyUpdateWithContext:(FBSceneUpdateContext *)arg2;
+- (void)scene:(FBScene *)arg1 didCompleteUpdateWithContext:(FBSceneUpdateContext *)arg2 error:(NSError *)arg3;
+- (void)scene:(FBScene *)arg1 didPrepareUpdateWithContext:(FBSceneUpdateContext *)arg2;
+- (void)scene:(FBScene *)arg1 didUpdateClientSettings:(FBSSceneUpdate *)arg2;
+- (void)scene:(FBScene *)arg1 didUpdateClientSettingsWithDiff:(FBSSceneClientSettingsDiff *)arg2 oldClientSettings:(FBSSceneClientSettings *)arg3 transitionContext:(FBSSceneTransitionContext *)arg4;
+- (void)scene:(FBScene *)arg1 didUpdateSettings:(FBSSceneUpdate *)arg2;
+- (NSSet *)scene:(FBScene *)arg1 handleActions:(NSSet *)arg2;
+- (void)sceneContentStateDidChange:(FBScene *)arg1;
+- (void)sceneDidActivate:(FBScene *)arg1;
+- (void)sceneDidInvalidate:(FBScene *)arg1;
+- (void)sceneDidInvalidate:(FBScene *)arg1 withContext:(FBSSceneTransitionContext *)arg2;
+- (void)sceneWillActivate:(FBScene *)arg1;
+- (void)sceneWillDeactivate:(FBScene *)arg1 withContext:(FBSSceneTransitionContext *)arg2;
+- (void)sceneWillDeactivate:(FBScene *)arg1 withError:(NSError *)arg2;
+
+@end
+
+@protocol FBSceneDelegate <FBSceneObserver>
+
+@optional
+
+- (void)scene:(FBScene *)arg1 didReceiveActions:(NSSet *)arg2;
+- (void)scene:(FBScene *)arg1 willUpdateSettings:(FBSSceneUpdate *)arg2;
+- (void)scene:(FBScene *)arg1 willUpdateSettings:(FBSMutableSceneSettings *)arg2 withTransitionContext:(FBSSceneTransitionContext *)arg3;
+- (void)sceneDidDeactivate:(FBScene *)arg1 withContext:(FBSSceneTransitionContext *)arg2;
+- (void)sceneDidDeactivate:(FBScene *)arg1 withError:(NSError *)arg2;
+
+@end
+
+@interface FBScene : NSObject
+
+@property (nonatomic, readonly, copy) NSString *identifier;
+@property (nonatomic) id<FBSceneDelegate> delegate;
+@property (getter=isValid, nonatomic, readonly) bool valid;
+
+- (FBProcess *)clientProcess;
+- (UIScenePresentationManager *)uiPresentationManager;
+- (void)updateSettings:(UIMutableApplicationSceneSettings *)settings withTransitionContext:(id)context completion:(id)completion;
+- (void)updateSettingsWithBlock:(void(^)(UIMutableApplicationSceneSettings *settings))arg1;
+
+@end
+
+@interface FBDisplayManager : NSObject
++ (instancetype)sharedInstance;
+- (id)mainConfiguration;
+@end
+
+@interface FBSSceneClientIdentity : NSObject
++ (instancetype)identityForBundleID:(NSString *)bundleID;
++ (instancetype)identityForProcessIdentity:(RBSProcessIdentity *)identity;
++ (instancetype)localIdentity;
+@end
+
+@interface FBProcessState : NSObject <NSCopying>
+
+@property (readonly, copy) NSString *debugDescription; /* unknown property attribute: ? */
+@property (getter=isDebugging, nonatomic) bool debugging;
+@property (readonly, copy) NSString *description;
+@property (getter=isForeground, nonatomic, readonly) bool foreground;
+@property (readonly) unsigned long long hash;
+@property (nonatomic) int pid;
+@property (getter=isRunning, nonatomic, readonly) bool running;
+@property (readonly) Class superclass;
+@property (nonatomic) long long taskState;
+@property (nonatomic) long long visibility;
+
+- (id)description;
+- (id)descriptionBuilderWithMultilinePrefix:(id)arg1;
+- (id)descriptionWithMultilinePrefix:(id)arg1;
+- (id)init;
+- (id)initWithPid:(int)arg1;
+- (bool)isDebugging;
+- (bool)isEqual:(id)arg1;
+- (bool)isForeground;
+- (bool)isRunning;
+- (int)pid;
+- (void)setDebugging:(bool)arg1;
+- (void)setPid:(int)arg1;
+- (void)setTaskState:(long long)arg1;
+- (void)setVisibility:(long long)arg1;
+- (id)succinctDescription;
+- (id)succinctDescriptionBuilder;
+- (long long)taskState;
+- (long long)visibility;
+
+@end
+
+@protocol FBProcessObserver <NSObject>
+
+@optional
+
+- (void)process:(FBProcess *)arg1 stateDidChangeFromState:(FBProcessState *)arg2 toState:(FBProcessState *)arg3;
+- (void)processDidExit:(FBProcess *)arg1;
+- (void)processWillExit:(FBProcess *)arg1;
+
+@end
+
+@class FBProcessManager;
+
+@protocol FBProcessManagerObserver <NSObject>
+
+@required
+
+- (void)processManager:(FBProcessManager *)arg1 didAddProcess:(FBProcess *)arg2;
+- (void)processManager:(FBProcessManager *)arg1 didRemoveProcess:(FBProcess *)arg2;
+
+@end
+
+@interface FBProcessManager : NSObject
++ (instancetype)sharedInstance;
+- (FBProcessExecutionContext *)launchProcessWithContext:(FBMutableProcessExecutionContext *)context;
+- (id)registerProcessForAuditToken:(audit_token_t)token;
+- (id)registerProcessForHandle:(id)arg1;
+- (id)processForPID:(int)arg1;
+- (void)_removeProcess:(id)arg1;
+- (void)addObserver:(id<FBProcessManagerObserver>)arg1;
+- (void)removeObserver:(id<FBProcessManagerObserver>)arg1;
+@end
+
+@interface FBSSceneSpecification : NSObject
++ (instancetype)specification;
+@end
+
+// RunningBoardServices
+@interface RBSProcessIdentity : NSObject
++ (instancetype)identityForEmbeddedApplicationIdentifier:(NSString *)identifier;
++ (instancetype)identityForXPCServiceIdentifier:(NSString *)identifier;
++ (id)identityForExecutablePath:(id)arg1 pid:(int)arg2 auid:(unsigned int)arg3;
+@end
+
+@interface RBSProcessPredicate
++ (id)predicateMatchingIdentity:(id)arg1;
++ (instancetype)predicateMatchingIdentifier:(NSNumber *)pid;
+@end
+
+@interface RBSProcessHandle
+@property(nonatomic, copy, readonly) RBSProcessIdentity *identity;
++ (instancetype)handleForPredicate:(RBSProcessPredicate *)predicate error:(NSError **)error;
+- (audit_token_t)auditToken;
+- (bool)isValid;
+- (int)pid;
+@end
+
+@interface RBSProcessMonitorConfiguration : NSObject <NSCopying>
+
+@property (readonly, copy) NSString *debugDescription; /* unknown property attribute: ? */
+@property (readonly, copy) NSString *description;
+@property (nonatomic) unsigned long long events;
+@property (readonly) unsigned long long hash;
+@property (nonatomic, readonly) unsigned long long identifier;
+@property (nonatomic, copy) NSArray<RBSProcessPredicate*> *predicates;
+@property (nonatomic) unsigned int serviceClass;
+@property (readonly) Class superclass;
+@property (nonatomic, copy) id /* block */ updateHandler;
+
++ (bool)supportsRBSXPCSecureCoding;
+
+- (id)copyWithZone:(NSZone)arg1;
+- (id)debugDescription;
+- (id)description;
+- (void)encodeWithRBSXPCCoder:(id)arg1;
+- (unsigned long long)events;
+- (unsigned long long)hash;
+- (unsigned long long)identifier;
+- (id)init;
+- (id)initWithRBSXPCCoder:(id)arg1;
+- (bool)isEqual:(id)arg1;
+- (bool)matchesProcess:(id)arg1;
+- (id)predicates;
+- (unsigned int)serviceClass;
+- (void)setEvents:(unsigned long long)arg1;
+- (void)setPredicates:(NSArray<RBSProcessPredicate*>*)arg1;
+- (void)setPreventLaunchUpdateHandle:(id /* block */)arg1;
+- (void)setServiceClass:(unsigned int)arg1;
+- (void)setStateDescriptor:(id)arg1;
+- (void)setUpdateHandler:(id /* block */)arg1;
+- (id)stateDescriptor;
+- (id /* block */)updateHandler;
+
+@end
+
+@interface RBSProcessMonitor : NSObject
+
+@property (readonly, copy) NSString *debugDescription; /* unknown property attribute: ? */
+@property (readonly, copy) NSString *description;
+@property (nonatomic, readonly) unsigned long long events;
+@property (readonly) unsigned long long hash;
+@property (nonatomic, readonly) unsigned int serviceClass;
+@property (nonatomic, readonly, copy) NSSet *states;
+@property (readonly) Class superclass;
+
++ (id)_monitorWithService:(id)arg1;
++ (id)_monitorWithService:(id)arg1 configuration:(id /* block */)arg2;
++ (id)monitor;
++ (id)monitorWithConfiguration:(id /* block */)arg1;
++ (id)monitorWithPredicate:(id)arg1 updateHandler:(id /* block */)arg2;
+
+- (void)_handleExitEvent:(id)arg1;
+- (void)_handlePreventLaunchUpdate:(id)arg1;
+- (void)_handleProcessStateChange:(id)arg1;
+- (id)calloutQueue;
+- (id)configuration;
+- (id)copyWithZone:(NSZone)arg1;
+- (void)dealloc;
+- (id)description;
+- (unsigned long long)events;
+- (id)init;
+- (void)invalidate;
+- (unsigned int)serviceClass;
+- (void)setEvents:(unsigned long long)arg1;
+- (void)setPredicates:(id)arg1;
+- (void)setPreventLaunchUpdateHandle:(id /* block */)arg1;
+- (void)setServiceClass:(unsigned int)arg1;
+- (void)setStateDescriptor:(id)arg1;
+- (void)setUpdateHandler:(id /* block */)arg1;
+- (id)stateForIdentity:(id)arg1;
+- (id)states;
+- (void)updateConfiguration:(id /* block */)arg1;
+
+@end
+
+@interface RBSProcessState : NSObject <NSCopying>
+
+@property (nonatomic, readonly, copy) NSSet *assertions;
+@property (nonatomic, readonly, copy) NSObject<OS_xpc_object> *codedState;
+@property (readonly, copy) NSString *debugDescription; /* unknown property attribute: ? */
+@property (nonatomic) unsigned char debugState;
+@property (getter=isDebugging, nonatomic, readonly) bool debugging;
+@property (readonly, copy) NSString *description;
+@property (getter=isEmptyState, nonatomic, readonly) bool emptyState;
+@property (nonatomic, copy) NSSet *endowmentInfos;
+@property (nonatomic, copy) NSSet *endowmentNamespaces;
+@property (readonly) unsigned long long hash;
+@property (nonatomic, copy) NSSet *legacyAssertions;
+@property (getter=isPreventedFromLaunching, nonatomic, readonly) bool preventedFromLaunching;
+@property (nonatomic, copy) NSSet *primitiveAssertions;
+@property (nonatomic, readonly) RBSProcessHandle *process;
+@property (getter=isRunning, nonatomic, readonly) bool running;
+@property (readonly) Class superclass;
+@property (nonatomic, copy) NSSet *tags;
+@property (nonatomic) unsigned char taskState;
+@property (nonatomic) unsigned char terminationResistance;
+
++ (void)setActiveStateDescriptor:(id)arg1;
++ (id)stateWithProcess:(id)arg1;
++ (id)statesForPredicate:(id)arg1 withDescriptor:(id)arg2 error:(out id*)arg3;
++ (id)statesForPredicate:(id)arg1 withDescriptor:(id)arg2 service:(id)arg3 error:(out id*)arg4;
++ (bool)supportsRBSXPCSecureCoding;
++ (id)untrackedRunningStateforProcess:(id)arg1;
+
+- (id)assertions;
+- (id)codedState;
+- (id)copyWithZone:(NSZone)arg1;
+- (unsigned char)debugState;
+- (id)description;
+- (void)encodeWithPreviousState:(id)arg1;
+- (void)encodeWithRBSXPCCoder:(id)arg1;
+- (id)endowmentInfos;
+- (id)endowmentNamespaces;
+- (unsigned long long)hash;
+- (id)init;
+- (id)initWithRBSXPCCoder:(id)arg1;
+- (bool)isDebugging;
+- (bool)isDifferentFromState:(id)arg1 significantly:(out bool*)arg2;
+- (bool)isEmptyState;
+- (bool)isEqual:(id)arg1;
+- (bool)isPreventedFromLaunching;
+- (bool)isRunning;
+- (id)legacyAssertions;
+- (id)primitiveAssertions;
+- (id)process;
+- (void)setDebugState:(unsigned char)arg1;
+- (void)setEndowmentInfos:(NSSet*)arg1;
+- (void)setEndowmentNamespaces:(NSSet*)arg1;
+- (void)setLegacyAssertions:(NSSet*)arg1;
+- (void)setPrimitiveAssertions:(NSSet*)arg1;
+- (void)setTags:(NSSet*)arg1;
+- (void)setTaskState:(unsigned char)arg1;
+- (void)setTerminationResistance:(unsigned char)arg1;
+- (id)tags;
+- (unsigned char)taskState;
+- (unsigned char)terminationResistance;
+
+@end
+
+@interface RBSProcessExitStatus : NSObject <NSCopying, NSSecureCoding>
+
+@property (nonatomic, readonly) unsigned long long code;
+@property (readonly, copy) NSString *debugDescription; /* unknown property attribute: ? */
+@property (readonly, copy) NSString *description;
+@property (nonatomic, readonly) unsigned int domain;
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+
++ (id)statusWithDomain:(unsigned int)arg1 code:(unsigned long long)arg2;
++ (bool)supportsRBSXPCSecureCoding;
++ (bool)supportsSecureCoding;
+
+- (id)_dictionaryRepresentation;
+- (id)_initWithDictionaryRepresentation:(id)arg1;
+- (bool)_isVoluntary;
+- (unsigned long long)code;
+- (id)description;
+- (unsigned int)domain;
+- (void)encodeWithCoder:(id)arg1;
+- (void)encodeWithRBSXPCCoder:(id)arg1;
+- (id)error;
+- (unsigned long long)hash;
+- (id)initWithCoder:(id)arg1;
+- (id)initWithRBSXPCCoder:(id)arg1;
+- (bool)isCrash;
+- (bool)isEqual:(id)arg1;
+- (bool)isFairPlayFailure;
+- (bool)isJetsam;
+- (bool)isSignal;
+- (bool)isValid;
+
+@end
+
+@interface RBSProcessExitEvent : NSObject {
+    RBSProcessExitContext * _context;
+    RBSProcessHandle * _process;
+}
+
+@property (nonatomic, retain) RBSProcessExitContext *context;
+@property (readonly, copy) NSString *debugDescription; /* unknown property attribute: ? */
+@property (readonly, copy) NSString *description;
+@property (readonly) unsigned long long hash;
+@property (nonatomic, retain) RBSProcessHandle *process;
+@property (readonly) Class superclass;
+
++ (bool)supportsRBSXPCSecureCoding;
+
+- (id)context;
+- (id)description;
+- (void)encodeWithRBSXPCCoder:(id)arg1;
+- (unsigned long long)hash;
+- (id)initWithRBSXPCCoder:(id)arg1;
+- (bool)isEqual:(id)arg1;
+- (id)process;
+- (void)setContext:(RBSProcessExitContext*)arg1;
+- (void)setProcess:(RBSProcessHandle*)arg1;
+
+@end
+
+@interface RBSProcessStateUpdate : NSObject
+
+@property (nonatomic, readonly) RBSProcessExitEvent *exitEvent;
+@property (nonatomic, readonly) RBSProcessState *previousState;
+@property (nonatomic, readonly) RBSProcessHandle *process;
+@property (nonatomic, readonly) RBSProcessState *state;
+
++ (id)updateWithState:(id)arg1 previousState:(id)arg2 exitEvent:(id)arg3;
+
+- (id)description;
+- (id)exitEvent;
+- (id)previousState;
+- (id)process;
+- (id)state;
+
+@end
+
+@interface RBSTarget : NSObject
+@end
+
+@interface UIApplicationSceneSpecification : FBSSceneSpecification
+@end
+
+@interface FBSSceneIdentity : NSObject
++ (instancetype)identityForIdentifier:(NSString *)id;
+@end
+
+// FBSSceneSettings
+@interface UIApplicationSceneSettings(Multitask)
+- (bool)isForeground;
+- (CGRect)frame;
+- (UIInterfaceOrientation)interfaceOrientation;
+- (UIMutableApplicationSceneSettings *)mutableCopy;
+@end
+
+@interface FBScene (a)
+- (UIApplicationSceneSettings*)settings;
+@end
+
+@interface UIMutableApplicationSceneSettings(Multitask)
+@property(nonatomic, assign, readwrite) BOOL canShowAlerts;
+@property(nonatomic, assign) BOOL deviceOrientationEventsEnabled;
+@property(nonatomic, assign, readwrite) NSInteger interruptionPolicy;
+@property(nonatomic, strong, readwrite) NSString *persistenceIdentifier;
+@property (nonatomic, assign, readwrite) UIEdgeInsets peripheryInsets;
+@property (nonatomic, assign, readwrite) UIEdgeInsets safeAreaInsetsPortrait, safeAreaInsetsPortraitUpsideDown, safeAreaInsetsLandscapeLeft, safeAreaInsetsLandscapeRight;
+@property(assign, nonatomic, readwrite) UIUserInterfaceStyle userInterfaceStyle;
+@property(assign, nonatomic, readwrite) UIDeviceOrientation deviceOrientation;
+@property (nonatomic, strong, readwrite) BSCornerRadiusConfiguration *cornerRadiusConfiguration;
+@property (assign,nonatomic) CGRect statusBarAvoidanceFrame;
+@property (assign,nonatomic) double statusBarHeight;
+@property (assign,nonatomic, getter=isForeground) bool foreground;
+- (id)displayConfiguration;
+- (CGRect)frame;
+- (NSMutableSet *)ignoreOcclusionReasons;
+- (void)setDisplayConfiguration:(id)c;
+- (void)setForeground:(BOOL)f;
+- (void)setFrame:(CGRect)frame;
+- (void)setLevel:(NSInteger)level;
+- (void)setStatusBarDisabled:(BOOL)disabled;
+- (void)setInterfaceOrientation:(NSInteger)o;
+- (BSSettings *)otherSettings;
+@end
+
+@interface FBSSceneParameters(Multitask)
++ (instancetype)parametersForSpecification:(FBSSceneSpecification *)spec;
+//- (void)updateSettingsWithBlock:(id)block;
+@end
+
+@interface FBSMutableSceneDefinition : NSObject
+@property(nonatomic, copy) FBSSceneClientIdentity *clientIdentity;
+@property(nonatomic, copy) FBSSceneIdentity *identity;
+@property(nonatomic, copy) FBSSceneSpecification *specification;
++ (instancetype)definition;
+@end
+
+@interface FBSceneManager : NSObject
++ (instancetype)sharedInstance;
+- (FBScene *)createSceneWithDefinition:(id)def initialParameters:(id)params;
+-(void)destroyScene:(id)arg1 withTransitionContext:(id)arg2;
+@end
+
+@interface FBSSceneSettingsDiff : NSObject
+- (UIMutableApplicationSceneSettings *)settingsByApplyingToMutableCopyOfSettings:(UIApplicationSceneSettings *)settings ;
+@end
+
+// UIKit
+@protocol _UISceneSettingsDiffAction<NSObject>
+@required
+- (void)_performActionsForUIScene:(UIScene *)scene withUpdatedFBSScene:(id)fbsScene settingsDiff:(FBSSceneSettingsDiff *)diff fromSettings:(id)settings transitionContext:(id)context lifecycleActionType:(uint32_t)actionType;
+@end
+
+@interface UIImage(internal)
++ (instancetype)_applicationIconImageForBundleIdentifier:(NSString *)bundleID format:(NSInteger)format scale:(CGFloat)scale;
+@end
+
+@interface UIWindow (Private)
+- (instancetype)_initWithFrame:(CGRect)frame attached:(BOOL)attached;
+- (void)orderFront:(id)arg1;
+@end
+
+@interface _UIRootWindow : UIWindow
+@end
+
+@interface UIScreen (Private)
+- (CGRect)_referenceBounds;
+- (id)displayConfiguration;
+@end
+
+@interface UIScenePresentationBinder : NSObject
+- (void)addScene:(id)scene;
+@end
+
+@interface UIScenePresentationManager : NSObject
+- (instancetype)_initWithScene:(FBScene *)scene;
+- (_UIScenePresenter *)createPresenterWithIdentifier:(NSString *)identifier;
+@end
+
+@interface _UIScenePresenterOwner : NSObject
+- (instancetype)initWithScenePresentationManager:(UIScenePresentationManager *)manager context:(FBScene *)scene;
+@end
+
+@interface _UIScenePresentationView : UIView
+//- (instancetype)initWithPresenter:(_UIScenePresenter *)presenter;
+@end
+
+@interface _UIScenePresenter : NSObject
+@property (nonatomic, assign, readonly) _UIScenePresentationView *presentationView;
+@property(nonatomic, assign, readonly) FBScene *scene;
+- (instancetype)initWithOwner:(_UIScenePresenterOwner *)manager identifier:(NSString *)scene sortContext:(NSNumber *)context;
+- (void)modifyPresentationContext:(void(^)(UIMutableScenePresentationContext *context))block;
+- (void)activate;
+- (void)deactivate;
+- (void)invalidate;
+- (bool)isActive;
+- (bool)_isHosting;
+
+- (id)newSnapshot;
+- (id)newSnapshotPresentationView;
+
+@end
+
+@interface UIRootWindowScenePresentationBinder : UIScenePresentationBinder
+- (instancetype)initWithPriority:(int)pro displayConfiguration:(id)c;
+@end
+
+@interface UIScenePresentationContext : NSObject
+- (UIScenePresentationContext *)_initWithDefaultValues;
+@end
+
+@interface _UISceneLayerHostContainerView : UIView
+- (instancetype)initWithScene:(FBScene *)scene debugDescription:(NSString *)desc;
+- (void)_setPresentationContext:(UIScenePresentationContext *)context;
+@end
+
+@interface UIScene(Private)
+- (void)_registerSettingsDiffActionArray:(NSArray<id<_UISceneSettingsDiffAction>> *)array forKey:(NSString *)key;
+- (void)_unregisterSettingsDiffActionArrayForKey:(NSString *)key;
+@end
+
+@interface UIMutableScenePresentationContext : UIScenePresentationContext
+@property(nonatomic, assign) NSUInteger appearanceStyle;
+@end
+
+@interface UIViewController(Private)
+- (void)viewDidMoveToWindow:(UIWindow *)window shouldAppearOrDisappear:(BOOL)appear;
+@end
+
+NS_ASSUME_NONNULL_BEGIN
+
+@interface SFSCoreGlyphsBundle: NSObject
+@property (nonatomic, class, readonly) NSBundle *private;
+@end
+
+@interface _UIAssetManager : NSObject
++ (instancetype)assetManagerForBundle:(NSBundle *)bundle;
+- (UIImage *)imageNamed:(NSString *)name;
+@end
+
+@interface UIImage (SFSCoreGlyphsBundle)
+
+- (instancetype)initWithPrivateSystemName:(NSString *)name;
+
+@end
+
+NS_ASSUME_NONNULL_END

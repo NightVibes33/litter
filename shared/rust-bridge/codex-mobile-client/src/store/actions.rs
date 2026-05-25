@@ -24,6 +24,7 @@ pub(crate) fn thread_info_from_upstream_status_change(
         agent_nickname: None,
         agent_role: None,
         parent_thread_id: None,
+        forked_from_id: None,
         agent_status: None,
         created_at: None,
         updated_at: None,

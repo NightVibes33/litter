@@ -6,6 +6,15 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +42,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Stop
@@ -60,6 +70,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -71,10 +82,14 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.sp
+import com.litter.android.state.AppModel
 import com.litter.android.state.ComposerImageAttachment
 import com.litter.android.state.AppComposerPayload
 import com.litter.android.state.VoiceTranscriptionManager
+import com.litter.android.state.ampReasoningEffortLocked
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import uniffi.codex_mobile_client.AuthStatusRequest
@@ -94,6 +109,11 @@ import uniffi.codex_mobile_client.ThreadKey
 import uniffi.codex_mobile_client.AppInterruptTurnRequest
 import uniffi.codex_mobile_client.AppQueuedFollowUpKind
 import uniffi.codex_mobile_client.AppQueuedFollowUpPreview
+import uniffi.codex_mobile_client.AppThreadGoal
+import uniffi.codex_mobile_client.AppThreadGoalClearRequest
+import uniffi.codex_mobile_client.AppThreadGoalGetRequest
+import uniffi.codex_mobile_client.AppThreadGoalSetRequest
+import uniffi.codex_mobile_client.AppThreadGoalStatus
 
 /** Slash command definitions matching iOS. */
 internal data class SlashCommand(val name: String, val description: String)
@@ -107,6 +127,7 @@ private val SLASH_COMMANDS = listOf(
     SlashCommand("fork", "Fork this conversation"),
     SlashCommand("rename", "Rename this session"),
     SlashCommand("review", "Start a code review"),
+    SlashCommand("goal", "Set or manage the thread goal"),
     SlashCommand("resume", "Browse sessions"),
     SlashCommand("skills", "List available skills"),
     SlashCommand("permissions", "Change permissions"),
@@ -128,6 +149,7 @@ fun ComposerBar(
     isThinking: Boolean,
     activeTaskSummary: ActiveTaskSummary? = null,
     queuedFollowUps: List<uniffi.codex_mobile_client.AppQueuedFollowUpPreview> = emptyList(),
+    goal: AppThreadGoal? = null,
     rateLimits: uniffi.codex_mobile_client.RateLimitSnapshot? = null,
     showCollaborationModeChip: Boolean = true,
     onOpenCollaborationModePicker: (() -> Unit)? = null,
@@ -140,14 +162,30 @@ fun ComposerBar(
     onShowSkillsSheet: (() -> Unit)? = null,
     onSlashError: ((String) -> Unit)? = null,
     pendingUserInput: PendingUserInputRequest? = null,
+    onDismissPendingUserInput: (() -> Unit)? = null,
 ) {
     val appModel = LocalAppModel.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val composerPrefillRequest by appModel.composerPrefillRequest.collectAsState()
-    var textFieldValue by remember { mutableStateOf(TextFieldValue("")) }
+    // Hydrate the live composer state from `AppModel`'s per-thread draft so
+    // it survives ComposerBar recomposition / view-tree teardown when the
+    // user backgrounds the app. `remember(threadKey)` re-initializes when
+    // navigating to a different thread; subsequent edits write back.
+    var textFieldValue by remember(threadKey) {
+        val saved = appModel.composerDraft(threadKey).text
+        mutableStateOf(TextFieldValue(saved, selection = TextRange(saved.length)))
+    }
     val text = textFieldValue.text
-    var attachedImage by remember { mutableStateOf<ComposerImageAttachment?>(null) }
+    var attachedImage by remember(threadKey) {
+        mutableStateOf(appModel.composerDraft(threadKey).attachment)
+    }
+    LaunchedEffect(threadKey, text, attachedImage) {
+        appModel.setComposerDraft(
+            threadKey,
+            AppModel.ComposerDraft(text = text, attachment = attachedImage),
+        )
+    }
     var showAttachMenu by remember { mutableStateOf(false) }
     var showExpanded by remember { mutableStateOf(false) }
     val inlineFocusRequester = remember { FocusRequester() }
@@ -214,6 +252,58 @@ fun ComposerBar(
     // Pending user input answers
     var userInputAnswers by remember { mutableStateOf(mapOf<String, String>()) }
 
+    suspend fun handleGoalCommand(args: String?) {
+        val raw = args?.trim().orEmpty()
+        when (raw.lowercase()) {
+            "" -> {
+                val current = appModel.client.getThreadGoal(
+                    threadKey.serverId,
+                    AppThreadGoalGetRequest(threadId = threadKey.threadId),
+                )
+                onSlashError?.invoke(current?.let(::goalSummary) ?: "No goal is set for this thread.")
+            }
+            "pause" -> {
+                appModel.client.setThreadGoal(
+                    threadKey.serverId,
+                    AppThreadGoalSetRequest(
+                        threadId = threadKey.threadId,
+                        objective = null,
+                        status = AppThreadGoalStatus.PAUSED,
+                        tokenBudget = null,
+                    ),
+                )
+            }
+            "resume" -> {
+                appModel.client.setThreadGoal(
+                    threadKey.serverId,
+                    AppThreadGoalSetRequest(
+                        threadId = threadKey.threadId,
+                        objective = null,
+                        status = AppThreadGoalStatus.ACTIVE,
+                        tokenBudget = null,
+                    ),
+                )
+            }
+            "clear" -> {
+                appModel.client.clearThreadGoal(
+                    threadKey.serverId,
+                    AppThreadGoalClearRequest(threadId = threadKey.threadId),
+                )
+            }
+            else -> {
+                appModel.client.setThreadGoal(
+                    threadKey.serverId,
+                    AppThreadGoalSetRequest(
+                        threadId = threadKey.threadId,
+                        objective = raw,
+                        status = AppThreadGoalStatus.ACTIVE,
+                        tokenBudget = null,
+                    ),
+                )
+            }
+        }
+    }
+
     // Only consume edit-message prefill for the intended thread.
     LaunchedEffect(composerPrefillRequest?.requestId, threadKey) {
         val prefill = composerPrefillRequest ?: return@LaunchedEffect
@@ -236,6 +326,13 @@ fun ComposerBar(
             "skills" -> onShowSkillsSheet?.invoke()
             "permissions" -> onShowPermissionsSheet?.invoke()
             "experimental" -> onShowExperimentalSheet?.invoke()
+            "goal" -> scope.launch {
+                try {
+                    handleGoalCommand(args)
+                } catch (e: Exception) {
+                    onSlashError?.invoke(e.message ?: "Failed to update goal")
+                }
+            }
             "fork" -> scope.launch {
                 try {
                     val cwd = appModel.snapshot.value?.threads?.find { it.key == threadKey }?.info?.cwd
@@ -277,6 +374,9 @@ fun ComposerBar(
     // dialog. Keep this in sync if you change slash-command dispatch or
     // payload shape.
     val sendCurrent: () -> Unit = {
+        if (pendingUserInput != null) {
+            onDismissPendingUserInput?.invoke()
+        }
         val handledAsSlash = parseSlashCommandInvocation(text)?.let { invocation ->
             if (dispatchSlashCommand(invocation.command.name, invocation.args)) {
                 textFieldValue = TextFieldValue("")
@@ -287,8 +387,13 @@ fun ComposerBar(
         if (!handledAsSlash && (text.isNotBlank() || attachedImage != null)) {
             val launchState = appModel.launchState.snapshot.value
             val pendingModel = launchState.selectedModel.trim().ifEmpty { null }
-            val effort = launchState.reasoningEffort.trim().ifEmpty { null }
-                ?.let(::reasoningEffortFromServerValue)
+            val thread = appModel.snapshot.value?.threads?.find { it.key == threadKey }
+            val effort = if (thread?.ampReasoningEffortLocked == true) {
+                null
+            } else {
+                launchState.reasoningEffort.trim().ifEmpty { null }
+                    ?.let(::reasoningEffortFromServerValue)
+            }
             val tier = if (HeaderOverrides.pendingFastMode) ServiceTier.FAST else null
             val attachmentToSend = attachedImage
             val payload = AppComposerPayload(
@@ -361,6 +466,93 @@ fun ComposerBar(
             }
         }
 
+        goal?.let { current ->
+            val goalActions = remember(current.threadId, current.status) {
+                GoalCardActions(
+                    togglePause = {
+                        scope.launch {
+                            val next = when (current.status) {
+                                AppThreadGoalStatus.ACTIVE -> AppThreadGoalStatus.PAUSED
+                                AppThreadGoalStatus.PAUSED,
+                                AppThreadGoalStatus.BUDGET_LIMITED -> AppThreadGoalStatus.ACTIVE
+                                AppThreadGoalStatus.COMPLETE -> return@launch
+                            }
+                            runCatching {
+                                appModel.client.setThreadGoal(
+                                    threadKey.serverId,
+                                    AppThreadGoalSetRequest(
+                                        threadId = threadKey.threadId,
+                                        objective = null,
+                                        status = next,
+                                        tokenBudget = null,
+                                    ),
+                                )
+                            }.onFailure { onSlashError?.invoke(it.message ?: "Failed to update goal") }
+                        }
+                    },
+                    markComplete = {
+                        scope.launch {
+                            runCatching {
+                                appModel.client.setThreadGoal(
+                                    threadKey.serverId,
+                                    AppThreadGoalSetRequest(
+                                        threadId = threadKey.threadId,
+                                        objective = null,
+                                        status = AppThreadGoalStatus.COMPLETE,
+                                        tokenBudget = null,
+                                    ),
+                                )
+                            }.onFailure { onSlashError?.invoke(it.message ?: "Failed to update goal") }
+                        }
+                    },
+                    setObjective = { objective ->
+                        scope.launch {
+                            runCatching {
+                                appModel.client.setThreadGoal(
+                                    threadKey.serverId,
+                                    AppThreadGoalSetRequest(
+                                        threadId = threadKey.threadId,
+                                        objective = objective,
+                                        status = null,
+                                        tokenBudget = null,
+                                    ),
+                                )
+                            }.onFailure { onSlashError?.invoke(it.message ?: "Failed to update goal") }
+                        }
+                    },
+                    setBudget = { budget ->
+                        scope.launch {
+                            val resumeFromLimit = current.status == AppThreadGoalStatus.BUDGET_LIMITED
+                                && budget != null
+                                && budget > current.tokensUsed
+                            runCatching {
+                                appModel.client.setThreadGoal(
+                                    threadKey.serverId,
+                                    AppThreadGoalSetRequest(
+                                        threadId = threadKey.threadId,
+                                        objective = null,
+                                        status = if (resumeFromLimit) AppThreadGoalStatus.ACTIVE else null,
+                                        tokenBudget = budget,
+                                    ),
+                                )
+                            }.onFailure { onSlashError?.invoke(it.message ?: "Failed to update goal") }
+                        }
+                    },
+                    clear = {
+                        scope.launch {
+                            runCatching {
+                                appModel.client.clearThreadGoal(
+                                    threadKey.serverId,
+                                    AppThreadGoalClearRequest(threadId = threadKey.threadId),
+                                )
+                            }.onFailure { onSlashError?.invoke(it.message ?: "Failed to clear goal") }
+                        }
+                    },
+                )
+            }
+            GoalPanel(current, goalActions)
+        }
+
         activePlanProgress?.let { progress ->
             PlanProgressPanel(progress = progress)
         }
@@ -424,6 +616,30 @@ fun ComposerBar(
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // Header with close button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Input Required",
+                        color = LitterTheme.textPrimary,
+                        fontSize = LitterTextStyle.caption.scaled,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (onDismissPendingUserInput != null) {
+                        Text(
+                            text = "✕",
+                            color = LitterTheme.textMuted,
+                            fontSize = LitterTextStyle.body.scaled,
+                            modifier = Modifier
+                                .clickable { onDismissPendingUserInput() }
+                                .padding(4.dp)
+                                .semantics { contentDescription = "Dismiss input request" },
+                        )
+                    }
+                }
                 for (question in pendingUserInput.questions) {
                     Text(question.question, color = LitterTheme.textPrimary, fontSize = LitterTextStyle.footnote.scaled)
                     if (question.options.isNotEmpty()) {
@@ -1065,6 +1281,7 @@ private fun reasoningEffortFromServerValue(value: String): ReasoningEffort? =
         "medium" -> ReasoningEffort.MEDIUM
         "high" -> ReasoningEffort.HIGH
         "xhigh" -> ReasoningEffort.X_HIGH
+        "max" -> ReasoningEffort.MAX
         else -> null
     }
 
@@ -1305,6 +1522,502 @@ internal fun parseSlashCommandInvocation(text: String): SlashInvocation? {
     val command = SLASH_COMMANDS.firstOrNull { it.name == parts.first().lowercase() } ?: return null
     val args = parts.getOrNull(1)?.trim()?.takeIf { it.isNotEmpty() }
     return SlashInvocation(command = command, args = args)
+}
+
+private fun goalSummary(goal: AppThreadGoal): String {
+    return buildString {
+        append("Goal: ")
+        append(goal.objective)
+        append("\nStatus: ")
+        append(goalStatusLabel(goal.status))
+        append("\nTokens used: ")
+        append(goal.tokensUsed)
+        goal.tokenBudget?.let {
+            append("\nToken budget: ")
+            append(it)
+        }
+    }
+}
+
+private fun goalStatusLabel(status: AppThreadGoalStatus): String =
+    when (status) {
+        AppThreadGoalStatus.ACTIVE -> "active"
+        AppThreadGoalStatus.PAUSED -> "paused"
+        AppThreadGoalStatus.BUDGET_LIMITED -> "limited by budget"
+        AppThreadGoalStatus.COMPLETE -> "complete"
+    }
+
+data class GoalCardActions(
+    val togglePause: () -> Unit,
+    val markComplete: () -> Unit,
+    val setObjective: (String) -> Unit,
+    val setBudget: (Long?) -> Unit,
+    val clear: () -> Unit,
+) {
+    companion object {
+        val Noop = GoalCardActions(
+            togglePause = {},
+            markComplete = {},
+            setObjective = {},
+            setBudget = {},
+            clear = {},
+        )
+    }
+}
+
+@Composable
+private fun GoalPanel(goal: AppThreadGoal, actions: GoalCardActions) {
+    val tint = when (goal.status) {
+        AppThreadGoalStatus.ACTIVE -> LitterTheme.accent
+        AppThreadGoalStatus.PAUSED -> LitterTheme.textMuted
+        AppThreadGoalStatus.BUDGET_LIMITED -> LitterTheme.warning
+        AppThreadGoalStatus.COMPLETE -> LitterTheme.success
+    }
+    val statusLabel = when (goal.status) {
+        AppThreadGoalStatus.ACTIVE -> "active"
+        AppThreadGoalStatus.PAUSED -> "paused"
+        AppThreadGoalStatus.BUDGET_LIMITED -> "limited"
+        AppThreadGoalStatus.COMPLETE -> "complete"
+    }
+    val budgetProgress: Float? = goal.tokenBudget?.takeIf { it > 0 }?.let { budget ->
+        (goal.tokensUsed.toFloat() / budget.toFloat()).coerceIn(0f, 1f)
+    }
+    val budgetLabel = goal.tokenBudget?.takeIf { it > 0 }?.let { budget ->
+        "${formatGoalTokens(goal.tokensUsed)} / ${formatGoalTokens(budget)}"
+    }
+    val progressTint = when {
+        budgetProgress == null -> tint
+        budgetProgress >= 1f -> LitterTheme.danger
+        budgetProgress >= 0.85f -> LitterTheme.warning
+        else -> tint
+    }
+    val progressTextTint = when {
+        budgetProgress == null -> LitterTheme.textSecondary
+        budgetProgress >= 1f -> LitterTheme.danger
+        budgetProgress >= 0.85f -> LitterTheme.warning
+        else -> LitterTheme.textSecondary
+    }
+    val canTogglePause = goal.status != AppThreadGoalStatus.COMPLETE
+    val pauseResumeLabel: String? = when (goal.status) {
+        AppThreadGoalStatus.ACTIVE -> "Pause goal"
+        AppThreadGoalStatus.PAUSED -> "Resume goal"
+        AppThreadGoalStatus.BUDGET_LIMITED -> "Resume goal (override cap)"
+        AppThreadGoalStatus.COMPLETE -> null
+    }
+
+    var showMenu by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var showBudgetDialog by remember { mutableStateOf(false) }
+    var showClearConfirm by remember { mutableStateOf(false) }
+
+    // Pulsing status dot — only animates while the goal is active. Mirrors
+    // the iOS pill's 0.35 ↔ 1.0 ease-in-out at 1.1s autoreverse.
+    val pulse = rememberInfiniteTransition(label = "goalPulse")
+    val pulseAlpha by pulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "goalPulseAlpha",
+    )
+    val statusDotAlpha = if (goal.status == AppThreadGoalStatus.ACTIVE) pulseAlpha else 1f
+    val animatedProgress by animateFloatAsState(
+        targetValue = budgetProgress ?: 0f,
+        animationSpec = spring(
+            dampingRatio = 0.85f,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "goalProgress",
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(LitterTheme.codeBackground.copy(alpha = 0.92f))
+            .border(1.dp, tint.copy(alpha = 0.28f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Status pill — tappable to pause/resume (or override cap when
+            // BUDGET_LIMITED). Disabled once the goal is COMPLETE.
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(tint.copy(alpha = 0.14f))
+                    .border(0.5.dp, tint.copy(alpha = 0.35f), RoundedCornerShape(999.dp))
+                    .clickable(enabled = canTogglePause) { actions.togglePause() }
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(tint.copy(alpha = statusDotAlpha), CircleShape),
+                )
+                Text(
+                    text = statusLabel.uppercase(),
+                    color = tint,
+                    fontSize = 10f.scaled,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = BerkeleyMono,
+                )
+            }
+
+            Text(
+                text = goal.objective,
+                color = LitterTheme.textPrimary,
+                fontSize = LitterTextStyle.caption.scaled,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { showEditDialog = true },
+            )
+
+            Box {
+                IconButton(
+                    onClick = { showMenu = true },
+                    modifier = Modifier.size(24.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreHoriz,
+                        contentDescription = "Goal actions",
+                        tint = LitterTheme.textSecondary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false },
+                ) {
+                    if (pauseResumeLabel != null) {
+                        DropdownMenuItem(
+                            text = { Text(pauseResumeLabel, color = LitterTheme.textPrimary) },
+                            onClick = {
+                                showMenu = false
+                                actions.togglePause()
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Edit objective", color = LitterTheme.textPrimary) },
+                        onClick = {
+                            showMenu = false
+                            showEditDialog = true
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Set token budget", color = LitterTheme.textPrimary) },
+                        onClick = {
+                            showMenu = false
+                            showBudgetDialog = true
+                        },
+                    )
+                    if (goal.status != AppThreadGoalStatus.COMPLETE) {
+                        DropdownMenuItem(
+                            text = { Text("Mark complete", color = LitterTheme.textPrimary) },
+                            onClick = {
+                                showMenu = false
+                                actions.markComplete()
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Clear goal", color = LitterTheme.danger) },
+                        onClick = {
+                            showMenu = false
+                            showClearConfirm = true
+                        },
+                    )
+                }
+            }
+        }
+
+        if (budgetProgress != null) {
+            val percent = (budgetProgress * 100).toInt()
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(tint.copy(alpha = 0.10f)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(fraction = animatedProgress.coerceIn(0f, 1f))
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(progressTint.copy(alpha = 0.85f), progressTint),
+                                ),
+                                RoundedCornerShape(999.dp),
+                            ),
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (budgetLabel != null) {
+                        Text(
+                            text = budgetLabel,
+                            color = LitterTheme.textSecondary,
+                            fontSize = 10f.scaled,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = BerkeleyMono,
+                        )
+                    }
+                    Text(
+                        text = "$percent%",
+                        color = progressTextTint,
+                        fontSize = 10f.scaled,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = BerkeleyMono,
+                    )
+                }
+            }
+        }
+
+        // Usage chips (tokens used + elapsed time). Visible whenever the goal
+        // has any usage — including when no budget is set, so the user can
+        // still see what the goal has consumed. Mirrors iOS
+        // `ConversationComposerContentView.usageMetricsRow`.
+        val hasUsage = goal.tokensUsed > 0 || goal.timeUsedSeconds > 0
+        if (hasUsage) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (goal.tokensUsed > 0) {
+                    Text(
+                        text = "T ${formatGoalTokens(goal.tokensUsed)}",
+                        color = LitterTheme.textSecondary,
+                        fontSize = 10f.scaled,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = BerkeleyMono,
+                    )
+                }
+                if (goal.tokensUsed > 0 && goal.timeUsedSeconds > 0) {
+                    Text(
+                        text = "·",
+                        color = LitterTheme.textMuted.copy(alpha = 0.6f),
+                        fontSize = 10f.scaled,
+                        fontFamily = BerkeleyMono,
+                    )
+                }
+                if (goal.timeUsedSeconds > 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = LitterTheme.textSecondary,
+                            modifier = Modifier.size(10.dp),
+                        )
+                        Text(
+                            text = formatGoalSeconds(goal.timeUsedSeconds),
+                            color = LitterTheme.textSecondary,
+                            fontSize = 10f.scaled,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = BerkeleyMono,
+                        )
+                    }
+                }
+                Spacer(Modifier.weight(1f, fill = false))
+            }
+        }
+    }
+
+    if (showEditDialog) {
+        GoalTextInputDialog(
+            title = "Edit Objective",
+            initial = goal.objective,
+            placeholder = "What do you want to accomplish?",
+            singleLine = false,
+            confirmLabel = "Save",
+            onConfirm = { value ->
+                val trimmed = value.trim()
+                if (trimmed.isNotEmpty()) actions.setObjective(trimmed)
+                showEditDialog = false
+            },
+            onDismiss = { showEditDialog = false },
+        )
+    }
+
+    if (showBudgetDialog) {
+        GoalTextInputDialog(
+            title = "Token Budget",
+            initial = goal.tokenBudget?.toString().orEmpty(),
+            placeholder = "e.g. 50000",
+            singleLine = true,
+            keyboardNumeric = true,
+            confirmLabel = "Save",
+            helper = "The agent will pause when the cap is reached.",
+            onConfirm = { value ->
+                val parsed = value.trim().toLongOrNull()
+                if (parsed != null && parsed > 0) actions.setBudget(parsed)
+                showBudgetDialog = false
+            },
+            onDismiss = { showBudgetDialog = false },
+        )
+    }
+
+    if (showClearConfirm) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showClearConfirm = false },
+            confirmButton = {
+                Text(
+                    text = "Clear Goal",
+                    color = LitterTheme.danger,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clickable {
+                            showClearConfirm = false
+                            actions.clear()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            },
+            dismissButton = {
+                Text(
+                    text = "Cancel",
+                    color = LitterTheme.textPrimary,
+                    modifier = Modifier
+                        .clickable { showClearConfirm = false }
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+            },
+            title = {
+                Text("Clear this goal?", color = LitterTheme.textPrimary, fontWeight = FontWeight.SemiBold)
+            },
+            text = {
+                Text(
+                    "Removes the goal from this thread. The agent stops tracking objective progress.",
+                    color = LitterTheme.textSecondary,
+                )
+            },
+            containerColor = LitterTheme.surface,
+        )
+    }
+}
+
+@Composable
+private fun GoalTextInputDialog(
+    title: String,
+    initial: String,
+    placeholder: String,
+    confirmLabel: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+    helper: String? = null,
+    singleLine: Boolean = true,
+    keyboardNumeric: Boolean = false,
+) {
+    var value by remember { mutableStateOf(initial) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Text(
+                text = confirmLabel,
+                color = LitterTheme.accent,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clickable { onConfirm(value) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        },
+        dismissButton = {
+            Text(
+                text = "Cancel",
+                color = LitterTheme.textPrimary,
+                modifier = Modifier
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        },
+        title = {
+            Text(title, color = LitterTheme.textPrimary, fontWeight = FontWeight.SemiBold)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    singleLine = singleLine,
+                    textStyle = TextStyle(
+                        color = LitterTheme.textPrimary,
+                        fontSize = LitterTextStyle.body.scaled,
+                        fontFamily = LitterTheme.monoFont,
+                    ),
+                    cursorBrush = SolidColor(LitterTheme.accent),
+                    keyboardOptions = if (keyboardNumeric) {
+                        androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                        )
+                    } else {
+                        androidx.compose.foundation.text.KeyboardOptions.Default
+                    },
+                    decorationBox = { inner ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(LitterTheme.codeBackground, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                        ) {
+                            if (value.isEmpty()) {
+                                Text(
+                                    text = placeholder,
+                                    color = LitterTheme.textMuted,
+                                    fontSize = LitterTextStyle.body.scaled,
+                                )
+                            }
+                            inner()
+                        }
+                    },
+                )
+                if (helper != null) {
+                    Text(
+                        text = helper,
+                        color = LitterTheme.textSecondary,
+                        fontSize = LitterTextStyle.caption.scaled,
+                    )
+                }
+            }
+        },
+        containerColor = LitterTheme.surface,
+    )
+}
+
+private fun formatGoalTokens(value: Long): String =
+    when {
+        value >= 1_000_000 -> "%.1fM".format(value / 1_000_000.0)
+        value >= 1_000 -> "%.1fk".format(value / 1_000.0)
+        else -> value.toString()
+    }
+
+private fun formatGoalSeconds(seconds: Long): String {
+    if (seconds < 60) return "${seconds}s"
+    val total = seconds.toInt()
+    val minutes = total / 60
+    val remainSecs = total % 60
+    if (total < 3600) {
+        return if (remainSecs == 0) "${minutes}m" else "${minutes}m ${remainSecs}s"
+    }
+    val hours = total / 3600
+    val remainMins = (total % 3600) / 60
+    return if (remainMins == 0) "${hours}h" else "${hours}h ${remainMins}m"
 }
 
 // ── Rate Limit Badge (matching iOS RateLimitBadgeView) ───────────────────────

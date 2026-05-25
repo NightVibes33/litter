@@ -171,7 +171,7 @@ CCDriverRef CCDriverCreate(CFAllocatorRef allocator,
     {
         driverRef->argStorage.insert(driverRef->argStorage.begin(), "swiftc");
     }
-
+    
     new (&driverRef->argPtr) llvm::SmallVector<const char *, 64>();
     for(const std::string &arg : driverRef->argStorage)
     {
@@ -185,7 +185,7 @@ CCDriverRef CCDriverCreate(CFAllocatorRef allocator,
             IntrusiveRefCntPtr<clang::DiagnosticIDs> DiagID(new clang::DiagnosticIDs());
             clang::DiagnosticOptions DiagOpts;
             driverRef->clangDiagnosticEngine = IntrusiveRefCntPtr<clang::DiagnosticsEngine>(new clang::DiagnosticsEngine(DiagID, DiagOpts, new clang::IgnoringDiagConsumer(), /*ShouldOwnClient=*/true));
-
+            
             try
             {
                 driverRef->clangDriver = std::make_unique<clang::driver::Driver>("clang", "", *driverRef->clangDiagnosticEngine);
@@ -195,14 +195,14 @@ CCDriverRef CCDriverCreate(CFAllocatorRef allocator,
                 CFRelease(driverRef);
                 return nullptr;
             }
-
+            
             break;
         }
         case CCDriverTypeSwift:
         {
             driverRef->swiftDiagnosticEngine = std::make_unique<swift::DiagnosticEngine>(driverRef->swiftSourceManager);
             driverRef->swiftDiagnosticEngine->addConsumer(driverRef->swiftPrintingDiagnosticConsumer);
-
+            
             try
             {
                 driverRef->swiftDriver = std::make_unique<swift::driver::Driver>("swiftc", "swiftc", driverRef->argPtr, *driverRef->swiftDiagnosticEngine);
@@ -212,7 +212,7 @@ CCDriverRef CCDriverCreate(CFAllocatorRef allocator,
                 CFRelease(driverRef);
                 return nullptr;
             }
-
+            
             break;
         }
         default:
@@ -379,33 +379,33 @@ static void CollapseArgsToWl(CFMutableArrayRef argsArray)
 CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
 {
     CFAllocatorRef allocator = CFGetAllocator(driver);
-
+    
     llvm::SmallVector<const char *, 64> Args;
     Args.reserve(driver->argStorage.size());
     for(const auto &s : driver->argStorage)
     {
         Args.push_back(s.c_str());
     }
-
+    
     CFMutableArrayRef jobsArray = CFArrayCreateMutable(allocator, 0, &kCFTypeArrayCallBacks);
-
+    
     switch(driver->type)
     {
         case CCDriverTypeClang:
         {
             using namespace clang::driver;
             using llvm::isa; using llvm::cast; using llvm::dyn_cast;
-
+            
             driver->clangCompilation.reset(driver->clangDriver->BuildCompilation(Args));
             if(!driver->clangCompilation)
             {
                 CFRelease(jobsArray);
                 return nullptr;
             }
-
+            
             llvm::StringMap<const char *> pathRemap;
             llvm::SmallPtrSet<const Command *, 8> skippedJobs;
-
+            
             if(driver->callback)
             {
                 for(auto &Job : driver->clangCompilation->getJobs())
@@ -414,38 +414,38 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                     {
                         continue;
                     }
-
+                    
                     Command &Cmd = const_cast<Command &>(cast<Command>(Job));
                     const clang::driver::Action &Src = Cmd.getSource();
                     if(!isa<CompileJobAction>(Src) && !isa<AssembleJobAction>(Src))
                     {
                         continue;
                     }
-
+                    
                     const clang::driver::Action *leaf = &Src;
                     while(!leaf->getInputs().empty())
                     {
                         leaf = leaf->getInputs()[0];
                     }
-
+                    
                     const char *baseInput = nullptr;
                     if(auto *IA = dyn_cast<InputAction>(leaf))
                     {
                         baseInput = IA->getInputArg().getValue();
                     }
-
+                    
                     bool skip = false;
                     CFStringRef newCF = driver->callback(baseInput, &skip, driver->outputPathCallbackContext);
                     if(!newCF)
                     {
                         continue;
                     }
-
+                    
                     std::string s = _CCStringToStd(newCF);
                     CFRelease(newCF);
-
+                    
                     const char *newArg = driver->clangCompilation->getArgs().MakeArgString(s);
-
+                    
                     llvm::opt::ArgStringList newArgs;
                     const auto &old = Cmd.getArguments();
                     for(size_t i = 0; i < old.size(); ++i)
@@ -469,7 +469,7 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                     }
                 }
             }
-
+            
             if(!pathRemap.empty())
             {
                 for(auto &Job : driver->clangCompilation->getJobs())
@@ -478,24 +478,24 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                     {
                         continue;
                     }
-
+                    
                     Command &Cmd = const_cast<Command &>(cast<Command>(Job));
                     if(!isa<LinkJobAction>(Cmd.getSource()))
                     {
                         continue;
                     }
-
+                    
                     llvm::opt::ArgStringList newArgs;
                     for(const char *a : Cmd.getArguments())
                     {
                         auto it = pathRemap.find(a);
                         newArgs.push_back(it != pathRemap.end() ? it->second : a);
                     }
-
+                    
                     Cmd.replaceArguments(newArgs);
                 }
             }
-
+            
             for(auto &Job : driver->clangCompilation->getJobs())
             {
                 if(!isa<Command>(Job))
@@ -507,7 +507,7 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                 {
                     continue;
                 }
-
+                
                 CCJobType type = _CCJobTypeGetFromClangCommand(&Cmd);
                 _AppendJob(jobsArray, allocator, type, Cmd.getArguments());
             }
@@ -517,32 +517,32 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
         {
             using llvm::dyn_cast;
             using K = swift::driver::Action::Kind;
-
+            
             auto ArgList = driver->swiftDriver->parseArgStrings(llvm::ArrayRef<const char *>(Args).slice(1));
             if(!ArgList || driver->swiftDiagnosticEngine->hadAnyError())
             {
                 CFRelease(jobsArray);
                 return nullptr;
             }
-
+            
             driver->swiftToolChain = driver->swiftDriver->buildToolChain(*ArgList);
             if(!driver->swiftToolChain)
             {
                 CFRelease(jobsArray);
                 return nullptr;
             }
-
+            
             driver->swiftCompilation = driver->swiftDriver->buildCompilation(*driver->swiftToolChain, std::move(ArgList));
             if(!driver->swiftCompilation || driver->swiftDiagnosticEngine->hadAnyError())
             {
                 CFRelease(jobsArray);
                 return nullptr;
             }
-
+            
             llvm::StringMap<std::string> pathRemap;
             llvm::DenseMap<const swift::driver::Job *, std::string> jobOwnOutput;
             llvm::SmallPtrSet<const swift::driver::Job *, 8> skippedJobs;
-
+            
             if(driver->callback)
             {
                 for(const swift::driver::Job *J : driver->swiftCompilation->getJobs())
@@ -552,7 +552,7 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                     {
                         continue;
                     }
-
+                    
                     const swift::driver::Action *leaf = &J->getSource();
                     while(auto *JA = llvm::dyn_cast<swift::driver::JobAction>(leaf))
                     {
@@ -562,23 +562,23 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                         }
                         leaf = JA->getInputs()[0];
                     }
-
+                    
                     const char *baseInput = nullptr;
                     if(auto *IA = llvm::dyn_cast<swift::driver::InputAction>(leaf))
                     {
                         baseInput = IA->getInputArg().getValue();
                     }
-
+                    
                     bool skip = false;
                     CFStringRef newCF = driver->callback(baseInput, &skip, driver->outputPathCallbackContext);
                     if(!newCF)
                     {
                         continue;
                     }
-
+                    
                     std::string s = _CCStringToStd(newCF);
                     CFRelease(newCF);
-
+                    
                     llvm::StringRef oldOut = J->getOutput().getPrimaryOutputFilename();
                     if(!oldOut.empty())
                     {
@@ -591,23 +591,23 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                     }
                 }
             }
-
+            
             for(const swift::driver::Job *J : driver->swiftCompilation->getJobs())
             {
                 if(skippedJobs.contains(J))
                 {
                     continue;
                 }
-
+                
                 CCJobType type = _CCJobTypeGetFromSwiftJob(J);
                 const llvm::opt::ArgStringList &cmdArgs = J->getArguments();
-
+                
                 auto ownIt = jobOwnOutput.find(J);
                 const std::string *ownNew = (ownIt != jobOwnOutput.end()) ? &ownIt->second : nullptr;
                 llvm::StringRef ownOldOut = J->getOutput().getPrimaryOutputFilename();
-
+                
                 CFMutableArrayRef argsArray = CFArrayCreateMutable(allocator, cmdArgs.size(), &kCFTypeArrayCallBacks);
-
+                
                 for(size_t i = 0; i < cmdArgs.size(); ++i)
                 {
                     const char *arg = cmdArgs[i];
@@ -615,7 +615,7 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                     {
                         continue;
                     }
-
+                    
                     if(ownNew && llvm::StringRef(arg) == "-o" && i + 1 < cmdArgs.size() && llvm::StringRef(cmdArgs[i + 1]) == ownOldOut)
                     {
                         _AppendCStr(argsArray, allocator, "-o");
@@ -623,11 +623,11 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                         ++i;
                         continue;
                     }
-
+                    
                     auto it = pathRemap.find(arg);
                     _AppendCStr(argsArray, allocator, it != pathRemap.end() ? it->second.c_str() : arg);
                 }
-
+                
                 /*
                  * in-case the swift driver emits a clang driver job
                  * we gonna have to convert all args to a linker flag
@@ -638,13 +638,13 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
                 if(type == CCJobTypeDriver)
                 {
                     CollapseArgsToWl(argsArray);
-
+                    
                     /* TODO: translate some swift flags into clang driver flags */
                 }
-
+            
             out_append_swift_job:
                 {
-
+                    
                     CCJobRef jobRef = CCJobCreate(allocator, type, argsArray);
                     CFRelease(argsArray);
                     if(jobRef)
@@ -660,7 +660,7 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
             CFRelease(jobsArray);
             return nullptr;
     }
-
+    
     return jobsArray;
 }
 
@@ -706,12 +706,12 @@ CFURLRef CCDriverCopySysrootURL(CCDriverRef driver)
         default:
             return nullptr;
     }
-
+    
     if(cxxstr.empty())
     {
         return nullptr;
     }
-
+        
     CFAllocatorRef allocator = CFGetAllocator(driver);
     CFStringRef str = CFStringCreateWithCString(allocator, cxxstr.c_str(), kCFStringEncodingUTF8);
     if(!str)

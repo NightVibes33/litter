@@ -1,6 +1,38 @@
 import Foundation
 import SwiftUI
 
+/// Lightweight projection of a thread for use in lineage breadcrumbs and
+/// sibling pills. Carries the resolved title so render-time code doesn't need
+/// to look up the underlying `AppSessionSummary` again.
+struct ThreadLineageMember: Equatable, Hashable {
+    let key: ThreadKey
+    let title: String
+}
+
+/// Fork lineage info for a single thread. Computed once per
+/// `HomeDashboardSupport.recentConnectedSessions` pass over the snapshot's
+/// session summaries by walking `parentThreadId` within a server. Only attached
+/// to a session when the lineage actually has more than one member — singletons
+/// don't need the structure at the render layer.
+struct ThreadLineage: Equatable, Hashable {
+    /// Top of the chain. Equals `self.key` when this thread is itself the root.
+    let rootKey: ThreadKey
+    /// Immediate parent (nil if this thread is the root of its lineage).
+    let parentKey: ThreadKey?
+    /// Ordered ancestors, root → ... → parent. Excludes self. Empty when
+    /// `parentKey == nil` or when ancestors aren't loaded.
+    let ancestors: [ThreadLineageMember]
+    /// All loaded threads sharing this root, sorted by `updatedAt` desc.
+    /// Includes self.
+    let members: [ThreadLineageMember]
+    /// 1-based position of self in `members`.
+    let branchIndex: Int
+    /// Equal to `members.count`. Cached so callers don't reach into the array.
+    let branchTotal: Int
+
+    var hasMultipleBranches: Bool { branchTotal > 1 }
+}
+
 struct HomeDashboardRecentSession: Identifiable, Hashable {
     let key: ThreadKey
     let serverId: String
@@ -17,6 +49,13 @@ struct HomeDashboardRecentSession: Identifiable, Hashable {
     let isResumed: Bool
     let isSubagent: Bool
     let isFork: Bool
+    /// Source thread id when this thread was created via the in-app
+    /// fork actions (`forkThread` / `forkThreadFromMessage`). Distinct
+    /// from sub-agent parentage — sub-agents never set this.
+    let forkedFromId: String?
+    /// Set when this thread shares a fork root with at least one other
+    /// loaded thread. `nil` for singletons.
+    let lineage: ThreadLineage?
     let lastResponsePreview: String?
     /// `source_turn_id` of the assistant item behind
     /// `lastResponsePreview`. Used as the crossfade key in
@@ -29,6 +68,7 @@ struct HomeDashboardRecentSession: Identifiable, Hashable {
     let lastToolLabel: String?
     let stats: AppConversationStats?
     let tokenUsage: AppTokenUsage?
+    let goal: AppThreadGoal?
     /// Tool activity log precomputed by the Rust reducer in
     /// `extract_conversation_activity` (shared/rust-bridge/.../boundary.rs).
     /// The iOS home card used to redo this walk client-side — that was the
@@ -53,7 +93,6 @@ struct HomeDashboardServer: Identifiable, Equatable {
     let host: String
     let port: UInt16
     let isLocal: Bool
-    let hasIpc: Bool
     let health: AppServerHealth
     let sourceLabel: String
     let statusLabel: String
@@ -85,7 +124,6 @@ struct HomeDashboardServer: Identifiable, Equatable {
             lhs.host == rhs.host &&
             lhs.port == rhs.port &&
             lhs.isLocal == rhs.isLocal &&
-            lhs.hasIpc == rhs.hasIpc &&
             lhs.health == rhs.health &&
             lhs.sourceLabel == rhs.sourceLabel &&
             lhs.statusLabel == rhs.statusLabel &&
@@ -104,11 +142,16 @@ enum HomeDashboardSupport {
         serversById: [String: HomeDashboardServer],
         limit: Int? = 10
     ) -> [HomeDashboardRecentSession] {
+        // Compute lineage from the *unfiltered* snapshot so a fork whose
+        // parent lives on the same server (always the case in practice)
+        // resolves even if we later drop sessions due to server filters.
+        let lineageByKey = ThreadLineageMap.compute(sessions: sessions)
         let sorted = sessions
             .filter { serversById[$0.key.serverId] != nil }
             .sorted { ($0.updatedAt ?? 0) > ($1.updatedAt ?? 0) }
             .compactMap { session -> HomeDashboardRecentSession? in
                 guard let server = serversById[session.key.serverId] else { return nil }
+                let lineage = lineageByKey[session.key].flatMap { $0.hasMultipleBranches ? $0 : nil }
                 return HomeDashboardRecentSession(
                     key: session.key,
                     serverId: session.key.serverId,
@@ -125,12 +168,15 @@ enum HomeDashboardSupport {
                     isResumed: session.isResumed,
                     isSubagent: session.isSubagent,
                     isFork: session.isFork,
+                    forkedFromId: session.forkedFromId,
+                    lineage: lineage,
                     lastResponsePreview: session.lastResponsePreview,
                     lastResponseTurnId: session.lastResponseTurnId,
                     lastUserMessage: session.lastUserMessage,
                     lastToolLabel: session.lastToolLabel,
                     stats: session.stats,
                     tokenUsage: session.tokenUsage,
+                    goal: session.goal,
                     recentToolLog: session.recentToolLog,
                     lastTurnStart: session.lastTurnStartMs.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000.0) },
                     lastTurnEnd: session.hasActiveTurn
@@ -156,7 +202,6 @@ enum HomeDashboardSupport {
                     host: server.host,
                     port: server.port,
                     isLocal: server.isLocal,
-                    hasIpc: server.hasIpc,
                     health: server.health,
                     sourceLabel: server.connectionModeLabel,
                     statusLabel: server.statusLabel,
@@ -205,7 +250,6 @@ enum HomeDashboardSupport {
             host: saved.hostname,
             port: saved.preferredCodexPort ?? saved.port ?? saved.sshPort ?? 0,
             isLocal: saved.source == .local,
-            hasIpc: false,
             health: .disconnected,
             sourceLabel: sourceLabel(for: saved),
             statusLabel: AppServerHealth.disconnected.displayLabel,
@@ -236,10 +280,19 @@ enum HomeDashboardSupport {
 
     private static func savedAgentRuntimes(for saved: SavedServer) -> [AgentRuntimeInfo] {
         let kinds: [AgentRuntimeKind]
-        if saved.alleycatAgentWire == "ssh-bridge" {
+        if saved.alleycatAgentWire == "ssh-bridge" || saved.alleycatNodeId != nil {
             kinds = parseRuntimeKinds(saved.alleycatAgentName)
         } else {
-            kinds = [.codex]
+            // Direct Codex connections have a single known runtime —
+            // the codex app-server itself. Use the cached metadata id
+            // when present so the entry survives if codex is renamed
+            // server-side; fall back to the literal "codex" id
+            // otherwise (cold start before first probe).
+            let fallback = AgentRuntimeMetadataProvider.all?()
+                .first(where: { $0.capabilities?.usesDirectCodexPort == true })?
+                .name
+                ?? "codex"
+            kinds = [fallback]
         }
         return kinds.map { kind in
             AgentRuntimeInfo(
@@ -255,20 +308,18 @@ enum HomeDashboardSupport {
         let parsed = (raw ?? "")
             .split(separator: ",")
             .compactMap { token -> AgentRuntimeKind? in
-                switch token.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-                case "codex":
-                    return .codex
-                case "claude":
-                    return .claude
-                case "pi":
-                    return .pi
-                case "opencode":
-                    return .opencode
-                default:
-                    return nil
+                let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if trimmed.isEmpty { return nil }
+                switch trimmed {
+                case "pi.dev", "pidev": return "pi"
+                case "ampcode", "amp-code", "amp_code", "amp code": return "amp"
+                case "open-code", "open_code", "open code": return "opencode"
+                case "claude-code", "claude_code", "claude code": return "claude"
+                case "factory", "factory-droid", "factory_droid", "factory droid": return "droid"
+                default: return trimmed
                 }
             }
-        return parsed.isEmpty ? [.codex] : parsed
+        return parsed.isEmpty ? ["codex"] : parsed
     }
 
     static func serverSubtitle(for server: HomeDashboardServer) -> String {
@@ -286,7 +337,7 @@ enum HomeDashboardSupport {
         return lastPathComponent.isEmpty ? trimmed : lastPathComponent
     }
 
-    private static func sessionTitle(for session: AppSessionSummary) -> String {
+    static func sessionTitle(for session: AppSessionSummary) -> String {
         let trimmedTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedTitle.isEmpty && trimmedTitle != "Untitled session" {
             return trimmedTitle
@@ -301,5 +352,111 @@ enum HomeDashboardSupport {
         }
 
         return "New thread"
+    }
+}
+
+/// Walks `forkedFromId` over a snapshot of session summaries to derive a
+/// `ThreadLineage` for every thread. Lineage is scoped per server — a fork
+/// id always refers to a thread on the same server. Cycles are guarded by
+/// tracking visited thread ids during the walk. Sub-agent parentage is
+/// intentionally NOT traversed: it's a separate relationship and surfaces
+/// through `agentNickname`/`agentRole`, not via fork affordances.
+@MainActor
+enum ThreadLineageMap {
+    static func compute(sessions: [AppSessionSummary]) -> [ThreadKey: ThreadLineage] {
+        guard !sessions.isEmpty else { return [:] }
+
+        var byServerThreadId: [String: [String: AppSessionSummary]] = [:]
+        for session in sessions {
+            byServerThreadId[session.key.serverId, default: [:]][session.key.threadId] = session
+        }
+
+        var rootByKey: [ThreadKey: ThreadKey] = [:]
+        for session in sessions {
+            rootByKey[session.key] = root(for: session, in: byServerThreadId)
+        }
+
+        var groupsByRoot: [ThreadKey: [AppSessionSummary]] = [:]
+        for session in sessions {
+            let r = rootByKey[session.key] ?? session.key
+            groupsByRoot[r, default: []].append(session)
+        }
+
+        var result: [ThreadKey: ThreadLineage] = [:]
+        for (rootKey, group) in groupsByRoot {
+            let sorted = group.sorted { ($0.updatedAt ?? 0) > ($1.updatedAt ?? 0) }
+            let members = sorted.map {
+                ThreadLineageMember(key: $0.key, title: HomeDashboardSupport.sessionTitle(for: $0))
+            }
+            for (idx, session) in sorted.enumerated() {
+                let parentKey = sanitizedForkParentKey(for: session)
+                let ancestors = ancestorChain(for: session, in: byServerThreadId)
+                result[session.key] = ThreadLineage(
+                    rootKey: rootKey,
+                    parentKey: parentKey,
+                    ancestors: ancestors,
+                    members: members,
+                    branchIndex: idx + 1,
+                    branchTotal: members.count
+                )
+            }
+        }
+        return result
+    }
+
+    private static func sanitizedForkParentKey(for session: AppSessionSummary) -> ThreadKey? {
+        guard let parentId = session.forkedFromId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !parentId.isEmpty
+        else { return nil }
+        return ThreadKey(serverId: session.key.serverId, threadId: parentId)
+    }
+
+    private static func root(
+        for session: AppSessionSummary,
+        in byServerThreadId: [String: [String: AppSessionSummary]]
+    ) -> ThreadKey {
+        var current = session
+        var visited: Set<String> = [current.key.threadId]
+        while let parentId = current.forkedFromId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !parentId.isEmpty,
+              !visited.contains(parentId)
+        {
+            visited.insert(parentId)
+            guard let parent = byServerThreadId[current.key.serverId]?[parentId] else {
+                // Parent isn't in the loaded snapshot. Use its id as a
+                // synthetic root key so siblings of an unloaded parent
+                // still cluster together — otherwise A and B with
+                // forkedFromId=P would each be their own root and the
+                // search clusters would split.
+                return ThreadKey(serverId: current.key.serverId, threadId: parentId)
+            }
+            current = parent
+        }
+        return current.key
+    }
+
+    private static func ancestorChain(
+        for session: AppSessionSummary,
+        in byServerThreadId: [String: [String: AppSessionSummary]]
+    ) -> [ThreadLineageMember] {
+        var chain: [ThreadLineageMember] = []
+        var current = session
+        var visited: Set<String> = [current.key.threadId]
+        while let parentId = current.forkedFromId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !parentId.isEmpty,
+              !visited.contains(parentId),
+              let parent = byServerThreadId[current.key.serverId]?[parentId]
+        {
+            chain.insert(
+                ThreadLineageMember(
+                    key: parent.key,
+                    title: HomeDashboardSupport.sessionTitle(for: parent)
+                ),
+                at: 0
+            )
+            visited.insert(parentId)
+            current = parent
+        }
+        return chain
     }
 }

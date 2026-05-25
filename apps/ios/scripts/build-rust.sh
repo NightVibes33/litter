@@ -141,6 +141,34 @@ if [ "${SCCACHE_DISABLE:-0}" != "1" ] && [ -z "${RUSTC_WRAPPER:-}" ] && command 
   export RUSTC_WRAPPER="$(command -v sccache)"
 fi
 
+"$REPO_DIR/tools/scripts/update-alleycat-main.sh" --shared
+
+# libghostty static libs + headers must exist before the Rust crate is
+# compiled because the iOS terminal renderer links against them. Build them
+# on demand so direct CI invocations of build-rust.sh are self-contained.
+LIBGHOSTTY_DEVICE_LIB="$GENERATED_DEVICE_DIR/libghostty.a"
+LIBGHOSTTY_SIM_LIB="$GENERATED_SIM_DIR/libghostty.a"
+LIBGHOSTTY_MACABI_LIB="$GENERATED_MACABI_DIR/libghostty.a"
+LIBGHOSTTY_HEADER="$GENERATED_HEADERS_DIR/ghostty.h"
+NEEDS_GHOSTTY=0
+if [ ! -f "$LIBGHOSTTY_HEADER" ]; then
+  NEEDS_GHOSTTY=1
+fi
+if [ "$DEVICE_ONLY" -eq 1 ] && [ ! -f "$LIBGHOSTTY_DEVICE_LIB" ]; then
+  NEEDS_GHOSTTY=1
+elif [ "$SIM_ONLY" -eq 1 ] && [ ! -f "$LIBGHOSTTY_SIM_LIB" ]; then
+  NEEDS_GHOSTTY=1
+elif [ "$MACABI_ONLY" -eq 1 ] && [ ! -f "$LIBGHOSTTY_MACABI_LIB" ]; then
+  NEEDS_GHOSTTY=1
+elif [ "$DEVICE_ONLY" -eq 0 ] && [ "$SIM_ONLY" -eq 0 ] && [ "$MACABI_ONLY" -eq 0 ] &&
+  { [ ! -f "$LIBGHOSTTY_DEVICE_LIB" ] || [ ! -f "$LIBGHOSTTY_SIM_LIB" ] || [ ! -f "$LIBGHOSTTY_MACABI_LIB" ]; }; then
+  NEEDS_GHOSTTY=1
+fi
+if [ "$NEEDS_GHOSTTY" -eq 1 ]; then
+  echo "==> libghostty artifacts missing; building"
+  "$REPO_DIR/apps/ios/scripts/build-ghostty.sh"
+fi
+
 ensure_host_llvm_on_path() {
   local candidate
   local llvm_candidates=(
@@ -299,7 +327,10 @@ elif [ "$MACABI_ONLY" -eq 1 ]; then
 else
   rustup target add aarch64-apple-ios aarch64-apple-ios-sim aarch64-apple-ios-macabi x86_64-apple-ios-macabi
 fi
-rustup target add i686-unknown-linux-musl
+# litter-ish builds a small Linux supervisor into the embedded rootfs. Older
+# releases used i686, current releases use AArch64; keep both targets available
+# so the git-tracked dependency can move without breaking iOS/Catalyst builds.
+rustup target add i686-unknown-linux-musl aarch64-unknown-linux-musl
 
 if [ "$DEVICE_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios ($PROFILE)..."

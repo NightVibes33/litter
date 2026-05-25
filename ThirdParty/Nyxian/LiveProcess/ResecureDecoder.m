@@ -30,7 +30,7 @@ void ResecureDecoder(void)
 {
     /* getting nsxpcdecoder class */
     Class decoderClass = NSClassFromString(@"NSXPCDecoder");
-
+    
     /* get the selector and method ready */
     SEL validateSel = NSSelectorFromString(@"_validateAllowedClass:forKey:allowingInvocations:");
     Method validateMethod = class_getInstanceMethod(decoderClass, validateSel);
@@ -38,11 +38,11 @@ void ResecureDecoder(void)
     {
         return;
     }
-
+    
     /* get the implementation pointer */
     static IMP orig_validate = NULL;
     orig_validate = method_getImplementation(validateMethod);
-
+    
     /* create a hooking block */
     IMP new_validate = imp_implementationWithBlock(^BOOL(id self, Class cls, NSString *key, BOOL allowInvocations) {
         static NSSet *allowedClasses = nil;
@@ -56,15 +56,15 @@ void ResecureDecoder(void)
                               [FDObject class],
                               nil];
         });
-
+        
         if([allowedClasses containsObject:cls])
         {
             return YES;
         }
-
+        
         return ((BOOL(*)(id, SEL, Class, NSString*, BOOL))orig_validate)(self, validateSel, cls, key, allowInvocations);
     });
-
+    
     /* hook! */
     method_setImplementation(validateMethod, new_validate);
 }

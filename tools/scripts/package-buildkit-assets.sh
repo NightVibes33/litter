@@ -6,12 +6,20 @@ OUT_DIR="${LITTER_BUILDKIT_OUT_DIR:-${ROOT_DIR}/artifacts/buildkit/LitterBuildKi
 ZIP_PATH="${LITTER_BUILDKIT_ZIP:-${ROOT_DIR}/artifacts/buildkit/LitterBuildKitAssets.zip}"
 CORECOMPILER_FRAMEWORK="${CORECOMPILER_FRAMEWORK:-}"
 NATIVE_DRIVER_FRAMEWORK="${LITTER_BUILDKIT_NATIVE_FRAMEWORK:-}"
+OPENSSL_FRAMEWORK="${LITTER_BUILDKIT_OPENSSL_FRAMEWORK:-${ROOT_DIR}/ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework}"
 NYXIAN_RUNNER="${NYXIAN_BUILDKIT_RUNNER:-}"
 NATIVE_MODE="${LITTER_BUILDKIT_NATIVE_MODE:-inprocess}"
 SUPPORT_LIBS="${CORECOMPILER_SUPPORT_LIBS:-}"
 IPHONEOS_SDK_PATH="${IPHONEOS_SDK_PATH:-}"
+CLANG_RESOURCE_DIR="${LITTER_BUILDKIT_CLANG_RESOURCE_DIR:-${CLANG_RESOURCE_DIR:-}}"
+CXX_STANDARD_LIBRARY_INCLUDE_DIR="${LITTER_BUILDKIT_CXX_STANDARD_LIBRARY_INCLUDE_DIR:-${CXX_STANDARD_LIBRARY_INCLUDE_DIR:-}}"
+SWIFT_RESOURCE_DIR="${LITTER_BUILDKIT_SWIFT_RESOURCE_DIR:-${SWIFT_RESOURCE_DIR:-}}"
 SDK_VERSION="${LITTER_BUILDKIT_SDK_VERSION:-}"
 SWIFT_VERSION="${LITTER_BUILDKIT_SWIFT_VERSION:-6.x}"
+SWIFT_COMPATIBILITY_VERSION="${LITTER_BUILDKIT_SWIFT_COMPATIBILITY_VERSION:-$SWIFT_VERSION}"
+SDK_SWIFT_VERSION="${LITTER_BUILDKIT_SDK_SWIFT_VERSION:-}"
+SOURCE_COMMIT="${LITTER_BUILDKIT_SOURCE_COMMIT:-}"
+NATIVE_SOURCE_FINGERPRINT="${LITTER_BUILDKIT_NATIVE_SOURCE_FINGERPRINT:-}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: package-buildkit-assets.sh must run on macOS with Xcode available" >&2
@@ -23,6 +31,95 @@ if [[ -z "${IPHONEOS_SDK_PATH}" ]]; then
 fi
 if [[ -z "$SDK_VERSION" ]]; then
   SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+fi
+SWIFT_BIN="$(xcrun --sdk iphoneos --find swiftc 2>/dev/null || xcrun --find swiftc)"
+CLANG_BIN="$(xcrun --sdk iphoneos --find clang)"
+if [[ -z "$CLANG_RESOURCE_DIR" ]]; then
+  CLANG_RESOURCE_DIR="$("$CLANG_BIN" -print-resource-dir)"
+fi
+find_swift_resource_dir() {
+  local candidate
+  if [[ -x "$SWIFT_BIN" ]]; then
+    candidate="$("$SWIFT_BIN" -print-target-info 2>/dev/null | python3 -c 'import json,sys; print((json.load(sys.stdin).get("paths") or {}).get("runtimeResourcePath") or "")' 2>/dev/null || true)"
+    if [[ -d "$candidate/iphoneos" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+  local swift_usr_dir
+  swift_usr_dir="$(cd "$(dirname "$SWIFT_BIN")/.." && pwd -P)"
+  for candidate in "$swift_usr_dir/lib/swift" "$IPHONEOS_SDK_PATH/usr/lib/swift"; do
+    if [[ -d "$candidate/iphoneos" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+if [[ -z "$SWIFT_RESOURCE_DIR" ]]; then
+  SWIFT_RESOURCE_DIR="$(find_swift_resource_dir || true)"
+fi
+if [[ -z "$SWIFT_RESOURCE_DIR" || ! -d "$SWIFT_RESOURCE_DIR/iphoneos" ]]; then
+  echo "error: unable to locate a Swift resource directory with an iphoneos target directory" >&2
+  echo "Set LITTER_BUILDKIT_SWIFT_RESOURCE_DIR to the Swift toolchain resource dir, usually XcodeDefault.xctoolchain/usr/lib/swift." >&2
+  exit 1
+fi
+find_cxx_standard_library_include_dir() {
+  local toolchain_usr_dir
+  toolchain_usr_dir="$(cd "$(dirname "$CLANG_BIN")/.." && pwd -P)"
+  local developer_dir
+  developer_dir="$(xcode-select -p)"
+  local candidate
+  for candidate in \
+    "$toolchain_usr_dir/include/c++/v1" \
+    "$toolchain_usr_dir/lib/c++/v1" \
+    "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/include/c++/v1" \
+    "$developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/lib/c++/v1" \
+    "$IPHONEOS_SDK_PATH/usr/include/c++/v1"; do
+    if [[ -f "$candidate/vector" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  # Xcode occasionally moves libc++ headers. Ask clang for the active C++
+  # search paths and choose the first directory containing the vector header.
+  local search_log
+  search_log="$(mktemp)"
+  printf '#include <vector>\n' | "$CLANG_BIN" \
+    -target "arm64-apple-ios${IOS_DEPLOYMENT_TARGET:-18.0}" \
+    -isysroot "$IPHONEOS_SDK_PATH" \
+    -x c++ \
+    -std=c++17 \
+    -E \
+    -v \
+    - >/dev/null 2>"$search_log" || true
+  while IFS= read -r candidate; do
+    candidate="${candidate#"${candidate%%[![:space:]]*}"}"
+    candidate="${candidate% (framework directory)}"
+    if [[ -f "$candidate/vector" ]]; then
+      rm -f "$search_log"
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done < <(awk '/#include <...> search starts here:/{capture=1; next} /End of search list./{capture=0} capture {print}' "$search_log")
+  echo "warning: unable to locate libc++ headers from clang search paths:" >&2
+  sed 's/^/  /' "$search_log" >&2
+  rm -f "$search_log"
+  return 1
+}
+if [[ -z "$CXX_STANDARD_LIBRARY_INCLUDE_DIR" ]]; then
+  CXX_STANDARD_LIBRARY_INCLUDE_DIR="$(find_cxx_standard_library_include_dir || true)"
+fi
+if [[ -z "$SDK_SWIFT_VERSION" ]]; then
+  SDK_SWIFT_VERSION="$(xcrun --find swift >/dev/null 2>&1 && swift --version | head -n 1 || true)"
+fi
+
+if [[ -z "$SOURCE_COMMIT" ]]; then
+  SOURCE_COMMIT="$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || true)"
+fi
+if [[ -z "$NATIVE_SOURCE_FINGERPRINT" ]]; then
+  NATIVE_SOURCE_FINGERPRINT="$("$ROOT_DIR/tools/scripts/buildkit-native-source-fingerprint.sh")"
 fi
 
 require_path() {
@@ -59,12 +156,47 @@ if [[ -d "$IPHONEOS_SDK_PATH" ]]; then
   IPHONEOS_SDK_PATH="$(cd "$IPHONEOS_SDK_PATH" && pwd -P)"
 fi
 require_path "iPhoneOS SDK" "$IPHONEOS_SDK_PATH"
+if [[ -d "$CLANG_RESOURCE_DIR" ]]; then
+  CLANG_RESOURCE_DIR="$(cd "$CLANG_RESOURCE_DIR" && pwd -P)"
+fi
+require_path "Clang resource directory" "$CLANG_RESOURCE_DIR"
+require_path "Clang builtin header stdarg.h" "$CLANG_RESOURCE_DIR/include/stdarg.h"
+require_path "Clang builtin header stdbool.h" "$CLANG_RESOURCE_DIR/include/stdbool.h"
+require_path "Clang builtin header stddef.h" "$CLANG_RESOURCE_DIR/include/stddef.h"
+if [[ -d "$CXX_STANDARD_LIBRARY_INCLUDE_DIR" ]]; then
+  CXX_STANDARD_LIBRARY_INCLUDE_DIR="$(cd "$CXX_STANDARD_LIBRARY_INCLUDE_DIR" && pwd -P)"
+fi
+require_path "libc++ standard library headers" "$CXX_STANDARD_LIBRARY_INCLUDE_DIR"
+require_path "libc++ vector header" "$CXX_STANDARD_LIBRARY_INCLUDE_DIR/vector"
+if [[ -d "$SWIFT_RESOURCE_DIR" ]]; then
+  SWIFT_RESOURCE_DIR="$(cd "$SWIFT_RESOURCE_DIR" && pwd -P)"
+fi
+require_path "Swift resource directory" "$SWIFT_RESOURCE_DIR"
+require_path "Swift iphoneos resource directory" "$SWIFT_RESOURCE_DIR/iphoneos"
 
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR/Toolchains/Nyxian" "$OUT_DIR/SDK" "$(dirname "$ZIP_PATH")"
 cp -R "$CORECOMPILER_FRAMEWORK" "$OUT_DIR/Toolchains/Nyxian/CoreCompiler.framework"
 cp -R "$NATIVE_DRIVER_FRAMEWORK" "$OUT_DIR/Toolchains/Nyxian/LitterBuildKitNative.framework"
+OPENSSL_REL=""
+if [[ -d "$OPENSSL_FRAMEWORK" ]]; then
+  cp -R "$OPENSSL_FRAMEWORK" "$OUT_DIR/Toolchains/Nyxian/OpenSSL.framework"
+  OPENSSL_REL="Toolchains/Nyxian/OpenSSL.framework"
+fi
 cp -R "$SUPPORT_LIBS" "$OUT_DIR/Toolchains/Nyxian/CoreCompilerSupportLibs"
+CLANG_RESOURCE_REL="Toolchains/Nyxian/ClangResourceDir"
+CLANG_RESOURCE_DEST="$OUT_DIR/$CLANG_RESOURCE_REL"
+rm -rf "$CLANG_RESOURCE_DEST"
+/usr/bin/ditto "$CLANG_RESOURCE_DIR" "$CLANG_RESOURCE_DEST"
+CXX_INCLUDE_REL="Toolchains/Nyxian/CxxStandardLibrary/include/c++/v1"
+CXX_INCLUDE_DEST="$OUT_DIR/$CXX_INCLUDE_REL"
+rm -rf "$OUT_DIR/Toolchains/Nyxian/CxxStandardLibrary"
+mkdir -p "$(dirname "$CXX_INCLUDE_DEST")"
+/usr/bin/ditto "$CXX_STANDARD_LIBRARY_INCLUDE_DIR" "$CXX_INCLUDE_DEST"
+SWIFT_RESOURCE_REL="Toolchains/Nyxian/SwiftResourceDir"
+SWIFT_RESOURCE_DEST="$OUT_DIR/$SWIFT_RESOURCE_REL"
+rm -rf "$SWIFT_RESOURCE_DEST"
+/usr/bin/ditto "$SWIFT_RESOURCE_DIR" "$SWIFT_RESOURCE_DEST"
 SDK_DEST="$OUT_DIR/SDK/iPhoneOS${SDK_VERSION}.sdk"
 rm -rf "$SDK_DEST"
 /usr/bin/ditto "$IPHONEOS_SDK_PATH" "$SDK_DEST"
@@ -76,23 +208,140 @@ if [[ -n "$NYXIAN_RUNNER" ]]; then
   RUNNER_REL="Toolchains/Nyxian/bin/litter-buildkit-runner"
 fi
 
-python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" <<'PY'
+normalize_buildkit_payload_symlinks() {
+  echo "==> Normalizing BuildKit asset symlinks"
+  local link_list link_path link_target resolved_target pass rel_path
+  pass=0
+  while find "$OUT_DIR" -type l -print -quit | grep -q .; do
+    pass=$((pass + 1))
+    if [[ "$pass" -gt 20 ]]; then
+      echo "error: BuildKit asset symlink normalization did not converge" >&2
+      find "$OUT_DIR" -type l -print | sed -n '1,200p' >&2
+      exit 1
+    fi
+    link_list="$(mktemp)"
+    find "$OUT_DIR" -type l -print | sort -r > "$link_list"
+    while IFS= read -r link_path; do
+      rel_path="${link_path#$OUT_DIR/}"
+      if [[ "$rel_path" = "$SWIFT_RESOURCE_REL/clang" ]]; then
+        echo "replaced Swift clang resource link with packaged ClangResourceDir: $rel_path"
+        rm -f "$link_path"
+        /usr/bin/ditto "$CLANG_RESOURCE_DEST" "$link_path"
+        continue
+      fi
+
+      link_target="$(readlink "$link_path")"
+      if [[ "$link_target" = /* ]]; then
+        resolved_target="$link_target"
+      else
+        resolved_target="$(dirname "$link_path")/$link_target"
+      fi
+      if [[ ! -e "$resolved_target" ]]; then
+        echo "error: BuildKit asset symlink target is missing: $rel_path -> $link_target" >&2
+        rm -f "$link_list"
+        exit 1
+      fi
+      rm -f "$link_path"
+      /usr/bin/ditto "$resolved_target" "$link_path"
+    done < "$link_list"
+    rm -f "$link_list"
+  done
+}
+
+prune_sdk_compiler_dylibs() {
+  echo "==> Pruning SDK compiler dylibs from BuildKit assets"
+  find "$OUT_DIR/SDK" -type f \( \
+    -name 'lib_Compiler*.dylib' -o \
+    -name 'libLLVM*.dylib' -o \
+    -name 'libllvm*.dylib' \
+  \) -print | sort -u | while IFS= read -r library; do
+    echo "removed: ${library#$OUT_DIR/}"
+    rm -f "$library"
+  done
+}
+
+is_macho_binary() {
+  local path="$1"
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  /usr/bin/file "$path" 2>/dev/null | /usr/bin/grep -Eiq 'Mach-O'
+}
+
+sign_macho_binary() {
+  local path="$1"
+  is_macho_binary "$path" || return 0
+  chmod u+w "$path" 2>/dev/null || true
+  /usr/bin/codesign --force --sign - --timestamp=none "$path"
+  local signature_info
+  signature_info="$(/usr/bin/codesign -dv --verbose=4 "$path" 2>&1)" || {
+    echo "error: failed to sign BuildKit Mach-O payload: $path" >&2
+    printf '%s\n' "$signature_info" >&2
+    exit 1
+  }
+  if ! printf '%s\n' "$signature_info" | /usr/bin/grep -Eq 'CDHash=|CodeDirectory'; then
+    echo "error: BuildKit Mach-O payload is missing a code directory/CDHash after signing: $path" >&2
+    printf '%s\n' "$signature_info" >&2
+    exit 1
+  fi
+  echo "signed: ${path#$OUT_DIR/}"
+}
+
+sign_buildkit_payload() {
+  echo "==> Ad-hoc signing BuildKit Mach-O payloads"
+  find "$OUT_DIR/Toolchains/Nyxian" -type f \( \
+    -name 'CoreCompiler' -o \
+    -name 'LitterBuildKitNative' -o \
+    -name 'OpenSSL' -o \
+    -name 'litter-buildkit-runner' -o \
+    -name 'lib_Compiler*.dylib' -o \
+    -name 'libLLVM*.dylib' -o \
+    -name 'libllvm*.dylib' \
+  \) -print | sort -u | while IFS= read -r binary; do
+    sign_macho_binary "$binary"
+  done
+  find "$OUT_DIR/SDK" -type f -name '*.dylib' -print | sort -u | while IFS= read -r binary; do
+    sign_macho_binary "$binary"
+  done
+}
+
+normalize_buildkit_payload_symlinks
+prune_sdk_compiler_dylibs
+sign_buildkit_payload
+
+python3 - "$OUT_DIR" "$SDK_VERSION" "$SWIFT_VERSION" "$SWIFT_COMPATIBILITY_VERSION" "$SDK_SWIFT_VERSION" "$RUNNER_REL" "$NATIVE_MODE" "$SOURCE_COMMIT" "$NATIVE_SOURCE_FINGERPRINT" "$CLANG_RESOURCE_REL" "$CXX_INCLUDE_REL" "$SWIFT_RESOURCE_REL" "$OPENSSL_REL" <<'PY'
 import datetime, hashlib, json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 sdk_version = sys.argv[2]
 swift_version = sys.argv[3]
-runner_rel = sys.argv[4]
-native_mode = sys.argv[5]
+swift_compatibility_version = sys.argv[4]
+sdk_swift_version = sys.argv[5]
+runner_rel = sys.argv[6]
+native_mode = sys.argv[7]
+source_commit = sys.argv[8]
+native_source_fingerprint = sys.argv[9]
+clang_resource_rel = sys.argv[10]
+cxx_include_rel = sys.argv[11]
+swift_resource_rel = sys.argv[12]
+openssl_rel = sys.argv[13]
 required = [
     "Toolchains/Nyxian/CoreCompiler.framework",
     "Toolchains/Nyxian/CoreCompiler.framework/CoreCompiler",
     "Toolchains/Nyxian/LitterBuildKitNative.framework",
     "Toolchains/Nyxian/LitterBuildKitNative.framework/LitterBuildKitNative",
     "Toolchains/Nyxian/CoreCompilerSupportLibs",
+    clang_resource_rel,
+    f"{clang_resource_rel}/include/stdarg.h",
+    f"{clang_resource_rel}/include/stdbool.h",
+    f"{clang_resource_rel}/include/stddef.h",
+    cxx_include_rel,
+    swift_resource_rel,
+    f"{swift_resource_rel}/iphoneos",
+    f"{cxx_include_rel}/vector",
     f"SDK/iPhoneOS{sdk_version}.sdk/SDKSettings.plist",
 ]
 if runner_rel:
     required.append(runner_rel)
+if openssl_rel:
+    required.extend([openssl_rel, f"{openssl_rel}/OpenSSL"])
 hashes = {}
 for path in sorted(root.rglob("*")):
     if path.is_file() and path.stat().st_size <= 64 * 1024 * 1024:
@@ -108,6 +357,14 @@ manifest = {
     "createdAt": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
     "sdkVersion": sdk_version,
     "swiftVersion": swift_version,
+    "swiftCompatibilityVersion": swift_compatibility_version,
+    "sdkSwiftVersion": sdk_swift_version or None,
+    "sourceCommit": source_commit or None,
+    "nativeDriverSourceFingerprint": native_source_fingerprint,
+    "source": {
+        "repositoryCommit": source_commit or None,
+        "nativeDriverSourceFingerprint": native_source_fingerprint,
+    },
     "minimumIOS": "18.0",
     "toolchain": {
         "name": "Nyxian/CoreCompiler",
@@ -116,9 +373,13 @@ manifest = {
         "nativeRunner": runner_rel or None,
         "nativeDriverMode": native_mode,
         "supportLibraries": "Toolchains/Nyxian/CoreCompilerSupportLibs",
+        "opensslFramework": openssl_rel or None,
+        "swiftResourceDir": swift_resource_rel,
         "sdkPath": f"SDK/iPhoneOS{sdk_version}.sdk",
+        "clangResourceDir": clang_resource_rel,
+        "cxxStandardLibraryIncludeDir": cxx_include_rel,
     },
-    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package"] + (["nyxian-runner"] if runner_rel else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
+    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package", "clang-ios-build", "objc-ios-build", "cxx-ios-build", "objcxx-ios-build", "ld-ios-link", "xcrun-compat", "plutil-compat", "clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports"] + (["nyxian-runner"] if runner_rel else []) + (["feather-zsign", "kittystore-zsign"] if openssl_rel and native_mode == "inprocess" else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
     "requiredPaths": required,
     "sha256": hashes,
 }
@@ -127,15 +388,12 @@ PY
 
 rm -f "$ZIP_PATH"
 (
-  NORMALIZED_DIR="$(mktemp -d)"
-  trap 'rm -rf "$NORMALIZED_DIR"' EXIT
-  cp -R -L "$OUT_DIR" "$NORMALIZED_DIR/$(basename "$OUT_DIR")"
-  if find "$NORMALIZED_DIR/$(basename "$OUT_DIR")" -type l -print -quit | grep -q .; then
-    echo "error: normalized BuildKit asset output still contains symlinks" >&2
-    find "$NORMALIZED_DIR/$(basename "$OUT_DIR")" -type l -print | sed -n '1,200p' >&2
+  if find "$OUT_DIR" -type l -print -quit | grep -q .; then
+    echo "error: BuildKit asset output still contains symlinks" >&2
+    find "$OUT_DIR" -type l -print | sed -n '1,200p' >&2
     exit 1
   fi
-  cd "$NORMALIZED_DIR"
+  cd "$(dirname "$OUT_DIR")"
   /usr/bin/zip -qry "$ZIP_PATH" "$(basename "$OUT_DIR")"
 )
 

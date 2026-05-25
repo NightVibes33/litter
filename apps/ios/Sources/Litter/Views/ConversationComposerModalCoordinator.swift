@@ -183,7 +183,8 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                     threadKey: snapshot.threadKey,
                     collaborationMode: snapshot.collaborationMode,
                     effectiveApprovalPolicy: currentThread?.effectiveApprovalPolicy,
-                    effectiveSandboxPolicy: currentThread?.effectiveSandboxPolicy
+                    effectiveSandboxPolicy: currentThread?.effectiveSandboxPolicy,
+                    isReasoningEffortLocked: currentThread?.ampReasoningEffortLocked == true
                 )
                 .presentationDetents([.medium, .large], selection: $modelSelectorDetent)
                 .presentationDragIndicator(.visible)

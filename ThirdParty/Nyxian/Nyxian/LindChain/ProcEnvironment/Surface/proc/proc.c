@@ -1,0 +1,101 @@
+/*
+ SPDX-License-Identifier: AGPL-3.0-or-later
+
+ Copyright (C) 2025 - 2026 mach-port-t
+
+ This file is part of Nyxian.
+
+ Nyxian is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ Nyxian is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Affero General Public License for more details.
+
+ You should have received a copy of the GNU Affero General Public License
+ along with Nyxian. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#include <LindChain/ProcEnvironment/Surface/proc/proc.h>
+#include <LindChain/ProcEnvironment/Utils/klog.h>
+
+DEFINE_KVOBJECT_MAIN_EVENT_HANDLER(proc)
+{
+    /* handle size request */
+    if(kvarr == NULL)
+    {
+        return (int64_t)sizeof(ksurface_proc_t);
+    }
+    
+    /* get our kobj */
+    ksurface_proc_t *proc = (ksurface_proc_t*)kvarr[0];
+    
+    switch(type)
+    {
+        case kvObjEventInit:
+        {
+            klog_log("proc:init", "initilizing process @ %p", proc);
+            
+            /* setting fresh properties */
+            proc->bsd.kp_eproc.e_ucred.cr_ngroups = 1;
+            proc->bsd.kp_proc.p_priority = PUSER;
+            proc->bsd.kp_proc.p_usrpri = PUSER;
+            proc->bsd.kp_eproc.e_tdev = -1;
+            proc->bsd.kp_eproc.e_flag = 2;
+            
+            goto mutual_init;
+        }
+        case kvObjEventCopy:
+        {
+            ksurface_proc_t *src = (ksurface_proc_t*)kvarr[1];
+            
+            klog_log("proc:copy", "copying process @ %p from process @ %p", proc, src);
+            
+            /* copy the object into the other object */
+            memcpy(&(proc->bsd), &(src->bsd), sizeof(kinfo_proc_t));
+            memcpy(&(proc->nyx), &(src->nyx), sizeof(knyx_proc_t));
+            
+        mutual_init:
+            proc->bsd.kp_proc.p_stat = SRUN;
+            proc->bsd.kp_proc.p_flag = P_LP64 | P_EXEC;
+            proc->nyx.p_status = W_EXITCODE(0, SIGKILL);
+            
+            if(gettimeofday(&proc->bsd.kp_proc.p_un.__p_starttime, NULL) != 0)
+            {
+                return -1;
+            }
+            
+            pthread_mutex_init(&(proc->children.mutex), NULL);
+            
+            return 0;
+        }
+        case kvObjEventSnapshot:
+        {
+            ksurface_proc_t *src = (ksurface_proc_t*)kvarr[1];
+            
+            /* copy the object into the other object */
+            memcpy(&(proc->bsd), &(src->bsd), sizeof(kinfo_proc_t));
+            memcpy(&(proc->nyx), &(src->nyx), sizeof(knyx_proc_t));
+            
+            return 0;
+        }
+        case kvObjEventDeinit:
+            if(proc->header.base_type != kvObjBaseTypeObjectSnapshot)
+            {
+                klog_log("proc:deinit", "deinitilizing process @ %p", proc);
+                pthread_mutex_destroy(&(proc->children.mutex));
+                
+                if(proc->task != MACH_PORT_NULL)
+                {
+                    mach_port_deallocate(mach_task_self(), proc->task);
+                }
+            }
+            
+            /* fallthrough */
+        default:
+            return 0;
+    }
+}

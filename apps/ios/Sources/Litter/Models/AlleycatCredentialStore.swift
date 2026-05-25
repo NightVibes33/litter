@@ -83,6 +83,71 @@ final class AlleycatCredentialStore {
         }
     }
 
+    // MARK: - iroh device secret key (one slot per device)
+
+    private static let deviceKeyAccount = "__device_secret_key__"
+
+    /// Load the persisted iroh device secret key bytes (32 bytes), or
+    /// nil if not yet generated. Used by `AppRuntimeController` at app
+    /// launch to feed the Rust client before any alleycat operation
+    /// triggers the endpoint bind.
+    func loadDeviceSecretKey() throws -> Data? {
+        let query = deviceKeyQuery().merging([
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]) { _, new in new }
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        switch status {
+        case errSecSuccess:
+            guard let data = item as? Data, data.count == 32 else {
+                throw AlleycatCredentialStoreError.decodingFailed
+            }
+            return data
+        case errSecItemNotFound:
+            return nil
+        default:
+            throw AlleycatCredentialStoreError.keychain(status)
+        }
+    }
+
+    /// Persist the iroh device secret key bytes. Called once after the
+    /// Rust client first generates a fresh key, so subsequent launches
+    /// reuse the same `EndpointId`.
+    func saveDeviceSecretKey(_ bytes: Data) throws {
+        guard bytes.count == 32 else {
+            throw AlleycatCredentialStoreError.encodingFailed
+        }
+        let query = deviceKeyQuery()
+        let attributes = query.merging([
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecValueData as String: bytes
+        ]) { _, new in new }
+        let status = SecItemAdd(attributes as CFDictionary, nil)
+        if status == errSecDuplicateItem {
+            let updates: [String: Any] = [
+                kSecValueData as String: bytes,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            ]
+            let updateStatus = SecItemUpdate(query as CFDictionary, updates as CFDictionary)
+            guard updateStatus == errSecSuccess else {
+                throw AlleycatCredentialStoreError.keychain(updateStatus)
+            }
+            return
+        }
+        guard status == errSecSuccess else {
+            throw AlleycatCredentialStoreError.keychain(status)
+        }
+    }
+
+    private func deviceKeyQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.alleycat.device_key",
+            kSecAttrAccount as String: Self.deviceKeyAccount
+        ]
+    }
+
     private func baseQuery(nodeId: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,

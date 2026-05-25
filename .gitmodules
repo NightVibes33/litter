@@ -2,3 +2,11 @@
 	path = shared/third_party/codex
 	url = https://github.com/openai/codex
 	shallow = true
+[submodule "shared/third_party/ghostty"]
+	path = shared/third_party/ghostty
+	url = https://github.com/ghostty-org/ghostty.git
+	shallow = true
+[submodule "ThirdParty/SideStore/AltSign"]
+	path = ThirdParty/SideStore/AltSign
+	url = https://github.com/SideStore/AltSign.git
+	branch = master

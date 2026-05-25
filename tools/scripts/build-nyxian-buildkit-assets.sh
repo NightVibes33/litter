@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NYXIAN_ROOT="${NYXIAN_ROOT:-${ROOT_DIR}/ThirdParty/Nyxian}"
 LLVM_ROOT="${LLVM_ON_IOS_ROOT:-${ROOT_DIR}/ThirdParty/LLVM-On-iOS}"
 BUILD_UPSTREAM="${LITTER_NYXIAN_BUILD_UPSTREAM:-1}"
+NYXIAN_LLVM_REF="${LITTER_NYXIAN_LLVM_REF:-swift}"
+NYXIAN_LLVM_FALLBACK_REF="${LITTER_NYXIAN_LLVM_FALLBACK_REF:-swift}"
 CORECOMPILER_FRAMEWORK="${CORECOMPILER_FRAMEWORK:-}"
 CORECOMPILER_SUPPORT_LIBS="${CORECOMPILER_SUPPORT_LIBS:-}"
 CORECOMPILER_SCHEME="${CORECOMPILER_SCHEME:-CoreCompiler}"
@@ -41,7 +43,65 @@ find_corecompiler_framework() {
   return 1
 }
 
+
+clone_or_update_dependency() {
+  local path="$1"
+  local repo="$2"
+  local ref="$3"
+  local fallback_ref="$4"
+  local marker="$5"
+
+  if [[ -f "$path/$marker" ]]; then
+    echo "==> Using existing dependency: ${path#$ROOT_DIR/}"
+    return 0
+  fi
+
+  rm -rf "$path"
+  mkdir -p "$(dirname "$path")"
+  echo "==> Fetching ${path#$ROOT_DIR/} from $repo ($ref)"
+  if git clone --depth 1 --branch "$ref" "$repo" "$path"; then
+    return 0
+  fi
+
+  if [[ "$fallback_ref" != "$ref" ]]; then
+    echo "warning: failed to fetch $repo ref $ref; retrying $fallback_ref" >&2
+    rm -rf "$path"
+    git clone --depth 1 --branch "$fallback_ref" "$repo" "$path"
+    return 0
+  fi
+
+  rm -rf "$path"
+  git clone --depth 1 "$repo" "$path"
+}
+
+ensure_nyxian_build_dependencies() {
+  [[ -f "$NYXIAN_ROOT/.gitmodules" ]] || return 0
+
+  clone_or_update_dependency \
+    "$NYXIAN_ROOT/LLVM-On-iOS" \
+    "https://github.com/ProjectNyxian/LLVM-On-iOS.git" \
+    "$NYXIAN_LLVM_REF" \
+    "$NYXIAN_LLVM_FALLBACK_REF" \
+    "Makefile"
+
+  if [[ "${LITTER_NYXIAN_FETCH_FULL_SUBMODULES:-0}" = "1" ]]; then
+    clone_or_update_dependency \
+      "$NYXIAN_ROOT/libroot" \
+      "https://github.com/Opa334/libroot.git" \
+      "${LITTER_NYXIAN_LIBROOT_REF:-main}" \
+      "${LITTER_NYXIAN_LIBROOT_FALLBACK_REF:-master}" \
+      "README.md"
+    clone_or_update_dependency \
+      "$NYXIAN_ROOT/TrollStore" \
+      "https://github.com/opa334/TrollStore" \
+      "${LITTER_NYXIAN_TROLLSTORE_REF:-main}" \
+      "${LITTER_NYXIAN_TROLLSTORE_FALLBACK_REF:-master}" \
+      "Makefile"
+  fi
+}
+
 if [[ "$BUILD_UPSTREAM" = "1" ]]; then
+  ensure_nyxian_build_dependencies
   if [[ -f "$NYXIAN_ROOT/Makefile" && -d "$NYXIAN_ROOT/LLVM-On-iOS" ]]; then
     echo "==> Building Nyxian CoreCompiler support libs"
     CHECK_DEPS="${CHECK_DEPS:-0}" make -C "$NYXIAN_ROOT" CoreCompiler/CoreCompilerSupportLibs

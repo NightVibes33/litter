@@ -6,9 +6,26 @@ Cross-platform automation scripts will move here over time.
 - `codex-app-driver.applescript`: launches `Codex.app`, opens a project root, creates a thread, and pastes/sends prompts through GUI scripting for desktop-side conversation automation.
 - `codex-desktop-controller.mjs`: launches or attaches to a remote-debugging-enabled `Codex.app` instance, then drives the real renderer UI through CDP so it can open projects, create threads, send prompts, wait for the turn to finish, and dump the visible transcript as JSON without macOS accessibility scripting.
 - `deploy-android-ondevice.sh`: builds Rust JNI libs, assembles `onDeviceDebug`, installs on a target device (`--serial`/`ANDROID_SERIAL`), and launches the app.
-- `build-llama-xcframework.sh`: builds the pinned llama.cpp Apple XCFramework on a macOS runner and installs the iOS framework into `apps/ios/Frameworks`.
 - `ensure-ish-dev-random.sh`: repairs missing `/dev/null`, `/dev/random`, and `/dev/urandom` devices inside the iSH fakefs.
 - `switch-app-identity.sh`: switches local app IDs between `com.sigkitten.litter` and `com.<your-identifier>.litter` for Android+iOS (`--to your-identifier --identifier <name>`), with optional `--team-id` for iOS signing. For iOS it updates `apps/ios/project.yml` and regenerates `apps/ios/Litter.xcodeproj` via `xcodegen` (no direct `.xcodeproj` edits).
+- `triage-mobile-feedback.py`: rerunnable triage ledger for GitHub issues/PRs, TestFlight feedback/crashes, and Google Play reviews/crash issues. It stores raw per-run snapshots, a durable local state file, and a generated board under `artifacts/mobile-triage/`.
+- `verify-altstore-source.py`: validates the generated Litter AltStore/SideStore source before publishing so every app version entry has a direct GitHub-release IPA URL, SHA-256 checksum, version/build/date metadata, positive size, and a matching direct-download news card.
+
+Mobile triage flow:
+
+```bash
+# Fetch GitHub issues/PRs + TestFlight + Play data for the last day and update the local board.
+./tools/scripts/triage-mobile-feedback.py --last-hours 24
+
+# Inspect active items without fetching again.
+./tools/scripts/triage-mobile-feedback.py list --status active
+
+# Mark work as handled so repeated fetches do not put it back in the active queue.
+./tools/scripts/triage-mobile-feedback.py mark '<item-id>' --status done --note 'Fixed in <commit-or-version>'
+./tools/scripts/triage-mobile-feedback.py mark '<item-id>' --status pr-open --note 'Fix PR #123'
+```
+
+The generated board is `artifacts/mobile-triage/triage-board.md`; the source of truth is `artifacts/mobile-triage/triage-state.json`.
 
 Common `codex-desktop-controller.mjs` flows:
 
