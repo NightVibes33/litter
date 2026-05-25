@@ -758,11 +758,15 @@ struct BuildKitSettingsView: View {
                     twoFactorCode: appleIDTwoFactorCodeInput
                 )
                 let summary = try result.get()
+                let existingAccount = NyxianAppleIDStore.load()
+                let shouldPreserveSideStoreADI = existingAccount?.email.caseInsensitiveCompare(summary.email) == .orderedSame
                 let account = try NyxianAppleIDStore.login(
                     email: summary.email,
                     password: appleIDPasswordInput,
                     teamID: summary.teamID,
-                    anisetteServerURL: summary.anisetteServerURL
+                    anisetteServerURL: summary.anisetteServerURL,
+                    sideStoreLocalUserIdentifier: shouldPreserveSideStoreADI ? existingAccount?.sideStoreLocalUserIdentifier : nil,
+                    sideStoreAdiPB: shouldPreserveSideStoreADI ? existingAccount?.sideStoreAdiPB : nil
                 )
                 appleIDEmailInput = account.email
                 appleIDTeamIDInput = summary.teamID
@@ -773,11 +777,16 @@ struct BuildKitSettingsView: View {
                 appleIDTwoFactorCodeInput = ""
                 appleIDActionMessage = "SideStore Apple ID login verified for \(summary.statusDetail). Teams found: \(summary.availableTeams.map(\.displayText).joined(separator: ", "))."
             } else {
+                let existingAccount = NyxianAppleIDStore.load()
+                let loginEmail = appleIDEmailInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                let shouldPreserveSideStoreADI = existingAccount?.email.caseInsensitiveCompare(loginEmail) == .orderedSame
                 let account = try NyxianAppleIDStore.login(
                     email: appleIDEmailInput,
                     password: appleIDPasswordInput,
                     teamID: appleIDTeamIDInput,
-                    anisetteServerURL: anisetteURL
+                    anisetteServerURL: anisetteURL,
+                    sideStoreLocalUserIdentifier: shouldPreserveSideStoreADI ? existingAccount?.sideStoreLocalUserIdentifier : nil,
+                    sideStoreAdiPB: shouldPreserveSideStoreADI ? existingAccount?.sideStoreAdiPB : nil
                 )
                 appleIDEmailInput = account.email
                 appleIDTeamIDInput = account.teamID
@@ -809,7 +818,9 @@ struct BuildKitSettingsView: View {
                 email: account.email,
                 password: password,
                 teamID: appleIDTeamIDInput,
-                anisetteServerURL: account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+                anisetteServerURL: account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL,
+                sideStoreLocalUserIdentifier: account.sideStoreLocalUserIdentifier,
+                sideStoreAdiPB: account.sideStoreAdiPB
             )
             appleIDEmailInput = updated.email
             appleIDTeamIDInput = updated.teamID

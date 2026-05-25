@@ -51,6 +51,7 @@ require_grep "SideStore .sideconf handler" "handleSideStoreAccountImport" "apps/
 require_grep "SideStore local_user preservation" "local_user" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
 require_grep "SideStore adiPB preservation" "adiPB" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
 require_grep "SideStore ADI status" "hasSideStoreADI" "apps/ios/Sources/Litter/Models/NyxianSigningCertificateValidator.swift"
+require_grep "SideStore ADI preserved after team save" "sideStoreAdiPB: account.sideStoreAdiPB" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
 require_grep "SideStore bot import command" "litter-kittystore-import-sideconf" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
 
 require_grep "Feather remove files UI" "Remove Files" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
