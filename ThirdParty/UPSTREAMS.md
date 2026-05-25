@@ -5,7 +5,14 @@ These source drops are kept small and source-only. Generated build products, IPA
 ## Feather / Zsign
 
 - Feather reference repo: https://github.com/khcrysalis/Feather.git
-- Feather reference commit inspected for this integration: `6c0dc83a4cdee6206b771a6dd3d1337f89668ffd`
+- Feather reference commit inspected for this integration: `2320fd752864adaa9a173f9fc2f64ee9241e979e`
+- KittyStore signing option reference files adapted from Feather at the inspected commit:
+  - `Feather/Backend/Observable/OptionsManager.swift`
+  - `Feather/Utilities/Handlers/SigningHandler.swift`
+  - `Feather/Utilities/Handlers/TweakHandler.swift`
+  - `Feather/Utilities/Handlers/ZsignHandler.swift`
+  - `Feather/Views/Signing/SigningView.swift`
+  - `Feather/Views/Signing/SigningPropertiesView.swift`
 - Vendored signing engine repo: https://github.com/khcrysalis/Zsign-Package.git
 - Vendored path: `ThirdParty/Feather/Zsign-Package`
 - License: MIT, see `ThirdParty/Feather/Zsign-Package/LICENSE`
