@@ -11,6 +11,7 @@ struct BuildKitSettingsView: View {
     @State private var lastActionOutput: String?
     @State private var tokenInput = ""
     @State private var showingCertificateImporter = false
+    @State private var showingSideStoreAccountImporter = false
     @State private var appleIDEmailInput = ""
     @State private var appleIDTeamIDInput = ""
     @State private var appleIDPasswordInput = ""
@@ -48,6 +49,9 @@ struct BuildKitSettingsView: View {
         }
         .fileImporter(isPresented: $showingCertificateImporter, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
             handleCertificateImport(result)
+        }
+        .fileImporter(isPresented: $showingSideStoreAccountImporter, allowedContentTypes: sideStoreAccountContentTypes, allowsMultipleSelection: false) { result in
+            handleSideStoreAccountImport(result)
         }
         .onChange(of: downloader.installRevision) { _, _ in
             taskBag.run { await refresh() }
@@ -424,6 +428,14 @@ struct BuildKitSettingsView: View {
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
+            Button {
+                showingSideStoreAccountImporter = true
+            } label: {
+                Label("Import SideStore Account", systemImage: "person.crop.circle.badge.plus")
+                    .foregroundStyle(LitterTheme.accent)
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
             Button(role: .destructive) {
                 clearNyxianAppleID()
             } label: {
@@ -518,6 +530,14 @@ struct BuildKitSettingsView: View {
             Text("Diagnostics")
                 .foregroundStyle(LitterTheme.textSecondary)
         }
+    }
+
+    private var sideStoreAccountContentTypes: [UTType] {
+        var types: [UTType] = [.json, .data]
+        if let sideconf = UTType(filenameExtension: "sideconf") {
+            types.insert(sideconf, at: 0)
+        }
+        return types
     }
 
     private var statusIcon: String {
@@ -645,6 +665,41 @@ struct BuildKitSettingsView: View {
             }
         case .failure(let error):
             certificateActionMessage = "Certificate import failed: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func handleSideStoreAccountImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if didAccess { url.stopAccessingSecurityScopedResource() }
+            }
+            do {
+                let data = try Data(contentsOf: url)
+                let summary = try KittyStoreSideStoreAccountImporter.importSideconf(
+                    data: data,
+                    anisetteServerURL: anisetteURLForLogin
+                )
+                appleIDEmailInput = summary.account.email
+                appleIDTeamIDInput = summary.account.teamID
+                appleIDAnisetteURLInput = summary.account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+                syncAnisetteSelectionFromInput()
+                appleIDPasswordInput = ""
+                appleIDTwoFactorCodeInput = ""
+                certificatePasswordInput = ""
+                appleIDActionMessage = summary.message
+                certificateActionMessage = summary.certificate.importMessage
+                lastActionOutput = "SideStore .sideconf import completed.\n" + summary.message
+                taskBag.run { await refresh() }
+            } catch {
+                appleIDActionMessage = "SideStore account import failed: \(error.localizedDescription)"
+                lastActionOutput = "SideStore .sideconf import failed.\n\(error.localizedDescription)"
+            }
+        case .failure(let error):
+            appleIDActionMessage = "SideStore account import failed: \(error.localizedDescription)"
         }
     }
 

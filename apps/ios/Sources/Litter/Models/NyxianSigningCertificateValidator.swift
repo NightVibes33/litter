@@ -293,20 +293,26 @@ struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
     var email: String
     var teamID: String
     var anisetteServerURL: String?
+    var sideStoreLocalUserIdentifier: String?
+    var sideStoreAdiPB: String?
     var loggedInAt: Date
 
     enum CodingKeys: String, CodingKey {
         case email
         case teamID
         case anisetteServerURL
+        case sideStoreLocalUserIdentifier
+        case sideStoreAdiPB
         case loggedInAt
         case updatedAt
     }
 
-    init(email: String, teamID: String, anisetteServerURL: String?, loggedInAt: Date) {
+    init(email: String, teamID: String, anisetteServerURL: String?, sideStoreLocalUserIdentifier: String? = nil, sideStoreAdiPB: String? = nil, loggedInAt: Date) {
         self.email = email
         self.teamID = teamID
         self.anisetteServerURL = anisetteServerURL
+        self.sideStoreLocalUserIdentifier = sideStoreLocalUserIdentifier
+        self.sideStoreAdiPB = sideStoreAdiPB
         self.loggedInAt = loggedInAt
     }
 
@@ -315,6 +321,8 @@ struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
         email = try container.decode(String.self, forKey: .email)
         teamID = try container.decodeIfPresent(String.self, forKey: .teamID) ?? ""
         anisetteServerURL = try container.decodeIfPresent(String.self, forKey: .anisetteServerURL)
+        sideStoreLocalUserIdentifier = try container.decodeIfPresent(String.self, forKey: .sideStoreLocalUserIdentifier)
+        sideStoreAdiPB = try container.decodeIfPresent(String.self, forKey: .sideStoreAdiPB)
         loggedInAt = try container.decodeIfPresent(Date.self, forKey: .loggedInAt)
             ?? container.decodeIfPresent(Date.self, forKey: .updatedAt)
             ?? Date()
@@ -325,6 +333,8 @@ struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
         try container.encode(email, forKey: .email)
         if !teamID.isEmpty { try container.encode(teamID, forKey: .teamID) }
         try container.encodeIfPresent(anisetteServerURL, forKey: .anisetteServerURL)
+        try container.encodeIfPresent(sideStoreLocalUserIdentifier, forKey: .sideStoreLocalUserIdentifier)
+        try container.encodeIfPresent(sideStoreAdiPB, forKey: .sideStoreAdiPB)
         try container.encode(loggedInAt, forKey: .loggedInAt)
     }
 
@@ -338,6 +348,11 @@ struct NyxianAppleIDAccount: Codable, Equatable, Sendable {
 
     var anisetteDetail: String {
         anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+    }
+
+    var hasSideStoreADI: Bool {
+        sideStoreLocalUserIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            && sideStoreAdiPB?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 }
 
@@ -466,12 +481,16 @@ enum NyxianAppleIDStore {
         email rawEmail: String,
         password rawPassword: String,
         teamID rawTeamID: String,
-        anisetteServerURL rawAnisetteServerURL: String
+        anisetteServerURL rawAnisetteServerURL: String,
+        sideStoreLocalUserIdentifier rawSideStoreLocalUserIdentifier: String? = nil,
+        sideStoreAdiPB rawSideStoreAdiPB: String? = nil
     ) throws -> NyxianAppleIDAccount {
         let email = rawEmail.trimmingCharacters(in: .whitespacesAndNewlines)
         let password = rawPassword.trimmingCharacters(in: .whitespacesAndNewlines)
         let teamID = rawTeamID.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         let anisetteServerURL = try NyxianAnisetteServerDirectory.normalizedServerURL(rawAnisetteServerURL)
+        let sideStoreLocalUserIdentifier = rawSideStoreLocalUserIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sideStoreAdiPB = rawSideStoreAdiPB?.trimmingCharacters(in: .whitespacesAndNewlines)
         guard email.contains("@"), email.contains(".") else {
             throw NyxianAppleIDValidationError.invalidEmail
         }
@@ -490,6 +509,8 @@ enum NyxianAppleIDStore {
             email: email,
             teamID: teamID,
             anisetteServerURL: anisetteServerURL,
+            sideStoreLocalUserIdentifier: sideStoreLocalUserIdentifier?.isEmpty == false ? sideStoreLocalUserIdentifier : nil,
+            sideStoreAdiPB: sideStoreAdiPB?.isEmpty == false ? sideStoreAdiPB : nil,
             loggedInAt: Date()
         )
         let encoded = try JSONEncoder().encode(account)

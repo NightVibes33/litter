@@ -32,6 +32,7 @@ struct KittyStoreView: View {
     @State private var installedDeviceAppsMessage: String?
     @State private var existingDylibs: [KittyStoreImportedFile] = []
     @State private var removeDylibNames = ""
+    @State private var removeAppFiles = ""
     @State private var frameworksAndPlugins: [KittyStoreImportedFile] = []
     @State private var tweaks: [KittyStoreImportedFile] = []
     @State private var appNameOverride = ""
@@ -39,6 +40,8 @@ struct KittyStoreView: View {
     @State private var appVersionOverride = ""
     @State private var entitlementsText = "{\n}\n"
     @State private var signingType: KittyStoreFeatherSigningType = .standard
+    @State private var appAppearance: KittyStoreAppAppearance = .default
+    @State private var minimumAppRequirement: KittyStoreMinimumRequirement = .default
     @State private var injectPath: KittyStoreInjectPath = .executable
     @State private var injectFolder: KittyStoreInjectFolder = .frameworks
     @State private var ppqProtection = true
@@ -735,6 +738,10 @@ struct KittyStoreView: View {
                     KittyStoreCodeEditorView(title: "Remove Dylibs", text: $removeDylibNames)
                 }
 
+                NavigationLink("Remove Files") {
+                    KittyStoreCodeEditorView(title: "Remove Files", text: $removeAppFiles)
+                }
+
                 NavigationLink("Frameworks & PlugIns") {
                     KittyStoreFilesListView(
                         title: "Frameworks & PlugIns",
@@ -765,6 +772,8 @@ struct KittyStoreView: View {
             NavigationLink("Properties") {
                 KittyStoreSigningPropertiesView(
                     signingType: $signingType,
+                    appAppearance: $appAppearance,
+                    minimumAppRequirement: $minimumAppRequirement,
                     injectPath: $injectPath,
                     injectFolder: $injectFolder,
                     ppqProtection: $ppqProtection,
@@ -1564,6 +1573,13 @@ struct KittyStoreView: View {
             .filter { !$0.isEmpty }
     }
 
+    private func parsedRemoveAppFiles() -> [String] {
+        removeAppFiles
+            .components(separatedBy: CharacterSet(charactersIn: "\n,"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     private func signingPlanJSON() -> String {
         let payload: [String: Any] = [
             "mode": selectedSigningMode.rawValue,
@@ -1584,11 +1600,14 @@ struct KittyStoreView: View {
             "modify": [
                 "existingDylibs": existingDylibs.map(\.stagedPath),
                 "removeDylibs": parsedRemoveDylibNames(),
+                "removeFiles": parsedRemoveAppFiles(),
                 "frameworksAndPlugins": frameworksAndPlugins.map(\.stagedPath),
                 "tweaks": tweaks.map(\.stagedPath),
                 "entitlements": entitlementsText
             ],
             "properties": [
+                "appAppearance": appAppearance.rawValue,
+                "minimumAppRequirement": minimumAppRequirement.rawValue,
                 "injectPath": injectPath.rawValue,
                 "injectFolder": injectFolder.rawValue,
                 "ppqProtection": ppqProtection,
@@ -2057,6 +2076,40 @@ private enum KittyStoreFeatherSigningType: String, CaseIterable, Identifiable {
     }
 }
 
+private enum KittyStoreAppAppearance: String, CaseIterable, Identifiable {
+    case `default` = "default"
+    case light = "Light"
+    case dark = "Dark"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .default: return "Default"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+}
+
+private enum KittyStoreMinimumRequirement: String, CaseIterable, Identifiable {
+    case `default` = "default"
+    case iOS16 = "16.0"
+    case iOS15 = "15.0"
+    case iOS14 = "14.0"
+    case iOS13 = "13.0"
+    case iOS12 = "12.0"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .default: return "Default"
+        default: return rawValue
+        }
+    }
+}
+
 private enum KittyStorePostSigningAction: String, CaseIterable, Identifiable {
     case none
     case install
@@ -2378,6 +2431,8 @@ private struct KittyStoreFilesListView: View {
 
 private struct KittyStoreSigningPropertiesView: View {
     @Binding var signingType: KittyStoreFeatherSigningType
+    @Binding var appAppearance: KittyStoreAppAppearance
+    @Binding var minimumAppRequirement: KittyStoreMinimumRequirement
     @Binding var injectPath: KittyStoreInjectPath
     @Binding var injectFolder: KittyStoreInjectFolder
     @Binding var ppqProtection: Bool
@@ -2403,6 +2458,16 @@ private struct KittyStoreSigningPropertiesView: View {
             Section("General") {
                 Picker("Signing Type", selection: $signingType) {
                     ForEach(KittyStoreFeatherSigningType.allCases) { value in
+                        Text(value.title).tag(value)
+                    }
+                }
+                Picker("Appearance", selection: $appAppearance) {
+                    ForEach(KittyStoreAppAppearance.allCases) { value in
+                        Text(value.title).tag(value)
+                    }
+                }
+                Picker("Minimum iOS", selection: $minimumAppRequirement) {
+                    ForEach(KittyStoreMinimumRequirement.allCases) { value in
                         Text(value.title).tag(value)
                     }
                 }

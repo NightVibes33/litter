@@ -1083,9 +1083,13 @@ static void LBIKittyStoreModifyInfoPlist(NSDictionary *plan, NSString *appDir, N
         info[@"CFBundleVersion"] = version;
     }
     NSDictionary *properties = LBIDictionaryValue(plan, @"properties");
+    NSString *appAppearance = LBIString(properties, @"appAppearance");
+    if(appAppearance.length > 0 && ![appAppearance.lowercaseString isEqualToString:@"default"]) { info[@"UIUserInterfaceStyle"] = appAppearance; }
+    NSString *minimumRequirement = LBIString(properties, @"minimumAppRequirement");
+    if(minimumRequirement.length > 0 && ![minimumRequirement.lowercaseString isEqualToString:@"default"]) { info[@"MinimumOSVersion"] = minimumRequirement; }
     if(LBIBoolValue(properties[@"fileSharing"])) { info[@"UISupportsDocumentBrowser"] = @YES; }
     if(LBIBoolValue(properties[@"iTunesFileSharing"])) { info[@"UIFileSharingEnabled"] = @YES; }
-    if(LBIBoolValue(properties[@"proMotion"])) { info[@"CADisableMinimumFrameDurationOnPhone"] = @NO; }
+    if(LBIBoolValue(properties[@"proMotion"])) { info[@"CADisableMinimumFrameDurationOnPhone"] = @YES; }
     if(LBIBoolValue(properties[@"gameMode"])) { info[@"GCSupportsGameMode"] = @YES; }
     if(LBIBoolValue(properties[@"iPadFullscreen"])) { info[@"UIRequiresFullScreen"] = @YES; }
     if(LBIBoolValue(properties[@"removeURLScheme"])) { [info removeObjectForKey:@"CFBundleURLTypes"]; }
@@ -1096,6 +1100,46 @@ static void LBIKittyStoreModifyInfoPlist(NSDictionary *plan, NSString *appDir, N
     else
     {
         [log appendFormat:@"Could not write Info.plist at %@\n", infoPath];
+    }
+}
+
+static BOOL LBIKittyStoreRelativePathIsSafe(NSString *path)
+{
+    NSString *trimmed = [path stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if(trimmed.length == 0 || [trimmed hasPrefix:@"/"]) { return NO; }
+    for(NSString *component in trimmed.pathComponents)
+    {
+        if([component isEqualToString:@".."] || [component isEqualToString:@"/"]) { return NO; }
+    }
+    return YES;
+}
+
+static void LBIKittyStoreRemoveAppFiles(NSDictionary *plan, NSString *appDir, NSMutableString *log)
+{
+    for(NSString *name in LBIStringArray(plan, @"modify", @"removeFiles"))
+    {
+        NSString *trimmed = [name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if(trimmed.length == 0) { continue; }
+        if(!LBIKittyStoreRelativePathIsSafe(trimmed))
+        {
+            [log appendFormat:@"Skipped unsafe app-relative removal path: %@\n", trimmed];
+            continue;
+        }
+        NSString *target = [appDir stringByAppendingPathComponent:trimmed];
+        if(![NSFileManager.defaultManager fileExistsAtPath:target])
+        {
+            [log appendFormat:@"App-relative removal target not found: %@\n", trimmed];
+            continue;
+        }
+        NSError *error = nil;
+        if([NSFileManager.defaultManager removeItemAtPath:target error:&error])
+        {
+            [log appendFormat:@"Removed app-relative file before signing: %@\n", trimmed];
+        }
+        else
+        {
+            [log appendFormat:@"Could not remove app-relative file %@: %@\n", trimmed, error.localizedDescription ?: @"unknown error"];
+        }
     }
 }
 
@@ -1428,6 +1472,7 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
     }
 
     LBIKittyStoreModifyInfoPlist(plan, appDir, log);
+    LBIKittyStoreRemoveAppFiles(plan, appDir, log);
     vector<string> dylibs;
     vector<string> removeDylibs;
     LBIKittyStoreCollectInputs(plan, appDir, workRoot, dylibs, removeDylibs, log);

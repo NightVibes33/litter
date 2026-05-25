@@ -541,9 +541,10 @@ actor LitterBuildKit {
         let appleIDLoggedIn = NyxianAppleIDStore.isLoggedIn
         let appleIDDetail: String
         if let appleIDAccount {
+            let sideStoreADI = appleIDAccount.hasSideStoreADI ? ", SideStore ADI imported" : ""
             appleIDDetail = appleIDLoggedIn
-                ? "\(appleIDAccount.statusDetail) via \(appleIDAccount.anisetteDetail) (password in Keychain)"
-                : "\(appleIDAccount.statusDetail) via \(appleIDAccount.anisetteDetail) (password missing from Keychain)"
+                ? "\(appleIDAccount.statusDetail) via \(appleIDAccount.anisetteDetail) (password in Keychain\(sideStoreADI))"
+                : "\(appleIDAccount.statusDetail) via \(appleIDAccount.anisetteDetail) (password missing from Keychain\(sideStoreADI))"
         } else {
             appleIDDetail = "Missing Apple ID login"
         }
@@ -920,6 +921,7 @@ actor LitterBuildKit {
         var outputPath: String?
         var dylibs: [String] = []
         var removeDylibs: [String] = []
+        var removeFiles: [String] = []
         var frameworks: [String] = []
         var tweaks: [String] = []
         var properties: [String: String] = [:]
@@ -954,6 +956,9 @@ actor LitterBuildKit {
             case "--entitlements-json": entitlementsJSON = takeValue(token)
             case "--dylib": if let value = takeValue(token) { dylibs.append(value) }
             case "--remove-dylib", "--rm-dylib": if let value = takeValue(token) { removeDylibs.append(value) }
+            case "--remove-file", "--rm-file": if let value = takeValue(token) { removeFiles.append(value) }
+            case "--app-appearance": if let value = takeValue(token) { properties["appAppearance"] = value }
+            case "--minimum-ios", "--minimum-app-requirement": if let value = takeValue(token) { properties["minimumAppRequirement"] = value }
             case "--framework", "--plugin": if let value = takeValue(token) { frameworks.append(value) }
             case "--tweak": if let value = takeValue(token) { tweaks.append(value) }
             case "--property":
@@ -1117,6 +1122,7 @@ actor LitterBuildKit {
             "modify": [
                 "existingDylibs": resolvedDylibs,
                 "removeDylibs": removeDylibs,
+                "removeFiles": removeFiles,
                 "frameworksAndPlugins": resolvedFrameworks,
                 "tweaks": resolvedTweaks,
                 "entitlements": entitlementsValue
@@ -3419,6 +3425,9 @@ actor LitterBuildKit {
           --version 1.0
           --dylib /root/libExample.dylib
           --remove-dylib @executable_path/libOld.dylib
+          --remove-file Frameworks/CydiaSubstrate.framework
+          --app-appearance default|Light|Dark
+          --minimum-ios default|16.0|15.0|14.0|13.0|12.0
           --framework /root/Example.framework
           --plugin /root/Example.appex
           --tweak /root/tweak.deb
