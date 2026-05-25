@@ -9,6 +9,7 @@ Cross-platform automation scripts will move here over time.
 - `ensure-ish-dev-random.sh`: repairs missing `/dev/null`, `/dev/random`, and `/dev/urandom` devices inside the iSH fakefs.
 - `switch-app-identity.sh`: switches local app IDs between `com.sigkitten.litter` and `com.<your-identifier>.litter` for Android+iOS (`--to your-identifier --identifier <name>`), with optional `--team-id` for iOS signing. For iOS it updates `apps/ios/project.yml` and regenerates `apps/ios/Litter.xcodeproj` via `xcodegen` (no direct `.xcodeproj` edits).
 - `triage-mobile-feedback.py`: rerunnable triage ledger for GitHub issues/PRs, TestFlight feedback/crashes, and Google Play reviews/crash issues. It stores raw per-run snapshots, a durable local state file, and a generated board under `artifacts/mobile-triage/`.
+- `verify-altstore-source.py`: validates the generated Litter AltStore/SideStore source before publishing so every app version entry has a direct GitHub-release IPA URL, SHA-256 checksum, version/build/date metadata, positive size, and a matching direct-download news card.
 
 Mobile triage flow:
 

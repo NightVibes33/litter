@@ -31,6 +31,7 @@ require_path "SideStore minimuxer source" "ThirdParty/SideStore/minimuxer"
 require_path "SideStore LocalDevVPN tunnel provider" "ThirdParty/SideStore/LocalDevVPN-TunnelProv"
 require_path "Feather Zsign package" "ThirdParty/Feather/Zsign-Package"
 require_path "KittyStore view" "apps/ios/Sources/Litter/Views/KittyStoreView.swift"
+require_path "AltStore source verifier" "tools/scripts/verify-altstore-source.py"
 require_path "BuildKit settings view" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
 require_path "SideStore account importer" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
 require_path "SideStore signing bridge" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreSigningBridge.swift"
@@ -43,6 +44,7 @@ require_grep "AltSign dynamic embed" "embed: true" "apps/ios/project.yml"
 require_grep "minimuxer bridge build" "tools/scripts/build-sidestore-minimuxer.sh" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "minimuxer linked Swift flag" "KITTYSTORE_MINIMUXER_LINKED" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "dynamic framework packaging guard" "Verify embedded dynamic frameworks" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "AltStore source verifier workflow gate" "verify-altstore-source.py" ".github/workflows/ios-unsigned-ipa.yml"
 
 require_grep "SideStore .sideconf UI import" "Import SideStore Account" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
 require_grep "SideStore .sideconf handler" "handleSideStoreAccountImport" "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift"
@@ -62,6 +64,7 @@ require_grep "Feather native ProMotion plist" 'CADisableMinimumFrameDurationOnPh
 
 require_grep "README SideStore .sideconf docs" ".sideconf" "README.md"
 require_grep "README SideStore/Feather attribution" "SideStore, AltStore, Feather, LocalDevVPN" "README.md"
+require_grep "README installable AltSource versions" "version-history first" "README.md"
 
 if [ "$missing" -ne 0 ]; then
   exit 1

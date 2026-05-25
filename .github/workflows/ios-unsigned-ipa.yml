@@ -40,6 +40,7 @@ on:
       - 'tools/scripts/vendor-nyxian.sh'
       - 'tools/scripts/verify-nyxian-source-import.sh'
       - 'tools/scripts/verify-kittystore-integration.sh'
+      - 'tools/scripts/verify-altstore-source.py'
       - 'tools/scripts/build-nyxian-buildkit-assets.sh'
       - 'tools/scripts/verify-nyxian-buildkit-assets.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
@@ -1110,6 +1111,18 @@ jobs:
               with urllib.request.urlopen(req, timeout=45) as response:
                   return json.loads(response.read().decode("utf-8"))
 
+          def request_asset_text(asset):
+              headers = {
+                  "Accept": "application/octet-stream",
+                  "User-Agent": "litter-altstore-source-builder",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              }
+              if token:
+                  headers["Authorization"] = f"Bearer {token}"
+              req = urllib.request.Request(asset["url"], headers=headers)
+              with urllib.request.urlopen(req, timeout=45) as response:
+                  return response.read().decode("utf-8", errors="replace")
+
           def request_asset_json(asset):
               try:
                   return request_json(asset["url"], accept="application/octet-stream")
@@ -1201,6 +1214,46 @@ jobs:
                       if loaded:
                           metadata.update(loaded)
               return metadata
+
+          def normalized_sha256(value):
+              text = str(value or "").strip()
+              if re.fullmatch(r"[A-Fa-f0-9]{64}", text):
+                  return text.lower()
+              return ""
+
+          def sha256_from_text(value):
+              match = re.search(r"\b([A-Fa-f0-9]{64})\b", value or "")
+              return match.group(1).lower() if match else ""
+
+          def sha256_for_release(release, metadata, ipa_asset):
+              metadata_sha = normalized_sha256(metadata.get("sha256"))
+              if metadata_sha:
+                  return metadata_sha
+
+              ipa_name = str(ipa_asset.get("name") or "")
+              sha_assets = []
+              for asset in release.get("assets", []):
+                  name = str(asset.get("name") or "")
+                  lower = name.lower()
+                  if not lower.endswith(".sha256"):
+                      continue
+                  if ipa_name and (name == f"{ipa_name}.sha256" or ipa_name in name):
+                      sha_assets.insert(0, asset)
+                  else:
+                      sha_assets.append(asset)
+
+              for asset in sha_assets:
+                  try:
+                      parsed = sha256_from_text(request_asset_text(asset))
+                  except Exception as error:
+                      print(f"::warning::Could not read checksum asset {asset.get('name', 'asset')}: {error}")
+                      continue
+                  if parsed:
+                      return parsed
+
+              release_name = release.get("tag_name") or release.get("name") or "release"
+              print(f"::warning::Skipping {release_name} in AltStore source versions because its IPA has no usable sha256 metadata")
+              return ""
 
           def clean_history_lines(tag, previous_tag, current=False):
               target = "HEAD" if current else tag
@@ -1322,6 +1375,7 @@ jobs:
               "downloadURL": os.environ["IPA_DOWNLOAD_URL"],
               "size": int(os.environ["IPA_SIZE"]),
               "minOSVersion": "18.0",
+              "sha256": os.environ["IPA_SHA256"].lower(),
           }
           notes = notes_for(current_entry, current_release, current_metadata, previous_tags.get(current_release_tag, ""), current=True)
           current_entry["localizedDescription"] = notes
@@ -1361,6 +1415,9 @@ jobs:
               download_url = str(metadata.get("ipaDownloadURL") or ipa_asset.get("browser_download_url") or "")
               if not download_url or download_url in versions_by_url:
                   continue
+              sha256 = sha256_for_release(release, metadata, ipa_asset)
+              if not sha256:
+                  continue
               entry = {
                   "version": version,
                   "buildVersion": build,
@@ -1369,6 +1426,7 @@ jobs:
                   "downloadURL": download_url,
                   "size": int(metadata.get("size") or ipa_asset.get("size") or 0),
                   "minOSVersion": str(metadata.get("minimumIOSVersion") or "18.0"),
+                  "sha256": sha256,
               }
               entry["localizedDescription"] = notes_for(entry, release, metadata, previous_tags.get(release.get("tag_name", ""), ""), current=False)
               versions_by_url[download_url] = entry
@@ -1430,6 +1488,8 @@ jobs:
           print(f"AltStore source versions: {len(versions)}")
           print(f"AltStore source IPA download cards: {len(archive_news)}")
           PY
+
+          python3 tools/scripts/verify-altstore-source.py "$SOURCE_PATH" --require-news-downloads
 
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" \
