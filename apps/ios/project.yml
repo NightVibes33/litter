@@ -93,6 +93,15 @@ targets:
       - path: Resources/fs
         type: folder
         buildPhase: resources
+      - path: ../../ThirdParty/SideStore/Source
+        type: folder
+        buildPhase: resources
+      - path: ../../ThirdParty/Feather/Source
+        type: folder
+        buildPhase: resources
+      - path: ../../ThirdParty/SideStore/LocalDevVPN-Source
+        type: folder
+        buildPhase: resources
       - path: Sources/LitterLiveActivity/CodexTurnLiveActivity.swift
       - path: Sources/LitterWatch/Models/WatchModels.swift
       - path: Sources/LitterWatch/Models/WatchSize.swift
