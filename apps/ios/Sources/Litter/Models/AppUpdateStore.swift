@@ -144,6 +144,14 @@ final class AppUpdateStore: ObservableObject {
 
     let releaseSource = AppReleaseSource.current
 
+    var stableUpdateURL: String {
+        releaseSource.stableUpdateURLString
+    }
+
+    var stableSourceURL: String {
+        releaseSource.stableSourceURLString
+    }
+
     private var activeDriver: FileDownloadDriver?
     private var activeTask: Task<Void, Never>?
     private var downloadStartedAt: Date?
