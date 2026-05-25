@@ -22,6 +22,7 @@ use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use ish_embed_host::IshInstance;
 
@@ -40,6 +41,7 @@ pub const ISH_E_TIMEOUT: i32 = -8;
 pub const ISH_E_NOMEM: i32 = -9;
 pub const ISH_E_ARGS: i32 = -10;
 const BOOTSTRAP_COMMAND_TIMEOUT_MS: u64 = 10_000;
+const INSTANCE_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const ROOTFS_STAMP_FILE: &str = ".litter-rootfs-id";
 const ROOTFS_ARCH_FILE: &str = "data/etc/apk/arch";
 const ROOTFS_ALPINE_RELEASE_FILE: &str = "data/etc/alpine-release";
@@ -62,14 +64,29 @@ pub(crate) fn instance() -> Option<&'static IshInstance> {
 /// Used by the terminal session opener so a UI tap that races the on-launch
 /// bootstrap doesn't surface a misleading "iSH has not been bootstrapped"
 /// error to the user.
-pub(crate) async fn instance_or_wait(timeout: std::time::Duration) -> Option<&'static IshInstance> {
+pub(crate) async fn instance_or_wait(timeout: Duration) -> Option<&'static IshInstance> {
     if let Some(instance) = INSTANCE.get() {
         return Some(instance);
     }
-    let deadline = std::time::Instant::now() + timeout;
-    let poll = std::time::Duration::from_millis(100);
-    while std::time::Instant::now() < deadline {
+    let deadline = Instant::now() + timeout;
+    let poll = Duration::from_millis(100);
+    while Instant::now() < deadline {
         tokio::time::sleep(poll).await;
+        if let Some(instance) = INSTANCE.get() {
+            return Some(instance);
+        }
+    }
+    None
+}
+
+fn instance_or_wait_blocking(timeout: Duration) -> Option<&'static IshInstance> {
+    if let Some(instance) = INSTANCE.get() {
+        return Some(instance);
+    }
+    let deadline = Instant::now() + timeout;
+    let poll = Duration::from_millis(100);
+    while Instant::now() < deadline {
+        std::thread::sleep(poll);
         if let Some(instance) = INSTANCE.get() {
             return Some(instance);
         }
@@ -173,9 +190,11 @@ pub fn run_streaming<F>(
 where
     F: FnMut(&[u8]),
 {
-    let Some(instance) = INSTANCE.get() else {
+    let Some(instance) = instance_or_wait_blocking(INSTANCE_WAIT_TIMEOUT) else {
         eprintln!("[ish] run() called before bootstrap succeeded");
-        return (ISH_E_NOT_RUNNING, Vec::new());
+        let output = b"iSH runtime is not bootstrapped\n".to_vec();
+        on_output(&output);
+        return (ISH_E_NOT_RUNNING, output);
     };
 
     // The previous embed library funnelled every command through a single
