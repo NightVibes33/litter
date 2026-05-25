@@ -192,6 +192,7 @@ struct KittyStoreView: View {
 
     private var newsWorkspace: some View {
         storeScroll {
+            latestNewsPanel
             versionHistoryPanel
         }
     }
@@ -199,7 +200,6 @@ struct KittyStoreView: View {
     private var sourcesWorkspace: some View {
         storeScroll {
             sourcePanel
-            setupPanel
         }
     }
 
@@ -240,7 +240,6 @@ struct KittyStoreView: View {
         Form {
             signingCustomizationSection
             signingIdentitySection
-            sideStoreTransportSection
             signingAdvancedSection
 
             Section {
@@ -319,34 +318,13 @@ struct KittyStoreView: View {
         panel(title: "My Apps", icon: "square.stack.3d.up.fill") {
             VStack(spacing: 10) {
                 readinessRow(
-                    "Apple ID",
-                    detail: buildKitStatus?.appleIDDetail ?? "Add Apple ID in KittyStore Settings for SideStore signing.",
-                    state: buildKitStatus?.appleIDConfigured
-                )
-                readinessRow(
-                    "Pairing File",
-                    detail: importedPairingFile?.displayName ?? "Import the SideStore pairing file in App Refresh.",
-                    state: importedPairingFile != nil
-                )
-                readinessRow(
-                    "LocalDevVPN",
-                    detail: buildKitStatus?.localDevVPNDetail ?? "Required for direct on-device install and refresh.",
-                    state: buildKitStatus?.localDevVPNConnected
-                )
-                readinessRow(
                     "Device Apps",
                     detail: installedDeviceAppsInProgress ? "Loading installed apps from SideStore minimuxer." : (installedDeviceAppsMessage ?? "Load apps from the paired device."),
                     state: installedDeviceApps.isEmpty ? nil : true
                 )
 
-                actionRow("Load Installed Apps", detail: importedPairingFile == nil ? "Import a pairing file before browsing installed apps." : "Browse installed apps through the SideStore minimuxer bridge.", icon: "iphone.gen3", enabled: importedPairingFile != nil && KittyStoreMinimuxerBridge.isLinked && !installedDeviceAppsInProgress) {
+                actionRow("Load Installed Apps", detail: importedPairingFile == nil ? "Import a pairing file in Settings before browsing installed apps." : "Browse installed apps through the SideStore minimuxer bridge.", icon: "iphone.gen3", enabled: importedPairingFile != nil && KittyStoreMinimuxerBridge.isLinked && !installedDeviceAppsInProgress) {
                     loadInstalledDeviceApps()
-                }
-                actionRow("Sign IPA", detail: "Open the Feather-style signing workspace.", icon: "signature") {
-                    showingSigningSheet = true
-                }
-                actionRow("Refresh Store", detail: "Reload sources, accounts, signing status, and device readiness.", icon: "arrow.clockwise") {
-                    taskBag.run { await refreshAll() }
                 }
 
                 if installedDeviceApps.isEmpty {
@@ -356,19 +334,31 @@ struct KittyStoreView: View {
                         installedDeviceAppRow(installedApp)
                     }
                 }
+            }
+        }
+    }
 
-                if let selectedApp = app, let latest = selectedApp.versions.first {
-                    readinessRow("Selected Source App", detail: "\(selectedApp.name) \(latest.version ?? latest.buildVersion ?? "latest")", state: true)
-                    if let sideStoreURL = installerURL(scheme: "sidestore", host: "install", targetURL: latest.downloadURL) {
-                        actionRow("Install Selected", detail: "Open the selected source IPA in SideStore.", icon: "square.and.arrow.down") { openURL(sideStoreURL) }
+    private var latestNewsPanel: some View {
+        panel(title: "News", icon: "newspaper") {
+            VStack(spacing: 10) {
+                if let latestVersion {
+                    readinessRow(
+                        "\(selectedAppName) \(latestVersion.version ?? latestVersion.buildVersion ?? "Latest")",
+                        detail: latestVersion.cleanedDescription.isEmpty ? "Latest source release is ready to install or sign." : shortNotes(latestVersion.cleanedDescription),
+                        state: true
+                    )
+                    HStack(spacing: 8) {
+                        if let sideStoreURL = installerURL(scheme: "sidestore", host: "install", targetURL: latestVersion.downloadURL) {
+                            compactButton("Install", icon: "square.and.arrow.down") { openURL(sideStoreURL) }
+                        }
+                        if let selectedApp = app {
+                            compactButton("Sign", icon: "signature") {
+                                downloadSourceIPAForSigning(storeApp: selectedApp, version: latestVersion, openSigning: true)
+                            }
+                        }
                     }
-                    actionRow("Sign Selected", detail: "Download \(selectedApp.name), open signing, then install or refresh.", icon: "signature") {
-                        downloadSourceIPAForSigning(storeApp: selectedApp, version: latest, openSigning: true)
-                    }
-                    actionRow("Refresh Selected", detail: importedPairingFile == nil ? "Import a pairing file before refresh." : "Sign and refresh \(selectedApp.bundleIdentifier).", icon: "arrow.triangle.2.circlepath", enabled: importedPairingFile != nil) {
-                        postSigningAction = .refresh
-                        downloadSourceIPAForSigning(storeApp: selectedApp, version: latest, openSigning: true)
-                    }
+                } else {
+                    emptyState(sourcePhase.message)
                 }
             }
         }
@@ -384,17 +374,6 @@ struct KittyStoreView: View {
                         versionRow(version)
                     }
                 }
-            }
-        }
-    }
-
-    private var setupPanel: some View {
-        panel(title: "Setup", icon: "checklist") {
-            VStack(spacing: 10) {
-                readinessRow("AltStore/SideStore source", detail: source == nil ? "Load a compatible source feed before browsing apps." : "Loaded \(apps.count) app(s) from \(source?.name ?? "source feed").", state: source != nil)
-                readinessRow("Version history", detail: versions.isEmpty ? "Refresh the source to load historical IPA versions." : "\(versions.count) installable IPA versions are listed.", state: !versions.isEmpty)
-                readinessRow("SideStore install", detail: "Uses sidestore:// install links for every source app version.", state: source != nil)
-                readinessRow("LocalDevVPN", detail: buildKitStatus?.localDevVPNDetail ?? "Required for SideStore-style on-device install and refresh.", state: buildKitStatus?.localDevVPNConnected)
             }
         }
     }
@@ -516,14 +495,6 @@ struct KittyStoreView: View {
                     clearKittyStoreCertificate()
                 }
 
-                readinessRow(
-                    "Provisioning Profile",
-                    detail: importedProvisioningProfile?.displayName ?? (buildKitStatus?.embeddedProvisionPresent == true ? "Embedded profile is available." : "Import a .mobileprovision in signing."),
-                    state: importedProvisioningProfile != nil || buildKitStatus?.embeddedProvisionPresent == true
-                )
-                actionRow("Import Provisioning Profile", detail: "Choose a .mobileprovision for certificate signing.", icon: "doc.badge.gearshape") {
-                    presentImporter(.provisioningProfile)
-                }
                 actionRow("Signing Workspace", detail: "Import IPAs, profiles, dylibs, tweaks, entitlements, and properties.", icon: "slider.horizontal.3") {
                     showingSigningSheet = true
                 }
@@ -673,54 +644,6 @@ struct KittyStoreView: View {
             Text("Signing")
         } footer: {
             Text("Certificate signing follows Feather's flow. KittyStore settings validate bad passwords, missing private keys, profile mismatch, expiry, and revocation before a certificate is treated as usable.")
-        }
-        .listRowBackground(LitterTheme.surface.opacity(0.62))
-    }
-
-    private var sideStoreTransportSection: some View {
-        Section {
-            Button {
-                showingSigningSheet = false
-                selectedTab = .settings
-            } label: {
-                LabeledContent("Apple ID") {
-                    Text(buildKitStatus?.appleIDConfigured == true ? "Logged In" : "Missing")
-                        .foregroundStyle(buildKitStatus?.appleIDConfigured == true ? LitterTheme.success : LitterTheme.warning)
-                }
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                presentImporter(.pairingFile)
-            } label: {
-                LabeledContent("Pairing File") {
-                    Text(importedPairingFile?.displayName ?? "Not Imported")
-                        .foregroundStyle(importedPairingFile == nil ? LitterTheme.textSecondary : LitterTheme.textPrimary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            LabeledContent("LocalDevVPN") {
-                Text(buildKitStatus?.localDevVPNConnected == true ? "Connected" : "Not Detected")
-                    .foregroundStyle(buildKitStatus?.localDevVPNConnected == true ? LitterTheme.success : LitterTheme.warning)
-            }
-
-            if let detail = buildKitStatus?.appleIDDetail, !detail.isEmpty {
-                Text(detail)
-                    .litterFont(.caption)
-                    .foregroundStyle(LitterTheme.textSecondary)
-                    .textSelection(.enabled)
-            }
-            if let detail = buildKitStatus?.localDevVPNDetail, !detail.isEmpty {
-                Text(detail)
-                    .litterFont(.caption)
-                    .foregroundStyle(LitterTheme.textSecondary)
-                    .textSelection(.enabled)
-            }
-        } header: {
-            Text("SideStore Install")
-        } footer: {
-            Text("Apple ID, SideStore Anisette, pairing file, and LocalDevVPN are configured in KittyStore Settings for direct on-device install and refresh.")
         }
         .listRowBackground(LitterTheme.surface.opacity(0.62))
     }
@@ -2006,7 +1929,6 @@ struct KittyStoreView: View {
                 HStack(spacing: 8) {
                     compactButton(isSelected ? "Selected" : "View", icon: isSelected ? "checkmark.circle.fill" : "rectangle.and.text.magnifyingglass") {
                         selectSourceApp(storeApp)
-                        selectedTab = .myApps
                     }
                     if let sideStoreURL = installerURL(scheme: "sidestore", host: "install", targetURL: latest.downloadURL) {
                         compactButton("SideStore", icon: "square.and.arrow.down") { openURL(sideStoreURL) }
