@@ -19,6 +19,7 @@ struct BuildKitSettingsView: View {
     @State private var selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.defaultServerURL
     @State private var anisetteServerListURLInput = NyxianAnisetteServerDirectory.officialListURL
     @State private var anisetteServers = NyxianAnisetteServerDirectory.fallbackServers
+    @State private var appleIDTeams: [KittyStoreSideStoreSigningBridge.TeamSummary] = []
     @State private var appleIDActionMessage: String?
     @State private var anisetteServerMessage: String?
     @State private var certificatePasswordInput = ""
@@ -346,6 +347,23 @@ struct BuildKitSettingsView: View {
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            if !appleIDTeams.isEmpty {
+                Picker("Signing team", selection: $appleIDTeamIDInput) {
+                    ForEach(appleIDTeams, id: \.id) { team in
+                        Text(team.displayText).tag(team.id)
+                    }
+                }
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+                Button {
+                    taskBag.run { await saveSelectedAppleIDTeam() }
+                } label: {
+                    Label("Save Selected Team", systemImage: "person.2.badge.gearshape")
+                        .foregroundStyle(LitterTheme.accent)
+                }
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
 
             SecureField("Apple ID password or app-specific password", text: $appleIDPasswordInput)
                 .textContentType(.password)
@@ -688,6 +706,7 @@ struct BuildKitSettingsView: View {
                 )
                 appleIDEmailInput = account.email
                 appleIDTeamIDInput = summary.teamID
+                appleIDTeams = summary.availableTeams
                 appleIDAnisetteURLInput = summary.anisetteServerURL
                 syncAnisetteSelectionFromInput()
                 appleIDPasswordInput = ""
@@ -702,6 +721,7 @@ struct BuildKitSettingsView: View {
                 )
                 appleIDEmailInput = account.email
                 appleIDTeamIDInput = account.teamID
+                appleIDTeams = []
                 appleIDAnisetteURLInput = account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
                 syncAnisetteSelectionFromInput()
                 appleIDPasswordInput = ""
@@ -715,6 +735,34 @@ struct BuildKitSettingsView: View {
     }
 
     @MainActor
+    private func saveSelectedAppleIDTeam() async {
+        do {
+            guard let account = NyxianAppleIDStore.load() else {
+                appleIDActionMessage = "Log in with Apple ID before saving a signing team."
+                return
+            }
+            guard let password = try NyxianAppleIDCredentialStore.shared.loadPassword() else {
+                appleIDActionMessage = "Apple ID password is missing from Keychain. Log in again before saving a signing team."
+                return
+            }
+            let updated = try NyxianAppleIDStore.login(
+                email: account.email,
+                password: password,
+                teamID: appleIDTeamIDInput,
+                anisetteServerURL: account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+            )
+            appleIDEmailInput = updated.email
+            appleIDTeamIDInput = updated.teamID
+            appleIDAnisetteURLInput = updated.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
+            syncAnisetteSelectionFromInput()
+            appleIDActionMessage = "Saved signing team \(updated.teamID)."
+            await refresh()
+        } catch {
+            appleIDActionMessage = "Could not save signing team: \(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
     private func clearNyxianAppleID() {
         do {
             try NyxianAppleIDStore.clear()
@@ -722,6 +770,7 @@ struct BuildKitSettingsView: View {
             appleIDTeamIDInput = ""
             appleIDPasswordInput = ""
             appleIDTwoFactorCodeInput = ""
+            appleIDTeams = []
             appleIDAnisetteURLInput = NyxianAnisetteServerDirectory.defaultServerURL
             selectedAnisetteServerAddress = NyxianAnisetteServerDirectory.defaultServerURL
             appleIDActionMessage = "Removed Apple ID login."
