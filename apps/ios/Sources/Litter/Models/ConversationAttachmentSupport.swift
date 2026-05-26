@@ -122,7 +122,7 @@ enum ConversationAttachmentSupport {
         guard !path.isEmpty else { return nil }
 
         let trimmedDisplayName = rawDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayName = trimmedDisplayName?.nilIfEmpty ?? displayName(forPath: path)
+        let displayName = nonEmptyString(trimmedDisplayName) ?? displayName(forPath: path)
         let kind: ConversationAttachment.Kind
         if isDirectory {
             kind = .folder
@@ -130,7 +130,7 @@ enum ConversationAttachmentSupport {
             kind = isArchiveName(displayName) || isArchiveName(path) ? .archive : .file
         }
         let trimmedSourceRoot = rawSourceRoot?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sourceRoot = trimmedSourceRoot?.nilIfEmpty
+        let sourceRoot = nonEmptyString(trimmedSourceRoot)
         return ConversationAttachment(
             kind: kind,
             displayName: displayName,
@@ -149,6 +149,11 @@ enum ConversationAttachmentSupport {
             }
         }
         return inputs
+    }
+
+    private static func nonEmptyString(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        return value
     }
 
     static func linkedFakefsPaths(in text: String) -> [String] {
