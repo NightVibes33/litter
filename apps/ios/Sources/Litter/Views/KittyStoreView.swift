@@ -9,6 +9,9 @@ struct KittyStoreView: View {
     @State private var sources: [KittyStoreSource] = []
     @State private var sourcePhase: KittyStoreSourcePhase = .idle
     @AppStorage("kittystore.source.urls.v1") private var storedSourceURLsJSON = ""
+    @AppStorage("kittystore.backgroundRefresh.v1") private var kittyStoreBackgroundRefresh = true
+    @AppStorage("kittystore.disableIdleTimeout.v1") private var kittyStoreDisableIdleTimeout = true
+    @AppStorage("kittystore.allowSiriRefresh.v1") private var kittyStoreAllowSiriRefresh = false
     @AppStorage("kittystore.pairing.path.v1") private var storedPairingFilePath = ""
     @AppStorage("kittystore.pairing.name.v1") private var storedPairingFileName = ""
     @AppStorage("kittystore.pairing.size.v1") private var storedPairingFileSize = ""
@@ -17,6 +20,9 @@ struct KittyStoreView: View {
     @AppStorage("kittystore.provisioning.size.v1") private var storedProvisioningProfileSize = ""
     @State private var copiedMessage: String?
     @State private var shareItem: KittyStoreShareItem?
+    @State private var showingAppleIDSignInSheet = false
+    @State private var showingAppleIDTwoFactorPrompt = false
+    @State private var appleIDLoginInProgress = false
     @State private var selectedTab: KittyStoreTab = .news
     @State private var selectedSourceAppID: String?
     @State private var showingSigningSheet = false
@@ -210,6 +216,17 @@ struct KittyStoreView: View {
         .sheet(item: $shareItem) { item in
             KittyStoreActivityView(activityItems: [item.url])
         }
+        .sheet(isPresented: $showingAppleIDSignInSheet) {
+            NavigationStack {
+                appleIDSignInWorkspace
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Close") { showingAppleIDSignInSheet = false }
+                        }
+                    }
+            }
+            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+        }
         .sheet(isPresented: $showingSigningSheet) {
             NavigationStack {
                 signingWorkspace
@@ -228,6 +245,15 @@ struct KittyStoreView: View {
         }
         .alert(item: $signingAlert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
+        .alert("Please enter the 6-digit verification code that was sent to your Apple devices.", isPresented: $showingAppleIDTwoFactorPrompt) {
+            TextField("Verification code", text: $appleIDTwoFactorCodeInput)
+                .keyboardType(.numberPad)
+                .textContentType(.oneTimeCode)
+            Button("Cancel", role: .cancel) { }
+            Button("Continue") {
+                taskBag.run { await saveKittyStoreAppleID() }
+            }
         }
         .confirmationDialog(
             "Remove from Device",
@@ -299,8 +325,11 @@ struct KittyStoreView: View {
     }
 
     private var settingsWorkspace: some View {
-        storeScroll {
+        storeScroll(spacing: 22) {
             accountSettingsPanel
+            supportSettingsPanel
+            displaySettingsPanel
+            refreshSettingsPanel
             signingSettingsPanel
             transportSettingsPanel
             diagnosticsSettingsPanel
@@ -619,71 +648,188 @@ struct KittyStoreView: View {
     }
 
     private var accountSettingsPanel: some View {
-        panel(title: "Account", icon: "person.crop.circle") {
-            VStack(spacing: 10) {
-                readinessRow(
-                    "Apple ID",
-                    detail: buildKitStatus?.appleIDDetail ?? "Not logged in.",
-                    state: buildKitStatus?.appleIDConfigured
-                )
-
-                settingsTextField("Apple ID email", text: $appleIDEmailInput, keyboardType: .emailAddress, textContentType: .username)
-                settingsTextField("Team ID (optional)", text: $appleIDTeamIDInput, autocapitalization: .characters)
-                settingsSecureField("Apple ID password or app-specific password", text: $appleIDPasswordInput)
-                settingsTextField("Two-factor code", text: $appleIDTwoFactorCodeInput, keyboardType: .numberPad, textContentType: .oneTimeCode)
-
-                Picker("Anisette server", selection: $selectedAnisetteServerAddress) {
-                    ForEach(anisetteServers) { server in
-                        Text(server.displayName).tag(server.address)
+        let account = NyxianAppleIDStore.load()
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                settingsSectionHeader("Account")
+                Spacer(minLength: 0)
+                if account != nil {
+                    Button("SIGN OUT") {
+                        clearKittyStoreAppleID()
                     }
-                    Text("Custom").tag(NyxianAnisetteServerDirectory.customSelectionID)
+                    .buttonStyle(.plain)
+                    .litterFont(.caption, weight: .heavy)
+                    .foregroundStyle(LitterTheme.accent)
                 }
-                .pickerStyle(.menu)
-                .padding(10)
-                .background(LitterTheme.surfaceLight.opacity(0.3), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
 
-                if selectedAnisetteServerAddress == NyxianAnisetteServerDirectory.customSelectionID {
-                    settingsTextField("Custom Anisette server URL", text: $appleIDAnisetteURLInput, keyboardType: .URL)
+            if let account {
+                signedInAccountCard(account)
+            } else {
+                Button {
+                    showingAppleIDSignInSheet = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Text("Sign in with Apple ID")
+                            .litterFont(.headline, weight: .bold)
+                            .foregroundStyle(LitterTheme.textPrimary)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .litterFont(.headline, weight: .bold)
+                            .foregroundStyle(LitterTheme.textSecondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                    .background(settingsBlockBackground)
                 }
-                settingsTextField("Anisette server list URL", text: $anisetteServerListURLInput, keyboardType: .URL)
+                .buttonStyle(.plain)
+                Text("Sign in with your Apple ID to download, sign, install, and refresh apps from KittyStore.")
+                    .settingsFootnoteStyle()
+            }
+
+            actionRow("Import SideStore Account", detail: "Import a .sideconf account, ADI fields, certificate, and password.", icon: "person.crop.circle.badge.plus") {
+                presentImporter(.sideStoreAccount)
+            }
+
+            if let appleIDActionMessage, !appleIDActionMessage.isEmpty {
+                messageBlock(appleIDActionMessage)
+            }
+            if let sideStoreAccountActionMessage, !sideStoreAccountActionMessage.isEmpty {
+                messageBlock(sideStoreAccountActionMessage)
+            }
+        }
+    }
+
+    private var appleIDSignInWorkspace: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Welcome to KittyStore.")
+                        .litterFont(size: 38, weight: .heavy)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Sign in with your Apple ID to get started.")
+                        .litterFont(.title3, weight: .semibold)
+                        .foregroundStyle(LitterTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 18)
+
+                VStack(alignment: .leading, spacing: 18) {
+                    sideStoreField("Apple ID", text: $appleIDEmailInput, placeholder: "name@email.com", keyboardType: .emailAddress, textContentType: .username)
+                    sideStoreSecureField("Password", text: $appleIDPasswordInput, placeholder: "••••••••")
+                    if !appleIDTwoFactorCodeInput.isEmpty {
+                        sideStoreField("Verification Code", text: $appleIDTwoFactorCodeInput, placeholder: "123456", keyboardType: .numberPad, textContentType: .oneTimeCode)
+                    }
+                    appleIDSignInButton
+                }
 
                 if !appleIDTeams.isEmpty {
-                    Picker("Signing team", selection: $appleIDTeamIDInput) {
-                        ForEach(appleIDTeams, id: \.id) { team in
-                            Text(team.displayText).tag(team.id)
+                    VStack(alignment: .leading, spacing: 10) {
+                        settingsSectionHeader("Signing Team")
+                        Picker("Signing team", selection: $appleIDTeamIDInput) {
+                            ForEach(appleIDTeams, id: \.id) { team in
+                                Text(team.displayText).tag(team.id)
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .padding(14)
+                        .background(settingsBlockBackground)
+
+                        Button {
+                            taskBag.run { await saveSelectedAppleIDTeam() }
+                        } label: {
+                            Text(appleIDTeamIDInput.isEmpty ? "Save Selected Team" : "Use \(appleIDTeamIDInput)")
+                                .litterFont(.headline, weight: .bold)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 15)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(LitterTheme.accent)
+                        .background(LitterTheme.surface.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    settingsSectionHeader("Anisette")
+                    Picker("Anisette server", selection: $selectedAnisetteServerAddress) {
+                        ForEach(anisetteServers) { server in
+                            Text(server.displayName).tag(server.address)
+                        }
+                        Text("Custom").tag(NyxianAnisetteServerDirectory.customSelectionID)
                     }
                     .pickerStyle(.menu)
-                    .padding(10)
-                    .background(LitterTheme.surfaceLight.opacity(0.3), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(14)
+                    .background(settingsBlockBackground)
 
-                    actionRow("Save Selected Team", detail: appleIDTeamIDInput.isEmpty ? "Choose a team returned by Apple ID login." : "Use \(appleIDTeamIDInput) for SideStore signing.", icon: "person.2.badge.gearshape") {
-                        taskBag.run { await saveSelectedAppleIDTeam() }
+                    if selectedAnisetteServerAddress == NyxianAnisetteServerDirectory.customSelectionID {
+                        sideStoreField("Custom Anisette Server", text: $appleIDAnisetteURLInput, placeholder: NyxianAnisetteServerDirectory.defaultServerURL, keyboardType: .URL)
+                    }
+                    sideStoreField("Server List", text: $anisetteServerListURLInput, placeholder: NyxianAnisetteServerDirectory.officialListURL, keyboardType: .URL)
+                    actionRow("Refresh Anisette Servers", detail: "Reload the SideStore Anisette server list.", icon: "arrow.clockwise.circle") {
+                        taskBag.run { await refreshAnisetteServers(showSuccess: true) }
                     }
                 }
 
-                actionRow("Login Apple ID", detail: KittyStoreSideStoreSigningBridge.isLinked ? "Authenticate with SideStore AltSign and save the selected team." : "Save the account locally; this build is missing AltSign linkage.", icon: "person.badge.key.fill", enabled: !appleIDEmailInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !appleIDPasswordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
-                    taskBag.run { await saveKittyStoreAppleID() }
-                }
-                actionRow("Import SideStore Account", detail: "Import a .sideconf account, ADI fields, certificate, and password.", icon: "person.crop.circle.badge.plus") {
-                    presentImporter(.sideStoreAccount)
-                }
-                actionRow("Refresh Anisette Servers", detail: "Reload the SideStore Anisette server list.", icon: "arrow.clockwise.circle") {
-                    taskBag.run { await refreshAnisetteServers(showSuccess: true) }
-                }
-                actionRow("Clear Apple ID Login", detail: "Remove the saved Apple ID and Keychain password.", icon: "person.crop.circle.badge.xmark", enabled: NyxianAppleIDStore.load() != nil) {
-                    clearKittyStoreAppleID()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Why do we need this?")
+                        .litterFont(.title3, weight: .heavy)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                    Text("Your Apple ID is used to configure apps so they can be installed on this device. Your credentials are stored securely in this device's Keychain and sent only to Apple for authentication.")
+                        .litterFont(.body, weight: .medium)
+                        .foregroundStyle(LitterTheme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let appleIDActionMessage, !appleIDActionMessage.isEmpty {
                     messageBlock(appleIDActionMessage)
                 }
-                if let sideStoreAccountActionMessage, !sideStoreAccountActionMessage.isEmpty {
-                    messageBlock(sideStoreAccountActionMessage)
-                }
                 if let anisetteServerMessage, !anisetteServerMessage.isEmpty {
                     messageBlock(anisetteServerMessage)
                 }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 34)
+        }
+        .scrollContentBackground(.hidden)
+        .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+    }
+
+    private var supportSettingsPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            settingsSectionHeader("Support Us")
+            navigationActionRow("Support the team", detail: "Support KittyLitter by helping fund ongoing development.", icon: "heart.fill") {
+                TipJarView()
+            }
+        }
+    }
+
+    private var displaySettingsPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            settingsSectionHeader("Display")
+            actionRow("Change App Icon", detail: "Choose an alternate KittyLitter app icon when alternate icons are bundled.", icon: "app.badge") {
+                signingAlert = KittyStoreSigningAlert(title: "App Icons", message: "Alternate KittyStore icons are not bundled in this build yet.")
+            }
+        }
+    }
+
+    private var refreshSettingsPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            settingsSectionHeader("Refreshing Apps")
+            VStack(spacing: 0) {
+                settingsToggleRow("Background Refresh", isOn: $kittyStoreBackgroundRefresh)
+                settingsDivider
+                settingsToggleRow("Disable Idle Timeout", isOn: $kittyStoreDisableIdleTimeout)
+                settingsDivider
+                settingsToggleRow("Allow Siri To Refresh Apps...", isOn: $kittyStoreAllowSiriRefresh)
+            }
+            .background(settingsBlockBackground)
+            Text("Enable Background Refresh to automatically refresh apps in the background when connected to Wi-Fi.")
+                .settingsFootnoteStyle()
+            Text("Enable Disable Idle Timeout to keep your device awake during a refresh or install of any apps.")
+                .settingsFootnoteStyle()
+            actionRow("How it works", detail: "Review the LocalDevVPN, pairing file, and refresh requirements.", icon: "questionmark.circle") {
+                selectedTab = .settings
             }
         }
     }
@@ -1326,22 +1472,38 @@ struct KittyStoreView: View {
 
     @MainActor
     private func saveKittyStoreAppleID() async {
+        let trimmedEmail = appleIDEmailInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPassword = appleIDPasswordInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCode = appleIDTwoFactorCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEmail.isEmpty, !trimmedPassword.isEmpty else {
+            appleIDActionMessage = "Enter your Apple ID and password before signing in."
+            return
+        }
+        if !trimmedCode.isEmpty, trimmedCode.count != 6 {
+            appleIDActionMessage = "Enter the 6-digit verification code from your Apple devices."
+            showingAppleIDTwoFactorPrompt = true
+            return
+        }
+
+        appleIDLoginInProgress = true
+        defer { appleIDLoginInProgress = false }
+
         do {
             let anisetteURL = anisetteURLForLogin
             if KittyStoreSideStoreSigningBridge.isLinked {
                 let result = await KittyStoreSideStoreSigningBridge.authenticate(
-                    email: appleIDEmailInput,
-                    password: appleIDPasswordInput,
+                    email: trimmedEmail,
+                    password: trimmedPassword,
                     requestedTeamID: appleIDTeamIDInput,
                     anisetteServerURL: anisetteURL,
-                    twoFactorCode: appleIDTwoFactorCodeInput
+                    twoFactorCode: trimmedCode
                 )
                 let summary = try result.get()
                 let existingAccount = NyxianAppleIDStore.load()
                 let shouldPreserveSideStoreADI = existingAccount?.email.caseInsensitiveCompare(summary.email) == .orderedSame
                 let account = try NyxianAppleIDStore.login(
                     email: summary.email,
-                    password: appleIDPasswordInput,
+                    password: trimmedPassword,
                     teamID: summary.teamID,
                     anisetteServerURL: summary.anisetteServerURL,
                     sideStoreLocalUserIdentifier: shouldPreserveSideStoreADI ? existingAccount?.sideStoreLocalUserIdentifier : nil,
@@ -1354,14 +1516,19 @@ struct KittyStoreView: View {
                 syncAnisetteSelectionFromInput()
                 appleIDPasswordInput = ""
                 appleIDTwoFactorCodeInput = ""
-                appleIDActionMessage = "SideStore Apple ID login verified for \(summary.statusDetail). Teams found: \(summary.availableTeams.map(\.displayText).joined(separator: ", "))."
+                let teamMessage = summary.availableTeams.isEmpty
+                    ? "No developer teams were returned."
+                    : "Teams found: " + summary.availableTeams.map(\.displayText).joined(separator: ", ") + "."
+                appleIDActionMessage = "SideStore Apple ID login verified for \(summary.statusDetail). \(teamMessage)"
+                if summary.availableTeams.count <= 1 {
+                    showingAppleIDSignInSheet = false
+                }
             } else {
                 let existingAccount = NyxianAppleIDStore.load()
-                let loginEmail = appleIDEmailInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                let shouldPreserveSideStoreADI = existingAccount?.email.caseInsensitiveCompare(loginEmail) == .orderedSame
+                let shouldPreserveSideStoreADI = existingAccount?.email.caseInsensitiveCompare(trimmedEmail) == .orderedSame
                 let account = try NyxianAppleIDStore.login(
-                    email: appleIDEmailInput,
-                    password: appleIDPasswordInput,
+                    email: trimmedEmail,
+                    password: trimmedPassword,
                     teamID: appleIDTeamIDInput,
                     anisetteServerURL: anisetteURL,
                     sideStoreLocalUserIdentifier: shouldPreserveSideStoreADI ? existingAccount?.sideStoreLocalUserIdentifier : nil,
@@ -1374,12 +1541,27 @@ struct KittyStoreView: View {
                 syncAnisetteSelectionFromInput()
                 appleIDPasswordInput = ""
                 appleIDTwoFactorCodeInput = ""
+                showingAppleIDSignInSheet = false
                 appleIDActionMessage = "Apple ID login saved locally, but SideStore AltSign is not linked in this build yet."
             }
             await refreshBuildKitStatus()
         } catch {
-            appleIDActionMessage = "Apple ID login failed: \(error.localizedDescription)"
+            if appleIDErrorNeedsTwoFactor(error) {
+                appleIDActionMessage = "Enter the 6-digit verification code from your Apple devices, then tap Continue."
+                showingAppleIDTwoFactorPrompt = true
+            } else {
+                appleIDActionMessage = "Apple ID login failed: \(error.localizedDescription)"
+            }
         }
+    }
+
+    private func appleIDErrorNeedsTwoFactor(_ error: Error) -> Bool {
+        let message = "\(error.localizedDescription) \(String(describing: error))".lowercased()
+        return message.contains("two-factor")
+            || message.contains("two factor")
+            || message.contains("2fa")
+            || message.contains("verification code")
+            || message.contains("trusted device")
     }
 
     @MainActor
@@ -2445,6 +2627,154 @@ struct KittyStoreView: View {
         .background(LitterTheme.surfaceLight.opacity(0.34), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
+    private var settingsBlockBackground: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(LitterTheme.surfaceLight.opacity(0.38))
+    }
+
+    private var settingsDivider: some View {
+        Rectangle()
+            .fill(LitterTheme.border.opacity(0.48))
+            .frame(height: 1)
+            .padding(.horizontal, 16)
+    }
+
+    private var appleIDCanSubmit: Bool {
+        !appleIDEmailInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !appleIDPasswordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !appleIDLoginInProgress
+    }
+
+    private var appleIDSignInButton: some View {
+        Button {
+            taskBag.run { await saveKittyStoreAppleID() }
+        } label: {
+            HStack(spacing: 10) {
+                if appleIDLoginInProgress {
+                    ProgressView()
+                        .tint(LitterTheme.textOnAccent)
+                }
+                Text(appleIDLoginInProgress ? "Signing in" : "Sign in")
+                    .litterFont(.headline, weight: .heavy)
+            }
+            .foregroundStyle(LitterTheme.textOnAccent)
+            .frame(maxWidth: .infinity, minHeight: 62)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(appleIDCanSubmit ? LitterTheme.accent : LitterTheme.surfaceLight.opacity(0.34))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!appleIDCanSubmit)
+    }
+
+    private func settingsSectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .litterFont(.caption, weight: .heavy)
+            .foregroundStyle(LitterTheme.textSecondary)
+            .textCase(.uppercase)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func signedInAccountCard(_ account: NyxianAppleIDAccount) -> some View {
+        VStack(spacing: 0) {
+            accountInfoRow("Name", value: appleIDDisplayName(account))
+            settingsDivider
+            accountInfoRow("Email", value: account.email)
+            settingsDivider
+            accountInfoRow("Type", value: appleIDAccountType(account))
+        }
+        .background(settingsBlockBackground)
+    }
+
+    private func accountInfoRow(_ title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .litterFont(.headline, weight: .semibold)
+                .foregroundStyle(LitterTheme.textSecondary)
+                .frame(width: 82, alignment: .leading)
+            Text(value)
+                .litterFont(.headline, weight: .heavy)
+                .foregroundStyle(LitterTheme.textPrimary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 58)
+    }
+
+    private func appleIDDisplayName(_ account: NyxianAppleIDAccount) -> String {
+        let localPart = account.email.split(separator: "@").first.map(String.init) ?? account.email
+        let pieces = localPart
+            .replacingOccurrences(of: ".", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { piece in piece.prefix(1).uppercased() + String(piece.dropFirst()) }
+        return pieces.isEmpty ? account.email : pieces.joined(separator: " ")
+    }
+
+    private func appleIDAccountType(_ account: NyxianAppleIDAccount) -> String {
+        account.teamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Free Developer Account"
+            : "Developer Team " + account.teamID
+    }
+
+    private func sideStoreField(
+        _ title: String,
+        text: Binding<String>,
+        placeholder: String,
+        keyboardType: UIKeyboardType = .default,
+        textContentType: UITextContentType? = nil,
+        autocapitalization: TextInputAutocapitalization = .never
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            settingsSectionHeader(title)
+            TextField(placeholder, text: text)
+                .keyboardType(keyboardType)
+                .textContentType(textContentType)
+                .textInputAutocapitalization(autocapitalization)
+                .autocorrectionDisabled()
+                .litterFont(.title3, weight: .semibold)
+                .foregroundStyle(LitterTheme.textPrimary)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+                .background(settingsBlockBackground)
+        }
+    }
+
+    private func sideStoreSecureField(_ title: String, text: Binding<String>, placeholder: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            settingsSectionHeader(title)
+            SecureField(placeholder, text: text)
+                .textContentType(.password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .litterFont(.title3, weight: .semibold)
+                .foregroundStyle(LitterTheme.textPrimary)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
+                .background(settingsBlockBackground)
+        }
+    }
+
+    private func settingsToggleRow(_ title: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: 14) {
+            Text(title)
+                .litterFont(.headline, weight: .heavy)
+                .foregroundStyle(LitterTheme.textPrimary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.78)
+            Spacer(minLength: 8)
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 58)
+    }
+
     private func settingsTextField(
         _ title: String,
         text: Binding<String>,
@@ -2678,6 +3008,15 @@ struct KittyStoreView: View {
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map(String.init)
         return lines.prefix(18).joined(separator: "\n")
+    }
+}
+
+private extension View {
+    func settingsFootnoteStyle() -> some View {
+        self
+            .litterFont(.callout, weight: .semibold)
+            .foregroundStyle(LitterTheme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
