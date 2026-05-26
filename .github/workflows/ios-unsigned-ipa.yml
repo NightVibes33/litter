@@ -174,9 +174,9 @@ jobs:
             apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
             apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
             apps/ios/GeneratedRust/Headers/module.modulemap
-          key: ios-swift-uniffi-bindings-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/uniffi-bindgen/**', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**') }}
+          key: ios-swift-uniffi-bindings-v3-${{ runner.os }}-${{ hashFiles('Makefile', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/uniffi-bindgen/**', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**') }}
           restore-keys: |
-            ios-swift-uniffi-bindings-v2-${{ runner.os }}-
+            ios-swift-uniffi-bindings-v3-${{ runner.os }}-
 
       - name: Cache generated iOS assets
         uses: actions/cache@v4

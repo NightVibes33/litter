@@ -287,9 +287,10 @@ final class LocalConnectorBroker: @unchecked Sendable {
     }
 
     private static func makeBearerToken() -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
+        let byteCount = 32
+        var bytes = [UInt8](repeating: 0, count: byteCount)
         let status = bytes.withUnsafeMutableBytes { rawBuffer in
-            SecRandomCopyBytes(kSecRandomDefault, bytes.count, rawBuffer.baseAddress!)
+            SecRandomCopyBytes(kSecRandomDefault, byteCount, rawBuffer.baseAddress!)
         }
         if status != errSecSuccess {
             return UUID().uuidString.replacingOccurrences(of: "-", with: "") + UUID().uuidString.replacingOccurrences(of: "-", with: "")
