@@ -72,8 +72,6 @@ packages:
   MarkdownKit:
     url: https://github.com/bmoliveira/MarkdownKit.git
     from: "1.7.1"
-  Minimuxer:
-    path: ../../ThirdParty/SideStore/Source/Dependencies/minimuxer
   AltSign:
     path: ../../ThirdParty/SideStore/AltSign
 targets:
@@ -118,6 +116,43 @@ targets:
         product: KeychainAccess
       - package: AltSign
         product: AltSign-Static
+
+  RustBridge:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.RustBridge
+        DEFINES_MODULE: "YES"
+        CLANG_ENABLE_MODULES: "YES"
+        OTHER_LDFLAGS: "$(inherited) -lrust_bridge -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork"
+        "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework/ios-arm64"
+        "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework/ios-arm64-simulator"
+    sources:
+      - path: ../../ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge
+        excludes:
+          - Cargo.toml
+          - Cargo.lock
+          - Makefile
+          - src/**
+          - lib/**
+
+  Minimuxer:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.Minimuxer
+        DEFINES_MODULE: "YES"
+        CLANG_ENABLE_MODULES: "YES"
+    sources:
+      - path: ../../ThirdParty/SideStore/Source/Dependencies/minimuxer/Sources
+    dependencies:
+      - target: RustBridge
+      - package: ZIPFoundation
+        product: ZIPFoundation
 
   SideStore:
     type: framework
@@ -169,8 +204,7 @@ targets:
         product: MarkdownKit
       - package: Nuke
         product: Nuke
-      - package: Minimuxer
-        product: Minimuxer
+      - target: Minimuxer
 
   Litter:
     type: application
