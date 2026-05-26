@@ -60,6 +60,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 90
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       HOMEBREW_NO_AUTO_UPDATE: "1"
       CARGO_INCREMENTAL: "0"
       CARGO_BUILD_JOBS: "2"
@@ -197,7 +198,7 @@ jobs:
           require_file() {
             local path="$1"
             if [ ! -s "$path" ]; then
-              echo "::warning::Missing Swift UniFFI cache file: $path"
+              echo "Missing Swift UniFFI cache file: $path"
               missing=1
             else
               ls -lh "$path"
@@ -211,100 +212,100 @@ jobs:
 
           stale=0
           if [ "${{ steps.swift_bindings_cache.outputs.cache-hit }}" != "true" ]; then
-            echo "::warning::Swift UniFFI binding cache was not an exact hit; regenerating to avoid stale fallback bindings."
+            echo "Swift UniFFI binding cache was not an exact hit; regenerating to avoid stale fallback bindings."
             stale=1
           fi
           if [ "$missing" -eq 0 ]; then
             if ! grep -q "func ishRuntimePreflight" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing ishRuntimePreflight()."
+              echo "Swift UniFFI binding is stale: missing ishRuntimePreflight()."
               stale=1
             fi
             if ! grep -q "AppThreadGoal" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing AppThreadGoal."
+              echo "Swift UniFFI binding is stale: missing AppThreadGoal."
               stale=1
             fi
             if ! grep -q "SlingshotCredentialProvider" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing SlingshotCredentialProvider."
+              echo "Swift UniFFI binding is stale: missing SlingshotCredentialProvider."
               stale=1
             fi
             if ! grep -q "SlingshotCredentialRecord" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing SlingshotCredentialRecord."
+              echo "Swift UniFFI binding is stale: missing SlingshotCredentialRecord."
               stale=1
             fi
             if ! grep -q "connectRemoteSlingshotUrlServer" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing connectRemoteSlingshotUrlServer()."
+              echo "Swift UniFFI binding is stale: missing connectRemoteSlingshotUrlServer()."
               stale=1
             fi
             if ! grep -q "TerminalBackendKind" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing TerminalBackendKind."
+              echo "Swift UniFFI binding is stale: missing TerminalBackendKind."
               stale=1
             fi
             if ! grep -q "openTerminalSession" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing openTerminalSession()."
+              echo "Swift UniFFI binding is stale: missing openTerminalSession()."
               stale=1
             fi
             if ! grep -q "TerminalOutputListener" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing TerminalOutputListener."
+              echo "Swift UniFFI binding is stale: missing TerminalOutputListener."
               stale=1
             fi
             if ! grep -q "listPluginCatalog" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing listPluginCatalog()."
+              echo "Swift UniFFI binding is stale: missing listPluginCatalog()."
               stale=1
             fi
             if ! grep -q "installPlugin" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing installPlugin()."
+              echo "Swift UniFFI binding is stale: missing installPlugin()."
               stale=1
             fi
             if ! grep -q "uninstallPlugin" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing uninstallPlugin()."
+              echo "Swift UniFFI binding is stale: missing uninstallPlugin()."
               stale=1
             fi
             if ! grep -q "AppPluginInstallRequest" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing AppPluginInstallRequest."
+              echo "Swift UniFFI binding is stale: missing AppPluginInstallRequest."
               stale=1
             fi
             if ! grep -q "AppPluginUninstallRequest" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing AppPluginUninstallRequest."
+              echo "Swift UniFFI binding is stale: missing AppPluginUninstallRequest."
               stale=1
             fi
             if ! grep -q "AppPluginInstallResponse" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing AppPluginInstallResponse."
+              echo "Swift UniFFI binding is stale: missing AppPluginInstallResponse."
               stale=1
             fi
             if ! grep -q "PluginAvailability" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing PluginAvailability."
+              echo "Swift UniFFI binding is stale: missing PluginAvailability."
               stale=1
             fi
             if ! grep -q "remotePluginId" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing PluginSummary.remotePluginId."
+              echo "Swift UniFFI binding is stale: missing PluginSummary.remotePluginId."
               stale=1
             fi
             if ! grep -q "keywords" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
-              echo "::warning::Swift UniFFI binding is stale: missing PluginSummary.keywords."
+              echo "Swift UniFFI binding is stale: missing PluginSummary.keywords."
               stale=1
             fi
             if ! grep -q "ish_runtime_preflight" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
-              echo "::warning::Swift UniFFI C header is stale: missing ish_runtime_preflight."
+              echo "Swift UniFFI C header is stale: missing ish_runtime_preflight."
               stale=1
             fi
             if ! grep -q "connect_remote_slingshot_url_server" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
-              echo "::warning::Swift UniFFI C header is stale: missing connect_remote_slingshot_url_server."
+              echo "Swift UniFFI C header is stale: missing connect_remote_slingshot_url_server."
               stale=1
             fi
             if ! grep -q "terminal" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
-              echo "::warning::Swift UniFFI C header is stale: missing terminal bindings."
+              echo "Swift UniFFI C header is stale: missing terminal bindings."
               stale=1
             fi
             if ! grep -q "list_plugin_catalog" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
-              echo "::warning::Swift UniFFI C header is stale: missing list_plugin_catalog."
+              echo "Swift UniFFI C header is stale: missing list_plugin_catalog."
               stale=1
             fi
             if ! grep -q "install_plugin" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
-              echo "::warning::Swift UniFFI C header is stale: missing install_plugin."
+              echo "Swift UniFFI C header is stale: missing install_plugin."
               stale=1
             fi
             if ! grep -q "uninstall_plugin" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
-              echo "::warning::Swift UniFFI C header is stale: missing uninstall_plugin."
+              echo "Swift UniFFI C header is stale: missing uninstall_plugin."
               stale=1
             fi
           fi
@@ -352,7 +353,7 @@ jobs:
           require_file() {
             local path="$1"
             if [ ! -f "$path" ]; then
-              echo "::warning::Missing Rust cache file: $path"
+              echo "Missing Rust cache file: $path"
               missing=1
             else
               ls -lh "$path"
@@ -361,7 +362,7 @@ jobs:
           require_nonempty() {
             local path="$1"
             if [ ! -s "$path" ]; then
-              echo "::warning::Missing or empty Rust cache file: $path"
+              echo "Missing or empty Rust cache file: $path"
               missing=1
             else
               ls -lh "$path"
@@ -583,9 +584,9 @@ jobs:
               if stable_match:
                   latest_patch = max(latest_patch, int(stable_match.group(1)))
               elif stable_version:
-                  print(f"::warning::Stable update feed is on {stable_version}; using {base} as the {major}.{minor}.x base", file=sys.stderr)
+                  print(f"Stable update feed is on {stable_version}; using {base} as the {major}.{minor}.x base", file=sys.stderr)
           except Exception as error:
-              print(f"::warning::Could not inspect stable Litter app-source release ({error}); using {base} as the version base", file=sys.stderr)
+              print(f"Could not inspect stable Litter app-source release ({error}); using {base} as the version base", file=sys.stderr)
 
           print(f"{major}.{minor}.{latest_patch + 1}")
           PY
@@ -682,15 +683,13 @@ jobs:
 
             while [ "$attempt" -le 3 ]; do
               echo "==> $label (attempt $attempt/3)"
-              if "$@"; then
-                return 0
-              fi
+              "$@" && return 0
               status=$?
               if [ "$attempt" -eq 3 ]; then
                 echo "::error::$label failed after 3 attempts with exit code $status" >&2
                 return "$status"
               fi
-              echo "::warning::$label failed with exit code $status; retrying after $((attempt * 20)) seconds" >&2
+              echo "$label failed with exit code $status; retrying after $((attempt * 20)) seconds" >&2
               sleep $((attempt * 20))
               attempt=$((attempt + 1))
             done
@@ -1227,7 +1226,7 @@ jobs:
               try:
                   return request_json(asset["url"], accept="application/octet-stream")
               except Exception as error:
-                  print(f"::warning::Could not read {asset.get('name', 'asset')}: {error}")
+                  print(f"Could not read {asset.get('name', 'asset')}: {error}")
                   return {}
 
           def release_pages():
@@ -1346,13 +1345,13 @@ jobs:
                   try:
                       parsed = sha256_from_text(request_asset_text(asset))
                   except Exception as error:
-                      print(f"::warning::Could not read checksum asset {asset.get('name', 'asset')}: {error}")
+                      print(f"Could not read checksum asset {asset.get('name', 'asset')}: {error}")
                       continue
                   if parsed:
                       return parsed
 
               release_name = release.get("tag_name") or release.get("name") or "release"
-              print(f"::warning::Skipping {release_name} in AltStore source versions because its IPA has no usable sha256 metadata")
+              print(f"Skipping {release_name} in AltStore source versions because its IPA has no usable sha256 metadata")
               return ""
 
           def clean_history_lines(tag, previous_tag, current=False):
