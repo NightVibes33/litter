@@ -695,10 +695,12 @@ jobs:
             done
           }
 
+          # LiveProcess.xcscheme comes from upstream and points at LiveContainer.xcodeproj.
+          # Resolve packages through the valid app scheme, then build the extension target directly.
           xcodebuild_with_retry "Resolve Nyxian SwiftPM dependencies" \
             xcodebuild -resolvePackageDependencies \
               -project ThirdParty/Nyxian/Nyxian.xcodeproj \
-              -scheme LiveProcess \
+              -scheme Nyxian \
               -clonedSourcePackagesDirPath "$SOURCE_PACKAGES"
 
           xcodebuild_with_retry "Build Nyxian LiveProcess extension" \
