@@ -125,6 +125,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.RustBridge
+        GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
         OTHER_LDFLAGS: "$(inherited) -lrust_bridge -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork"
@@ -147,6 +148,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.Minimuxer
+        GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
     sources:
@@ -405,7 +407,7 @@ targets:
           embed_framework_if_present AltStoreCore 1
           embed_framework_if_present Roxas 1
           embed_framework_if_present Minimuxer 1
-          embed_framework_if_present RustBridge 0
+          embed_framework_if_present RustBridge 1
           embed_framework_if_present OpenSSL 0
           embed_framework_with_prefix SemanticVersion_ 1
           embed_framework_with_prefix KeychainAccess_ 1
