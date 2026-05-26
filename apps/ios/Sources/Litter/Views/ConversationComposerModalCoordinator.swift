@@ -15,6 +15,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     @Binding var showPhotoPicker: Bool
     @Binding var showCamera: Bool
     @Binding var showFileImporter: Bool
+    @Binding var showRemoteFilePicker: Bool
     @Binding var selectedPhoto: PhotosPickerItem?
     @Binding var capturedImage: UIImage?
     @Binding var showModelSelector: Bool
@@ -29,6 +30,8 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     let onOpenSettings: () -> Void
     let onLoadSelectedPhoto: (PhotosPickerItem) async -> Void
     let onLoadSelectedFiles: ([URL]) async -> Void
+    let onSearchRemoteFiles: (String) async throws -> [FileSearchResult]
+    let onAttachRemoteFile: (FileSearchResult) -> Void
     let onLoadExperimentalFeatures: () async -> Void
     let onIsExperimentalFeatureEnabled: (String, Bool) -> Bool
     let onSetExperimentalFeature: (String, Bool) async -> Void
@@ -135,9 +138,10 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
 
     private var attachSheetDetentHeight: CGFloat {
         let showsFile = true
+        let showsComputerFile = true
         let showsCamera = !LitterPlatform.isCatalyst
-        let count = 2 + (showsCamera ? 1 : 0)
-        return count >= 3 ? 260 : 210
+        let count = 1 + (showsFile ? 1 : 0) + (showsComputerFile ? 1 : 0) + (showsCamera ? 1 : 0)
+        return count >= 4 ? 320 : (count >= 3 ? 260 : 210)
     }
 
     var body: some View {
@@ -151,6 +155,10 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                     onChooseFile: {
                         showAttachMenu = false
                         showFileImporter = true
+                    },
+                    onChooseComputerFile: {
+                        showAttachMenu = false
+                        showRemoteFilePicker = true
                     },
                     onTakePhoto: LitterPlatform.isCatalyst ? nil : {
                         showAttachMenu = false
@@ -168,6 +176,14 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
             ) { result in
                 guard case let .success(urls) = result else { return }
                 Task { await onLoadSelectedFiles(urls) }
+            }
+            .sheet(isPresented: $showRemoteFilePicker) {
+                ConversationRemoteFilePickerView(
+                    onSearch: onSearchRemoteFiles,
+                    onAttach: onAttachRemoteFile
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .onChange(of: selectedPhoto) { _, item in
                 guard let item else { return }

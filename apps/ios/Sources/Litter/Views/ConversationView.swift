@@ -1501,6 +1501,7 @@ private struct ConversationInputBar: View {
     @State private var showPhotoPicker = false
     @State private var showCamera = false
     @State private var showFileImporter = false
+    @State private var showRemoteFilePicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var attachments: [ConversationAttachment] = []
     @State private var capturedImage: UIImage?
@@ -1598,6 +1599,7 @@ private struct ConversationInputBar: View {
             showPhotoPicker: $showPhotoPicker,
             showCamera: $showCamera,
             showFileImporter: $showFileImporter,
+            showRemoteFilePicker: $showRemoteFilePicker,
             selectedPhoto: $selectedPhoto,
             capturedImage: $capturedImage,
             showModelSelector: $showModelSelector,
@@ -1612,6 +1614,8 @@ private struct ConversationInputBar: View {
             onOpenSettings: openAppSettings,
             onLoadSelectedPhoto: loadSelectedPhoto,
             onLoadSelectedFiles: importSelectedFiles,
+            onSearchRemoteFiles: onFileSearch,
+            onAttachRemoteFile: appendRemoteFileAttachment,
             onLoadExperimentalFeatures: loadExperimentalFeatures,
             onIsExperimentalFeatureEnabled: { featureId, fallback in
                 isExperimentalFeatureEnabled(featureId, fallback: fallback)
@@ -1763,6 +1767,13 @@ private struct ConversationInputBar: View {
             }
         } catch {
             slashErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func appendRemoteFileAttachment(_ result: FileSearchResult) {
+        guard let attachment = ConversationAttachmentSupport.attachment(from: result) else { return }
+        if !attachments.contains(where: { $0.fakefsPath == attachment.fakefsPath }) {
+            attachments.append(attachment)
         }
     }
 
@@ -2577,6 +2588,7 @@ private struct ConversationInputBar: View {
             replacement: replacement
         ) else { return }
         inputText = updated
+        appendRemoteFileAttachment(match)
         showFilePopup = false
         activeAtToken = nil
         clearFileSearchState()

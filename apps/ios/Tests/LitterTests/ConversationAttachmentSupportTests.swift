@@ -35,6 +35,41 @@ final class ConversationAttachmentSupportTests: XCTestCase {
         XCTAssertEqual(ConversationAttachmentSupport.normalizeLinkedFakefsPath("litter-file://root/tmp/test.png"), "/root/tmp/test.png")
     }
 
+    func testLinkedComputerFileAttachmentKeepsWindowsPathAsMentionPath() throws {
+        let attachment = try XCTUnwrap(
+            ConversationAttachmentSupport.attachmentForLinkedFile(
+                path: #"C:\Users\bobby\Downloads\report.zip"#,
+                sourceRoot: #"C:\Users\bobby\Downloads"#
+            )
+        )
+
+        XCTAssertEqual(attachment.kind, .archive)
+        XCTAssertEqual(attachment.displayName, "report.zip")
+        XCTAssertEqual(attachment.fakefsPath, #"C:\Users\bobby\Downloads\report.zip"#)
+
+        let inputs = ConversationAttachmentSupport.buildTurnInputs(attachments: [attachment])
+        guard case .mention(let name, let path)? = inputs.first else {
+            return XCTFail("Expected mention input")
+        }
+        XCTAssertEqual(name, "report.zip")
+        XCTAssertEqual(path, #"C:\Users\bobby\Downloads\report.zip"#)
+    }
+
+    func testLinkedComputerFolderAttachmentUsesFolderKind() throws {
+        let attachment = try XCTUnwrap(
+            ConversationAttachmentSupport.attachmentForLinkedFile(
+                path: "/Users/bobby/Projects/litter",
+                displayName: "litter",
+                isDirectory: true,
+                sourceRoot: "/Users/bobby/Projects"
+            )
+        )
+
+        XCTAssertEqual(attachment.kind, .folder)
+        XCTAssertEqual(attachment.displayName, "litter")
+        XCTAssertEqual(attachment.fakefsPath, "/Users/bobby/Projects/litter")
+    }
+
     func testPreparedAttachmentCreatesImageUserInput() throws {
         let attachment = try XCTUnwrap(
             PreparedImageAttachment(

@@ -96,6 +96,49 @@ enum ConversationAttachmentSupport {
         }
     }
 
+    static func attachment(from searchResult: FileSearchResult) -> ConversationAttachment? {
+        let isDirectory: Bool
+        switch searchResult.matchType {
+        case .directory:
+            isDirectory = true
+        case .file:
+            isDirectory = false
+        }
+        attachmentForLinkedFile(
+            path: searchResult.path,
+            displayName: searchResult.fileName,
+            isDirectory: isDirectory,
+            sourceRoot: searchResult.root
+        )
+    }
+
+    static func attachmentForLinkedFile(
+        path rawPath: String,
+        displayName rawDisplayName: String? = nil,
+        isDirectory: Bool = false,
+        sourceRoot rawSourceRoot: String? = nil
+    ) -> ConversationAttachment? {
+        let path = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return nil }
+
+        let trimmedDisplayName = rawDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let displayName = trimmedDisplayName?.nilIfEmpty ?? displayName(forPath: path)
+        let kind: ConversationAttachment.Kind
+        if isDirectory {
+            kind = .folder
+        } else {
+            kind = isArchiveName(displayName) || isArchiveName(path) ? .archive : .file
+        }
+        let trimmedSourceRoot = rawSourceRoot?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceRoot = trimmedSourceRoot?.nilIfEmpty
+        return ConversationAttachment(
+            kind: kind,
+            displayName: displayName,
+            detail: sourceRoot.map { "linked from \($0)" } ?? "linked computer file",
+            fakefsPath: path
+        )
+    }
+
     static func buildLinkedTurnInputs(text: String) async -> [AppUserInput] {
         var inputs: [AppUserInput] = []
         for path in linkedFakefsPaths(in: text) {
@@ -176,7 +219,12 @@ enum ConversationAttachmentSupport {
     }
 
     private static func displayName(for path: String) -> String {
-        let name = URL(fileURLWithPath: path).lastPathComponent
+        displayName(forPath: path)
+    }
+
+    private static func displayName(forPath path: String) -> String {
+        let normalized = path.replacingOccurrences(of: "\\", with: "/")
+        let name = normalized.split(separator: "/").last.map(String.init) ?? ""
         return name.isEmpty ? path : name
     }
 

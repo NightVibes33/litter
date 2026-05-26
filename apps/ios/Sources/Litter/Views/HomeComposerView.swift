@@ -28,6 +28,7 @@ struct HomeComposerView: View {
     @State private var showPhotoPicker = false
     @State private var showCamera = false
     @State private var showFileImporter = false
+    @State private var showRemoteFilePicker = false
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var voiceManager = VoiceTranscriptionManager()
     @State private var isSubmitting = false
@@ -55,9 +56,10 @@ struct HomeComposerView: View {
 
     private var attachSheetDetentHeight: CGFloat {
         let showsFile = true
+        let showsComputerFile = project != nil
         let showsCamera = !LitterPlatform.isCatalyst
-        let count = 2 + (showsCamera ? 1 : 0)
-        return count >= 3 ? 260 : 210
+        let count = 1 + (showsFile ? 1 : 0) + (showsComputerFile ? 1 : 0) + (showsCamera ? 1 : 0)
+        return count >= 4 ? 320 : (count >= 3 ? 260 : 210)
     }
 
     private var isActive: Bool {
@@ -162,6 +164,10 @@ struct HomeComposerView: View {
                     showAttachMenu = false
                     showFileImporter = true
                 },
+                onChooseComputerFile: project == nil ? nil : {
+                    showAttachMenu = false
+                    showRemoteFilePicker = true
+                },
                 onTakePhoto: LitterPlatform.isCatalyst ? nil : {
                     showAttachMenu = false
                     showCamera = true
@@ -178,6 +184,14 @@ struct HomeComposerView: View {
         ) { result in
             guard case let .success(urls) = result else { return }
             Task { await importSelectedFiles(urls) }
+        }
+        .sheet(isPresented: $showRemoteFilePicker) {
+            ConversationRemoteFilePickerView(
+                onSearch: searchProjectFiles,
+                onAttach: appendRemoteFileAttachment
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .onChange(of: selectedPhoto) { _, item in
             guard let item else { return }
@@ -303,6 +317,25 @@ struct HomeComposerView: View {
             }
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func searchProjectFiles(_ query: String) async throws -> [FileSearchResult] {
+        guard let project else { return [] }
+        return try await appModel.client.searchFiles(
+            serverId: project.serverId,
+            params: AppSearchFilesRequest(
+                query: query,
+                roots: [project.cwd],
+                cancellationToken: "ios-home-composer-file-search"
+            )
+        )
+    }
+
+    private func appendRemoteFileAttachment(_ result: FileSearchResult) {
+        guard let attachment = ConversationAttachmentSupport.attachment(from: result) else { return }
+        if !attachments.contains(where: { $0.fakefsPath == attachment.fakefsPath }) {
+            attachments.append(attachment)
         }
     }
 
