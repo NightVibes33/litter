@@ -10,9 +10,9 @@ import AltSign
 
 extension ALTApplication
 {
-    static let altstoreBundleID = Bundle.Info.appbundleIdentifier
+    public static let altstoreBundleID = Bundle.Info.appbundleIdentifier
     
-    var isAltStoreApp: Bool {
+    public var isAltStoreApp: Bool {
         let isAltStoreApp = self.bundleIdentifier.contains(ALTApplication.altstoreBundleID)
         return isAltStoreApp
     }

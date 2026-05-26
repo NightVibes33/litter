@@ -6,6 +6,7 @@
 //  Copyright © 2025 SideStore. All rights reserved.
 //
 
+import Foundation
 class ErrorProcessing {
     
     enum InfoMode: String {

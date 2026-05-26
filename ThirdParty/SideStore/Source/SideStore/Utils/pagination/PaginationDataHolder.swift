@@ -8,6 +8,11 @@
 
 import Foundation
 
+public enum Direction {
+    case up
+    case down
+}
+
 public class PaginationDataHolder {
     
     public let itemsPerPage: UInt
