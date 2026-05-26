@@ -70,9 +70,10 @@ enum KittyStoreMinimuxerBridge {
         #else
         configureSideStoreNetworkBridge()
         let ready = Minimuxer.ready()
+        let endpointReachable = Minimuxer.testLocalDevVPNConnection()
         let detail = ready
-            ? "SideStore minimuxer is ready after binding LocalDevVPN override IP 10.7.0.1 and refreshing NetworkObserver."
-            : "SideStore minimuxer is linked but not ready after binding LocalDevVPN override IP 10.7.0.1 and refreshing NetworkObserver."
+            ? "SideStore minimuxer is ready through LocalDevVPN override IP 10.7.0.1."
+            : "SideStore minimuxer is linked but not ready yet. LocalDevVPN 10.7.0.1 reachable: \(endpointReachable)."
         return LocalDevVPNProbe(isReady: ready, detail: detail)
         #endif
         #else
@@ -277,17 +278,6 @@ enum KittyStoreMinimuxerBridge {
         #if !targetEnvironment(simulator)
         setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
         Minimuxer.retargetUsbmuxdAddr()
-        Minimuxer.bindTunnelConfig(
-            TunnelConfigBinding(
-                setDeviceIP: { _ in },
-                setFakeIP: { _ in },
-                setSubnetMask: { _ in },
-                getOverrideFakeIP: { "10.7.0.1" },
-                setOverrideEffective: { _ in }
-            )
-        )
-        NetworkObserver.shared.start()
-        NetworkObserver.shared.refreshEndpoint()
         #endif
     }
     #endif

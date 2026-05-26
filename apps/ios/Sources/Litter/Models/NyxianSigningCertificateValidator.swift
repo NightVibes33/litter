@@ -248,7 +248,7 @@ enum NyxianLocalDevVPNDetector {
         if tunnelInterfaces.isEmpty {
             return NyxianLocalDevVPNState(
                 isConnected: false,
-                detail: "SideStore checks LocalDevVPN by binding minimuxer to override IP 10.7.0.1, starting NetworkObserver, scanning utun, then asking Minimuxer.ready(). Open LocalDevVPN, connect it, then retry with a valid pairing file. \(probe.detail)"
+                detail: "SideStore's Rust minimuxer targets LocalDevVPN at 10.7.0.1 and requires a started pairing session before Minimuxer.ready() can pass. Open LocalDevVPN, connect it, then retry with a valid pairing file. \(probe.detail)"
             )
         }
         return NyxianLocalDevVPNState(
