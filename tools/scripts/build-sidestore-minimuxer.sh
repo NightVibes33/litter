@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MINIMUXER_ROOT="${LITTER_SIDESTORE_MINIMUXER_ROOT:-$ROOT_DIR/ThirdParty/SideStore/minimuxer}"
+SOURCE_MINIMUXER_ROOT="$ROOT_DIR/ThirdParty/SideStore/Source/Dependencies/minimuxer"
+RUSTBRIDGE_ROOT="$SOURCE_MINIMUXER_ROOT/RustBridge"
+RUSTBRIDGE_DEVICE_LIB_DIR="$RUSTBRIDGE_ROOT/lib/RustBridge.xcframework/ios-arm64"
 IOS_DIR="$ROOT_DIR/apps/ios"
 GENERATED_SWIFT_DIR="$IOS_DIR/Sources/Litter/Generated/Minimuxer"
 HEADER_DIR="$IOS_DIR/GeneratedRust/Headers/Minimuxer"
@@ -46,6 +49,10 @@ if [ ! -f "$MINIMUXER_ROOT/Cargo.toml" ]; then
   echo "error: minimuxer source is missing: $MINIMUXER_ROOT" >&2
   exit 1
 fi
+if [ ! -f "$RUSTBRIDGE_ROOT/Cargo.toml" ]; then
+  echo "error: SideStore RustBridge source is missing: $RUSTBRIDGE_ROOT" >&2
+  exit 1
+fi
 
 rustup target add aarch64-apple-ios >/dev/null
 if [ "$SKIP_SIM" != "true" ]; then
@@ -54,6 +61,15 @@ if [ "$SKIP_SIM" != "true" ]; then
 fi
 
 mkdir -p "$GENERATED_SWIFT_DIR" "$HEADER_DIR" "$DEVICE_LIB_DIR"
+mkdir -p "$RUSTBRIDGE_DEVICE_LIB_DIR/Headers"
+
+(
+  cd "$RUSTBRIDGE_ROOT"
+  echo "==> Building SideStore RustBridge for iOS device"
+  cargo build --release --target aarch64-apple-ios
+  cp target/aarch64-apple-ios/release/librust_bridge.a "$RUSTBRIDGE_DEVICE_LIB_DIR/librust_bridge.a"
+)
+require_file "$RUSTBRIDGE_DEVICE_LIB_DIR/librust_bridge.a"
 
 mkdir -p "$MINIMUXER_ROOT/generated"
 cat > "$MINIMUXER_ROOT/generated/minimuxer-helpers.swift" <<'SWIFT'

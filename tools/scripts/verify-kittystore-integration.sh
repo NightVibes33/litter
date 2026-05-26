@@ -198,6 +198,8 @@ require_grep "KittyStore iOS AltStore scheme" "<string>altstore</string>" "apps/
 require_grep "KittyStore iOS LocalDevVPN scheme" "<string>localdevvpn</string>" "apps/ios/Sources/Litter/Info.plist"
 require_grep "SideStore LocalDevVPN override IP" "10.7.0.1" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
 require_grep "SideStore minimuxer retarget wrapper" "retargetUsbmuxdAddr" "tools/scripts/build-sidestore-minimuxer.sh"
+require_grep "SideStore RustBridge CI build" "Building SideStore RustBridge for iOS device" "tools/scripts/build-sidestore-minimuxer.sh"
+require_grep "SideStore RustBridge static library staging" "librust_bridge.a" "tools/scripts/build-sidestore-minimuxer.sh"
 require_grep "SideStore LocalDevVPN connection probe" "testLocalDevVPNConnection" "tools/scripts/build-sidestore-minimuxer.sh"
 require_grep "SideStore local_user preservation" "local_user" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
 require_grep "SideStore adiPB preservation" "adiPB" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
