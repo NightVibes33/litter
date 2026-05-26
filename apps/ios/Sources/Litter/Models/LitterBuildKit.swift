@@ -2765,32 +2765,43 @@ actor LitterBuildKit {
 
     private static func installAssetZip(_ zipURL: URL) throws -> BuildKitAssetManifest {
         let fm = FileManager.default
-        let extractionRoot = FileManager.default.temporaryDirectory
-            .appendingPathComponent("LitterBuildKitZip-\(UUID().uuidString)", isDirectory: true)
-        defer { try? fm.removeItem(at: extractionRoot) }
-        try fm.createDirectory(at: extractionRoot, withIntermediateDirectories: true, attributes: nil)
-        try extractAssetZip(zipURL, to: extractionRoot)
-        let source = try findExtractedAssetDirectory(in: extractionRoot)
-        return try installAssetDirectory(source)
+        let stage = documentsRoot.appendingPathComponent("BuildKit.installing", isDirectory: true)
+        try? fm.removeItem(at: stage)
+        try fm.createDirectory(at: stage, withIntermediateDirectories: true, attributes: nil)
+        do {
+            try extractAssetZip(zipURL, to: stage)
+            let manifest = try validateAssetDirectory(stage)
+            try replaceInstalledBuildKit(withStage: stage)
+            return manifest
+        } catch {
+            try? fm.removeItem(at: stage)
+            throw error
+        }
     }
 
     private static func extractAssetZip(_ zipURL: URL, to destination: URL) throws {
         guard let archive = Archive(url: zipURL, accessMode: .read) else {
             throw NSError(domain: "LitterBuildKit", code: 8, userInfo: [NSLocalizedDescriptionKey: "Could not open BuildKit asset ZIP: \(zipURL.lastPathComponent)"])
         }
+        let assetPrefix = try assetZipRootPrefix(in: archive)
         let fm = FileManager.default
         for entry in archive {
-            let sanitized = try sanitizedZipEntryPath(entry.path)
+            guard let sanitized = try sanitizedZipEntryPath(entry.path, strippingAssetPrefix: assetPrefix) else { continue }
             let output = destination.appendingPathComponent(sanitized)
-            try fm.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
             do {
+                if entry.type == .directory {
+                    try fm.createDirectory(at: output, withIntermediateDirectories: true, attributes: nil)
+                    continue
+                }
+                try fm.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
                 _ = try archive.extract(entry, to: output)
             } catch {
+                let nsError = error as NSError
                 throw NSError(
                     domain: "LitterBuildKit",
                     code: 12,
                     userInfo: [
-                        NSLocalizedDescriptionKey: "Could not extract BuildKit ZIP entry \(entry.path): \(error.localizedDescription)",
+                        NSLocalizedDescriptionKey: "Could not extract BuildKit ZIP entry \(entry.path) (compressed \(entry.compressedSize) bytes, uncompressed \(entry.uncompressedSize) bytes): \(nsError.domain) \(nsError.code) \(nsError.localizedDescription)",
                         NSUnderlyingErrorKey: error
                     ]
                 )
@@ -2798,41 +2809,63 @@ actor LitterBuildKit {
         }
     }
 
-    private static func sanitizedZipEntryPath(_ path: String) throws -> String {
+    private static func assetZipRootPrefix(in archive: Archive) throws -> String {
+        let manifestPaths = archive.compactMap { entry -> String? in
+            let normalized = entry.path.replacingOccurrences(of: "\\", with: "/")
+            guard normalized == "manifest.json" || normalized.hasSuffix("/manifest.json") else { return nil }
+            return normalized
+        }
+        guard let manifestPath = manifestPaths.first(where: { $0 == "BuildKitAssets/manifest.json" })
+                ?? manifestPaths.first(where: { $0.hasSuffix("/BuildKitAssets/manifest.json") })
+                ?? manifestPaths.sorted(by: { $0.count < $1.count }).first else {
+            throw NSError(domain: "LitterBuildKit", code: 11, userInfo: [NSLocalizedDescriptionKey: "BuildKit asset ZIP did not contain manifest.json."])
+        }
+        return String(manifestPath.dropLast("manifest.json".count))
+    }
+
+    private static func sanitizedZipEntryPath(_ path: String, strippingAssetPrefix assetPrefix: String) throws -> String? {
         let normalized = path.replacingOccurrences(of: "\\", with: "/")
-        let checkPath = normalized.hasSuffix("/") ? String(normalized.dropLast()) : normalized
+        let relative: String
+        if assetPrefix.isEmpty {
+            relative = normalized
+        } else {
+            guard normalized.hasPrefix(assetPrefix) else { return nil }
+            relative = String(normalized.dropFirst(assetPrefix.count))
+            if relative.isEmpty { return nil }
+        }
+        if relative == "__MACOSX" || relative.hasPrefix("__MACOSX/") { return nil }
+        let checkPath = relative.hasSuffix("/") ? String(relative.dropLast()) : relative
         let components = checkPath.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
         guard !checkPath.isEmpty,
-              !normalized.hasPrefix("/"),
+              !relative.hasPrefix("/"),
               !components.contains(".."),
               !components.contains("") else {
             throw NSError(domain: "LitterBuildKit", code: 9, userInfo: [NSLocalizedDescriptionKey: "Unsafe path in BuildKit asset ZIP: \(path)"])
         }
-        return normalized
-    }
-
-    private static func findExtractedAssetDirectory(in root: URL) throws -> URL {
-        if fileExists(root.appendingPathComponent("manifest.json")) { return root }
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: nil) else {
-            throw NSError(domain: "LitterBuildKit", code: 10, userInfo: [NSLocalizedDescriptionKey: "Could not inspect extracted BuildKit asset ZIP."])
-        }
-        for case let url as URL in enumerator where url.lastPathComponent == "manifest.json" {
-            return url.deletingLastPathComponent()
-        }
-        throw NSError(domain: "LitterBuildKit", code: 11, userInfo: [NSLocalizedDescriptionKey: "Extracted BuildKit asset ZIP did not contain manifest.json."])
+        return relative
     }
 
     private static func installAssetDirectory(_ source: URL) throws -> BuildKitAssetManifest {
         let manifest = try validateAssetDirectory(source)
         let fm = FileManager.default
         let stage = documentsRoot.appendingPathComponent("BuildKit.installing", isDirectory: true)
-        let previous = documentsRoot.appendingPathComponent("BuildKit.previous", isDirectory: true)
         try? fm.removeItem(at: stage)
-        try? fm.removeItem(at: previous)
         try fm.createDirectory(at: stage.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: nil)
-        try copyDirectoryContents(from: source, to: stage)
-        _ = try validateAssetDirectory(stage)
+        do {
+            try copyDirectoryContents(from: source, to: stage)
+            _ = try validateAssetDirectory(stage)
+            try replaceInstalledBuildKit(withStage: stage)
+            return manifest
+        } catch {
+            try? fm.removeItem(at: stage)
+            throw error
+        }
+    }
+
+    private static func replaceInstalledBuildKit(withStage stage: URL) throws {
+        let fm = FileManager.default
+        let previous = documentsRoot.appendingPathComponent("BuildKit.previous", isDirectory: true)
+        try? fm.removeItem(at: previous)
         if fm.fileExists(atPath: buildKitRoot.path) {
             try fm.moveItem(at: buildKitRoot, to: previous)
         }
@@ -2841,11 +2874,11 @@ actor LitterBuildKit {
             try? fm.removeItem(at: previous)
         } catch {
             if fm.fileExists(atPath: previous.path) {
+                try? fm.removeItem(at: buildKitRoot)
                 try? fm.moveItem(at: previous, to: buildKitRoot)
             }
             throw error
         }
-        return manifest
     }
 
     private static func copyDirectoryContents(from source: URL, to destination: URL) throws {
