@@ -86,6 +86,8 @@ targets:
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas"
+        GCC_PREFIX_HEADER: ../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas/Roxas-Prefix.pch
+        GCC_PRECOMPILE_PREFIX_HEADER: "YES"
     sources:
       - path: ../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas
         excludes:

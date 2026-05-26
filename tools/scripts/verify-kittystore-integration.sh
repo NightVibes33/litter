@@ -152,6 +152,7 @@ require_grep "SideStore target compiles upstream SideStore helpers" "../../Third
 require_grep "AltStoreCore framework target" "AltStoreCore:" "apps/ios/project.yml"
 require_grep "AltStoreCore target compiles upstream source" "../../ThirdParty/SideStore/Source/AltStoreCore" "apps/ios/project.yml"
 require_grep "Roxas framework target" "Roxas:" "apps/ios/project.yml"
+require_grep "Roxas prefix header" "Roxas-Prefix.pch" "apps/ios/project.yml"
 require_grep "RustBridge framework target" "RustBridge:" "apps/ios/project.yml"
 require_grep "Minimuxer framework target" "Minimuxer:" "apps/ios/project.yml"
 require_grep "Minimuxer target compiles upstream source" "../../ThirdParty/SideStore/Source/Dependencies/minimuxer/Sources" "apps/ios/project.yml"
