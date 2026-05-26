@@ -169,6 +169,7 @@ final class AppModel {
 
     func start() {
         guard updateTask == nil else { return }
+        LocalConnectorBroker.shared.start()
         let subscription = store.subscribeUpdates()
         self.subscription = subscription
         updateTask = Task.detached(priority: .userInitiated) { [weak self, subscription] in
@@ -188,6 +189,7 @@ final class AppModel {
     }
 
     func stop() {
+        LocalConnectorBroker.shared.stop()
         updateTask?.cancel()
         updateTask = nil
         pendingThreadRefreshTask?.cancel()
