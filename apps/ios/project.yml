@@ -286,6 +286,20 @@ targets:
       - package: AltSign
         product: AltSign-Dynamic
         embed: true
+      - target: AltStoreCore
+        embed: true
+      - target: Roxas
+        embed: true
+      - target: Minimuxer
+        embed: true
+      - target: RustBridge
+        embed: true
+      - package: SemanticVersion
+        product: SemanticVersion
+        embed: true
+      - package: KeychainAccess
+        product: KeychainAccess
+        embed: true
       - target: SideStore
         embed: true
       - target: LitterLiveActivity
