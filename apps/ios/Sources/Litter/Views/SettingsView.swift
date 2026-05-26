@@ -76,6 +76,8 @@ struct SettingsView: View {
                     ConversationSettingsRouteView()
                 case .updates:
                     AppUpdateSettingsView()
+                case .connectors:
+                    ConnectorSettingsView()
                 case .plugins:
                     PluginSettingsView()
                 case .aiProviders:
@@ -226,6 +228,23 @@ struct SettingsView: View {
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
                         Text("Run commands in the same local iSH runtime used by bots")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            NavigationLink(value: SettingsRoute.connectors) {
+                HStack(spacing: 10) {
+                    Image(systemName: "link.badge.plus")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Connectors")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Manage local broker and hosted relay access for bots")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
@@ -804,6 +823,7 @@ enum SettingsRoute: String, Hashable {
     case appearance
     case conversation
     case updates
+    case connectors
     case plugins
     case aiProviders
     case buildKit
