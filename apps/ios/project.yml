@@ -93,15 +93,6 @@ targets:
       - path: Resources/fs
         type: folder
         buildPhase: resources
-      - path: ../../ThirdParty/SideStore/Source
-        type: folder
-        buildPhase: resources
-      - path: ../../ThirdParty/Feather/Source
-        type: folder
-        buildPhase: resources
-      - path: ../../ThirdParty/SideStore/LocalDevVPN-Source
-        type: folder
-        buildPhase: resources
       - path: Sources/LitterLiveActivity/CodexTurnLiveActivity.swift
       - path: Sources/LitterWatch/Models/WatchModels.swift
       - path: Sources/LitterWatch/Models/WatchSize.swift
@@ -214,6 +205,31 @@ targets:
           }
           embed_framework_if_present AltSign-Dynamic 1
           embed_framework_if_present OpenSSL 0
+      - name: Embed Upstream Store Sources
+        script: |
+          set -eu
+          RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          DEST_ROOT="$RESOURCES_DIR/UpstreamApps"
+          copy_upstream_source() {
+            label="$1"
+            source="$2"
+            destination="$DEST_ROOT/$label"
+            if [ ! -d "$source" ]; then
+              echo "error: missing upstream source folder: $source" >&2
+              exit 1
+            fi
+            rm -rf "$destination"
+            mkdir -p "$DEST_ROOT"
+            /usr/bin/ditto "$source" "$destination"
+            if [ ! -d "$destination" ]; then
+              echo "error: failed to embed upstream source folder: $label" >&2
+              exit 1
+            fi
+            echo "Embedded upstream $label source at $destination"
+          }
+          copy_upstream_source SideStore "$SRCROOT/../../ThirdParty/SideStore/Source"
+          copy_upstream_source Feather "$SRCROOT/../../ThirdParty/Feather/Source"
+          copy_upstream_source LocalDevVPN "$SRCROOT/../../ThirdParty/SideStore/LocalDevVPN-Source"
       - name: Package Private BuildKit Assets
         script: |
           set -eu
