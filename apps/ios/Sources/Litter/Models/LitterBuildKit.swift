@@ -460,9 +460,9 @@ actor LitterBuildKit {
             return
         }
 
-        let source = Self.firstAvailableAssetCandidateDescription()
+        let source = Self.firstAvailableAssetCandidateDescription(skipKnownFailed: true)
         do {
-            let manifest = try Self.installFirstAvailableAssetDirectory()
+            let manifest = try Self.installFirstAvailableAssetDirectory(skipKnownFailed: true, recordAutoFailure: true)
             LLog.info(
                 "buildkit",
                 "installed private BuildKit assets",
@@ -2552,6 +2552,14 @@ actor LitterBuildKit {
         var manifest: BuildKitAssetManifest
     }
 
+    private struct AutoAssetFailureRecord: Codable {
+        var fingerprint: String
+        var label: String
+        var path: String
+        var failedAt: String
+        var error: String
+    }
+
     private static func assetCandidates() -> [AssetCandidate] {
         [
             AssetCandidate(label: "bundled BuildKitAssets directory", url: Bundle.main.url(forResource: "BuildKitAssets", withExtension: nil), kind: .directory),
@@ -2563,8 +2571,8 @@ actor LitterBuildKit {
         ]
     }
 
-    private static func firstAvailableAssetCandidateDescription() -> String {
-        guard let best = bestAvailableAssetCandidate() else { return "none" }
+    private static func firstAvailableAssetCandidateDescription(skipKnownFailed: Bool = false) -> String {
+        guard let best = bestAvailableAssetCandidate(skipKnownFailed: skipKnownFailed) else { return "none" }
         return "\(best.candidate.label): \(best.url.path)"
     }
 
@@ -2572,16 +2580,18 @@ actor LitterBuildKit {
         bestAvailableAssetCandidate()?.manifest
     }
 
-    private static func availableAssetCandidates() -> [AvailableAssetCandidate] {
+    private static func availableAssetCandidates(skipKnownFailed: Bool = false) -> [AvailableAssetCandidate] {
         assetCandidates().compactMap { candidate in
             guard let url = candidate.url, let manifest = assetManifest(for: candidate) else { return nil }
-            return AvailableAssetCandidate(candidate: candidate, url: url, manifest: manifest)
+            let available = AvailableAssetCandidate(candidate: candidate, url: url, manifest: manifest)
+            if skipKnownFailed, autoInstallFailureMatches(available) { return nil }
+            return available
         }
     }
 
-    private static func bestAvailableAssetCandidate() -> AvailableAssetCandidate? {
+    private static func bestAvailableAssetCandidate(skipKnownFailed: Bool = false) -> AvailableAssetCandidate? {
         var best: AvailableAssetCandidate?
-        for available in availableAssetCandidates() {
+        for available in availableAssetCandidates(skipKnownFailed: skipKnownFailed) {
             guard let current = best else {
                 best = available
                 continue
@@ -2659,30 +2669,81 @@ actor LitterBuildKit {
         return nil
     }
 
+    private static var autoInstallFailureURL: URL {
+        documentsRoot.appendingPathComponent("BuildKit.failed-auto-install.json")
+    }
+
+    private static func autoInstallFailureRecord() -> AutoAssetFailureRecord? {
+        guard let data = try? Data(contentsOf: autoInstallFailureURL) else { return nil }
+        return try? JSONDecoder().decode(AutoAssetFailureRecord.self, from: data)
+    }
+
+    private static func autoInstallFailureMatches(_ candidate: AvailableAssetCandidate) -> Bool {
+        autoInstallFailureRecord()?.fingerprint == assetCandidateFingerprint(candidate)
+    }
+
+    private static func recordAutoInstallFailure(_ candidate: AvailableAssetCandidate, error: Error) {
+        let record = AutoAssetFailureRecord(
+            fingerprint: assetCandidateFingerprint(candidate),
+            label: candidate.candidate.label,
+            path: candidate.url.path,
+            failedAt: ISO8601DateFormatter().string(from: Date()),
+            error: error.localizedDescription
+        )
+        guard let data = try? JSONEncoder().encode(record) else { return }
+        try? data.write(to: autoInstallFailureURL, options: .atomic)
+    }
+
+    private static func clearAutoInstallFailure() {
+        try? FileManager.default.removeItem(at: autoInstallFailureURL)
+    }
+
+    private static func assetCandidateFingerprint(_ candidate: AvailableAssetCandidate) -> String {
+        let attributes = (try? FileManager.default.attributesOfItem(atPath: candidate.url.path)) ?? [:]
+        let size = (attributes[.size] as? NSNumber)?.int64Value ?? -1
+        let modified = (attributes[.modificationDate] as? Date)?.timeIntervalSince1970 ?? -1
+        return "\(candidate.candidate.label)|\(candidate.url.path)|\(candidate.manifest.bundleIdentifier)|\(candidate.manifest.sdkVersion)|\(size)|\(modified)"
+    }
+
     private static func assetAvailabilityReport() -> String {
         assetCandidates().map { candidate in
             guard let url = candidate.url else {
                 return "- \(candidate.label): not found"
             }
+            let failedSuffix: String
+            if let manifest = assetManifest(for: candidate) {
+                let available = AvailableAssetCandidate(candidate: candidate, url: url, manifest: manifest)
+                failedSuffix = autoInstallFailureMatches(available) ? " (previous auto-install failed for this exact file; explicit install will retry)" : ""
+            } else {
+                failedSuffix = ""
+            }
             switch candidate.kind {
             case .directory:
                 let manifest = url.appendingPathComponent("manifest.json")
-                return "- \(candidate.label): \(manifest.path) \(fileExists(manifest) ? "present" : "missing")"
+                return "- \(candidate.label): \(manifest.path) \(fileExists(manifest) ? "present" : "missing")\(failedSuffix)"
             case .zip:
-                return "- \(candidate.label): \(url.path) \(fileExists(url) ? "present" : "missing")"
+                return "- \(candidate.label): \(url.path) \(fileExists(url) ? "present" : "missing")\(failedSuffix)"
             }
         }.joined(separator: "\n")
     }
 
-    private static func installFirstAvailableAssetDirectory() throws -> BuildKitAssetManifest {
-        guard let best = bestAvailableAssetCandidate() else {
+    private static func installFirstAvailableAssetDirectory(skipKnownFailed: Bool = false, recordAutoFailure: Bool = false) throws -> BuildKitAssetManifest {
+        guard let best = bestAvailableAssetCandidate(skipKnownFailed: skipKnownFailed) else {
             throw NSError(domain: "LitterBuildKit", code: 1, userInfo: [NSLocalizedDescriptionKey: "Expected BuildKitAssets/manifest.json or LitterBuildKitAssets.zip in the app bundle, Documents, or Documents/Inbox.\n\(assetAvailabilityReport())"])
         }
-        switch best.candidate.kind {
-        case .directory:
-            return try installAssetDirectory(best.url)
-        case .zip:
-            return try installAssetZip(best.url)
+        do {
+            let manifest: BuildKitAssetManifest
+            switch best.candidate.kind {
+            case .directory:
+                manifest = try installAssetDirectory(best.url)
+            case .zip:
+                manifest = try installAssetZip(best.url)
+            }
+            clearAutoInstallFailure()
+            return manifest
+        } catch {
+            if recordAutoFailure { recordAutoInstallFailure(best, error: error) }
+            throw error
         }
     }
 
@@ -3799,8 +3860,23 @@ actor LitterBuildKit {
           sleep 1
           elapsed=$((elapsed + 1))
         done
-        echo "Timed out waiting for Litter BuildKit request: $id" >&2
-        echo "Status: litter-build-status $id" >&2
+        mkdir -p "$builds/$id"
+        {
+          echo "exitCode=124"
+          echo "status=request-timeout"
+          echo "updatedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        } > "$builds/$id/status.txt"
+        {
+          echo "Timed out waiting for Litter BuildKit request: $id"
+          echo "Command: $cmd"
+          echo "Request: $req"
+          echo "Builds: $builds"
+          echo "This means the native Litter BuildKit request monitor did not write a result before the shim timeout."
+        } > "$builds/$id/log.txt"
+        rm -f "$req" 2>/dev/null || true
+        cat "$builds/$id/status.txt"
+        printf '\\n'
+        cat "$builds/$id/log.txt"
         exit 124
         """
     }

@@ -1,0 +1,15 @@
+/target
+/Cargo.lock
+em_proxy.h
+/em_proxy.xcframework
+/em_proxy.xcframework.zip
+/include
+*.a
+.DS_Store
+**/.DS_Store
+.last-prebuilt-fetch-em_proxy
+.skip-prebuilt-fetch-em_proxy
+.build
+.swiftpm
+target
+/em_proxy.xcodeproj/xcuserdata/mahee96.xcuserdatad/xcschemes/xcschememanagement.plist

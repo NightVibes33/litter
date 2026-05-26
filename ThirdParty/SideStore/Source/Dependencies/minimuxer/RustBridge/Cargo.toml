@@ -1,0 +1,30 @@
+[package]
+name = "rust_bridge"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+# <--- bridge.rs -->
+# Service wrappers: Device, Lockdown, AFC, InstProxy, Misagent, Mounter, Heartbeat, DebugServer
+rusty_libimobiledevice = { git = "https://github.com/SideStore/rusty_libimobiledevice", features = [
+  "dynamic",
+], default-features = false }
+# Plist parsing: instproxy lookup, misagent copy, heartbeat, mounter lookup
+plist_plus = { version = "0.2", features = ["dynamic"] }
+# JSON serialization: debugserver_set_argv, afc_get_file_info, afc_read_directory
+serde_json = "1"
+
+# <--- post17.rs -->
+# iOS 17+ async operations: CoreDeviceProxy, XPCDevice, DVT, DebugProxy, ImageMounter
+idevice = { git = "https://github.com/jkcoxson/idevice", rev = "a714d35d95dc16769f8a54a6168ccec6338b73c7", features = ["full"] }
+plist = "1.7.1"
+# Async runtime: block_on for iOS 17+ JIT and DDI mount
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "net"] }
+# Lazy static RUNTIME
+once_cell = "1"
+# Logging
+log = "0.4"
+
+[lib]
+crate-type = ["staticlib"]
+name = "rust_bridge"

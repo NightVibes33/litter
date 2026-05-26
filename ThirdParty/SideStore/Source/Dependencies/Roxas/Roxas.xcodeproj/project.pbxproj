@@ -1,0 +1,1346 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		BF0FB2121F0EA90E007460E0 /* RSTCellContentPrefetchingDataSource.h in Headers */ = {isa = PBXBuildFile; fileRef = BF0FB2111F0EA90E007460E0 /* RSTCellContentPrefetchingDataSource.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF0FB4451C017DF600D26616 /* RSTPlaceholderView.h in Headers */ = {isa = PBXBuildFile; fileRef = BF0FB4431C017DF600D26616 /* RSTPlaceholderView.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF0FB4461C017DF600D26616 /* RSTPlaceholderView.h in Headers */ = {isa = PBXBuildFile; fileRef = BF0FB4431C017DF600D26616 /* RSTPlaceholderView.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF0FB4471C017DF600D26616 /* RSTPlaceholderView.m in Sources */ = {isa = PBXBuildFile; fileRef = BF0FB4441C017DF600D26616 /* RSTPlaceholderView.m */; };
+		BF0FB4481C017DF600D26616 /* RSTPlaceholderView.m in Sources */ = {isa = PBXBuildFile; fileRef = BF0FB4441C017DF600D26616 /* RSTPlaceholderView.m */; };
+		BF0FB44A1C017F1300D26616 /* RSTPlaceholderView.xib in Resources */ = {isa = PBXBuildFile; fileRef = BF0FB4491C017F1300D26616 /* RSTPlaceholderView.xib */; };
+		BF0FB44B1C017F1300D26616 /* RSTPlaceholderView.xib in Resources */ = {isa = PBXBuildFile; fileRef = BF0FB4491C017F1300D26616 /* RSTPlaceholderView.xib */; };
+		BF18B6131E2967D400F70067 /* NSString+Localization.h in Headers */ = {isa = PBXBuildFile; fileRef = BF18B6111E2967D400F70067 /* NSString+Localization.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF18B6141E2967D400F70067 /* NSString+Localization.m in Sources */ = {isa = PBXBuildFile; fileRef = BF18B6121E2967D400F70067 /* NSString+Localization.m */; };
+		BF18B6151E2967D800F70067 /* NSString+Localization.m in Sources */ = {isa = PBXBuildFile; fileRef = BF18B6121E2967D400F70067 /* NSString+Localization.m */; };
+		BF18B6171E2970B800F70067 /* NSStringLocalizationTests.m in Sources */ = {isa = PBXBuildFile; fileRef = BF18B6161E2970B800F70067 /* NSStringLocalizationTests.m */; };
+		BF18B6181E2975C800F70067 /* NSString+Localization.m in Sources */ = {isa = PBXBuildFile; fileRef = BF18B6121E2967D400F70067 /* NSString+Localization.m */; };
+		BF18B61B1E297E0100F70067 /* RSTSilentAssertionHandler.m in Sources */ = {isa = PBXBuildFile; fileRef = BF18B61A1E297E0100F70067 /* RSTSilentAssertionHandler.m */; };
+		BF18B61D1E2981DF00F70067 /* NSString+Localization.h in Headers */ = {isa = PBXBuildFile; fileRef = BF18B6111E2967D400F70067 /* NSString+Localization.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF28F0F11B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.h in Headers */ = {isa = PBXBuildFile; fileRef = BF28F0EF1B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF28F0F21B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.m in Sources */ = {isa = PBXBuildFile; fileRef = BF28F0F01B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.m */; };
+		BF2DF1461C96ABA100F9FDD8 /* RSTOperationQueue.h in Headers */ = {isa = PBXBuildFile; fileRef = BF2DF1441C96ABA100F9FDD8 /* RSTOperationQueue.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF2DF1471C96ABA100F9FDD8 /* RSTOperationQueue.m in Sources */ = {isa = PBXBuildFile; fileRef = BF2DF1451C96ABA100F9FDD8 /* RSTOperationQueue.m */; };
+		BF2DF14B1C96B56000F9FDD8 /* RSTOperation.h in Headers */ = {isa = PBXBuildFile; fileRef = BF2DF1491C96B56000F9FDD8 /* RSTOperation.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF2DF14C1C96B56000F9FDD8 /* RSTOperation.m in Sources */ = {isa = PBXBuildFile; fileRef = BF2DF14A1C96B56000F9FDD8 /* RSTOperation.m */; };
+		BF2DF14F1C96B6EE00F9FDD8 /* RSTOperation_Subclasses.h in Headers */ = {isa = PBXBuildFile; fileRef = BF2DF14E1C96B6EE00F9FDD8 /* RSTOperation_Subclasses.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF2DF1521C97484A00F9FDD8 /* UIViewController+TransitionState.h in Headers */ = {isa = PBXBuildFile; fileRef = BF2DF1501C97484A00F9FDD8 /* UIViewController+TransitionState.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF2DF1531C97484A00F9FDD8 /* UIViewController+TransitionState.m in Sources */ = {isa = PBXBuildFile; fileRef = BF2DF1511C97484A00F9FDD8 /* UIViewController+TransitionState.m */; };
+		BF357B4420FD115A00A4A1A0 /* RSTPersistentContainer.h in Headers */ = {isa = PBXBuildFile; fileRef = BF357B4220FD115A00A4A1A0 /* RSTPersistentContainer.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF357B4520FD115A00A4A1A0 /* RSTPersistentContainer.m in Sources */ = {isa = PBXBuildFile; fileRef = BF357B4320FD115A00A4A1A0 /* RSTPersistentContainer.m */; };
+		BF357B5220FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.h in Headers */ = {isa = PBXBuildFile; fileRef = BF357B5020FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF357B5320FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.m in Sources */ = {isa = PBXBuildFile; fileRef = BF357B5120FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.m */; };
+		BF36F1D11A1459B90057FF07 /* UIImage+Manipulation.m in Sources */ = {isa = PBXBuildFile; fileRef = BF36F1CF1A1459B90057FF07 /* UIImage+Manipulation.m */; };
+		BF36F1D21A1459B90057FF07 /* UIImage+Manipulation.h in Headers */ = {isa = PBXBuildFile; fileRef = BF36F1D01A1459B90057FF07 /* UIImage+Manipulation.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF3AC2C920E686EE00F7DD99 /* RSTSeparatorView.h in Headers */ = {isa = PBXBuildFile; fileRef = BF3AC2C720E686EE00F7DD99 /* RSTSeparatorView.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF3AC2CA20E686EE00F7DD99 /* RSTSeparatorView.m in Sources */ = {isa = PBXBuildFile; fileRef = BF3AC2C820E686EE00F7DD99 /* RSTSeparatorView.m */; };
+		BF53E98D207B46EE00A57BCE /* UIKit+ActivityIndicating.h in Headers */ = {isa = PBXBuildFile; fileRef = BF53E98B207B46EE00A57BCE /* UIKit+ActivityIndicating.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF53E98E207B46EE00A57BCE /* UIKit+ActivityIndicating.m in Sources */ = {isa = PBXBuildFile; fileRef = BF53E98C207B46EE00A57BCE /* UIKit+ActivityIndicating.m */; };
+		BF57C0271D726016000132D2 /* UIView+AnimatedHide.h in Headers */ = {isa = PBXBuildFile; fileRef = BF57C0251D726016000132D2 /* UIView+AnimatedHide.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF57C0281D726016000132D2 /* UIView+AnimatedHide.h in Headers */ = {isa = PBXBuildFile; fileRef = BF57C0251D726016000132D2 /* UIView+AnimatedHide.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF57C0291D726016000132D2 /* UIView+AnimatedHide.m in Sources */ = {isa = PBXBuildFile; fileRef = BF57C0261D726016000132D2 /* UIView+AnimatedHide.m */; };
+		BF57C02A1D726016000132D2 /* UIView+AnimatedHide.m in Sources */ = {isa = PBXBuildFile; fileRef = BF57C0261D726016000132D2 /* UIView+AnimatedHide.m */; };
+		BF58BC0E1D51A027008FC1A3 /* UICollectionView+CellContent.h in Headers */ = {isa = PBXBuildFile; fileRef = BF58BC0C1D51A027008FC1A3 /* UICollectionView+CellContent.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF58BC0F1D51A027008FC1A3 /* UICollectionView+CellContent.h in Headers */ = {isa = PBXBuildFile; fileRef = BF58BC0C1D51A027008FC1A3 /* UICollectionView+CellContent.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF58BC101D51A027008FC1A3 /* UICollectionView+CellContent.m in Sources */ = {isa = PBXBuildFile; fileRef = BF58BC0D1D51A027008FC1A3 /* UICollectionView+CellContent.m */; };
+		BF58BC111D51A027008FC1A3 /* UICollectionView+CellContent.m in Sources */ = {isa = PBXBuildFile; fileRef = BF58BC0D1D51A027008FC1A3 /* UICollectionView+CellContent.m */; };
+		BF58BC131D51A5AC008FC1A3 /* RSTCellContentChange.h in Headers */ = {isa = PBXBuildFile; fileRef = BF58BC121D51A5AC008FC1A3 /* RSTCellContentChange.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF58BC141D51A5AC008FC1A3 /* RSTCellContentChange.h in Headers */ = {isa = PBXBuildFile; fileRef = BF58BC121D51A5AC008FC1A3 /* RSTCellContentChange.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF58BC161D51A5C9008FC1A3 /* RSTCellContentChange.m in Sources */ = {isa = PBXBuildFile; fileRef = BF58BC151D51A5C9008FC1A3 /* RSTCellContentChange.m */; };
+		BF58BC171D51A5C9008FC1A3 /* RSTCellContentChange.m in Sources */ = {isa = PBXBuildFile; fileRef = BF58BC151D51A5C9008FC1A3 /* RSTCellContentChange.m */; };
+		BF5B42391C7D828900835FEF /* NSUserDefaultsTests.m in Sources */ = {isa = PBXBuildFile; fileRef = BF5B42381C7D828900835FEF /* NSUserDefaultsTests.m */; };
+		BF5B423A1C7D84C800835FEF /* NSUserDefaults+DynamicProperties.m in Sources */ = {isa = PBXBuildFile; fileRef = BF28F0F01B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.m */; };
+		BF5B423B1C7D87F800835FEF /* RSTHelperFile.m in Sources */ = {isa = PBXBuildFile; fileRef = BFADB01219AE7C4A0050CF31 /* RSTHelperFile.m */; };
+		BF6A2D4C1FFC2BCC00A6B924 /* RSTDynamicDataSource.h in Headers */ = {isa = PBXBuildFile; fileRef = BF6A2D4A1FFC2BCC00A6B924 /* RSTDynamicDataSource.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF6A2D4D1FFC2BCC00A6B924 /* RSTDynamicDataSource.m in Sources */ = {isa = PBXBuildFile; fileRef = BF6A2D4B1FFC2BCC00A6B924 /* RSTDynamicDataSource.m */; };
+		BF6C2E2D1E52521400EABBC9 /* RSTArrayDataSource.h in Headers */ = {isa = PBXBuildFile; fileRef = BF6C2E2B1E52521400EABBC9 /* RSTArrayDataSource.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF6C2E2E1E52521400EABBC9 /* RSTArrayDataSource.m in Sources */ = {isa = PBXBuildFile; fileRef = BF6C2E2C1E52521400EABBC9 /* RSTArrayDataSource.m */; };
+		BF71CF8E1FE912D1001F1613 /* RSTCompositeDataSource.h in Headers */ = {isa = PBXBuildFile; fileRef = BF71CF8C1FE912D1001F1613 /* RSTCompositeDataSource.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF71CF8F1FE912D1001F1613 /* RSTCompositeDataSource.m in Sources */ = {isa = PBXBuildFile; fileRef = BF71CF8D1FE912D1001F1613 /* RSTCompositeDataSource.m */; };
+		BF749F2320A10E5D00915B16 /* RSTCollectionViewCell.xib in Resources */ = {isa = PBXBuildFile; fileRef = BF749F2220A10E5D00915B16 /* RSTCollectionViewCell.xib */; };
+		BF7A4FDF1A33B947007697D1 /* RSTDefines.h in Headers */ = {isa = PBXBuildFile; fileRef = BF7A4FDE1A33B89C007697D1 /* RSTDefines.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF7A759D2166B72900797D91 /* NSConstraintConflict+Conveniences.h in Headers */ = {isa = PBXBuildFile; fileRef = BF7A759B2166B72900797D91 /* NSConstraintConflict+Conveniences.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF7A759E2166B72900797D91 /* NSConstraintConflict+Conveniences.m in Sources */ = {isa = PBXBuildFile; fileRef = BF7A759C2166B72900797D91 /* NSConstraintConflict+Conveniences.m */; };
+		BF7FF099207312E5003A921A /* RSTActivityIndicating.h in Headers */ = {isa = PBXBuildFile; fileRef = BF7FF097207312E5003A921A /* RSTActivityIndicating.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8422212193715F0035340B /* RSTHasher.h in Headers */ = {isa = PBXBuildFile; fileRef = BF84221F2193715F0035340B /* RSTHasher.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8422222193715F0035340B /* RSTHasher.m in Sources */ = {isa = PBXBuildFile; fileRef = BF8422202193715F0035340B /* RSTHasher.m */; };
+		BF86246B1BB742E700C12EEE /* RSTHelperFile.m in Sources */ = {isa = PBXBuildFile; fileRef = BFADB01219AE7C4A0050CF31 /* RSTHelperFile.m */; };
+		BF86246C1BB742E700C12EEE /* UIImage+Manipulation.m in Sources */ = {isa = PBXBuildFile; fileRef = BF36F1CF1A1459B90057FF07 /* UIImage+Manipulation.m */; };
+		BF86246D1BB742E700C12EEE /* NSUserDefaults+DynamicProperties.m in Sources */ = {isa = PBXBuildFile; fileRef = BF28F0F01B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.m */; };
+		BF86246E1BB742E700C12EEE /* NSFileManager+URLs.m in Sources */ = {isa = PBXBuildFile; fileRef = BF9AB7D01A477FF4007DFEFF /* NSFileManager+URLs.m */; };
+		BF86246F1BB742E700C12EEE /* NSBundle+Extensions.m in Sources */ = {isa = PBXBuildFile; fileRef = BFA0E4281A3E956300DA1EC2 /* NSBundle+Extensions.m */; };
+		BF8624701BB742E700C12EEE /* RSTNavigationController.m in Sources */ = {isa = PBXBuildFile; fileRef = BFC6B5D11A0A10A900BECAB5 /* RSTNavigationController.m */; };
+		BF8624731BB742E700C12EEE /* RSTHelperFile.h in Headers */ = {isa = PBXBuildFile; fileRef = BFADB01119AE7C4A0050CF31 /* RSTHelperFile.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8624741BB742E700C12EEE /* NSUserDefaults+DynamicProperties.h in Headers */ = {isa = PBXBuildFile; fileRef = BF28F0EF1B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8624751BB742E700C12EEE /* NSFileManager+URLs.h in Headers */ = {isa = PBXBuildFile; fileRef = BF9AB7CF1A477FF4007DFEFF /* NSFileManager+URLs.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8624761BB742E700C12EEE /* UIImage+Manipulation.h in Headers */ = {isa = PBXBuildFile; fileRef = BF36F1D01A1459B90057FF07 /* UIImage+Manipulation.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8624771BB742E700C12EEE /* RSTNavigationController.h in Headers */ = {isa = PBXBuildFile; fileRef = BFC6B5D01A0A10A900BECAB5 /* RSTNavigationController.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8624781BB742E700C12EEE /* NSBundle+Extensions.h in Headers */ = {isa = PBXBuildFile; fileRef = BFA0E4271A3E956300DA1EC2 /* NSBundle+Extensions.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8624791BB742E700C12EEE /* Roxas.h in Headers */ = {isa = PBXBuildFile; fileRef = BFADAFFD19AE7BB70050CF31 /* Roxas.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF86247A1BB742E700C12EEE /* RSTDefines.h in Headers */ = {isa = PBXBuildFile; fileRef = BF7A4FDE1A33B89C007697D1 /* RSTDefines.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8D82261E53CFEE00756F08 /* NSPredicate+Search.h in Headers */ = {isa = PBXBuildFile; fileRef = BF8D82241E53CFEE00756F08 /* NSPredicate+Search.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8D82271E53CFEE00756F08 /* NSPredicate+Search.m in Sources */ = {isa = PBXBuildFile; fileRef = BF8D82251E53CFEE00756F08 /* NSPredicate+Search.m */; };
+		BF8FD1C31E5BADE300820F2C /* RSTFetchedResultsDataSource.h in Headers */ = {isa = PBXBuildFile; fileRef = BF8FD1C11E5BADE300820F2C /* RSTFetchedResultsDataSource.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8FD1C41E5BADE300820F2C /* RSTFetchedResultsDataSource.m in Sources */ = {isa = PBXBuildFile; fileRef = BF8FD1C21E5BADE300820F2C /* RSTFetchedResultsDataSource.m */; };
+		BF8FD1C71E5BBE1400820F2C /* RSTCellContentCell.h in Headers */ = {isa = PBXBuildFile; fileRef = BF8FD1C61E5BBE1400820F2C /* RSTCellContentCell.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8FD1CC1E5BBFB100820F2C /* UITableViewCell+CellContent.h in Headers */ = {isa = PBXBuildFile; fileRef = BF8FD1CA1E5BBFB100820F2C /* UITableViewCell+CellContent.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF8FD1CD1E5BBFB100820F2C /* UITableViewCell+CellContent.m in Sources */ = {isa = PBXBuildFile; fileRef = BF8FD1CB1E5BBFB100820F2C /* UITableViewCell+CellContent.m */; };
+		BF9A87F81C5381B3008927B8 /* RSTConstants.h in Headers */ = {isa = PBXBuildFile; fileRef = BF9A87F71C538187008927B8 /* RSTConstants.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF9A87F91C5381B6008927B8 /* RSTConstants.h in Headers */ = {isa = PBXBuildFile; fileRef = BF9A87F71C538187008927B8 /* RSTConstants.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF9AB7D11A477FF4007DFEFF /* NSFileManager+URLs.h in Headers */ = {isa = PBXBuildFile; fileRef = BF9AB7CF1A477FF4007DFEFF /* NSFileManager+URLs.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BF9AB7D21A477FF4007DFEFF /* NSFileManager+URLs.m in Sources */ = {isa = PBXBuildFile; fileRef = BF9AB7D01A477FF4007DFEFF /* NSFileManager+URLs.m */; };
+		BFA0E4291A3E956300DA1EC2 /* NSBundle+Extensions.h in Headers */ = {isa = PBXBuildFile; fileRef = BFA0E4271A3E956300DA1EC2 /* NSBundle+Extensions.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFA0E42A1A3E956300DA1EC2 /* NSBundle+Extensions.m in Sources */ = {isa = PBXBuildFile; fileRef = BFA0E4281A3E956300DA1EC2 /* NSBundle+Extensions.m */; };
+		BFAD9D0A1E5283970051F340 /* RSTCellContentView.h in Headers */ = {isa = PBXBuildFile; fileRef = BFAD9D091E5283970051F340 /* RSTCellContentView.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFADAFFE19AE7BB70050CF31 /* Roxas.h in Headers */ = {isa = PBXBuildFile; fileRef = BFADAFFD19AE7BB70050CF31 /* Roxas.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFADB01319AE7C4A0050CF31 /* RSTHelperFile.h in Headers */ = {isa = PBXBuildFile; fileRef = BFADB01119AE7C4A0050CF31 /* RSTHelperFile.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFADB01419AE7C4A0050CF31 /* RSTHelperFile.m in Sources */ = {isa = PBXBuildFile; fileRef = BFADB01219AE7C4A0050CF31 /* RSTHelperFile.m */; };
+		BFAFF4E41E5C233500C67FF3 /* RSTBlockOperation.h in Headers */ = {isa = PBXBuildFile; fileRef = BFAFF4E21E5C233500C67FF3 /* RSTBlockOperation.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFAFF4E51E5C233500C67FF3 /* RSTBlockOperation.m in Sources */ = {isa = PBXBuildFile; fileRef = BFAFF4E31E5C233500C67FF3 /* RSTBlockOperation.m */; };
+		BFAFF4E81E5CBBE600C67FF3 /* RSTLoadOperation.h in Headers */ = {isa = PBXBuildFile; fileRef = BFAFF4E61E5CBBE600C67FF3 /* RSTLoadOperation.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFAFF4E91E5CBBE600C67FF3 /* RSTLoadOperation.m in Sources */ = {isa = PBXBuildFile; fileRef = BFAFF4E71E5CBBE600C67FF3 /* RSTLoadOperation.m */; };
+		BFB2283B2066FBBF00F08151 /* RSTLaunchViewController.h in Headers */ = {isa = PBXBuildFile; fileRef = BFB228392066FBBF00F08151 /* RSTLaunchViewController.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFB2283C2066FBBF00F08151 /* RSTLaunchViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = BFB2283A2066FBBF00F08151 /* RSTLaunchViewController.m */; };
+		BFB88BE020A04D680067A545 /* RSTCollectionViewGridLayout.h in Headers */ = {isa = PBXBuildFile; fileRef = BFB88BDE20A04D680067A545 /* RSTCollectionViewGridLayout.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFB88BE120A04D680067A545 /* RSTCollectionViewGridLayout.m in Sources */ = {isa = PBXBuildFile; fileRef = BFB88BDF20A04D680067A545 /* RSTCollectionViewGridLayout.m */; };
+		BFBDEA341EC274D20034D65E /* UIAlertAction+Actions.h in Headers */ = {isa = PBXBuildFile; fileRef = BFBDEA321EC274D20034D65E /* UIAlertAction+Actions.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFBDEA351EC274D20034D65E /* UIAlertAction+Actions.m in Sources */ = {isa = PBXBuildFile; fileRef = BFBDEA331EC274D20034D65E /* UIAlertAction+Actions.m */; };
+		BFC2BC641D52DC6700C30751 /* UICollectionViewCell+CellContent.h in Headers */ = {isa = PBXBuildFile; fileRef = BFC2BC621D52DC6700C30751 /* UICollectionViewCell+CellContent.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFC2BC651D52DC6700C30751 /* UICollectionViewCell+CellContent.h in Headers */ = {isa = PBXBuildFile; fileRef = BFC2BC621D52DC6700C30751 /* UICollectionViewCell+CellContent.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFC2BC661D52DC6700C30751 /* UICollectionViewCell+CellContent.m in Sources */ = {isa = PBXBuildFile; fileRef = BFC2BC631D52DC6700C30751 /* UICollectionViewCell+CellContent.m */; };
+		BFC2BC671D52DC6700C30751 /* UICollectionViewCell+CellContent.m in Sources */ = {isa = PBXBuildFile; fileRef = BFC2BC631D52DC6700C30751 /* UICollectionViewCell+CellContent.m */; };
+		BFC5B07F20A0F25A0085B6A3 /* RSTCollectionViewCell.h in Headers */ = {isa = PBXBuildFile; fileRef = BFC5B07D20A0F25A0085B6A3 /* RSTCollectionViewCell.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFC5B08020A0F25A0085B6A3 /* RSTCollectionViewCell.m in Sources */ = {isa = PBXBuildFile; fileRef = BFC5B07E20A0F25A0085B6A3 /* RSTCollectionViewCell.m */; };
+		BFC6B5D21A0A10A900BECAB5 /* RSTNavigationController.h in Headers */ = {isa = PBXBuildFile; fileRef = BFC6B5D01A0A10A900BECAB5 /* RSTNavigationController.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFC6B5D31A0A10A900BECAB5 /* RSTNavigationController.m in Sources */ = {isa = PBXBuildFile; fileRef = BFC6B5D11A0A10A900BECAB5 /* RSTNavigationController.m */; };
+		BFDB50621EB942F50084C58A /* NSLayoutConstraint+Edges.h in Headers */ = {isa = PBXBuildFile; fileRef = BFDB50601EB942F50084C58A /* NSLayoutConstraint+Edges.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFDB50631EB942F50084C58A /* NSLayoutConstraint+Edges.m in Sources */ = {isa = PBXBuildFile; fileRef = BFDB50611EB942F50084C58A /* NSLayoutConstraint+Edges.m */; };
+		BFDC6F14220248DB00CA3153 /* RSTError.h in Headers */ = {isa = PBXBuildFile; fileRef = BFDC6F12220248DB00CA3153 /* RSTError.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFDC6F15220248DB00CA3153 /* RSTError.m in Sources */ = {isa = PBXBuildFile; fileRef = BFDC6F13220248DB00CA3153 /* RSTError.m */; };
+		BFDF04D81D51193B00091747 /* RSTCellContentChangeOperation.h in Headers */ = {isa = PBXBuildFile; fileRef = BFDF04D61D51193B00091747 /* RSTCellContentChangeOperation.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFDF04D91D51193B00091747 /* RSTCellContentChangeOperation.h in Headers */ = {isa = PBXBuildFile; fileRef = BFDF04D61D51193B00091747 /* RSTCellContentChangeOperation.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFDF04DA1D51193B00091747 /* RSTCellContentChangeOperation.m in Sources */ = {isa = PBXBuildFile; fileRef = BFDF04D71D51193B00091747 /* RSTCellContentChangeOperation.m */; };
+		BFDF04DB1D51193B00091747 /* RSTCellContentChangeOperation.m in Sources */ = {isa = PBXBuildFile; fileRef = BFDF04D71D51193B00091747 /* RSTCellContentChangeOperation.m */; };
+		BFE35D821DBED4D700F77C10 /* UITableView+CellContent.h in Headers */ = {isa = PBXBuildFile; fileRef = BFE35D801DBED4D700F77C10 /* UITableView+CellContent.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFE35D831DBED4D700F77C10 /* UITableView+CellContent.h in Headers */ = {isa = PBXBuildFile; fileRef = BFE35D801DBED4D700F77C10 /* UITableView+CellContent.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFE35D841DBED4D700F77C10 /* UITableView+CellContent.m in Sources */ = {isa = PBXBuildFile; fileRef = BFE35D811DBED4D700F77C10 /* UITableView+CellContent.m */; };
+		BFE35D851DBED4D700F77C10 /* UITableView+CellContent.m in Sources */ = {isa = PBXBuildFile; fileRef = BFE35D811DBED4D700F77C10 /* UITableView+CellContent.m */; };
+		BFE8F0461E4AF8A200A64745 /* RSTSearchController.h in Headers */ = {isa = PBXBuildFile; fileRef = BFE8F0441E4AF8A200A64745 /* RSTSearchController.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFE8F0471E4AF8A200A64745 /* RSTSearchController.m in Sources */ = {isa = PBXBuildFile; fileRef = BFE8F0451E4AF8A200A64745 /* RSTSearchController.m */; };
+		BFE8F04A1E4AF9F400A64745 /* RSTCellContentDataSource.h in Headers */ = {isa = PBXBuildFile; fileRef = BFE8F0481E4AF9F400A64745 /* RSTCellContentDataSource.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFE8F04B1E4AF9F400A64745 /* RSTCellContentDataSource.m in Sources */ = {isa = PBXBuildFile; fileRef = BFE8F0491E4AF9F400A64745 /* RSTCellContentDataSource.m */; };
+		BFE8F0511E4B04ED00A64745 /* RSTCellContentDataSource_Subclasses.h in Headers */ = {isa = PBXBuildFile; fileRef = BFE8F0501E4B04ED00A64745 /* RSTCellContentDataSource_Subclasses.h */; };
+		BFF2D106219CEC3B00191AB4 /* RSTToastView.m in Sources */ = {isa = PBXBuildFile; fileRef = BFF2D104219CEC3B00191AB4 /* RSTToastView.m */; };
+		BFF2D107219CEC3B00191AB4 /* RSTToastView.h in Headers */ = {isa = PBXBuildFile; fileRef = BFF2D105219CEC3B00191AB4 /* RSTToastView.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		BFF2D10A219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.m in Sources */ = {isa = PBXBuildFile; fileRef = BFF2D108219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.m */; };
+		BFF2D10B219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.h in Headers */ = {isa = PBXBuildFile; fileRef = BFF2D109219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		D55E1226212F44710095CA4F /* RSTNibView.h in Headers */ = {isa = PBXBuildFile; fileRef = D55E1224212F44710095CA4F /* RSTNibView.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		D55E1227212F44710095CA4F /* RSTNibView.m in Sources */ = {isa = PBXBuildFile; fileRef = D55E1225212F44710095CA4F /* RSTNibView.m */; };
+		D581E69F2137310600789E1D /* RSTTintedImageView.h in Headers */ = {isa = PBXBuildFile; fileRef = D581E69D2137310600789E1D /* RSTTintedImageView.h */; settings = {ATTRIBUTES = (Public, ); }; };
+		D581E6A02137310600789E1D /* RSTTintedImageView.m in Sources */ = {isa = PBXBuildFile; fileRef = D581E69E2137310600789E1D /* RSTTintedImageView.m */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		BF0FB2111F0EA90E007460E0 /* RSTCellContentPrefetchingDataSource.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTCellContentPrefetchingDataSource.h; sourceTree = "<group>"; };
+		BF0FB4431C017DF600D26616 /* RSTPlaceholderView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTPlaceholderView.h; sourceTree = "<group>"; };
+		BF0FB4441C017DF600D26616 /* RSTPlaceholderView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTPlaceholderView.m; sourceTree = "<group>"; };
+		BF0FB4491C017F1300D26616 /* RSTPlaceholderView.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = RSTPlaceholderView.xib; sourceTree = "<group>"; };
+		BF18B6111E2967D400F70067 /* NSString+Localization.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSString+Localization.h"; sourceTree = "<group>"; };
+		BF18B6121E2967D400F70067 /* NSString+Localization.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSString+Localization.m"; sourceTree = "<group>"; };
+		BF18B6161E2970B800F70067 /* NSStringLocalizationTests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = NSStringLocalizationTests.m; sourceTree = "<group>"; };
+		BF18B6191E297E0100F70067 /* RSTSilentAssertionHandler.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTSilentAssertionHandler.h; sourceTree = "<group>"; };
+		BF18B61A1E297E0100F70067 /* RSTSilentAssertionHandler.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTSilentAssertionHandler.m; sourceTree = "<group>"; };
+		BF28F0EF1B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSUserDefaults+DynamicProperties.h"; sourceTree = "<group>"; };
+		BF28F0F01B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSUserDefaults+DynamicProperties.m"; sourceTree = "<group>"; };
+		BF2DF1441C96ABA100F9FDD8 /* RSTOperationQueue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTOperationQueue.h; sourceTree = "<group>"; };
+		BF2DF1451C96ABA100F9FDD8 /* RSTOperationQueue.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTOperationQueue.m; sourceTree = "<group>"; };
+		BF2DF1491C96B56000F9FDD8 /* RSTOperation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTOperation.h; sourceTree = "<group>"; };
+		BF2DF14A1C96B56000F9FDD8 /* RSTOperation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTOperation.m; sourceTree = "<group>"; };
+		BF2DF14E1C96B6EE00F9FDD8 /* RSTOperation_Subclasses.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTOperation_Subclasses.h; sourceTree = "<group>"; };
+		BF2DF1501C97484A00F9FDD8 /* UIViewController+TransitionState.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIViewController+TransitionState.h"; sourceTree = "<group>"; };
+		BF2DF1511C97484A00F9FDD8 /* UIViewController+TransitionState.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UIViewController+TransitionState.m"; sourceTree = "<group>"; };
+		BF357B4220FD115A00A4A1A0 /* RSTPersistentContainer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTPersistentContainer.h; sourceTree = "<group>"; };
+		BF357B4320FD115A00A4A1A0 /* RSTPersistentContainer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTPersistentContainer.m; sourceTree = "<group>"; };
+		BF357B5020FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTRelationshipPreservingMergePolicy.h; sourceTree = "<group>"; };
+		BF357B5120FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTRelationshipPreservingMergePolicy.m; sourceTree = "<group>"; };
+		BF36F1CF1A1459B90057FF07 /* UIImage+Manipulation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UIImage+Manipulation.m"; sourceTree = "<group>"; };
+		BF36F1D01A1459B90057FF07 /* UIImage+Manipulation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIImage+Manipulation.h"; sourceTree = "<group>"; };
+		BF3AC2C720E686EE00F7DD99 /* RSTSeparatorView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTSeparatorView.h; sourceTree = "<group>"; };
+		BF3AC2C820E686EE00F7DD99 /* RSTSeparatorView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTSeparatorView.m; sourceTree = "<group>"; };
+		BF53E98B207B46EE00A57BCE /* UIKit+ActivityIndicating.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UIKit+ActivityIndicating.h"; sourceTree = "<group>"; };
+		BF53E98C207B46EE00A57BCE /* UIKit+ActivityIndicating.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "UIKit+ActivityIndicating.m"; sourceTree = "<group>"; };
+		BF57C0251D726016000132D2 /* UIView+AnimatedHide.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIView+AnimatedHide.h"; sourceTree = "<group>"; };
+		BF57C0261D726016000132D2 /* UIView+AnimatedHide.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UIView+AnimatedHide.m"; sourceTree = "<group>"; };
+		BF58BC0C1D51A027008FC1A3 /* UICollectionView+CellContent.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UICollectionView+CellContent.h"; sourceTree = "<group>"; };
+		BF58BC0D1D51A027008FC1A3 /* UICollectionView+CellContent.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UICollectionView+CellContent.m"; sourceTree = "<group>"; };
+		BF58BC121D51A5AC008FC1A3 /* RSTCellContentChange.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTCellContentChange.h; sourceTree = "<group>"; };
+		BF58BC151D51A5C9008FC1A3 /* RSTCellContentChange.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTCellContentChange.m; sourceTree = "<group>"; };
+		BF5B42381C7D828900835FEF /* NSUserDefaultsTests.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = NSUserDefaultsTests.m; sourceTree = "<group>"; };
+		BF6A2D4A1FFC2BCC00A6B924 /* RSTDynamicDataSource.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTDynamicDataSource.h; sourceTree = "<group>"; };
+		BF6A2D4B1FFC2BCC00A6B924 /* RSTDynamicDataSource.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTDynamicDataSource.m; sourceTree = "<group>"; };
+		BF6C2E2B1E52521400EABBC9 /* RSTArrayDataSource.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTArrayDataSource.h; sourceTree = "<group>"; };
+		BF6C2E2C1E52521400EABBC9 /* RSTArrayDataSource.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTArrayDataSource.m; sourceTree = "<group>"; };
+		BF71CF8C1FE912D1001F1613 /* RSTCompositeDataSource.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTCompositeDataSource.h; sourceTree = "<group>"; };
+		BF71CF8D1FE912D1001F1613 /* RSTCompositeDataSource.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTCompositeDataSource.m; sourceTree = "<group>"; };
+		BF749F2220A10E5D00915B16 /* RSTCollectionViewCell.xib */ = {isa = PBXFileReference; lastKnownFileType = file.xib; path = RSTCollectionViewCell.xib; sourceTree = "<group>"; };
+		BF7A4FDE1A33B89C007697D1 /* RSTDefines.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTDefines.h; sourceTree = "<group>"; };
+		BF7A4FE01A33BA66007697D1 /* Roxas-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Roxas-Prefix.pch"; path = "Roxas/Roxas-Prefix.pch"; sourceTree = SOURCE_ROOT; };
+		BF7A759B2166B72900797D91 /* NSConstraintConflict+Conveniences.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "NSConstraintConflict+Conveniences.h"; sourceTree = "<group>"; };
+		BF7A759C2166B72900797D91 /* NSConstraintConflict+Conveniences.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "NSConstraintConflict+Conveniences.m"; sourceTree = "<group>"; };
+		BF7FF097207312E5003A921A /* RSTActivityIndicating.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTActivityIndicating.h; sourceTree = "<group>"; };
+		BF84221F2193715F0035340B /* RSTHasher.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTHasher.h; sourceTree = "<group>"; };
+		BF8422202193715F0035340B /* RSTHasher.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTHasher.m; sourceTree = "<group>"; };
+		BF8624801BB742E700C12EEE /* Roxas.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Roxas.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		BF8D82241E53CFEE00756F08 /* NSPredicate+Search.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSPredicate+Search.h"; sourceTree = "<group>"; };
+		BF8D82251E53CFEE00756F08 /* NSPredicate+Search.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSPredicate+Search.m"; sourceTree = "<group>"; };
+		BF8FD1C11E5BADE300820F2C /* RSTFetchedResultsDataSource.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTFetchedResultsDataSource.h; sourceTree = "<group>"; };
+		BF8FD1C21E5BADE300820F2C /* RSTFetchedResultsDataSource.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTFetchedResultsDataSource.m; sourceTree = "<group>"; };
+		BF8FD1C61E5BBE1400820F2C /* RSTCellContentCell.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTCellContentCell.h; sourceTree = "<group>"; };
+		BF8FD1CA1E5BBFB100820F2C /* UITableViewCell+CellContent.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UITableViewCell+CellContent.h"; sourceTree = "<group>"; };
+		BF8FD1CB1E5BBFB100820F2C /* UITableViewCell+CellContent.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UITableViewCell+CellContent.m"; sourceTree = "<group>"; };
+		BF9A87F71C538187008927B8 /* RSTConstants.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTConstants.h; sourceTree = "<group>"; };
+		BF9AB7CF1A477FF4007DFEFF /* NSFileManager+URLs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSFileManager+URLs.h"; sourceTree = "<group>"; };
+		BF9AB7D01A477FF4007DFEFF /* NSFileManager+URLs.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSFileManager+URLs.m"; sourceTree = "<group>"; };
+		BFA0E4271A3E956300DA1EC2 /* NSBundle+Extensions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSBundle+Extensions.h"; sourceTree = "<group>"; };
+		BFA0E4281A3E956300DA1EC2 /* NSBundle+Extensions.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSBundle+Extensions.m"; sourceTree = "<group>"; };
+		BFAD9D091E5283970051F340 /* RSTCellContentView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTCellContentView.h; sourceTree = "<group>"; };
+		BFADAFF819AE7BB70050CF31 /* Roxas.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Roxas.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		BFADAFFC19AE7BB70050CF31 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		BFADAFFD19AE7BB70050CF31 /* Roxas.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Roxas.h; sourceTree = "<group>"; };
+		BFADB00319AE7BB80050CF31 /* RoxasTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RoxasTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BFADB00619AE7BB80050CF31 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		BFADB01119AE7C4A0050CF31 /* RSTHelperFile.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTHelperFile.h; sourceTree = "<group>"; };
+		BFADB01219AE7C4A0050CF31 /* RSTHelperFile.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTHelperFile.m; sourceTree = "<group>"; };
+		BFAFF4E21E5C233500C67FF3 /* RSTBlockOperation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTBlockOperation.h; sourceTree = "<group>"; };
+		BFAFF4E31E5C233500C67FF3 /* RSTBlockOperation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTBlockOperation.m; sourceTree = "<group>"; };
+		BFAFF4E61E5CBBE600C67FF3 /* RSTLoadOperation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTLoadOperation.h; sourceTree = "<group>"; };
+		BFAFF4E71E5CBBE600C67FF3 /* RSTLoadOperation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTLoadOperation.m; sourceTree = "<group>"; };
+		BFB228392066FBBF00F08151 /* RSTLaunchViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTLaunchViewController.h; sourceTree = "<group>"; };
+		BFB2283A2066FBBF00F08151 /* RSTLaunchViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTLaunchViewController.m; sourceTree = "<group>"; };
+		BFB88BDE20A04D680067A545 /* RSTCollectionViewGridLayout.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTCollectionViewGridLayout.h; sourceTree = "<group>"; };
+		BFB88BDF20A04D680067A545 /* RSTCollectionViewGridLayout.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTCollectionViewGridLayout.m; sourceTree = "<group>"; };
+		BFBDEA321EC274D20034D65E /* UIAlertAction+Actions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UIAlertAction+Actions.h"; sourceTree = "<group>"; };
+		BFBDEA331EC274D20034D65E /* UIAlertAction+Actions.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UIAlertAction+Actions.m"; sourceTree = "<group>"; };
+		BFBDEA411EC2C5AC0034D65E /* Roxas.playground */ = {isa = PBXFileReference; lastKnownFileType = file.playground; path = Roxas.playground; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.swift; };
+		BFC2BC621D52DC6700C30751 /* UICollectionViewCell+CellContent.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UICollectionViewCell+CellContent.h"; sourceTree = "<group>"; };
+		BFC2BC631D52DC6700C30751 /* UICollectionViewCell+CellContent.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UICollectionViewCell+CellContent.m"; sourceTree = "<group>"; };
+		BFC5B07D20A0F25A0085B6A3 /* RSTCollectionViewCell.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTCollectionViewCell.h; sourceTree = "<group>"; };
+		BFC5B07E20A0F25A0085B6A3 /* RSTCollectionViewCell.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTCollectionViewCell.m; sourceTree = "<group>"; };
+		BFC6B5D01A0A10A900BECAB5 /* RSTNavigationController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTNavigationController.h; sourceTree = "<group>"; };
+		BFC6B5D11A0A10A900BECAB5 /* RSTNavigationController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTNavigationController.m; sourceTree = "<group>"; };
+		BFDB50601EB942F50084C58A /* NSLayoutConstraint+Edges.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSLayoutConstraint+Edges.h"; sourceTree = "<group>"; };
+		BFDB50611EB942F50084C58A /* NSLayoutConstraint+Edges.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSLayoutConstraint+Edges.m"; sourceTree = "<group>"; };
+		BFDC6F12220248DB00CA3153 /* RSTError.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTError.h; sourceTree = "<group>"; };
+		BFDC6F13220248DB00CA3153 /* RSTError.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTError.m; sourceTree = "<group>"; };
+		BFDF04D61D51193B00091747 /* RSTCellContentChangeOperation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTCellContentChangeOperation.h; sourceTree = "<group>"; };
+		BFDF04D71D51193B00091747 /* RSTCellContentChangeOperation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTCellContentChangeOperation.m; sourceTree = "<group>"; };
+		BFE35D801DBED4D700F77C10 /* UITableView+CellContent.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UITableView+CellContent.h"; sourceTree = "<group>"; };
+		BFE35D811DBED4D700F77C10 /* UITableView+CellContent.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UITableView+CellContent.m"; sourceTree = "<group>"; };
+		BFE8F0441E4AF8A200A64745 /* RSTSearchController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTSearchController.h; sourceTree = "<group>"; };
+		BFE8F0451E4AF8A200A64745 /* RSTSearchController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTSearchController.m; sourceTree = "<group>"; };
+		BFE8F0481E4AF9F400A64745 /* RSTCellContentDataSource.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTCellContentDataSource.h; sourceTree = "<group>"; };
+		BFE8F0491E4AF9F400A64745 /* RSTCellContentDataSource.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTCellContentDataSource.m; sourceTree = "<group>"; };
+		BFE8F0501E4B04ED00A64745 /* RSTCellContentDataSource_Subclasses.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTCellContentDataSource_Subclasses.h; sourceTree = "<group>"; };
+		BFF2D104219CEC3B00191AB4 /* RSTToastView.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = RSTToastView.m; sourceTree = "<group>"; };
+		BFF2D105219CEC3B00191AB4 /* RSTToastView.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RSTToastView.h; sourceTree = "<group>"; };
+		BFF2D108219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "UISpringTimingParameters+Conveniences.m"; sourceTree = "<group>"; };
+		BFF2D109219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "UISpringTimingParameters+Conveniences.h"; sourceTree = "<group>"; };
+		D55E1224212F44710095CA4F /* RSTNibView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTNibView.h; sourceTree = "<group>"; };
+		D55E1225212F44710095CA4F /* RSTNibView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTNibView.m; sourceTree = "<group>"; };
+		D581E69D2137310600789E1D /* RSTTintedImageView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = RSTTintedImageView.h; sourceTree = "<group>"; };
+		D581E69E2137310600789E1D /* RSTTintedImageView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = RSTTintedImageView.m; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		BF8624711BB742E700C12EEE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BFADAFF419AE7BB70050CF31 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BFADB00019AE7BB80050CF31 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		BF0FB4421C017DD600D26616 /* Visual Components */ = {
+			isa = PBXGroup;
+			children = (
+				BFB228372066FB9000F08151 /* Placeholder View */,
+				BFB228382066FB9C00F08151 /* Launch View Controller */,
+				BF3AC2C620E686A100F7DD99 /* Separator */,
+				D55E1223212F444C0095CA4F /* Nib View */,
+				D581E69C213730EA00789E1D /* Tinted Image View */,
+				BFF2D103219CEC1400191AB4 /* Toast View */,
+			);
+			name = "Visual Components";
+			sourceTree = "<group>";
+		};
+		BF18B61C1E297E0E00F70067 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				BF5B42381C7D828900835FEF /* NSUserDefaultsTests.m */,
+				BF18B6161E2970B800F70067 /* NSStringLocalizationTests.m */,
+			);
+			name = Tests;
+			sourceTree = "<group>";
+		};
+		BF2DF1481C96ABA400F9FDD8 /* Operations */ = {
+			isa = PBXGroup;
+			children = (
+				BF2DF1441C96ABA100F9FDD8 /* RSTOperationQueue.h */,
+				BF2DF1451C96ABA100F9FDD8 /* RSTOperationQueue.m */,
+				BF2DF1491C96B56000F9FDD8 /* RSTOperation.h */,
+				BF2DF14E1C96B6EE00F9FDD8 /* RSTOperation_Subclasses.h */,
+				BF2DF14A1C96B56000F9FDD8 /* RSTOperation.m */,
+				BFAFF4EC1E5CBDC200C67FF3 /* Block Operations */,
+				BFAFF4ED1E5CBDC900C67FF3 /* Load Operations */,
+			);
+			name = Operations;
+			sourceTree = "<group>";
+		};
+		BF357B4120FD113700A4A1A0 /* Core Data */ = {
+			isa = PBXGroup;
+			children = (
+				BF357B4220FD115A00A4A1A0 /* RSTPersistentContainer.h */,
+				BF357B4320FD115A00A4A1A0 /* RSTPersistentContainer.m */,
+				BF357B5020FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.h */,
+				BF357B5120FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.m */,
+			);
+			name = "Core Data";
+			sourceTree = "<group>";
+		};
+		BF36F1CE1A1459720057FF07 /* Categories */ = {
+			isa = PBXGroup;
+			children = (
+				BF53E98A207B469F00A57BCE /* RSTActivityIndicating */,
+				BF8FD1C51E5BBB9C00820F2C /* Cell Content */,
+				BF36F1D01A1459B90057FF07 /* UIImage+Manipulation.h */,
+				BF36F1CF1A1459B90057FF07 /* UIImage+Manipulation.m */,
+				BFA0E4271A3E956300DA1EC2 /* NSBundle+Extensions.h */,
+				BFA0E4281A3E956300DA1EC2 /* NSBundle+Extensions.m */,
+				BF9AB7CF1A477FF4007DFEFF /* NSFileManager+URLs.h */,
+				BF9AB7D01A477FF4007DFEFF /* NSFileManager+URLs.m */,
+				BF28F0EF1B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.h */,
+				BF28F0F01B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.m */,
+				BF2DF1501C97484A00F9FDD8 /* UIViewController+TransitionState.h */,
+				BF2DF1511C97484A00F9FDD8 /* UIViewController+TransitionState.m */,
+				BF57C0251D726016000132D2 /* UIView+AnimatedHide.h */,
+				BF57C0261D726016000132D2 /* UIView+AnimatedHide.m */,
+				BF18B6111E2967D400F70067 /* NSString+Localization.h */,
+				BF18B6121E2967D400F70067 /* NSString+Localization.m */,
+				BF8D82241E53CFEE00756F08 /* NSPredicate+Search.h */,
+				BF8D82251E53CFEE00756F08 /* NSPredicate+Search.m */,
+				BFBDEA321EC274D20034D65E /* UIAlertAction+Actions.h */,
+				BFBDEA331EC274D20034D65E /* UIAlertAction+Actions.m */,
+				BFDB50601EB942F50084C58A /* NSLayoutConstraint+Edges.h */,
+				BFDB50611EB942F50084C58A /* NSLayoutConstraint+Edges.m */,
+				BF7A759B2166B72900797D91 /* NSConstraintConflict+Conveniences.h */,
+				BF7A759C2166B72900797D91 /* NSConstraintConflict+Conveniences.m */,
+				BFF2D109219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.h */,
+				BFF2D108219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.m */,
+			);
+			name = Categories;
+			sourceTree = "<group>";
+		};
+		BF3AC2C620E686A100F7DD99 /* Separator */ = {
+			isa = PBXGroup;
+			children = (
+				BF3AC2C720E686EE00F7DD99 /* RSTSeparatorView.h */,
+				BF3AC2C820E686EE00F7DD99 /* RSTSeparatorView.m */,
+			);
+			name = Separator;
+			sourceTree = "<group>";
+		};
+		BF53E98A207B469F00A57BCE /* RSTActivityIndicating */ = {
+			isa = PBXGroup;
+			children = (
+				BF7FF097207312E5003A921A /* RSTActivityIndicating.h */,
+				BF53E98B207B46EE00A57BCE /* UIKit+ActivityIndicating.h */,
+				BF53E98C207B46EE00A57BCE /* UIKit+ActivityIndicating.m */,
+			);
+			name = RSTActivityIndicating;
+			sourceTree = "<group>";
+		};
+		BF6A2D411FFC2A5E00A6B924 /* Dynamic */ = {
+			isa = PBXGroup;
+			children = (
+				BF6A2D4A1FFC2BCC00A6B924 /* RSTDynamicDataSource.h */,
+				BF6A2D4B1FFC2BCC00A6B924 /* RSTDynamicDataSource.m */,
+			);
+			name = Dynamic;
+			sourceTree = "<group>";
+		};
+		BF71CF8B1FE91214001F1613 /* Composite */ = {
+			isa = PBXGroup;
+			children = (
+				BF71CF8C1FE912D1001F1613 /* RSTCompositeDataSource.h */,
+				BF71CF8D1FE912D1001F1613 /* RSTCompositeDataSource.m */,
+			);
+			name = Composite;
+			sourceTree = "<group>";
+		};
+		BF8422232193776F0035340B /* Functionality */ = {
+			isa = PBXGroup;
+			children = (
+				BF84221F2193715F0035340B /* RSTHasher.h */,
+				BF8422202193715F0035340B /* RSTHasher.m */,
+			);
+			name = Functionality;
+			sourceTree = "<group>";
+		};
+		BF8D822C1E53F66D00756F08 /* Changes */ = {
+			isa = PBXGroup;
+			children = (
+				BF58BC121D51A5AC008FC1A3 /* RSTCellContentChange.h */,
+				BF58BC151D51A5C9008FC1A3 /* RSTCellContentChange.m */,
+				BFDF04D61D51193B00091747 /* RSTCellContentChangeOperation.h */,
+				BFDF04D71D51193B00091747 /* RSTCellContentChangeOperation.m */,
+			);
+			name = Changes;
+			sourceTree = "<group>";
+		};
+		BF8FD1C51E5BBB9C00820F2C /* Cell Content */ = {
+			isa = PBXGroup;
+			children = (
+				BFE35D801DBED4D700F77C10 /* UITableView+CellContent.h */,
+				BFE35D811DBED4D700F77C10 /* UITableView+CellContent.m */,
+				BF8FD1CA1E5BBFB100820F2C /* UITableViewCell+CellContent.h */,
+				BF8FD1CB1E5BBFB100820F2C /* UITableViewCell+CellContent.m */,
+				BF58BC0C1D51A027008FC1A3 /* UICollectionView+CellContent.h */,
+				BF58BC0D1D51A027008FC1A3 /* UICollectionView+CellContent.m */,
+				BFC2BC621D52DC6700C30751 /* UICollectionViewCell+CellContent.h */,
+				BFC2BC631D52DC6700C30751 /* UICollectionViewCell+CellContent.m */,
+			);
+			name = "Cell Content";
+			sourceTree = "<group>";
+		};
+		BFAD9D0B1E52845C0051F340 /* Array */ = {
+			isa = PBXGroup;
+			children = (
+				BF6C2E2B1E52521400EABBC9 /* RSTArrayDataSource.h */,
+				BF6C2E2C1E52521400EABBC9 /* RSTArrayDataSource.m */,
+			);
+			name = Array;
+			sourceTree = "<group>";
+		};
+		BFADAFEE19AE7BB70050CF31 = {
+			isa = PBXGroup;
+			children = (
+				BFBDEA411EC2C5AC0034D65E /* Roxas.playground */,
+				BFADAFFA19AE7BB70050CF31 /* Roxas */,
+				BFADB00419AE7BB80050CF31 /* RoxasTests */,
+				BFADAFF919AE7BB70050CF31 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		BFADAFF919AE7BB70050CF31 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BFADAFF819AE7BB70050CF31 /* Roxas.framework */,
+				BFADB00319AE7BB80050CF31 /* RoxasTests.xctest */,
+				BF8624801BB742E700C12EEE /* Roxas.framework */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BFADAFFA19AE7BB70050CF31 /* Roxas */ = {
+			isa = PBXGroup;
+			children = (
+				BFADAFFD19AE7BB70050CF31 /* Roxas.h */,
+				BFADB01519AE7C4E0050CF31 /* Generic */,
+				BF2DF1481C96ABA400F9FDD8 /* Operations */,
+				BFDF04D51D51172A00091747 /* Cell Content */,
+				BF357B4120FD113700A4A1A0 /* Core Data */,
+				BF0FB4421C017DD600D26616 /* Visual Components */,
+				BFC6B5CF1A0A100E00BECAB5 /* Containers */,
+				BF8422232193776F0035340B /* Functionality */,
+				BF36F1CE1A1459720057FF07 /* Categories */,
+				BFADAFFB19AE7BB70050CF31 /* Supporting Files */,
+			);
+			path = Roxas;
+			sourceTree = "<group>";
+		};
+		BFADAFFB19AE7BB70050CF31 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				BF7A4FE01A33BA66007697D1 /* Roxas-Prefix.pch */,
+				BFADAFFC19AE7BB70050CF31 /* Info.plist */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		BFADB00419AE7BB80050CF31 /* RoxasTests */ = {
+			isa = PBXGroup;
+			children = (
+				BF18B6191E297E0100F70067 /* RSTSilentAssertionHandler.h */,
+				BF18B61A1E297E0100F70067 /* RSTSilentAssertionHandler.m */,
+				BF18B61C1E297E0E00F70067 /* Tests */,
+				BFADB00519AE7BB80050CF31 /* Supporting Files */,
+			);
+			path = RoxasTests;
+			sourceTree = "<group>";
+		};
+		BFADB00519AE7BB80050CF31 /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				BFADB00619AE7BB80050CF31 /* Info.plist */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+		BFADB01519AE7C4E0050CF31 /* Generic */ = {
+			isa = PBXGroup;
+			children = (
+				BF7A4FDE1A33B89C007697D1 /* RSTDefines.h */,
+				BF9A87F71C538187008927B8 /* RSTConstants.h */,
+				BFADB01119AE7C4A0050CF31 /* RSTHelperFile.h */,
+				BFADB01219AE7C4A0050CF31 /* RSTHelperFile.m */,
+				BFDC6F12220248DB00CA3153 /* RSTError.h */,
+				BFDC6F13220248DB00CA3153 /* RSTError.m */,
+			);
+			name = Generic;
+			sourceTree = "<group>";
+		};
+		BFAFF4EC1E5CBDC200C67FF3 /* Block Operations */ = {
+			isa = PBXGroup;
+			children = (
+				BFAFF4E21E5C233500C67FF3 /* RSTBlockOperation.h */,
+				BFAFF4E31E5C233500C67FF3 /* RSTBlockOperation.m */,
+			);
+			name = "Block Operations";
+			sourceTree = "<group>";
+		};
+		BFAFF4ED1E5CBDC900C67FF3 /* Load Operations */ = {
+			isa = PBXGroup;
+			children = (
+				BFAFF4E61E5CBBE600C67FF3 /* RSTLoadOperation.h */,
+				BFAFF4E71E5CBBE600C67FF3 /* RSTLoadOperation.m */,
+			);
+			name = "Load Operations";
+			sourceTree = "<group>";
+		};
+		BFB228372066FB9000F08151 /* Placeholder View */ = {
+			isa = PBXGroup;
+			children = (
+				BF0FB4431C017DF600D26616 /* RSTPlaceholderView.h */,
+				BF0FB4441C017DF600D26616 /* RSTPlaceholderView.m */,
+				BF0FB4491C017F1300D26616 /* RSTPlaceholderView.xib */,
+			);
+			name = "Placeholder View";
+			sourceTree = "<group>";
+		};
+		BFB228382066FB9C00F08151 /* Launch View Controller */ = {
+			isa = PBXGroup;
+			children = (
+				BFB228392066FBBF00F08151 /* RSTLaunchViewController.h */,
+				BFB2283A2066FBBF00F08151 /* RSTLaunchViewController.m */,
+			);
+			name = "Launch View Controller";
+			sourceTree = "<group>";
+		};
+		BFB88BDD20A04CE20067A545 /* Collection View Layouts */ = {
+			isa = PBXGroup;
+			children = (
+				BFB88BDE20A04D680067A545 /* RSTCollectionViewGridLayout.h */,
+				BFB88BDF20A04D680067A545 /* RSTCollectionViewGridLayout.m */,
+			);
+			name = "Collection View Layouts";
+			sourceTree = "<group>";
+		};
+		BFC5B07C20A0F2100085B6A3 /* Cells */ = {
+			isa = PBXGroup;
+			children = (
+				BFC5B07D20A0F25A0085B6A3 /* RSTCollectionViewCell.h */,
+				BFC5B07E20A0F25A0085B6A3 /* RSTCollectionViewCell.m */,
+				BF749F2220A10E5D00915B16 /* RSTCollectionViewCell.xib */,
+			);
+			name = Cells;
+			sourceTree = "<group>";
+		};
+		BFC6B5CF1A0A100E00BECAB5 /* Containers */ = {
+			isa = PBXGroup;
+			children = (
+				BFC6B5D01A0A10A900BECAB5 /* RSTNavigationController.h */,
+				BFC6B5D11A0A10A900BECAB5 /* RSTNavigationController.m */,
+			);
+			name = Containers;
+			sourceTree = "<group>";
+		};
+		BFD40E94209E5B7C00A0D15F /* Prefetching */ = {
+			isa = PBXGroup;
+			children = (
+				BF0FB2111F0EA90E007460E0 /* RSTCellContentPrefetchingDataSource.h */,
+			);
+			name = Prefetching;
+			sourceTree = "<group>";
+		};
+		BFDF04D51D51172A00091747 /* Cell Content */ = {
+			isa = PBXGroup;
+			children = (
+				BF8FD1C61E5BBE1400820F2C /* RSTCellContentCell.h */,
+				BFAD9D091E5283970051F340 /* RSTCellContentView.h */,
+				BFE8F03A1E4AF30900A64745 /* Data Sources */,
+				BF8D822C1E53F66D00756F08 /* Changes */,
+				BFE8F0431E4AF84000A64745 /* Search */,
+				BFB88BDD20A04CE20067A545 /* Collection View Layouts */,
+				BFC5B07C20A0F2100085B6A3 /* Cells */,
+			);
+			name = "Cell Content";
+			sourceTree = "<group>";
+		};
+		BFE8F03A1E4AF30900A64745 /* Data Sources */ = {
+			isa = PBXGroup;
+			children = (
+				BFE8F0481E4AF9F400A64745 /* RSTCellContentDataSource.h */,
+				BFE8F0501E4B04ED00A64745 /* RSTCellContentDataSource_Subclasses.h */,
+				BFE8F0491E4AF9F400A64745 /* RSTCellContentDataSource.m */,
+				BFD40E94209E5B7C00A0D15F /* Prefetching */,
+				BFAD9D0B1E52845C0051F340 /* Array */,
+				BFE8F03B1E4AF31000A64745 /* Fetched Results Controller */,
+				BF6A2D411FFC2A5E00A6B924 /* Dynamic */,
+				BF71CF8B1FE91214001F1613 /* Composite */,
+			);
+			name = "Data Sources";
+			sourceTree = "<group>";
+		};
+		BFE8F03B1E4AF31000A64745 /* Fetched Results Controller */ = {
+			isa = PBXGroup;
+			children = (
+				BF8FD1C11E5BADE300820F2C /* RSTFetchedResultsDataSource.h */,
+				BF8FD1C21E5BADE300820F2C /* RSTFetchedResultsDataSource.m */,
+			);
+			name = "Fetched Results Controller";
+			sourceTree = "<group>";
+		};
+		BFE8F0431E4AF84000A64745 /* Search */ = {
+			isa = PBXGroup;
+			children = (
+				BFE8F0441E4AF8A200A64745 /* RSTSearchController.h */,
+				BFE8F0451E4AF8A200A64745 /* RSTSearchController.m */,
+			);
+			name = Search;
+			sourceTree = "<group>";
+		};
+		BFF2D103219CEC1400191AB4 /* Toast View */ = {
+			isa = PBXGroup;
+			children = (
+				BFF2D105219CEC3B00191AB4 /* RSTToastView.h */,
+				BFF2D104219CEC3B00191AB4 /* RSTToastView.m */,
+			);
+			name = "Toast View";
+			sourceTree = "<group>";
+		};
+		D55E1223212F444C0095CA4F /* Nib View */ = {
+			isa = PBXGroup;
+			children = (
+				D55E1224212F44710095CA4F /* RSTNibView.h */,
+				D55E1225212F44710095CA4F /* RSTNibView.m */,
+			);
+			name = "Nib View";
+			sourceTree = "<group>";
+		};
+		D581E69C213730EA00789E1D /* Tinted Image View */ = {
+			isa = PBXGroup;
+			children = (
+				D581E69D2137310600789E1D /* RSTTintedImageView.h */,
+				D581E69E2137310600789E1D /* RSTTintedImageView.m */,
+			);
+			name = "Tinted Image View";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXHeadersBuildPhase section */
+		BF8624721BB742E700C12EEE /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF58BC0F1D51A027008FC1A3 /* UICollectionView+CellContent.h in Headers */,
+				BF8624731BB742E700C12EEE /* RSTHelperFile.h in Headers */,
+				BF8624741BB742E700C12EEE /* NSUserDefaults+DynamicProperties.h in Headers */,
+				BF9A87F91C5381B6008927B8 /* RSTConstants.h in Headers */,
+				BF8624751BB742E700C12EEE /* NSFileManager+URLs.h in Headers */,
+				BF8624761BB742E700C12EEE /* UIImage+Manipulation.h in Headers */,
+				BF0FB4461C017DF600D26616 /* RSTPlaceholderView.h in Headers */,
+				BFE35D831DBED4D700F77C10 /* UITableView+CellContent.h in Headers */,
+				BF8624771BB742E700C12EEE /* RSTNavigationController.h in Headers */,
+				BF57C0281D726016000132D2 /* UIView+AnimatedHide.h in Headers */,
+				BF58BC141D51A5AC008FC1A3 /* RSTCellContentChange.h in Headers */,
+				BFC2BC651D52DC6700C30751 /* UICollectionViewCell+CellContent.h in Headers */,
+				BF8624781BB742E700C12EEE /* NSBundle+Extensions.h in Headers */,
+				BF8624791BB742E700C12EEE /* Roxas.h in Headers */,
+				BF18B61D1E2981DF00F70067 /* NSString+Localization.h in Headers */,
+				BFDF04D91D51193B00091747 /* RSTCellContentChangeOperation.h in Headers */,
+				BF86247A1BB742E700C12EEE /* RSTDefines.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BFADAFF519AE7BB70050CF31 /* Headers */ = {
+			isa = PBXHeadersBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BFADB01319AE7C4A0050CF31 /* RSTHelperFile.h in Headers */,
+				BF18B6131E2967D400F70067 /* NSString+Localization.h in Headers */,
+				D581E69F2137310600789E1D /* RSTTintedImageView.h in Headers */,
+				BF58BC131D51A5AC008FC1A3 /* RSTCellContentChange.h in Headers */,
+				BF28F0F11B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.h in Headers */,
+				BFBDEA341EC274D20034D65E /* UIAlertAction+Actions.h in Headers */,
+				BF6A2D4C1FFC2BCC00A6B924 /* RSTDynamicDataSource.h in Headers */,
+				BF2DF14B1C96B56000F9FDD8 /* RSTOperation.h in Headers */,
+				BF2DF14F1C96B6EE00F9FDD8 /* RSTOperation_Subclasses.h in Headers */,
+				BF357B5220FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.h in Headers */,
+				D55E1226212F44710095CA4F /* RSTNibView.h in Headers */,
+				BFE35D821DBED4D700F77C10 /* UITableView+CellContent.h in Headers */,
+				BFF2D10B219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.h in Headers */,
+				BF7A759D2166B72900797D91 /* NSConstraintConflict+Conveniences.h in Headers */,
+				BFF2D107219CEC3B00191AB4 /* RSTToastView.h in Headers */,
+				BF9A87F81C5381B3008927B8 /* RSTConstants.h in Headers */,
+				BFDC6F14220248DB00CA3153 /* RSTError.h in Headers */,
+				BFB2283B2066FBBF00F08151 /* RSTLaunchViewController.h in Headers */,
+				BF357B4420FD115A00A4A1A0 /* RSTPersistentContainer.h in Headers */,
+				BF9AB7D11A477FF4007DFEFF /* NSFileManager+URLs.h in Headers */,
+				BF0FB2121F0EA90E007460E0 /* RSTCellContentPrefetchingDataSource.h in Headers */,
+				BF36F1D21A1459B90057FF07 /* UIImage+Manipulation.h in Headers */,
+				BF0FB4451C017DF600D26616 /* RSTPlaceholderView.h in Headers */,
+				BF8422212193715F0035340B /* RSTHasher.h in Headers */,
+				BF2DF1461C96ABA100F9FDD8 /* RSTOperationQueue.h in Headers */,
+				BFE8F04A1E4AF9F400A64745 /* RSTCellContentDataSource.h in Headers */,
+				BFB88BE020A04D680067A545 /* RSTCollectionViewGridLayout.h in Headers */,
+				BF6C2E2D1E52521400EABBC9 /* RSTArrayDataSource.h in Headers */,
+				BFAFF4E41E5C233500C67FF3 /* RSTBlockOperation.h in Headers */,
+				BFC6B5D21A0A10A900BECAB5 /* RSTNavigationController.h in Headers */,
+				BF57C0271D726016000132D2 /* UIView+AnimatedHide.h in Headers */,
+				BFE8F0511E4B04ED00A64745 /* RSTCellContentDataSource_Subclasses.h in Headers */,
+				BFAFF4E81E5CBBE600C67FF3 /* RSTLoadOperation.h in Headers */,
+				BFDB50621EB942F50084C58A /* NSLayoutConstraint+Edges.h in Headers */,
+				BF71CF8E1FE912D1001F1613 /* RSTCompositeDataSource.h in Headers */,
+				BF58BC0E1D51A027008FC1A3 /* UICollectionView+CellContent.h in Headers */,
+				BFC5B07F20A0F25A0085B6A3 /* RSTCollectionViewCell.h in Headers */,
+				BF8FD1CC1E5BBFB100820F2C /* UITableViewCell+CellContent.h in Headers */,
+				BF2DF1521C97484A00F9FDD8 /* UIViewController+TransitionState.h in Headers */,
+				BF53E98D207B46EE00A57BCE /* UIKit+ActivityIndicating.h in Headers */,
+				BFDF04D81D51193B00091747 /* RSTCellContentChangeOperation.h in Headers */,
+				BF7FF099207312E5003A921A /* RSTActivityIndicating.h in Headers */,
+				BF3AC2C920E686EE00F7DD99 /* RSTSeparatorView.h in Headers */,
+				BFA0E4291A3E956300DA1EC2 /* NSBundle+Extensions.h in Headers */,
+				BFAD9D0A1E5283970051F340 /* RSTCellContentView.h in Headers */,
+				BFE8F0461E4AF8A200A64745 /* RSTSearchController.h in Headers */,
+				BF8FD1C71E5BBE1400820F2C /* RSTCellContentCell.h in Headers */,
+				BF8FD1C31E5BADE300820F2C /* RSTFetchedResultsDataSource.h in Headers */,
+				BFC2BC641D52DC6700C30751 /* UICollectionViewCell+CellContent.h in Headers */,
+				BFADAFFE19AE7BB70050CF31 /* Roxas.h in Headers */,
+				BF8D82261E53CFEE00756F08 /* NSPredicate+Search.h in Headers */,
+				BF7A4FDF1A33B947007697D1 /* RSTDefines.h in Headers */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXHeadersBuildPhase section */
+
+/* Begin PBXNativeTarget section */
+		BF8624691BB742E700C12EEE /* RoxasTV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BF86247C1BB742E700C12EEE /* Build configuration list for PBXNativeTarget "RoxasTV" */;
+			buildPhases = (
+				BF86246A1BB742E700C12EEE /* Sources */,
+				BF8624711BB742E700C12EEE /* Frameworks */,
+				BF8624721BB742E700C12EEE /* Headers */,
+				BF86247B1BB742E700C12EEE /* Resources */,
+				BF0FB44C1C01801700D26616 /* ShellScript */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RoxasTV;
+			productName = Roxas;
+			productReference = BF8624801BB742E700C12EEE /* Roxas.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		BFADAFF719AE7BB70050CF31 /* Roxas */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BFADB00B19AE7BB80050CF31 /* Build configuration list for PBXNativeTarget "Roxas" */;
+			buildPhases = (
+				BFADAFF319AE7BB70050CF31 /* Sources */,
+				BFADAFF419AE7BB70050CF31 /* Frameworks */,
+				BFADAFF519AE7BB70050CF31 /* Headers */,
+				BFADAFF619AE7BB70050CF31 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Roxas;
+			productName = Roxas;
+			productReference = BFADAFF819AE7BB70050CF31 /* Roxas.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		BFADB00219AE7BB80050CF31 /* RoxasTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BFADB00E19AE7BB80050CF31 /* Build configuration list for PBXNativeTarget "RoxasTests" */;
+			buildPhases = (
+				BFADAFFF19AE7BB80050CF31 /* Sources */,
+				BFADB00019AE7BB80050CF31 /* Frameworks */,
+				BFADB00119AE7BB80050CF31 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RoxasTests;
+			productName = RoxasTests;
+			productReference = BFADB00319AE7BB80050CF31 /* RoxasTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		BFADAFEF19AE7BB70050CF31 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1410;
+				ORGANIZATIONNAME = "Riley Testut";
+				TargetAttributes = {
+					BFADAFF719AE7BB70050CF31 = {
+						CreatedOnToolsVersion = 6.0;
+						LastSwiftMigration = 0900;
+					};
+					BFADB00219AE7BB80050CF31 = {
+						CreatedOnToolsVersion = 6.0;
+					};
+				};
+			};
+			buildConfigurationList = BFADAFF219AE7BB70050CF31 /* Build configuration list for PBXProject "Roxas" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				English,
+				en,
+				Base,
+			);
+			mainGroup = BFADAFEE19AE7BB70050CF31;
+			productRefGroup = BFADAFF919AE7BB70050CF31 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				BFADAFF719AE7BB70050CF31 /* Roxas */,
+				BF8624691BB742E700C12EEE /* RoxasTV */,
+				BFADB00219AE7BB80050CF31 /* RoxasTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		BF86247B1BB742E700C12EEE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF0FB44B1C017F1300D26616 /* RSTPlaceholderView.xib in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BFADAFF619AE7BB70050CF31 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF749F2320A10E5D00915B16 /* RSTCollectionViewCell.xib in Resources */,
+				BF0FB44A1C017F1300D26616 /* RSTPlaceholderView.xib in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BFADB00119AE7BB80050CF31 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		BF0FB44C1C01801700D26616 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		BF86246A1BB742E700C12EEE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BFE35D851DBED4D700F77C10 /* UITableView+CellContent.m in Sources */,
+				BFDF04DB1D51193B00091747 /* RSTCellContentChangeOperation.m in Sources */,
+				BF57C02A1D726016000132D2 /* UIView+AnimatedHide.m in Sources */,
+				BF86246B1BB742E700C12EEE /* RSTHelperFile.m in Sources */,
+				BF58BC171D51A5C9008FC1A3 /* RSTCellContentChange.m in Sources */,
+				BF86246C1BB742E700C12EEE /* UIImage+Manipulation.m in Sources */,
+				BF86246D1BB742E700C12EEE /* NSUserDefaults+DynamicProperties.m in Sources */,
+				BF86246E1BB742E700C12EEE /* NSFileManager+URLs.m in Sources */,
+				BF18B6151E2967D800F70067 /* NSString+Localization.m in Sources */,
+				BF86246F1BB742E700C12EEE /* NSBundle+Extensions.m in Sources */,
+				BF8624701BB742E700C12EEE /* RSTNavigationController.m in Sources */,
+				BF0FB4481C017DF600D26616 /* RSTPlaceholderView.m in Sources */,
+				BF58BC111D51A027008FC1A3 /* UICollectionView+CellContent.m in Sources */,
+				BFC2BC671D52DC6700C30751 /* UICollectionViewCell+CellContent.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BFADAFF319AE7BB70050CF31 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BFF2D10A219CEC4900191AB4 /* UISpringTimingParameters+Conveniences.m in Sources */,
+				BF3AC2CA20E686EE00F7DD99 /* RSTSeparatorView.m in Sources */,
+				BFE35D841DBED4D700F77C10 /* UITableView+CellContent.m in Sources */,
+				BF8D82271E53CFEE00756F08 /* NSPredicate+Search.m in Sources */,
+				BFE8F0471E4AF8A200A64745 /* RSTSearchController.m in Sources */,
+				BFADB01419AE7C4A0050CF31 /* RSTHelperFile.m in Sources */,
+				BF18B6141E2967D400F70067 /* NSString+Localization.m in Sources */,
+				BFDF04DA1D51193B00091747 /* RSTCellContentChangeOperation.m in Sources */,
+				BFBDEA351EC274D20034D65E /* UIAlertAction+Actions.m in Sources */,
+				BF36F1D11A1459B90057FF07 /* UIImage+Manipulation.m in Sources */,
+				BF357B5320FD240B00A4A1A0 /* RSTRelationshipPreservingMergePolicy.m in Sources */,
+				BF53E98E207B46EE00A57BCE /* UIKit+ActivityIndicating.m in Sources */,
+				BF357B4520FD115A00A4A1A0 /* RSTPersistentContainer.m in Sources */,
+				BF7A759E2166B72900797D91 /* NSConstraintConflict+Conveniences.m in Sources */,
+				BF28F0F21B3F36B4003C1D41 /* NSUserDefaults+DynamicProperties.m in Sources */,
+				D55E1227212F44710095CA4F /* RSTNibView.m in Sources */,
+				BF57C0291D726016000132D2 /* UIView+AnimatedHide.m in Sources */,
+				BF9AB7D21A477FF4007DFEFF /* NSFileManager+URLs.m in Sources */,
+				BFA0E42A1A3E956300DA1EC2 /* NSBundle+Extensions.m in Sources */,
+				BFAFF4E51E5C233500C67FF3 /* RSTBlockOperation.m in Sources */,
+				BFE8F04B1E4AF9F400A64745 /* RSTCellContentDataSource.m in Sources */,
+				BF2DF1471C96ABA100F9FDD8 /* RSTOperationQueue.m in Sources */,
+				BFB2283C2066FBBF00F08151 /* RSTLaunchViewController.m in Sources */,
+				BFF2D106219CEC3B00191AB4 /* RSTToastView.m in Sources */,
+				BFDB50631EB942F50084C58A /* NSLayoutConstraint+Edges.m in Sources */,
+				BFC5B08020A0F25A0085B6A3 /* RSTCollectionViewCell.m in Sources */,
+				BF8FD1CD1E5BBFB100820F2C /* UITableViewCell+CellContent.m in Sources */,
+				BF2DF14C1C96B56000F9FDD8 /* RSTOperation.m in Sources */,
+				BF2DF1531C97484A00F9FDD8 /* UIViewController+TransitionState.m in Sources */,
+				BFC6B5D31A0A10A900BECAB5 /* RSTNavigationController.m in Sources */,
+				BF58BC161D51A5C9008FC1A3 /* RSTCellContentChange.m in Sources */,
+				BF6A2D4D1FFC2BCC00A6B924 /* RSTDynamicDataSource.m in Sources */,
+				BFDC6F15220248DB00CA3153 /* RSTError.m in Sources */,
+				BF58BC101D51A027008FC1A3 /* UICollectionView+CellContent.m in Sources */,
+				BF8FD1C41E5BADE300820F2C /* RSTFetchedResultsDataSource.m in Sources */,
+				BF6C2E2E1E52521400EABBC9 /* RSTArrayDataSource.m in Sources */,
+				BFC2BC661D52DC6700C30751 /* UICollectionViewCell+CellContent.m in Sources */,
+				BF8422222193715F0035340B /* RSTHasher.m in Sources */,
+				BFB88BE120A04D680067A545 /* RSTCollectionViewGridLayout.m in Sources */,
+				BF0FB4471C017DF600D26616 /* RSTPlaceholderView.m in Sources */,
+				BF71CF8F1FE912D1001F1613 /* RSTCompositeDataSource.m in Sources */,
+				D581E6A02137310600789E1D /* RSTTintedImageView.m in Sources */,
+				BFAFF4E91E5CBBE600C67FF3 /* RSTLoadOperation.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BFADAFFF19AE7BB80050CF31 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BF5B423A1C7D84C800835FEF /* NSUserDefaults+DynamicProperties.m in Sources */,
+				BF5B42391C7D828900835FEF /* NSUserDefaultsTests.m in Sources */,
+				BF18B61B1E297E0100F70067 /* RSTSilentAssertionHandler.m in Sources */,
+				BF18B6181E2975C800F70067 /* NSString+Localization.m in Sources */,
+				BF18B6171E2970B800F70067 /* NSStringLocalizationTests.m in Sources */,
+				BF5B423B1C7D87F800835FEF /* RSTHelperFile.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		BF86247D1BB742E700C12EEE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				"CODE_SIGN_IDENTITY[sdk=appletvos*]" = "";
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = Roxas/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				SDKROOT = appletvos;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		BF86247E1BB742E700C12EEE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				"CODE_SIGN_IDENTITY[sdk=appletvos*]" = "";
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = Roxas/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				SDKROOT = appletvos;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		BF86247F1BB742E700C12EEE /* Ad Hoc */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				"CODE_SIGN_IDENTITY[sdk=appletvos*]" = "";
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = Roxas/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				SDKROOT = appletvos;
+				SKIP_INSTALL = YES;
+			};
+			name = "Ad Hoc";
+		};
+		BFA7210E1A412F71008A0A21 /* Ad Hoc */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "Roxas/Roxas-Prefix.pch";
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rileytestut.Roxas;
+				PRODUCT_NAME = Roxas;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TVOS_DEPLOYMENT_TARGET = 12.0;
+				VALIDATE_PRODUCT = YES;
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = "Ad Hoc";
+		};
+		BFA7210F1A412F71008A0A21 /* Ad Hoc */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = Roxas/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				SKIP_INSTALL = YES;
+				SWIFT_SWIFT3_OBJC_INFERENCE = On;
+				SWIFT_VERSION = 4.0;
+			};
+			name = "Ad Hoc";
+		};
+		BFA721101A412F71008A0A21 /* Ad Hoc */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = RoxasTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rileytestut.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = "Ad Hoc";
+		};
+		BFADB00919AE7BB80050CF31 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "Roxas/Roxas-Prefix.pch";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rileytestut.Roxas;
+				PRODUCT_NAME = Roxas;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TVOS_DEPLOYMENT_TARGET = 12.0;
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Debug;
+		};
+		BFADB00A19AE7BB80050CF31 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "Roxas/Roxas-Prefix.pch";
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 12.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				PRODUCT_BUNDLE_IDENTIFIER = com.rileytestut.Roxas;
+				PRODUCT_NAME = Roxas;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TVOS_DEPLOYMENT_TARGET = 12.0;
+				VALIDATE_PRODUCT = YES;
+				VERSIONING_SYSTEM = "apple-generic";
+				VERSION_INFO_PREFIX = "";
+			};
+			name = Release;
+		};
+		BFADB00C19AE7BB80050CF31 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = Roxas/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				SKIP_INSTALL = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_SWIFT3_OBJC_INFERENCE = On;
+				SWIFT_VERSION = 4.0;
+			};
+			name = Debug;
+		};
+		BFADB00D19AE7BB80050CF31 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				INFOPLIST_FILE = Roxas/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				SKIP_INSTALL = YES;
+				SWIFT_SWIFT3_OBJC_INFERENCE = On;
+				SWIFT_VERSION = 4.0;
+			};
+			name = Release;
+		};
+		BFADB00F19AE7BB80050CF31 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				INFOPLIST_FILE = RoxasTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rileytestut.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		BFADB01019AE7BB80050CF31 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = RoxasTests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.rileytestut.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		BF86247C1BB742E700C12EEE /* Build configuration list for PBXNativeTarget "RoxasTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BF86247D1BB742E700C12EEE /* Debug */,
+				BF86247E1BB742E700C12EEE /* Release */,
+				BF86247F1BB742E700C12EEE /* Ad Hoc */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BFADAFF219AE7BB70050CF31 /* Build configuration list for PBXProject "Roxas" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BFADB00919AE7BB80050CF31 /* Debug */,
+				BFADB00A19AE7BB80050CF31 /* Release */,
+				BFA7210E1A412F71008A0A21 /* Ad Hoc */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BFADB00B19AE7BB80050CF31 /* Build configuration list for PBXNativeTarget "Roxas" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BFADB00C19AE7BB80050CF31 /* Debug */,
+				BFADB00D19AE7BB80050CF31 /* Release */,
+				BFA7210F1A412F71008A0A21 /* Ad Hoc */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		BFADB00E19AE7BB80050CF31 /* Build configuration list for PBXNativeTarget "RoxasTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BFADB00F19AE7BB80050CF31 /* Debug */,
+				BFADB01019AE7BB80050CF31 /* Release */,
+				BFA721101A412F71008A0A21 /* Ad Hoc */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = BFADAFEF19AE7BB70050CF31 /* Project object */;
+}

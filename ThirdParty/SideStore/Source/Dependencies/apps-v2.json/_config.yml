@@ -1,0 +1,7 @@
+title: SideStore Official Source
+description: The home of SideTeam apps
+url: "https://apps.sidestore.io"
+
+exclude:
+  - "LICENSE"
+  - "README.md"
