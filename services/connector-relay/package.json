@@ -1,0 +1,15 @@
+{
+  "name": "litter-connector-relay",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GPL-3.0-only WITH LicenseRef-App-Store-Google-Play-Exception",
+  "type": "module",
+  "scripts": {
+    "check": "node --check api/health.js && node --check api/connectors.js && node --check api/oauth/start.js && node --check api/oauth/callback.js && node --check api/oauth/refresh.js",
+    "test": "node scripts/smoke-test.mjs",
+    "deploy": "vercel deploy --prod --yes"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -91,3 +91,6 @@ tools/app-store-screenshots/
 .agents/
 .antigravitycli/
 skills-lock.json
+
+# Vercel local project metadata
+.vercel/

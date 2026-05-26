@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/health",
+      "destination": "/api/health.js"
+    },
+    {
+      "source": "/connectors",
+      "destination": "/api/connectors.js"
+    },
+    {
+      "source": "/oauth/start",
+      "destination": "/api/oauth/start.js"
+    },
+    {
+      "source": "/oauth/callback",
+      "destination": "/api/oauth/callback.js"
+    },
+    {
+      "source": "/oauth/refresh",
+      "destination": "/api/oauth/refresh.js"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        }
+      ]
+    }
+  ]
+}
