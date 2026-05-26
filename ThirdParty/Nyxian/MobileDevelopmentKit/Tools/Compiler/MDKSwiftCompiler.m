@@ -36,22 +36,28 @@
     CFStringRef string = nil;
     BOOL success = CCSwiftCompilerJobExecute((__bridge CCJobRef)job, &array, &string);
 
-    if(array != nil && outDiagnostic != nil)
+    if(array != nil)
     {
-        *outDiagnostic = (__bridge_transfer NSArray<MDKDiagnostic*>*)array;
-    }
-    else
-    {
-        CFRelease(array);
+        if(outDiagnostic != nil)
+        {
+            *outDiagnostic = (__bridge_transfer NSArray<MDKDiagnostic*>*)array;
+        }
+        else
+        {
+            CFRelease(array);
+        }
     }
     
-    if(string != nil && outMainSource != nil)
+    if(string != nil)
     {
-        *outMainSource = (__bridge_transfer NSString*)string;
-    }
-    else
-    {
-        CFRelease(string);
+        if(outMainSource != nil)
+        {
+            *outMainSource = (__bridge_transfer NSString*)string;
+        }
+        else
+        {
+            CFRelease(string);
+        }
     }
 
     return success;

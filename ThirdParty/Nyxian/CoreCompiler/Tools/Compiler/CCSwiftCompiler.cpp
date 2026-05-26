@@ -37,6 +37,7 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <fcntl.h>
 #include <mutex>
+#include <stdio.h>
 #include <unistd.h>
 
 struct CapturedDiag {
@@ -108,12 +109,13 @@ public:
 };
 
 static std::once_flag SwiftModulesInitOnce;
+static std::mutex SwiftFrontendExecutionMutex;
 
 static CFStringRef CCStringCreateWithFileDescriptor(CFAllocatorRef allocator, int fd)
 {
     if(fd < 0)
     {
-        return CFSTR("");
+        return CFStringCreateWithCString(allocator, "", kCFStringEncodingUTF8);
     }
 
     lseek(fd, 0, SEEK_SET);
@@ -121,7 +123,7 @@ static CFStringRef CCStringCreateWithFileDescriptor(CFAllocatorRef allocator, in
     CFMutableDataRef data = CFDataCreateMutable(allocator, 0);
     if(data == nullptr)
     {
-        return CFSTR("");
+        return CFStringCreateWithCString(allocator, "", kCFStringEncodingUTF8);
     }
 
     char buffer[4096];
@@ -136,10 +138,69 @@ static CFStringRef CCStringCreateWithFileDescriptor(CFAllocatorRef allocator, in
 
     if(string == nullptr)
     {
-        return CFSTR("");
+        return CFStringCreateWithCString(allocator, "", kCFStringEncodingUTF8);
     }
 
     return string;
+}
+
+static int CCOpenUnlinkedTempFile(void)
+{
+    char path[] = "/tmp/litter-swift-frontend.XXXXXX";
+    int fd = mkstemp(path);
+    if(fd >= 0)
+    {
+        unlink(path);
+    }
+    return fd;
+}
+
+static CFStringRef CCCreateSwiftFrontendOutput(CFAllocatorRef allocator, CFStringRef stdoutText, CFStringRef stderrText)
+{
+    CFMutableStringRef output = CFStringCreateMutable(allocator, 0);
+    if(output == nullptr)
+    {
+        return CFStringCreateWithCString(allocator, "", kCFStringEncodingUTF8);
+    }
+
+    if(stderrText != nullptr && CFStringGetLength(stderrText) > 0)
+    {
+        CFStringAppend(output, CFSTR("Swift frontend stderr:\n"));
+        CFStringAppend(output, stderrText);
+        if(!CFStringHasSuffix(output, CFSTR("\n")))
+        {
+            CFStringAppend(output, CFSTR("\n"));
+        }
+    }
+
+    if(stdoutText != nullptr && CFStringGetLength(stdoutText) > 0)
+    {
+        CFStringAppend(output, CFSTR("Swift frontend stdout:\n"));
+        CFStringAppend(output, stdoutText);
+        if(!CFStringHasSuffix(output, CFSTR("\n")))
+        {
+            CFStringAppend(output, CFSTR("\n"));
+        }
+    }
+
+    return output;
+}
+
+static void CCAppendInternalDiagnostic(CFMutableArrayRef diagnostics, CFStringRef mainSource, CCDiagnosticLevel level, CFStringRef message)
+{
+    if(diagnostics == nullptr || message == nullptr || CFStringGetLength(message) == 0)
+    {
+        return;
+    }
+
+    CCDiagnosticRef diagnostic = CCDiagnosticCreate(kCFAllocatorSystemDefault, CCDiagnosticTypeInternal, level, mainSource, nullptr, message);
+    if(diagnostic == nullptr)
+    {
+        return;
+    }
+
+    CFArrayAppendValue(diagnostics, diagnostic);
+    CFRelease(diagnostic);
 }
 
 CC_EXPORT Boolean CCSwiftCompilerJobExecute(CCJobRef job,
@@ -165,32 +226,84 @@ CC_EXPORT Boolean CCSwiftCompilerJobExecute(CCJobRef job,
     });
     
     MyObserver obs;
-    llvm::remove_fatal_error_handler();
-    int status = swift::performFrontend(args, "swift-frontend", reinterpret_cast<void *>(CCSwiftCompilerJobExecute), &obs);
-    CCInstallLLVMFatalErrorHandler();
-    
+    int status = 1;
+    CFStringRef capturedStdout = nullptr;
+    CFStringRef capturedStderr = nullptr;
+
+    {
+        std::lock_guard<std::mutex> lock(SwiftFrontendExecutionMutex);
+        int stdoutFD = CCOpenUnlinkedTempFile();
+        int stderrFD = CCOpenUnlinkedTempFile();
+        int savedStdout = stdoutFD >= 0 ? dup(STDOUT_FILENO) : -1;
+        int savedStderr = stderrFD >= 0 ? dup(STDERR_FILENO) : -1;
+
+        if(stdoutFD >= 0 && savedStdout >= 0)
+        {
+            dup2(stdoutFD, STDOUT_FILENO);
+        }
+        if(stderrFD >= 0 && savedStderr >= 0)
+        {
+            dup2(stderrFD, STDERR_FILENO);
+        }
+
+        llvm::remove_fatal_error_handler();
+        status = swift::performFrontend(args, "swift-frontend", reinterpret_cast<void *>(CCSwiftCompilerJobExecute), &obs);
+        CCInstallLLVMFatalErrorHandler();
+
+        fflush(stdout);
+        fflush(stderr);
+
+        if(stdoutFD >= 0)
+        {
+            capturedStdout = CCStringCreateWithFileDescriptor(kCFAllocatorSystemDefault, stdoutFD);
+        }
+        if(stderrFD >= 0)
+        {
+            capturedStderr = CCStringCreateWithFileDescriptor(kCFAllocatorSystemDefault, stderrFD);
+        }
+
+        if(savedStdout >= 0)
+        {
+            dup2(savedStdout, STDOUT_FILENO);
+            close(savedStdout);
+        }
+        if(savedStderr >= 0)
+        {
+            dup2(savedStderr, STDERR_FILENO);
+            close(savedStderr);
+        }
+        if(stdoutFD >= 0)
+        {
+            close(stdoutFD);
+        }
+        if(stderrFD >= 0)
+        {
+            close(stderrFD);
+        }
+    }
+
     if(outDiagnostics == nullptr)
     {
+        if(capturedStdout != nullptr) { CFRelease(capturedStdout); }
+        if(capturedStderr != nullptr) { CFRelease(capturedStderr); }
         return status == 0;
     }
-    
-    *outDiagnostics = CFArrayCreateMutable(kCFAllocatorSystemDefault, obs.consumer.diags.size(), &kCFTypeArrayCallBacks);
+
+    *outDiagnostics = CFArrayCreateMutable(kCFAllocatorSystemDefault, obs.consumer.diags.size() + 1, &kCFTypeArrayCallBacks);
     if(*outDiagnostics == nullptr)
     {
+        if(capturedStdout != nullptr) { CFRelease(capturedStdout); }
+        if(capturedStderr != nullptr) { CFRelease(capturedStderr); }
         return status == 0;
     }
-    
-    if(obs.primaryFile.empty())
-    {
-        return status == 0;
-    }
-    
-    CFStringRef mainSource = CFStringCreateWithCString(kCFAllocatorSystemDefault, obs.primaryFile.c_str(), kCFStringEncodingUTF8);
+
+    const char *mainSourceCString = obs.primaryFile.empty() ? "swift-frontend" : obs.primaryFile.c_str();
+    CFStringRef mainSource = CFStringCreateWithCString(kCFAllocatorSystemDefault, mainSourceCString, kCFStringEncodingUTF8);
     if(mainSource == nullptr)
     {
-        return status == 0;
+        mainSource = CFRetain(CFSTR("swift-frontend"));
     }
-    
+
     for(auto &d : obs.consumer.diags)
     {
         CCDiagnosticLevel level = CCDiagnosticLevelUnknown;
@@ -245,6 +358,23 @@ CC_EXPORT Boolean CCSwiftCompilerJobExecute(CCJobRef job,
         CFRelease(diagnostic);
     }
     
+    if(status != 0)
+    {
+        CFStringRef frontendOutput = CCCreateSwiftFrontendOutput(kCFAllocatorSystemDefault, capturedStdout, capturedStderr);
+        if(frontendOutput != nullptr && CFStringGetLength(frontendOutput) > 0)
+        {
+            CCAppendInternalDiagnostic((CFMutableArrayRef)*outDiagnostics, mainSource, CCDiagnosticLevelError, frontendOutput);
+        }
+        else if(CFArrayGetCount(*outDiagnostics) == 0)
+        {
+            CCAppendInternalDiagnostic((CFMutableArrayRef)*outDiagnostics, mainSource, CCDiagnosticLevelError, CFSTR("Swift frontend returned a failure status without emitting diagnostics or captured output."));
+        }
+        if(frontendOutput != nullptr) { CFRelease(frontendOutput); }
+    }
+
+    if(capturedStdout != nullptr) { CFRelease(capturedStdout); }
+    if(capturedStderr != nullptr) { CFRelease(capturedStderr); }
+
     if(outMainSource == nullptr)
     {
         CFRelease(mainSource);

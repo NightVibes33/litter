@@ -4,12 +4,15 @@
 #import <MobileDevelopmentKit/MDKJob.h>
 #import <MobileDevelopmentKit/MDKDiagnostic.h>
 #import <MobileDevelopmentKit/MDKLinker.h>
+#import <MobileDevelopmentKit/MDKSwiftCompiler.h>
 
 #include <zlib.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <sys/stat.h>
+#include <sys/mount.h>
+#include <errno.h>
 
 #ifdef LBN_ENABLE_KITTYSTORE_SIGNER
 #include "common/archive.h"
@@ -123,6 +126,10 @@ static NSString *LBIJobTypeName(CCJobType type)
 
 static BOOL LBIExecuteJob(MDKJob *job, NSArray<MDKDiagnostic *> **diagnostics, NSString **mainSource)
 {
+    if(job.type == CCJobTypeSwiftCompiler)
+    {
+        return [MDKSwiftCompiler executeJob:job outDiagnostics:diagnostics outMainSource:mainSource];
+    }
     if(job.type == CCJobTypeLinker)
     {
         if(mainSource != nil) { *mainSource = nil; }
@@ -292,6 +299,10 @@ static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInte
         [log appendFormat:@"job type=%@(%u) source=%@ ok=%@\n", LBIJobTypeName(jobToExecute.type), jobToExecute.type, mainSource ?: @"", ok ? @"yes" : @"no"];
         [log appendFormat:@"job args: %@\n", [argumentsToExecute componentsJoinedByString:@" "]];
         if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
+        if(!ok && diagnostics.count == 0)
+        {
+            [log appendFormat:@"%@ job failed without diagnostics. This usually means the native Swift frontend failed before it could create a diagnostic consumer. Check available storage, resource-dir/module loading, and the job args above.\n", LBIJobTypeName(jobToExecute.type)];
+        }
         if(!ok)
         {
             if(exitCode == 0) { exitCode = 1; }
@@ -620,9 +631,58 @@ static BOOL LBIWordsContain(NSArray<NSString *> *words, NSString *value)
     return NO;
 }
 
-static int LBIRunSwiftDriver(NSArray<NSString *> *arguments, NSMutableString *log)
+static NSString *LBIFormatBytes(unsigned long long bytes)
+{
+    double value = (double)bytes;
+    NSArray<NSString *> *units = @[@"B", @"KB", @"MB", @"GB", @"TB"];
+    NSUInteger unitIndex = 0;
+    while(value >= 1024.0 && unitIndex + 1 < units.count)
+    {
+        value /= 1024.0;
+        unitIndex++;
+    }
+    return [NSString stringWithFormat:@"%.1f %@", value, units[unitIndex]];
+}
+
+static NSString *LBIExistingStorageProbePath(NSString *path)
+{
+    NSString *probe = path.length > 0 ? path : NSTemporaryDirectory();
+    NSFileManager *fm = NSFileManager.defaultManager;
+    while(probe.length > 1 && ![fm fileExistsAtPath:probe])
+    {
+        NSString *parent = probe.stringByDeletingLastPathComponent;
+        if(parent.length == 0 || [parent isEqualToString:probe]) { break; }
+        probe = parent;
+    }
+    return probe.length > 0 ? probe : NSTemporaryDirectory();
+}
+
+static void LBIAppendStorageDiagnostics(NSMutableString *log, NSString *path)
+{
+    NSString *probe = LBIExistingStorageProbePath(path);
+    struct statfs stats;
+    if(statfs(probe.fileSystemRepresentation, &stats) != 0)
+    {
+        [log appendFormat:@"warning: could not read available storage at %@: %s\n", probe, strerror(errno)];
+        return;
+    }
+
+    unsigned long long available = (unsigned long long)stats.f_bavail * (unsigned long long)stats.f_bsize;
+    [log appendFormat:@"Available storage at %@: %@ (%llu bytes)\n", probe, LBIFormatBytes(available), available];
+    if(available < 2ULL * 1024ULL * 1024ULL * 1024ULL)
+    {
+        [log appendString:@"error: available storage is below 2 GB. Swift frontend jobs may fail while loading SDK modules or writing temporary compiler outputs. Free storage and retry.\n"];
+    }
+    else if(available < 6ULL * 1024ULL * 1024ULL * 1024ULL)
+    {
+        [log appendString:@"warning: available storage is below the 6 GB recommended minimum for on-device Swift frontend jobs after BuildKit assets are installed.\n"];
+    }
+}
+
+static int LBIRunSwiftDriver(NSArray<NSString *> *arguments, NSMutableString *log, NSString *storageProbePath)
 {
     [log appendFormat:@"swift driver args: %@\n", [arguments componentsJoinedByString:@" "]];
+    LBIAppendStorageDiagnostics(log, storageProbePath);
     MDKDriver *driver = [MDKDriver driverWithArguments:arguments withType:CCDriverTypeSwift];
     if(driver == nil)
     {
@@ -1730,7 +1790,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
             if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
             [driverArgs addObject:source];
-            int code = LBIRunSwiftDriver(driverArgs, log);
+            int code = LBIRunSwiftDriver(driverArgs, log, hostWorkDir.length > 0 ? hostWorkDir : buildKitRoot);
             return LBICopyResponse(code, code == 0 ? @"swift-check-ok" : @"swift-check-failed", log);
         }
 
@@ -1755,7 +1815,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
                 LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
                 if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
                 [driverArgs addObject:source];
-                int code = LBIRunSwiftDriver(driverArgs, log);
+                int code = LBIRunSwiftDriver(driverArgs, log, hostWorkDir.length > 0 ? hostWorkDir : buildKitRoot);
                 return LBICopyResponse(code, code == 0 ? @"swiftc-check-ok" : @"swiftc-check-failed", log);
             }
 
@@ -1772,7 +1832,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
             if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
             [driverArgs addObject:source];
-            int code = LBIRunSwiftDriver(driverArgs, log);
+            int code = LBIRunSwiftDriver(driverArgs, log, hostWorkDir.length > 0 ? hostWorkDir : buildKitRoot);
             if(code != 0) { return LBICopyResponse(code, @"swiftc-failed", log); }
             chmod(hostOutput.fileSystemRepresentation, 0755);
             NSString *fakefsPath = [requestedOutput hasPrefix:@"/"] ? requestedOutput : [cwd stringByAppendingPathComponent:requestedOutput];
@@ -1863,7 +1923,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
             [driverArgs addObjectsFromArray:@[@"-framework", @"UIKit", @"-framework", @"Foundation"]];
             [driverArgs addObjectsFromArray:sources];
-            int code = LBIRunSwiftDriver(driverArgs, log);
+            int code = LBIRunSwiftDriver(driverArgs, log, hostWorkDir.length > 0 ? hostWorkDir : buildKitRoot);
             if(code != 0) { return LBICopyResponse(code, @"swift-build-failed", log); }
             chmod(executable.fileSystemRepresentation, 0755);
             [log appendFormat:@"Built app executable: %@\n", executable];

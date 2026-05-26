@@ -242,6 +242,8 @@ struct LitterBuildKitStatus: Equatable, Sendable {
     var sdkRoot: String
     var swiftResourceRoot: String
     var buildKitRoot: String
+    var availableStorageBytes: Int64?
+    var availableStorageDetail: String
     var commands: [String]
     var assetManifest: BuildKitAssetManifest?
     var sourceImportManifest: BuildKitSourceImportManifest?
@@ -578,6 +580,8 @@ actor LitterBuildKit {
             sdkRoot: Self.sdkRoot.path,
             swiftResourceRoot: Self.swiftResourceRoot.path,
             buildKitRoot: Self.buildKitRoot.path,
+            availableStorageBytes: Self.availableStorageBytes(at: Self.documentsRoot),
+            availableStorageDetail: Self.availableStorageDetail(at: Self.documentsRoot),
             commands: Self.commandNames,
             assetManifest: manifest,
             sourceImportManifest: sourceManifest
@@ -2352,6 +2356,32 @@ actor LitterBuildKit {
         documentsRoot.appendingPathComponent("BuildKit", isDirectory: true)
     }
 
+    private static func availableStorageBytes(at url: URL) -> Int64? {
+        if let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
+           let capacity = values.volumeAvailableCapacityForImportantUsage {
+            return capacity
+        }
+        if let values = try? url.resourceValues(forKeys: [.volumeAvailableCapacityKey]),
+           let capacity = values.volumeAvailableCapacity {
+            return Int64(capacity)
+        }
+        return nil
+    }
+
+    private static func availableStorageDetail(at url: URL) -> String {
+        guard let bytes = availableStorageBytes(at: url) else {
+            return "unknown"
+        }
+        let formatted = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+        if bytes < 2 * 1024 * 1024 * 1024 {
+            return "\(formatted) available; below the 2 GB hard floor for Swift frontend jobs"
+        }
+        if bytes < 6 * 1024 * 1024 * 1024 {
+            return "\(formatted) available; below the 6 GB recommended minimum for Swift frontend jobs"
+        }
+        return "\(formatted) available"
+    }
+
     private static var toolchainRoot: URL {
         buildKitRoot.appendingPathComponent("Toolchains/Nyxian", isDirectory: true)
     }
@@ -3556,6 +3586,8 @@ actor LitterBuildKit {
             "buildKit": [
                 "nativeBuildsReady": status.isReadyForNativeBuilds,
                 "unsignedIPAReady": status.canBuildUnsignedIPA,
+                "availableStorageBytes": status.availableStorageBytes.map { NSNumber(value: $0) } ?? NSNull(),
+                "availableStorageDetail": status.availableStorageDetail,
                 "requestMonitorRunning": status.requestMonitorRunning,
                 "missingRequirements": status.missingRequirements
             ],
@@ -3663,6 +3695,7 @@ actor LitterBuildKit {
         Clang resource root: \(clangResourceRoot.path)
         libc++ include root: \(cxxStandardLibraryIncludeRoot.path)
         Swift resource root: \(status.swiftResourceRoot)
+        Available app storage: \(status.availableStorageDetail)
         Swift direct build: \(status.canRunSwiftDirectly ? "ready" : "blocked")
         Unsigned IPA build: \(status.canBuildUnsignedIPA ? "ready" : "blocked")
         Commands: \(status.commands.joined(separator: ", "))
