@@ -194,18 +194,25 @@ final class LocalConnectorBroker: @unchecked Sendable {
             authorizationHeader: "Bearer \(bearerToken)",
             healthURL: "\(baseURLString)/v1/health",
             connectorsURL: "\(baseURLString)/v1/connectors",
-            sessionURL: "\(baseURLString)/v1/session"
+            sessionURL: "\(baseURLString)/v1/session",
+            clientCommand: "litter-connectors"
         )
         do {
             let data = try JSONEncoder.litterConnectorBroker.encode(manifest)
             guard let text = String(data: data, encoding: .utf8) else { return }
             _ = await IshFS.run("mkdir -p /root/.litter/connectors")
             try await IshFS.writeTextFile(path: Self.manifestPath, text: text + "\n")
+            try await installClientShim()
         } catch {
             LLog.warn("connectors", "failed to publish connector broker manifest", fields: [
                 "error": error.localizedDescription
             ])
         }
+    }
+
+    private func installClientShim() async throws {
+        try await IshFS.writeTextFile(path: "/usr/local/bin/litter-connectors", text: Self.clientShimScript)
+        _ = await IshFS.run("chmod +x /usr/local/bin/litter-connectors")
     }
 
     private func unpublishManifest() async {
@@ -293,6 +300,61 @@ final class LocalConnectorBroker: @unchecked Sendable {
             .replacingOccurrences(of: "=", with: "")
     }
 
+    private static let clientShimScript = #"""
+#!/bin/sh
+set -eu
+manifest="${LITTER_CONNECTOR_BROKER_MANIFEST:-/root/.litter/connectors/broker.json}"
+cmd="${1:-connectors}"
+usage() {
+  echo "Usage: litter-connectors [manifest|health|connectors|session]" >&2
+}
+json_value() {
+  key="$1"
+  sed -n "s/.*\"$key\":\"\([^\"]*\)\".*/\1/p" "$manifest" | head -n 1
+}
+require_manifest() {
+  if [ ! -f "$manifest" ]; then
+    echo "Missing connector broker manifest: $manifest" >&2
+    echo "Open Litter with the local runtime running, then try again." >&2
+    exit 1
+  fi
+}
+if [ "$cmd" = manifest ]; then
+  require_manifest
+  cat "$manifest"
+  exit 0
+elif [ "$cmd" = health ]; then
+  field=healthURL
+elif [ "$cmd" = connectors ]; then
+  field=connectorsURL
+elif [ "$cmd" = session ]; then
+  field=sessionURL
+elif [ "$cmd" = -h ] || [ "$cmd" = --help ] || [ "$cmd" = help ]; then
+  usage
+  exit 0
+else
+  usage
+  exit 64
+fi
+require_manifest
+url=$(json_value "$field")
+auth=$(json_value authorizationHeader)
+if [ -z "$url" ]; then
+  echo "Connector broker manifest is missing $field" >&2
+  exit 1
+fi
+if ! command -v curl >/dev/null 2>&1; then
+  echo "curl is required for litter-connectors" >&2
+  exit 127
+fi
+if [ -n "$auth" ]; then
+  curl -fsS -H "Authorization: $auth" "$url"
+else
+  curl -fsS "$url"
+fi
+printf '\n'
+"""#
+
     private static let connectorCatalog: [LocalConnectorBrokerConnector] = [
         .init(id: "github", name: "GitHub", provider: "github", authMode: "nativeOAuthOrRelay", status: "notConfigured"),
         .init(id: "gmail", name: "Gmail", provider: "google", authMode: "nativeOAuthOrRelay", status: "notConfigured"),
@@ -318,6 +380,7 @@ private struct LocalConnectorBrokerManifest: Codable {
     let healthURL: String
     let connectorsURL: String
     let sessionURL: String
+    let clientCommand: String
 }
 
 private struct LocalConnectorBrokerHealthResponse: Codable {
