@@ -286,20 +286,6 @@ targets:
       - package: AltSign
         product: AltSign-Dynamic
         embed: true
-      - target: AltStoreCore
-        embed: true
-      - target: Roxas
-        embed: true
-      - target: Minimuxer
-        embed: true
-      - target: RustBridge
-        embed: true
-      - package: SemanticVersion
-        product: SemanticVersion
-        embed: true
-      - package: KeychainAccess
-        product: KeychainAccess
-        embed: true
       - target: SideStore
         embed: true
       - target: LitterLiveActivity
@@ -364,8 +350,65 @@ targets:
             sign_if_requested "$destination"
             echo "Embedded $name.framework from $source"
           }
+          embed_framework_with_prefix() {
+            prefix="$1"
+            required="$2"
+            source=""
+            checked=""
+            for base in \
+              "$BUILT_PRODUCTS_DIR" \
+              "$BUILT_PRODUCTS_DIR/PackageFrameworks" \
+              "$CONFIGURATION_BUILD_DIR" \
+              "$CONFIGURATION_BUILD_DIR/PackageFrameworks" \
+              "$PROJECT_TEMP_DIR/../UninstalledProducts/$PLATFORM_NAME" \
+              "$CONFIGURATION_TEMP_DIR/../../UninstalledProducts/$PLATFORM_NAME" \
+              "$TARGET_TEMP_DIR/../../../UninstalledProducts/$PLATFORM_NAME" \
+              "$TARGET_BUILD_DIR/PackageFrameworks" \
+              "$TARGET_BUILD_DIR"
+            do
+              if [ ! -d "$base" ]; then
+                continue
+              fi
+              for candidate in "$base"/$prefix*.framework; do
+                if [ ! -d "$candidate" ]; then
+                  continue
+                fi
+                checked="${checked} ${candidate}"
+                name="$(/usr/bin/basename "$candidate" .framework)"
+                if [ -f "$candidate/Info.plist" ] && [ -f "$candidate/$name" ]; then
+                  source="$candidate"
+                  break 2
+                fi
+                echo "warning: skipping incomplete $name.framework candidate at $candidate" >&2
+              done
+            done
+            if [ -z "$source" ]; then
+              if [ "$required" = "1" ]; then
+                echo "error: required package framework with prefix $prefix was not built as a complete framework bundle" >&2
+                printf 'Checked candidates:%s\n' "$checked" >&2
+                exit 1
+              fi
+              return 0
+            fi
+            name="$(/usr/bin/basename "$source" .framework)"
+            destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$name.framework"
+            rm -rf "$destination"
+            /usr/bin/ditto "$source" "$destination"
+            if [ ! -f "$destination/Info.plist" ] || [ ! -f "$destination/$name" ]; then
+              echo "error: copied $name.framework is incomplete at $destination" >&2
+              exit 1
+            fi
+            sign_if_requested "$destination"
+            echo "Embedded $name.framework from $source"
+          }
           embed_framework_if_present AltSign-Dynamic 1
+          embed_framework_if_present AltStoreCore 1
+          embed_framework_if_present Roxas 1
+          embed_framework_if_present Minimuxer 1
+          embed_framework_if_present RustBridge 0
           embed_framework_if_present OpenSSL 0
+          embed_framework_with_prefix SemanticVersion_ 1
+          embed_framework_with_prefix KeychainAccess_ 1
       - name: Embed Upstream Store Sources
         script: |
           set -eu
