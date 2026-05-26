@@ -138,6 +138,7 @@ targets:
           - Cargo.lock
           - Makefile
           - src/**
+          - target/**
           - lib/**
 
   Minimuxer:
