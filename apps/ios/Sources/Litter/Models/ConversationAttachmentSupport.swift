@@ -104,7 +104,7 @@ enum ConversationAttachmentSupport {
         case .file:
             isDirectory = false
         }
-        attachmentForLinkedFile(
+        return attachmentForLinkedFile(
             path: searchResult.path,
             displayName: searchResult.fileName,
             isDirectory: isDirectory,
