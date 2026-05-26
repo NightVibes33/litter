@@ -42,6 +42,7 @@ struct SettingsView: View {
                     supportSection
                     gettingStartedSection
                     updatesSection
+                    signingSection
                     appearanceSection
                     fontSection
                     conversationSection
@@ -76,6 +77,8 @@ struct SettingsView: View {
                     ConversationSettingsRouteView()
                 case .updates:
                     AppUpdateSettingsView()
+                case .signing:
+                    FeatherSigningSettingsView()
                 case .connectors:
                     ConnectorSettingsView()
                 case .plugins:
@@ -187,6 +190,30 @@ struct SettingsView: View {
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Updates")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
+    private var signingSection: some View {
+        Section {
+            NavigationLink(value: SettingsRoute.signing) {
+                HStack(spacing: 10) {
+                    Image(systemName: "signature")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Signing")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Feather certificates, pairing, LocalDevVPN, and IPA signing")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("KittyStore")
                 .foregroundColor(LitterTheme.textSecondary)
         }
     }
@@ -823,6 +850,7 @@ enum SettingsRoute: String, Hashable {
     case appearance
     case conversation
     case updates
+    case signing
     case connectors
     case plugins
     case aiProviders

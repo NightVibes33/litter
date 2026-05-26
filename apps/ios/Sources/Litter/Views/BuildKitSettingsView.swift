@@ -291,7 +291,7 @@ struct BuildKitSettingsView: View {
 
     private var signingSection: some View {
         Section {
-            Text("Apple ID login, certificate import, provisioning profiles, pairing files, LocalDevVPN, and Feather-style signing options live in KittyStore Settings. BuildKit only reports whether those Store-owned inputs are ready for the native runner.")
+            Text("Apple ID sign-in and 2FA stay inside SideStore Settings. Settings > Signing owns Feather certificate import, provisioning profiles, pairing files, LocalDevVPN status, and signing options. BuildKit only reports whether those inputs are ready for the native runner.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -311,7 +311,7 @@ struct BuildKitSettingsView: View {
             Text("KittyStore Signing State")
                 .foregroundStyle(LitterTheme.textSecondary)
         } footer: {
-            Text("BuildKit diagnostics stay read-only here so SideStore and Feather options are not scattered outside KittyStore.")
+            Text("BuildKit diagnostics stay read-only here so SideStore account transport and Feather signing options are not duplicated.")
         }
     }
 
