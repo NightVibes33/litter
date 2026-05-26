@@ -344,7 +344,6 @@ actor LitterBuildKit {
         "litter-kittystore-status",
         "litter-kittystore-source",
         "litter-kittystore-versions",
-        "litter-kittystore-import-sideconf",
         "litter-kittystore-validate-profile",
         "litter-kittystore-plan",
         "litter-kittystore-sign",
@@ -683,8 +682,6 @@ actor LitterBuildKit {
             return await kittyStoreSource(args: args)
         case "litter-kittystore-versions":
             return await kittyStoreVersions(args: args)
-        case "litter-kittystore-import-sideconf":
-            return await kittyStoreImportSideconf(args: args, cwd: cwd)
         case "litter-kittystore-validate-profile":
             return await kittyStoreValidateProfile(args: args, cwd: cwd)
         case "litter-kittystore-plan":
@@ -889,56 +886,6 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 0, status: "kittystore-versions", log: output)
         } catch {
             return BuildKitCommandResult(exitCode: 69, status: "kittystore-versions-failed", log: "Could not read KittyStore version history.\n\(error.localizedDescription)\n")
-        }
-    }
-
-    private func kittyStoreImportSideconf(args: String, cwd: String) async -> BuildKitCommandResult {
-        let tokens = Self.shellWords(args)
-        if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "kittystore-sideconf-help", log: "Usage: litter-kittystore-import-sideconf --sideconf /root/Account.sideconf [--anisette-url https://ani.sidestore.io]\nImports a SideStore .sideconf account export, validates its certificate/password, saves Apple ID credentials, and preserves SideStore ADI fields.\n")
-        }
-        guard let sideconf = Self.optionValue(tokens: tokens, names: ["--sideconf", "--account", "--file"]) else {
-            return BuildKitCommandResult(exitCode: 64, status: "kittystore-sideconf-missing", log: "Missing --sideconf /root/Account.sideconf\n")
-        }
-        let anisetteURL = Self.optionValue(tokens: tokens, names: ["--anisette-url", "--anisette"]) ?? NyxianAnisetteServerDirectory.defaultServerURL
-        let resolvedSideconf = Self.resolveFakefsPath(sideconf, cwd: cwd)
-        guard await IshFS.exists(path: resolvedSideconf) else {
-            return BuildKitCommandResult(exitCode: 66, status: "kittystore-sideconf-file-missing", log: "SideStore account file does not exist: \(resolvedSideconf)\n")
-        }
-
-        do {
-            let tempURL = try await IshFS.copyFileToTemporaryURL(
-                path: resolvedSideconf,
-                suggestedFileName: URL(fileURLWithPath: resolvedSideconf).lastPathComponent,
-                maxBytes: 64_000_000
-            )
-            defer { try? FileManager.default.removeItem(at: tempURL) }
-            let data = try Data(contentsOf: tempURL)
-            let summary = try KittyStoreSideStoreAccountImporter.importSideconf(
-                data: data,
-                anisetteServerURL: anisetteURL
-            )
-            let payload: [String: Any] = [
-                "ready": true,
-                "email": summary.account.email,
-                "teamID": summary.account.teamID,
-                "teamSelected": summary.account.hasSelectedTeam,
-                "anisetteServerURL": summary.account.anisetteDetail,
-                "sideStoreADIImported": summary.account.hasSideStoreADI,
-                "certificate": [
-                    "commonName": summary.certificate.commonName,
-                    "sha256Fingerprint": summary.certificate.sha256Fingerprint,
-                    "expiresAt": summary.certificate.expiresAt.map { ISO8601DateFormatter().string(from: $0) } ?? ""
-                ]
-            ]
-            return BuildKitCommandResult(exitCode: 0, status: "kittystore-sideconf-imported", log: Self.prettyJSON(payload) + "\n")
-        } catch {
-            let payload: [String: Any] = [
-                "ready": false,
-                "sideconf": resolvedSideconf,
-                "error": error.localizedDescription
-            ]
-            return BuildKitCommandResult(exitCode: 65, status: "kittystore-sideconf-invalid", log: Self.prettyJSON(payload) + "\n")
         }
     }
 
@@ -1190,11 +1137,13 @@ actor LitterBuildKit {
         if mode == "apple-id" {
             if !current.appleIDConfigured { missing.append("Apple ID login is missing in BuildKit settings") }
             if resolvedPairing == nil { missing.append("--pairing is required for apple-id signing") }
+            if !current.localDevVPNConnected { missing.append("LocalDevVPN is required for apple-id signing") }
+            if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer bridge is not linked into this IPA") }
         }
         if postSigningAction != "none" {
             if signingType == "adhoc" { missing.append("Ad hoc signed IPAs cannot be installed/refreshed on stock iOS through the SideStore minimuxer path") }
             if resolvedPairing == nil { missing.append("--pairing is required for post-signing install/refresh") }
-            if !current.localDevVPNConnected { warnings.append("LocalDevVPN is not detected; direct install/refresh will remain blocked") }
+            if !current.localDevVPNConnected { missing.append("LocalDevVPN is required for post-signing install/refresh") }
             if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer bridge is not linked into this IPA") }
         }
         if !current.canBuildUnsignedIPA { warnings.append("Unsigned IPA BuildKit packaging is not ready on this install") }
@@ -1312,7 +1261,6 @@ actor LitterBuildKit {
         let profile = Self.optionValue(tokens: tokens, names: ["--profile", "--provisioning-profile"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
         let bundleID = Self.optionValue(tokens: tokens, names: ["--bundle-id", "--identifier"]) ?? ""
         var missing: [String] = []
-        if !current.appleIDConfigured { missing.append("Apple ID login is missing in BuildKit settings") }
         if !current.localDevVPNConnected { missing.append("LocalDevVPN is not detected") }
         if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer bridge is not linked into this IPA") }
         if bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { missing.append("Bundle identifier is required for SideStore install/refresh") }
@@ -3616,7 +3564,6 @@ actor LitterBuildKit {
                 "litter-kittystore-config",
                 "litter-kittystore-source",
                 "litter-kittystore-versions",
-                "litter-kittystore-import-sideconf",
                 "litter-kittystore-validate-profile",
                 "litter-kittystore-plan",
                 "litter-kittystore-sign",
@@ -3636,7 +3583,6 @@ actor LitterBuildKit {
         - litter-kittystore-config [--repo owner/repo] [--reset]
         - litter-kittystore-source [--url] [--out /root/source.json]
         - litter-kittystore-versions [--out /root/versions.json]
-        - litter-kittystore-import-sideconf --sideconf /root/Account.sideconf [--anisette-url https://ani.sidestore.io]
         - litter-kittystore-validate-profile --profile /root/App.mobileprovision [--bundle-id com.example.app] [--require-certificate-match]
         - litter-kittystore-plan --ipa /root/App.ipa --mode certificate --out /root/plan.json
         - litter-kittystore-plan --ipa /root/App.ipa --mode apple-id --pairing /root/device.mobiledevicepairing --out /root/plan.json
@@ -3646,7 +3592,7 @@ actor LitterBuildKit {
         - litter-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing
         - litter-kittystore-installed --pairing /root/device.mobiledevicepairing
 
-        The source/version/status/plan commands are bot-safe. Sign uses the native Feather/Zsign path when private BuildKit assets include it. Install/refresh/remove/installed call the vendored SideStore minimuxer bridge when the iOS IPA is built with KITTYSTORE_MINIMUXER_LINKED.
+        The source/version/status/plan commands are bot-safe. Sign uses the native Feather/Zsign path when private BuildKit assets include it. Install/refresh/remove/installed require a pairing file, LocalDevVPN, and the vendored SideStore minimuxer bridge when the iOS IPA is built with KITTYSTORE_MINIMUXER_LINKED.
         """
     }
 

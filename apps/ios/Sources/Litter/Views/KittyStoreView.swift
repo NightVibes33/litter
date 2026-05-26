@@ -53,7 +53,6 @@ struct KittyStoreView: View {
     @State private var certificatePasswordInput = ""
     @State private var certificateActionMessage: String?
     @State private var pendingCertificateFile: KittyStoreImportedFile?
-    @State private var sideStoreAccountActionMessage: String?
     @State private var importedIPA: KittyStoreImportedFile?
     @State private var importedProvisioningProfile: KittyStoreImportedFile?
     @State private var importedPairingFile: KittyStoreImportedFile?
@@ -433,7 +432,7 @@ struct KittyStoreView: View {
                     state: installedDeviceApps.isEmpty ? nil : true
                 )
 
-                actionRow("Load Installed Apps", detail: importedPairingFile == nil ? "Import a pairing file in Settings before browsing installed apps." : "Browse installed apps through the SideStore minimuxer bridge.", icon: "iphone.gen3", enabled: importedPairingFile != nil && KittyStoreMinimuxerBridge.isLinked && !installedDeviceAppsInProgress) {
+                actionRow("Load Installed Apps", detail: installedDeviceAppsActionDetail, icon: "iphone.gen3", enabled: canLoadInstalledDeviceApps) {
                     loadInstalledDeviceApps()
                 }
 
@@ -687,15 +686,8 @@ struct KittyStoreView: View {
                     .settingsFootnoteStyle()
             }
 
-            actionRow("Import SideStore Account", detail: "Import a .sideconf account, ADI fields, certificate, and password.", icon: "person.crop.circle.badge.plus") {
-                presentImporter(.sideStoreAccount)
-            }
-
             if let appleIDActionMessage, !appleIDActionMessage.isEmpty {
                 messageBlock(appleIDActionMessage)
-            }
-            if let sideStoreAccountActionMessage, !sideStoreAccountActionMessage.isEmpty {
-                messageBlock(sideStoreAccountActionMessage)
             }
         }
     }
@@ -1230,6 +1222,24 @@ struct KittyStoreView: View {
         buildKitStatus?.embeddedProvisionPresent == true ? "Use Embedded Profile" : "Not Imported"
     }
 
+    private var localDevVPNReadyForDeviceTransfer: Bool {
+        buildKitStatus?.localDevVPNConnected == true
+    }
+
+    private var canLoadInstalledDeviceApps: Bool {
+        importedPairingFile != nil
+            && localDevVPNReadyForDeviceTransfer
+            && KittyStoreMinimuxerBridge.isLinked
+            && !installedDeviceAppsInProgress
+    }
+
+    private var installedDeviceAppsActionDetail: String {
+        if importedPairingFile == nil { return "Import a pairing file in Settings before browsing installed apps." }
+        if !localDevVPNReadyForDeviceTransfer { return "Enable LocalDevVPN before browsing installed apps." }
+        if !KittyStoreMinimuxerBridge.isLinked { return "This IPA was not linked with the SideStore minimuxer bridge." }
+        return "Browse installed apps through LocalDevVPN and the SideStore minimuxer bridge."
+    }
+
     private var signingReadinessMessage: String? {
         if sourceIPADownloadInProgress { return sourceIPADownloadMessage ?? "Downloading the selected source IPA." }
         guard importedIPA != nil else { return "Import an IPA before signing." }
@@ -1237,7 +1247,7 @@ struct KittyStoreView: View {
             if selectedSigningMode == .certificate && signingType == .adhoc { return "Ad Hoc signed IPAs cannot be installed or refreshed through SideStore on stock iOS." }
             if importedPairingFile == nil { return "Import the iOS pairing file for SideStore-style \(postSigningAction.transferVerb)." }
             if !KittyStoreMinimuxerBridge.isLinked { return "This build was not linked with the SideStore minimuxer bridge yet." }
-            if buildKitStatus?.localDevVPNConnected != true { return "Ready to try SideStore signing. LocalDevVPN will be verified by minimuxer during \(postSigningAction.transferVerb)." }
+            if !localDevVPNReadyForDeviceTransfer { return "Open LocalDevVPN and enable its tunnel before SideStore-style \(postSigningAction.transferVerb)." }
         }
         switch selectedSigningMode {
         case .certificate:
@@ -1248,7 +1258,9 @@ struct KittyStoreView: View {
             if buildKitStatus?.appleIDConfigured != true { return "Add Apple ID login in KittyStore Settings." }
             if importedPairingFile == nil { return "Import the iOS pairing file for SideStore Apple ID signing." }
             if !KittyStoreMinimuxerBridge.isLinked { return "This build was not linked with the SideStore minimuxer bridge yet." }
-            return signingInProgress ? "Native signing or transfer is running." : "Inputs are ready for signing and SideStore-style \(postSigningAction.transferVerb)."
+            if !localDevVPNReadyForDeviceTransfer { return "Open LocalDevVPN and enable its tunnel before SideStore Apple ID signing." }
+            if postSigningAction == .none { return signingInProgress ? "Native signing is running." : "Inputs are ready for SideStore Apple ID signing." }
+            return signingInProgress ? "Native signing or transfer is running." : "Inputs are ready for SideStore Apple ID signing and \(postSigningAction.transferVerb)."
         }
     }
 
@@ -1679,8 +1691,6 @@ struct KittyStoreView: View {
         case .certificate:
             pendingCertificateFile = files.first
             certificateActionMessage = files.first.map { "Selected \($0.displayName). Enter its password and tap Validate & Save Certificate." }
-        case .sideStoreAccount:
-            importSideStoreAccount(files.first)
         case .provisioningProfile:
             guard let file = files.first else { return }
             do {
@@ -1703,32 +1713,6 @@ struct KittyStoreView: View {
             frameworksAndPlugins.append(contentsOf: files)
         case .tweaks:
             tweaks.append(contentsOf: files)
-        }
-    }
-
-    @MainActor
-    private func importSideStoreAccount(_ file: KittyStoreImportedFile?) {
-        guard let file else { return }
-        do {
-            let data = try Data(contentsOf: URL(fileURLWithPath: file.stagedPath))
-            let summary = try KittyStoreSideStoreAccountImporter.importSideconf(
-                data: data,
-                anisetteServerURL: anisetteURLForLogin
-            )
-            appleIDEmailInput = summary.account.email
-            appleIDTeamIDInput = summary.account.teamID
-            appleIDAnisetteURLInput = summary.account.anisetteServerURL ?? NyxianAnisetteServerDirectory.defaultServerURL
-            syncAnisetteSelectionFromInput()
-            appleIDPasswordInput = ""
-            appleIDTwoFactorCodeInput = ""
-            certificatePasswordInput = ""
-            pendingCertificateFile = nil
-            appleIDActionMessage = summary.message
-            sideStoreAccountActionMessage = summary.message
-            certificateActionMessage = summary.certificate.importMessage
-            taskBag.run { await refreshBuildKitStatus() }
-        } catch {
-            sideStoreAccountActionMessage = "SideStore account import failed: \(error.localizedDescription)"
         }
     }
 
@@ -1907,6 +1891,10 @@ struct KittyStoreView: View {
                 signingAlert = KittyStoreSigningAlert(title: "Minimuxer Missing", message: "This IPA was not linked with the SideStore minimuxer bridge, so direct on-device install and refresh cannot run.")
                 return
             }
+            guard localDevVPNReadyForDeviceTransfer else {
+                signingAlert = KittyStoreSigningAlert(title: "LocalDevVPN Required", message: "Open LocalDevVPN and enable its tunnel before direct on-device \(selectedPostSigningAction.transferVerb).")
+                return
+            }
         }
 
         switch selectedSigningMode {
@@ -1931,11 +1919,15 @@ struct KittyStoreView: View {
                 return
             }
             guard importedPairingFile != nil else {
-                signingAlert = KittyStoreSigningAlert(title: "Pairing File Missing", message: "Import the SideStore-style iOS pairing file before direct install or refresh.")
+                signingAlert = KittyStoreSigningAlert(title: "Pairing File Missing", message: "Import the SideStore-style iOS pairing file before SideStore Apple ID signing.")
                 return
             }
             guard KittyStoreMinimuxerBridge.isLinked else {
                 signingAlert = KittyStoreSigningAlert(title: "Minimuxer Missing", message: "This IPA was not linked with the SideStore minimuxer bridge, so direct on-device install and refresh cannot run.")
+                return
+            }
+            guard localDevVPNReadyForDeviceTransfer else {
+                signingAlert = KittyStoreSigningAlert(title: "LocalDevVPN Required", message: "Open LocalDevVPN and enable its tunnel before SideStore Apple ID signing.")
                 return
             }
         }
@@ -2264,6 +2256,10 @@ struct KittyStoreView: View {
             signingAlert = KittyStoreSigningAlert(title: "Minimuxer Missing", message: "This IPA was not linked with the SideStore minimuxer bridge, so installed app browsing cannot run.")
             return
         }
+        guard localDevVPNReadyForDeviceTransfer else {
+            signingAlert = KittyStoreSigningAlert(title: "LocalDevVPN Required", message: "Open LocalDevVPN and enable its tunnel before loading installed apps from the device.")
+            return
+        }
 
         installedDeviceAppsInProgress = true
         installedDeviceAppsMessage = "Loading installed apps from SideStore minimuxer."
@@ -2302,6 +2298,10 @@ struct KittyStoreView: View {
         }
         guard KittyStoreMinimuxerBridge.isLinked else {
             signingAlert = KittyStoreSigningAlert(title: "Minimuxer Missing", message: "This IPA was not linked with the SideStore minimuxer bridge, so direct on-device remove cannot run.")
+            return
+        }
+        guard localDevVPNReadyForDeviceTransfer else {
+            signingAlert = KittyStoreSigningAlert(title: "LocalDevVPN Required", message: "Open LocalDevVPN and enable its tunnel before removing apps from the device.")
             return
         }
 
@@ -3183,7 +3183,6 @@ private enum KittyStoreInjectFolder: String, CaseIterable, Identifiable {
 private enum KittyStoreImportKind: String {
     case ipa
     case certificate
-    case sideStoreAccount
     case provisioningProfile
     case pairingFile
     case existingDylibs
@@ -3194,7 +3193,6 @@ private enum KittyStoreImportKind: String {
         switch self {
         case .ipa: return "IPA"
         case .certificate: return "Certificate"
-        case .sideStoreAccount: return "SideStore Account"
         case .provisioningProfile: return "Provisioning Profile"
         case .pairingFile: return "Pairing File"
         case .existingDylibs: return "Existing Dylibs"
@@ -3205,7 +3203,7 @@ private enum KittyStoreImportKind: String {
 
     var allowsMultipleSelection: Bool {
         switch self {
-        case .ipa, .certificate, .sideStoreAccount, .provisioningProfile, .pairingFile: return false
+        case .ipa, .certificate, .provisioningProfile, .pairingFile: return false
         case .existingDylibs, .frameworksAndPlugins, .tweaks: return true
         }
     }
@@ -3216,8 +3214,6 @@ private enum KittyStoreImportKind: String {
             return [.item, UTType(filenameExtension: "ipa") ?? .data, .zip, .data]
         case .certificate:
             return [.item, UTType(filenameExtension: "p12") ?? .data, UTType(filenameExtension: "pfx") ?? .data, .data]
-        case .sideStoreAccount:
-            return [.item, UTType(filenameExtension: "sideconf") ?? .data, .json, .data]
         case .provisioningProfile:
             return [.item, UTType(filenameExtension: "mobileprovision") ?? .data, UTType(filenameExtension: "provisionprofile") ?? .data, .propertyList, .data]
         case .pairingFile:

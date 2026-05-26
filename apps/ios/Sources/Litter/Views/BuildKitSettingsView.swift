@@ -291,7 +291,7 @@ struct BuildKitSettingsView: View {
 
     private var signingSection: some View {
         Section {
-            Text("SideStore account login, .sideconf import, certificate import, pairing files, and Feather-style signing options live in KittyStore Settings. BuildKit only reports whether those Store-owned inputs are ready for the native runner.")
+            Text("Apple ID login, certificate import, provisioning profiles, pairing files, LocalDevVPN, and Feather-style signing options live in KittyStore Settings. BuildKit only reports whether those Store-owned inputs are ready for the native runner.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -406,7 +406,6 @@ struct BuildKitSettingsView: View {
         case "litter-ipa-build": return "Unsigned IPA"
         case "litter-ipa-package": return "Package app"
         case "litter-nyxian-status": return "Nyxian"
-        case "litter-kittystore-import-sideconf": return "SideStore"
         case "litter-kittystore-validate-profile": return "Profile"
         case "litter-kittystore-plan": return "Signing"
         case "litter-kittystore-sign": return "Signer"
