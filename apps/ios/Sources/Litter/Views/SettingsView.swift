@@ -76,6 +76,8 @@ struct SettingsView: View {
                     ConversationSettingsRouteView()
                 case .updates:
                     AppUpdateSettingsView()
+                case .plugins:
+                    PluginSettingsView()
                 case .aiProviders:
                     AIProviderSettingsView()
                 case .buildKit:
@@ -224,6 +226,23 @@ struct SettingsView: View {
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
                         Text("Run commands in the same local iSH runtime used by bots")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            NavigationLink(value: SettingsRoute.plugins) {
+                HStack(spacing: 10) {
+                    Image(systemName: "puzzlepiece.extension")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Plugins")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Install and remove Codex plugins and connector packs")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
@@ -785,6 +804,7 @@ enum SettingsRoute: String, Hashable {
     case appearance
     case conversation
     case updates
+    case plugins
     case aiProviders
     case buildKit
 }

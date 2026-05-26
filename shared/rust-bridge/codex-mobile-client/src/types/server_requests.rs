@@ -801,6 +801,49 @@ impl TryFrom<AppListPluginsRequest> for upstream::PluginListParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[derive(uniffi::Record)]
+pub struct AppPluginInstallRequest {
+    #[serde(default)]
+    #[uniffi(default = None)]
+    pub marketplace_path: Option<AbsolutePath>,
+    #[serde(default)]
+    #[uniffi(default = None)]
+    pub remote_marketplace_name: Option<String>,
+    pub plugin_name: String,
+}
+
+impl TryFrom<AppPluginInstallRequest> for upstream::PluginInstallParams {
+    type Error = RpcClientError;
+
+    fn try_from(value: AppPluginInstallRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            marketplace_path: value
+                .marketplace_path
+                .map(absolute_path_buf_from_mobile)
+                .transpose()?,
+            remote_marketplace_name: value.remote_marketplace_name,
+            plugin_name: value.plugin_name,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[derive(uniffi::Record)]
+pub struct AppPluginUninstallRequest {
+    pub plugin_id: String,
+}
+
+impl From<AppPluginUninstallRequest> for upstream::PluginUninstallParams {
+    fn from(value: AppPluginUninstallRequest) -> Self {
+        Self {
+            plugin_id: value.plugin_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+#[derive(uniffi::Record)]
 pub struct AppStartTurnRequest {
     pub thread_id: String,
     pub input: Vec<AppUserInput>,

@@ -231,9 +231,11 @@ async fn hydrate_thread_goal_if_available(
 }
 
 /// Flatten upstream `plugin/list` marketplaces into a deduped, sorted list of
-/// `PluginSummary` rows suitable for `@`-autocomplete. Pure so it can be unit-
-/// tested without running an RPC client.
-fn shape_plugin_list(response: upstream::PluginListResponse) -> Vec<types::PluginSummary> {
+/// `PluginSummary` rows. Pure so it can be unit-tested without running an RPC client.
+fn shape_plugin_entries(
+    response: upstream::PluginListResponse,
+    mentionable_only: bool,
+) -> Vec<types::PluginSummary> {
     let mut summaries: Vec<types::PluginSummary> = Vec::new();
     for marketplace in response.marketplaces {
         let marketplace_name = marketplace.name.trim().to_owned();
@@ -250,7 +252,7 @@ fn shape_plugin_list(response: upstream::PluginListResponse) -> Vec<types::Plugi
                 marketplace_path.clone(),
                 plugin,
             );
-            if summary.is_available_for_mention() {
+            if !mentionable_only || summary.is_available_for_mention() {
                 summaries.push(summary);
             }
         }
@@ -267,6 +269,16 @@ fn shape_plugin_list(response: upstream::PluginListResponse) -> Vec<types::Plugi
     });
 
     summaries
+}
+
+/// Installed/default plugins suitable for `@`-autocomplete.
+fn shape_plugin_list(response: upstream::PluginListResponse) -> Vec<types::PluginSummary> {
+    shape_plugin_entries(response, true)
+}
+
+/// Full plugin catalog for Settings management surfaces.
+fn shape_plugin_catalog(response: upstream::PluginListResponse) -> Vec<types::PluginSummary> {
+    shape_plugin_entries(response, false)
 }
 
 fn is_mobile_hidden_skill(skill: &types::SkillMetadata) -> bool {
@@ -1109,6 +1121,56 @@ impl AppClient {
             )
             .await?;
             Ok(shape_plugin_list(response))
+        })
+    }
+
+    pub async fn list_plugin_catalog(
+        &self,
+        server_id: String,
+        params: types::AppListPluginsRequest,
+    ) -> Result<Vec<types::PluginSummary>, ClientError> {
+        blocking_async!(self.rt, self.inner, |c| {
+            let upstream_params = convert_params::<_, upstream::PluginListParams>(params)?;
+            let response: upstream::PluginListResponse = rpc(
+                c.as_ref(),
+                &server_id,
+                req!(server_id, PluginList, upstream_params),
+            )
+            .await?;
+            Ok(shape_plugin_catalog(response))
+        })
+    }
+
+    pub async fn install_plugin(
+        &self,
+        server_id: String,
+        params: types::AppPluginInstallRequest,
+    ) -> Result<types::AppPluginInstallResponse, ClientError> {
+        blocking_async!(self.rt, self.inner, |c| {
+            let upstream_params = convert_params::<_, upstream::PluginInstallParams>(params)?;
+            let response: upstream::PluginInstallResponse = rpc(
+                c.as_ref(),
+                &server_id,
+                req!(server_id, PluginInstall, upstream_params),
+            )
+            .await?;
+            Ok(response.into())
+        })
+    }
+
+    pub async fn uninstall_plugin(
+        &self,
+        server_id: String,
+        params: types::AppPluginUninstallRequest,
+    ) -> Result<(), ClientError> {
+        blocking_async!(self.rt, self.inner, |c| {
+            let _: upstream::PluginUninstallResponse = rpc(
+                c.as_ref(),
+                &server_id,
+                req!(server_id, PluginUninstall, params.into()),
+            )
+            .await?;
+            Ok(())
         })
     }
 
@@ -3400,6 +3462,35 @@ mod tests {
             let shaped = shape_plugin_list(response);
             let names: Vec<&str> = shaped.iter().map(|s| s.name.as_str()).collect();
             assert_eq!(names, vec!["alpha", "beta", "gamma"]);
+        }
+
+        #[test]
+        fn catalog_keeps_installable_uninstalled_plugins() {
+            let response = response(vec![marketplace(
+                "openai-curated",
+                vec![
+                    summary(
+                        "install-me",
+                        "gmail",
+                        false,
+                        false,
+                        upstream::PluginInstallPolicy::Available,
+                        Some("Gmail"),
+                    ),
+                    summary(
+                        "not-available",
+                        "admin-disabled",
+                        false,
+                        false,
+                        upstream::PluginInstallPolicy::NotAvailable,
+                        None,
+                    ),
+                ],
+            )]);
+
+            let shaped = shape_plugin_catalog(response);
+            let names: Vec<&str> = shaped.iter().map(|s| s.name.as_str()).collect();
+            assert_eq!(names, vec!["admin-disabled", "gmail"]);
         }
 
         #[test]
