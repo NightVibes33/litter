@@ -4,7 +4,6 @@
 #import <MobileDevelopmentKit/MDKJob.h>
 #import <MobileDevelopmentKit/MDKDiagnostic.h>
 #import <MobileDevelopmentKit/MDKLinker.h>
-#import <MobileDevelopmentKit/MDKSwiftCompiler.h>
 
 #include <zlib.h>
 #include <stdlib.h>
@@ -126,10 +125,6 @@ static NSString *LBIJobTypeName(CCJobType type)
 
 static BOOL LBIExecuteJob(MDKJob *job, NSArray<MDKDiagnostic *> **diagnostics, NSString **mainSource)
 {
-    if(job.type == CCJobTypeSwiftCompiler)
-    {
-        return [MDKSwiftCompiler executeJob:job outDiagnostics:diagnostics outMainSource:mainSource];
-    }
     if(job.type == CCJobTypeLinker)
     {
         if(mainSource != nil) { *mainSource = nil; }
