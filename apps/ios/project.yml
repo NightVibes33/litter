@@ -60,9 +60,118 @@ packages:
   Nuke:
     url: https://github.com/kean/Nuke.git
     from: "12.8.0"
+  SemanticVersion:
+    url: https://github.com/SwiftPackageIndex/SemanticVersion.git
+    exactVersion: "0.4.0"
+  Starscream:
+    url: https://github.com/daltoniam/Starscream.git
+    from: "4.0.8"
+  KeychainAccess:
+    url: https://github.com/kishikawakatsumi/KeychainAccess.git
+    branch: master
+  MarkdownKit:
+    url: https://github.com/bmoliveira/MarkdownKit.git
+    from: "1.7.1"
+  Minimuxer:
+    path: ../../ThirdParty/SideStore/Source/Dependencies/minimuxer
   AltSign:
     path: ../../ThirdParty/SideStore/AltSign
 targets:
+  Roxas:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.Roxas
+        INFOPLIST_FILE: ../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas/Info.plist
+        DEFINES_MODULE: "YES"
+        CLANG_ENABLE_MODULES: "YES"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas"
+    sources:
+      - path: ../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas
+        excludes:
+          - Info.plist
+
+  AltStoreCore:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.AltStoreCore
+        INFOPLIST_FILE: ../../ThirdParty/SideStore/Source/AltStoreCore/Info.plist
+        DEFINES_MODULE: "YES"
+        CLANG_ENABLE_MODULES: "YES"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStoreCore $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStoreCore/Types $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared/Connections $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared/Errors $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared/Categories"
+    sources:
+      - path: ../../ThirdParty/SideStore/Source/AltStoreCore
+        excludes:
+          - Info.plist
+          - Intents/**
+      - path: ../../ThirdParty/SideStore/Source/Shared
+    dependencies:
+      - target: Roxas
+      - package: SemanticVersion
+        product: SemanticVersion
+      - package: KeychainAccess
+        product: KeychainAccess
+      - package: AltSign
+        product: AltSign-Static
+
+  SideStore:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.SideStore
+        PRODUCT_MODULE_NAME: SideStore
+        DEFINES_MODULE: "YES"
+        CLANG_ENABLE_MODULES: "YES"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStore $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStoreCore $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared"
+    sources:
+      - path: Sources/SideStoreEmbedded
+      - path: ../../ThirdParty/SideStore/Source/AltStore
+        excludes:
+          - AppDelegate.swift
+          - SceneDelegate.swift
+          - Info.plist
+          - AltStore-Bridging-Header.h
+          - Intents/**
+          - Extensions/INInteraction+AltStore.swift
+      - path: ../../ThirdParty/SideStore/Source/SideStore
+        excludes:
+          - Tests/**
+          - Utils/misc/**
+          - EMProxyWrapper.swift
+    dependencies:
+      - target: AltStoreCore
+      - target: Roxas
+      - sdk: AVFoundation.framework
+      - sdk: CoreHaptics.framework
+      - sdk: Intents.framework
+      - sdk: IntentsUI.framework
+      - sdk: MessageUI.framework
+      - sdk: QuickLook.framework
+      - sdk: SafariServices.framework
+      - sdk: UniformTypeIdentifiers.framework
+      - sdk: WidgetKit.framework
+      - package: AltSign
+        product: AltSign-Static
+      - package: SemanticVersion
+        product: SemanticVersion
+      - package: Starscream
+        product: Starscream
+      - package: KeychainAccess
+        product: KeychainAccess
+      - package: MarkdownKit
+        product: MarkdownKit
+      - package: Nuke
+        product: Nuke
+      - package: Minimuxer
+        product: Minimuxer
+
   Litter:
     type: application
     platform: iOS
@@ -140,6 +249,8 @@ targets:
         product: NukeUI
       - package: AltSign
         product: AltSign-Dynamic
+        embed: true
+      - target: SideStore
         embed: true
       - target: LitterLiveActivity
         embed: true

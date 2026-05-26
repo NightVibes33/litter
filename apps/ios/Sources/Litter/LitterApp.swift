@@ -3,8 +3,9 @@ import UIKit
 import UserNotifications
 import Combine
 import os
+import SideStore
 
-class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
     private var pendingPushToken: Data?
     private var pendingNotificationThreadKey: ThreadKey?
     private var splashWindow: UIWindow?
@@ -35,6 +36,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         OpenAIApiKeyStore.shared.applyToEnvironment()
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
         LLog.bootstrap()
+        Task { @MainActor in
+            SideStoreEmbeddedFactory.bootstrap()
+        }
 
         #if targetEnvironment(macCatalyst)
         // On unsandboxed Mac Catalyst, send the spawned codex child a
@@ -965,7 +969,7 @@ private struct HomeNavigationView: View {
                     .toolbar(.hidden, for: .navigationBar)
                     .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                 case .kittyStore:
-                    KittyStoreView()
+                    SideStoreHostView()
                 case .filesWorkspace:
                     LocalFileWorkspaceView()
                 case .appsList:
