@@ -3,6 +3,19 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+private final class KittyStoreAppleIDVerificationRequest: Identifiable, @unchecked Sendable {
+    let id = UUID()
+    private let callback: (String?) -> Void
+
+    init(callback: @escaping (String?) -> Void) {
+        self.callback = callback
+    }
+
+    func submit(_ code: String?) {
+        callback(code)
+    }
+}
+
 struct KittyStoreView: View {
     @Environment(\.openURL) private var openURL
     @StateObject private var taskBag = ViewTaskBag()
@@ -22,6 +35,8 @@ struct KittyStoreView: View {
     @State private var shareItem: KittyStoreShareItem?
     @State private var showingAppleIDSignInSheet = false
     @State private var showingAppleIDTwoFactorPrompt = false
+    @State private var appleIDVerificationRequest: KittyStoreAppleIDVerificationRequest?
+    @State private var appleIDTwoFactorWasCancelled = false
     @State private var appleIDLoginInProgress = false
     @State private var selectedTab: KittyStoreTab = .news
     @State private var selectedSourceAppID: String?
@@ -249,9 +264,11 @@ struct KittyStoreView: View {
             TextField("Verification code", text: $appleIDTwoFactorCodeInput)
                 .keyboardType(.numberPad)
                 .textContentType(.oneTimeCode)
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {
+                cancelAppleIDVerificationCode()
+            }
             Button("Continue") {
-                taskBag.run { await saveKittyStoreAppleID() }
+                submitAppleIDVerificationCode()
             }
         }
         .confirmationDialog(
@@ -324,14 +341,11 @@ struct KittyStoreView: View {
     }
 
     private var settingsWorkspace: some View {
-        storeScroll(spacing: 22) {
+        storeScroll(spacing: 18) {
             accountSettingsPanel
-            supportSettingsPanel
-            displaySettingsPanel
-            refreshSettingsPanel
             signingSettingsPanel
             transportSettingsPanel
-            diagnosticsSettingsPanel
+            storeOptionsSettingsPanel
         }
     }
 
@@ -710,7 +724,7 @@ struct KittyStoreView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     sideStoreField("Apple ID", text: $appleIDEmailInput, placeholder: "name@email.com", keyboardType: .emailAddress, textContentType: .username)
                     sideStoreSecureField("Password", text: $appleIDPasswordInput, placeholder: "••••••••")
-                    if !appleIDTwoFactorCodeInput.isEmpty {
+                    if appleIDVerificationRequest != nil || !appleIDTwoFactorCodeInput.isEmpty {
                         sideStoreField("Verification Code", text: $appleIDTwoFactorCodeInput, placeholder: "123456", keyboardType: .numberPad, textContentType: .oneTimeCode)
                     }
                     appleIDSignInButton
@@ -905,6 +919,35 @@ struct KittyStoreView: View {
     private var diagnosticsSettingsPanel: some View {
         panel(title: "Diagnostics", icon: "stethoscope") {
             VStack(spacing: 10) {
+                readinessRow("Source Feed", detail: sourcePhase.message, state: source != nil)
+                readinessRow("BuildKit", detail: buildKitStatus == nil ? "Status has not loaded yet." : "Status refreshed from the local BuildKit bridge.", state: buildKitStatus != nil)
+                actionRow("Refresh Diagnostics", detail: "Reload source, account, certificate, and LocalDevVPN state.", icon: "arrow.clockwise") {
+                    taskBag.run { await refreshAll() }
+                }
+                navigationActionRow("Advanced BuildKit Diagnostics", detail: "Open raw BuildKit assets, commands, and fakefs checks.", icon: "wrench.and.screwdriver") {
+                    BuildKitSettingsView()
+                }
+            }
+        }
+    }
+
+    private var storeOptionsSettingsPanel: some View {
+        panel(title: "Store Options", icon: "slider.horizontal.3") {
+            VStack(spacing: 10) {
+                VStack(spacing: 0) {
+                    settingsToggleRow("Background Refresh", isOn: $kittyStoreBackgroundRefresh)
+                    settingsDivider
+                    settingsToggleRow("Disable Idle Timeout", isOn: $kittyStoreDisableIdleTimeout)
+                    settingsDivider
+                    settingsToggleRow("Allow Siri To Refresh Apps...", isOn: $kittyStoreAllowSiriRefresh)
+                }
+                .background(settingsBlockBackground)
+                actionRow("Change App Icon", detail: "Choose an alternate KittyLitter app icon when alternate icons are bundled.", icon: "app.badge") {
+                    signingAlert = KittyStoreSigningAlert(title: "App Icons", message: "Alternate KittyStore icons are not bundled in this build yet.")
+                }
+                navigationActionRow("Support the team", detail: "Support KittyLitter by helping fund ongoing development.", icon: "heart.fill") {
+                    TipJarView()
+                }
                 readinessRow("Source Feed", detail: sourcePhase.message, state: source != nil)
                 readinessRow("BuildKit", detail: buildKitStatus == nil ? "Status has not loaded yet." : "Status refreshed from the local BuildKit bridge.", state: buildKitStatus != nil)
                 actionRow("Refresh Diagnostics", detail: "Reload source, account, certificate, and LocalDevVPN state.", icon: "arrow.clockwise") {
@@ -1483,6 +1526,49 @@ struct KittyStoreView: View {
     }
 
     @MainActor
+    private func appleIDVerificationHandler(fallbackCode: String) -> ((@escaping (String?) -> Void) -> Void) {
+        { callback in
+            let code = fallbackCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !code.isEmpty {
+                callback(code)
+                return
+            }
+            let request = KittyStoreAppleIDVerificationRequest(callback: callback)
+            Task { @MainActor in
+                appleIDVerificationRequest = request
+                appleIDTwoFactorCodeInput = ""
+                appleIDActionMessage = "Apple sent a verification code. Enter the 6-digit code to continue."
+                showingAppleIDTwoFactorPrompt = true
+            }
+        }
+    }
+
+    @MainActor
+    private func submitAppleIDVerificationCode() {
+        let trimmedCode = appleIDTwoFactorCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedCode.count == 6 else {
+            appleIDActionMessage = "Enter the 6-digit verification code from your Apple devices."
+            showingAppleIDTwoFactorPrompt = true
+            return
+        }
+        if let request = appleIDVerificationRequest {
+            appleIDVerificationRequest = nil
+            request.submit(trimmedCode)
+        } else {
+            taskBag.run { await saveKittyStoreAppleID() }
+        }
+    }
+
+    @MainActor
+    private func cancelAppleIDVerificationCode() {
+        appleIDTwoFactorWasCancelled = true
+        let request = appleIDVerificationRequest
+        appleIDVerificationRequest = nil
+        request?.submit(nil)
+        appleIDActionMessage = "Apple ID verification cancelled."
+    }
+
+    @MainActor
     private func saveKittyStoreAppleID() async {
         let trimmedEmail = appleIDEmailInput.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPassword = appleIDPasswordInput.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1497,6 +1583,7 @@ struct KittyStoreView: View {
             return
         }
 
+        appleIDTwoFactorWasCancelled = false
         appleIDLoginInProgress = true
         defer { appleIDLoginInProgress = false }
 
@@ -1508,7 +1595,8 @@ struct KittyStoreView: View {
                     password: trimmedPassword,
                     requestedTeamID: appleIDTeamIDInput,
                     anisetteServerURL: anisetteURL,
-                    twoFactorCode: trimmedCode
+                    twoFactorCode: trimmedCode,
+                    verificationHandler: appleIDVerificationHandler(fallbackCode: trimmedCode)
                 )
                 let summary = try result.get()
                 let existingAccount = NyxianAppleIDStore.load()
@@ -1528,6 +1616,7 @@ struct KittyStoreView: View {
                 syncAnisetteSelectionFromInput()
                 appleIDPasswordInput = ""
                 appleIDTwoFactorCodeInput = ""
+                appleIDVerificationRequest = nil
                 let teamMessage = summary.availableTeams.isEmpty
                     ? "No developer teams were returned."
                     : "Teams found: " + summary.availableTeams.map(\.displayText).joined(separator: ", ") + "."
@@ -1553,12 +1642,16 @@ struct KittyStoreView: View {
                 syncAnisetteSelectionFromInput()
                 appleIDPasswordInput = ""
                 appleIDTwoFactorCodeInput = ""
+                appleIDVerificationRequest = nil
                 showingAppleIDSignInSheet = false
                 appleIDActionMessage = "Apple ID login saved locally, but SideStore AltSign is not linked in this build yet."
             }
             await refreshBuildKitStatus()
         } catch {
-            if appleIDErrorNeedsTwoFactor(error) {
+            if appleIDTwoFactorWasCancelled {
+                appleIDTwoFactorWasCancelled = false
+                appleIDActionMessage = "Apple ID verification cancelled."
+            } else if appleIDErrorNeedsTwoFactor(error) {
                 appleIDActionMessage = "Enter the 6-digit verification code from your Apple devices, then tap Continue."
                 showingAppleIDTwoFactorPrompt = true
             } else {
@@ -1568,11 +1661,17 @@ struct KittyStoreView: View {
     }
 
     private func appleIDErrorNeedsTwoFactor(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        if nsError.domain.contains("ALTAppleAPI"), nsError.code == 3018 || nsError.code == 3019 {
+            return true
+        }
         let message = "\(error.localizedDescription) \(String(describing: error))".lowercased()
         return message.contains("two-factor")
             || message.contains("two factor")
             || message.contains("2fa")
             || message.contains("verification code")
+            || message.contains("requires signing in")
+            || message.contains("incorrect verification")
             || message.contains("trusted device")
     }
 
@@ -1842,6 +1941,7 @@ struct KittyStoreView: View {
 
         let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
         let isDirectory = resourceValues.isDirectory ?? false
+        try kind.validateSelectedURL(url, isDirectory: isDirectory)
         let directory = try LitterDownloadSupport.appSupportDirectory(named: "KittyStoreImports")
         let destinationName = "\(kind.rawValue)-\(UUID().uuidString)-\(sanitizeFileName(url.lastPathComponent))"
         let destination = directory.appendingPathComponent(destinationName, isDirectory: isDirectory)
@@ -3189,6 +3289,15 @@ private enum KittyStoreImportKind: String {
     case frameworksAndPlugins
     case tweaks
 
+    private static let ipaType = UTType(filenameExtension: "ipa") ?? UTType(importedAs: "com.sigkitten.litter.ipa", conformingTo: .zip)
+    private static let p12Type = UTType(filenameExtension: "p12") ?? UTType(importedAs: "com.rsa.pkcs-12", conformingTo: .data)
+    private static let pfxType = UTType(filenameExtension: "pfx") ?? UTType(importedAs: "com.rsa.pkcs-12", conformingTo: .data)
+    private static let mobileProvisionType = UTType(filenameExtension: "mobileprovision") ?? UTType(importedAs: "com.apple.mobileprovision", conformingTo: .data)
+    private static let provisionProfileType = UTType(filenameExtension: "provisionprofile") ?? UTType(importedAs: "com.apple.mobileprovision", conformingTo: .data)
+    private static let mobileDevicePairingType = UTType(filenameExtension: "mobiledevicepairing") ?? UTType(importedAs: "com.apple.mobiledevicepairing", conformingTo: .data)
+    private static let pairingType = UTType(filenameExtension: "pairing") ?? UTType(importedAs: "com.apple.mobiledevicepairing", conformingTo: .data)
+    private static let plistType = UTType(filenameExtension: "plist") ?? .propertyList
+
     var title: String {
         switch self {
         case .ipa: return "IPA"
@@ -3211,19 +3320,72 @@ private enum KittyStoreImportKind: String {
     var allowedContentTypes: [UTType] {
         switch self {
         case .ipa:
-            return [.item, UTType(filenameExtension: "ipa") ?? .data, .zip, .data]
+            return [Self.ipaType]
         case .certificate:
-            return [.item, UTType(filenameExtension: "p12") ?? .data, UTType(filenameExtension: "pfx") ?? .data, .data]
+            return [Self.p12Type, Self.pfxType]
         case .provisioningProfile:
-            return [.item, UTType(filenameExtension: "mobileprovision") ?? .data, UTType(filenameExtension: "provisionprofile") ?? .data, .propertyList, .data]
+            return [Self.mobileProvisionType, Self.provisionProfileType]
         case .pairingFile:
-            return [.item, UTType(filenameExtension: "mobiledevicepairing") ?? .data, UTType(filenameExtension: "pairing") ?? .data, .propertyList, .json, .data]
+            return [Self.mobileDevicePairingType, Self.pairingType, Self.plistType]
         case .existingDylibs:
-            return [.item, UTType(filenameExtension: "dylib") ?? .data, .data]
+            return [UTType(filenameExtension: "dylib") ?? .data]
         case .frameworksAndPlugins:
-            return [.item, .folder, UTType(filenameExtension: "framework") ?? .data, UTType(filenameExtension: "appex") ?? .data, UTType(filenameExtension: "dylib") ?? .data, .zip, .data]
+            return [.folder, UTType(filenameExtension: "framework") ?? .data, UTType(filenameExtension: "appex") ?? .data, UTType(filenameExtension: "dylib") ?? .data, .zip]
         case .tweaks:
-            return [.item, UTType(filenameExtension: "deb") ?? .data, UTType(filenameExtension: "dylib") ?? .data, .folder, .zip, .data]
+            return [UTType(filenameExtension: "deb") ?? .data, UTType(filenameExtension: "dylib") ?? .data, .folder, .zip]
+        }
+    }
+
+    var acceptedFileExtensions: Set<String>? {
+        switch self {
+        case .ipa:
+            return ["ipa"]
+        case .certificate:
+            return ["p12", "pfx"]
+        case .provisioningProfile:
+            return ["mobileprovision", "provisionprofile"]
+        case .pairingFile:
+            return ["mobiledevicepairing", "pairing", "plist"]
+        case .existingDylibs, .frameworksAndPlugins, .tweaks:
+            return nil
+        }
+    }
+
+    var acceptedFileDescription: String {
+        switch self {
+        case .ipa:
+            return ".ipa"
+        case .certificate:
+            return ".p12 or .pfx"
+        case .provisioningProfile:
+            return ".mobileprovision or .provisionprofile"
+        case .pairingFile:
+            return ".mobiledevicepairing, .pairing, or .plist"
+        case .existingDylibs:
+            return ".dylib"
+        case .frameworksAndPlugins:
+            return ".framework, .appex, .dylib, .zip, or a folder"
+        case .tweaks:
+            return ".deb, .dylib, .zip, or a folder"
+        }
+    }
+
+    func validateSelectedURL(_ url: URL, isDirectory: Bool) throws {
+        guard let acceptedFileExtensions else { return }
+        guard !isDirectory else {
+            throw NSError(
+                domain: "KittyStoreImport",
+                code: 64,
+                userInfo: [NSLocalizedDescriptionKey: "Select a file for \(title), not a folder. Required format: \(acceptedFileDescription)."]
+            )
+        }
+        let fileExtension = url.pathExtension.lowercased()
+        guard acceptedFileExtensions.contains(fileExtension) else {
+            throw NSError(
+                domain: "KittyStoreImport",
+                code: 65,
+                userInfo: [NSLocalizedDescriptionKey: "Wrong file type for \(title). Selected \(url.lastPathComponent), but KittyStore needs \(acceptedFileDescription)."]
+            )
         }
     }
 }

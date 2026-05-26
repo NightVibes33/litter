@@ -139,5 +139,85 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>iOS App Archive</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.sigkitten.litter.ipa</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ipa</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>PKCS#12 Signing Identity</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.rsa.pkcs-12</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>p12</string>
+					<string>pfx</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-pkcs12</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>iOS Provisioning Profile</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.apple.mobileprovision</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mobileprovision</string>
+					<string>provisionprofile</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>SideStore Pairing File</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.apple.mobiledevicepairing</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mobiledevicepairing</string>
+					<string>pairing</string>
+					<string>plist</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+
 </dict>
 </plist>

@@ -55,7 +55,8 @@ enum KittyStoreSideStoreSigningBridge {
         password rawPassword: String,
         requestedTeamID rawRequestedTeamID: String,
         anisetteServerURL rawAnisetteServerURL: String,
-        twoFactorCode rawTwoFactorCode: String
+        twoFactorCode rawTwoFactorCode: String,
+        verificationHandler: ((@escaping (String?) -> Void) -> Void)? = nil
     ) async -> Result<AuthenticationSummary, Error> {
         #if canImport(AltSign) && canImport(CAltSign)
         do {
@@ -73,7 +74,8 @@ enum KittyStoreSideStoreSigningBridge {
                 email: email,
                 password: password,
                 anisetteData: anisetteData,
-                twoFactorCode: twoFactorCode
+                twoFactorCode: twoFactorCode,
+                verificationHandler: verificationHandler
             )
             let teams = try await fetchTeams(account: account, session: session)
             guard let selectedTeam = selectTeam(from: teams, requestedTeamID: requestedTeamID) else {
@@ -723,11 +725,13 @@ private extension KittyStoreSideStoreSigningBridge {
         email: String,
         password: String,
         anisetteData: ALTAnisetteData,
-        twoFactorCode: String
+        twoFactorCode: String,
+        verificationHandler providedVerificationHandler: ((@escaping (String?) -> Void) -> Void)? = nil
     ) async throws -> (ALTAccount, ALTAppleAPISession) {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(ALTAccount, ALTAppleAPISession), Error>) in
-            let verificationHandler: ((@escaping (String?) -> Void) -> Void)? = { callback in
-                callback(twoFactorCode.isEmpty ? nil : twoFactorCode)
+            let trimmedTwoFactorCode = twoFactorCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            let verificationHandler: ((@escaping (String?) -> Void) -> Void)? = providedVerificationHandler ?? { callback in
+                callback(trimmedTwoFactorCode.isEmpty ? nil : trimmedTwoFactorCode)
             }
             ALTAppleAPI.shared.authenticate(
                 appleID: email,
