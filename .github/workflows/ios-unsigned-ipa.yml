@@ -210,6 +210,10 @@ jobs:
           require_file apps/ios/GeneratedRust/Headers/module.modulemap
 
           stale=0
+          if [ "${{ steps.swift_bindings_cache.outputs.cache-hit }}" != "true" ]; then
+            echo "::warning::Swift UniFFI binding cache was not an exact hit; regenerating to avoid stale fallback bindings."
+            stale=1
+          fi
           if [ "$missing" -eq 0 ]; then
             if ! grep -q "func ishRuntimePreflight" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
               echo "::warning::Swift UniFFI binding is stale: missing ishRuntimePreflight()."
@@ -243,6 +247,42 @@ jobs:
               echo "::warning::Swift UniFFI binding is stale: missing TerminalOutputListener."
               stale=1
             fi
+            if ! grep -q "listPluginCatalog" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing listPluginCatalog()."
+              stale=1
+            fi
+            if ! grep -q "installPlugin" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing installPlugin()."
+              stale=1
+            fi
+            if ! grep -q "uninstallPlugin" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing uninstallPlugin()."
+              stale=1
+            fi
+            if ! grep -q "AppPluginInstallRequest" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing AppPluginInstallRequest."
+              stale=1
+            fi
+            if ! grep -q "AppPluginUninstallRequest" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing AppPluginUninstallRequest."
+              stale=1
+            fi
+            if ! grep -q "AppPluginInstallResponse" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing AppPluginInstallResponse."
+              stale=1
+            fi
+            if ! grep -q "PluginAvailability" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing PluginAvailability."
+              stale=1
+            fi
+            if ! grep -q "remotePluginId" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing PluginSummary.remotePluginId."
+              stale=1
+            fi
+            if ! grep -q "keywords" apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift; then
+              echo "::warning::Swift UniFFI binding is stale: missing PluginSummary.keywords."
+              stale=1
+            fi
             if ! grep -q "ish_runtime_preflight" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
               echo "::warning::Swift UniFFI C header is stale: missing ish_runtime_preflight."
               stale=1
@@ -253,6 +293,18 @@ jobs:
             fi
             if ! grep -q "terminal" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
               echo "::warning::Swift UniFFI C header is stale: missing terminal bindings."
+              stale=1
+            fi
+            if ! grep -q "list_plugin_catalog" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
+              echo "::warning::Swift UniFFI C header is stale: missing list_plugin_catalog."
+              stale=1
+            fi
+            if ! grep -q "install_plugin" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
+              echo "::warning::Swift UniFFI C header is stale: missing install_plugin."
+              stale=1
+            fi
+            if ! grep -q "uninstall_plugin" apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h; then
+              echo "::warning::Swift UniFFI C header is stale: missing uninstall_plugin."
               stale=1
             fi
           fi
