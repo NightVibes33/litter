@@ -237,23 +237,23 @@ enum NyxianLocalDevVPNDetector {
         let tunnelInterfaces = activeTunnelInterfaces()
 
         #if KITTYSTORE_MINIMUXER_LINKED
-        setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
-        if KittyStoreMinimuxerBridge.isRuntimeReady {
+        let probe = KittyStoreMinimuxerBridge.probeLocalDevVPN()
+        if probe.isReady {
             let interfaceText = tunnelInterfaces.isEmpty ? "no public tunnel interface name reported" : tunnelInterfaces.sorted().joined(separator: ", ")
             return NyxianLocalDevVPNState(
                 isConnected: true,
-                detail: "SideStore minimuxer reports LocalDevVPN ready (\(interfaceText))."
+                detail: "SideStore minimuxer reports LocalDevVPN ready (\(interfaceText)). \(probe.detail)"
             )
         }
         if tunnelInterfaces.isEmpty {
             return NyxianLocalDevVPNState(
                 isConnected: false,
-                detail: "SideStore minimuxer is not ready and no active tunnel interface was found. Open LocalDevVPN, connect it, then retry with a valid pairing file."
+                detail: "SideStore checks LocalDevVPN by binding minimuxer to override IP 10.7.0.1, starting NetworkObserver, scanning utun, then asking Minimuxer.ready(). Open LocalDevVPN, connect it, then retry with a valid pairing file. \(probe.detail)"
             )
         }
         return NyxianLocalDevVPNState(
-            isConnected: false,
-            detail: "Found active tunnel interface(s) \(tunnelInterfaces.sorted().joined(separator: ", ")), but SideStore minimuxer is not ready. This is not treated as LocalDevVPN ready."
+            isConnected: true,
+            detail: "Found active tunnel interface(s) \(tunnelInterfaces.sorted().joined(separator: ", ")). SideStore minimuxer is not fully ready yet, but KittyStore will attempt the real minimuxer operation and report the native error if pairing or transport fails. \(probe.detail)"
         )
         #else
         if tunnelInterfaces.isEmpty {

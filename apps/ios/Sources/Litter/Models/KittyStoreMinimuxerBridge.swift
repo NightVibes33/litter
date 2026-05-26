@@ -46,6 +46,11 @@ enum KittyStoreMinimuxerBridge {
         var log: String
     }
 
+    struct LocalDevVPNProbe: Sendable {
+        var isReady: Bool
+        var detail: String
+    }
+
     static var isLinked: Bool {
         #if KITTYSTORE_MINIMUXER_LINKED
         true
@@ -55,14 +60,23 @@ enum KittyStoreMinimuxerBridge {
     }
 
     static var isRuntimeReady: Bool {
+        probeLocalDevVPN().isReady
+    }
+
+    static func probeLocalDevVPN() -> LocalDevVPNProbe {
         #if KITTYSTORE_MINIMUXER_LINKED
         #if targetEnvironment(simulator)
-        return true
+        return LocalDevVPNProbe(isReady: true, detail: "Simulator build treats the SideStore minimuxer transport as ready.")
         #else
-        return Minimuxer.ready()
+        configureSideStoreNetworkBridge()
+        let ready = Minimuxer.ready()
+        let detail = ready
+            ? "SideStore minimuxer is ready after binding LocalDevVPN override IP 10.7.0.1 and refreshing NetworkObserver."
+            : "SideStore minimuxer is linked but not ready after binding LocalDevVPN override IP 10.7.0.1 and refreshing NetworkObserver."
+        return LocalDevVPNProbe(isReady: ready, detail: detail)
         #endif
         #else
-        return false
+        return LocalDevVPNProbe(isReady: false, detail: "SideStore minimuxer is not linked into this Litter build.")
         #endif
     }
 
@@ -72,7 +86,7 @@ enum KittyStoreMinimuxerBridge {
             do {
                 let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
                     ?? FileManager.default.temporaryDirectory
-                setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
+                configureSideStoreNetworkBridge()
                 try Minimuxer.startWithLogger(
                     pairingFile: pairingFileContents,
                     logPath: documentsURL.absoluteString,
@@ -107,7 +121,7 @@ enum KittyStoreMinimuxerBridge {
                     ?? FileManager.default.temporaryDirectory
                 let documentsPath = documentsURL.absoluteString
 
-                setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
+                configureSideStoreNetworkBridge()
                 log.append("SideStore minimuxer installed-app browse")
                 log.append("- Log path: \(documentsPath)")
 
@@ -157,7 +171,7 @@ enum KittyStoreMinimuxerBridge {
                     ?? FileManager.default.temporaryDirectory
                 let documentsPath = documentsURL.absoluteString
 
-                setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
+                configureSideStoreNetworkBridge()
                 log.append("SideStore minimuxer transport")
                 log.append("- Action: \(action.rawValue)")
                 log.append("- Bundle ID: \(bundleIdentifier)")
@@ -222,7 +236,7 @@ enum KittyStoreMinimuxerBridge {
                     ?? FileManager.default.temporaryDirectory
                 let documentsPath = documentsURL.absoluteString
 
-                setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
+                configureSideStoreNetworkBridge()
                 log.append("SideStore minimuxer remove")
                 log.append("- Bundle ID: \(bundleIdentifier)")
                 log.append("- Log path: \(documentsPath)")
@@ -257,6 +271,26 @@ enum KittyStoreMinimuxerBridge {
         )
         #endif
     }
+
+    #if KITTYSTORE_MINIMUXER_LINKED
+    private static func configureSideStoreNetworkBridge() {
+        #if !targetEnvironment(simulator)
+        setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
+        Minimuxer.retargetUsbmuxdAddr()
+        Minimuxer.bindTunnelConfig(
+            TunnelConfigBinding(
+                setDeviceIP: { _ in },
+                setFakeIP: { _ in },
+                setSubnetMask: { _ in },
+                getOverrideFakeIP: { "10.7.0.1" },
+                setOverrideEffective: { _ in }
+            )
+        )
+        NetworkObserver.shared.start()
+        NetworkObserver.shared.refreshEndpoint()
+        #endif
+    }
+    #endif
 
     private static func parseInstalledApps(plistText: String) throws -> [KittyStoreInstalledDeviceApp] {
         let data = Data(plistText.utf8)

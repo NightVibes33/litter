@@ -144,8 +144,9 @@ struct KittyStoreView: View {
     }
     private var apps: [KittyStoreApp] { sources.flatMap(\.apps) }
     private var newsItems: [KittyStoreNewsItem] {
-        sources
-            .flatMap(\.news)
+        let sourceNews = sources.flatMap(\.news)
+        let appReleaseNews = apps.compactMap(latestReleaseNewsItem(for:))
+        return (sourceNews + appReleaseNews)
             .sorted { ($0.date ?? "") > ($1.date ?? "") }
     }
     private var app: KittyStoreApp? {
@@ -269,8 +270,6 @@ struct KittyStoreView: View {
 
     private var newsWorkspace: some View {
         storeScroll(spacing: 18) {
-            kittyWelcomeNewsCard
-            kittyCautionNewsCard
             if newsItems.isEmpty {
                 latestNewsPanel
             } else {
@@ -420,27 +419,6 @@ struct KittyStoreView: View {
         }
     }
 
-    private var kittyWelcomeNewsCard: some View {
-        newsArticleCard(
-            title: "Welcome to KittyStore!",
-            caption: "Check out the SideStore and Feather powered store for sources, signing, and direct app refresh.",
-            tint: Color(red: 0.48, green: 0.16, blue: 0.82),
-            symbol: "pawprint.fill",
-            footer: source?.name ?? "KittyLitter"
-        ) {
-            URL(string: "https://github.com/NightVibes33/litter")
-        }
-    }
-
-    private var kittyCautionNewsCard: some View {
-        newsArticleCard(
-            title: "Proceed with Caution!",
-            caption: "KittyStore is pre-release software. Expect bugs while the SideStore, Feather, and LocalDevVPN bridges continue to harden.",
-            tint: Color(red: 0.86, green: 0.18, blue: 0.14),
-            symbol: "exclamationmark.triangle.fill",
-            footer: "Pre-release"
-        )
-    }
 
     private func newsItemCard(_ item: KittyStoreNewsItem) -> some View {
         newsArticleCard(
@@ -448,7 +426,8 @@ struct KittyStoreView: View {
             caption: item.caption,
             tint: newsTintColor(item.tintColor),
             symbol: item.appID == nil ? "newspaper.fill" : "square.and.arrow.down.fill",
-            footer: item.displayDate
+            footer: [item.sourceName, item.displayDate].compactMap { $0 }.joined(separator: " - "),
+            imageURL: item.imageURL
         ) {
             newsDestinationURL(for: item)
         }
@@ -460,6 +439,7 @@ struct KittyStoreView: View {
         tint: Color,
         symbol: String,
         footer: String? = nil,
+        imageURL: String? = nil,
         destination: @escaping () -> URL? = { nil }
     ) -> some View {
         Button {
@@ -481,6 +461,23 @@ struct KittyStoreView: View {
                     .foregroundStyle(Color.white.opacity(0.12))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(18)
+                if let imageURL, let url = URL(string: imageURL) {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 74, height: 74)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .shadow(color: .black.opacity(0.24), radius: 10, y: 4)
+                        default:
+                            EmptyView()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(18)
+                }
 
                 VStack(alignment: .leading, spacing: 10) {
                     if let footer, !footer.isEmpty {
@@ -711,6 +708,18 @@ struct KittyStoreView: View {
                 }
                 actionRow("Clear .p12", detail: "Remove the saved certificate identity and password.", icon: "trash", enabled: NyxianSigningCertificateStorage.loadIdentity() != nil) {
                     clearKittyStoreCertificate()
+                }
+
+                readinessRow(
+                    "Provisioning Profile (.mobileprovision)",
+                    detail: importedProvisioningProfile?.displayName ?? "Import the second Feather certificate-pair file for per-app signing.",
+                    state: importedProvisioningProfile != nil
+                )
+                actionRow("Import .mobileprovision", detail: "Choose the provisioning profile that matches the app and certificate.", icon: "doc.badge.gearshape") {
+                    presentImporter(.provisioningProfile)
+                }
+                actionRow("Clear .mobileprovision", detail: "Remove the saved provisioning profile from KittyStore.", icon: "trash", enabled: importedProvisioningProfile != nil) {
+                    clearPersistedProvisioningProfile()
                 }
 
                 actionRow("Signing Workspace", detail: "Import IPAs, profiles, dylibs, tweaks, entitlements, and properties.", icon: "slider.horizontal.3") {
@@ -1005,6 +1014,50 @@ struct KittyStoreView: View {
         URL(string: url)?.host ?? "source feed"
     }
 
+    private func latestReleaseNewsItem(for storeApp: KittyStoreApp) -> KittyStoreNewsItem? {
+        guard let latest = storeApp.versions.first else { return nil }
+        let versionText = latest.version ?? latest.buildVersion ?? "Latest"
+        let notes = latest.cleanedDescription
+        let caption: String
+        if !notes.isEmpty {
+            caption = shortNotes(notes)
+        } else if let subtitle = storeApp.subtitle, !subtitle.isEmpty {
+            caption = subtitle
+        } else if let description = storeApp.localizedDescription, !description.isEmpty {
+            caption = shortNotes(description)
+        } else {
+            caption = "New source release is available to install or sign."
+        }
+        return KittyStoreNewsItem(
+            identifier: "release-\(storeApp.bundleIdentifier)-\(latest.id)",
+            date: latest.date,
+            title: "\(storeApp.name) \(versionText)",
+            caption: caption,
+            tintColor: nil,
+            imageURL: storeApp.iconURL,
+            externalURL: latest.downloadURL,
+            appID: storeApp.bundleIdentifier,
+            sourceName: storeApp.sourceName,
+            sourceURL: storeApp.sourceURL
+        )
+    }
+
+    private func resolvedSourceAssetURL(_ rawValue: String?, sourceURL: String) -> String? {
+        guard let rawValue else { return nil }
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let absolute = URL(string: trimmed), absolute.scheme != nil {
+            return absolute.absoluteString
+        }
+        if trimmed.hasPrefix("//"), let scheme = URL(string: sourceURL)?.scheme {
+            return "\(scheme):\(trimmed)"
+        }
+        guard let base = URL(string: sourceURL), let resolved = URL(string: trimmed, relativeTo: base) else {
+            return trimmed
+        }
+        return resolved.absoluteURL.absoluteString
+    }
+
     private var importedIPAName: String {
         importedIPA?.displayName ?? latestVersion.map { "\(selectedAppName) \($0.version ?? "IPA")" } ?? "Imported IPA"
     }
@@ -1121,16 +1174,25 @@ struct KittyStoreView: View {
                 let sourceName = decodedSource.name ?? sourceHost(for: rawURL)
                 decodedSource.resolvedSourceURL = rawURL
                 if decodedSource.sourceURL == nil { decodedSource.sourceURL = rawURL }
+                decodedSource.iconURL = resolvedSourceAssetURL(decodedSource.iconURL, sourceURL: rawURL)
                 decodedSource.apps = decodedSource.apps.map { app in
                     var next = app
                     next.sourceName = sourceName
                     next.sourceURL = rawURL
+                    next.iconURL = resolvedSourceAssetURL(next.iconURL, sourceURL: rawURL)
+                    next.versions = next.versions.map { version in
+                        var resolvedVersion = version
+                        resolvedVersion.downloadURL = resolvedSourceAssetURL(resolvedVersion.downloadURL, sourceURL: rawURL) ?? resolvedVersion.downloadURL
+                        return resolvedVersion
+                    }
                     return next
                 }
                 decodedSource.news = decodedSource.news.map { news in
                     var next = news
                     next.sourceName = sourceName
                     next.sourceURL = rawURL
+                    next.imageURL = resolvedSourceAssetURL(next.imageURL, sourceURL: rawURL)
+                    next.externalURL = resolvedSourceAssetURL(next.externalURL, sourceURL: rawURL)
                     return next
                 }
                 loadedSources.append(decodedSource)
@@ -1251,6 +1313,15 @@ struct KittyStoreView: View {
         storedPairingFileName = ""
         storedPairingFileSize = ""
         installedDeviceAppsMessage = "Removed the pairing file from KittyStore."
+    }
+
+    @MainActor
+    private func clearPersistedProvisioningProfile() {
+        importedProvisioningProfile = nil
+        storedProvisioningProfilePath = ""
+        storedProvisioningProfileName = ""
+        storedProvisioningProfileSize = ""
+        certificateActionMessage = "Removed the provisioning profile from KittyStore."
     }
 
     @MainActor
@@ -2175,9 +2246,13 @@ struct KittyStoreView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(LitterTheme.surfaceLight.opacity(0.55))
-                    Text(String(installedApp.displayName.prefix(1)).uppercased())
-                        .litterFont(.title3, weight: .bold)
-                        .foregroundStyle(LitterTheme.accent)
+                    if let matchingSourceApp {
+                        KittyStoreAppIconView(app: matchingSourceApp, size: 48)
+                    } else {
+                        Text(String(installedApp.displayName.prefix(1)).uppercased())
+                            .litterFont(.title3, weight: .bold)
+                            .foregroundStyle(LitterTheme.accent)
+                    }
                 }
                 .frame(width: 48, height: 48)
 
@@ -2233,9 +2308,7 @@ struct KittyStoreView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(LitterTheme.surfaceLight.opacity(0.55))
-                    Text(String(storeApp.name.prefix(1)).uppercased())
-                        .litterFont(.title3, weight: .bold)
-                        .foregroundStyle(LitterTheme.accent)
+                    KittyStoreAppIconView(app: storeApp, size: 52)
                 }
                 .frame(width: 52, height: 52)
                 .overlay(
@@ -2801,21 +2874,21 @@ private enum KittyStoreImportKind: String {
     var allowedContentTypes: [UTType] {
         switch self {
         case .ipa:
-            return [UTType(filenameExtension: "ipa") ?? .data, .zip, .data]
+            return [.item, UTType(filenameExtension: "ipa") ?? .data, .zip, .data]
         case .certificate:
-            return [UTType(filenameExtension: "p12") ?? .data, .data]
+            return [.item, UTType(filenameExtension: "p12") ?? .data, UTType(filenameExtension: "pfx") ?? .data, .data]
         case .sideStoreAccount:
-            return [UTType(filenameExtension: "sideconf") ?? .data, .json, .data]
+            return [.item, UTType(filenameExtension: "sideconf") ?? .data, .json, .data]
         case .provisioningProfile:
-            return [UTType(filenameExtension: "mobileprovision") ?? .data, .propertyList, .data]
+            return [.item, UTType(filenameExtension: "mobileprovision") ?? .data, UTType(filenameExtension: "provisionprofile") ?? .data, .propertyList, .data]
         case .pairingFile:
-            return [UTType(filenameExtension: "mobiledevicepairing") ?? .data, .propertyList, .data]
+            return [.item, UTType(filenameExtension: "mobiledevicepairing") ?? .data, UTType(filenameExtension: "pairing") ?? .data, .propertyList, .json, .data]
         case .existingDylibs:
-            return [UTType(filenameExtension: "dylib") ?? .data, .data]
+            return [.item, UTType(filenameExtension: "dylib") ?? .data, .data]
         case .frameworksAndPlugins:
-            return [.folder, UTType(filenameExtension: "framework") ?? .data, UTType(filenameExtension: "appex") ?? .data, UTType(filenameExtension: "dylib") ?? .data, .zip, .data]
+            return [.item, .folder, UTType(filenameExtension: "framework") ?? .data, UTType(filenameExtension: "appex") ?? .data, UTType(filenameExtension: "dylib") ?? .data, .zip, .data]
         case .tweaks:
-            return [UTType(filenameExtension: "deb") ?? .data, UTType(filenameExtension: "dylib") ?? .data, .folder, .zip, .data]
+            return [.item, UTType(filenameExtension: "deb") ?? .data, UTType(filenameExtension: "dylib") ?? .data, .folder, .zip, .data]
         }
     }
 }
@@ -2942,6 +3015,30 @@ private struct KittyStoreNewsItem: Decodable, Equatable, Identifiable {
         case appID
     }
 
+    init(
+        identifier: String?,
+        date: String?,
+        title: String,
+        caption: String,
+        tintColor: String?,
+        imageURL: String?,
+        externalURL: String?,
+        appID: String?,
+        sourceName: String?,
+        sourceURL: String?
+    ) {
+        self.identifier = identifier
+        self.date = date
+        self.title = title
+        self.caption = caption
+        self.tintColor = tintColor
+        self.imageURL = imageURL
+        self.externalURL = externalURL
+        self.appID = appID
+        self.sourceName = sourceName
+        self.sourceURL = sourceURL
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         identifier = try container.decodeIfPresent(String.self, forKey: .identifier)
@@ -2954,6 +3051,39 @@ private struct KittyStoreNewsItem: Decodable, Equatable, Identifiable {
         appID = try container.decodeIfPresent(String.self, forKey: .appID)
         sourceName = nil
         sourceURL = nil
+    }
+}
+
+private struct KittyStoreAppIconView: View {
+    var app: KittyStoreApp
+    var size: CGFloat
+
+    var body: some View {
+        Group {
+            if let iconURL = app.iconURL, let url = URL(string: iconURL) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    default:
+                        fallback
+                    }
+                }
+            } else {
+                fallback
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: max(8, size * 0.22), style: .continuous))
+    }
+
+    private var fallback: some View {
+        Text(String(app.name.prefix(1)).uppercased())
+            .litterFont(size: size * 0.34, weight: .bold)
+            .foregroundStyle(LitterTheme.accent)
+            .frame(width: size, height: size)
     }
 }
 
