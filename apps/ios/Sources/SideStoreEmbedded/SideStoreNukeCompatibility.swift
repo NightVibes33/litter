@@ -46,6 +46,12 @@ enum Nuke {
     }
 }
 
+extension NSAttributedString {
+    convenience init(markdownRepresentation string: String, attributes: [NSAttributedString.Key: Any]) {
+        self.init(string: string, attributes: attributes)
+    }
+}
+
 final class RefreshAllIntent: INIntent {}
 
 extension INInteraction {

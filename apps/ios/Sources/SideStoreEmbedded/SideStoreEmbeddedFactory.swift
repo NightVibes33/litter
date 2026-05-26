@@ -34,7 +34,7 @@ open class AppDelegate: NSObject, UIApplicationDelegate {
     public static let addSourceDeepLinkURLKey = "sourceURL"
     public static let exportCertificateCallbackTemplateKey = "callback"
 
-    public let consoleLog = ConsoleLog()
+    let consoleLog = ConsoleLog()
 
     public override init() {
         super.init()
