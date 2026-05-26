@@ -602,28 +602,69 @@ jobs:
             find "$APP_PATH/Frameworks" -maxdepth 3 -type f -print >&2 || true
             exit 1
           fi
+      - name: Restore Nyxian SwiftPM package cache
+        id: nyxian_swiftpm_cache
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        uses: actions/cache/restore@v4
+        with:
+          path: build/NyxianSourcePackages
+          key: ios-nyxian-swiftpm-v1-${{ runner.os }}-${{ hashFiles('ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj') }}
+          restore-keys: |
+            ios-nyxian-swiftpm-v1-${{ runner.os }}-
+
       - name: Build Nyxian LiveProcess extension
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         run: |
           set -euo pipefail
           BUILD_ROOT="$PWD/build/NyxianLiveProcess"
           OUTPUT_ROOT="$PWD/build/nyxian-liveprocess"
+          SOURCE_PACKAGES="$PWD/build/NyxianSourcePackages"
           rm -rf "$BUILD_ROOT" "$OUTPUT_ROOT"
-          mkdir -p "$BUILD_ROOT" "$OUTPUT_ROOT"
+          mkdir -p "$BUILD_ROOT" "$OUTPUT_ROOT" "$SOURCE_PACKAGES"
 
-          xcodebuild build \
-            -project ThirdParty/Nyxian/Nyxian.xcodeproj \
-            -target LiveProcess \
-            -configuration Release \
-            -sdk iphoneos \
-            SYMROOT="$BUILD_ROOT/Build/Products" \
-            OBJROOT="$BUILD_ROOT/Build/Intermediates" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.LiveProcess" \
-            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+          xcodebuild_with_retry() {
+            local label="$1"
+            local attempt=1
+            local status=0
+            shift
+
+            while [ "$attempt" -le 3 ]; do
+              echo "==> $label (attempt $attempt/3)"
+              if "$@"; then
+                return 0
+              fi
+              status=$?
+              if [ "$attempt" -eq 3 ]; then
+                echo "::error::$label failed after 3 attempts with exit code $status" >&2
+                return "$status"
+              fi
+              echo "::warning::$label failed with exit code $status; retrying after $((attempt * 20)) seconds" >&2
+              sleep $((attempt * 20))
+              attempt=$((attempt + 1))
+            done
+          }
+
+          xcodebuild_with_retry "Resolve Nyxian SwiftPM dependencies" \
+            xcodebuild -resolvePackageDependencies \
+              -project ThirdParty/Nyxian/Nyxian.xcodeproj \
+              -scheme LiveProcess \
+              -clonedSourcePackagesDirPath "$SOURCE_PACKAGES"
+
+          xcodebuild_with_retry "Build Nyxian LiveProcess extension" \
+            xcodebuild build \
+              -project ThirdParty/Nyxian/Nyxian.xcodeproj \
+              -target LiveProcess \
+              -configuration Release \
+              -sdk iphoneos \
+              -clonedSourcePackagesDirPath "$SOURCE_PACKAGES" \
+              SYMROOT="$BUILD_ROOT/Build/Products" \
+              OBJROOT="$BUILD_ROOT/Build/Intermediates" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY="" \
+              DEVELOPMENT_TEAM="" \
+              PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.LiveProcess" \
+              CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
 
           LIVEPROCESS_APPEX="$(find "$BUILD_ROOT" -type d -name 'LiveProcess.appex' -print | head -n 1)"
           if [ -z "$LIVEPROCESS_APPEX" ] || [ ! -d "$LIVEPROCESS_APPEX" ]; then
@@ -635,6 +676,13 @@ jobs:
           cp -R "$LIVEPROCESS_APPEX" "$OUTPUT_ROOT/LiveProcess.appex"
           /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$OUTPUT_ROOT/LiveProcess.appex/Info.plist" >/dev/null
           echo "Nyxian LiveProcess extension staged at $OUTPUT_ROOT/LiveProcess.appex"
+
+      - name: Save Nyxian SwiftPM package cache
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.nyxian_swiftpm_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/NyxianSourcePackages
+          key: ${{ steps.nyxian_swiftpm_cache.outputs.cache-primary-key }}
 
       - name: Verify archived BuildKit asset payload
         if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
