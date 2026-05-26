@@ -115,7 +115,7 @@ targets:
       - package: KeychainAccess
         product: KeychainAccess
       - package: AltSign
-        product: AltSign-Static
+        product: AltSign-Dynamic
 
   RustBridge:
     type: framework
@@ -193,7 +193,7 @@ targets:
       - sdk: UniformTypeIdentifiers.framework
       - sdk: WidgetKit.framework
       - package: AltSign
-        product: AltSign-Static
+        product: AltSign-Dynamic
       - package: SemanticVersion
         product: SemanticVersion
       - package: Starscream
