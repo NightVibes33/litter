@@ -48,6 +48,7 @@ enum KittyStoreMinimuxerBridge {
 
     struct LocalDevVPNProbe: Sendable {
         var isReady: Bool
+        var endpointReachable: Bool
         var detail: String
     }
 
@@ -66,18 +67,23 @@ enum KittyStoreMinimuxerBridge {
     static func probeLocalDevVPN() -> LocalDevVPNProbe {
         #if KITTYSTORE_MINIMUXER_LINKED
         #if targetEnvironment(simulator)
-        return LocalDevVPNProbe(isReady: true, detail: "Simulator build treats the SideStore minimuxer transport as ready.")
+        return LocalDevVPNProbe(isReady: true, endpointReachable: true, detail: "Simulator build treats the SideStore minimuxer transport as ready.")
         #else
         configureSideStoreNetworkBridge()
         let ready = Minimuxer.ready()
         let endpointReachable = Minimuxer.testLocalDevVPNConnection()
-        let detail = ready
-            ? "SideStore minimuxer is ready through LocalDevVPN override IP 10.7.0.1."
-            : "SideStore minimuxer is linked but not ready yet. LocalDevVPN 10.7.0.1 reachable: \(endpointReachable)."
-        return LocalDevVPNProbe(isReady: ready, detail: detail)
+        let detail: String
+        if ready {
+            detail = "SideStore minimuxer is ready through LocalDevVPN override IP 10.7.0.1."
+        } else if endpointReachable {
+            detail = "LocalDevVPN 10.7.0.1 is reachable. Pairing will be checked during install or refresh."
+        } else {
+            detail = "LocalDevVPN 10.7.0.1 is not reachable yet."
+        }
+        return LocalDevVPNProbe(isReady: ready, endpointReachable: endpointReachable, detail: detail)
         #endif
         #else
-        return LocalDevVPNProbe(isReady: false, detail: "SideStore minimuxer is not linked into this Litter build.")
+        return LocalDevVPNProbe(isReady: false, endpointReachable: false, detail: "SideStore minimuxer is not linked into this Litter build.")
         #endif
     }
 

@@ -1300,7 +1300,7 @@ actor LitterBuildKit {
         }
 
         do {
-            let pairingText = try await IshFS.readTextFile(path: pairing!, maxBytes: 2_000_000)
+            let pairingText = try await Self.normalizedPairingFileContents(path: pairing!)
             let profileData: Data?
             if let profile {
                 profileData = try await IshFS.readFileData(path: profile, maxBytes: 20_000_000)
@@ -1360,7 +1360,7 @@ actor LitterBuildKit {
         }
 
         do {
-            let pairingText = try await IshFS.readTextFile(path: pairing!, maxBytes: 2_000_000)
+            let pairingText = try await Self.normalizedPairingFileContents(path: pairing!)
             let bridge = await KittyStoreMinimuxerBridge.listInstalledApps(
                 pairingFileContents: pairingText,
                 consoleLoggingEnabled: false
@@ -1419,7 +1419,7 @@ actor LitterBuildKit {
         }
 
         do {
-            let pairingText = try await IshFS.readTextFile(path: pairing!, maxBytes: 2_000_000)
+            let pairingText = try await Self.normalizedPairingFileContents(path: pairing!)
             let bridge = await KittyStoreMinimuxerBridge.removeApp(
                 bundleIdentifier: bundleID,
                 pairingFileContents: pairingText,
@@ -3153,6 +3153,26 @@ actor LitterBuildKit {
     private static func resolveFakefsPath(_ token: String, cwd: String) -> String {
         if token.hasPrefix("/") { return normalizedFakefsPath(token) }
         return normalizedFakefsPath((cwd as NSString).appendingPathComponent(token))
+    }
+
+    private static func normalizedPairingFileContents(path: String) async throws -> String {
+        try normalizePairingFileData(try await IshFS.readFileData(path: path, maxBytes: 2_000_000))
+    }
+
+    private static func normalizePairingFileData(_ data: Data) throws -> String {
+        var format = PropertyListSerialization.PropertyListFormat.binary
+        let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: &format)
+        guard let dictionary = plist as? [String: Any], !dictionary.isEmpty else {
+            throw NSError(domain: "KittyStorePairing", code: 71, userInfo: [NSLocalizedDescriptionKey: "The pairing file is not a valid plist dictionary."])
+        }
+        guard dictionary["private_key"] is Data || dictionary["UDID"] is String else {
+            throw NSError(domain: "KittyStorePairing", code: 72, userInfo: [NSLocalizedDescriptionKey: "The pairing file is missing SideStore pairing keys."])
+        }
+        let xmlData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        guard let xml = String(data: xmlData, encoding: .utf8) else {
+            throw NSError(domain: "KittyStorePairing", code: 73, userInfo: [NSLocalizedDescriptionKey: "Could not convert the pairing file to the XML plist format required by minimuxer."])
+        }
+        return xml
     }
 
     private static func shellQuoteForDisplay(_ value: String) -> String {

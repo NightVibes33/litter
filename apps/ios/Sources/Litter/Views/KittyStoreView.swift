@@ -1787,9 +1787,15 @@ struct KittyStoreView: View {
         case .ipa:
             importedIPA = files.first
             if appNameOverride.isEmpty, let name = files.first?.nameWithoutExtension { appNameOverride = name }
+            if let file = files.first {
+                signingAlert = KittyStoreSigningAlert(title: "IPA Ready", message: "Imported \(file.displayName).")
+            }
         case .certificate:
             pendingCertificateFile = files.first
             certificateActionMessage = files.first.map { "Selected \($0.displayName). Enter its password and tap Validate & Save Certificate." }
+            if let file = files.first {
+                signingAlert = KittyStoreSigningAlert(title: "Certificate Selected", message: "Selected \(file.displayName). Enter the certificate password, then tap Validate & Save Certificate.")
+            }
         case .provisioningProfile:
             guard let file = files.first else { return }
             do {
@@ -1802,10 +1808,18 @@ struct KittyStoreView: View {
                 signingAlert = KittyStoreSigningAlert(title: "Provisioning Profile Failed", message: error.localizedDescription)
             }
         case .pairingFile:
-            importedPairingFile = files.first
-            if let file = files.first { persistPairingFile(file) }
-            installedDeviceApps.removeAll()
-            installedDeviceAppsMessage = files.first.map { "Pairing file imported and saved: \($0.displayName). Load installed apps to browse the device." } ?? "Pairing file imported."
+            guard let file = files.first else { return }
+            do {
+                _ = try pairingFileContents(for: file)
+                importedPairingFile = file
+                persistPairingFile(file)
+                installedDeviceApps.removeAll()
+                installedDeviceAppsMessage = "Pairing file imported and saved: \(file.displayName). Load installed apps to browse the device."
+                signingAlert = KittyStoreSigningAlert(title: "Pairing File Ready", message: "Saved \(file.displayName). KittyStore can now pass it to the SideStore minimuxer.")
+            } catch {
+                importedPairingFile = nil
+                signingAlert = KittyStoreSigningAlert(title: "Pairing File Failed", message: error.localizedDescription)
+            }
         case .existingDylibs:
             existingDylibs.append(contentsOf: files)
         case .frameworksAndPlugins:
@@ -1838,6 +1852,30 @@ struct KittyStoreView: View {
             signingCertificateFingerprint: certificateFingerprint,
             requestedBundleIdentifier: displayedBundleIdentifier
         )
+    }
+
+    private func pairingFileContents(for file: KittyStoreImportedFile) throws -> String {
+        try pairingFileContents(atPath: file.stagedPath)
+    }
+
+    private func pairingFileContents(atPath path: String) throws -> String {
+        try normalizePairingFileData(try Data(contentsOf: URL(fileURLWithPath: path)))
+    }
+
+    private func normalizePairingFileData(_ data: Data) throws -> String {
+        var format = PropertyListSerialization.PropertyListFormat.binary
+        let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: &format)
+        guard let dictionary = plist as? [String: Any], !dictionary.isEmpty else {
+            throw kittyStoreImportError("The selected pairing file is not a valid plist dictionary.", code: 71)
+        }
+        guard dictionary["private_key"] is Data || dictionary["UDID"] is String else {
+            throw kittyStoreImportError("The selected pairing file is missing SideStore pairing keys. Use the pairing file exported for this device.", code: 72)
+        }
+        let xmlData = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        guard let xml = String(data: xmlData, encoding: .utf8) else {
+            throw kittyStoreImportError("KittyStore could not convert the pairing file to the XML plist format required by minimuxer.", code: 73)
+        }
+        return xml
     }
 
     @MainActor
@@ -1939,25 +1977,47 @@ struct KittyStoreView: View {
             if didAccess { url.stopAccessingSecurityScopedResource() }
         }
 
-        let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
-        let isDirectory = resourceValues.isDirectory ?? false
-        try kind.validateSelectedURL(url, isDirectory: isDirectory)
         let directory = try LitterDownloadSupport.appSupportDirectory(named: "KittyStoreImports")
-        let destinationName = "\(kind.rawValue)-\(UUID().uuidString)-\(sanitizeFileName(url.lastPathComponent))"
-        let destination = directory.appendingPathComponent(destinationName, isDirectory: isDirectory)
         let fileManager = FileManager.default
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
+        var coordinationError: NSError?
+        var importError: Error?
+        var stagedFile: KittyStoreImportedFile?
+
+        NSFileCoordinator(filePresenter: nil).coordinate(readingItemAt: url, options: [], error: &coordinationError) { coordinatedURL in
+            do {
+                let resourceValues = try coordinatedURL.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+                let isDirectory = resourceValues.isDirectory ?? false
+                try kind.validateSelectedURL(url, isDirectory: isDirectory)
+                let destinationName = "\(kind.rawValue)-\(UUID().uuidString)-\(sanitizeFileName(url.lastPathComponent))"
+                let destination = directory.appendingPathComponent(destinationName, isDirectory: isDirectory)
+                if fileManager.fileExists(atPath: destination.path) {
+                    try fileManager.removeItem(at: destination)
+                }
+                try fileManager.copyItem(at: coordinatedURL, to: destination)
+                guard fileManager.fileExists(atPath: destination.path) else {
+                    throw kittyStoreImportError("KittyStore could not stage \(url.lastPathComponent). The imported file was not copied into app storage.", code: 74)
+                }
+                let copiedValues = try? destination.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
+                let size = copiedValues?.isDirectory == true ? nil : copiedValues?.fileSize.map(Int64.init)
+                if isDirectory == false, (size ?? 0) == 0 {
+                    throw kittyStoreImportError("KittyStore staged \(url.lastPathComponent), but the copied file is empty.", code: 75)
+                }
+                stagedFile = KittyStoreImportedFile(
+                    displayName: url.lastPathComponent.isEmpty ? kind.title : url.lastPathComponent,
+                    stagedPath: destination.path,
+                    size: size,
+                    isDirectory: isDirectory
+                )
+            } catch {
+                importError = error
+            }
         }
-        try fileManager.copyItem(at: url, to: destination)
-        let copiedValues = try? destination.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
-        let size = copiedValues?.isDirectory == true ? nil : copiedValues?.fileSize.map(Int64.init)
-        return KittyStoreImportedFile(
-            displayName: url.lastPathComponent.isEmpty ? kind.title : url.lastPathComponent,
-            stagedPath: destination.path,
-            size: size,
-            isDirectory: isDirectory
-        )
+        if let coordinationError { throw coordinationError }
+        if let importError { throw importError }
+        guard let stagedFile else {
+            throw kittyStoreImportError("KittyStore could not import \(url.lastPathComponent). The document provider did not return a readable file.", code: 76)
+        }
+        return stagedFile
     }
 
     private func sanitizeFileName(_ value: String) -> String {
@@ -2147,7 +2207,7 @@ struct KittyStoreView: View {
             var deviceUDID: String?
             if let pairingPath {
                 do {
-                    let pairing = try String(contentsOfFile: pairingPath, encoding: .utf8)
+                    let pairing = try pairingFileContents(atPath: pairingPath)
                     pairingContents = pairing
                     let udidResult = await KittyStoreMinimuxerBridge.fetchUDID(pairingFileContents: pairing, consoleLoggingEnabled: true)
                     guard udidResult.exitCode == 0 else {
@@ -2308,7 +2368,7 @@ struct KittyStoreView: View {
 
             if postSigningAction.requiresDeviceTransfer, let pairingPath, let minimuxerAction = postSigningAction.minimuxerAction {
                 do {
-                    let pairing = try String(contentsOfFile: pairingPath, encoding: .utf8)
+                    let pairing = try pairingFileContents(atPath: pairingPath)
                     signingInProgress = true
                     let installResult = await KittyStoreMinimuxerBridge.installOrRefresh(
                         action: minimuxerAction,
@@ -2365,7 +2425,7 @@ struct KittyStoreView: View {
         installedDeviceAppsMessage = "Loading installed apps from SideStore minimuxer."
         taskBag.run {
             do {
-                let pairing = try String(contentsOfFile: pairingPath, encoding: .utf8)
+                let pairing = try pairingFileContents(atPath: pairingPath)
                 let result = await KittyStoreMinimuxerBridge.listInstalledApps(
                     pairingFileContents: pairing,
                     consoleLoggingEnabled: true
@@ -2408,7 +2468,7 @@ struct KittyStoreView: View {
         deviceActionInProgress = true
         taskBag.run {
             do {
-                let pairing = try String(contentsOfFile: pairingPath, encoding: .utf8)
+                let pairing = try pairingFileContents(atPath: pairingPath)
                 let result = await KittyStoreMinimuxerBridge.removeApp(
                     bundleIdentifier: request.bundleIdentifier,
                     pairingFileContents: pairing,
@@ -3278,6 +3338,10 @@ private enum KittyStoreInjectFolder: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var title: String { rawValue }
+}
+
+private func kittyStoreImportError(_ message: String, code: Int) -> NSError {
+    NSError(domain: "KittyStoreImport", code: code, userInfo: [NSLocalizedDescriptionKey: message])
 }
 
 private enum KittyStoreImportKind: String {
