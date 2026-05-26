@@ -164,9 +164,9 @@ struct KittyStoreView: View {
     }
     private var apps: [KittyStoreApp] { sources.flatMap(\.apps) }
     private var newsItems: [KittyStoreNewsItem] {
-        let sourceNews = sources.flatMap(\.news)
-        let appReleaseNews = apps.compactMap(latestReleaseNewsItem(for:))
-        return (sourceNews + appReleaseNews)
+        sources
+            .flatMap(\.news)
+            .filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !$0.caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .sorted { ($0.date ?? "") > ($1.date ?? "") }
     }
     private var app: KittyStoreApp? {
@@ -313,7 +313,7 @@ struct KittyStoreView: View {
     private var newsWorkspace: some View {
         storeScroll(spacing: 18) {
             if newsItems.isEmpty {
-                latestNewsPanel
+                sourceNewsEmptyPanel
             } else {
                 ForEach(newsItems) { newsItem in
                     newsItemCard(newsItem)
@@ -546,29 +546,23 @@ struct KittyStoreView: View {
         .buttonStyle(.plain)
     }
 
-    private var latestNewsPanel: some View {
+    private var sourceNewsEmptyPanel: some View {
         panel(title: "News", icon: "newspaper") {
-            VStack(spacing: 10) {
-                if let latestVersion {
-                    readinessRow(
-                        "\(selectedAppName) \(latestVersion.version ?? latestVersion.buildVersion ?? "Latest")",
-                        detail: latestVersion.cleanedDescription.isEmpty ? "Latest source release is ready to install or sign." : shortNotes(latestVersion.cleanedDescription),
-                        state: true
-                    )
-                    HStack(spacing: 8) {
-                        if let sideStoreURL = installerURL(scheme: "sidestore", host: "install", targetURL: latestVersion.downloadURL) {
-                            compactButton("Install", icon: "square.and.arrow.down") { openURL(sideStoreURL) }
-                        }
-                        if let selectedApp = app {
-                            compactButton("Sign", icon: "signature") {
-                                downloadSourceIPAForSigning(storeApp: selectedApp, version: latestVersion, openSigning: true)
-                            }
-                        }
-                    }
-                } else {
-                    emptyState(sourcePhase.message)
-                }
-            }
+            emptyState(sourceNewsEmptyMessage)
+        }
+    }
+
+    private var sourceNewsEmptyMessage: String {
+        switch sourcePhase {
+        case .loading:
+            return "Loading news from sources."
+        case .failed(let message):
+            return "Could not load source news: \(message)"
+        case .idle:
+            return "No sources have loaded yet."
+        case .loaded:
+            if sources.isEmpty { return "No sources loaded." }
+            return "The loaded sources did not publish any news items."
         }
     }
 
@@ -1195,34 +1189,6 @@ struct KittyStoreView: View {
         URL(string: url)?.host ?? "source feed"
     }
 
-    private func latestReleaseNewsItem(for storeApp: KittyStoreApp) -> KittyStoreNewsItem? {
-        guard let latest = storeApp.versions.first else { return nil }
-        let versionText = latest.version ?? latest.buildVersion ?? "Latest"
-        let notes = latest.cleanedDescription
-        let caption: String
-        if !notes.isEmpty {
-            caption = shortNotes(notes)
-        } else if let subtitle = storeApp.subtitle, !subtitle.isEmpty {
-            caption = subtitle
-        } else if let description = storeApp.localizedDescription, !description.isEmpty {
-            caption = shortNotes(description)
-        } else {
-            caption = "New source release is available to install or sign."
-        }
-        return KittyStoreNewsItem(
-            identifier: "release-\(storeApp.bundleIdentifier)-\(latest.id)",
-            date: latest.date,
-            title: "\(storeApp.name) \(versionText)",
-            caption: caption,
-            tintColor: nil,
-            imageURL: storeApp.iconURL,
-            externalURL: latest.downloadURL,
-            appID: storeApp.bundleIdentifier,
-            sourceName: storeApp.sourceName,
-            sourceURL: storeApp.sourceURL
-        )
-    }
-
     private func resolvedSourceAssetURL(_ rawValue: String?, sourceURL: String) -> String? {
         guard let rawValue else { return nil }
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1390,9 +1356,13 @@ struct KittyStoreView: View {
                 }
                 decodedSource.news = decodedSource.news.map { news in
                     var next = news
+                    let matchingApp = decodedSource.apps.first { app in
+                        guard let appID = next.appID?.trimmingCharacters(in: .whitespacesAndNewlines), !appID.isEmpty else { return false }
+                        return app.id == appID || app.bundleIdentifier == appID
+                    }
                     next.sourceName = sourceName
                     next.sourceURL = rawURL
-                    next.imageURL = resolvedSourceAssetURL(next.imageURL, sourceURL: rawURL)
+                    next.imageURL = resolvedSourceAssetURL(next.imageURL, sourceURL: rawURL) ?? matchingApp?.iconURL
                     next.externalURL = resolvedSourceAssetURL(next.externalURL, sourceURL: rawURL)
                     return next
                 }
