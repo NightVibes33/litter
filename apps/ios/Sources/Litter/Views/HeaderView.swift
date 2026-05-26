@@ -33,8 +33,8 @@ struct HeaderView: View {
         } label: {
             expandedHeaderLabel
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(maxWidth: isRegularSurface ? 380 : 300, minHeight: 44, alignment: .center)
+            .padding(.vertical, 6)
+            .frame(maxWidth: isRegularSurface ? 340 : 270, minHeight: 38, alignment: .center)
         }
         .layoutPriority(-1)
         .buttonStyle(.plain)
