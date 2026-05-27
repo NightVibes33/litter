@@ -1773,7 +1773,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
         if([command isEqualToString:@"litter-kittystore-install"] || [command isEqualToString:@"litter-kittystore-refresh"])
         {
             [log appendString:@"SideStore minimuxer source is vendored, but this native BuildKit framework was not linked with the minimuxer static library. Rebuild the private app with a Minimuxer xcframework/staticlib bridge before install/refresh can run on device.\n"];
-            return LBICopyResponse(78, @"kittystore-minimuxer-not-linked", log);
+            return LBICopyResponse(78, @"sidestore-minimuxer-not-linked", log);
         }
 
         if([command isEqualToString:@"litter-swift-check"])

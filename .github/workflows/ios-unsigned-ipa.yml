@@ -56,7 +56,7 @@ concurrency:
 
 jobs:
   build-unsigned-ipa:
-    name: Build unsigned SideStore/AltStore IPA
+    name: Build unsigned KittyStore/AltStore IPA
     runs-on: macos-26
     timeout-minutes: 90
     env:
@@ -103,7 +103,7 @@ jobs:
           set -euo pipefail
           tools/scripts/verify-nyxian-source-import.sh
 
-      - name: Verify KittyStore SideStore/Feather integration
+      - name: Verify KittyStore/Feather integration
         run: |
           set -euo pipefail
           tools/scripts/verify-kittystore-integration.sh
@@ -521,7 +521,7 @@ jobs:
           path: apps/ios/Sources/Litter/Resources/BuildKitAssets
           key: ${{ steps.buildkit_assets_cache.outputs.cache-primary-key }}
 
-      - name: Build SideStore minimuxer bridge
+      - name: Build KittyStore minimuxer bridge
         run: |
           set -euo pipefail
           time tools/scripts/build-sidestore-minimuxer.sh
@@ -1032,7 +1032,7 @@ jobs:
           fi
           echo "Launch-safe IPA keeps private BuildKit compiler payload external. Install assets from BuildKit settings when needed."
 
-      - name: Package SideStore/AltStore IPA artifact
+      - name: Package KittyStore/AltStore IPA artifact
         run: |
           set -euo pipefail
           APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
@@ -1047,7 +1047,7 @@ jobs:
           cp -R "$APP_PATH" Payload/
           APP_BUNDLE="Payload/$(basename "$APP_PATH")"
 
-          # SideStore/AltStore re-sign the IPA after download. Normal builds stay
+          # KittyStore/AltStore re-sign the IPA after download. Normal builds stay
           # extension-free for launch safety. The manual nyxian-private lane keeps
           # only the LiveProcess NSExtension required by original Nyxian/emexDE.
           find "$APP_BUNDLE" -name _CodeSignature -type d -prune -exec rm -rf {} +
@@ -1128,7 +1128,7 @@ jobs:
               "artifact": os.environ["IPA_NAME"],
               "sha256": os.environ["IPA_SHA256"],
               "size": int(os.environ["IPA_SIZE"]),
-              "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing",
+              "distribution": "unsigned IPA for KittyStore/AltStore re-signing; not directly installable on stock iOS without signing",
               "nyxianLiveProcessExtension": os.environ.get("LITTER_NYXIAN_PRIVATE_BUILD") == "1",
               "privateBuildKitAssetsEmbedded": os.environ.get("LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS") == "1",
           }
@@ -1367,14 +1367,14 @@ jobs:
 
           def fallback_body(release, metadata):
               body = str(metadata.get("releaseNotes") or release.get("body") or "").strip()
-              if body.startswith("Unsigned Litter IPA for SideStore/AltStore re-signing.") and "Update history:" not in body:
+              if body.startswith("Unsigned Litter IPA for KittyStore/AltStore re-signing.") and "Update history:" not in body:
                   return ""
               return body
 
           def notes_for(entry, release, metadata, previous_tag, current=False):
               history = clean_history_lines(release.get("tag_name", ""), previous_tag, current=current)
               fallback = fallback_body(release, metadata)
-              lines = ["Unsigned Litter IPA for SideStore/AltStore re-signing.", "", "Update history:"]
+              lines = ["Unsigned Litter IPA for KittyStore/AltStore re-signing.", "", "Update history:"]
               if history:
                   lines.extend(history)
               elif fallback:
@@ -1406,7 +1406,7 @@ jobs:
               workflow = f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{repository}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}"
               if current and os.environ.get("GITHUB_RUN_ID"):
                   lines.append(f"- Workflow run: {workflow}")
-              lines.extend(["", "This IPA is unsigned and must be signed by SideStore, AltStore, Feather, or another signing tool before installation."])
+              lines.extend(["", "This IPA is unsigned and must be signed by KittyStore, AltStore, Feather, or another signing tool before installation."])
               return "\n".join(lines) + "\n"
 
           current_metadata = {
@@ -1426,7 +1426,7 @@ jobs:
               "publishedAt": os.environ["PUBLISHED_AT"],
               "releaseURL": os.environ["RELEASE_URL"],
               "iconURL": os.environ["APP_ICON_URL"],
-              "distribution": "unsigned IPA for SideStore/AltStore re-signing; not directly installable on stock iOS without signing",
+              "distribution": "unsigned IPA for KittyStore/AltStore re-signing; not directly installable on stock iOS without signing",
               "nyxianLiveProcessExtension": os.environ.get("LITTER_NYXIAN_PRIVATE_BUILD") == "1",
               "privateBuildKitAssetsEmbedded": os.environ.get("LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS") == "1",
           }
@@ -1649,7 +1649,7 @@ jobs:
             retry_release_command "Upload stable source release assets" \
               gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" --repo "$GITHUB_REPOSITORY" --clobber
             retry_release_command "Update stable source release notes" \
-              gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." --prerelease
+              gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable KittyStore/AltStore source metadata for all published Litter sideload builds." --prerelease
           else
             retry_release_command "Create stable source release" \
               gh release create "$SOURCE_TAG" \
@@ -1659,7 +1659,7 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" \
                 --target "$GITHUB_SHA" \
                 --title "Litter app source" \
-                --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." \
+                --notes "Stable KittyStore/AltStore source metadata for all published Litter sideload builds." \
                 --prerelease
           fi
 

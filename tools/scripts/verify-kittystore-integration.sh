@@ -36,7 +36,7 @@ require_absent() {
 }
 
 require_path "SideStore AltSign package" "ThirdParty/SideStore/AltSign"
-require_path "SideStore minimuxer source" "ThirdParty/SideStore/minimuxer"
+require_path "KittyStore minimuxer source" "ThirdParty/SideStore/minimuxer"
 require_path "SideStore LocalDevVPN tunnel provider" "ThirdParty/SideStore/LocalDevVPN-TunnelProv"
 require_path "SideStore full source clone" "ThirdParty/SideStore/Source/AltStore/TabBarController.swift"
 require_path "SideStore AltStoreCore source" "ThirdParty/SideStore/Source/AltStoreCore"
@@ -78,7 +78,7 @@ require_path "Feather signing material store" "apps/ios/Sources/Litter/Models/Fe
 require_path "SideStore account importer" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
 require_path "SideStore signing bridge" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreSigningBridge.swift"
 require_path "KittyStore Nuke compatibility glue" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreNukeCompatibility.swift"
-require_path "SideStore minimuxer bridge" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
+require_path "KittyStore minimuxer bridge" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
 require_path "KittyStore embedded factory" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift"
 require_path "KittyStore host view" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 if [ -e "$ROOT_DIR/apps/ios/Sources/Litter/Views/KittyStoreView.swift" ]; then
@@ -217,14 +217,14 @@ require_absent "BuildKit Apple ID handler scatter" "saveNyxianAppleID" "apps/ios
 require_grep "BuildKit binary pairing plist normalization" "normalizedPairingFileContents" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
 require_grep "LocalDevVPN endpoint reachability state" "endpointReachable" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
 require_absent "overbearing LocalDevVPN interface dump" "Found active tunnel interface(s)" "apps/ios/Sources/Litter/Models/NyxianSigningCertificateValidator.swift"
-require_absent "overbearing minimuxer not-ready copy" "SideStore minimuxer is linked but not ready yet" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
+require_absent "overbearing minimuxer not-ready copy" "KittyStore minimuxer is linked but not ready yet" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
 require_grep "BuildKit Apple ID LocalDevVPN gate" "LocalDevVPN is required for apple-id signing" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
 require_grep "KittyStore iOS SideStore scheme" "<string>sidestore</string>" "apps/ios/Sources/Litter/Info.plist"
 require_grep "KittyStore iOS AltStore scheme" "<string>altstore</string>" "apps/ios/Sources/Litter/Info.plist"
 require_grep "KittyStore iOS LocalDevVPN scheme" "<string>localdevvpn</string>" "apps/ios/Sources/Litter/Info.plist"
 require_grep "SideStore LocalDevVPN override IP" "10.7.0.1" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
-require_grep "SideStore minimuxer retarget wrapper" "retargetUsbmuxdAddr" "tools/scripts/build-sidestore-minimuxer.sh"
-require_grep "SideStore RustBridge CI build" "Building SideStore RustBridge for iOS device" "tools/scripts/build-sidestore-minimuxer.sh"
+require_grep "KittyStore minimuxer retarget wrapper" "retargetUsbmuxdAddr" "tools/scripts/build-sidestore-minimuxer.sh"
+require_grep "KittyStore RustBridge CI build" "Building KittyStore RustBridge for iOS device" "tools/scripts/build-sidestore-minimuxer.sh"
 require_grep "SideStore RustBridge static library staging" "librust_bridge.a" "tools/scripts/build-sidestore-minimuxer.sh"
 require_grep "SideStore LocalDevVPN connection probe" "testLocalDevVPNConnection" "tools/scripts/build-sidestore-minimuxer.sh"
 require_grep "SideStore local_user preservation" "local_user" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
@@ -263,4 +263,4 @@ if [ "$missing" -ne 0 ]; then
   exit 1
 fi
 
-echo "KittyStore SideStore/Feather integration wiring verified."
+echo "KittyStore/Feather integration wiring verified."

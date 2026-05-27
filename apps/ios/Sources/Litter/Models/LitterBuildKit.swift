@@ -1287,7 +1287,7 @@ actor LitterBuildKit {
             "bundleIdentifier": bundleID,
             "ready": missing.isEmpty,
             "missing": missing,
-            "sideStore": [
+            "kittyStoreTransport": [
                 "appleIDConfigured": current.appleIDConfigured,
                 "appleIDDetail": current.appleIDDetail,
                 "localDevVPNConnected": current.localDevVPNConnected,
@@ -1349,7 +1349,7 @@ actor LitterBuildKit {
             "pairingFile": pairing ?? "",
             "ready": missing.isEmpty,
             "missing": missing,
-            "sideStore": [
+            "kittyStoreTransport": [
                 "localDevVPNConnected": current.localDevVPNConnected,
                 "localDevVPNDetail": current.localDevVPNDetail,
                 "minimuxerLinked": KittyStoreMinimuxerBridge.isLinked
@@ -1408,7 +1408,7 @@ actor LitterBuildKit {
             "bundleIdentifier": bundleID,
             "ready": missing.isEmpty,
             "missing": missing,
-            "sideStore": [
+            "kittyStoreTransport": [
                 "localDevVPNConnected": current.localDevVPNConnected,
                 "localDevVPNDetail": current.localDevVPNDetail,
                 "minimuxerLinked": KittyStoreMinimuxerBridge.isLinked
@@ -3589,7 +3589,7 @@ actor LitterBuildKit {
                 "compatibleSources": ["KittyStore", "AltStore"],
                 "signingWorkspace": "Feather-style"
             ],
-            "sideStore": [
+            "kittyStoreTransport": [
                 "appleIDConfigured": status.appleIDConfigured,
                 "appleIDDetail": status.appleIDDetail,
                 "localDevVPNConnected": status.localDevVPNConnected,

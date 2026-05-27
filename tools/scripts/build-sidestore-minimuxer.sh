@@ -14,7 +14,7 @@ SKIP_SIM="${LITTER_MINIMUXER_SKIP_SIM:-true}"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
-    echo "error: $1 is required to build the SideStore minimuxer bridge" >&2
+    echo "error: $1 is required to build the KittyStore minimuxer bridge" >&2
     exit 127
   fi
 }
@@ -28,7 +28,7 @@ require_file() {
 
 case "$(uname -s)" in
   Darwin) ;;
-  *) echo "error: SideStore minimuxer iOS static library must be built on macOS/Xcode" >&2; exit 78 ;;
+  *) echo "error: KittyStore minimuxer iOS static library must be built on macOS/Xcode" >&2; exit 78 ;;
 esac
 
 require_cmd cargo
@@ -50,7 +50,7 @@ if [ ! -f "$MINIMUXER_ROOT/Cargo.toml" ]; then
   exit 1
 fi
 if [ ! -f "$RUSTBRIDGE_ROOT/Cargo.toml" ]; then
-  echo "error: SideStore RustBridge source is missing: $RUSTBRIDGE_ROOT" >&2
+  echo "error: KittyStore RustBridge source is missing: $RUSTBRIDGE_ROOT" >&2
   exit 1
 fi
 
@@ -65,7 +65,7 @@ mkdir -p "$RUSTBRIDGE_DEVICE_LIB_DIR/Headers"
 
 (
   cd "$RUSTBRIDGE_ROOT"
-  echo "==> Building SideStore RustBridge for iOS device"
+  echo "==> Building KittyStore RustBridge for iOS device"
   cargo build --release --target aarch64-apple-ios
   cp target/aarch64-apple-ios/release/librust_bridge.a "$RUSTBRIDGE_DEVICE_LIB_DIR/librust_bridge.a"
 )
@@ -187,12 +187,12 @@ MODULEMAP
 
 (
   cd "$MINIMUXER_ROOT"
-  echo "==> Building SideStore minimuxer for iOS device"
+  echo "==> Building KittyStore minimuxer for iOS device"
   cargo build --release --target aarch64-apple-ios
   cp target/aarch64-apple-ios/release/libminimuxer.a target/libminimuxer-ios.a
 
   if [ "$SKIP_SIM" != "true" ]; then
-    echo "==> Building SideStore minimuxer for iOS simulator"
+    echo "==> Building KittyStore minimuxer for iOS simulator"
     cargo build --release --target aarch64-apple-ios-sim
     cargo build --release --target x86_64-apple-ios
     lipo -create \
@@ -249,7 +249,7 @@ Generated from ThirdParty/SideStore/minimuxer by tools/scripts/build-sidestore-m
 Do not edit these generated bridge headers by hand.
 EOF
 
-echo "SideStore minimuxer bridge staged:"
+echo "KittyStore minimuxer bridge staged:"
 echo "- $DEVICE_LIB_DIR/libminimuxer-ios.a"
 echo "- $GENERATED_SWIFT_DIR/minimuxer.generated.swift"
 echo "- $HEADER_DIR/minimuxer-Bridging-Header.h"

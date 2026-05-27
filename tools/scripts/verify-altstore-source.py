@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate that the generated AltStore/SideStore source keeps every IPA entry installable."""
+"""Validate that the generated KittyStore/AltStore source keeps every IPA entry installable."""
 from __future__ import annotations
 
 import argparse

@@ -24,7 +24,7 @@
   "knownSourceGaps": [
     "Private Apple SDK and CoreCompiler assets must be installed through LitterBuildKitAssets before Swift/IPA commands can execute natively.",
     "Only the iOS arm64 OpenSSL.xcframework slice is vendored to keep the repo device-build focused.",
-    "Standalone TrollStore/libroot payloads remain excluded because Litter targets SideStore/AltStore/developer sideload BuildKit workflows first."
+    "Standalone TrollStore/libroot payloads remain excluded because Litter targets KittyStore/AltStore/developer sideload BuildKit workflows first."
   ],
   "liveContainer": {
     "sourceIncluded": true,
