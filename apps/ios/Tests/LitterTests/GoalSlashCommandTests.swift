@@ -36,4 +36,23 @@ final class GoalSlashCommandTests: XCTestCase {
         XCTAssertTrue(usage.contains("/goal <objective>"))
         XCTAssertTrue(usage.contains("/goal budget <tokens>"))
     }
+
+    func testGoalSuccessMessagesUseNeutralSlashCommandAlertTitle() {
+        XCTAssertEqual(
+            slashCommandAlertTitle(for: "Goal set. Use /goal to view it, /goal pause to pause it, or /goal complete when done."),
+            "Slash Command"
+        )
+        XCTAssertEqual(slashCommandAlertTitle(for: "Goal token budget set to 50000."), "Slash Command")
+        XCTAssertEqual(slashCommandAlertTitle(for: "Goal status set to complete."), "Slash Command")
+        XCTAssertEqual(slashCommandAlertTitle(for: "Goal cleared."), "Slash Command")
+        XCTAssertEqual(slashCommandAlertTitle(for: "Goal: ship it"), "Slash Command")
+    }
+
+    func testGoalErrorsKeepSlashCommandErrorTitle() {
+        XCTAssertEqual(
+            slashCommandAlertTitle(for: "Goal budget must be a positive token count, for example /goal budget 50000."),
+            "Slash Command Error"
+        )
+        XCTAssertEqual(slashCommandAlertTitle(for: "Not connected to a server"), "Slash Command Error")
+    }
 }

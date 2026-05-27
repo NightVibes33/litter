@@ -249,7 +249,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
             } message: {
                 Text("Current thread title:\n\(renameCurrentThreadTitle)")
             }
-            .alert("Slash Command Error", isPresented: Binding(
+            .alert(slashCommandAlertTitle(for: slashErrorMessage), isPresented: Binding(
                 get: { slashErrorMessage != nil },
                 set: { if !$0 { slashErrorMessage = nil } }
             )) {
@@ -664,4 +664,19 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
             }
         }
     }
+}
+
+func slashCommandAlertTitle(for message: String?) -> String {
+    let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    guard !trimmed.isEmpty else { return "Slash Command" }
+
+    let neutralPrefixes = [
+        "Goal set.",
+        "Goal token budget set",
+        "Goal status set",
+        "Goal cleared.",
+        "Goal:",
+        "No goal is set for this thread."
+    ]
+    return neutralPrefixes.contains { trimmed.hasPrefix($0) } ? "Slash Command" : "Slash Command Error"
 }
