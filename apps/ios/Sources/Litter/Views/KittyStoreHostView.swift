@@ -12,9 +12,11 @@ struct KittyStoreHostView: UIViewControllerRepresentable {
 
 struct KittyStoreRouteView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppState.self) private var appState
+    @AppStorage("litterSettingsRequestedRoute") private var requestedSettingsRoute = ""
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack(alignment: .top) {
             Color(.systemBackground)
                 .ignoresSafeArea()
 
@@ -22,19 +24,37 @@ struct KittyStoreRouteView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
 
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "chevron.left")
-                    .litterFont(size: 17, weight: .semibold)
-                    .foregroundColor(LitterTheme.textPrimary)
-                    .frame(width: 38, height: 38)
-                    .contentShape(Circle())
+            HStack {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .litterFont(size: 17, weight: .semibold)
+                        .foregroundColor(LitterTheme.textPrimary)
+                        .frame(width: 38, height: 38)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .modifier(GlassCircleModifier())
+                .accessibilityLabel("Back")
+
+                Spacer(minLength: 0)
+
+                Button {
+                    requestedSettingsRoute = SettingsRoute.signing.rawValue
+                    appState.showSettings = true
+                } label: {
+                    Image(systemName: "link.badge.plus")
+                        .litterFont(size: 17, weight: .semibold)
+                        .foregroundColor(LitterTheme.textPrimary)
+                        .frame(width: 38, height: 38)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .modifier(GlassCircleModifier())
+                .accessibilityLabel("Import Pairing File")
             }
-            .buttonStyle(.plain)
-            .modifier(GlassCircleModifier())
-            .accessibilityLabel("Back")
-            .padding(.leading, 12)
+            .padding(.horizontal, 12)
             .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

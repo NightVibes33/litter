@@ -21,6 +21,8 @@ Litter is a SwiftUI iOS app that talks to Codex through `shared/rust-bridge`. It
 iPhone-local model downloading and inference are not part of the app. Private or local models should run on a computer and be added through the AI Providers screen as an OpenAI-compatible `/v1` endpoint.
 
 The repository also contains CI lanes for unsigned sideload IPAs, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline. Public source contains the Nyxian and BuildKit integration code, but the Apple SDK payload and compiled private BuildKit frameworks are not committed.
+Android source may remain in the tree for upstream history, but Android build, test, screenshot, and release lanes are disabled in this fork. Current supported build work is iOS, watchOS, Mac Catalyst, shared Rust, and BuildKit.
+
 
 Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com/dnakov). This fork is maintained by [NightVibes33](https://github.com/NightVibes33). In this repo, NightVibes, NightVibes33, NightVibes3, ZYN, and Zyn refer to the same fork maintainer, not separate contributors. Accepted upstream contributors and third-party attribution are tracked in [AUTHORS.md](AUTHORS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
@@ -37,7 +39,7 @@ Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com
 
 ```text
 apps/ios/                  SwiftUI app. project.yml is the XcodeGen source of truth.
-apps/android/              Android app, Compose UI, proot/Ghostty integration, and release lanes.
+apps/android/              Legacy Android source retained for upstream history; this fork does not build Android.
 shared/rust-bridge/        Rust mobile bridge, UniFFI API, iSH/proot runtime, SSH, Slingshot, terminal, and app-server transport.
 shared/third_party/codex/  Upstream Codex submodule used by the bridge.
 shared/third_party/ghostty/ Pinned Ghostty renderer submodule used by the terminal work.
@@ -59,7 +61,6 @@ On macOS, install Xcode, Rust, XcodeGen, and the expected mobile toolchains, the
 ```bash
 make ios-device-fast      # fast iOS device build
 make ios-sim-fast         # fast simulator build
-make android-emulator-fast # fast Android emulator build
 make rust-check           # host cargo check for shared Rust crates
 make rust-test            # host cargo test for shared Rust crates
 ```
@@ -264,11 +265,7 @@ All IPAs from this workflow are unsigned. They must be signed by SideStore, AltS
 | `make ios-device-fast` | Fast iOS device build using the raw device staticlib lane. |
 | `make ios-sim-fast` | Fast simulator build. |
 | `make ios` | Full iOS package lane. |
-| `make android-emulator-fast` | Fast Android emulator build. |
-| `make android-alpine-fs` | Prepare the bundled Android Alpine fakefs. |
-| `make proot-android` | Build Android proot executable artifacts. |
 | `make ghostty-ios` | Build pinned Ghostty iOS renderer artifacts. |
-| `make ghostty-android` | Build pinned Ghostty Android renderer artifacts. |
 | `make sync-ghostty` | Sync the pinned Ghostty submodule while preserving the Litter mobile patch. |
 | `make watch-register` | Register a newly paired Apple Watch for CLI install flows. |
 | `make rust-check` | Host `cargo check` for shared Rust crates. |

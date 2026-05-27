@@ -186,6 +186,10 @@ private final class KittyStoreRootViewController: UIViewController {
         view.backgroundColor = .systemBackground
         view.clipsToBounds = true
         view.insetsLayoutMarginsFromSafeArea = false
+        view.layoutMargins = .zero
+        view.directionalLayoutMargins = .zero
+        view.preservesSuperviewLayoutMargins = false
+        viewRespectsSystemMinimumLayoutMargins = false
         edgesForExtendedLayout = [.all]
         extendedLayoutIncludesOpaqueBars = true
         showSplashView()
@@ -207,6 +211,7 @@ private final class KittyStoreRootViewController: UIViewController {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        embeddedViewController?.view.frame = view.bounds
         applyBranding()
     }
 
@@ -259,8 +264,13 @@ private final class KittyStoreRootViewController: UIViewController {
         viewController.edgesForExtendedLayout = [.all]
         viewController.extendedLayoutIncludesOpaqueBars = true
         viewController.additionalSafeAreaInsets = .zero
+        viewController.viewRespectsSystemMinimumLayoutMargins = false
         viewController.view.translatesAutoresizingMaskIntoConstraints = false
         viewController.view.insetsLayoutMarginsFromSafeArea = false
+        viewController.view.layoutMargins = .zero
+        viewController.view.directionalLayoutMargins = .zero
+        viewController.view.preservesSuperviewLayoutMargins = false
+        viewController.view.clipsToBounds = true
         viewController.view.backgroundColor = .systemBackground
         viewController.view.alpha = 0
         view.addSubview(viewController.view)
@@ -289,11 +299,18 @@ private final class KittyStoreRootViewController: UIViewController {
     }
 
     private static func branded(_ text: String?) -> String? {
-        text?
+        guard let text else { return nil }
+
+        return text
+            .replacingOccurrences(of: "SideStore/AltStore", with: "KittyStore/AltStore")
+            .replacingOccurrences(of: "SideStore and AltStore", with: "KittyStore and AltStore")
+            .replacingOccurrences(of: "SideStore or AltStore", with: "KittyStore or AltStore")
+            .replacingOccurrences(of: "SideStore-compatible", with: "KittyStore-compatible")
             .replacingOccurrences(of: "SideStore", with: "KittyStore")
             .replacingOccurrences(of: "Side Store", with: "KittyStore")
-            .replacingOccurrences(of: "AltStore", with: "KittyStore")
             .replacingOccurrences(of: "AltServer", with: "LocalDevVPN")
+            .replacingOccurrences(of: "KittyStore KittyStore", with: "KittyStore")
+            .replacingOccurrences(of: "KittyStore/KittyStore", with: "KittyStore/AltStore")
     }
 
     private static func branded(_ attributedText: NSAttributedString?) -> NSAttributedString? {

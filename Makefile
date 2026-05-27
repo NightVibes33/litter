@@ -200,6 +200,11 @@ ANDROID_RUST_SOURCES := $(shell find $(RUST_DIR) \
 
 $(shell mkdir -p $(STAMPS))
 
+DISABLED_ANDROID_BUILD_GOALS := android android-fast android-tools android-emulator-fast android-emulator-run android-device-run android-release android-debug android-install android-emulator-install rust-android android-alpine-fs proot-android ghostty-android test-android play-upload play-release screenshots-android
+ifneq ($(filter $(DISABLED_ANDROID_BUILD_GOALS),$(MAKECMDGOALS)),)
+$(error Android builds are disabled for this iOS-only fork)
+endif
+
 .PHONY: all ios ios-sim ios-sim-fast ios-sim-run ios-device ios-device-fast ios-device-run ios-device-stop ios-run verify-ios-project catalyst catalyst-run catalyst-fast catalyst-fast-run mac-direct mac-direct-run mac-direct-fast mac-direct-fast-run \
 	android android-fast android-tools android-emulator-fast android-emulator-run android-device-run android-release android-debug android-install android-emulator-install \
 	rust-ios rust-ios-package rust-ios-device-release rust-mac-release rust-ios-device-fast rust-ios-sim-fast rust-ios-macabi-fast rust-android rust-check rust-test rust-host-dev \
@@ -215,7 +220,7 @@ $(shell mkdir -p $(STAMPS))
 	clean clean-rust clean-ios clean-android \
 	rebuild-bindings kittylitter kittylitter-restart tui tui-run help
 
-all: ios android
+all: ios
 
 # ios-build-* targets declare their real prerequisites so that `make -j`
 # can run rust-ios-package, alpine-fs download, and xcgen in parallel.
@@ -527,20 +532,12 @@ help:
 		'make rust-ios-sim-fast  fast Rust iOS simulator lane (raw staticlib only)' \
 		'make rust-ios-device-fast fast Rust iOS device lane (raw staticlib only)' \
 		'make rust-ios-macabi-fast fast Rust Mac Catalyst lane (host-arch macabi staticlib only)' \
-		'make android-alpine-fs  download Android proot Alpine rootfs asset' \
-		'make proot-android     build Android proot executable artifacts' \
 		'make ghostty-ios        build pinned Ghostty iOS renderer artifacts' \
-		'make ghostty-android    build pinned Ghostty Android renderer artifacts (requires Android platform patch)' \
 		'make alleycat-main      refresh Alleycat git deps to latest dnakov/alleycat main' \
 		'make catalyst           full Mac Catalyst build (release+LTO macabi staticlib + xcodebuild)' \
 		'make catalyst-run       full Mac Catalyst build + launch' \
 		'make catalyst-fast      fast Mac Catalyst dev build (ios-dev profile, host arch)' \
 		'make catalyst-fast-run  fast Mac Catalyst dev build + launch' \
-		'make android            fast Android dev build (default ABI/profile: arm64-v8a/android-dev)' \
-		'make android-emulator-fast fast Android dev build using emulator ABI ($(ANDROID_EMULATOR_ABIS))' \
-		'make android-emulator-run  fast emulator build + install + launch on emulator; saves logcat under artifacts/android-emulator-run' \
-		'make android-device-run    fast Android dev build + install + launch with saved logcat under artifacts/android-device-run (override ANDROID_DEVICE_SERIAL; auto-uninstalls on versionCode downgrade; set ANDROID_REINSTALL_ON_SIGNATURE_MISMATCH=1 to also uninstall on signature mismatch)' \
-		'make android-release    Android build using release Rust profile and multi-ABI output' \
 		'make rust-check         host cargo check for shared crates' \
 		'make rust-test          host cargo test for shared crates'
 
@@ -805,7 +802,7 @@ android-emulator-install: android-emulator-fast
 	if [ -z "$$EMU" ]; then echo "ERROR: no emulator found"; exit 1; fi && \
 	adb -s "$$EMU" install -r $(ANDROID_APK)
 
-test: test-rust test-ios test-android
+test: test-rust test-ios
 
 test-rust: alleycat-main
 	@echo "==> Running Rust tests..."
@@ -842,19 +839,15 @@ appstore-release: ios-release-prep
 	@echo "==> Submitting current repo version to the App Store..."
 	@$(IOS_SCRIPTS)/app-store-release.sh
 
-play-upload: android-release
-	@echo "==> Uploading to Google Play..."
-	@$(ANDROID_DIR)/scripts/play-upload.sh
+play-upload:
+	@echo "Android Play uploads are disabled for this iOS-only fork."
+	@false
 
 play-release:
-	@if [ -n "$$LITTER_VERSION_CODE_OVERRIDE" ]; then \
-		echo "==> Using overridden Android versionCode $$LITTER_VERSION_CODE_OVERRIDE"; \
-	else \
-		$(ANDROID_DIR)/scripts/bump-version.sh; \
-	fi
-	@$(MAKE) play-upload
+	@echo "Android Play releases are disabled for this iOS-only fork."
+	@false
 
-clean: clean-rust clean-ios clean-android
+clean: clean-rust clean-ios
 	@rm -rf $(STAMPS)
 	@echo "==> Clean complete"
 
@@ -886,7 +879,7 @@ rebuild-bindings:
 	@rm -f $(STAMP_BINDINGS_S) $(STAMP_BINDINGS_K)
 	@$(MAKE) bindings
 
-screenshots: screenshots-ios screenshots-android
+screenshots: screenshots-ios
 
 screenshots-ios:
 	@echo "── Capturing iOS screenshots ──"

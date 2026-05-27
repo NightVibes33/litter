@@ -44,7 +44,7 @@ Use `tools/scripts/build-litter-buildkit-native.sh` to build the native wrapper,
 
 ## Connect Your Mac to Litter Over SSH
 
-Use this flow to make Codex sessions from your Mac visible in the iOS/Android app.
+Use this flow to make Codex sessions from your Mac visible in the iOS app.
 
 1. Enable SSH on the Mac.
 
@@ -131,15 +131,9 @@ CLI build:
 xcodebuild -project apps/ios/Litter.xcodeproj -scheme Litter -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
-## Build and Run Android
+## Android
 
-Prerequisites: Java 17, Android SDK + build tools for API 35, Gradle 8.x.
-
-```bash
-open -a "Android Studio" apps/android                                  # open in Android Studio
-cd apps/android && ./gradlew :app:testDebugUnitTest                    # run tests
-gradle -p apps/android :app:assembleOnDeviceDebug :app:assembleRemoteOnlyDebug  # build flavors
-```
+Android build and release flows are disabled for this fork. Do not use the legacy Android Gradle, Play, proot, or Ghostty Android commands for current Litter builds.
 
 ## TestFlight (iOS)
 
