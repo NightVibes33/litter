@@ -4,7 +4,7 @@ use codex_shell_command::parse_command::shlex_join;
 use crate::shell_quoting::posix_quote;
 
 /// Build the single command string that gets handed to the iOS iSH shell
-/// (or the Android equivalent). The shared Rust preflight has already
+/// The shared Rust preflight has already
 /// rewritten login-shell wrappers like `bash -lc …` into
 /// `["sh", "-c", <script>]`, so for any shell-wrapper argv we keep the
 /// wrapper and let the persistent shell parse it (`;`, `&&`, heredocs,

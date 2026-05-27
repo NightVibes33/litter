@@ -1,7 +1,7 @@
-//! Shared mobile client library for iOS / Android.
+//! Shared mobile client library for the Litter iOS app.
 //!
-//! This crate owns the single public UniFFI surface for mobile. Keep shared
-//! business logic here so Swift/Kotlin only compile one binding set.
+//! This crate owns the public UniFFI surface consumed by Swift. Keep shared
+//! app business logic here and UI-specific behavior in the Swift target.
 
 #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]
 pub mod ish_exec;
@@ -11,20 +11,17 @@ pub mod ish_runtime;
 
 // Always-compiled UniFFI-visible types. The host cdylib that
 // `generate-bindings.sh` feeds to uniffi-bindgen must contain these so the
-// generated Swift/Kotlin has `IshRunResult` / `IshBootstrapError` /
+// generated Swift has `IshRunResult` / `IshBootstrapError` /
 // `ishBootstrap` / `ishDefaultCwd` / `ishRun` symbols on every lane.
 pub mod ish_types;
-pub mod proot_types;
-
 pub use ish_types::{IshBootstrapError, IshRunResult};
-pub use proot_types::ProotBootstrapError;
 
 /// One-time iSH bootstrap. Swift passes the bundle's `fs/` resource dir, the
 /// app's Application Support dir, and the Documents dir; Rust does the
 /// rootfs extraction, boot, and exec-hook registration. Replaces the old
 /// `codex_ish_init` + `litter_install_ish_hook` C entry points.
 ///
-/// Non-iOS targets (Catalyst, Android, host bindgen) return
+/// Non-iOS targets (Catalyst and host bindgen) return
 /// `IshBootstrapError::Unsupported` — the kernel is iOS-only and not linked
 /// into those builds.
 #[uniffi::export]
@@ -56,33 +53,6 @@ pub fn ish_bootstrap(
 #[uniffi::export]
 pub fn ish_default_cwd() -> String {
     "/root".to_string()
-}
-
-/// One-time Android proot bootstrap. Kotlin passes the app's native library
-/// directory, the copied Alpine rootfs archive path, and the app data
-/// directory; Rust extracts the rootfs and verifies that `libproot.so` can
-/// enter it.
-#[uniffi::export]
-pub fn proot_bootstrap(
-    proot_lib_dir: String,
-    rootfs_archive: String,
-    data_dir: String,
-) -> Result<(), ProotBootstrapError> {
-    #[cfg(target_os = "android")]
-    {
-        return proot_runtime::bootstrap(
-            std::path::Path::new(&proot_lib_dir),
-            std::path::Path::new(&rootfs_archive),
-            std::path::Path::new(&data_dir),
-        );
-    }
-    #[cfg(not(target_os = "android"))]
-    {
-        let _ = (proot_lib_dir, rootfs_archive, data_dir);
-        Err(ProotBootstrapError::Unsupported {
-            detail: "proot is Android-only".into(),
-        })
-    }
 }
 
 /// Run `cmd` through the persistent iSH `/bin/sh`. An empty `cwd` means "no
@@ -138,18 +108,7 @@ mod mobile_exec_command;
 mod shell_quoting;
 pub(crate) mod ssh_scripts;
 
-#[cfg(target_os = "android")]
-mod android_context;
-#[cfg(target_os = "android")]
-pub mod android_exec;
-#[cfg(target_os = "android")]
-pub mod proot_runtime;
-
-#[cfg(any(
-    all(target_os = "ios", not(target_abi = "macabi")),
-    target_os = "android",
-    test
-))]
+#[cfg(any(all(target_os = "ios", not(target_abi = "macabi")), test))]
 pub mod shell_preflight;
 
 pub mod alleycat;

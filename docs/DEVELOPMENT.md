@@ -2,7 +2,7 @@
 
 ## Product Target
 
-The primary product target is iOS sideloading with unsigned IPA artifacts for SideStore/AltStore-style re-signing. Android and TestFlight/App Store notes are legacy or secondary references, not the current core delivery path.
+The primary product target is iOS sideloading with unsigned IPA artifacts for SideStore/AltStore-style re-signing. TestFlight and App Store notes are secondary references, not the current core delivery path.
 
 ## Litter BuildKit
 
@@ -93,7 +93,6 @@ Current local patch set (applied by `sync-codex.sh`):
 
 Additional patches (not auto-applied):
 
-- `patches/codex/android-vendored-openssl.patch`
 - `patches/codex/realtime-transcript-deltas.patch`
 
 Sync/apply (idempotent):
@@ -131,9 +130,6 @@ CLI build:
 xcodebuild -project apps/ios/Litter.xcodeproj -scheme Litter -configuration Debug -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
-## Android
-
-Android build and release flows are disabled for this fork. Do not use the legacy Android Gradle, Play, proot, or Ghostty Android commands for current Litter builds.
 
 ## TestFlight (iOS)
 

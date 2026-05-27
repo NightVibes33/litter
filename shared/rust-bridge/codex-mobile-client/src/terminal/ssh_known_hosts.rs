@@ -1,6 +1,6 @@
 //! Persistent SSH host-key fingerprint trust store.
 //!
-//! Storage itself is platform-owned (iOS Keychain / Android EncryptedSharedPreferences).
+//! Storage itself is platform-owned by the iOS Keychain.
 //! Rust owns the policy and the lookup-during-connect; platforms implement
 //! [`TerminalSshTrustBackend`] to read/write the encrypted store.
 //!
@@ -26,8 +26,7 @@ use std::sync::Arc;
 
 /// Platform-implemented persistent storage for pinned host fingerprints.
 ///
-/// iOS implements this on top of the Keychain; Android on top of
-/// `androidx.security:security-crypto` EncryptedSharedPreferences. The
+/// iOS implements this on top of the Keychain. The
 /// backend MUST be synchronous and side-effect free with respect to other
 /// terminal operations — the trust store consults it on every connect.
 #[uniffi::export(callback_interface)]

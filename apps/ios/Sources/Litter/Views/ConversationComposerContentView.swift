@@ -111,6 +111,16 @@ struct ConversationComposerContentView: View {
     }
 
     var body: some View {
+        ZStack(alignment: .bottom) {
+            baseComposerContent
+
+            floatingStatusOverlay
+        }
+        .frame(maxWidth: LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass) ? 760 : .infinity)
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var baseComposerContent: some View {
         VStack(spacing: 0) {
             if !attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -127,56 +137,7 @@ struct ConversationComposerContentView: View {
                 }
             }
 
-
             VStack(alignment: .trailing, spacing: 0) {
-                if let goal {
-                    ConversationComposerGoalRowView(goal: goal, actions: goalActions)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                }
-
-                if let activePlanProgress {
-                    ConversationComposerPlanProgressView(progress: activePlanProgress)
-                        .id(activePlanProgress.turnId)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                }
-
-                if let activeTaskSummary {
-                    ConversationComposerActiveTaskRowView(summary: activeTaskSummary)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                }
-
-                if let pendingUserInputRequest {
-                    PendingUserInputPromptView(
-                        request: pendingUserInputRequest,
-                        onSubmit: onRespondToPendingUserInput,
-                        onDismiss: onDismissPendingUserInput
-                    )
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-                }
-
-                if hasPendingPlanImplementation {
-                    PlanImplementationPromptView(
-                        onImplement: onImplementPlan,
-                        onDismiss: onDismissPlanImplementation
-                    )
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
-                }
-
-                if !queuedFollowUps.isEmpty {
-                    QueuedFollowUpsPreviewView(
-                        previews: queuedFollowUps,
-                        onSteer: onSteerQueuedFollowUp,
-                        onDelete: onDeleteQueuedFollowUp
-                    )
-                        .padding(.horizontal, 12)
-                        .padding(.top, 8)
-                }
-
                 if !pluginMentions.isEmpty {
                     ConversationComposerPluginChipStrip(
                         plugins: pluginMentions,
@@ -208,8 +169,79 @@ struct ConversationComposerContentView: View {
                 )
             }
         }
-        .frame(maxWidth: LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass) ? 760 : .infinity)
-        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    @ViewBuilder
+    private var floatingStatusOverlay: some View {
+        if hasFloatingStatusOverlay {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .trailing, spacing: 8) {
+                        if let goal {
+                            ConversationComposerGoalRowView(goal: goal, actions: goalActions)
+                        }
+
+                        if let activePlanProgress {
+                            ConversationComposerPlanProgressView(progress: activePlanProgress)
+                                .id(activePlanProgress.turnId)
+                        }
+
+                        if let activeTaskSummary {
+                            ConversationComposerActiveTaskRowView(summary: activeTaskSummary)
+                        }
+
+                        if let pendingUserInputRequest {
+                            PendingUserInputPromptView(
+                                request: pendingUserInputRequest,
+                                onSubmit: onRespondToPendingUserInput,
+                                onDismiss: onDismissPendingUserInput
+                            )
+                        }
+
+                        if hasPendingPlanImplementation {
+                            PlanImplementationPromptView(
+                                onImplement: onImplementPlan,
+                                onDismiss: onDismissPlanImplementation
+                            )
+                        }
+
+                        if !queuedFollowUps.isEmpty {
+                            QueuedFollowUpsPreviewView(
+                                previews: queuedFollowUps,
+                                onSteer: onSteerQueuedFollowUp,
+                                onDelete: onDeleteQueuedFollowUp
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .scrollIndicators(.hidden)
+                .frame(maxHeight: 260)
+
+                Color.clear
+                    .frame(height: floatingStatusBottomPadding)
+                    .allowsHitTesting(false)
+            }
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .zIndex(2)
+        }
+    }
+
+    private var hasFloatingStatusOverlay: Bool {
+        goal != nil ||
+            activePlanProgress != nil ||
+            activeTaskSummary != nil ||
+            pendingUserInputRequest != nil ||
+            hasPendingPlanImplementation ||
+            !queuedFollowUps.isEmpty
+    }
+
+    private var floatingStatusBottomPadding: CGFloat {
+        var padding: CGFloat = 68
+        if !pluginMentions.isEmpty { padding += 32 }
+        if !attachments.isEmpty { padding += 64 }
+        return padding
     }
 }
 

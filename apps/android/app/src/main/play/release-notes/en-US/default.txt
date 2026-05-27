@@ -1,4 +1,0 @@
-Initial Android release of Litter.
-- On-device and remote runtime support
-- Improved conversation readability and text sizing
-- Stronger server discovery and connection behavior

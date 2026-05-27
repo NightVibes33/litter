@@ -18,7 +18,3 @@ tokio = { workspace = true }
 [target.'cfg(target_os = "ios")'.dependencies]
 codex-core = { workspace = true }
 codex-apply-patch = { workspace = true }
-
-[target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
-openssl-sys = { version = "0.9", features = ["vendored"] }

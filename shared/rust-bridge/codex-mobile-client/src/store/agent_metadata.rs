@@ -1,5 +1,5 @@
 //! Global cache of agent metadata sourced from alleycat probe
-//! responses. Platforms (Swift / Kotlin) read from here when they need
+//! responses. Swift reads from here when it needs
 //! to render an agent's label, icon, sort order, BETA badge, or branch
 //! on capability flags.
 //!

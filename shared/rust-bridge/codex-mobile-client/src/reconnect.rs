@@ -1,7 +1,7 @@
-//! Shared reconnection logic for iOS and Android.
+//! Shared reconnection logic for iOS.
 //!
 //! Consolidates the duplicated transport-resolution and reconnect-plan
-//! computation that previously lived in platform Swift/Kotlin code.
+//! computation that previously lived in platform Swift code.
 
 use crate::alleycat::{AgentWire as AlleycatAgentWire, ParsedPairPayload as AlleycatPairPayload};
 use crate::mobile_client::MobileClient;
@@ -146,8 +146,8 @@ pub(crate) enum ReconnectPlan {
 /// Resolve the effective preferred connection mode, handling legacy
 /// `ssh_port_forwarding_enabled` migration.
 ///
-/// Mirrors iOS `migratedPreferredConnectionMode` and Android
-/// `resolvedPreferredConnectionMode` (simplified — the full Android version
+/// Mirrors iOS `migratedPreferredConnectionMode` and the former
+/// platform-specific connection mode logic
 /// also validates that the mode is still reachable, but for reconnect
 /// planning the raw preference is what matters since we skip if no
 /// credential is available anyway).
@@ -163,7 +163,7 @@ pub(crate) fn resolved_preferred_connection_mode(server: &SavedServerRecord) -> 
 
 /// Resolve the SSH port for a saved server.
 ///
-/// Mirrors Android `resolvedSshPort`:
+/// Resolves the SSH port:
 ///   `sshPort ?: port.takeIf { !hasCodexServer && it > 0 } ?: 22`
 /// and iOS `SavedServer.toDiscoveredServer()` → `DiscoveredServer.resolvedSSHPort`:
 ///   `sshPort ?? (hasCodexServer ? nil : port)` then `?? 22`
@@ -179,7 +179,7 @@ pub(crate) fn resolved_ssh_port(server: &SavedServerRecord) -> u16 {
 
 /// Build the list of available direct Codex ports (merging port + codex_ports).
 ///
-/// Mirrors Android `availableDirectCodexPorts`.
+/// Returns available direct Codex ports.
 fn available_direct_codex_ports(server: &SavedServerRecord) -> Vec<u16> {
     let mut ordered = Vec::new();
     if server.has_codex_server && server.port > 0 {
@@ -244,7 +244,7 @@ fn resolved_preferred_codex_port(server: &SavedServerRecord) -> Option<u16> {
 /// Returns `None` when SSH is preferred, when the user needs to choose,
 /// or when no direct port is available.
 ///
-/// Mirrors Android `directCodexPort`.
+/// Resolves the direct Codex port.
 pub(crate) fn direct_codex_port(server: &SavedServerRecord) -> Option<u16> {
     if server.websocket_url.is_some() {
         return None;
@@ -266,7 +266,7 @@ pub(crate) fn direct_codex_port(server: &SavedServerRecord) -> Option<u16> {
 
 /// Compute the reconnect plan for a single saved server.
 ///
-/// Consolidates iOS `reconnectPlan(for:)` and Android
+/// Consolidates iOS reconnect planning and former platform-specific
 /// `reconnectSavedServer` into a single decision tree.
 #[cfg(test)]
 fn compute_reconnect_plan(

@@ -6,7 +6,6 @@ set -euo pipefail
 # Pattern mirrors apps/ios/scripts/sync-codex.sh. Patches live under
 # patches/ghostty/*.patch and add mobile-embed capability that upstream
 # Ghostty does not yet ship:
-#   - GHOSTTY_PLATFORM_ANDROID with EGL native_window plumbing
 #   - external_pty mode: host owns the byte stream, Ghostty just renders
 #
 # This script is idempotent: it detects already-applied patches and exits

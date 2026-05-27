@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::types::DirectoryPathSegment;
 
-/// Opaque remote-path object exposed to Swift / Kotlin via UniFFI.
+/// Opaque remote-path object exposed to Swift via UniFFI.
 #[derive(uniffi::Object)]
 pub struct RemotePath {
     inner: crate::remote_path::RemotePath,

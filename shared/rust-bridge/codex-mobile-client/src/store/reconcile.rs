@@ -1432,7 +1432,7 @@ mod tests {
     /// `older_turns_cursor` so the cursor stored by
     /// `apply_thread_turns_page` survives subsequent refreshes. Without
     /// this preservation, "Load earlier messages" never shows up on
-    /// Android after `load_thread_turns_page` returned `has_more=true`.
+    /// after `load_thread_turns_page` returned `has_more=true`.
     #[tokio::test]
     async fn apply_thread_read_with_empty_turns_preserves_pagination_state() {
         let client = MobileClient::new();

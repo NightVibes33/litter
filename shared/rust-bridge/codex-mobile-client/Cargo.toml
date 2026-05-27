@@ -2,7 +2,7 @@
 name = "codex-mobile-client"
 version = "0.1.0"
 edition = "2024"
-description = "Shared mobile client library for Codex iOS and Android apps"
+description = "Shared mobile client library for the Litter iOS app"
 license-file = "../../../LICENSE"
 
 [lib]
@@ -71,12 +71,3 @@ codex-apply-patch = { workspace = true }
 # iSH backend. Tracks the iSH repo's `main` branch — `cargo update -p
 # ish-embed-host` pulls the latest.
 ish-embed-host = { git = "https://github.com/dnakov/litter-ish.git", branch = "main" }
-
-[target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
-ndk-context = "0.1"
-openssl-sys = { version = "0.9", features = ["vendored"] }
-portable-pty = "0.9"
-flate2 = "1"
-tar = "0.4"
-rusqlite = { version = "0.32.1", features = ["bundled"] }

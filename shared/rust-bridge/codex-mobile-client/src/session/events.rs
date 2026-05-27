@@ -2,7 +2,7 @@
 //!
 //! Processes upstream typed `ServerNotification` and `ServerRequest` enums
 //! from `codex-app-server-protocol` and maps them to high-level `UiEvent`s
-//! for platform (iOS/Android) consumption.
+//! for Swift consumption.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
@@ -20,7 +20,7 @@ use crate::types::{
 
 /// High-level events for platform UI consumption.
 ///
-/// Each variant represents a meaningful state change that the Swift/Kotlin
+/// Each variant represents a meaningful state change that the Swift
 /// UI layer should react to. These are emitted by the [`EventProcessor`]
 /// after processing typed upstream notifications from the server.
 #[allow(dead_code)]

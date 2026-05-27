@@ -21,9 +21,6 @@ pub enum TerminalBackendKind {
     LocalIsh {
         cwd: Option<String>,
     },
-    LocalProot {
-        cwd: Option<String>,
-    },
     RemoteAlleycat {
         node_id: String,
         token: String,

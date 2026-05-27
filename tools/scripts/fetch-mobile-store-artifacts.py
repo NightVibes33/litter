@@ -8,19 +8,11 @@ Outputs:
   - Downloaded iOS crash logs when ASC exposes them
   - A Markdown summary describing what was fetched and what was unavailable
 
-Notes:
-  - Android private testing feedback is not exposed via the public Google Play
-    APIs used here. This script fetches Play reviews plus Play Developer
-    Reporting crash issues/reports.
-  - Google Play Developer Reporting time windows are hour-aligned UTC. The
-    script expands the API interval to whole hours, then filters the payload
-    back down to the exact requested window client-side.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
 import datetime as dt
 import json
 import os
@@ -28,7 +20,6 @@ import pathlib
 import shlex
 import subprocess
 import sys
-import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -38,12 +29,7 @@ from typing import Any
 UTC = dt.timezone.utc
 
 DEFAULT_IOS_BUNDLE_ID = "com.sigkitten.litter"
-DEFAULT_ANDROID_PACKAGE = "com.sigkitten.litter.android"
 DEFAULT_OUTPUT_BASE = pathlib.Path("/tmp/mobile-store-artifacts")
-DEFAULT_PLAY_ENV_FILE = pathlib.Path.home() / ".config/litter/play-upload.env"
-
-PLAY_REPORTING_SCOPE = "https://www.googleapis.com/auth/playdeveloperreporting"
-PLAY_PUBLISHER_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 
 
 class ScriptError(RuntimeError):
@@ -59,13 +45,9 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--output-dir", help="Directory for fetched artifacts.")
     parser.add_argument("--ios-bundle-id", default=DEFAULT_IOS_BUNDLE_ID)
-    parser.add_argument("--android-package", default=DEFAULT_ANDROID_PACKAGE)
     parser.add_argument("--ios-version", help="Optional iOS pre-release version filter, e.g. 1.0.4.")
     parser.add_argument("--asc-bin", help="Path to the asc CLI.")
-    parser.add_argument("--play-service-account-json", help="Path to a Google Play service account JSON.")
-    parser.add_argument("--play-env-file", default=str(DEFAULT_PLAY_ENV_FILE))
     parser.add_argument("--skip-ios", action="store_true")
-    parser.add_argument("--skip-android", action="store_true")
     parser.add_argument("--no-download-ios-screenshots", action="store_true")
     return parser.parse_args()
 
@@ -339,278 +321,12 @@ def fetch_ios(
     return result
 
 
-def load_service_account_path(explicit: str | None, env_file: pathlib.Path) -> pathlib.Path:
-    if explicit:
-        path = pathlib.Path(explicit).expanduser()
-        if not path.exists():
-            raise ScriptError(f"Google Play service account JSON not found: {path}")
-        return path
-    env_value = os.environ.get("LITTER_PLAY_SERVICE_ACCOUNT_JSON")
-    if env_value:
-        path = pathlib.Path(env_value).expanduser()
-        if path.exists():
-            return path
-    file_env = load_export_file(env_file)
-    candidate = file_env.get("LITTER_PLAY_SERVICE_ACCOUNT_JSON")
-    if candidate:
-        path = pathlib.Path(candidate).expanduser()
-        if path.exists():
-            return path
-    raise ScriptError(
-        "Google Play service account JSON not found. Set --play-service-account-json, "
-        "LITTER_PLAY_SERVICE_ACCOUNT_JSON, or ~/.config/litter/play-upload.env."
-    )
-
-
-def b64url(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def issue_token(service_account_path: pathlib.Path, scope: str) -> str:
-    payload = json.loads(service_account_path.read_text())
-    now = int(dt.datetime.now(tz=UTC).timestamp())
-    header = {"alg": "RS256", "typ": "JWT"}
-    claim = {
-        "iss": payload["client_email"],
-        "scope": scope,
-        "aud": payload["token_uri"],
-        "exp": now + 3600,
-        "iat": now,
-    }
-    signing_input = f"{b64url(json.dumps(header, separators=(',', ':')).encode())}.{b64url(json.dumps(claim, separators=(',', ':')).encode())}"
-    with tempfile.NamedTemporaryFile("w", delete=False) as handle:
-        handle.write(payload["private_key"])
-        key_path = pathlib.Path(handle.name)
-    try:
-        signature = subprocess.run(
-            ["openssl", "dgst", "-sha256", "-sign", str(key_path)],
-            check=True,
-            input=signing_input.encode(),
-            capture_output=True,
-        ).stdout
-    except FileNotFoundError as exc:
-        raise ScriptError("openssl is required to issue Google Play access tokens.") from exc
-    finally:
-        key_path.unlink(missing_ok=True)
-    assertion = f"{signing_input}.{b64url(signature)}".encode()
-    body = urllib.parse.urlencode(
-        {
-            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            "assertion": assertion.decode(),
-        }
-    ).encode()
-    request = urllib.request.Request(
-        payload["token_uri"],
-        data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            token_payload = json.loads(response.read().decode())
-    except urllib.error.HTTPError as exc:
-        raise ScriptError(f"Google token exchange failed: {exc.read().decode()}") from exc
-    return token_payload["access_token"]
-
-
-def api_get_json(url: str, bearer_token: str) -> dict[str, Any]:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Authorization": f"Bearer {bearer_token}",
-            "Accept": "application/json",
-            "User-Agent": "litter-store-fetch/1.0",
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=120) as response:
-            return maybe_parse_json(response.read().decode())
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode()
-        raise ScriptError(f"HTTP {exc.code} for {url}: {body}") from exc
-
-
-def floor_hour(value: dt.datetime) -> dt.datetime:
-    return value.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
-
-
-def ceil_hour(value: dt.datetime) -> dt.datetime:
-    utc_value = value.astimezone(UTC)
-    floored = floor_hour(utc_value)
-    if floored == utc_value.replace(microsecond=0):
-        return floored
-    return floored + dt.timedelta(hours=1)
-
-
-def build_play_interval_params(since: dt.datetime, until: dt.datetime) -> dict[str, str]:
-    start = floor_hour(since)
-    end = ceil_hour(until)
-    return {
-        "interval.startTime.year": str(start.year),
-        "interval.startTime.month": str(start.month),
-        "interval.startTime.day": str(start.day),
-        "interval.startTime.hours": str(start.hour),
-        "interval.endTime.year": str(end.year),
-        "interval.endTime.month": str(end.month),
-        "interval.endTime.day": str(end.day),
-        "interval.endTime.hours": str(end.hour),
-    }
-
-
-def review_last_modified(review: dict[str, Any]) -> str | None:
-    comments = review.get("comments") or []
-    for comment in reversed(comments):
-        user_comment = comment.get("userComment") or {}
-        modified = user_comment.get("lastModified") or {}
-        seconds = modified.get("seconds")
-        if seconds is None:
-            continue
-        nanos = int(modified.get("nanos", 0))
-        stamp = dt.datetime.fromtimestamp(int(seconds), tz=UTC) + dt.timedelta(microseconds=nanos / 1000)
-        return stamp.replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    return None
-
-
-def fetch_paginated_json(
-    *,
-    base_url: str,
-    bearer_token: str,
-    item_key: str,
-    query: dict[str, str],
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    next_token: str | None = None
-    while True:
-        params = dict(query)
-        if next_token:
-            params["pageToken"] = next_token
-        url = f"{base_url}?{urllib.parse.urlencode(params)}"
-        payload = api_get_json(url, bearer_token)
-        rows.extend(payload.get(item_key, []) or [])
-        next_token = payload.get("nextPageToken")
-        if not next_token:
-            break
-    return rows
-
-
-def fetch_android(
-    *,
-    package_name: str,
-    service_account_path: pathlib.Path,
-    output_dir: pathlib.Path,
-    since: dt.datetime,
-    until: dt.datetime,
-) -> dict[str, Any]:
-    android_dir = ensure_dir(output_dir / "android")
-    publisher_token = issue_token(service_account_path, PLAY_PUBLISHER_SCOPE)
-    reporting_token = issue_token(service_account_path, PLAY_REPORTING_SCOPE)
-
-    reviews = fetch_paginated_json(
-        base_url=f"https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package_name}/reviews",
-        bearer_token=publisher_token,
-        item_key="reviews",
-        query={"maxResults": "100"},
-    )
-    filtered_reviews = []
-    for review in reviews:
-        modified = review_last_modified(review)
-        if modified and within_window(modified, since, until):
-            review["normalizedLastModified"] = modified
-            filtered_reviews.append(review)
-
-    interval_query = build_play_interval_params(since, until)
-    issues = fetch_paginated_json(
-        base_url=f"https://playdeveloperreporting.googleapis.com/v1beta1/apps/{package_name}/errorIssues:search",
-        bearer_token=reporting_token,
-        item_key="errorIssues",
-        query={**interval_query, "pageSize": "100"},
-    )
-    reports = fetch_paginated_json(
-        base_url=f"https://playdeveloperreporting.googleapis.com/v1beta1/apps/{package_name}/errorReports:search",
-        bearer_token=reporting_token,
-        item_key="errorReports",
-        query={**interval_query, "pageSize": "100"},
-    )
-
-    filtered_issues = [
-        row for row in issues if within_window(row.get("lastErrorReportTime"), since, until)
-    ]
-    filtered_reports = [
-        row for row in reports if within_window(row.get("eventTime"), since, until)
-    ]
-
-    issue_index = {
-        row["name"].split("/")[-1]: row
-        for row in filtered_issues
-        if row.get("name")
-    }
-    grouped_reports: dict[str, list[dict[str, Any]]] = {}
-    for report in filtered_reports:
-        issue_name = report.get("issue", "")
-        issue_id = issue_name.split("/")[-1] if issue_name else "unknown"
-        grouped_reports.setdefault(issue_id, []).append(report)
-
-    summarized_issues = []
-    for issue_id, issue in issue_index.items():
-        sample_reports = grouped_reports.get(issue_id, [])
-        summarized_issues.append(
-            {
-                "issueId": issue_id,
-                "type": issue.get("type"),
-                "cause": issue.get("cause"),
-                "location": issue.get("location"),
-                "errorReportCount": issue.get("errorReportCount"),
-                "distinctUsers": issue.get("distinctUsers"),
-                "lastErrorReportTime": issue.get("lastErrorReportTime"),
-                "firstAppVersion": issue.get("firstAppVersion"),
-                "lastAppVersion": issue.get("lastAppVersion"),
-                "issueUri": issue.get("issueUri"),
-                "rawReportCount": len(sample_reports),
-                "sampleReportFirstLine": (
-                    sample_reports[0].get("reportText", "").splitlines()[0]
-                    if sample_reports
-                    else None
-                ),
-                "sampleDevices": sorted(
-                    {
-                        report.get("deviceModel", {}).get("marketingName")
-                        for report in sample_reports
-                        if report.get("deviceModel", {}).get("marketingName")
-                    }
-                ),
-            }
-        )
-    summarized_issues.sort(key=lambda row: row.get("lastErrorReportTime") or "", reverse=True)
-
-    result = {
-        "packageName": package_name,
-        "serviceAccountJson": str(service_account_path),
-        "privateTestingFeedbackAvailableViaApi": False,
-        "privateTestingFeedbackNote": (
-            "Google Play private testing feedback is available in Play Console UI, "
-            "not the public APIs used by this script."
-        ),
-        "reviewCount": len(filtered_reviews),
-        "crashIssueCount": len(filtered_issues),
-        "crashReportCount": len(filtered_reports),
-        "reviews": filtered_reviews,
-        "errorIssues": filtered_issues,
-        "errorReports": filtered_reports,
-        "summarizedIssues": summarized_issues,
-    }
-    to_json_file(android_dir / "reviews.json", {"reviews": filtered_reviews})
-    to_json_file(android_dir / "error-issues.json", {"errorIssues": filtered_issues})
-    to_json_file(android_dir / "error-reports.json", {"errorReports": filtered_reports})
-    to_json_file(android_dir / "metadata.json", result)
-    return result
-
-
 def render_summary(
     *,
     output_dir: pathlib.Path,
     requested_since: dt.datetime,
     requested_until: dt.datetime,
     ios_result: dict[str, Any] | None,
-    android_result: dict[str, Any] | None,
 ) -> str:
     def md_link(label: str, target: pathlib.Path | str | None) -> str:
         if not target:
@@ -711,63 +427,13 @@ def render_summary(
                 elif row.get("crashLogError"):
                     lines.append(f"  crash log: unavailable ({row['crashLogError']})")
             lines.append("")
-    if android_result is not None:
-        lines.extend(
-            [
-                "## Android Play",
-                "",
-                f"- Package: {code(android_result['packageName'])}",
-                f"- Reviews in window: {code(android_result['reviewCount'])}",
-                f"- Crash issues in window: {code(android_result['crashIssueCount'])}",
-                f"- Raw crash reports in window: {code(android_result['crashReportCount'])}",
-                f"- Reviews JSON: {rel_json('android/reviews.json')}",
-                f"- Crash issues JSON: {rel_json('android/error-issues.json')}",
-                f"- Crash reports JSON: {rel_json('android/error-reports.json')}",
-                f"- Metadata JSON: {rel_json('android/metadata.json')}",
-                "- Private testing feedback screenshots are not available via the public Google Play APIs used here.",
-                "",
-            ]
-        )
-        if android_result["reviews"]:
-            lines.extend(["### Android Reviews", ""])
-            for review in android_result["reviews"]:
-                review_id = review.get("reviewId", "unknown")
-                modified = review.get("normalizedLastModified", "unknown")
-                comment_text = ""
-                comments = review.get("comments") or []
-                for comment in reversed(comments):
-                    user_comment = comment.get("userComment") or {}
-                    text = (user_comment.get("text") or "").strip()
-                    if text:
-                        comment_text = text
-                        break
-                lines.append(f"- {code(modified)} {code(review_id)}")
-                if comment_text:
-                    lines.append(f"  comment: {comment_text}")
-            lines.append("")
-        if android_result["summarizedIssues"]:
-            lines.extend(["### Android Crash Issues", ""])
-            for issue in android_result["summarizedIssues"]:
-                lines.append(
-                    f"- {code(issue.get('lastErrorReportTime', 'unknown'))} {code(issue.get('issueId', 'unknown'))} {issue.get('cause', 'unknown cause')}"
-                )
-                lines.append(
-                    f"  location: {issue.get('location', 'unknown')} | reports: {code(issue.get('errorReportCount', 0))} | raw reports: {code(issue.get('rawReportCount', 0))}"
-                )
-                if issue.get("sampleDevices"):
-                    lines.append(f"  devices: {', '.join(issue['sampleDevices'])}")
-                if issue.get("sampleReportFirstLine"):
-                    lines.append(f"  sample: {issue['sampleReportFirstLine']}")
-                if issue.get("issueUri"):
-                    lines.append(f"  play console: {md_link('issue', issue['issueUri'])}")
-            lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
 def main() -> int:
     args = parse_args()
-    if args.skip_ios and args.skip_android:
-        raise ScriptError("Nothing to do: both --skip-ios and --skip-android were set.")
+    if args.skip_ios:
+        raise ScriptError("Nothing to do: --skip-ios was set.")
 
     since, until = compute_window(args)
     timestamp = dt.datetime.now(tz=UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -782,7 +448,6 @@ def main() -> int:
         "generatedAtUtc": iso_now(),
         "outputDir": str(output_dir),
         "ios": None,
-        "android": None,
     }
 
     ios_result = None
@@ -804,32 +469,12 @@ def main() -> int:
             "crashCount": ios_result["crashCount"],
         }
 
-    android_result = None
-    if not args.skip_android:
-        service_account_path = load_service_account_path(
-            args.play_service_account_json,
-            pathlib.Path(args.play_env_file).expanduser(),
-        )
-        android_result = fetch_android(
-            package_name=args.android_package,
-            service_account_path=service_account_path,
-            output_dir=output_dir,
-            since=since,
-            until=until,
-        )
-        metadata["android"] = {
-            "packageName": android_result["packageName"],
-            "reviewCount": android_result["reviewCount"],
-            "crashIssueCount": android_result["crashIssueCount"],
-            "crashReportCount": android_result["crashReportCount"],
-        }
 
     summary = render_summary(
         output_dir=output_dir,
         requested_since=since,
         requested_until=until,
         ios_result=ios_result,
-        android_result=android_result,
     )
     (output_dir / "summary.md").write_text(summary)
     to_json_file(output_dir / "metadata.json", metadata)

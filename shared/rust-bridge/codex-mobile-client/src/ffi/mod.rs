@@ -1,11 +1,10 @@
-//! FFI layer for iOS and Android consumption.
+//! FFI layer for iOS consumption.
 //!
-//! Uses UniFFI proc-macro approach for automatic Swift/Kotlin binding generation.
+//! Uses UniFFI proc-macro approach for automatic Swift binding generation.
 //! The scaffolding macro is invoked in lib.rs; this module holds additional
 //! FFI helper types and exported functions.
 
 pub(crate) mod alleycat;
-mod android;
 mod app_store;
 mod client;
 mod discovery;

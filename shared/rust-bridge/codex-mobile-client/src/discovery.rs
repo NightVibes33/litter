@@ -140,7 +140,7 @@ pub enum MdnsServiceEvent {
     },
 }
 
-/// Platform-provided mDNS browser (iOS = NWBrowser, Android = NsdManager).
+/// Platform-provided mDNS browser (iOS = NWBrowser).
 ///
 /// The Rust layer coordinates results; actual browsing is delegated to the
 /// platform because reliable mDNS requires OS-level APIs.
@@ -795,7 +795,7 @@ impl DiscoveryService {
         results
     }
 
-    /// ARP table scan (Linux/Android: /proc/net/arp, macOS: `arp -a`).
+    /// ARP table scan (Linux: /proc/net/arp, macOS: `arp -a`).
     async fn scan_arp(&self) -> Vec<DiscoveredServer> {
         if !self.config.enable_arp_scan {
             return Vec::new();
@@ -1124,11 +1124,11 @@ fn parse_ipv4_hint(value: &str) -> Option<Ipv4Addr> {
 /// Fetch the list of Tailscale peers from the local API.
 ///
 /// Talks raw HTTP/1.1 over a TCP connection to the Tailscale local API daemon.
-/// On macOS this is at 127.0.0.1:41112, on Linux/Android at 100.100.100.100:80.
+/// On macOS this is at 127.0.0.1:41112, on Linux at 100.100.100.100:80.
 async fn fetch_tailscale_peers() -> Result<Vec<(String, String)>, String> {
     // Try both known endpoints.
     let endpoints = [
-        ("100.100.100.100", 80), // Linux / Android
+        ("100.100.100.100", 80), // Linux
         ("127.0.0.1", 41112),    // macOS
     ];
 
@@ -1228,12 +1228,12 @@ async fn fetch_tailscale_status(host: &str, port: u16) -> Result<Vec<(String, St
 
 /// Parse ARP table to find candidate IPs.
 ///
-/// On Linux/Android reads `/proc/net/arp`.
+/// On Linux reads `/proc/net/arp`.
 /// On macOS, runs `arp -a` and parses the output.
 fn parse_arp_table() -> Vec<String> {
     let mut candidates = Vec::new();
 
-    // Try /proc/net/arp first (Linux/Android).
+    // Try /proc/net/arp first (Linux).
     if let Ok(content) = std::fs::read_to_string("/proc/net/arp") {
         for line in content.lines().skip(1) {
             let parts: Vec<&str> = line.split_whitespace().collect();

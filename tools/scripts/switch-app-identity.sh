@@ -18,9 +18,9 @@ usage() {
   cat <<'EOF'
 Usage: ./tools/scripts/switch-app-identity.sh --to <sigkitten|your-identifier> [options]
 
-Switches local app identifiers across Android and iOS between:
-  - com.sigkitten.litter(.android|.remote)
-  - com.<your-identifier>.litter(.android|.remote)
+Switches local iOS app identifiers between:
+  - com.sigkitten.litter(.remote)
+  - com.<your-identifier>.litter(.remote)
 
 Options:
   --to <sigkitten|your-identifier>
@@ -108,9 +108,6 @@ detect_current_identifier() {
     current="$(sed -nE 's/^[[:space:]]*PRODUCT_BUNDLE_IDENTIFIER:[[:space:]]*com\.([a-z0-9_]+)\.litter(\.remote)?[[:space:]]*$/\1/p' "$IOS_PROJECT_YML" | head -n1)"
   fi
 
-  if [ -z "$current" ] && [ -f "$REPO_DIR/apps/android/app/build.gradle.kts" ]; then
-    current="$(sed -nE 's/^[[:space:]]*namespace[[:space:]]*=[[:space:]]*"com\.([a-z0-9_]+)\.litter\.android"[[:space:]]*$/\1/p' "$REPO_DIR/apps/android/app/build.gradle.kts" | head -n1)"
-  fi
 
   if [ -z "$current" ]; then
     echo "error: could not detect current identifier from project files" >&2
@@ -246,4 +243,4 @@ fi
 echo "Done."
 echo "Review changes with:"
 echo "  git -C \"$REPO_DIR\" status --short"
-echo "  git -C \"$REPO_DIR\" diff -- apps/android/app/build.gradle.kts apps/ios/project.yml apps/ios/Litter.xcodeproj/project.pbxproj tools/scripts/switch-app-identity.sh"
+echo "  git -C \"$REPO_DIR\" diff -- apps/ios/project.yml apps/ios/Litter.xcodeproj/project.pbxproj tools/scripts/switch-app-identity.sh"

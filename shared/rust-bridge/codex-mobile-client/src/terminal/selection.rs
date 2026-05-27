@@ -29,7 +29,7 @@ pub struct TerminalCellRange {
 /// convert pixel coords → cell coords.
 ///
 /// Pixel coords are in the same coordinate space the platform uses for
-/// the surface (iOS = points × scale; Android = surface pixels).
+/// the surface (iOS = points x scale).
 #[derive(Debug, Clone, Copy, PartialEq, uniffi::Record)]
 pub struct TerminalCellMetrics {
     pub cell_width_px: f32,

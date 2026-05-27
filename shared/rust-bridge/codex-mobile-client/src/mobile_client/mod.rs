@@ -51,7 +51,7 @@ pub use self::thread_projection::{
     reconcile_active_turn, thread_info_from_upstream_thread,
     thread_snapshot_from_upstream_thread_with_overrides,
 };
-/// Top-level entry point for platform code (iOS / Android).
+/// Top-level entry point for Swift platform code.
 ///
 /// Ties together server sessions, thread management, event processing,
 /// discovery, auth, caching, and voice handoff into a single facade.
@@ -72,7 +72,7 @@ pub struct MobileClient {
     pub(crate) widget_waiters: Arc<StdMutex<HashMap<String, WidgetWaiter>>>,
     /// Directory where `saved_apps.rs` persists the app index + per-app
     /// HTML/state files. Set once at process start by the platform
-    /// (iOS/Android) via `AppClient::set_saved_apps_directory`. When
+    /// via `AppClient::set_saved_apps_directory`. When
     /// `Some`, the `show_widget` auto-upsert hook is enabled; when
     /// `None`, the hook is skipped (pre-R2 callers / tests).
     pub(crate) saved_apps_directory: Arc<StdMutex<Option<String>>>,
@@ -95,7 +95,7 @@ pub struct MobileClient {
     /// `connect_remote_over_alleycat`.
     alleycat_endpoint: Arc<tokio::sync::OnceCell<iroh::Endpoint>>,
     /// Persisted iroh device secret key. The platform loads the key
-    /// bytes from keychain (iOS) / EncryptedSharedPreferences (Android)
+    /// bytes from keychain
     /// at app launch and pushes them in via
     /// `set_alleycat_secret_key`. After `alleycat_endpoint()` initializes,
     /// the platform reads the actually-used bytes back via
@@ -171,9 +171,7 @@ const SLINGSHOT_INITIALIZE_TIMEOUT_RETRY_DELAY_SECS: u64 = 5;
 
 pub(crate) fn slingshot_user_agent() -> String {
     let arch = slingshot_user_agent_arch();
-    if cfg!(target_os = "android") {
-        format!("Codex Desktop/26.513.20950 (Android; {arch})")
-    } else if cfg!(target_os = "ios") {
+    if cfg!(target_os = "ios") {
         format!("Codex Desktop/26.513.20950 (iOS; {arch})")
     } else {
         format!("Codex Desktop/26.513.20950 (Macintosh; Intel Mac OS X; {arch})")
@@ -181,9 +179,7 @@ pub(crate) fn slingshot_user_agent() -> String {
 }
 
 fn slingshot_user_agent_arch() -> &'static str {
-    if cfg!(all(target_os = "android", target_arch = "aarch64")) {
-        "arm64-v8a"
-    } else if cfg!(target_arch = "aarch64") {
+    if cfg!(target_arch = "aarch64") {
         "arm64"
     } else {
         std::env::consts::ARCH

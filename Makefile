@@ -35,11 +35,6 @@ IOS_SIM_RUN_ARTIFACTS_DIR ?= $(ROOT)/artifacts/ios-sim-run
 IOS_SIM_PROFILE ?= 1
 IOS_SIM_PROFILE_TEMPLATE ?= Time Profiler
 IOS_SIM_PROFILE_TIME_LIMIT ?=
-ANDROID_DEVICE_RUN_ARTIFACTS_DIR ?= $(ROOT)/artifacts/android-device-run
-ANDROID_EMULATOR_RUN_ARTIFACTS_DIR ?= $(ROOT)/artifacts/android-emulator-run
-ANDROID_DIR := $(ROOT)/apps/android
-ANDROID_JNI := $(ANDROID_DIR)/core/bridge/src/main/jniLibs
-ANDROID_APP_JNI := $(ANDROID_DIR)/app/src/main/jniLibs
 GENERATED_DIR := $(RUST_DIR)/generated
 PATCHES_DIR := $(ROOT)/patches/codex
 
@@ -48,11 +43,6 @@ IOS_SIM_DEVICE ?= iPhone 17 Pro
 IOS_SCHEME ?= Litter
 XCODE_CONFIG ?= Debug
 CARGO_FEATURES ?=
-ANDROID_ABIS ?= arm64-v8a
-ANDROID_RUST_PROFILE ?= android-dev
-ANDROID_RELEASE_ABIS ?= arm64-v8a,x86_64
-HOST_ARCH := $(shell uname -m)
-ANDROID_EMULATOR_ABIS ?= $(if $(filter arm64 aarch64,$(HOST_ARCH)),arm64-v8a,x86_64)
 
 # Source local env (credentials, SDK paths, cache settings) if present.
 # This must precede cache setup and path auto-detection.
@@ -77,31 +67,6 @@ if [ -n "$$PROFILE" ] && [ -f "$$CREDS_FILE" ]; then \
   '\'' "$$CREDS_FILE"; \
 fi'))
 endef
-
-# Auto-detect Android SDK/NDK/JDK paths (macOS defaults, overridable via env or .env)
-ANDROID_SDK_ROOT ?= $(or $(ANDROID_HOME),$(wildcard $(HOME)/Library/Android/sdk))
-ANDROID_NDK_HOME ?= $(shell ls -d $(ANDROID_SDK_ROOT)/ndk/*/ 2>/dev/null | sort -V | tail -1 | sed 's:/*$$::')
-JAVA_HOME ?= $(or $(shell /usr/libexec/java_home 2>/dev/null),$(shell test -d '/Applications/Android Studio.app/Contents/jbr/Contents/Home' && echo '/Applications/Android Studio.app/Contents/jbr/Contents/Home'))
-ANDROID_PLATFORM_TOOLS_DIR := $(ANDROID_SDK_ROOT)/platform-tools
-ANDROID_EMULATOR_DIR := $(ANDROID_SDK_ROOT)/emulator
-ANDROID_ENV := JAVA_HOME='$(JAVA_HOME)' ANDROID_SDK_ROOT='$(ANDROID_SDK_ROOT)' ANDROID_NDK_HOME='$(ANDROID_NDK_HOME)'
-
-# Android app metadata
-ANDROID_APK := $(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk
-ANDROID_PACKAGE := com.sigkitten.litter.android
-ANDROID_ACTIVITY := com.litter.android.MainActivity
-ANDROID_DEVICE_SERIAL ?=
-ANDROID_REINSTALL_ON_SIGNATURE_MISMATCH ?= 1
-
-export ANDROID_SDK_ROOT
-export ANDROID_NDK_HOME
-export JAVA_HOME
-ifneq ($(wildcard $(ANDROID_PLATFORM_TOOLS_DIR)),)
-  export PATH := $(ANDROID_PLATFORM_TOOLS_DIR):$(PATH)
-endif
-ifneq ($(wildcard $(ANDROID_EMULATOR_DIR)),)
-  export PATH := $(ANDROID_EMULATOR_DIR):$(PATH)
-endif
 
 SCCACHE := $(shell command -v sccache 2>/dev/null)
 ifneq ($(SCCACHE),)
@@ -168,17 +133,12 @@ BOUNDARY_SOURCES += $(shell find $(RUST_DIR)/codex-mobile-client/src -type f -na
 
 STAMP_SYNC := $(STAMPS)/sync
 STAMP_BINDINGS_S := $(STAMPS)/bindings-swift
-STAMP_BINDINGS_K := $(STAMPS)/bindings-kotlin
 STAMP_XCGEN := $(STAMPS)/xcgen
 # Pinned release tag of the prebuilt Alpine rootfs tarball (still hosted
 # on the dnakov/litter-ish releases page). The iSH kernel itself is built
 # from the `ish` Rust crate. Bump and re-run `make alpine-fs` to upgrade.
 ALPINE_FS_VERSION := v0.1.2
 STAMP_ALPINE_FS := $(STAMPS)/alpine-fs-$(ALPINE_FS_VERSION)
-STAMP_ANDROID_ALPINE_FS := $(STAMPS)/android-alpine-fs-$(ALPINE_FS_VERSION)
-PROOT_COMMIT := ee10b279a38d34b6704345bc448d18f019ca1b49
-TALLOC_VERSION := 2.4.3
-STAMP_PROOT_ANDROID = $(STAMPS)/proot-android-$(PROOT_COMMIT)-talloc-$(TALLOC_VERSION)-$(ANDROID_ABIS_SAFE)
 GHOSTTY_DIR := $(ROOT)/shared/third_party/ghostty
 GHOSTTY_COMMIT := $(shell if [ -e "$(GHOSTTY_DIR)/.git" ]; then git -C $(GHOSTTY_DIR) rev-parse --short=12 HEAD 2>/dev/null; else git -C $(ROOT) rev-parse --short=12 HEAD:shared/third_party/ghostty 2>/dev/null; fi || echo missing)
 GHOSTTY_PATCH_FILES := $(wildcard $(ROOT)/patches/ghostty/*.patch)
@@ -187,37 +147,19 @@ GHOSTTY_BUILD_ZIG := $(GHOSTTY_DIR)/build.zig
 STAMP_SYNC_GHOSTTY := $(STAMPS)/sync-ghostty-$(GHOSTTY_COMMIT)-$(GHOSTTY_PATCH_FINGERPRINT)
 STAMP_GHOSTTY_IOS := $(STAMPS)/ghostty-ios-$(GHOSTTY_COMMIT)-$(GHOSTTY_PATCH_FINGERPRINT)
 
-empty :=
-space := $(empty) $(empty)
-ANDROID_ABIS_SAFE := $(subst $(space),_,$(subst /,_,$(ANDROID_ABIS)))
-ANDROID_RUST_PROFILE_SAFE := $(subst /,_,$(ANDROID_RUST_PROFILE))
-STAMP_GHOSTTY_ANDROID := $(STAMPS)/ghostty-android-$(GHOSTTY_COMMIT)-$(GHOSTTY_PATCH_FINGERPRINT)-$(ANDROID_ABIS_SAFE)
-STAMP_RUST_ANDROID := $(STAMPS)/rust-android-$(ANDROID_RUST_PROFILE_SAFE)-$(ANDROID_ABIS_SAFE)
-ANDROID_RUST_SOURCES := $(shell find $(RUST_DIR) \
-	-path '*/target' -prune -o \
-	-path '*/generated' -prune -o \
-	-type f \( -name '*.rs' -o -name 'Cargo.toml' -o -name 'Cargo.lock' -o -name 'build.rs' \) -print 2>/dev/null)
-
 $(shell mkdir -p $(STAMPS))
 
-DISABLED_ANDROID_BUILD_GOALS := android android-fast android-tools android-emulator-fast android-emulator-run android-device-run android-release android-debug android-install android-emulator-install rust-android android-alpine-fs proot-android ghostty-android test-android play-upload play-release screenshots-android
-ifneq ($(filter $(DISABLED_ANDROID_BUILD_GOALS),$(MAKECMDGOALS)),)
-$(error Android builds are disabled for this iOS-only fork)
-endif
-
 .PHONY: all ios ios-sim ios-sim-fast ios-sim-run ios-device ios-device-fast ios-device-run ios-device-stop ios-run verify-ios-project catalyst catalyst-run catalyst-fast catalyst-fast-run mac-direct mac-direct-run mac-direct-fast mac-direct-fast-run \
-	android android-fast android-tools android-emulator-fast android-emulator-run android-device-run android-release android-debug android-install android-emulator-install \
-	rust-ios rust-ios-package rust-ios-device-release rust-mac-release rust-ios-device-fast rust-ios-sim-fast rust-ios-macabi-fast rust-android rust-check rust-test rust-host-dev \
-	android-alpine-fs proot-android \
-	ghostty-ios ghostty-android \
+	rust-ios rust-ios-package rust-ios-device-release rust-mac-release rust-ios-device-fast rust-ios-sim-fast rust-ios-macabi-fast rust-check rust-test rust-host-dev \
+	ghostty-ios \
 	alleycat-main \
-	bindings bindings-swift bindings-kotlin \
+	bindings bindings-swift \
 	sync patch unpatch sync-ghostty unpatch-ghostty xcgen alpine-fs ish-dev-random nyxian-vendor nyxian-source-verify nyxian-buildkit-assets nyxian-buildkit-assets-verify buildkit-assets-package buildkit-assets-upload sidestore-minimuxer \
 	ios-build ios-build-sim ios-build-sim-fast ios-build-device ios-build-device-fast \
 	watch watch-sim watch-sim-run watch-device watch-typecheck watch-register \
-	test test-rust test-ios test-android \
-	ios-release-prep mac-release-prep testflight mac-testflight mac-direct-dist appstore-release play-upload play-release \
-	clean clean-rust clean-ios clean-android \
+	test test-rust test-ios \
+	ios-release-prep mac-release-prep testflight mac-testflight mac-direct-dist appstore-release \
+	clean clean-rust clean-ios \
 	rebuild-bindings kittylitter kittylitter-restart tui tui-run help
 
 all: ios
@@ -385,40 +327,6 @@ ios-device-stop:
 ios-run: ios
 	@open $(IOS_DIR)/Litter.xcodeproj
 
-android: android-fast
-android-fast: rust-android android-tools android-alpine-fs proot-android android-debug
-android-tools:
-	@echo "==> Downloading bundled Android CLI tools..."
-	@$(ROOT)/tools/scripts/download-android-tools.sh
-android-emulator-fast:
-	@$(MAKE) android-fast ANDROID_ABIS="$(ANDROID_EMULATOR_ABIS)"
-android-emulator-run: android-emulator-fast
-	@echo "==> Installing and launching on emulator with saved logcat..."
-	@cd $(ROOT) && \
-	ANDROID_RUN_MODE=emulator \
-	ANDROID_RUN_ARTIFACTS_DIR='$(ANDROID_EMULATOR_RUN_ARTIFACTS_DIR)' \
-	ANDROID_APK='$(ANDROID_APK)' \
-	ANDROID_PACKAGE='$(ANDROID_PACKAGE)' \
-	ANDROID_ACTIVITY='$(ANDROID_ACTIVITY)' \
-	ANDROID_REINSTALL_ON_SIGNATURE_MISMATCH='$(ANDROID_REINSTALL_ON_SIGNATURE_MISMATCH)' \
-	./tools/scripts/run-android.sh
-android-device-run: android-fast
-	@echo "==> Installing and launching on connected device with saved logcat..."
-	@cd $(ROOT) && \
-	ANDROID_RUN_MODE=device \
-	ANDROID_RUN_ARTIFACTS_DIR='$(ANDROID_DEVICE_RUN_ARTIFACTS_DIR)' \
-	ANDROID_APK='$(ANDROID_APK)' \
-	ANDROID_PACKAGE='$(ANDROID_PACKAGE)' \
-	ANDROID_ACTIVITY='$(ANDROID_ACTIVITY)' \
-	ANDROID_REINSTALL_ON_SIGNATURE_MISMATCH='$(ANDROID_REINSTALL_ON_SIGNATURE_MISMATCH)' \
-	./tools/scripts/run-android.sh
-
-android-release: ANDROID_RUST_PROFILE=release
-android-release: ANDROID_ABIS=$(ANDROID_RELEASE_ABIS)
-android-release: rust-android android-tools android-alpine-fs proot-android
-	@echo "==> Building Android release..."
-	@cd $(ANDROID_DIR) && $(ANDROID_ENV) ./gradlew :app:assembleRelease
-
 rust-ios: rust-ios-package
 
 alleycat-main:
@@ -480,12 +388,6 @@ rust-shellcheck:
 
 rust-host-dev: rust-check rust-test
 
-rust-android: $(STAMP_RUST_ANDROID)
-$(STAMP_RUST_ANDROID): $(STAMP_SYNC) $(STAMP_BINDINGS_K) $(STAMP_GHOSTTY_ANDROID) $(ANDROID_RUST_SOURCES) tools/scripts/build-android-rust.sh Makefile | alleycat-main
-	@echo "==> Building Rust for Android..."
-	@cd $(ROOT) && $(ANDROID_ENV) ANDROID_ABIS="$(ANDROID_ABIS)" ANDROID_RUST_PROFILE="$(ANDROID_RUST_PROFILE)" $(DEV_CARGO_ENV) ./tools/scripts/build-android-rust.sh
-	@touch $@
-
 sync-ghostty: $(STAMP_SYNC_GHOSTTY)
 $(STAMP_SYNC_GHOSTTY): $(GHOSTTY_PATCH_FILES) apps/ios/scripts/sync-ghostty.sh Makefile
 	@echo "==> Syncing ghostty submodule + applying Litter patches..."
@@ -499,24 +401,6 @@ ghostty-ios: $(STAMP_GHOSTTY_IOS)
 $(STAMP_GHOSTTY_IOS): $(STAMP_SYNC_GHOSTTY) $(GHOSTTY_BUILD_ZIG) apps/ios/scripts/build-ghostty.sh Makefile
 	@echo "==> Building Ghostty renderer for iOS..."
 	@cd $(ROOT) && $(IOS_SCRIPTS)/build-ghostty.sh
-	@touch $@
-
-ghostty-android: $(STAMP_GHOSTTY_ANDROID)
-$(STAMP_GHOSTTY_ANDROID): $(STAMP_SYNC_GHOSTTY) $(GHOSTTY_BUILD_ZIG) tools/scripts/build-ghostty-android.sh Makefile
-	@echo "==> Building Ghostty renderer for Android..."
-	@cd $(ROOT) && ANDROID_ABIS="$(ANDROID_ABIS)" ./tools/scripts/build-ghostty-android.sh
-	@touch $@
-
-android-alpine-fs: $(STAMP_ANDROID_ALPINE_FS)
-$(STAMP_ANDROID_ALPINE_FS): apps/android/scripts/download-alpine-fs.sh Makefile
-	@echo "==> Fetching Android alpine-fs $(ALPINE_FS_VERSION)..."
-	@ALPINE_FS_VERSION=$(ALPINE_FS_VERSION) $(ANDROID_DIR)/scripts/download-alpine-fs.sh
-	@touch $@
-
-proot-android: $(STAMP_PROOT_ANDROID)
-$(STAMP_PROOT_ANDROID): tools/scripts/build-proot-android.sh Makefile
-	@echo "==> Building Android proot $(PROOT_COMMIT)..."
-	@cd $(ROOT) && $(ANDROID_ENV) ANDROID_ABIS="$(ANDROID_ABIS)" PROOT_COMMIT="$(PROOT_COMMIT)" TALLOC_VERSION="$(TALLOC_VERSION)" ./tools/scripts/build-proot-android.sh
 	@touch $@
 
 help:
@@ -567,9 +451,9 @@ unpatch-ghostty:
 			git -C $(GHOSTTY_DIR) apply --reverse "$$pf"; \
 		fi; \
 	done
-	@rm -f $(STAMPS)/sync-ghostty-* $(STAMPS)/ghostty-ios-* $(STAMPS)/ghostty-android-*
+	@rm -f $(STAMPS)/sync-ghostty-* $(STAMPS)/ghostty-ios-*
 
-bindings: bindings-swift bindings-kotlin
+bindings: bindings-swift
 
 bindings-swift: $(STAMP_BINDINGS_S)
 $(STAMP_BINDINGS_S): $(STAMP_SYNC) $(BOUNDARY_SOURCES) | alleycat-main
@@ -580,12 +464,6 @@ $(STAMP_BINDINGS_S): $(STAMP_SYNC) $(BOUNDARY_SOURCES) | alleycat-main
 	@cp $(GENERATED_DIR)/swift/codex_mobile_clientFFI.h $(IOS_GENERATED)/Headers/codex_mobile_clientFFI.h
 	@cp $(GENERATED_DIR)/swift/codex_mobile_clientFFI.modulemap $(IOS_GENERATED)/Headers/codex_mobile_clientFFI.modulemap
 	@cp $(GENERATED_DIR)/swift/module.modulemap $(IOS_GENERATED)/Headers/module.modulemap
-	@touch $@
-
-bindings-kotlin: $(STAMP_BINDINGS_K)
-$(STAMP_BINDINGS_K): $(STAMP_SYNC) $(BOUNDARY_SOURCES) | alleycat-main
-	@echo "==> Generating Kotlin bindings..."
-	@cd $(RUST_DIR) && ./generate-bindings.sh --kotlin-only
 	@touch $@
 
 ish-dev-random:
@@ -765,43 +643,6 @@ watch-sim-run: watch-sim
 	xcrun simctl install $$WATCH_UDID "$$APP_PATH" ; \
 	xcrun simctl launch $$WATCH_UDID com.sigkitten.litter.watchkitapp
 
-android-debug:
-	@echo "==> Building Android debug..."
-	@cd $(ANDROID_DIR) && $(ANDROID_ENV) ./gradlew :app:assembleDebug
-
-android-install: android-debug
-	@echo "==> Installing APK to device..."
-	@DEVICE=$${ANDROID_DEVICE_SERIAL:-$$(adb devices | awk -F'\t' 'NR>1 && $$2=="device" && $$1 !~ /^emulator-/ {print $$1; exit}')} && \
-	if [ -z "$$DEVICE" ]; then echo "ERROR: no connected Android device found (set ANDROID_DEVICE_SERIAL=<serial> to override)"; exit 1; fi && \
-	echo "==> Using device $$DEVICE..." && \
-	INSTALL_OUTPUT=$$(adb -s "$$DEVICE" install -r $(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk 2>&1) && \
-	printf '%s\n' "$$INSTALL_OUTPUT" || { \
-		status=$$?; \
-		printf '%s\n' "$$INSTALL_OUTPUT"; \
-		if printf '%s' "$$INSTALL_OUTPUT" | grep -q 'INSTALL_FAILED_UPDATE_INCOMPATIBLE'; then \
-			if [ "$(ANDROID_REINSTALL_ON_SIGNATURE_MISMATCH)" = "1" ]; then \
-				echo "==> Installed app has a different signing key; uninstalling $(ANDROID_PACKAGE) and retrying..."; \
-				adb -s "$$DEVICE" uninstall $(ANDROID_PACKAGE) && \
-				adb -s "$$DEVICE" install -r $(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk || exit $$?; \
-			else \
-				echo "ERROR: installed app signature does not match this APK. Re-run with ANDROID_REINSTALL_ON_SIGNATURE_MISMATCH=1 to uninstall the existing app and install this build."; \
-				exit 1; \
-			fi; \
-		elif printf '%s' "$$INSTALL_OUTPUT" | grep -q 'INSTALL_FAILED_VERSION_DOWNGRADE'; then \
-			echo "==> Installed app has a higher versionCode; uninstalling $(ANDROID_PACKAGE) and retrying..."; \
-			adb -s "$$DEVICE" uninstall $(ANDROID_PACKAGE) && \
-			adb -s "$$DEVICE" install -r $(ANDROID_DIR)/app/build/outputs/apk/debug/app-debug.apk || exit $$?; \
-		else \
-			exit $$status; \
-		fi; \
-	}
-
-android-emulator-install: android-emulator-fast
-	@echo "==> Installing APK to emulator..."
-	@EMU=$$(adb devices | grep '^emulator-' | head -1 | cut -f1) && \
-	if [ -z "$$EMU" ]; then echo "ERROR: no emulator found"; exit 1; fi && \
-	adb -s "$$EMU" install -r $(ANDROID_APK)
-
 test: test-rust test-ios
 
 test-rust: alleycat-main
@@ -814,10 +655,6 @@ test-ios: xcgen
 		-scheme $(IOS_SCHEME) \
 		-configuration Debug \
 		-destination 'platform=iOS Simulator,name=$(IOS_SIM_DEVICE)'
-
-test-android:
-	@echo "==> Running Android tests..."
-	@cd $(ANDROID_DIR) && ./gradlew :app:testDebugUnitTest
 
 ios-release-prep: rust-ios-device-release alpine-fs xcgen
 
@@ -839,14 +676,6 @@ appstore-release: ios-release-prep
 	@echo "==> Submitting current repo version to the App Store..."
 	@$(IOS_SCRIPTS)/app-store-release.sh
 
-play-upload:
-	@echo "Android Play uploads are disabled for this iOS-only fork."
-	@false
-
-play-release:
-	@echo "Android Play releases are disabled for this iOS-only fork."
-	@false
-
 clean: clean-rust clean-ios
 	@rm -rf $(STAMPS)
 	@echo "==> Clean complete"
@@ -866,17 +695,8 @@ clean-ios:
 	@rm -rf $(IOS_DIR)/Resources/fs
 	@rm -f $(STAMP_XCGEN) $(STAMP_BINDINGS_S) $(STAMPS)/alpine-fs-* $(STAMPS)/ghostty-ios-*
 
-clean-android:
-	@echo "==> Cleaning Android artifacts..."
-	@rm -rf $(ANDROID_JNI)/arm64-v8a $(ANDROID_JNI)/x86_64 $(ANDROID_DIR)/core/bridge/src/main/cpp/include/ghostty.h
-	@rm -f $(ANDROID_DIR)/app/src/main/assets/alpine-fs.tar.gz $(ANDROID_DIR)/app/src/main/assets/alpine-fs.tgz $(ANDROID_DIR)/app/src/main/assets/alpine-fs.version
-	@rm -f $(ANDROID_APP_JNI)/arm64-v8a/libproot.so $(ANDROID_APP_JNI)/arm64-v8a/libproot_loader.so $(ANDROID_APP_JNI)/x86_64/libproot.so $(ANDROID_APP_JNI)/x86_64/libproot_loader.so
-	@rm -f $(ANDROID_DIR)/app/src/main/assets/licenses/proot-COPYING.txt $(ANDROID_DIR)/app/src/main/assets/licenses/talloc-COPYING.txt $(ANDROID_DIR)/app/src/main/assets/proot.version
-	@rm -f $(STAMP_BINDINGS_K) $(STAMPS)/rust-android-* $(STAMPS)/ghostty-android-* $(STAMPS)/android-alpine-fs-* $(STAMPS)/proot-android-*
-	@cd $(ANDROID_DIR) && ./gradlew clean 2>/dev/null || true
-
 rebuild-bindings:
-	@rm -f $(STAMP_BINDINGS_S) $(STAMP_BINDINGS_K)
+	@rm -f $(STAMP_BINDINGS_S)
 	@$(MAKE) bindings
 
 screenshots: screenshots-ios
@@ -884,10 +704,6 @@ screenshots: screenshots-ios
 screenshots-ios:
 	@echo "── Capturing iOS screenshots ──"
 	cd $(IOS_DIR) && bundle exec fastlane screenshots
-
-screenshots-android:
-	@echo "── Capturing Android screenshots ──"
-	cd $(ANDROID_DIR) && bundle exec fastlane screenshots
 
 $(KITTYLITTER_DEV_MANIFEST): $(KITTYLITTER_DIR)/Cargo.toml $(KITTYLITTER_DIR)/src/main.rs
 	@if [ ! -f "$(ALLEYCAT_DEV_DIR)/crates/alleycat/Cargo.toml" ]; then \

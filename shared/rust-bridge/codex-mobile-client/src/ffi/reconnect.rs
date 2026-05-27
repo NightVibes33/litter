@@ -1,5 +1,5 @@
 //! UniFFI-exported `ReconnectController` — shared reconnection orchestration
-//! consumed by both iOS and Android.
+//! consumed by the iOS app.
 
 use crate::ffi::shared::{shared_mobile_client, shared_runtime};
 use crate::mobile_client::MobileClient;
@@ -211,7 +211,7 @@ impl ReconnectController {
 
         // Run the probe body on the shared tokio runtime: the probe awaits
         // session.request_client(...), which uses tokio primitives and would
-        // panic ("no reactor running") when polled from the Swift/Kotlin
+        // panic ("no reactor running") when polled from Swift
         // foreign async executor.
         let _ = self
             .rt
