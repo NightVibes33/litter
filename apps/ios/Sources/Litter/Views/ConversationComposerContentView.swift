@@ -111,13 +111,12 @@ struct ConversationComposerContentView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            baseComposerContent
-
-            floatingStatusOverlay
-        }
-        .frame(maxWidth: LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass) ? 760 : .infinity)
-        .frame(maxWidth: .infinity, alignment: .center)
+        baseComposerContent
+            .overlay(alignment: .bottom) {
+                floatingStatusOverlay
+            }
+            .frame(maxWidth: LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass) ? 760 : .infinity)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var baseComposerContent: some View {

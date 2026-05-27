@@ -131,14 +131,6 @@ diff --git a/include/ghostty.h b/include/ghostty.h
 index fbfe3ee2c..18770dcec 100644
 --- a/include/ghostty.h
 +++ b/include/ghostty.h
-@@ -66,6 +66,7 @@ typedef enum {
-   GHOSTTY_PLATFORM_INVALID,
-   GHOSTTY_PLATFORM_MACOS,
-   GHOSTTY_PLATFORM_IOS,
-+  GHOSTTY_PLATFORM_ANDROID,
- } ghostty_platform_e;
-
- typedef enum {
 @@ -445,6 +446,10 @@ typedef struct {
    const char* value;
  } ghostty_env_var_s;
@@ -150,21 +142,6 @@ index fbfe3ee2c..18770dcec 100644
  typedef struct {
    void* nsview;
  } ghostty_platform_macos_s;
-@@ -453,9 +458,14 @@ typedef struct {
-   void* uiview;
- } ghostty_platform_ios_s;
-
-+typedef struct {
-+  void* native_window;
-+} ghostty_platform_android_s;
-+
- typedef union {
-   ghostty_platform_macos_s macos;
-   ghostty_platform_ios_s ios;
-+  ghostty_platform_android_s android;
- } ghostty_platform_u;
-
- typedef enum {
 @@ -476,6 +486,8 @@ typedef struct {
    size_t env_var_count;
    const char* initial_input;
@@ -190,308 +167,6 @@ index fbfe3ee2c..18770dcec 100644
  GHOSTTY_API void ghostty_surface_preedit(ghostty_surface_t, const char*, uintptr_t);
  GHOSTTY_API bool ghostty_surface_mouse_captured(ghostty_surface_t);
  GHOSTTY_API bool ghostty_surface_mouse_button(ghostty_surface_t,
-diff --git a/pkg/android-ndk/build.zig b/pkg/android-ndk/build.zig
-index 5b005665b..8a1bd81e1 100644
---- a/pkg/android-ndk/build.zig
-+++ b/pkg/android-ndk/build.zig
-@@ -116,6 +116,35 @@ pub fn addPaths(b: *std.Build, step: *std.Build.Step.Compile) !void {
-     step.root_module.addLibraryPath(value.lib);
- }
-
-+pub fn addTranslateCPaths(b: *std.Build, step: *std.Build.Step.TranslateC) !void {
-+    const target = step.target.result;
-+    if (!target.abi.isAndroid()) return;
-+
-+    const ndk_path = findNDKPath(b) orelse return error.AndroidNDKNotFound;
-+    const ndk_triple = ndkTriple(target) orelse return error.AndroidNDKUnsupportedTarget;
-+    const host = hostTag() orelse return error.AndroidNDKUnsupportedHost;
-+    const sysroot = b.pathJoin(&.{
-+        ndk_path,
-+        "toolchains",
-+        "llvm",
-+        "prebuilt",
-+        host,
-+        "sysroot",
-+    });
-+
-+    step.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{
-+        sysroot,
-+        "usr",
-+        "include",
-+    }) });
-+    step.addSystemIncludePath(.{ .cwd_relative = b.pathJoin(&.{
-+        sysroot,
-+        "usr",
-+        "include",
-+        ndk_triple,
-+    }) });
-+}
-+
- fn findNDKPath(b: *std.Build) ?[]const u8 {
-     // Check if user has set the environment variable for the NDK path.
-     if (std.process.getEnvVarOwned(b.allocator, "ANDROID_NDK_HOME") catch null) |value| {
-diff --git a/pkg/dcimgui/build.zig b/pkg/dcimgui/build.zig
-index 924e7c932..1a789a6af 100644
---- a/pkg/dcimgui/build.zig
-+++ b/pkg/dcimgui/build.zig
-@@ -26,6 +26,10 @@ pub fn build(b: *std.Build) !void {
-         .linkage = .static,
-     });
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-     // On MSVC, we must not use linkLibCpp because Zig unconditionally
-     // passes -nostdinc++ and then adds its bundled libc++/libc++abi
-     // include paths, which conflict with MSVC's own C++ runtime headers.
-diff --git a/pkg/dcimgui/build.zig.zon b/pkg/dcimgui/build.zig.zon
-index 95d0120e1..67a30c097 100644
---- a/pkg/dcimgui/build.zig.zon
-+++ b/pkg/dcimgui/build.zig.zon
-@@ -21,6 +21,7 @@
-         },
-
-         .apple_sdk = .{ .path = "../apple-sdk" },
-+        .android_ndk = .{ .path = "../android-ndk" },
-         .freetype = .{ .path = "../freetype" },
-     },
- }
-diff --git a/pkg/fontconfig/build.zig b/pkg/fontconfig/build.zig
-index 7c87d1f2e..4e9400a74 100644
---- a/pkg/fontconfig/build.zig
-+++ b/pkg/fontconfig/build.zig
-@@ -75,6 +75,10 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
-         .linkage = .static,
-     });
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-     if (target.result.os.tag != .windows) {
-         lib.linkSystemLibrary("pthread");
-     }
-diff --git a/pkg/fontconfig/build.zig.zon b/pkg/fontconfig/build.zig.zon
-index b1387b87e..0a5606718 100644
---- a/pkg/fontconfig/build.zig.zon
-+++ b/pkg/fontconfig/build.zig.zon
-@@ -12,5 +12,6 @@
-
-         .freetype = .{ .path = "../freetype", .lazy = true },
-         .libxml2 = .{ .path = "../libxml2", .lazy = true },
-+        .android_ndk = .{ .path = "../android-ndk" },
-     },
- }
-diff --git a/pkg/freetype/build.zig b/pkg/freetype/build.zig
-index b85310a5b..2bbaecc28 100644
---- a/pkg/freetype/build.zig
-+++ b/pkg/freetype/build.zig
-@@ -72,6 +72,10 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
-         .linkage = .static,
-     });
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-     if (target.result.os.tag.isDarwin()) {
-         const apple_sdk = @import("apple_sdk");
-         try apple_sdk.addPaths(b, lib);
-diff --git a/pkg/freetype/build.zig.zon b/pkg/freetype/build.zig.zon
-index 8ed1516b1..d19446ee6 100644
---- a/pkg/freetype/build.zig.zon
-+++ b/pkg/freetype/build.zig.zon
-@@ -12,6 +12,7 @@
-         },
-
-         .apple_sdk = .{ .path = "../apple-sdk" },
-+        .android_ndk = .{ .path = "../android-ndk" },
-         .libpng = .{ .path = "../libpng" },
-         .zlib = .{ .path = "../zlib" },
-     },
-diff --git a/pkg/glslang/build.zig b/pkg/glslang/build.zig
-index 1dc82a6e3..33983446f 100644
---- a/pkg/glslang/build.zig
-+++ b/pkg/glslang/build.zig
-@@ -51,6 +51,10 @@ fn buildGlslang(
-         .linkage = .static,
-     });
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-     // On MSVC, we must not use linkLibCpp because Zig unconditionally
-     // passes -nostdinc++ and then adds its bundled libc++/libc++abi
-     // include paths, which conflict with MSVC's own C++ runtime headers.
-diff --git a/pkg/glslang/build.zig.zon b/pkg/glslang/build.zig.zon
-index 252237e58..f2e92d3cd 100644
---- a/pkg/glslang/build.zig.zon
-+++ b/pkg/glslang/build.zig.zon
-@@ -12,5 +12,6 @@
-         },
-
-         .apple_sdk = .{ .path = "../apple-sdk" },
-+        .android_ndk = .{ .path = "../android-ndk" },
-     },
- }
-diff --git a/pkg/harfbuzz/build.zig b/pkg/harfbuzz/build.zig
-index b482bc8a3..6f07b19c9 100644
---- a/pkg/harfbuzz/build.zig
-+++ b/pkg/harfbuzz/build.zig
-@@ -103,6 +103,10 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
-         .linkage = .static,
-     });
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-     // On MSVC, we must not use linkLibCpp because Zig unconditionally
-     // passes -nostdinc++ and then adds its bundled libc++/libc++abi
-     // include paths, which conflict with MSVC's own C++ runtime headers.
-diff --git a/pkg/harfbuzz/build.zig.zon b/pkg/harfbuzz/build.zig.zon
-index b7d155e9c..9046acc64 100644
---- a/pkg/harfbuzz/build.zig.zon
-+++ b/pkg/harfbuzz/build.zig.zon
-@@ -14,5 +14,6 @@
-         .freetype = .{ .path = "../freetype" },
-         .macos = .{ .path = "../macos" },
-         .apple_sdk = .{ .path = "../apple-sdk" },
-+        .android_ndk = .{ .path = "../android-ndk" },
-     },
- }
-diff --git a/pkg/libpng/build.zig b/pkg/libpng/build.zig
-index 8734b28f9..839c78e3b 100644
---- a/pkg/libpng/build.zig
-+++ b/pkg/libpng/build.zig
-@@ -13,6 +13,10 @@ pub fn build(b: *std.Build) !void {
-         .linkage = .static,
-     });
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-     if (target.result.os.tag == .linux) {
-         lib.linkSystemLibrary("m");
-     }
-diff --git a/pkg/libpng/build.zig.zon b/pkg/libpng/build.zig.zon
-index b5153ff74..ff14abea4 100644
---- a/pkg/libpng/build.zig.zon
-+++ b/pkg/libpng/build.zig.zon
-@@ -13,5 +13,6 @@
-
-         .zlib = .{ .path = "../zlib", .lazy = true },
-         .apple_sdk = .{ .path = "../apple-sdk" },
-+        .android_ndk = .{ .path = "../android-ndk" },
-     },
- }
-diff --git a/pkg/libxml2/build.zig b/pkg/libxml2/build.zig
-index a9b3e4b1a..340ee35a5 100644
---- a/pkg/libxml2/build.zig
-+++ b/pkg/libxml2/build.zig
-@@ -15,6 +15,10 @@ pub fn build(b: *std.Build) !void {
-         .linkage = .static,
-     });
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-
-     if (upstream_) |upstream| lib.addIncludePath(upstream.path("include"));
-     lib.addIncludePath(b.path("override/include"));
-diff --git a/pkg/libxml2/build.zig.zon b/pkg/libxml2/build.zig.zon
-index f932835aa..af2f98a39 100644
---- a/pkg/libxml2/build.zig.zon
-+++ b/pkg/libxml2/build.zig.zon
-@@ -9,5 +9,6 @@
-             .hash = "N-V-__8AAG3RoQEyRC2Vw7Qoro5SYBf62IHn3HjqtNVY6aWK",
-             .lazy = true,
-         },
-+        .android_ndk = .{ .path = "../android-ndk" },
-     },
- }
-diff --git a/pkg/oniguruma/build.zig b/pkg/oniguruma/build.zig
-index d142e5eb1..bfa69f9e7 100644
---- a/pkg/oniguruma/build.zig
-+++ b/pkg/oniguruma/build.zig
-@@ -70,6 +70,10 @@ fn buildLib(b: *std.Build, module: *std.Build.Module, options: anytype) !*std.Bu
-     const t = target.result;
-     const is_windows = t.os.tag == .windows;
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-
-     if (target.result.os.tag.isDarwin()) {
-         const apple_sdk = @import("apple_sdk");
-diff --git a/pkg/oniguruma/build.zig.zon b/pkg/oniguruma/build.zig.zon
-index 10ec786cb..556136c4c 100644
---- a/pkg/oniguruma/build.zig.zon
-+++ b/pkg/oniguruma/build.zig.zon
-@@ -12,5 +12,6 @@
-         },
-
-         .apple_sdk = .{ .path = "../apple-sdk" },
-+        .android_ndk = .{ .path = "../android-ndk" },
-     },
- }
-diff --git a/pkg/spirv-cross/build.zig b/pkg/spirv-cross/build.zig
-index 72ce61eb6..8831129e7 100644
---- a/pkg/spirv-cross/build.zig
-+++ b/pkg/spirv-cross/build.zig
-@@ -58,6 +58,10 @@ fn buildSpirvCross(
-         .linkage = .static,
-     });
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-     // On MSVC, we must not use linkLibCpp because Zig unconditionally
-     // passes -nostdinc++ and then adds its bundled libc++/libc++abi
-     // include paths, which conflict with MSVC's own C++ runtime headers.
-diff --git a/pkg/spirv-cross/build.zig.zon b/pkg/spirv-cross/build.zig.zon
-index 30eea9501..9e3eb7353 100644
---- a/pkg/spirv-cross/build.zig.zon
-+++ b/pkg/spirv-cross/build.zig.zon
-@@ -12,5 +12,6 @@
-         },
-
-         .apple_sdk = .{ .path = "../apple-sdk" },
-+        .android_ndk = .{ .path = "../android-ndk" },
-     },
- }
-diff --git a/pkg/zlib/build.zig b/pkg/zlib/build.zig
-index 64db13aa1..7719f7131 100644
---- a/pkg/zlib/build.zig
-+++ b/pkg/zlib/build.zig
-@@ -13,6 +13,10 @@ pub fn build(b: *std.Build) !void {
-         .linkage = .static,
-     });
-     lib.linkLibC();
-+    if (target.result.abi.isAndroid()) {
-+        const android_ndk = @import("android_ndk");
-+        try android_ndk.addPaths(b, lib);
-+    }
-     if (target.result.os.tag.isDarwin()) {
-         const apple_sdk = @import("apple_sdk");
-         try apple_sdk.addPaths(b, lib);
-diff --git a/pkg/zlib/build.zig.zon b/pkg/zlib/build.zig.zon
-index 0f75bca75..82ab6faa8 100644
---- a/pkg/zlib/build.zig.zon
-+++ b/pkg/zlib/build.zig.zon
-@@ -12,5 +12,6 @@
-         },
-
-         .apple_sdk = .{ .path = "../apple-sdk" },
-+        .android_ndk = .{ .path = "../android-ndk" },
-     },
- }
 diff --git a/src/Surface.zig b/src/Surface.zig
 index 5d16f3326..81268f140 100644
 --- a/src/Surface.zig
@@ -612,73 +287,38 @@ index 7310159cc..b8f7aa7d3 100644
  const CoreApp = @import("../App.zig");
  const CoreInspector = @import("../inspector/main.zig").Inspector;
  const CoreSurface = @import("../Surface.zig");
-@@ -26,6 +27,13 @@ const log = std.log.scoped(.embedded_window);
+@@ -26,6 +27,7 @@ const log = std.log.scoped(.embedded_window);
 
  pub const resourcesDir = internal_os.resourcesDir;
 
-+/// Android embeds Ghostty into a host-owned EGL window surface. That context
-+/// is bound on the app thread by the JNI bridge, so OpenGL draw calls must
-+/// be routed back through the app mailbox instead of running on the renderer
-+/// worker thread.
-+pub const must_draw_from_app_thread =
-+    builtin.target.os.tag == .linux and builtin.target.abi.isAndroid();
 +
  pub const App = struct {
      /// Because we only expect the embedding API to be used in embedded
      /// environments, the options are extern so that we can expose it
-@@ -345,6 +353,7 @@ pub const App = struct {
- pub const Platform = union(PlatformTag) {
-     macos: MacOS,
-     ios: IOS,
-+    android: Android,
-
-     // If our build target for libghostty is not darwin then we do
-     // not include macos support at all.
-@@ -358,6 +367,11 @@ pub const Platform = union(PlatformTag) {
+@@ -358,6 +367,7 @@ pub const Platform = union(PlatformTag) {
          uiview: objc.Object,
      } else void;
 
-+    pub const Android = if (builtin.target.os.tag == .linux and builtin.target.abi.isAndroid()) struct {
-+        /// The ANativeWindow-compatible surface provided by the embedding host.
-+        native_window: *anyopaque,
-+    } else void;
 +
      // The C ABI compatible version of this union. The tag is expected
      // to be stored elsewhere.
      pub const C = extern union {
-@@ -368,6 +382,10 @@ pub const Platform = union(PlatformTag) {
+@@ -368,6 +382,7 @@ pub const Platform = union(PlatformTag) {
          ios: extern struct {
              uiview: ?*anyopaque,
          },
 +
-+        android: extern struct {
-+            native_window: ?*anyopaque,
-+        },
      };
 
      /// Initialize a Platform a tag and configuration from the C ABI.
-@@ -387,6 +405,13 @@ pub const Platform = union(PlatformTag) {
+@@ -387,6 +405,7 @@ pub const Platform = union(PlatformTag) {
                      break :ios error.UIViewMustBeSet);
                  break :ios .{ .ios = .{ .uiview = uiview } };
              } else error.UnsupportedPlatform,
 +
-+            .android => if (Android != void) android: {
-+                const config = c_platform.android;
-+                const native_window = config.native_window orelse
-+                    break :android error.NativeWindowMustBeSet;
-+                break :android .{ .android = .{ .native_window = native_window } };
-+            } else error.UnsupportedPlatform,
          };
      }
  };
-@@ -397,6 +422,7 @@ pub const PlatformTag = enum(c_int) {
-
-     macos = 1,
-     ios = 2,
-+    android = 3,
- };
-
- pub const EnvVar = extern struct {
 @@ -411,6 +437,8 @@ pub const Surface = struct {
      app: *App,
      platform: Platform,
@@ -789,100 +429,6 @@ index 7310159cc..b8f7aa7d3 100644
      /// Set the preedit text for the surface. This is used for IME
      /// composition. If the length is 0, then the preedit text is cleared.
      export fn ghostty_surface_preedit(
-diff --git a/src/build/GhosttyLib.zig b/src/build/GhosttyLib.zig
-index b762da8bb..9f179c51e 100644
---- a/src/build/GhosttyLib.zig
-+++ b/src/build/GhosttyLib.zig
-@@ -35,6 +35,9 @@ pub fn initStatic(
-         .use_llvm = true,
-     });
-     lib.linkLibC();
-+    if (lib.rootModuleTarget().abi.isAndroid()) {
-+        try @import("android_ndk").addPaths(b, lib);
-+    }
-
-     // These must be bundled since we're compiling into a static lib.
-     // Otherwise, you get undefined symbol errors.
-@@ -88,6 +91,9 @@ pub fn initShared(
-         .use_llvm = true,
-     });
-     _ = try deps.add(lib);
-+    if (lib.rootModuleTarget().abi.isAndroid()) {
-+        try @import("android_ndk").addPaths(b, lib);
-+    }
-
-     // On Windows with MSVC, building a DLL requires the full CRT library
-     // chain. linkLibC() (called via deps.add) provides msvcrt.lib, but
-diff --git a/src/build/SharedDeps.zig b/src/build/SharedDeps.zig
-index b68be92d0..c912822e1 100644
---- a/src/build/SharedDeps.zig
-+++ b/src/build/SharedDeps.zig
-@@ -149,6 +149,8 @@ pub fn add(
-                 .verbose = false,
-             });
-             c.addSystemIncludePath(.{ .cwd_relative = libc.sys_include_dir.? });
-+        } else if (target.result.abi.isAndroid()) {
-+            try @import("android_ndk").addTranslateCPaths(b, c);
-         }
-         step.root_module.addImport("locale-c", c.createModule());
-     }
-@@ -173,6 +175,9 @@ pub fn add(
-                     });
-                     c.addSystemIncludePath(.{ .cwd_relative = libc.sys_include_dir.? });
-                 },
-+                .linux => if (target.result.abi.isAndroid()) {
-+                    try @import("android_ndk").addTranslateCPaths(b, c);
-+                },
-                 else => {},
-             }
-             step.root_module.addImport("pty-c", c.createModule());
-diff --git a/src/renderer/Metal.zig b/src/renderer/Metal.zig
-index 6c7432d21..254cea8ea 100644
---- a/src/renderer/Metal.zig
-+++ b/src/renderer/Metal.zig
-@@ -99,6 +99,7 @@ pub fn init(alloc: Allocator, opts: rendererpkg.Options) !Metal {
-             .view = switch (opts.rt_surface.platform) {
-                 .macos => |v| v.nsview,
-                 .ios => |v| v.uiview,
-+                .android => return error.UnsupportedPlatformForMetal,
-             },
-         },
-
-diff --git a/src/renderer/OpenGL.zig b/src/renderer/OpenGL.zig
-index 4b01da0c5..18f5caffd 100644
---- a/src/renderer/OpenGL.zig
-+++ b/src/renderer/OpenGL.zig
-@@ -12,6 +12,17 @@ const configpkg = @import("../config.zig");
- const rendererpkg = @import("../renderer.zig");
- const Renderer = rendererpkg.GenericRenderer(OpenGL);
-
-+const android_egl = if (builtin.target.os.tag == .linux and builtin.target.abi.isAndroid()) struct {
-+    const c = @cImport({
-+        @cInclude("EGL/egl.h");
-+    });
-+    const Proc = *const fn () callconv(.c) void;
-+
-+    fn getProcAddress(name: [*:0]const u8) callconv(.c) ?Proc {
-+        return @ptrCast(c.eglGetProcAddress(name));
-+    }
-+} else struct {};
-+
- pub const GraphicsAPI = OpenGL;
- pub const Target = @import("opengl/Target.zig");
- pub const Frame = @import("opengl/Frame.zig");
-@@ -170,9 +181,9 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
-         => try prepareContext(null),
-
-         apprt.embedded => {
--            // TODO(mitchellh): this does nothing today to allow libghostty
--            // to compile for OpenGL targets but libghostty is strictly
--            // broken for rendering on this platforms.
-+            if (comptime builtin.target.os.tag == .linux and builtin.target.abi.isAndroid()) {
-+                try prepareContext(&android_egl.getProcAddress);
-+            }
-         },
-     }
-
 diff --git a/src/termio/backend.zig b/src/termio/backend.zig
 index c29009acb..6904e527b 100644
 --- a/src/termio/backend.zig
