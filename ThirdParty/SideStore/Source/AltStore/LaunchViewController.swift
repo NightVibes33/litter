@@ -27,7 +27,7 @@ final class LaunchViewController: UIViewController, UIDocumentPickerDelegate {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        splashView = SplashView(frame: view.bounds, appName: "SideStore")
+        splashView = SplashView(frame: view.bounds, appName: "KittyStore")
         destinationViewController = storyboard!.instantiateViewController(withIdentifier: "tabBarController") as? TabBarController
         view.addSubview(splashView)
     }
@@ -93,8 +93,8 @@ final class LaunchViewController: UIViewController, UIDocumentPickerDelegate {
             let loggingEnabled = UserDefaults.standard.isMinimuxerConsoleLoggingEnabled
             try minimuxerStartWithLogger(pairing_file, documentsDirectory, loggingEnabled)
         } catch {
-            try! FileManager.default.removeItem(at: FileManager.default.documentsDirectory.appendingPathComponent(pairingFileName))
-            displayError("minimuxer failed to start, please restart SideStore. \((error as? LocalizedError)?.failureReason ?? "UNKNOWN ERROR")")
+            try? FileManager.default.removeItem(at: FileManager.default.documentsDirectory.appendingPathComponent(pairingFileName))
+            displayError("minimuxer failed to start, please restart KittyStore. \((error as? LocalizedError)?.failureReason ?? "UNKNOWN ERROR")")
         }
         startAutoMounter(documentsDirectory)
     }
@@ -103,7 +103,7 @@ final class LaunchViewController: UIViewController, UIDocumentPickerDelegate {
 
     func displayError(_ msg: String) {
         print(msg)
-        let alert = UIAlertController(title: "Error launching SideStore", message: msg, preferredStyle: .alert)
+        let alert = UIAlertController(title: "Error launching KittyStore", message: msg, preferredStyle: .alert)
         self.present(alert, animated: true)
     }
 
@@ -155,7 +155,7 @@ final class LaunchViewController: UIViewController, UIDocumentPickerDelegate {
         if let altCert = ALTCertificate(p12Data: account.cert, password: account.certpass) {
             Keychain.shared.signingCertificate = altCert.encryptedP12Data(withPassword: "")!
             Keychain.shared.signingCertificatePassword = account.certpass
-            let toastView = ToastView(text: NSLocalizedString("Successfully imported '\(account.email)'!", comment: ""), detailText: "SideStore should be fully operational!")
+            let toastView = ToastView(text: NSLocalizedString("Successfully imported '\(account.email)'!", comment: ""), detailText: "KittyStore should be fully operational!")
             return toastView.show(in: self)
         } else {
             let toastView = ToastView(text: NSLocalizedString("Failed to import account certificate!", comment: ""), detailText: "Failed to create ALTCertificate. Check if the password is correct. Still imported account/adi.pb details!")
@@ -177,7 +177,7 @@ extension LaunchViewController {
     @MainActor
     func handleLaunchError(_ error: Error, retryCallback: (() async -> Void)? = nil) {
         do { throw error } catch let error as NSError {
-            let title = error.userInfo[NSLocalizedFailureErrorKey] as? String ?? NSLocalizedString("Unable to Launch SideStore", comment: "")
+            let title = error.userInfo[NSLocalizedFailureErrorKey] as? String ?? NSLocalizedString("Unable to Launch KittyStore", comment: "")
             let desc: String
             if #available(iOS 14.5, *) {
                 desc = ([error.debugDescription] + error.underlyingErrors.map { ($0 as NSError).debugDescription }).joined(separator: "\n\n")

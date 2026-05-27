@@ -40,10 +40,6 @@ struct HomeModelChip: View {
         return appModel.availableModels(for: serverId)
     }
 
-    private var selectedRuntimeLabel: String {
-        appState.preferredChatRuntimeMode.shortTitle
-    }
-
     private var selectedModelLabel: String {
         let trimmed = appState.preferredModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
@@ -105,14 +101,6 @@ struct HomeModelChip: View {
                 Image(systemName: "cpu")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(disabled ? LitterTheme.textMuted : LitterTheme.accent)
-                Text(selectedRuntimeLabel)
-                    .litterMonoFont(size: 10, weight: .bold)
-                    .foregroundStyle(disabled ? LitterTheme.textMuted : LitterTheme.accent)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: true)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background((disabled ? LitterTheme.textMuted : LitterTheme.accent).opacity(0.14), in: Capsule())
                 Text(selectedModelLabel)
                     .litterMonoFont(size: 12, weight: .semibold)
                     .foregroundStyle(disabled ? LitterTheme.textSecondary : LitterTheme.textPrimary)
@@ -145,8 +133,7 @@ struct HomeModelChip: View {
                     .foregroundStyle(LitterTheme.textMuted)
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(minHeight: 36)
+            .padding(.vertical, 7)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)

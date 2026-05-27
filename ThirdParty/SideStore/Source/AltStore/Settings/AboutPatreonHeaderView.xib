@@ -60,9 +60,9 @@
                                 <textView clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="scaleToFill" scrollEnabled="NO" editable="NO" textAlignment="natural" selectable="NO" translatesAutoresizingMaskIntoConstraints="NO" id="FeG-e5-LJl">
                                     <rect key="frame" x="0.0" y="65" width="343" height="124"/>
                                     <color key="backgroundColor" white="1" alpha="0.13" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
-                                    <string key="text">Thank you for using SideStore!
+                                    <string key="text">Thank you for using KittyStore!
         
-Subscribing to the patreon supports us and makes sure we can continue developing SideStore for you.
+Subscribing to the patreon supports us and makes sure we can continue developing KittyStore for you.
     
 Following us on social media allows us to give quick updates and spread the word about sideloading!
         
