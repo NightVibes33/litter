@@ -1,5 +1,13 @@
 # Debug Log
 
+## 2026-05-27
+
+- Investigated the latest failing unsigned IPA workflow: run `26526379513` failed in `DatabaseManager.swift` because embedded KittyStore code assigned `StoreApp.name`, `developerName`, and `localizedDescription` from outside `StoreApp`, where those Core Data properties are `public private(set)`.
+- Fixed the archive blocker by adding `StoreApp.applyEmbeddedKittyStoreMetadata()` and calling it from embedded database preparation.
+- Rebranded embedded KittyStore runtime surfaces: removed delayed post-layout branding passes, renamed host/embedded glue paths to KittyStore, switched widget display names and fallback icons to KittyStore assets, and changed bot-visible `sidestore-*` statuses to `kittystore-*`.
+- Kept legacy `sidestore` URL schemes as compatibility aliases, while adding KittyStore schemes and switching bundle/app-group constants to `com.sigkitten.litter.KittyStore`.
+- Verified locally with `git diff --check`, `verify-kittystore-integration.sh`, AltStore source validation, JSON parsing, plist parsing, and shell syntax checks. The local iSH runtime still cannot regenerate the Xcode project because `xcodegen` is not installed, and `litter-swift-selftest` still fails in the app sandbox before diagnostics with low job-path free space.
+
 ## 2026-05-10
 
 - Confirmed the public unsigned IPA workflow is green on `main` before private BuildKit work.
