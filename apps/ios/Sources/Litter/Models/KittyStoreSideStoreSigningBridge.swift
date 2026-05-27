@@ -81,7 +81,7 @@ enum KittyStoreSideStoreSigningBridge {
             guard let selectedTeam = selectTeam(from: teams, requestedTeamID: requestedTeamID) else {
                 let teamText = teams.map { teamSummary($0).displayText }.joined(separator: "\n")
                 throw NSError(
-                    domain: "KittyStoreSideStoreSigningBridge",
+                    domain: "KittyStoreSigningBridge",
                     code: 404,
                     userInfo: [NSLocalizedDescriptionKey: teamText.isEmpty ? "Apple ID authenticated, but no Apple Developer team was returned." : "Team ID not found. Available teams:\n\(teamText)"]
                 )
@@ -297,9 +297,9 @@ enum KittyStoreSideStoreSigningBridge {
 
     private static var unavailableError: NSError {
         NSError(
-            domain: "KittyStoreSideStoreSigningBridge",
+            domain: "KittyStoreSigningBridge",
             code: 78,
-            userInfo: [NSLocalizedDescriptionKey: "KittyStore AltSign is not linked into this build. Re-run XcodeGen and build with the vendored ThirdParty/SideStore/AltSign package available."]
+            userInfo: [NSLocalizedDescriptionKey: "KittyStore AltSign is not linked into this build. Re-run XcodeGen and build with the vendored KittyStore AltSign package available."]
         )
     }
 }
@@ -355,7 +355,7 @@ private extension KittyStoreSideStoreSigningBridge {
         guard let team = selectTeam(from: teams, requestedTeamID: requestedTeamID) else {
             let teamText = teams.map { teamSummary($0).displayText }.joined(separator: "\n")
             throw NSError(
-                domain: "KittyStoreSideStoreSigningBridge",
+                domain: "KittyStoreSigningBridge",
                 code: 404,
                 userInfo: [NSLocalizedDescriptionKey: teamText.isEmpty ? "Apple ID authenticated, but no Apple Developer team was returned." : "Team ID not found. Available teams:\n\(teamText)"]
             )
@@ -379,7 +379,7 @@ private extension KittyStoreSideStoreSigningBridge {
 
         let appBundleURL = try fileManager.unzipAppBundle(at: ipaURL, toDirectory: workingDirectoryURL)
         guard let application = ALTApplication(fileURL: appBundleURL) else {
-            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 65, userInfo: [NSLocalizedDescriptionKey: "AltSign could not read an app bundle from the imported IPA."])
+            throw NSError(domain: "KittyStoreSigningBridge", code: 65, userInfo: [NSLocalizedDescriptionKey: "AltSign could not read an app bundle from the imported IPA."])
         }
         let originalMainBundleIdentifier = application.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         let mainBundleIdentifier = sideStoreBundleIdentifier(
@@ -450,7 +450,7 @@ private extension KittyStoreSideStoreSigningBridge {
 
         let appBundleURL = try fileManager.unzipAppBundle(at: ipaURL, toDirectory: workingDirectoryURL)
         guard let application = ALTApplication(fileURL: appBundleURL) else {
-            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 65, userInfo: [NSLocalizedDescriptionKey: "AltSign could not read an app bundle from the imported IPA."])
+            throw NSError(domain: "KittyStoreSigningBridge", code: 65, userInfo: [NSLocalizedDescriptionKey: "AltSign could not read an app bundle from the imported IPA."])
         }
 
         let originalMainBundleIdentifier = application.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -463,7 +463,7 @@ private extension KittyStoreSideStoreSigningBridge {
            !mainBundleIdentifier.isEmpty,
            !profileBundleIdentifierAllows(mainBundleIdentifier, profileBundleIdentifier: profile.bundleIdentifier) {
             throw NSError(
-                domain: "KittyStoreSideStoreSigningBridge",
+                domain: "KittyStoreSigningBridge",
                 code: 67,
                 userInfo: [NSLocalizedDescriptionKey: "Provisioning profile bundle ID \(profile.bundleIdentifier) does not allow \(mainBundleIdentifier)."]
             )
@@ -556,7 +556,7 @@ private extension KittyStoreSideStoreSigningBridge {
     static func rewriteInfoPlist(in bundleURL: URL, bundleIdentifier: String, displayName: String, version: String) throws {
         let infoPlistURL = bundleURL.appendingPathComponent("Info.plist")
         guard let infoDictionary = NSMutableDictionary(contentsOf: infoPlistURL) else {
-            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 66, userInfo: [NSLocalizedDescriptionKey: "Could not read Info.plist at \(infoPlistURL.path)."])
+            throw NSError(domain: "KittyStoreSigningBridge", code: 66, userInfo: [NSLocalizedDescriptionKey: "Could not read Info.plist at \(infoPlistURL.path)."])
         }
         let cleanedBundleIdentifier = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -575,7 +575,7 @@ private extension KittyStoreSideStoreSigningBridge {
         infoDictionary.removeObject(forKey: "DTXcode")
         infoDictionary.removeObject(forKey: "DTXcodeBuild")
         guard infoDictionary.write(to: infoPlistURL, atomically: true) else {
-            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 66, userInfo: [NSLocalizedDescriptionKey: "Could not write Info.plist at \(infoPlistURL.path)."])
+            throw NSError(domain: "KittyStoreSigningBridge", code: 66, userInfo: [NSLocalizedDescriptionKey: "Could not write Info.plist at \(infoPlistURL.path)."])
         }
         let signatureURL = bundleURL.appendingPathComponent("_CodeSignature", isDirectory: true)
         if FileManager.default.fileExists(atPath: signatureURL.path) {
@@ -589,11 +589,11 @@ private extension KittyStoreSideStoreSigningBridge {
             ALTAppleAPI.shared.addCertificate(machineName: machineName, to: team, session: session) { certificate, error in
                 if let error { continuation.resume(throwing: error) }
                 else if let certificate { continuation.resume(returning: certificate) }
-                else { continuation.resume(throwing: NSError(domain: "KittyStoreSideStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return a signing certificate."])) }
+                else { continuation.resume(throwing: NSError(domain: "KittyStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return a signing certificate."])) }
             }
         }
         guard let privateKey = certificate.privateKey else {
-            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple returned a certificate without a private key."])
+            throw NSError(domain: "KittyStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple returned a certificate without a private key."])
         }
         let certificates = try await fetchCertificates(team: team, session: session)
         if let serverCertificate = certificates.first(where: { $0.serialNumber == certificate.serialNumber }) {
@@ -622,7 +622,7 @@ private extension KittyStoreSideStoreSigningBridge {
             ALTAppleAPI.shared.registerDevice(name: deviceRegistrationName, identifier: udid, type: .iphone, team: team, session: session) { device, error in
                 if let error { continuation.resume(throwing: error) }
                 else if let device { continuation.resume(returning: device) }
-                else { continuation.resume(throwing: NSError(domain: "KittyStoreSideStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return a registered device."])) }
+                else { continuation.resume(throwing: NSError(domain: "KittyStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return a registered device."])) }
             }
         }
     }
@@ -647,7 +647,7 @@ private extension KittyStoreSideStoreSigningBridge {
             ALTAppleAPI.shared.addAppID(withName: appIDName, bundleIdentifier: bundleIdentifier, team: team, session: session) { appID, error in
                 if let error { continuation.resume(throwing: error) }
                 else if let appID { continuation.resume(returning: appID) }
-                else { continuation.resume(throwing: NSError(domain: "KittyStoreSideStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return an App ID."])) }
+                else { continuation.resume(throwing: NSError(domain: "KittyStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return an App ID."])) }
             }
         }
     }
@@ -677,7 +677,7 @@ private extension KittyStoreSideStoreSigningBridge {
             ALTAppleAPI.shared.fetchProvisioningProfile(for: appID, deviceType: .iphone, team: team, session: session) { profile, error in
                 if let error { continuation.resume(throwing: error) }
                 else if let profile { continuation.resume(returning: profile) }
-                else { continuation.resume(throwing: NSError(domain: "KittyStoreSideStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return a provisioning profile."])) }
+                else { continuation.resume(throwing: NSError(domain: "KittyStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple did not return a provisioning profile."])) }
             }
         }
     }
@@ -698,10 +698,10 @@ private extension KittyStoreSideStoreSigningBridge {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let (data, response) = try await URLSession.shared.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Anisette server returned HTTP \(http.statusCode)"])
+            throw NSError(domain: "KittyStoreSigningBridge", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Anisette server returned HTTP \(http.statusCode)"])
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
-            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 422, userInfo: [NSLocalizedDescriptionKey: "Anisette server did not return the KittyStore-compatible header JSON format."])
+            throw NSError(domain: "KittyStoreSigningBridge", code: 422, userInfo: [NSLocalizedDescriptionKey: "Anisette server did not return the KittyStore-compatible header JSON format."])
         }
 
         var formatted: [String: String] = ["deviceSerialNumber": json["X-Apple-I-SRL-NO"] ?? "0"]
@@ -716,7 +716,7 @@ private extension KittyStoreSideStoreSigningBridge {
         if let value = json["X-Apple-I-TimeZone"] { formatted["timeZone"] = value }
 
         guard let anisetteData = ALTAnisetteData(json: formatted) else {
-            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 422, userInfo: [NSLocalizedDescriptionKey: "Anisette headers were incomplete or invalid for AltSign."])
+            throw NSError(domain: "KittyStoreSigningBridge", code: 422, userInfo: [NSLocalizedDescriptionKey: "Anisette headers were incomplete or invalid for AltSign."])
         }
         return anisetteData
     }
@@ -744,7 +744,7 @@ private extension KittyStoreSideStoreSigningBridge {
                 } else if let account, let session {
                     continuation.resume(returning: (account, session))
                 } else {
-                    continuation.resume(throwing: NSError(domain: "KittyStoreSideStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple authentication returned no account session."]))
+                    continuation.resume(throwing: NSError(domain: "KittyStoreSigningBridge", code: 500, userInfo: [NSLocalizedDescriptionKey: "Apple authentication returned no account session."]))
                 }
             }
         }
@@ -823,7 +823,7 @@ private extension KittyStoreSideStoreSigningBridge {
                 if success {
                     continuation.resume()
                 } else {
-                    continuation.resume(throwing: error ?? NSError(domain: "KittyStoreSideStoreSigningBridge", code: 70, userInfo: [NSLocalizedDescriptionKey: "AltSign failed without a specific error."]))
+                    continuation.resume(throwing: error ?? NSError(domain: "KittyStoreSigningBridge", code: 70, userInfo: [NSLocalizedDescriptionKey: "AltSign failed without a specific error."]))
                 }
             }
         }

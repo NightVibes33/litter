@@ -44,7 +44,7 @@ final class TabBarController: UITabBarController
         super.viewDidLoad()
         
         guard let viewControllers, viewControllers.indices.contains(Tab.settings.rawValue) else {
-            print("[KittyStore] TabBarController loaded without the expected SideStore tabs.")
+            print("[KittyStore] TabBarController loaded without the expected KittyStore tabs.")
             return
         }
 

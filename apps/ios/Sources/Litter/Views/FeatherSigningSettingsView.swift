@@ -78,9 +78,9 @@ struct FeatherSigningSettingsView: View {
 
     private var upstreamSourceSection: some View {
         Section {
-            sourceRow("KittyStore Core", detail: "ThirdParty/SideStore/Source")
+            sourceRow("KittyStore Core", detail: "Vendored KittyStore runtime")
             sourceRow("Feather", detail: "ThirdParty/Feather/Source")
-            sourceRow("LocalDevVPN", detail: "ThirdParty/SideStore/LocalDevVPN-Source")
+            sourceRow("LocalDevVPN", detail: "Vendored LocalDevVPN bridge")
         } header: {
             Text("Upstream Sources")
                 .foregroundStyle(LitterTheme.textSecondary)

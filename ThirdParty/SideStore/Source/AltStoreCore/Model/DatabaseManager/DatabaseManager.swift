@@ -568,7 +568,7 @@ private extension DatabaseManager
                     }
                     catch
                     {
-                        print("Failed to copy SideStore app bundle to its proper location.", error)
+                        print("Failed to copy KittyStore app bundle to its proper location.", error)
                     }
                 }
             }

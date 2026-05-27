@@ -500,9 +500,9 @@ class FetchProvisioningProfilesInstallOperation: FetchProvisioningProfilesOperat
         
         if app.isAltStoreApp
         {
-            print("Application groups before modifying for SideStore: \(applicationGroups)")
+            print("Application groups before modifying for KittyStore: \(applicationGroups)")
             
-            // Remove app groups that contain AltStore since they can be problematic (cause SideStore to expire early)
+            // Remove app groups that contain AltStore since they can be problematic for refresh expiration.
             for (index, group) in applicationGroups.enumerated() {
                 if group.contains("AltStore") {
                     print("Removing application group: \(group)")

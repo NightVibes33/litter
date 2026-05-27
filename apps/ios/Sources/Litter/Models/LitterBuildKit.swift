@@ -270,9 +270,9 @@ struct LitterBuildKitStatus: Equatable, Sendable {
 
     var nyxianRunInstallRequirements: [String] {
         var lines: [String] = []
-        if !embeddedProvisionPresent { lines.append("KittyStore/AltStore embedded.mobileprovision on the installed Litter app") }
+        if !embeddedProvisionPresent { lines.append("KittyStore-compatible embedded.mobileprovision on the installed Litter app") }
         if !appleIDConfigured { lines.append("Apple ID login in BuildKit settings (email, password, KittyStore Anisette server; Team ID can be selected after login)") }
-        if !nyxianSigningCertificateInstalled { lines.append("validated matching KittyStore/AltStore .p12 certificate for Nyxian signing") }
+        if !nyxianSigningCertificateInstalled { lines.append("validated matching KittyStore-compatible .p12 certificate for Nyxian signing") }
         if !localDevVPNConnected { lines.append("LocalDevVPN connected for KittyStore-style on-device install/refresh") }
         return lines
     }
