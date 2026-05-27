@@ -6,12 +6,20 @@ import AltStoreCore
 public enum SideStoreEmbeddedFactory {
     @MainActor
     public static func makeRootViewController() -> UIViewController {
-        KittyStoreRootViewController()
+        SideStoreEmbeddedRuntime.prepareForLaunch()
+        LaunchViewController.isEmbeddedHostMode = true
+
+        let storyboard = UIStoryboard(name: "Main", bundle: Bundle(for: AppDelegate.self))
+        guard let viewController = storyboard.instantiateInitialViewController() else {
+            return SideStoreUnavailableViewController(message: "KittyStore could not load the embedded SideStore launch screen.")
+        }
+
+        return viewController
     }
 
     @MainActor
     public static func bootstrap() {
-        SideStoreEmbeddedRuntime.startIfNeeded()
+        SideStoreEmbeddedRuntime.prepareForLaunch()
     }
 }
 
@@ -36,12 +44,31 @@ open class AppDelegate: NSObject, UIApplicationDelegate {
 }
 
 private enum SideStoreEmbeddedRuntime {
+    @MainActor private static var didPrepare = false
     @MainActor private static var didStart = false
     @MainActor private static var didFinishStartup = false
     @MainActor private static var startupError: Error?
     @MainActor private static var startupCompletions: [((Error?) -> Void)] = []
 
     static var consoleLogProvider: (() -> ConsoleLog?)?
+
+    @MainActor
+    static func prepareForLaunch() {
+        guard !didPrepare else { return }
+        didPrepare = true
+
+        UserDefaults.registerDefaults()
+        SecureValueTransformer.register()
+        prepareImageCache()
+        consoleLogProvider?()?.startCapturing()
+
+        if UserDefaults.standard.firstLaunch == nil {
+            Keychain.shared.reset()
+            UserDefaults.standard.firstLaunch = Date()
+        }
+
+        UserDefaults.standard.preferredServerID = Bundle.main.object(forInfoDictionaryKey: Bundle.Info.serverID) as? String
+    }
 
     @MainActor
     static func startIfNeeded(completion: ((Error?) -> Void)? = nil) {
@@ -55,18 +82,7 @@ private enum SideStoreEmbeddedRuntime {
 
         guard !didStart else { return }
         didStart = true
-
-        UserDefaults.registerDefaults()
-        SecureValueTransformer.register()
-        prepareImageCache()
-        consoleLogProvider?()?.startCapturing()
-
-        if UserDefaults.standard.firstLaunch == nil {
-            Keychain.shared.reset()
-            UserDefaults.standard.firstLaunch = Date()
-        }
-
-        UserDefaults.standard.preferredServerID = Bundle.main.object(forInfoDictionaryKey: Bundle.Info.serverID) as? String
+        prepareForLaunch()
 
         guard !DatabaseManager.shared.isStarted else {
             finishStartup(error: nil)

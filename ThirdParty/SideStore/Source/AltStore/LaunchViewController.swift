@@ -18,6 +18,8 @@ import UniformTypeIdentifiers
 let pairingFileName = "ALTPairingFile.mobiledevicepairing"
 
 final class LaunchViewController: UIViewController, UIDocumentPickerDelegate {
+    static var isEmbeddedHostMode = false
+
     private var didFinishLaunching = false
     private var retries = 0
     private var maxRetries = 3
@@ -38,7 +40,9 @@ final class LaunchViewController: UIViewController, UIDocumentPickerDelegate {
         Task {
             startTime = Date()
             await runLaunchSequence()
-            doPostLaunch()
+            if !Self.isEmbeddedHostMode {
+                doPostLaunch()
+            }
         }
     }
 
@@ -210,15 +214,19 @@ extension LaunchViewController {
             if String(describing: error).contains("The Internet connection appears to be offline"){
                 mode = .localizedDescription    // dont make noise!
             }
+            guard let destinationViewController = self.destinationViewController else { return }
             let toastView = ToastView(error: error, mode: mode)
-            toastView.addTarget(self.destinationViewController, action: #selector(TabBarController.presentSources), for: .touchUpInside)
-            toastView.show(in: self.destinationViewController!.selectedViewController ?? self.destinationViewController!)
+            toastView.addTarget(destinationViewController, action: #selector(TabBarController.presentSources), for: .touchUpInside)
+            toastView.show(in: destinationViewController.selectedViewController ?? destinationViewController)
         }
         updateKnownSources()
         WidgetCenter.shared.reloadAllTimelines()
         didFinishLaunching = true
         
-        let destinationVC = destinationViewController!
+        guard let destinationVC = destinationViewController else {
+            displayError("KittyStore could not load its tab interface.")
+            return
+        }
         
         let elapsed = abs(startTime.timeIntervalSinceNow)
         let remaining = elapsed >= 1 ? 0 : 1 - elapsed
@@ -300,7 +308,7 @@ final class SplashView: UIView {
         container.layer.shadowRadius = 8
         addSubview(container)
 
-        iconView.image = UIImage(named: "AppIcon") ?? UIImage(named: "AppIcon60x60") ?? UIImage(systemName: "app.fill")
+        iconView.image = Self.appIconImage() ?? UIImage(systemName: "app.fill")
         iconView.contentMode = .scaleAspectFit
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.layer.cornerRadius = 24
@@ -317,6 +325,17 @@ final class SplashView: UIView {
             iconView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             iconView.trailingAnchor.constraint(equalTo: container.trailingAnchor)
         ])
+    }
+
+    private static func appIconImage() -> UIImage? {
+        let primaryIcon = (Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any])?["CFBundlePrimaryIcon"] as? [String: Any]
+        let iconFiles = primaryIcon?["CFBundleIconFiles"] as? [String]
+        for iconName in (iconFiles ?? []).reversed() {
+            if let image = UIImage(named: iconName) {
+                return image
+            }
+        }
+        return UIImage(named: "AppIcon") ?? UIImage(named: "AppIcon60x60")
     }
 
     private func setupTitle(appName: String) {

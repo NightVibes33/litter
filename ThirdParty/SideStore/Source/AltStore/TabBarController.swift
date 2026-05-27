@@ -27,7 +27,7 @@ final class TabBarController: UITabBarController
     
     private var _viewDidAppear = false
     
-    private var sourcesViewController: SourcesViewController!
+    private var sourcesViewController: SourcesViewController?
     
     required init?(coder aDecoder: NSCoder)
     {
@@ -43,11 +43,22 @@ final class TabBarController: UITabBarController
     {
         super.viewDidLoad()
         
-        let browseNavigationController = self.viewControllers![Tab.browse.rawValue] as! UINavigationController
-        browseNavigationController.tabBarItem.image = UIImage(systemName: "bag")
-        
-        let sourcesNavigationController = self.viewControllers![Tab.sources.rawValue] as! UINavigationController
-        self.sourcesViewController = sourcesNavigationController.viewControllers.first as? SourcesViewController
+        guard let viewControllers, viewControllers.indices.contains(Tab.settings.rawValue) else {
+            print("[KittyStore] TabBarController loaded without the expected SideStore tabs.")
+            return
+        }
+
+        if let browseNavigationController = viewControllers[Tab.browse.rawValue] as? UINavigationController {
+            browseNavigationController.tabBarItem.image = UIImage(systemName: "bag")
+        } else {
+            print("[KittyStore] Browse tab is not a navigation controller.")
+        }
+
+        if let sourcesNavigationController = viewControllers[Tab.sources.rawValue] as? UINavigationController {
+            self.sourcesViewController = sourcesNavigationController.viewControllers.first as? SourcesViewController
+        } else {
+            print("[KittyStore] Sources tab is not a navigation controller.")
+        }
     }
     
     override func viewDidAppear(_ animated: Bool)
