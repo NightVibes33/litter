@@ -20,6 +20,7 @@ enum InstalledSkillCatalog {
     static func installedUserSkills() -> [SkillMetadata] {
         let fm = FileManager.default
         try? fm.createDirectory(at: skillsURL, withIntermediateDirectories: true)
+        try? normalizeInstalledSkillLayout(in: skillsURL)
         guard let enumerator = fm.enumerator(
             at: skillsURL,
             includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey],
@@ -36,6 +37,50 @@ enum InstalledSkillCatalog {
             skills.append(skill)
         }
         return skills
+    }
+
+    @discardableResult
+    static func normalizeInstalledSkillLayout(in skillsRoot: URL = skillsURL) throws -> Int {
+        let fm = FileManager.default
+        let skillsRoot = skillsRoot.standardizedFileURL
+        let systemRoot = skillsRoot.appendingPathComponent(".system", isDirectory: true)
+        try fm.createDirectory(at: systemRoot, withIntermediateDirectories: true)
+
+        guard let enumerator = fm.enumerator(
+            at: skillsRoot,
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey],
+            options: [.skipsPackageDescendants]
+        ) else {
+            return 0
+        }
+
+        var skillFiles: [URL] = []
+        for case let fileURL as URL in enumerator where fileURL.lastPathComponent == "SKILL.md" {
+            skillFiles.append(fileURL.standardizedFileURL)
+        }
+
+        var moved = 0
+        for skillFile in skillFiles.sorted(by: { $0.path.count > $1.path.count }) {
+            let sourceDirectory = skillFile.deletingLastPathComponent()
+            guard fm.fileExists(atPath: sourceDirectory.path) else { continue }
+
+            let relativeComponents = pathComponents(of: sourceDirectory, relativeTo: skillsRoot)
+            guard relativeComponents.count >= 2 else { continue }
+
+            let isDirectSystemSkill = relativeComponents.count == 2 && relativeComponents.first == ".system"
+            guard !isDirectSystemSkill else { continue }
+
+            let isSystemSkill = relativeComponents.first == "system" || relativeComponents.first == ".system"
+            let targetRoot = isSystemSkill ? systemRoot : skillsRoot
+            let destination = targetRoot.appendingPathComponent(sourceDirectory.lastPathComponent, isDirectory: true)
+            guard sourceDirectory.path != destination.path else { continue }
+
+            try mergeSkillDirectory(from: sourceDirectory, to: destination)
+            removeEmptyAncestors(startingAt: sourceDirectory.deletingLastPathComponent(), stopAt: skillsRoot)
+            moved += 1
+        }
+
+        return moved
     }
 
     static func merge(serverSkills: [SkillMetadata]) -> [SkillMetadata] {
@@ -269,5 +314,48 @@ enum InstalledSkillCatalog {
 
     private static func isSystemSkill(_ fileURL: URL) -> Bool {
         fileURL.pathComponents.contains(".system")
+    }
+
+    private static func pathComponents(of url: URL, relativeTo root: URL) -> [String] {
+        let rootPath = root.standardizedFileURL.path
+        let path = url.standardizedFileURL.path
+        guard path == rootPath || path.hasPrefix(rootPath + "/") else { return [] }
+        let relative = String(path.dropFirst(rootPath.count)).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !relative.isEmpty else { return [] }
+        return relative.split(separator: "/").map(String.init)
+    }
+
+    private static func mergeSkillDirectory(from source: URL, to destination: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard fm.fileExists(atPath: destination.path) else {
+            try fm.moveItem(at: source, to: destination)
+            return
+        }
+
+        let children = try fm.contentsOfDirectory(
+            at: source,
+            includingPropertiesForKeys: nil,
+            options: []
+        )
+        for child in children {
+            let target = destination.appendingPathComponent(child.lastPathComponent, isDirectory: false)
+            if fm.fileExists(atPath: target.path) {
+                try fm.removeItem(at: target)
+            }
+            try fm.moveItem(at: child, to: target)
+        }
+        try? fm.removeItem(at: source)
+    }
+
+    private static func removeEmptyAncestors(startingAt url: URL, stopAt root: URL) {
+        let fm = FileManager.default
+        let rootPath = root.standardizedFileURL.path
+        var current = url.standardizedFileURL
+        while current.path != rootPath, current.path.hasPrefix(rootPath + "/") {
+            guard ((try? fm.contentsOfDirectory(atPath: current.path)) ?? []).isEmpty else { break }
+            try? fm.removeItem(at: current)
+            current.deleteLastPathComponent()
+        }
     }
 }
