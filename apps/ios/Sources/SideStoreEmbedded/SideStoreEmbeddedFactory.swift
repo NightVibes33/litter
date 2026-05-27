@@ -36,17 +36,15 @@ open class AppDelegate: NSObject, UIApplicationDelegate {
 }
 
 private enum SideStoreEmbeddedRuntime {
-    private typealias StartupCompletion = (Error?) -> Void
-
     @MainActor private static var didStart = false
     @MainActor private static var didFinishStartup = false
     @MainActor private static var startupError: Error?
-    @MainActor private static var startupCompletions: [StartupCompletion] = []
+    @MainActor private static var startupCompletions: [((Error?) -> Void)] = []
 
     static var consoleLogProvider: (() -> ConsoleLog?)?
 
     @MainActor
-    static func startIfNeeded(completion: StartupCompletion? = nil) {
+    static func startIfNeeded(completion: ((Error?) -> Void)? = nil) {
         if let completion {
             if didFinishStartup {
                 completion(startupError)
