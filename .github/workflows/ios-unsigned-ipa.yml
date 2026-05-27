@@ -1592,47 +1592,75 @@ jobs:
 
           python3 tools/scripts/verify-altstore-source.py "$SOURCE_PATH" --require-news-downloads
 
+          retry_release_command() {
+            label="$1"
+            shift
+            attempt=1
+            delay=10
+            while [ "$attempt" -le 5 ]; do
+              echo "==> $label (attempt $attempt/5)"
+              if "$@"; then
+                return 0
+              fi
+              status=$?
+              if [ "$attempt" -eq 5 ]; then
+                echo "::error::$label failed after 5 attempts with exit code $status" >&2
+                return "$status"
+              fi
+              echo "$label failed with exit code $status; retrying after ${delay}s" >&2
+              sleep "$delay"
+              delay=$((delay * 2))
+              attempt=$((attempt + 1))
+            done
+          }
+
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" \
-              "$IPA_PATH" \
-              "$SHA_PATH" \
-              "$METADATA_PATH" \
-              "$UPDATE_PATH" \
-              "$SOURCE_PATH" \
-              "$NOTES_PATH" \
-              --repo "$GITHUB_REPOSITORY" \
-              --clobber
-            gh release edit "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$RELEASE_TITLE" \
-              --notes-file "$NOTES_PATH"
+            retry_release_command "Upload ${RELEASE_TAG} release assets" \
+              gh release upload "$RELEASE_TAG" \
+                "$IPA_PATH" \
+                "$SHA_PATH" \
+                "$METADATA_PATH" \
+                "$UPDATE_PATH" \
+                "$SOURCE_PATH" \
+                "$NOTES_PATH" \
+                --repo "$GITHUB_REPOSITORY" \
+                --clobber
+            retry_release_command "Update ${RELEASE_TAG} release notes" \
+              gh release edit "$RELEASE_TAG" \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "$RELEASE_TITLE" \
+                --notes-file "$NOTES_PATH"
           else
-            gh release create "$RELEASE_TAG" \
-              "$IPA_PATH" \
-              "$SHA_PATH" \
-              "$METADATA_PATH" \
-              "$UPDATE_PATH" \
-              "$SOURCE_PATH" \
-              "$NOTES_PATH" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "$RELEASE_TITLE" \
-              --notes-file "$NOTES_PATH"
+            retry_release_command "Create ${RELEASE_TAG} release" \
+              gh release create "$RELEASE_TAG" \
+                "$IPA_PATH" \
+                "$SHA_PATH" \
+                "$METADATA_PATH" \
+                "$UPDATE_PATH" \
+                "$SOURCE_PATH" \
+                "$NOTES_PATH" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" \
+                --title "$RELEASE_TITLE" \
+                --notes-file "$NOTES_PATH"
           fi
 
           if gh release view "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" --repo "$GITHUB_REPOSITORY" --clobber
-            gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." --prerelease
+            retry_release_command "Upload stable source release assets" \
+              gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" --repo "$GITHUB_REPOSITORY" --clobber
+            retry_release_command "Update stable source release notes" \
+              gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." --prerelease
           else
-            gh release create "$SOURCE_TAG" \
-              "$UPDATE_PATH" \
-              "$SOURCE_PATH" \
-              "$SOURCE_ICON_DEST" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "Litter app source" \
-              --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." \
-              --prerelease
+            retry_release_command "Create stable source release" \
+              gh release create "$SOURCE_TAG" \
+                "$UPDATE_PATH" \
+                "$SOURCE_PATH" \
+                "$SOURCE_ICON_DEST" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$GITHUB_SHA" \
+                --title "Litter app source" \
+                --notes "Stable SideStore/AltStore source metadata for all published Litter sideload builds." \
+                --prerelease
           fi
 
           echo "Release download page: ${RELEASE_URL}"
