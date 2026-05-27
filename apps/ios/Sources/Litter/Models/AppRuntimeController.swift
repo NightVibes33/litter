@@ -152,6 +152,7 @@ final class AppRuntimeController {
 
     func appDidBecomeActive() {
         guard let appModel else { return }
+        LitterPlatform.repairLocalRuntimeBridgesIfNeeded()
         // Keep lifecycle state in sync even when foreground recovery exits early
         // for an already-running voice session.
         appModel.reconnectController.noteAppBecameActive()

@@ -62,6 +62,18 @@ enum LitterPlatform {
 #endif
     }
 
+    static func repairLocalRuntimeBridgesIfNeeded() {
+#if !targetEnvironment(macCatalyst)
+        Task.detached(priority: .utility) {
+            let codexBridge = await IshFS.repairCodexHomeBridge()
+            if codexBridge.exitCode != 0 {
+                let output = codexBridge.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                NSLog("[ish] /root/.codex bridge foreground repair failed rc=\(codexBridge.exitCode): \(output)")
+            }
+        }
+#endif
+    }
+
     static func ensureLocalRuntimeReady() async throws {
 #if targetEnvironment(macCatalyst)
         return
