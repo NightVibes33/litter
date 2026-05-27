@@ -10,7 +10,9 @@ import UIKit
 
 extension UIColor
 {
-    static let altBackground = UIColor(named: "Background")!
+    private static let altStoreBundle = Bundle(for: AppDelegate.self)
+
+    static let altBackground = UIColor(named: "Background", in: altStoreBundle, compatibleWith: nil)!
 }
 
 extension UIColor

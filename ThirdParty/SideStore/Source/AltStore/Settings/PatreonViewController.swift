@@ -17,7 +17,7 @@ final class PatreonViewController: UICollectionViewController, UICollectionViewD
     {
         super.viewDidLoad()
         
-        let aboutHeaderNib = UINib(nibName: "AboutPatreonHeaderView", bundle: nil)
+        let aboutHeaderNib = UINib(nibName: "AboutPatreonHeaderView", bundle: Bundle(for: AppDelegate.self))
         self.prototypeAboutHeader = aboutHeaderNib.instantiate(withOwner: nil, options: nil)[0] as? AboutPatreonHeaderView
         
         self.collectionView.register(aboutHeaderNib, forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader, withReuseIdentifier: "AboutHeader")

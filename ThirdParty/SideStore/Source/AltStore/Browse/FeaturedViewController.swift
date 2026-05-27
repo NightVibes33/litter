@@ -89,7 +89,7 @@ class FeaturedViewController: UICollectionViewController
         self.collectionView.directionalLayoutMargins.leading = 20
         self.collectionView.directionalLayoutMargins.trailing = 20
         
-        let storyboard = UIStoryboard(name: "Main", bundle: nil)
+        let storyboard = UIStoryboard(name: "Main", bundle: Bundle(for: AppDelegate.self))
         self.searchBrowseViewController = storyboard.instantiateViewController(identifier: "browseViewController") { coder in
             let browseViewController = BrowseViewController(coder: coder)
             return browseViewController
@@ -687,7 +687,7 @@ extension FeaturedViewController
 #Preview(traits: .portrait) {
     DatabaseManager.shared.startForPreview()
     
-    let storyboard = UIStoryboard(name: "Main", bundle: nil)
+    let storyboard = UIStoryboard(name: "Main", bundle: Bundle(for: AppDelegate.self))
     let featuredViewController = storyboard.instantiateViewController(identifier: "featuredViewController")
     
     let navigationController = UINavigationController(rootViewController: featuredViewController)

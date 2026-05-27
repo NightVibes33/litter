@@ -14,7 +14,7 @@ import AltSign
 
 private extension UIColor
 {
-    static let altInvertedPrimary = UIColor(named: "SettingsHighlighted")!
+    static let altInvertedPrimary = UIColor(named: "SettingsHighlighted", in: Bundle(for: AppDelegate.self), compatibleWith: nil)!
 }
 
 typealias AuthenticationError = AuthenticationErrorCode.Error
@@ -51,7 +51,7 @@ final class AuthenticationOperation: ResultOperation<(ALTTeam, ALTCertificate, A
         return navigationController
     }()
     
-    private lazy var storyboard = UIStoryboard(name: "Authentication", bundle: nil)
+    private lazy var storyboard = UIStoryboard(name: "Authentication", bundle: Bundle(for: AppDelegate.self))
     
     private var appleIDEmailAddress: String?
     private var appleIDPassword: String?

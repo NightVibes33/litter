@@ -218,7 +218,7 @@ final class SettingsViewController: UITableViewController
             navigationController?.navigationBar.standardAppearance = appearance
             navigationController?.navigationBar.scrollEdgeAppearance = appearance       // required for iOS 26, maybe enforce it in storyboard?
         } 
-        let nib = UINib(nibName: "SettingsHeaderFooterView", bundle: nil)
+        let nib = UINib(nibName: "SettingsHeaderFooterView", bundle: Bundle(for: AppDelegate.self))
         self.prototypeHeaderFooterView = nib.instantiate(withOwner: nil, options: nil)[0] as? SettingsHeaderFooterView
         
         self.tableView.register(nib, forHeaderFooterViewReuseIdentifier: "HeaderFooterView")

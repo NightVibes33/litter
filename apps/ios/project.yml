@@ -427,6 +427,11 @@ targets:
             rm -rf "$destination"
             mkdir -p "$DEST_ROOT"
             /usr/bin/ditto "$source" "$destination"
+            find "$destination" \( \
+              -path '*/target' -o \
+              -path '*/.build' -o \
+              -path '*/DerivedData' \
+            \) -type d -prune -exec rm -rf {} +
             if [ ! -d "$destination" ]; then
               echo "error: failed to embed upstream source folder: $label" >&2
               exit 1

@@ -515,7 +515,7 @@ extension SourcesViewController: NSFetchedResultsControllerDelegate
 #Preview(traits: .portrait) {
     DatabaseManager.shared.startForPreview()
     
-    let storyboard = UIStoryboard(name: "Sources", bundle: nil)
+    let storyboard = UIStoryboard(name: "Sources", bundle: Bundle(for: AppDelegate.self))
     let sourcesViewController = storyboard.instantiateInitialViewController()!
     
     let context = DatabaseManager.shared.persistentContainer.newBackgroundContext()
