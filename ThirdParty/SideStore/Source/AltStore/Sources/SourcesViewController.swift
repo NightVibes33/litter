@@ -351,7 +351,7 @@ private extension SourcesViewController
                 case .failure(OperationError.cancelled): break
                     
                 case .failure(var error as SourceError):
-                    let title = String(format: NSLocalizedString("“%@” could not be added to SideStore.", comment: ""), error.$source.name)
+                    let title = String(format: NSLocalizedString("“%@” could not be added to KittyStore.", comment: ""), error.$source.name)
                     error.errorTitle = title
                     self.present(error)
                     

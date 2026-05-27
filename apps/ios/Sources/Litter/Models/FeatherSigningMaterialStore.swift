@@ -185,7 +185,7 @@ enum FeatherSigningMaterialStore {
         FeatherSigningMaterialSnapshot(
             certificate: loadRecord(certificateRecordKey),
             provisioningProfile: loadRecord(provisioningProfileRecordKey),
-            pairingFile: loadRecord(pairingRecordKey),
+            pairingFile: loadPairingRecord(),
             importedIPA: loadRecord(importedIPARecordKey),
             entitlements: loadRecord(entitlementsRecordKey),
             dylibs: loadRecords(dylibsRecordKey),
@@ -245,9 +245,9 @@ enum FeatherSigningMaterialStore {
         try writeReplacing(normalizedData, to: sideStorePairingURL)
         let fakefsPath = "/root/.litter/kittystore/pairing/ALTPairingFile.mobiledevicepairing"
         let warning = await stageFakefsFile(data: normalizedData, path: fakefsPath)
-        let record = FeatherSigningFileRecord(id: UUID().uuidString, displayName: sanitizedFileName(url.lastPathComponent, fallback: "ALTPairingFile.mobiledevicepairing"), appPath: sideStorePairingURL.path, fakefsPath: fakefsPath, byteCount: Int64(normalizedData.count), importedAt: Date(), detail: "Saved for SideStore minimuxer and Feather heartbeat")
+        let record = FeatherSigningFileRecord(id: UUID().uuidString, displayName: sanitizedFileName(url.lastPathComponent, fallback: "ALTPairingFile.mobiledevicepairing"), appPath: sideStorePairingURL.path, fakefsPath: fakefsPath, byteCount: Int64(normalizedData.count), importedAt: Date(), detail: "Saved for KittyStore minimuxer and Feather heartbeat")
         saveRecord(record, key: pairingRecordKey)
-        return FeatherSigningImportResult(title: "Pairing File Saved", message: "Saved \(record.displayName) to SideStore and Feather document paths." + (warning.map { "\n\nFakefs staging warning:\n\($0)" } ?? ""))
+        return FeatherSigningImportResult(title: "Pairing File Saved", message: "Saved \(record.displayName) to KittyStore and Feather document paths." + (warning.map { "\n\nFakefs staging warning:\n\($0)" } ?? ""))
     }
 
     static func importIPA(from url: URL) async throws -> FeatherSigningImportResult {
@@ -342,6 +342,18 @@ enum FeatherSigningMaterialStore {
         return text + "\n"
     }
 
+    static func preparePairingFakefsIfNeeded() async -> String? {
+        guard let record = loadPairingRecord() else { return nil }
+        guard FileManager.default.fileExists(atPath: record.appPath) else { return "Pairing source is missing: \(record.appPath)" }
+        if await IshFS.exists(path: record.fakefsPath) { return nil }
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: record.appPath))
+            return await stageFakefsFile(data: data, path: record.fakefsPath)
+        } catch {
+            return "\(record.fakefsPath): \(error.localizedDescription)"
+        }
+    }
+
     static func writeLatestPlan(_ plan: String) async -> String? {
         let path = "/root/.litter/kittystore/plans/latest.json"
         do {
@@ -395,6 +407,27 @@ enum FeatherSigningMaterialStore {
             if !snapshot.localDevVPNState.isConnected { missing.append("LocalDevVPN for install/refresh") }
         }
         return missing
+    }
+
+    private static func loadPairingRecord() -> FeatherSigningFileRecord? {
+        if let record = loadRecord(pairingRecordKey) { return record }
+        let fileManager = FileManager.default
+        let candidates = [sideStorePairingURL, featherPairingURL]
+        guard let url = candidates.first(where: { fileManager.fileExists(atPath: $0.path) }) else { return nil }
+        let attributes = (try? fileManager.attributesOfItem(atPath: url.path)) ?? [:]
+        let byteCount = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        let importedAt = (attributes[.modificationDate] as? Date) ?? Date()
+        let record = FeatherSigningFileRecord(
+            id: "kittystore-pairing-file",
+            displayName: url.lastPathComponent,
+            appPath: url.path,
+            fakefsPath: "/root/.litter/kittystore/pairing/ALTPairingFile.mobiledevicepairing",
+            byteCount: byteCount,
+            importedAt: importedAt,
+            detail: "Imported in KittyStore Settings"
+        )
+        saveRecord(record, key: pairingRecordKey)
+        return record
     }
 
     private static func loadRecord(_ key: String) -> FeatherSigningFileRecord? {
@@ -451,13 +484,13 @@ enum FeatherSigningMaterialStore {
             guard let dictionary = plist as? [String: Any], !dictionary.isEmpty else {
                 throw NSError(domain: "FeatherSigningMaterialStore", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file is not a plist dictionary."])
             }
-            let expectedKeys = Set(["DeviceCertificate", "HostCertificate", "RootCertificate", "SystemBUID", "HostID", "WiFiMACAddress", "EscrowBag", "PairRecordData"])
-            if dictionary.keys.allSatisfy({ !expectedKeys.contains($0) }) && dictionary.count < 4 {
-                throw NSError(domain: "FeatherSigningMaterialStore", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file does not look like a SideStore pairing record."])
+            let expectedKeys = Set(["DeviceCertificate", "HostCertificate", "RootCertificate", "SystemBUID", "HostID", "WiFiMACAddress", "EscrowBag", "PairRecordData", "private_key", "UDID"])
+            if !dictionary.keys.contains(where: { expectedKeys.contains($0) }) {
+                throw NSError(domain: "FeatherSigningMaterialStore", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file does not look like a KittyStore pairing record."])
             }
             return try PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
         }
-        if let text = String(data: data, encoding: .utf8), text.contains("plist") || text.contains("DeviceCertificate") || text.contains("PairRecordData") {
+        if let text = String(data: data, encoding: .utf8), text.contains("DeviceCertificate") || text.contains("PairRecordData") || text.contains("private_key") || text.contains("UDID") {
             return data
         }
         throw NSError(domain: "FeatherSigningMaterialStore", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file could not be decoded."])

@@ -259,12 +259,12 @@ enum NyxianLocalDevVPNDetector {
         if tunnelInterfaces.isEmpty {
             return NyxianLocalDevVPNState(
                 isConnected: false,
-                detail: "SideStore minimuxer is not linked, and no active tunnel interface was found."
+                detail: "KittyStore minimuxer is not linked, and no active tunnel interface was found."
             )
         }
         return NyxianLocalDevVPNState(
             isConnected: false,
-            detail: "Detected \(tunnelInterfaces.count) tunnel interface(s), but this build cannot verify LocalDevVPN because the SideStore minimuxer bridge is not linked."
+            detail: "Detected \(tunnelInterfaces.count) tunnel interface(s), but this build cannot verify LocalDevVPN because the KittyStore minimuxer bridge is not linked."
         )
         #endif
     }
@@ -366,13 +366,13 @@ enum NyxianAppleIDValidationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidEmail:
-            return "Enter the Apple ID email used by SideStore or AltStore."
+            return "Enter the Apple ID email used by KittyStore or AltStore."
         case .missingPassword:
             return "Enter the Apple ID password or app-specific password used by your signer."
         case .invalidTeamID:
             return "Apple Developer Team IDs are 10 uppercase letters or numbers. Leave it blank if you want Litter to discover/select the team after Apple ID authentication."
         case .invalidAnisetteURL:
-            return "Enter a valid SideStore Anisette server URL."
+            return "Enter a valid KittyStore Anisette server URL."
         }
     }
 }
@@ -400,10 +400,10 @@ enum NyxianAnisetteServerDirectory {
     static let customSelectionID = "__custom_anisette_server__"
 
     static let fallbackServers: [NyxianAnisetteServer] = [
-        NyxianAnisetteServer(name: "SideStore", address: "https://ani.sidestore.io"),
-        NyxianAnisetteServer(name: "SideStore (.app)", address: "https://ani.sidestore.app"),
-        NyxianAnisetteServer(name: "SideStore (.zip)", address: "https://ani.sidestore.zip"),
-        NyxianAnisetteServer(name: "SideStore (.xyz)", address: "https://ani.846969.xyz"),
+        NyxianAnisetteServer(name: "KittyStore Default", address: "https://ani.sidestore.io"),
+        NyxianAnisetteServer(name: "KittyStore .app", address: "https://ani.sidestore.app"),
+        NyxianAnisetteServer(name: "KittyStore .zip", address: "https://ani.sidestore.zip"),
+        NyxianAnisetteServer(name: "KittyStore .xyz", address: "https://ani.846969.xyz"),
     ]
 
     static func fetchServers(listURL rawListURL: String = officialListURL) async throws -> [NyxianAnisetteServer] {
@@ -634,7 +634,7 @@ enum NyxianSigningCertificateValidationError: LocalizedError {
         case .noCertificate(let status):
             return "The .p12 identity did not contain a certificate (\(Self.describe(status)))."
         case .embeddedProvisioningProfileMissing:
-            return "The installed Litter app has no embedded.mobileprovision to match against. Install Litter through SideStore, AltStore, or another signer first."
+            return "The installed Litter app has no embedded.mobileprovision to match against. Install Litter through KittyStore, AltStore, or another signer first."
         case .embeddedProvisioningProfileUnreadable(let reason):
             return "The embedded provisioning profile could not be read: \(reason)"
         case .provisioningProfileHasNoDeveloperCertificates:

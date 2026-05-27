@@ -409,6 +409,33 @@ private extension DatabaseManager
                 storeApp = StoreApp.makeAltStoreApp(version: localApp.version, buildVersion: nil, in: context)
                 storeApp.source = altStoreSource
             }
+
+            if isEmbeddedSideStoreRuntime
+            {
+                altStoreSource.name = "KittyStore Official"
+                storeApp.name = "KittyStore"
+                storeApp.developerName = "Litter"
+                storeApp.localizedDescription = "KittyStore is Litter's embedded sideloading and update store."
+
+                if let installedApp = storeApp.installedApp
+                {
+                    context.delete(installedApp)
+                }
+
+                do
+                {
+                    try context.save()
+                    Task(priority: .high) {
+                        await self.updateFeaturedSortIDs()
+                        completionHandler(.success(()))
+                    }
+                }
+                catch
+                {
+                    completionHandler(.failure(error))
+                }
+                return
+            }
                         
             let serialNumber = Bundle.main.object(forInfoDictionaryKey: Bundle.Info.certificateID) as? String
             let installedApp: InstalledApp

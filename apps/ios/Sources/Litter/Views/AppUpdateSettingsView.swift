@@ -172,7 +172,7 @@ struct AppUpdateSettingsView: View {
         updatePanel(title: "Install", icon: "square.and.arrow.down") {
             VStack(spacing: 10) {
                 if let url = updater.sideStoreInstallURL {
-                    actionRow("Install with SideStore", detail: "Open this build in SideStore", icon: "square.and.arrow.down") { openURL(url) }
+                    actionRow("Install with KittyStore", detail: "Open this build in KittyStore", icon: "square.and.arrow.down") { openURL(url) }
                 }
 
                 if let url = updater.altStoreInstallURL {
@@ -186,7 +186,7 @@ struct AppUpdateSettingsView: View {
                 }
 
                 if let url = updater.sideStoreSourceURL {
-                    actionRow("Add SideStore source", detail: "Subscribe to the stable update feed", icon: "link.badge.plus") { openURL(url) }
+                    actionRow("Add KittyStore source", detail: "Subscribe to the stable update feed", icon: "link.badge.plus") { openURL(url) }
                 }
 
                 if let url = updater.altStoreSourceURL {
@@ -311,7 +311,7 @@ struct AppUpdateSettingsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
-                    Text("The updater reads the stable public app source first, then falls back to GitHub Releases. IPA installation still happens through SideStore, AltStore, Feather, Files, or another sideloading app.")
+                    Text("The updater reads the stable public app source first, then falls back to GitHub Releases. IPA installation still happens through KittyStore, AltStore, Feather, Files, or another sideloading app.")
                         .litterFont(.caption)
                         .foregroundStyle(LitterTheme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

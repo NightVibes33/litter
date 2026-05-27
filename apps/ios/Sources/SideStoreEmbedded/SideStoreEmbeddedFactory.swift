@@ -153,6 +153,14 @@ private final class KittyStoreRootViewController: UIViewController {
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        applyBranding()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.applyBranding()
+        }
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         applyBranding()
@@ -183,6 +191,7 @@ private final class KittyStoreRootViewController: UIViewController {
     private func showStoreInterface() {
         guard embeddedViewController == nil else { return }
 
+        LaunchViewController.isEmbeddedHostMode = true
         let storyboard = UIStoryboard(name: "Main", bundle: Bundle(for: AppDelegate.self))
         let viewController = storyboard.instantiateViewController(withIdentifier: "tabBarController")
 
@@ -231,17 +240,48 @@ private final class KittyStoreRootViewController: UIViewController {
     }
 
     private static func branded(_ text: String?) -> String? {
-        text?.replacingOccurrences(of: "SideStore", with: "KittyStore")
+        text?
+            .replacingOccurrences(of: "SideStore", with: "KittyStore")
+            .replacingOccurrences(of: "Side Store", with: "KittyStore")
+    }
+
+    private static func branded(_ attributedText: NSAttributedString?) -> NSAttributedString? {
+        guard let attributedText,
+              let brandedText = branded(attributedText.string),
+              brandedText != attributedText.string else {
+            return attributedText
+        }
+        let copy = NSMutableAttributedString(attributedString: attributedText)
+        copy.mutableString.setString(brandedText)
+        return copy
+    }
+
+    private static func brand(_ item: UIBarItem?) {
+        item?.title = branded(item?.title)
+        item?.accessibilityLabel = branded(item?.accessibilityLabel)
     }
 
     private static func applyBranding(to viewController: UIViewController) {
         viewController.title = branded(viewController.title)
         viewController.navigationItem.title = branded(viewController.navigationItem.title)
+        viewController.navigationItem.prompt = branded(viewController.navigationItem.prompt)
+        viewController.navigationItem.backButtonTitle = branded(viewController.navigationItem.backButtonTitle)
         viewController.tabBarItem.title = branded(viewController.tabBarItem.title)
+        viewController.toolbarItems?.forEach { brand($0) }
+        viewController.navigationItem.leftBarButtonItems?.forEach { brand($0) }
+        viewController.navigationItem.rightBarButtonItems?.forEach { brand($0) }
+        brand(viewController.navigationItem.backBarButtonItem)
+        brand(viewController.navigationItem.leftBarButtonItem)
+        brand(viewController.navigationItem.rightBarButtonItem)
+
+        if let alert = viewController as? UIAlertController {
+            alert.title = branded(alert.title)
+            alert.message = branded(alert.message)
+        }
 
         if let tabBarController = viewController as? UITabBarController {
             tabBarController.tabBar.items?.forEach { item in
-                item.title = branded(item.title)
+                brand(item)
             }
         }
 
@@ -258,15 +298,35 @@ private final class KittyStoreRootViewController: UIViewController {
         switch view {
         case let label as UILabel:
             label.text = branded(label.text)
+            label.attributedText = branded(label.attributedText)
         case let button as UIButton:
             [UIControl.State.normal, .highlighted, .selected, .disabled].forEach { state in
                 button.setTitle(branded(button.title(for: state)), for: state)
+                button.setAttributedTitle(branded(button.attributedTitle(for: state)), for: state)
+            }
+            if var configuration = button.configuration {
+                configuration.title = branded(configuration.title)
+                configuration.subtitle = branded(configuration.subtitle)
+                button.configuration = configuration
             }
         case let textField as UITextField:
             textField.text = branded(textField.text)
             textField.placeholder = branded(textField.placeholder)
+            textField.attributedPlaceholder = branded(textField.attributedPlaceholder)
         case let textView as UITextView:
             textView.text = branded(textView.text)
+            textView.attributedText = branded(textView.attributedText)
+        case let searchBar as UISearchBar:
+            searchBar.text = branded(searchBar.text)
+            searchBar.placeholder = branded(searchBar.placeholder)
+            searchBar.prompt = branded(searchBar.prompt)
+        case let segmentedControl as UISegmentedControl:
+            for index in 0..<segmentedControl.numberOfSegments {
+                segmentedControl.setTitle(branded(segmentedControl.titleForSegment(at: index)), forSegmentAt: index)
+            }
+        case let cell as UITableViewCell:
+            cell.textLabel?.text = branded(cell.textLabel?.text)
+            cell.detailTextLabel?.text = branded(cell.detailTextLabel?.text)
         default:
             break
         }

@@ -239,7 +239,7 @@ struct BuildKitSettingsView: View {
             Text("Private BuildKit Assets")
                 .foregroundStyle(LitterTheme.textSecondary)
         } footer: {
-            Text("Private release assets are user-owned. Downloaded assets enable data install; native frameworks may still need to be embedded by private CI so SideStore/AltStore signing can make the driver loadable.")
+            Text("Private release assets are user-owned. Downloaded assets enable data install; native frameworks may still need to be embedded by private CI so KittyStore/AltStore signing can make the driver loadable.")
         }
     }
 
@@ -291,14 +291,14 @@ struct BuildKitSettingsView: View {
 
     private var signingSection: some View {
         Section {
-            Text("Apple ID sign-in and 2FA stay inside SideStore Settings. Settings > Signing owns Feather certificate import, provisioning profiles, pairing files, LocalDevVPN status, and signing options. BuildKit only reports whether those inputs are ready for the native runner.")
+            Text("Apple ID sign-in and 2FA stay inside KittyStore Settings. Settings > Signing owns Feather certificate import, provisioning profiles, pairing files, LocalDevVPN status, and signing options. BuildKit only reports whether those inputs are ready for the native runner.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             statusRow("Embedded profile", status?.embeddedProvisionPresent == true ? "Present" : "Missing")
-            statusRow("SideStore AltSign", KittyStoreSideStoreSigningBridge.isLinked ? "Linked" : "Missing")
+            statusRow("KittyStore AltSign", KittyStoreSideStoreSigningBridge.isLinked ? "Linked" : "Missing")
             statusRow("Apple ID login", status?.appleIDConfigured == true ? "Logged in" : "Missing")
             statusRow("Apple ID detail", status?.appleIDDetail ?? "Missing")
             statusRow("Imported certificate", status?.nyxianSigningCertificateInstalled == true ? "Validated" : "Missing or invalid")
@@ -311,7 +311,7 @@ struct BuildKitSettingsView: View {
             Text("KittyStore Signing State")
                 .foregroundStyle(LitterTheme.textSecondary)
         } footer: {
-            Text("BuildKit diagnostics stay read-only here so SideStore account transport and Feather signing options are not duplicated.")
+            Text("BuildKit diagnostics stay read-only here so KittyStore account transport and Feather signing options are not duplicated.")
         }
     }
 

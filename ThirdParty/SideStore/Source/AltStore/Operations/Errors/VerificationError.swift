@@ -200,7 +200,7 @@ struct VerificationError: ALTLocalizedError
         case .undeclaredPermissions:
             guard let permissionsDescription else { return nil }
             
-            let baseMessage = NSLocalizedString("These permissions must be declared by the source in order for SideStore to install this app:", comment: "")
+            let baseMessage = NSLocalizedString("These permissions must be declared by the source in order for KittyStore to install this app:", comment: "")
             let recoverySuggestion = [baseMessage, permissionsDescription].joined(separator: "\n\n")
             return recoverySuggestion
             

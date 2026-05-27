@@ -203,14 +203,14 @@ final class InstallAppOperation: ResultOperation<InstalledApp>
 
                             let content = UNMutableNotificationContent()
                             content.title = "Refreshing..."
-                            content.body = "SideStore will automatically move to the homescreen to finish refreshing!"
+                            content.body = "KittyStore will automatically move to the homescreen to finish refreshing!"
                             let notification = UNNotificationRequest(identifier: Bundle.Info.appbundleIdentifier + ".FinishRefreshNotification", content: content, trigger: UNTimeIntervalNotificationTrigger(timeInterval: 2, repeats: false))
                             UNUserNotificationCenter.current().add(notification)
                             break
                         default:
                             print("Notifications are not enabled")
 
-                            let alert = UIAlertController(title: "Finish Refresh", message: "Please reopen SideStore after the process is finished.To finish refreshing, SideStore must be moved to the background. To do this, you can either go to the Home Screen manually or by hitting Continue. Please reopen SideStore after doing this.", preferredStyle: .alert)
+                            let alert = UIAlertController(title: "Finish Refresh", message: "Please reopen KittyStore after the process is finished. To finish refreshing, KittyStore must be moved to the background. You can go to the Home Screen manually or tap Continue. Please reopen KittyStore after doing this.", preferredStyle: .alert)
                             alert.addAction(UIAlertAction(title: NSLocalizedString("Continue", comment: ""), style: .default, handler: { _ in
                                 print("Going home")
                                 // Cell Shortcut

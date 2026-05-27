@@ -65,7 +65,7 @@ private extension RefreshAttemptsViewController
         
         let placeholderView = RSTPlaceholderView()
         placeholderView.textLabel.text = NSLocalizedString("No Refresh Attempts", comment: "")
-        placeholderView.detailTextLabel.text = NSLocalizedString("The more you use SideStore, the more often iOS will allow it to refresh apps in the background.", comment: "")
+        placeholderView.detailTextLabel.text = NSLocalizedString("The more you use KittyStore, the more often iOS will allow it to refresh apps in the background.", comment: "")
         dataSource.placeholderView = placeholderView
         
         return dataSource

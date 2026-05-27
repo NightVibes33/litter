@@ -198,6 +198,23 @@ struct SettingsView: View {
         Section {
             NavigationLink(value: SettingsRoute.signing) {
                 HStack(spacing: 10) {
+                    Image(systemName: "link.badge.plus")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pairing File")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Import .mobiledevicepairing for KittyStore installs")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            NavigationLink(value: SettingsRoute.signing) {
+                HStack(spacing: 10) {
                     Image(systemName: "signature")
                         .foregroundColor(LitterTheme.accent)
                         .frame(width: 20)
@@ -205,7 +222,7 @@ struct SettingsView: View {
                         Text("Signing")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("Feather certificates, pairing, LocalDevVPN, and IPA signing")
+                        Text("Feather certificates, LocalDevVPN, and IPA signing")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }

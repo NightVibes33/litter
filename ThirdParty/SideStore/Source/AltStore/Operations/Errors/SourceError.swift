@@ -80,7 +80,7 @@ struct SourceError: ALTLocalizedError
     var errorFailureReason: String {
         switch self.code
         {
-        case .unsupported: return String(format: NSLocalizedString("The source “%@” is not supported by this version of SideStore.", comment: ""), self.$source.name)
+        case .unsupported: return String(format: NSLocalizedString("The source “%@” is not supported by this version of KittyStore.", comment: ""), self.$source.name)
         case .duplicateBundleID:
             let bundleIDFragment = self.bundleID.map { String(format: NSLocalizedString("the bundle identifier %@", comment: ""), $0) } ?? NSLocalizedString("the same bundle identifier", comment: "")
             let failureReason = String(format: NSLocalizedString("The source “%@” contains multiple apps with %@.", comment: ""), self.$source.name, bundleIDFragment)
@@ -107,7 +107,7 @@ struct SourceError: ALTLocalizedError
             return failureReason
             
         case .blocked:
-            let failureReason = String(format: NSLocalizedString("The source “%@” has been blocked by SideStore for security reasons.", comment: ""), self.$source.name)
+            let failureReason = String(format: NSLocalizedString("The source “%@” has been blocked by KittyStore for security reasons.", comment: ""), self.$source.name)
             return failureReason
             
         case .changedID:
@@ -140,11 +140,11 @@ struct SourceError: ALTLocalizedError
             return failureReason
             
         case .marketplaceNotSupported:
-            let failureReason = String(format: NSLocalizedString("The source “%@” contains notarized apps, which are not supported by this version of SideStore.", comment: ""), self.$source.name)
+            let failureReason = String(format: NSLocalizedString("The source “%@” contains notarized apps, which are not supported by this version of KittyStore.", comment: ""), self.$source.name)
             return failureReason
             
         case .marketplaceRequired:
-            let failureReason = String(format: NSLocalizedString("One or more apps in source “%@” are missing a marketplaceID. This most likely means they are not notarized, which is not supported by this version of SideStore.", comment: ""), self.$source.name)
+            let failureReason = String(format: NSLocalizedString("One or more apps in source “%@” are missing a marketplaceID. This most likely means they are not notarized, which is not supported by this version of KittyStore.", comment: ""), self.$source.name)
             return failureReason
         }
     }
@@ -185,7 +185,7 @@ struct SourceError: ALTLocalizedError
             return recoverySuggestion
             
         case .marketplaceRequired:
-            let failureReason = String(format: NSLocalizedString("SideStore can only install marketplace apps that have been notarized by Apple.", comment: ""), self.$source.name)
+            let failureReason = String(format: NSLocalizedString("KittyStore can only install marketplace apps that have been notarized by Apple.", comment: ""), self.$source.name)
             return failureReason
             
         default: return nil

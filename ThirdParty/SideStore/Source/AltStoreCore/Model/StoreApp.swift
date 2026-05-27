@@ -714,10 +714,10 @@ public extension StoreApp
         #endif
         
         let app = StoreApp(context: context)
-        app.name = "SideStore"
+        app.name = "KittyStore"
         app.bundleIdentifier = placeholderBundleId
-        app.developerName = "Side Team"
-        app.localizedDescription = "SideStore is an alternative App Store."
+        app.developerName = "Litter"
+        app.localizedDescription = "KittyStore is Litter's embedded sideloading and update store."
         app.iconURL = sideStoreAppIconURL        
         app.screenshotURLs = []
         app.sourceIdentifier = placeholderSourceID

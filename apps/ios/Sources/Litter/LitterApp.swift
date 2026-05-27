@@ -969,7 +969,7 @@ private struct HomeNavigationView: View {
                     .toolbar(.hidden, for: .navigationBar)
                     .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                 case .kittyStore:
-                    SideStoreHostView()
+                    KittyStoreRouteView()
                 case .filesWorkspace:
                     LocalFileWorkspaceView()
                 case .appsList:

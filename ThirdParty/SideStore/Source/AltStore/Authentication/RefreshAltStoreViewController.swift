@@ -27,7 +27,7 @@ final class RefreshAltStoreViewController: UIViewController
         
         self.placeholderView.detailTextLabel.textAlignment = .left
         self.placeholderView.detailTextLabel.textColor = UIColor.white.withAlphaComponent(0.6)
-        self.placeholderView.detailTextLabel.text = NSLocalizedString("SideStore was unable to use an existing signing certificate, so it had to create a new one. This will cause any apps installed with an existing certificate to expire — including SideStore.\n\nTo prevent SideStore from expiring early, please refresh the app now. SideStore will quit once refreshing is complete.", comment: "")
+        self.placeholderView.detailTextLabel.text = NSLocalizedString("KittyStore was unable to use an existing signing certificate, so it had to create a new one. This will cause any apps installed with an existing certificate to expire, including KittyStore.\n\nTo prevent KittyStore from expiring early, please refresh the app now. KittyStore will quit once refreshing is complete.", comment: "")
     }
 }
 
@@ -57,7 +57,7 @@ private extension RefreshAltStoreViewController
                         sender.progress = nil
                         sender.isIndicatingActivity = false
                         
-                        let alertController = UIAlertController(title: NSLocalizedString("Failed to Refresh SideStore", comment: ""), message: error.localizedFailureReason ?? error.localizedDescription, preferredStyle: .alert)
+                        let alertController = UIAlertController(title: NSLocalizedString("Failed to Refresh KittyStore", comment: ""), message: error.localizedFailureReason ?? error.localizedDescription, preferredStyle: .alert)
                         alertController.addAction(UIAlertAction(title: NSLocalizedString("Try Again", comment: ""), style: .default, handler: { (action) in
                             refresh()
                         }))

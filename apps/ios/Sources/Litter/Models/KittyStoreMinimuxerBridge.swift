@@ -67,14 +67,14 @@ enum KittyStoreMinimuxerBridge {
     static func probeLocalDevVPN() -> LocalDevVPNProbe {
         #if KITTYSTORE_MINIMUXER_LINKED
         #if targetEnvironment(simulator)
-        return LocalDevVPNProbe(isReady: true, endpointReachable: true, detail: "Simulator build treats the SideStore minimuxer transport as ready.")
+        return LocalDevVPNProbe(isReady: true, endpointReachable: true, detail: "Simulator build treats the KittyStore minimuxer transport as ready.")
         #else
         configureSideStoreNetworkBridge()
         let ready = Minimuxer.ready()
         let endpointReachable = Minimuxer.testLocalDevVPNConnection()
         let detail: String
         if ready {
-            detail = "SideStore minimuxer is ready through LocalDevVPN override IP 10.7.0.1."
+            detail = "KittyStore minimuxer is ready through LocalDevVPN override IP 10.7.0.1."
         } else if endpointReachable {
             detail = "LocalDevVPN 10.7.0.1 is reachable. Pairing will be checked during install or refresh."
         } else {
@@ -83,7 +83,7 @@ enum KittyStoreMinimuxerBridge {
         return LocalDevVPNProbe(isReady: ready, endpointReachable: endpointReachable, detail: detail)
         #endif
         #else
-        return LocalDevVPNProbe(isReady: false, endpointReachable: false, detail: "SideStore minimuxer is not linked into this Litter build.")
+        return LocalDevVPNProbe(isReady: false, endpointReachable: false, detail: "KittyStore minimuxer is not linked into this Litter build.")
         #endif
     }
 
@@ -111,7 +111,7 @@ enum KittyStoreMinimuxerBridge {
         return Result(
             exitCode: 78,
             status: "sidestore-minimuxer-not-linked",
-            log: "SideStore minimuxer is not linked into this Litter build.\n"
+            log: "KittyStore minimuxer is not linked into this Litter build.\n"
         )
         #endif
     }
@@ -129,7 +129,7 @@ enum KittyStoreMinimuxerBridge {
                 let documentsPath = documentsURL.absoluteString
 
                 configureSideStoreNetworkBridge()
-                log.append("SideStore minimuxer installed-app browse")
+                log.append("KittyStore minimuxer installed-app browse")
                 log.append("- Log path: \(documentsPath)")
 
                 try Minimuxer.startWithLogger(
@@ -156,7 +156,7 @@ enum KittyStoreMinimuxerBridge {
         return KittyStoreInstalledAppsResult(
             exitCode: 78,
             status: "sidestore-minimuxer-not-linked",
-            log: "SideStore minimuxer is not linked into this Litter build.\n",
+            log: "KittyStore minimuxer is not linked into this Litter build.\n",
             apps: []
         )
         #endif
@@ -179,7 +179,7 @@ enum KittyStoreMinimuxerBridge {
                 let documentsPath = documentsURL.absoluteString
 
                 configureSideStoreNetworkBridge()
-                log.append("SideStore minimuxer transport")
+                log.append("KittyStore minimuxer transport")
                 log.append("- Action: \(action.rawValue)")
                 log.append("- Bundle ID: \(bundleIdentifier)")
                 log.append("- Log path: \(documentsPath)")
@@ -224,8 +224,8 @@ enum KittyStoreMinimuxerBridge {
             exitCode: 78,
             status: "sidestore-minimuxer-not-linked",
             log: """
-            SideStore minimuxer is not linked into this Litter build.
-            Rebuild the iOS app with tools/scripts/build-sidestore-minimuxer.sh and KITTYSTORE_MINIMUXER_LINKED enabled so the vendored SideStore minimuxer Rust bridge is compiled into the app process.
+            KittyStore minimuxer is not linked into this Litter build.
+            Rebuild the iOS app with tools/scripts/build-sidestore-minimuxer.sh and KITTYSTORE_MINIMUXER_LINKED enabled so the vendored KittyStore minimuxer bridge is compiled into the app process.
             """
         )
         #endif
@@ -244,7 +244,7 @@ enum KittyStoreMinimuxerBridge {
                 let documentsPath = documentsURL.absoluteString
 
                 configureSideStoreNetworkBridge()
-                log.append("SideStore minimuxer remove")
+                log.append("KittyStore minimuxer remove")
                 log.append("- Bundle ID: \(bundleIdentifier)")
                 log.append("- Log path: \(documentsPath)")
 
@@ -272,8 +272,8 @@ enum KittyStoreMinimuxerBridge {
             exitCode: 78,
             status: "sidestore-minimuxer-not-linked",
             log: """
-            SideStore minimuxer is not linked into this Litter build.
-            Rebuild the iOS app with tools/scripts/build-sidestore-minimuxer.sh and KITTYSTORE_MINIMUXER_LINKED enabled so the vendored SideStore minimuxer Rust bridge is compiled into the app process.
+            KittyStore minimuxer is not linked into this Litter build.
+            Rebuild the iOS app with tools/scripts/build-sidestore-minimuxer.sh and KITTYSTORE_MINIMUXER_LINKED enabled so the vendored KittyStore minimuxer bridge is compiled into the app process.
             """
         )
         #endif

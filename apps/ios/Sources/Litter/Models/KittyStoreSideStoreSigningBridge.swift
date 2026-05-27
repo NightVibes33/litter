@@ -152,7 +152,7 @@ enum KittyStoreSideStoreSigningBridge {
             return OperationResult(
                 exitCode: 0,
                 status: "sidestore-appleid-sign-ok",
-                log: "Signed IPA with SideStore Apple ID flow.\nInput: \(ipaURL.path)\nOutput: \(outputURL.path)\nTeam: \(auth.team.name) (\(auth.team.identifier))\nOriginal bundle ID: \(prepared.originalBundleIdentifier)\nSigned bundle ID: \(prepared.mainBundleIdentifier)\nProfiles: \(prepared.profiles.map { $0.bundleIdentifier }.joined(separator: ", "))\n",
+                log: "Signed IPA with KittyStore Apple ID flow.\nInput: \(ipaURL.path)\nOutput: \(outputURL.path)\nTeam: \(auth.team.name) (\(auth.team.identifier))\nOriginal bundle ID: \(prepared.originalBundleIdentifier)\nSigned bundle ID: \(prepared.mainBundleIdentifier)\nProfiles: \(prepared.profiles.map { $0.bundleIdentifier }.joined(separator: ", "))\n",
                 signedIPAPath: outputURL.path,
                 provisioningProfileData: prepared.mainProfile.data
             )
@@ -193,7 +193,7 @@ enum KittyStoreSideStoreSigningBridge {
                 return OperationResult(
                     exitCode: 65,
                     status: "sidestore-certificate-validation-failed",
-                    log: "SideStore AltSign rejected the imported .p12/profile before signing. \(error.localizedDescription)\n",
+                    log: "KittyStore AltSign rejected the imported .p12/profile before signing. \(error.localizedDescription)\n",
                     signedIPAPath: nil,
                     provisioningProfileData: nil
                 )
@@ -213,7 +213,7 @@ enum KittyStoreSideStoreSigningBridge {
             let profileTeamID = profile.teamIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
             let teamID = requestedTeamID.isEmpty ? profileTeamID : requestedTeamID
             guard !teamID.isEmpty else {
-                return OperationResult(exitCode: 64, status: "sidestore-team-missing", log: "SideStore/AltSign signing requires a team ID from the selected Apple account or the imported provisioning profile.\n", signedIPAPath: nil, provisioningProfileData: nil)
+                return OperationResult(exitCode: 64, status: "sidestore-team-missing", log: "KittyStore AltSign signing requires a team ID from the selected Apple account or the imported provisioning profile.\n", signedIPAPath: nil, provisioningProfileData: nil)
             }
             if !profileTeamID.isEmpty, profileTeamID != teamID {
                 return OperationResult(
@@ -283,7 +283,7 @@ enum KittyStoreSideStoreSigningBridge {
             return OperationResult(
                 exitCode: 0,
                 status: "sidestore-altsign-sign-ok",
-                log: "Signed IPA with SideStore AltSign.\nInput: \(ipaURL.path)\nOutput: \(outputURL.path)\nProfile: \(profile.name) / \(profile.bundleIdentifier)\nTeam: \(teamID)\nOriginal bundle ID: \(prepared.originalBundleIdentifier)\nSigned bundle ID: \(prepared.mainBundleIdentifier)\n",
+                log: "Signed IPA with KittyStore AltSign.\nInput: \(ipaURL.path)\nOutput: \(outputURL.path)\nProfile: \(profile.name) / \(profile.bundleIdentifier)\nTeam: \(teamID)\nOriginal bundle ID: \(prepared.originalBundleIdentifier)\nSigned bundle ID: \(prepared.mainBundleIdentifier)\n",
                 signedIPAPath: outputURL.path,
                 provisioningProfileData: profile.data
             )
@@ -299,7 +299,7 @@ enum KittyStoreSideStoreSigningBridge {
         NSError(
             domain: "KittyStoreSideStoreSigningBridge",
             code: 78,
-            userInfo: [NSLocalizedDescriptionKey: "SideStore AltSign is not linked into this build. Re-run XcodeGen and build with the vendored ThirdParty/SideStore/AltSign package available."]
+            userInfo: [NSLocalizedDescriptionKey: "KittyStore AltSign is not linked into this build. Re-run XcodeGen and build with the vendored ThirdParty/SideStore/AltSign package available."]
         )
     }
 }
@@ -374,7 +374,7 @@ private extension KittyStoreSideStoreSigningBridge {
     ) async throws -> PreparedAppleIDSigningInput {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true, attributes: nil)
-        let workingDirectoryURL = outputDirectory.appendingPathComponent("SideStoreWork-\(UUID().uuidString)", isDirectory: true)
+        let workingDirectoryURL = outputDirectory.appendingPathComponent("KittyStoreWork-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: workingDirectoryURL, withIntermediateDirectories: true, attributes: nil)
 
         let appBundleURL = try fileManager.unzipAppBundle(at: ipaURL, toDirectory: workingDirectoryURL)
@@ -445,7 +445,7 @@ private extension KittyStoreSideStoreSigningBridge {
     ) throws -> PreparedImportedIdentitySigningInput {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true, attributes: nil)
-        let workingDirectoryURL = outputDirectory.appendingPathComponent("SideStoreImportWork-\(UUID().uuidString)", isDirectory: true)
+        let workingDirectoryURL = outputDirectory.appendingPathComponent("KittyStoreImportWork-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: workingDirectoryURL, withIntermediateDirectories: true, attributes: nil)
 
         let appBundleURL = try fileManager.unzipAppBundle(at: ipaURL, toDirectory: workingDirectoryURL)
@@ -701,7 +701,7 @@ private extension KittyStoreSideStoreSigningBridge {
             throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Anisette server returned HTTP \(http.statusCode)"])
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
-            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 422, userInfo: [NSLocalizedDescriptionKey: "Anisette server did not return the SideStore header JSON format."])
+            throw NSError(domain: "KittyStoreSideStoreSigningBridge", code: 422, userInfo: [NSLocalizedDescriptionKey: "Anisette server did not return the KittyStore-compatible header JSON format."])
         }
 
         var formatted: [String: String] = ["deviceSerialNumber": json["X-Apple-I-SRL-NO"] ?? "0"]
@@ -803,7 +803,7 @@ private extension KittyStoreSideStoreSigningBridge {
     static func stagedOutputURL(for ipaURL: URL, in directory: URL) throws -> URL {
         let baseName = ipaURL.deletingPathExtension().lastPathComponent
         let safeBase = baseName.isEmpty ? "Signed" : baseName
-        return directory.appendingPathComponent("\(safeBase)-SideStoreSigned-\(UUID().uuidString.prefix(8)).ipa")
+        return directory.appendingPathComponent("\(safeBase)-KittyStoreSigned-\(UUID().uuidString.prefix(8)).ipa")
     }
 
     static func profileBundleIdentifierAllows(_ bundleIdentifier: String, profileBundleIdentifier: String) -> Bool {

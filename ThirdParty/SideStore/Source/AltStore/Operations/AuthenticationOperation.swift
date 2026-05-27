@@ -563,7 +563,7 @@ private extension AuthenticationOperation
     {
         func requestCertificate()
         {
-            let machineName: String = "SideStore - \(team.account.firstName)'s \(UIDevice.current.name)"
+            let machineName: String = "KittyStore - \(team.account.firstName)'s \(UIDevice.current.name)"
             ALTAppleAPI.shared.addCertificate(machineName: machineName, to: team, session: session) { (certificate, error) in
                 do
                 {
@@ -597,7 +597,7 @@ private extension AuthenticationOperation
         func replaceCertificate(from certificates: [ALTCertificate])
         {
             let ourCertificates = certificates.filter { a in
-                a.machineName?.starts(with: "SideStore") == true || a.machineName?.starts(with: "AltStore") == true
+                a.machineName?.starts(with: "KittyStore") == true || a.machineName?.starts(with: "SideStore") == true || a.machineName?.starts(with: "AltStore") == true
             }
             
             if ourCertificates.isEmpty {

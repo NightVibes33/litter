@@ -17,15 +17,15 @@ struct KittyStoreSideStoreAccountImportSummary: Equatable, Sendable {
 
     var message: String {
         var lines = [
-            "Imported SideStore .sideconf for \(account.email).",
+            "Imported KittyStore-compatible .sideconf for \(account.email).",
             "Certificate: \(certificate.commonName)",
             "SHA256: \(certificate.sha256Fingerprint)",
             account.hasSelectedTeam ? "Team: \(account.teamID)" : "Team: not selected yet"
         ]
         if importedLocalUser && importedAdiPB {
-            lines.append("SideStore ADI fields preserved for Apple API compatibility.")
+            lines.append("KittyStore ADI fields preserved for Apple API compatibility.")
         } else {
-            lines.append("SideStore ADI fields were missing from this file.")
+            lines.append("KittyStore ADI fields were missing from this file.")
         }
         return lines.joined(separator: "\n")
     }

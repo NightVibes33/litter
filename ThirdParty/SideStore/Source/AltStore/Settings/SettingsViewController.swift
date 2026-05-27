@@ -290,7 +290,7 @@ final class SettingsViewController: UITableViewController
         if let altCert = ALTCertificate(p12Data: account.cert, password: account.certpass) {
             Keychain.shared.signingCertificate = altCert.encryptedP12Data(withPassword: "")!
             Keychain.shared.signingCertificatePassword = account.certpass
-            let toastView = ToastView(text: NSLocalizedString("Successfully imported '\(account.email)'!", comment: ""), detailText: "SideStore should be fully operational!")
+            let toastView = ToastView(text: NSLocalizedString("Successfully imported '\(account.email)'!", comment: ""), detailText: "KittyStore should be fully operational!")
             return toastView.show(in: self)
         } else {
             let toastView = ToastView(text: NSLocalizedString("Failed to import account certificate!", comment: ""), detailText: "Failed to create ALTCertificate. Check if the password is correct. Still imported account/adi.pb details!")
@@ -433,17 +433,17 @@ private extension SettingsViewController
                 version.isEmpty  ? "" : " (\(version))"
             } ?? installedApp.localizedVersion
         
-            versionLabel = NSLocalizedString(String(format: "Version %@", localizedVersion), comment: "SideStore Version")
+            versionLabel = NSLocalizedString(String(format: "Version %@", localizedVersion), comment: "KittyStore Version")
         }
         else if let version = buildInfo.marketing_version
         {
-            versionLabel = NSLocalizedString(String(format: "Version %@", version), comment: "SideStore Version")
+            versionLabel = NSLocalizedString(String(format: "Version %@", version), comment: "KittyStore Version")
         }
         else
         {
-            var version = "SideStore\t"
+            var version = "KittyStore\t"
             version += "\n\(Bundle.Info.appbundleIdentifier)"
-            versionLabel = NSLocalizedString(version, comment: "SideStore Version")
+            versionLabel = NSLocalizedString(version, comment: "KittyStore Version")
         }
         
         // add xcode build version for local builds
@@ -802,7 +802,7 @@ private extension SettingsViewController
     
     func clearCache()
     {
-        let alertController = UIAlertController(title: NSLocalizedString("Are you sure you want to clear SideStore's cache?", comment: ""),
+        let alertController = UIAlertController(title: NSLocalizedString("Are you sure you want to clear KittyStore's cache?", comment: ""),
                                                 message: NSLocalizedString("This will remove all temporary files as well as backups for uninstalled apps.", comment: ""),
                                                 preferredStyle: .actionSheet)
         alertController.addAction(UIAlertAction(title: UIAlertAction.cancel.title, style: UIAlertAction.cancel.style) { [weak self] _ in
@@ -831,6 +831,109 @@ private extension SettingsViewController
         }
         
         self.present(alertController, animated: true)
+    }
+
+    func showPairingFileActions(indexPath: IndexPath) {
+        let fileManager = FileManager.default
+        let sideStoreURL = fileManager.documentsDirectory.appendingPathComponent(pairingFileName)
+        let featherURL = fileManager.documentsDirectory.appendingPathComponent("pairingFile.plist")
+        let hasPairing = fileManager.fileExists(atPath: sideStoreURL.path)
+        let status = hasPairing ? NSLocalizedString("A pairing file is currently imported.", comment: "") : NSLocalizedString("No pairing file is imported yet.", comment: "")
+        let alertController = UIAlertController(
+            title: NSLocalizedString("Pairing File", comment: ""),
+            message: status + " " + NSLocalizedString("Import or replace it here for KittyStore installs and LocalDevVPN.", comment: ""),
+            preferredStyle: .actionSheet
+        )
+
+        let importTitle = hasPairing ? NSLocalizedString("Replace Pairing File", comment: "") : NSLocalizedString("Import Pairing File", comment: "")
+        alertController.addAction(UIAlertAction(title: importTitle, style: .default) { _ in
+            self.presentPairingFileImporter()
+        })
+
+        if hasPairing {
+            alertController.addAction(UIAlertAction(title: NSLocalizedString("Delete Pairing File", comment: ""), style: .destructive) { _ in
+                UserDefaults.standard.isPairingReset = true
+                try? fileManager.removeItem(at: sideStoreURL)
+                try? fileManager.removeItem(at: featherURL)
+                UserDefaults.standard.removeObject(forKey: "litter.feather.signing.pairing.record.v1")
+                let toastView = ToastView(text: NSLocalizedString("Pairing File Deleted", comment: ""), detailText: NSLocalizedString("Import a new pairing file before installing or refreshing apps.", comment: ""))
+                toastView.show(in: self)
+                self.tableView.reloadData()
+            })
+        }
+
+        alertController.addAction(UIAlertAction(title: NSLocalizedString("Help", comment: ""), style: .default) { _ in
+            if let url = URL(string: "https://docs.sidestore.io/docs/advanced/pairing-file") { UIApplication.shared.open(url) }
+        })
+        alertController.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .cancel))
+        alertController.popoverPresentationController?.sourceView = self.tableView
+        alertController.popoverPresentationController?.sourceRect = self.tableView.rectForRow(at: indexPath)
+        self.present(alertController, animated: true)
+        self.tableView.deselectRow(at: indexPath, animated: true)
+    }
+
+    func presentPairingFileImporter() {
+        var types = UTType.types(tag: "plist", tagClass: .filenameExtension, conformingTo: nil)
+        types.append(contentsOf: UTType.types(tag: "mobiledevicepairing", tagClass: .filenameExtension, conformingTo: .data))
+        types.append(contentsOf: UTType.types(tag: "pairing", tagClass: .filenameExtension, conformingTo: .data))
+        types.append(.xml)
+        if types.isEmpty { types = [.data] }
+
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        picker.shouldShowFileExtensions = true
+        ImportExport.documentPickerHandler = DocumentPickerHandler { [weak self] url in
+            guard let self else { return }
+            guard let url else { return }
+            self.importPairingFile(from: url)
+        }
+        picker.delegate = ImportExport.documentPickerHandler
+        self.present(picker, animated: true)
+    }
+
+    func importPairingFile(from url: URL) {
+        let isSecuredURL = url.startAccessingSecurityScopedResource()
+        defer {
+            if isSecuredURL { url.stopAccessingSecurityScopedResource() }
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let normalizedData = try normalizedPairingData(data)
+            let fileManager = FileManager.default
+            let sideStoreURL = fileManager.documentsDirectory.appendingPathComponent(pairingFileName)
+            let featherURL = fileManager.documentsDirectory.appendingPathComponent("pairingFile.plist")
+            try fileManager.createDirectory(at: fileManager.documentsDirectory, withIntermediateDirectories: true, attributes: nil)
+            try normalizedData.write(to: sideStoreURL, options: .atomic)
+            try normalizedData.write(to: featherURL, options: .atomic)
+            UserDefaults.standard.removeObject(forKey: "litter.feather.signing.pairing.record.v1")
+            UserDefaults.standard.isPairingReset = false
+            let toastView = ToastView(text: NSLocalizedString("Pairing File Imported", comment: ""), detailText: NSLocalizedString("KittyStore saved it for installs, refreshes, and Feather signing.", comment: ""))
+            toastView.show(in: self)
+            self.tableView.reloadData()
+        } catch {
+            let toastView = ToastView(text: NSLocalizedString("Pairing File Import Failed", comment: ""), detailText: error.localizedDescription)
+            toastView.show(in: self)
+        }
+    }
+
+    func normalizedPairingData(_ data: Data) throws -> Data {
+        guard !data.isEmpty else {
+            throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The pairing file is empty.", comment: "")])
+        }
+        if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) {
+            guard let dictionary = plist as? [String: Any], !dictionary.isEmpty else {
+                throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The pairing file is not a plist dictionary.", comment: "")])
+            }
+            let expectedKeys = Set(["DeviceCertificate", "HostCertificate", "RootCertificate", "SystemBUID", "HostID", "WiFiMACAddress", "EscrowBag", "PairRecordData", "private_key", "UDID"])
+            if !dictionary.keys.contains(where: { expectedKeys.contains($0) }) {
+                throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The pairing file does not look like a KittyStore pairing record.", comment: "")])
+            }
+            return try PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
+        }
+        if let text = String(data: data, encoding: .utf8), text.contains("DeviceCertificate") || text.contains("PairRecordData") || text.contains("private_key") || text.contains("UDID") {
+            return data
+        }
+        throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The pairing file could not be decoded.", comment: "")])
     }
     
     @IBAction func handleDebugModeGesture(_ gestureRecognizer: UISwipeGestureRecognizer)
@@ -916,7 +1019,7 @@ private extension SettingsViewController
     
     @IBAction func followAltStoreGitHub()
     {
-        let safariURL = URL(string: "https://github.com/SideStore")!
+        let safariURL = URL(string: "https://github.com/NightVibes33/litter")!
         UIApplication.shared.open(safariURL, options: [:])
     }
 }
@@ -1040,6 +1143,15 @@ extension SettingsViewController
                indexPath.row == AppRefreshRow.allCases.count-1      // last row
         {
             cell.setValue(3, forKey: "style")
+        }
+
+        if indexPath.section == Section.advancedSettings.rawValue,
+           AdvancedSettingsRow.allCases.indices.contains(indexPath.row),
+           AdvancedSettingsRow.allCases[indexPath.row] == .resetPairingFile
+        {
+            cell.textLabel?.text = NSLocalizedString("Pairing File", comment: "")
+            let fileURL = FileManager.default.documentsDirectory.appendingPathComponent(pairingFileName)
+            cell.detailTextLabel?.text = FileManager.default.fileExists(atPath: fileURL.path) ? NSLocalizedString("Imported", comment: "") : NSLocalizedString("Import or replace", comment: "")
         }
         
         
@@ -1166,34 +1278,25 @@ extension SettingsViewController
                 
                 // Option 1: GitHub
                 alertController.addAction(UIAlertAction(title: "GitHub", style: .default) { _ in
-                    if let githubURL = URL(string: "https://github.com/SideStore/SideStore/issues") {
+                    if let githubURL = URL(string: "https://github.com/NightVibes33/litter/issues") {
                         let safariViewController = SFSafariViewController(url: githubURL)
                         safariViewController.preferredControlTintColor = .altPrimary
                         self.present(safariViewController, animated: true, completion: nil)
                     }
                 })
                 
-                // Option 2: Discord
-                alertController.addAction(UIAlertAction(title: "Discord", style: .default) { _ in
-                    if let discordURL = URL(string: "https://discord.gg/sidestore-949183273383395328") {
-                        let safariViewController = SFSafariViewController(url: discordURL)
-                        safariViewController.preferredControlTintColor = .altPrimary
-                        self.present(safariViewController, animated: true, completion: nil)
-                    }
-                })
-                
-                // Option 3: Mail
+                // Option 2: Mail
                 alertController.addAction(UIAlertAction(title: "Send Email", style: .default) { _ in
                     if MFMailComposeViewController.canSendMail() {
                         let mailViewController = MFMailComposeViewController()
                         mailViewController.mailComposeDelegate = self
-                        mailViewController.setToRecipients(["support@sidestore.io"])
+                        mailViewController.setToRecipients([])
 
                         // TODO: MARKETING_VERSION is going to be set anyways so this needs to be fixed for beta
                         if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
-                            mailViewController.setSubject("SideStore Beta \(version) Feedback")
+                            mailViewController.setSubject("KittyStore Beta \(version) Feedback")
                         } else {
-                            mailViewController.setSubject("SideStore Beta Feedback")
+                            mailViewController.setSubject("KittyStore Beta Feedback")
                         }
 
                        self.present(mailViewController, animated: true, completion: nil)
@@ -1307,34 +1410,8 @@ extension SettingsViewController
                 }
                 
             case .resetPairingFile:
-                
-                let filename = "ALTPairingFile.mobiledevicepairing"
-                
-                let fm = FileManager.default
-                
-                let documentsPath = fm.documentsDirectory.appendingPathComponent("/\(filename)")
-                let alertController = UIAlertController(
-                    title: NSLocalizedString("Are you sure to reset the pairing file?", comment: ""),
-                    message: NSLocalizedString("You can reset the pairing file when you cannot sideload apps or enable JIT. You need to restart SideStore.", comment: ""),
-                    preferredStyle: UIAlertController.Style.actionSheet)
-                
-                alertController.addAction(UIAlertAction(title: NSLocalizedString("Delete and Reset", comment: ""), style: .destructive){ _ in
-                    if fm.fileExists(atPath: documentsPath.path), let contents = try? String(contentsOf: documentsPath), !contents.isEmpty {
-                        UserDefaults.standard.isPairingReset = true
-                        try? fm.removeItem(atPath: documentsPath.path)
-                        NSLog("Pairing File Reseted")
-                    }
-                    self.tableView.deselectRow(at: indexPath, animated: true)
-                    let dialogMessage = UIAlertController(title: NSLocalizedString("Pairing File Reset", comment: ""), message: NSLocalizedString("Please restart SideStore", comment: ""), preferredStyle: .alert)
-                    self.present(dialogMessage, animated: true, completion: nil)
-                })
-                alertController.addAction(.cancel)
-                //Fix crash on iPad
-                alertController.popoverPresentationController?.sourceView = self.tableView
-                alertController.popoverPresentationController?.sourceRect = self.tableView.rectForRow(at: indexPath)
-                self.present(alertController, animated: true)
-                self.tableView.deselectRow(at: indexPath, animated: true)
-                
+                showPairingFileActions(indexPath: indexPath)
+
             case .anisetteServers:
                 
                 func handleRefreshResult(_ result: Result<Void, any Error>) {
@@ -1359,7 +1436,7 @@ extension SettingsViewController
                 
                 // Instantiate SwiftUI View inside UIHostingController
                 let anisetteServersView = AnisetteServersView(selected: UserDefaults.standard.menuAnisetteURL, errorCallback: {
-                    ToastView(text: "Cleared adi.pb!", detailText: "You will need to log back into Apple ID in SideStore.")
+                    ToastView(text: "Cleared adi.pb!", detailText: "You will need to log back into Apple ID in KittyStore.")
                         .show(in: self)
                 }, refreshCallback: {result in
                     handleRefreshResult(result)
@@ -1523,7 +1600,7 @@ extension SettingsViewController
                         return
                     }
                     
-                    let newCertTmpPath = FileManager.default.temporaryDirectory.appendingPathComponent("SideStoreSigningCertificate.p12")
+                    let newCertTmpPath = FileManager.default.temporaryDirectory.appendingPathComponent("KittyStoreSigningCertificate.p12")
                     do {
                         try newCertData.write(to: newCertTmpPath)
                     } catch {

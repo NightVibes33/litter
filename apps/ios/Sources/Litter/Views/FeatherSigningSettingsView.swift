@@ -24,8 +24,8 @@ struct FeatherSigningSettingsView: View {
     var body: some View {
         List {
             upstreamSourceSection
-            certificateSection
             pairingSection
+            certificateSection
             appSection
             modifySection
             featherOptionsSection
@@ -78,14 +78,14 @@ struct FeatherSigningSettingsView: View {
 
     private var upstreamSourceSection: some View {
         Section {
-            sourceRow("SideStore", detail: "ThirdParty/SideStore/Source")
+            sourceRow("KittyStore Core", detail: "ThirdParty/SideStore/Source")
             sourceRow("Feather", detail: "ThirdParty/Feather/Source")
             sourceRow("LocalDevVPN", detail: "ThirdParty/SideStore/LocalDevVPN-Source")
         } header: {
             Text("Upstream Sources")
                 .foregroundStyle(LitterTheme.textSecondary)
         } footer: {
-            Text("This screen follows Feather's certificate, tunnel, and signing option files while keeping SideStore as the store/install/refresh transport.")
+            Text("This screen follows Feather's certificate, tunnel, and signing option files while keeping KittyStore as the store/install/refresh transport.")
         }
     }
 
@@ -158,7 +158,7 @@ struct FeatherSigningSettingsView: View {
             Text("Pairing + LocalDevVPN")
                 .foregroundStyle(LitterTheme.textSecondary)
         } footer: {
-            Text("Pairing is saved as SideStore's ALTPairingFile.mobiledevicepairing and Feather's pairingFile.plist, then staged into fakefs for bots and BuildKit.")
+            Text("Pairing is saved as KittyStore's ALTPairingFile.mobiledevicepairing and Feather's pairingFile.plist, then staged into fakefs for bots and BuildKit.")
         }
         .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
@@ -180,7 +180,7 @@ struct FeatherSigningSettingsView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
 
-            statusRow("SideStore Apple ID", value: NyxianAppleIDStore.load()?.statusDetail ?? "Sign in from SideStore Settings", ready: NyxianAppleIDStore.isLoggedIn)
+            statusRow("KittyStore Apple ID", value: NyxianAppleIDStore.load()?.statusDetail ?? "Sign in from KittyStore Settings", ready: NyxianAppleIDStore.isLoggedIn)
 
             Picker("Signing Account", selection: $options.signingMode) {
                 ForEach(FeatherSigningOptions.SigningMode.allCases) { value in
@@ -197,7 +197,7 @@ struct FeatherSigningSettingsView: View {
             Text("App")
                 .foregroundStyle(LitterTheme.textSecondary)
         } footer: {
-            Text("Apple ID sign-in, 2FA, Anisette, and team selection use the embedded SideStore Settings screen. This screen only selects the credential path for signing.")
+            Text("Apple ID sign-in, 2FA, Anisette, and team selection use the embedded KittyStore Settings screen. This screen only selects the credential path for signing.")
         }
         .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
@@ -454,37 +454,47 @@ struct FeatherSigningSettingsView: View {
     }
 
     private func writePlanOnly() {
-        do {
-            let plan = try FeatherSigningMaterialStore.signingPlanJSON(options: options)
-            isWorking = true
-            Task {
+        isWorking = true
+        Task {
+            let pairingWarning = await FeatherSigningMaterialStore.preparePairingFakefsIfNeeded()
+            do {
+                let plan = try FeatherSigningMaterialStore.signingPlanJSON(options: options)
                 let path = await FeatherSigningMaterialStore.writeLatestPlan(plan)
                 await MainActor.run {
                     isWorking = false
-                    lastOutput = "Plan written: \(path ?? "fakefs write failed")\n\n" + plan
+                    let warning = pairingWarning.map { "\n\nPairing staging warning:\n\($0)" } ?? ""
+                    lastOutput = "Plan written: \(path ?? "fakefs write failed")\n\n" + plan + warning
+                }
+            } catch {
+                await MainActor.run {
+                    isWorking = false
+                    alert = SigningAlert(title: "Plan Failed", message: error.localizedDescription)
                 }
             }
-        } catch {
-            alert = SigningAlert(title: "Plan Failed", message: error.localizedDescription)
         }
     }
 
     private func startSigning() {
-        do {
-            let plan = try FeatherSigningMaterialStore.signingPlanJSON(options: options)
-            isWorking = true
-            Task {
+        isWorking = true
+        Task {
+            let pairingWarning = await FeatherSigningMaterialStore.preparePairingFakefsIfNeeded()
+            do {
+                let plan = try FeatherSigningMaterialStore.signingPlanJSON(options: options)
                 let path = await FeatherSigningMaterialStore.writeLatestPlan(plan)
                 let result = await LitterBuildKit.shared.signKittyStorePlan(planJSON: plan)
                 await MainActor.run {
                     isWorking = false
                     refresh()
                     let artifacts = result.fakefsArtifacts.isEmpty ? "" : "\nArtifacts:\n" + result.fakefsArtifacts.joined(separator: "\n")
-                    lastOutput = "Plan: \(path ?? "in-app only")\nStatus: \(result.status)\nExit: \(result.exitCode)\n\n\(result.log)\(artifacts)"
+                    let warning = pairingWarning.map { "\n\nPairing staging warning:\n\($0)" } ?? ""
+                    lastOutput = "Plan: \(path ?? "in-app only")\nStatus: \(result.status)\nExit: \(result.exitCode)\n\n\(result.log)\(artifacts)\(warning)"
+                }
+            } catch {
+                await MainActor.run {
+                    isWorking = false
+                    alert = SigningAlert(title: "Signing Failed", message: error.localizedDescription)
                 }
             }
-        } catch {
-            alert = SigningAlert(title: "Signing Failed", message: error.localizedDescription)
         }
     }
 
