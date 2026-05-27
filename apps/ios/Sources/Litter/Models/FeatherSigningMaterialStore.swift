@@ -478,19 +478,46 @@ enum FeatherSigningMaterialStore {
         }
     }
 
+
+    private static func isValidPairingDictionary(_ dictionary: [String: Any]) -> Bool {
+        let keys = Set(dictionary.keys)
+        return lockdownPairingKeys.isSubset(of: keys) || remotePairingKeys.isSubset(of: keys)
+    }
+
+    private static func isValidPairingText(_ text: String) -> Bool {
+        let hasLockdownRecord = lockdownPairingKeys.allSatisfy { text.contains($0) }
+        let hasRemotePairingRecord = remotePairingKeys.allSatisfy { text.contains($0) }
+        return hasLockdownRecord || hasRemotePairingRecord
+    }
+
+    private static let lockdownPairingKeys: Set<String> = [
+        "DeviceCertificate",
+        "HostCertificate",
+        "RootCertificate",
+        "SystemBUID",
+        "HostID",
+        "WiFiMACAddress",
+        "EscrowBag",
+        "UDID"
+    ]
+
+    private static let remotePairingKeys: Set<String> = [
+        "PairRecordData",
+        "private_key"
+    ]
+
     private static func normalizedPairingData(_ data: Data) throws -> Data {
         guard !data.isEmpty else { throw NSError(domain: "FeatherSigningMaterialStore", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file is empty."]) }
         if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) {
             guard let dictionary = plist as? [String: Any], !dictionary.isEmpty else {
                 throw NSError(domain: "FeatherSigningMaterialStore", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file is not a plist dictionary."])
             }
-            let expectedKeys = Set(["DeviceCertificate", "HostCertificate", "RootCertificate", "SystemBUID", "HostID", "WiFiMACAddress", "EscrowBag", "PairRecordData", "private_key", "UDID"])
-            if !dictionary.keys.contains(where: { expectedKeys.contains($0) }) {
-                throw NSError(domain: "FeatherSigningMaterialStore", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file does not look like a KittyStore pairing record."])
+            if !isValidPairingDictionary(dictionary) {
+                throw NSError(domain: "FeatherSigningMaterialStore", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file does not include a complete KittyStore pairing record."])
             }
             return try PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
         }
-        if let text = String(data: data, encoding: .utf8), text.contains("DeviceCertificate") || text.contains("PairRecordData") || text.contains("private_key") || text.contains("UDID") {
+        if let text = String(data: data, encoding: .utf8), isValidPairingText(text) {
             return data
         }
         throw NSError(domain: "FeatherSigningMaterialStore", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file could not be decoded."])

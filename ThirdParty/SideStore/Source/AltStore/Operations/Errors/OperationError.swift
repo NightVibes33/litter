@@ -241,9 +241,9 @@ struct OperationError: ALTLocalizedError {
         case .invalidOperationContext:
             let message = self._failureReason.map { ": \n\($0)" } ?? "."
             return String(format: NSLocalizedString("Invalid Operation Context%@", comment: ""), message)
-        case .serverNotFound: return NSLocalizedString("AltServer could not be found.", comment: "")
-        case .connectionFailed: return NSLocalizedString("A connection to AltServer could not be established.", comment: "")
-        case .connectionDropped: return NSLocalizedString("The connection to AltServer was dropped.", comment: "")
+        case .serverNotFound: return NSLocalizedString("LocalDevVPN could not be found.", comment: "")
+        case .connectionFailed: return NSLocalizedString("A connection to LocalDevVPN could not be established.", comment: "")
+        case .connectionDropped: return NSLocalizedString("The connection to LocalDevVPN was dropped.", comment: "")
             
         case .pledgeRequired:
             let appName = self.appName ?? NSLocalizedString("This app", comment: "")
@@ -260,7 +260,7 @@ struct OperationError: ALTLocalizedError {
         switch self.code
         {
         case .noWiFi: return NSLocalizedString("Make sure LocalDevVPN is connected and that you are connected to any Wi-Fi network!", comment: "")
-        case .serverNotFound: return NSLocalizedString("Make sure you're on the same Wi-Fi network as a computer running AltServer, or try connecting this device to your computer via USB.", comment: "")
+        case .serverNotFound: return NSLocalizedString("Make sure LocalDevVPN is connected and your pairing file is imported in KittyStore Settings.", comment: "")
         case .maximumAppIDLimitReached:
             let baseMessage = NSLocalizedString("Delete sideloaded apps to free up App ID slots.", comment: "")
             guard let appName, let requiredAppIDs, let availableAppIDs, let expirationDate else { return baseMessage }

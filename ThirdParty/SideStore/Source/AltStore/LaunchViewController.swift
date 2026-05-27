@@ -122,18 +122,61 @@ final class LaunchViewController: UIViewController, UIDocumentPickerDelegate {
 
         do {
             let data = try Data(contentsOf: url)
-            guard let pairingString = String(data: data, encoding: .utf8) else {
+            let normalizedData = try normalizedPairingData(data)
+            guard let pairingString = String(data: normalizedData, encoding: .utf8) else {
                 displayError("Unable to read pairing file")
                 return
             }
-            try pairingString.write(to: FileManager.default.documentsDirectory.appendingPathComponent(pairingFileName), atomically: true, encoding: .utf8)
+            try normalizedData.write(to: FileManager.default.documentsDirectory.appendingPathComponent(pairingFileName), options: .atomic)
+            UserDefaults.standard.isPairingReset = false
             start_minimuxer_threads(pairingString)
         } catch {
-            displayError("Unable to read pairing file")
+            displayError("Unable to import pairing file. \(error.localizedDescription)")
         }
         
         controller.dismiss(animated: true, completion: nil)
     }
+
+
+    private func normalizedPairingData(_ data: Data) throws -> Data {
+        guard !data.isEmpty else {
+            throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file is empty."])
+        }
+        if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) {
+            guard let dictionary = plist as? [String: Any], !dictionary.isEmpty else {
+                throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file is not a plist dictionary."])
+            }
+            let keys = Set(dictionary.keys)
+            guard Self.lockdownPairingKeys.isSubset(of: keys) || Self.remotePairingKeys.isSubset(of: keys) else {
+                throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file does not include a complete KittyStore pairing record."])
+            }
+            return try PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
+        }
+        if let text = String(data: data, encoding: .utf8) {
+            let hasLockdownRecord = Self.lockdownPairingKeys.allSatisfy { text.contains($0) }
+            let hasRemotePairingRecord = Self.remotePairingKeys.allSatisfy { text.contains($0) }
+            if hasLockdownRecord || hasRemotePairingRecord {
+                return data
+            }
+        }
+        throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: "The pairing file could not be decoded."])
+    }
+
+    private static let lockdownPairingKeys: Set<String> = [
+        "DeviceCertificate",
+        "HostCertificate",
+        "RootCertificate",
+        "SystemBUID",
+        "HostID",
+        "WiFiMACAddress",
+        "EscrowBag",
+        "UDID"
+    ]
+
+    private static let remotePairingKeys: Set<String> = [
+        "PairRecordData",
+        "private_key"
+    ]
 
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
         displayError("Choosing a pairing file was cancelled. Please re-open the app and try again.")
@@ -378,12 +421,12 @@ final class PairingFileManager {
     private func presentPairingFileAlert(on vc: UIViewController) {
         let alert = UIAlertController(title: "Pairing File", message: "Select the pairing file or select \"Help\" for help.", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "Help", style: .default) { _ in
-            if let url = URL(string: "https://github.com/NightVibes33/litter") { UIApplication.shared.open(url) }
-            sleep(2); exit(0)
+            if let url = URL(string: "https://github.com/NightVibes33/litter/blob/main/docs/kittystore-pairing-file.md") { UIApplication.shared.open(url) }
         })
         alert.addAction(UIAlertAction(title: "OK", style: .default) { _ in
             var types = UTType.types(tag: "plist", tagClass: .filenameExtension, conformingTo: nil)
             types.append(contentsOf: UTType.types(tag: "mobiledevicepairing", tagClass: .filenameExtension, conformingTo: .data))
+            types.append(contentsOf: UTType.types(tag: "pairing", tagClass: .filenameExtension, conformingTo: .data))
             types.append(.xml)
             let picker = UIDocumentPickerViewController(forOpeningContentTypes: types)
             picker.delegate = vc as? UIDocumentPickerDelegate

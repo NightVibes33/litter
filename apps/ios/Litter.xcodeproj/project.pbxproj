@@ -2788,7 +2788,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				OTHER_LDFLAGS = "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty";
+				OTHER_LDFLAGS = "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty $(KITTYSTORE_MINIMUXER_LDFLAGS)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.sigkitten.litter;
 				PROVISIONING_PROFILE_SPECIFIER = "$(APP_PROVISIONING_PROFILE_SPECIFIER)";
 				SDKROOT = iphoneos;
@@ -2836,7 +2836,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				OTHER_LDFLAGS = "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty";
+				OTHER_LDFLAGS = "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty $(KITTYSTORE_MINIMUXER_LDFLAGS)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.sigkitten.litter;
 				PROVISIONING_PROFILE_SPECIFIER = "$(APP_PROVISIONING_PROFILE_SPECIFIER)";
 				SDKROOT = iphoneos;

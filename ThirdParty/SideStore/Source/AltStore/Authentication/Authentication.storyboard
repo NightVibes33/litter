@@ -431,7 +431,7 @@
             </objects>
             <point key="canvasLocation" x="1353" y="736"/>
         </scene>
-        <!--Refresh SideStore-->
+        <!--Refresh KittyStore-->
         <scene sceneID="9Vh-dM-OqX">
             <objects>
                 <viewController storyboardIdentifier="refreshAltStoreViewController" id="aoK-yE-UVT" customClass="RefreshAltStoreViewController" customModule="SideStore" customModuleProvider="target" sceneMemberID="viewController">

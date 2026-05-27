@@ -163,7 +163,7 @@ private extension ViewController
             self.textLabel.text = String(format: NSLocalizedString("%@ is inactive.", comment: ""),
                                          Bundle.main.appName ?? NSLocalizedString("App", comment: ""))
                                             
-            self.detailTextLabel.text = String(format: NSLocalizedString("Refresh %@ in SideStore to continue using it.", comment: ""),
+            self.detailTextLabel.text = String(format: NSLocalizedString("Refresh %@ in KittyStore to continue using it.", comment: ""),
                                                Bundle.main.appName ?? NSLocalizedString("this app", comment: ""))
             
             self.detailTextLabel.isHidden = false

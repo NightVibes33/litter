@@ -23,6 +23,7 @@ private enum KittyStoreExternalLinks
     static let repository = URL(string: "https://github.com/NightVibes33/litter")!
     static let issues = URL(string: "https://github.com/NightVibes33/litter/issues")!
     static let social = URL(string: "https://x.com/xboxsignout999_?s=21&t=k6RkcjRI6uMwGvJ_q6XC7A")!
+    static let pairingHelp = URL(string: "https://github.com/NightVibes33/litter/blob/main/docs/kittystore-pairing-file.md")!
 }
 
 extension SettingsViewController
@@ -126,6 +127,16 @@ final class SettingsViewController: UITableViewController
 
     private var debugGestureCounter = 0
     private weak var debugGestureTimer: Timer?
+
+    private var isEmbeddedKittyStoreHost: Bool {
+        if let flag = Bundle.main.object(forInfoDictionaryKey: "LitterEmbedsSideStore") as? Bool {
+            return flag
+        }
+        if let flag = Bundle.main.object(forInfoDictionaryKey: "LitterEmbedsSideStore") as? String {
+            return ["1", "true", "yes"].contains(flag.lowercased())
+        }
+        return false
+    }
     
     @IBOutlet private var accountNameLabel: UILabel!
     @IBOutlet private var accountEmailLabel: UILabel!
@@ -268,6 +279,8 @@ final class SettingsViewController: UITableViewController
                 button.imageView?.contentMode = .scaleAspectFit
             }
         }
+
+        configureKittyStoreSocialFooter()
         
         configureReleaseChannelButton()
         #if !targetEnvironment(simulator)
@@ -275,6 +288,20 @@ final class SettingsViewController: UITableViewController
         #endif
     }
     
+    private func configureKittyStoreSocialFooter()
+    {
+        self.mastodonButton.isHidden = true
+        self.threadsButton.isHidden = true
+
+        self.twitterButton.configuration = nil
+        self.twitterButton.setImage(nil, for: .normal)
+        self.twitterButton.setTitle("X", for: .normal)
+        self.twitterButton.titleLabel?.font = .systemFont(ofSize: 22, weight: .bold)
+        self.twitterButton.accessibilityLabel = NSLocalizedString("Open KittyStore on X", comment: "")
+
+        self.githubButton.accessibilityLabel = NSLocalizedString("Open KittyStore Repository", comment: "")
+    }
+
     func importAccountAtFile(_ file: URL, remove: Bool = false) {
         _ = file.startAccessingSecurityScopedResource()
         defer { file.stopAccessingSecurityScopedResource() }
@@ -481,7 +508,16 @@ private extension SettingsViewController
         
         // AppRefreshRow
         self.backgroundRefreshSwitch.isOn = UserDefaults.standard.isBackgroundRefreshEnabled
-        self.enableEMPforWireguard.isOn = UserDefaults.standard.enableEMPforWireguard
+        if self.isEmbeddedKittyStoreHost {
+            UserDefaults.standard.enableEMPforWireguard = false
+            self.enableEMPforWireguard.isOn = false
+            self.enableEMPforWireguard.isEnabled = false
+            self.enableEMPforWireguard.alpha = 0.45
+        } else {
+            self.enableEMPforWireguard.isOn = UserDefaults.standard.enableEMPforWireguard
+            self.enableEMPforWireguard.isEnabled = true
+            self.enableEMPforWireguard.alpha = 1
+        }
         self.noIdleTimeoutSwitch.isOn = UserDefaults.standard.isIdleTimeoutDisableEnabled
         self.disableAppLimitSwitch.isOn = UserDefaults.standard.isAppLimitDisabled
 
@@ -784,6 +820,13 @@ private extension SettingsViewController
     
     @IBAction func toggleEnableEMPforWireguard(_ sender: UISwitch)
     {
+        guard !self.isEmbeddedKittyStoreHost else {
+            sender.setOn(false, animated: true)
+            UserDefaults.standard.enableEMPforWireguard = false
+            let toastView = ToastView(text: NSLocalizedString("Embedded EMProxy Unavailable", comment: ""), detailText: NSLocalizedString("KittyStore uses LocalDevVPN directly in this build. Import a pairing file before installing or refreshing apps.", comment: ""))
+            toastView.show(in: self)
+            return
+        }
         UserDefaults.standard.enableEMPforWireguard = sender.isOn
     }
     
@@ -870,7 +913,7 @@ private extension SettingsViewController
         }
 
         alertController.addAction(UIAlertAction(title: NSLocalizedString("Help", comment: ""), style: .default) { _ in
-            UIApplication.shared.open(KittyStoreExternalLinks.repository)
+            UIApplication.shared.open(KittyStoreExternalLinks.pairingHelp)
         })
         alertController.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .cancel))
         alertController.popoverPresentationController?.sourceView = self.tableView
@@ -914,6 +957,9 @@ private extension SettingsViewController
             try normalizedData.write(to: featherURL, options: .atomic)
             UserDefaults.standard.removeObject(forKey: "litter.feather.signing.pairing.record.v1")
             UserDefaults.standard.isPairingReset = false
+            if self.isEmbeddedKittyStoreHost {
+                SideStoreEmbeddedFactory.startTransportIfPossible()
+            }
             let toastView = ToastView(text: NSLocalizedString("Pairing File Imported", comment: ""), detailText: NSLocalizedString("KittyStore saved it for installs, refreshes, and Feather signing.", comment: ""))
             toastView.show(in: self)
             self.tableView.reloadData()
@@ -921,6 +967,38 @@ private extension SettingsViewController
             let toastView = ToastView(text: NSLocalizedString("Pairing File Import Failed", comment: ""), detailText: error.localizedDescription)
             toastView.show(in: self)
         }
+    }
+
+
+    private func isValidPairingDictionary(_ dictionary: [String: Any]) -> Bool {
+        let keys = Set(dictionary.keys)
+        return Self.lockdownPairingKeys.isSubset(of: keys) || Self.remotePairingKeys.isSubset(of: keys)
+    }
+
+    private func isValidPairingText(_ text: String) -> Bool {
+        let hasLockdownRecord = Self.lockdownPairingKeys.allSatisfy { text.contains($0) }
+        let hasRemotePairingRecord = Self.remotePairingKeys.allSatisfy { text.contains($0) }
+        return hasLockdownRecord || hasRemotePairingRecord
+    }
+
+    private static var lockdownPairingKeys: Set<String> {
+        [
+            "DeviceCertificate",
+            "HostCertificate",
+            "RootCertificate",
+            "SystemBUID",
+            "HostID",
+            "WiFiMACAddress",
+            "EscrowBag",
+            "UDID"
+        ]
+    }
+
+    private static var remotePairingKeys: Set<String> {
+        [
+            "PairRecordData",
+            "private_key"
+        ]
     }
 
     func normalizedPairingData(_ data: Data) throws -> Data {
@@ -931,13 +1009,12 @@ private extension SettingsViewController
             guard let dictionary = plist as? [String: Any], !dictionary.isEmpty else {
                 throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The pairing file is not a plist dictionary.", comment: "")])
             }
-            let expectedKeys = Set(["DeviceCertificate", "HostCertificate", "RootCertificate", "SystemBUID", "HostID", "WiFiMACAddress", "EscrowBag", "PairRecordData", "private_key", "UDID"])
-            if !dictionary.keys.contains(where: { expectedKeys.contains($0) }) {
-                throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The pairing file does not look like a KittyStore pairing record.", comment: "")])
+            if !isValidPairingDictionary(dictionary) {
+                throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The pairing file does not include a complete KittyStore pairing record.", comment: "")])
             }
             return try PropertyListSerialization.data(fromPropertyList: dictionary, format: .xml, options: 0)
         }
-        if let text = String(data: data, encoding: .utf8), text.contains("DeviceCertificate") || text.contains("PairRecordData") || text.contains("private_key") || text.contains("UDID") {
+        if let text = String(data: data, encoding: .utf8), isValidPairingText(text) {
             return data
         }
         throw NSError(domain: "KittyStorePairingImport", code: 64, userInfo: [NSLocalizedDescriptionKey: NSLocalizedString("The pairing file could not be decoded.", comment: "")])

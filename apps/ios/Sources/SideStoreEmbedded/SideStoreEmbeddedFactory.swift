@@ -13,6 +13,11 @@ public enum SideStoreEmbeddedFactory {
     public static func bootstrap() {
         SideStoreEmbeddedRuntime.prepareForLaunch()
     }
+
+    @MainActor
+    public static func startTransportIfPossible() {
+        SideStoreEmbeddedRuntime.startTransportIfPossible()
+    }
 }
 
 open class AppDelegate: NSObject, UIApplicationDelegate {
@@ -39,6 +44,7 @@ private enum SideStoreEmbeddedRuntime {
     @MainActor private static var didPrepare = false
     @MainActor private static var didStart = false
     @MainActor private static var didFinishStartup = false
+    @MainActor private static var didStartMinimuxer = false
     @MainActor private static var startupError: Error?
     @MainActor private static var startupCompletions: [((Error?) -> Void)] = []
 
@@ -50,6 +56,7 @@ private enum SideStoreEmbeddedRuntime {
         didPrepare = true
 
         UserDefaults.registerDefaults()
+        UserDefaults.standard.enableEMPforWireguard = false
         SecureValueTransformer.register()
         prepareImageCache()
         consoleLogProvider?()?.startCapturing()
@@ -101,6 +108,7 @@ private enum SideStoreEmbeddedRuntime {
         didFinishStartup = true
 
         if error == nil {
+            startMinimuxerIfPossible()
             AppManager.shared.update()
             AppManager.shared.updateAllSources { result in
                 if case .failure(let error) = result {
@@ -114,6 +122,41 @@ private enum SideStoreEmbeddedRuntime {
         completions.forEach { completion in
             completion(error)
         }
+    }
+
+    @MainActor
+    static func startTransportIfPossible() {
+        startMinimuxerIfPossible()
+    }
+
+    @MainActor
+    private static func startMinimuxerIfPossible() {
+        #if targetEnvironment(simulator)
+        return
+        #else
+        guard !didStartMinimuxer else { return }
+
+        let pairingURL = FileManager.default.documentsDirectory.appendingPathComponent(pairingFileName)
+        guard FileManager.default.fileExists(atPath: pairingURL.path),
+              let pairingFile = try? String(contentsOf: pairingURL),
+              !pairingFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            print("[SideStoreEmbedded] Pairing file not imported yet; minimuxer startup deferred.")
+            return
+        }
+
+        didStartMinimuxer = true
+        retargetUsbmuxdAddr()
+        let documentsDirectory = FileManager.default.documentsDirectory.absoluteString
+        do {
+            let loggingEnabled = UserDefaults.standard.isMinimuxerConsoleLoggingEnabled
+            try minimuxerStartWithLogger(pairingFile, documentsDirectory, loggingEnabled)
+            startAutoMounter(documentsDirectory)
+            print("[SideStoreEmbedded] Started minimuxer for embedded KittyStore.")
+        } catch {
+            didStartMinimuxer = false
+            print("[SideStoreEmbedded] Failed to start minimuxer: \(error.localizedDescription)")
+        }
+        #endif
     }
 
     private static func prepareImageCache() {
@@ -203,6 +246,12 @@ private final class KittyStoreRootViewController: UIViewController {
 
         embed(viewController)
         applyBranding()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.applyBranding()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.applyBranding()
+        }
     }
 
     private func showUnavailable(message: String) {
@@ -243,6 +292,8 @@ private final class KittyStoreRootViewController: UIViewController {
         text?
             .replacingOccurrences(of: "SideStore", with: "KittyStore")
             .replacingOccurrences(of: "Side Store", with: "KittyStore")
+            .replacingOccurrences(of: "AltStore", with: "KittyStore")
+            .replacingOccurrences(of: "AltServer", with: "LocalDevVPN")
     }
 
     private static func branded(_ attributedText: NSAttributedString?) -> NSAttributedString? {

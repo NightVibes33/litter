@@ -115,6 +115,7 @@ final class AboutPatreonHeaderView: UICollectionReusableView
         self.textView.layer.cornerRadius = 20
         self.textView.textContainer.lineFragmentPadding = 0
         
+        self.teamIcon.image = Self.appIconImage() ?? self.teamIcon.image
         for imageView in [self.teamIcon].compactMap({$0})
         {
             imageView.clipsToBounds = true
@@ -128,6 +129,23 @@ final class AboutPatreonHeaderView: UICollectionReusableView
         }
     }
     
+
+    private static func appIconImage() -> UIImage?
+    {
+        let primaryIcon = (Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any])?["CFBundlePrimaryIcon"] as? [String: Any]
+        let iconFiles = primaryIcon?["CFBundleIconFiles"] as? [String]
+        let names = Array((iconFiles ?? []).reversed()) + ["AppIcon60x60", "AppIcon", "Icon-1024", "brand_logo"]
+
+        for name in names
+        {
+            if let image = UIImage(named: name) { return image }
+            if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+               let image = UIImage(contentsOfFile: url.path) { return image }
+        }
+
+        return nil
+    }
+
     override func layoutMarginsDidChange()
     {
         super.layoutMarginsDidChange()

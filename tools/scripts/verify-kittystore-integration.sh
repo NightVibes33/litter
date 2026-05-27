@@ -194,6 +194,14 @@ require_grep "Private BuildKit native rebuild script" "build-litter-buildkit-nat
 require_grep "Private BuildKit refreshed fingerprint" "nativeDriverSourceFingerprint" "apps/ios/scripts/prepare-buildkit-assets.sh"
 require_grep "AltStore source verifier workflow gate" "verify-altstore-source.py" ".github/workflows/ios-unsigned-ipa.yml"
 
+require_grep "KittyStore release source URL" "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json" "ThirdParty/SideStore/Source/AltStoreCore/Model/Source.swift"
+require_grep "KittyStore add-source placeholder" "litter-altstore-source.json" "ThirdParty/SideStore/Source/AltStore/Sources/Components/AddSourceTextFieldCell.swift"
+require_grep "KittyStore local source has app list" '"apps": [' "ThirdParty/SideStore/Source/kittystore-source.json"
+require_grep "KittyStore embedded pairing help docs" "kittystore-pairing-file.md" "ThirdParty/SideStore/Source/AltStore/Settings/SettingsViewController.swift"
+require_grep "KittyStore install failure propagation" "self.finish(.failure(error))" "ThirdParty/SideStore/Source/AltStore/Operations/SendAppOperation.swift"
+require_grep "KittyStore embedded transport startup" "startTransportIfPossible" "apps/ios/Sources/SideStoreEmbedded/SideStoreEmbeddedFactory.swift"
+require_grep "KittyStore linked minimuxer import" "import Minimuxer" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
+
 require_grep "KittyStore configurable release source" "AppReleaseSource.current" "apps/ios/Sources/Litter/Models/AppUpdateStore.swift"
 require_grep "BuildKit configurable KittyStore source" "AppReleaseSource.current.stableSourceURLString" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
 require_absent "hardcoded AppUpdateStore NightVibes repo URL" "github.com/NightVibes33/litter" "apps/ios/Sources/Litter/Models/AppUpdateStore.swift"

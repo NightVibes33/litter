@@ -119,7 +119,7 @@ NSErrorUserInfoKey const ALTNSCodingPathKey = @"NSCodingPath";
 #if TARGET_OS_OSX
                 return NSLocalizedString(@"There was an error connecting to the device.", @"");
 #else
-                return NSLocalizedString(@"AltServer could not establish a connection to SideStore.", @"");
+                return NSLocalizedString(@"KittyStore could not establish a connection to LocalDevVPN.", @"");
 #endif
             }
 
@@ -168,18 +168,18 @@ NSErrorUserInfoKey const ALTNSCodingPathKey = @"NSCodingPath";
 #if TARGET_OS_OSX
             return NSLocalizedString(@"There was an error connecting to the device.", @"");
 #else
-            return NSLocalizedString(@"Could not connect to SideStore.", @"");
+            return NSLocalizedString(@"Could not connect to KittyStore.", @"");
 #endif
         }
 
         case ALTServerErrorLostConnection:
-            return NSLocalizedString(@"Lost connection to SideStore.", @"");
+            return NSLocalizedString(@"Lost connection to KittyStore.", @"");
             
         case ALTServerErrorDeviceNotFound:
-            return NSLocalizedString(@"SideStore could not find this device.", @"");
+            return NSLocalizedString(@"KittyStore could not find this device.", @"");
             
         case ALTServerErrorDeviceWriteFailed:
-            return NSLocalizedString(@"SideStore could not write data to this device.", @"");
+            return NSLocalizedString(@"KittyStore could not write data to this device.", @"");
 
         case ALTServerErrorInvalidRequest:
         {
@@ -189,7 +189,7 @@ NSErrorUserInfoKey const ALTNSCodingPathKey = @"NSCodingPath";
                 return underlyingError.localizedFailureReason;
             }
             
-            return NSLocalizedString(@"SideStore received an invalid request.", @"");
+            return NSLocalizedString(@"KittyStore received an invalid request.", @"");
         }
             
         case ALTServerErrorInvalidResponse:
@@ -200,7 +200,7 @@ NSErrorUserInfoKey const ALTNSCodingPathKey = @"NSCodingPath";
                 return underlyingError.localizedFailureReason;
             }
             
-            return NSLocalizedString(@"SideStore sent an invalid response.", @"");
+            return NSLocalizedString(@"KittyStore sent an invalid response.", @"");
         }
             
         case ALTServerErrorInvalidApp:
@@ -225,23 +225,23 @@ NSErrorUserInfoKey const ALTNSCodingPathKey = @"NSCodingPath";
             
             if (appName == nil || osVersion == nil)
             {
-                return NSLocalizedString(@"Your device must be running iOS 12.2 or later to install SideStore.", @"");
+                return NSLocalizedString(@"Your device must be running iOS 12.2 or later to install KittyStore.", @"");
             }
             
             return [NSString stringWithFormat:NSLocalizedString(@"%@ requires %@ or later.", @""), appName, osVersion];
         }
             
         case ALTServerErrorUnknownRequest:
-            return NSLocalizedString(@"SideStore does not support this request.", @"");
+            return NSLocalizedString(@"KittyStore does not support this request.", @"");
             
         case ALTServerErrorUnknownResponse:
-            return NSLocalizedString(@"SideStore received an unknown response from SideStore.", @"");
+            return NSLocalizedString(@"KittyStore received an unknown response from LocalDevVPN.", @"");
 
         case ALTServerErrorInvalidAnisetteData:
             return NSLocalizedString(@"The provided anisette data is invalid.", @"");
             
         case ALTServerErrorPluginNotFound:
-            return NSLocalizedString(@"AltServer could not connect to Mail plug-in.", @"");
+            return NSLocalizedString(@"KittyStore could not connect to Mail plug-in.", @"");
             
         case ALTServerErrorProfileNotFound:
             return [self profileErrorLocalizedDescriptionWithBaseDescription:NSLocalizedString(@"Could not find profile", "")];
@@ -294,7 +294,7 @@ NSErrorUserInfoKey const ALTNSCodingPathKey = @"NSCodingPath";
             
         case ALTServerErrorMaximumFreeAppLimitReached:
 #if TARGET_OS_OSX
-            return NSLocalizedString(@"Please deactivate a sideloaded app with SideStore in order to install another app.\n\nIf you're running iOS 13.5 or later, make sure 'Offload Unused Apps' is disabled in Settings > iTunes & App Stores, then install or delete all offloaded apps to prevent them from erroneously counting towards this limit.", @"");
+            return NSLocalizedString(@"Please deactivate a sideloaded app with KittyStore in order to install another app.\n\nIf you're running iOS 13.5 or later, make sure 'Offload Unused Apps' is disabled in Settings > iTunes & App Stores, then install or delete all offloaded apps to prevent them from erroneously counting towards this limit.", @"");
 #else
             return NSLocalizedString(@"Please deactivate a sideloaded app in order to install another one.\n\nIf you're running iOS 13.5 or later, make sure “Offload Unused Apps” is disabled in Settings > iTunes & App Stores, then install or delete all offloaded apps.", @"");
 #endif
@@ -403,13 +403,13 @@ NSErrorUserInfoKey const ALTNSCodingPathKey = @"NSCodingPath";
         case ALTServerConnectionErrorInvalidRequest:
         {
             NSString *deviceName = self.userInfo[ALTDeviceNameErrorKey] ?: NSLocalizedString(@"The device", @"");
-            return [NSString stringWithFormat:NSLocalizedString(@"%@ received an invalid request from SideStore.", @""), deviceName];
+            return [NSString stringWithFormat:NSLocalizedString(@"%@ received an invalid request from KittyStore.", @""), deviceName];
         }
             
         case ALTServerConnectionErrorInvalidResponse:
         {
             NSString *deviceName = self.userInfo[ALTDeviceNameErrorKey] ?: NSLocalizedString(@"the device", @"");
-            return [NSString stringWithFormat:NSLocalizedString(@"SideStore received an invalid response from %@.", @""), deviceName];
+            return [NSString stringWithFormat:NSLocalizedString(@"KittyStore received an invalid response from %@.", @""), deviceName];
         }
             
         case ALTServerConnectionErrorUsbmuxd:
@@ -420,13 +420,13 @@ NSErrorUserInfoKey const ALTNSCodingPathKey = @"NSCodingPath";
         case ALTServerConnectionErrorSSL:
         {
             NSString *deviceName = self.userInfo[ALTDeviceNameErrorKey] ?: NSLocalizedString(@"the device", @"");
-            return [NSString stringWithFormat:NSLocalizedString(@"SideStore could not establish a secure connection to %@.", @""), deviceName];
+            return [NSString stringWithFormat:NSLocalizedString(@"KittyStore could not establish a secure connection to %@.", @""), deviceName];
         }
             
         case ALTServerConnectionErrorTimedOut:
         {
             NSString *deviceName = self.userInfo[ALTDeviceNameErrorKey] ?: NSLocalizedString(@"the device", @"");
-            return [NSString stringWithFormat:NSLocalizedString(@"SideStore's connection to %@ timed out.", @""), deviceName];
+            return [NSString stringWithFormat:NSLocalizedString(@"KittyStore's connection to %@ timed out.", @""), deviceName];
         }
     }
     

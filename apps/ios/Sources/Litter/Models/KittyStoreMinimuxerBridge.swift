@@ -2,6 +2,7 @@ import Foundation
 
 #if KITTYSTORE_MINIMUXER_LINKED
 import Darwin
+import Minimuxer
 #endif
 
 struct KittyStoreInstalledDeviceApp: Identifiable, Equatable, Sendable {

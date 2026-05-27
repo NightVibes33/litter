@@ -2,11 +2,8 @@
   "version": 1,
   "trusted": [
     {
-      "identifier": "io.sidestore.example"
-    },
-    {
-      "identifier": "com.sidestoreapps.community",
-      "sourceURL": "https://community-apps.sidestore.io/sidecommunity.json"
+      "identifier": "com.nightvibes33.zyn.source",
+      "sourceURL": "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json"
     },
     {
       "identifier": "com.stik.stikdebug",
@@ -61,10 +58,6 @@
       "sourceURL": "https://pokemmo.eu/altstore/"
     },
     {
-      "identifier": "dev.theodyssey.sidestore",
-      "sourceURL": "https://theodyssey.dev/altstore/odysseysource.json"
-    },
-    {
       "identifier": "stream.yattee",
       "sourceURL": "https://repos.yattee.stream/alt/apps.json"
     },
@@ -83,11 +76,8 @@
   ],
   "sources": [
     {
-      "identifier": "io.sidestore.example"
-    },
-    {
-      "identifier": "com.sidestoreapps.community",
-      "sourceURL": "https://community-apps.sidestore.io/sidecommunity.json"
+      "identifier": "com.nightvibes33.zyn.source",
+      "sourceURL": "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json"
     },
     {
       "identifier": "com.stik.stikdebug",
@@ -136,10 +126,6 @@
     {
       "identifier": "eu.pokemmo.altstore",
       "sourceURL": "https://pokemmo.eu/altstore/"
-    },
-    {
-      "identifier": "dev.theodyssey.sidestore",
-      "sourceURL": "https://theodyssey.dev/altstore/odysseysource.json"
     },
     {
       "identifier": "stream.yattee",

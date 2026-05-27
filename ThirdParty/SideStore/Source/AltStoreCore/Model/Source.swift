@@ -20,17 +20,17 @@ public extension Source
     #if STAGING
     
     #if ALPHA
-    static let altStoreSourceURL = URL(string: "https://raw.githubusercontent.com/NightVibes33/litter/main/ThirdParty/SideStore/Source/kittystore-source.json")!
+    static let altStoreSourceURL = URL(string: "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json")!
     #else
-    static let altStoreSourceURL = URL(string: "https://raw.githubusercontent.com/NightVibes33/litter/main/ThirdParty/SideStore/Source/kittystore-source.json")!
+    static let altStoreSourceURL = URL(string: "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json")!
     #endif
     
     #else
     
     #if ALPHA
-    static let altStoreSourceURL = URL(string: "https://raw.githubusercontent.com/NightVibes33/litter/main/ThirdParty/SideStore/Source/kittystore-source.json")!
+    static let altStoreSourceURL = URL(string: "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json")!
     #else
-    static let altStoreSourceURL = URL(string: "https://raw.githubusercontent.com/NightVibes33/litter/main/ThirdParty/SideStore/Source/kittystore-source.json")!
+    static let altStoreSourceURL = URL(string: "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json")!
     #endif
     
     #endif

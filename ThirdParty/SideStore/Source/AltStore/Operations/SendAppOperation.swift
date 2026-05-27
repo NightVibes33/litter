@@ -81,9 +81,8 @@ final class SendAppOperation: ResultOperation<()>
             self.progress.completedUnitCount += 1
             self.finish(.success(()))
         } catch {
-            self.finish(.failure(MinimuxerError.RwAfc))
             self.progress.completedUnitCount += 1
-            self.finish(.success(()))
+            self.finish(.failure(error))
         }
     }
 }

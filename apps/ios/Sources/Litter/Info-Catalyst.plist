@@ -168,7 +168,7 @@
 				<string>public.data</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>SideStore Pairing File</string>
+			<string>KittyStore Pairing File</string>
 			<key>UTTypeIdentifier</key>
 			<string>com.apple.mobiledevicepairing</string>
 			<key>UTTypeTagSpecification</key>

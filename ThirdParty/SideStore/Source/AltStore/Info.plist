@@ -62,7 +62,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>SideStore General</string>
+			<string>KittyStore General</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>sidestore</string>
@@ -72,7 +72,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>SideStore Backup</string>
+			<string>KittyStore Backup</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>sidestore-com.SideStore.SideStore</string>
@@ -105,7 +105,7 @@
 		<string>_altserver._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>SideStore uses the local network to find and communicate with your device.</string>
+	<string>KittyStore uses the local network to find and communicate with your device.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>RefreshAllIntent</string>
