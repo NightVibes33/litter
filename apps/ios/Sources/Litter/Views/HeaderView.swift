@@ -33,8 +33,8 @@ struct HeaderView: View {
         } label: {
             expandedHeaderLabel
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(maxWidth: isRegularSurface ? 340 : 270, minHeight: 38, alignment: .center)
+            .padding(.vertical, 7)
+            .frame(maxWidth: isRegularSurface ? 320 : 250, minHeight: 34, alignment: .center)
         }
         .layoutPriority(-1)
         .buttonStyle(.plain)
@@ -59,21 +59,17 @@ struct HeaderView: View {
     }
 
     private var expandedHeaderLabel: some View {
-        VStack(spacing: 2) {
-            primaryHeaderRow
-            secondaryHeaderRow
-        }
+        primaryHeaderRow
     }
 
     private var primaryHeaderRow: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             statusDot
 
             if fastMode {
                 Image(systemName: "bolt.fill")
                     .font(LitterFont.styled(size: 10, weight: .semibold))
                     .foregroundColor(LitterTheme.warning)
-                    .frame(width: 12, height: 18)
             }
 
             Text(sessionRuntimeLabel)
@@ -90,40 +86,22 @@ struct HeaderView: View {
                 .foregroundColor(LitterTheme.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .minimumScaleFactor(isRegularSurface ? 0.9 : 0.8)
+                .minimumScaleFactor(isRegularSurface ? 1.0 : 0.75)
                 .allowsTightening(true)
-                .fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
 
             Text(sessionReasoningLabel)
-                .font(LitterFont.styled(size: 11, weight: .semibold))
+                .font(LitterFont.styled(size: 13, weight: .semibold))
                 .foregroundColor(LitterTheme.textSecondary)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: true)
 
-            Image(systemName: "chevron.down")
-                .font(LitterFont.styled(size: 10, weight: .semibold))
-                .foregroundColor(LitterTheme.textSecondary)
-                .rotationEffect(.degrees(appState.showModelSelector ? 180 : 0))
-                .frame(width: 12, height: 18)
-        }
-        .frame(maxWidth: .infinity, minHeight: 22, alignment: .center)
-    }
-
-    private var secondaryHeaderRow: some View {
-        HStack(spacing: 6) {
-            Text(sessionDirectoryLabel)
-                .font(LitterFont.styled(size: 11, weight: .semibold))
-                .foregroundColor(LitterTheme.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-
             if thread.collaborationMode == .plan {
                 Text("plan")
-                    .font(LitterFont.styled(size: 11, weight: .bold))
+                    .font(LitterFont.styled(size: 10, weight: .bold))
                     .foregroundColor(.black)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
                     .background(LitterTheme.accent)
                     .clipShape(Capsule())
             }
@@ -134,7 +112,12 @@ struct HeaderView: View {
                     .foregroundColor(LitterTheme.danger)
             }
 
+            Image(systemName: "chevron.down")
+                .font(LitterFont.styled(size: 10, weight: .semibold))
+                .foregroundColor(LitterTheme.textSecondary)
+                .rotationEffect(.degrees(appState.showModelSelector ? 180 : 0))
         }
+        .lineLimit(1)
     }
 
     private var statusDot: some View {
@@ -234,16 +217,6 @@ struct HeaderView: View {
         }
 
         return "default"
-    }
-
-    private var sessionDirectoryLabel: String {
-        let currentDirectory = (thread.info.cwd ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if !currentDirectory.isEmpty {
-            let isLocal = appModel.isLocalServer(serverId: thread.key.serverId)
-            return PathDisplay.display(currentDirectory, isLocal: isLocal)
-        }
-
-        return "~"
     }
 
     private var selectedModelBinding: Binding<String> {
