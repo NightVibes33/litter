@@ -41,6 +41,90 @@ enum IshFS {
         }.value
     }
 
+    /// Repair the native Codex home bridge used by shell-installed skills.
+    /// `/root/.codex` must point at `/mnt/codex`, and `/mnt/codex` must be a
+    /// real mount of the app's native Application Support/codex directory.
+    @discardableResult
+    static func repairCodexHomeBridge() async -> Result {
+        guard LitterPlatform.supportsLocalRuntime else { return Result(exitCode: 0, output: "") }
+        return await Task.detached(priority: .utility) {
+            do {
+                try await LitterPlatform.ensureLocalRuntimeReady()
+            } catch {
+                return Result(exitCode: -6, output: error.localizedDescription)
+            }
+            return repairCodexHomeBridgeOnReadyRuntimeSync()
+        }.value
+    }
+
+    /// Use only after the iSH kernel has been bootstrapped. This avoids a
+    /// recursive readiness call from `LitterPlatform.performLocalRuntimeReadiness()`.
+    @discardableResult
+    static func repairCodexHomeBridgeOnReadyRuntime() async -> Result {
+        guard LitterPlatform.supportsLocalRuntime else { return Result(exitCode: 0, output: "") }
+        return await Task.detached(priority: .utility) {
+            repairCodexHomeBridgeOnReadyRuntimeSync()
+        }.value
+    }
+
+    private static func repairCodexHomeBridgeOnReadyRuntimeSync() -> Result {
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        let codexHome = base.appendingPathComponent("codex", isDirectory: true)
+        let skillsURL = codexHome.appendingPathComponent("skills", isDirectory: true)
+        let systemSkillsURL = skillsURL.appendingPathComponent(".system", isDirectory: true)
+        let pluginCacheURL = codexHome
+            .appendingPathComponent("plugins", isDirectory: true)
+            .appendingPathComponent("cache", isDirectory: true)
+            .appendingPathComponent("openai-curated", isDirectory: true)
+
+        do {
+            try fm.createDirectory(at: systemSkillsURL, withIntermediateDirectories: true)
+            try fm.createDirectory(at: pluginCacheURL, withIntermediateDirectories: true)
+        } catch {
+            return Result(exitCode: -7, output: "Could not create native Codex home: \(error.localizedDescription)")
+        }
+
+        let script = """
+        set -eu
+        native=\(shellQuote(codexHome.path))
+        mkdir -p /mnt/codex /tmp
+        chmod 1777 /tmp 2>/dev/null || true
+        backup=
+        if ! mount | grep ' /mnt/codex ' | grep ' type real ' >/dev/null 2>&1; then
+          if [ -L /root/.codex ] && [ "$(readlink /root/.codex 2>/dev/null || true)" = "/mnt/codex" ] && [ -d /mnt/codex ]; then
+            backup="/root/.codex.fakefs.$(date +%s)"
+            mkdir -p "$backup"
+            cp -a /mnt/codex/. "$backup"/ 2>/dev/null || true
+          elif [ -d /root/.codex ] && [ ! -L /root/.codex ]; then
+            backup="/root/.codex.fakefs.$(date +%s)"
+            mv /root/.codex "$backup" 2>/dev/null || true
+          fi
+          mount -t real "$native" /mnt/codex
+          if [ -n "$backup" ]; then
+            cp -a "$backup"/. /mnt/codex/ 2>/dev/null || true
+          fi
+        fi
+        if [ -L /root/.codex ]; then rm /root/.codex; fi
+        if [ -e /root/.codex ]; then
+          backup="/root/.codex.fakefs.$(date +%s)"
+          mv /root/.codex "$backup" 2>/dev/null || rm -rf /root/.codex
+          cp -a "$backup"/. /mnt/codex/ 2>/dev/null || true
+        fi
+        ln -s /mnt/codex /root/.codex
+        mkdir -p /root/.codex/skills /root/.codex/skills/.system /root/.codex/plugins/cache/openai-curated
+        chmod 700 /root/.codex 2>/dev/null || true
+        mount | grep ' /mnt/codex ' | grep ' type real ' >/dev/null
+        """
+        let res = ishRun(cmd: script, cwd: "")
+        var output = String(data: res.output, encoding: .utf8) ?? ""
+        if res.exitCode < 0 && output.isEmpty {
+            output = diagnostic(for: res.exitCode)
+        }
+        return Result(exitCode: res.exitCode, output: output)
+    }
+
     static func listDirectory(path: String, includeHidden: Bool) async throws -> [LocalFileEntry] {
         let quoted = shellQuote(path)
         let hiddenGuard = includeHidden ? "" : "case \"$name\" in .*) continue ;; esac;"

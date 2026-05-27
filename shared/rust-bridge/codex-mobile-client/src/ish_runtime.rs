@@ -351,17 +351,27 @@ fn codex_home_bridge_script(codex_home: &str) -> String {
     format!(
         concat!(
             "mkdir -p /mnt/codex /tmp ;",
-            "chmod 1777 /tmp ;",
+            "chmod 1777 /tmp 2>/dev/null || true ;",
+            "backup= ;",
+            "if ! mount | grep ' /mnt/codex ' | grep ' type real ' >/dev/null 2>&1; then ",
+            "if [ -L /root/.codex ] && [ \"$(readlink /root/.codex 2>/dev/null || true)\" = /mnt/codex ] && [ -d /mnt/codex ]; then ",
+            "backup=\"/root/.codex.fakefs.$(date +%s)\" ; mkdir -p \"$backup\" ; cp -a /mnt/codex/. \"$backup\"/ 2>/dev/null || true ; ",
+            "elif [ -d /root/.codex ] && [ ! -L /root/.codex ]; then ",
+            "backup=\"/root/.codex.fakefs.$(date +%s)\" ; mv /root/.codex \"$backup\" 2>/dev/null || true ; ",
+            "fi ;",
             "mount -t real {} /mnt/codex || exit $? ;",
+            "if [ -n \"$backup\" ]; then cp -a \"$backup\"/. /mnt/codex/ 2>/dev/null || true ; fi ;",
+            "fi ;",
             "if [ -L /root/.codex ]; then rm /root/.codex; fi ;",
-            "if [ -d /root/.codex ]; then ",
-            "cp -a /root/.codex/. /mnt/codex/ 2>/dev/null || true ;",
+            "if [ -e /root/.codex ]; then ",
             "backup=\"/root/.codex.fakefs.$(date +%s)\" ;",
             "mv /root/.codex \"$backup\" 2>/dev/null || rm -rf /root/.codex ;",
+            "cp -a \"$backup\"/. /mnt/codex/ 2>/dev/null || true ;",
             "fi ;",
             "ln -s /mnt/codex /root/.codex ;",
-            "mkdir -p /root/.codex/skills ;",
-            "chmod 700 /root/.codex"
+            "mkdir -p /root/.codex/skills /root/.codex/skills/.system /root/.codex/plugins/cache/openai-curated ;",
+            "chmod 700 /root/.codex ;",
+            "mount | grep ' /mnt/codex ' | grep ' type real ' >/dev/null"
         ),
         shell_quote(codex_home)
     )
@@ -752,7 +762,10 @@ mod tests {
         assert!(script.contains(
             "mount -t real '/var/mobile/Application Support/codex' /mnt/codex"
         ));
-        assert!(script.contains("cp -a /root/.codex/. /mnt/codex/"));
+        assert!(script.contains("mount | grep ' /mnt/codex ' | grep ' type real '"));
+        assert!(script.contains("readlink /root/.codex"));
+        assert!(script.contains("cp -a /mnt/codex/. \"$backup\"/"));
+        assert!(script.contains("cp -a \"$backup\"/. /mnt/codex/"));
         assert!(script.contains("ln -s /mnt/codex /root/.codex"));
         assert!(script.contains("mkdir -p /root/.codex/skills"));
     }

@@ -108,6 +108,12 @@ enum LitterPlatform {
             }
         }
 
+        let codexBridge = await IshFS.repairCodexHomeBridgeOnReadyRuntime()
+        if codexBridge.exitCode != 0 {
+            let output = codexBridge.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            NSLog("[ish] /root/.codex bridge repair failed rc=\(codexBridge.exitCode): \(output)")
+        }
+
         let preflight = ishRuntimePreflight()
         guard preflight.exitCode == 0 else {
             finishLocalRuntimeBootstrap(.idle)
