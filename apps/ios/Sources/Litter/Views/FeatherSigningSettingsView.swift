@@ -44,28 +44,28 @@ struct FeatherSigningSettingsView: View {
                     .disabled(isWorking)
             }
         }
-        .fileImporter(isPresented: $importingP12, allowedContentTypes: [.litterP12, .litterPFX], allowsMultipleSelection: false) { result in
-            selectStagedURL(result, assign: { p12URL = $0 })
+        .fileImporter(isPresented: $importingP12, allowedContentTypes: [.litterP12, .litterPFX, .data], allowsMultipleSelection: false) { result in
+            selectStagedURL(result, allowedExtensions: ["p12", "pfx"], label: "certificate", assign: { p12URL = $0 })
         }
-        .fileImporter(isPresented: $importingProfile, allowedContentTypes: [.litterMobileProvision, .litterProvisionProfile], allowsMultipleSelection: false) { result in
-            selectStagedURL(result, assign: { profileURL = $0 })
+        .fileImporter(isPresented: $importingProfile, allowedContentTypes: [.litterMobileProvision, .litterProvisionProfile, .data], allowsMultipleSelection: false) { result in
+            selectStagedURL(result, allowedExtensions: ["mobileprovision", "provisionprofile"], label: "provisioning profile", assign: { profileURL = $0 })
         }
-        .fileImporter(isPresented: $importingPairing, allowedContentTypes: [.litterPairing, .litterMobileDevicePairing, .propertyList], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $importingPairing, allowedContentTypes: [.litterPairing, .litterMobileDevicePairing, .propertyList, .data], allowsMultipleSelection: false) { result in
             importFile(result) { try await FeatherSigningMaterialStore.importPairingFile(from: $0) }
         }
-        .fileImporter(isPresented: $importingIPA, allowedContentTypes: [.litterIPA], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $importingIPA, allowedContentTypes: [.litterIPA, .zip, .data], allowsMultipleSelection: false) { result in
             importFile(result) { try await FeatherSigningMaterialStore.importIPA(from: $0) }
         }
-        .fileImporter(isPresented: $importingEntitlements, allowedContentTypes: [.litterEntitlements, .propertyList, .xml], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $importingEntitlements, allowedContentTypes: [.litterEntitlements, .propertyList, .xml, .data], allowsMultipleSelection: false) { result in
             importFile(result) { try await FeatherSigningMaterialStore.importEntitlements(from: $0) }
         }
-        .fileImporter(isPresented: $importingDylib, allowedContentTypes: [.litterDylib], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $importingDylib, allowedContentTypes: [.litterDylib, .data], allowsMultipleSelection: false) { result in
             importFile(result) { try await FeatherSigningMaterialStore.importDylib(from: $0) }
         }
         .fileImporter(isPresented: $importingFramework, allowedContentTypes: [.folder, .litterFramework, .litterPlugin, .litterAppeX], allowsMultipleSelection: false) { result in
             importFile(result) { try await FeatherSigningMaterialStore.importFrameworkOrPlugin(from: $0) }
         }
-        .fileImporter(isPresented: $importingTweak, allowedContentTypes: [.litterDeb, .litterDylib, .litterZip], allowsMultipleSelection: false) { result in
+        .fileImporter(isPresented: $importingTweak, allowedContentTypes: [.litterDeb, .litterDylib, .litterZip, .data], allowsMultipleSelection: false) { result in
             importFile(result) { try await FeatherSigningMaterialStore.importTweak(from: $0) }
         }
         .alert(item: $alert) { alert in
@@ -390,9 +390,12 @@ struct FeatherSigningSettingsView: View {
         }
     }
 
-    private func selectStagedURL(_ result: Result<[URL], Error>, assign: (URL) -> Void) {
+    private func selectStagedURL(_ result: Result<[URL], Error>, allowedExtensions: Set<String>, label: String, assign: (URL) -> Void) {
         do {
-            assign(try singleURL(from: result))
+            let selectedURL = try singleURL(from: result)
+            try FeatherSigningMaterialStore.validateFileExtension(selectedURL, allowed: allowedExtensions, label: label)
+            let stagedURL = try FeatherSigningMaterialStore.stageSelectionForLaterRead(from: selectedURL)
+            assign(stagedURL)
         } catch {
             alert = SigningAlert(title: "Import Failed", message: error.localizedDescription)
         }

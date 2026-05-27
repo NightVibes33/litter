@@ -166,6 +166,21 @@ enum FeatherSigningMaterialStore {
     static var sideStorePairingURL: URL { documentsRoot.appendingPathComponent("ALTPairingFile.mobiledevicepairing", isDirectory: false) }
     private static var workspaceRoot: URL { documentsRoot.appendingPathComponent("FeatherSigning", isDirectory: true) }
 
+    static func stageSelectionForLaterRead(from url: URL) throws -> URL {
+        let data = try readSecurityScopedData(from: url)
+        let safeName = sanitizedFileName(url.lastPathComponent, fallback: "selected-file")
+        let destination = workspaceRoot
+            .appendingPathComponent("StagedSelections", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent(safeName, isDirectory: false)
+        try writeReplacing(data, to: destination)
+        return destination
+    }
+
+    static func validateFileExtension(_ url: URL, allowed: Set<String>, label: String) throws {
+        try requireExtension(url, allowed: allowed, label: label)
+    }
+
     static func snapshot(checkRevocation: Bool = true) -> FeatherSigningMaterialSnapshot {
         FeatherSigningMaterialSnapshot(
             certificate: loadRecord(certificateRecordKey),
