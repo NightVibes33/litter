@@ -23,8 +23,8 @@ struct TextLockScreenWidget: Widget
                 ComplicationView(entry: entry, style: .text)
             }
             .supportedFamilies([.accessoryCircular])
-            .configurationDisplayName("AltWidget (Text)")
-            .description("View remaining days until SideStore expires.")
+            .configurationDisplayName("KittyStore Widget (Text)")
+            .description("View remaining days until KittyStore-managed apps expire.")
         }
         else
         {
@@ -46,8 +46,8 @@ struct IconLockScreenWidget: Widget
                 ComplicationView(entry: entry, style: .icon)
             }
             .supportedFamilies([.accessoryCircular])
-            .configurationDisplayName("AltWidget (Icon)")
-            .description("View remaining days until SideStore expires.")
+            .configurationDisplayName("KittyStore Widget (Icon)")
+            .description("View remaining days until KittyStore-managed apps expire.")
         }
         else
         {

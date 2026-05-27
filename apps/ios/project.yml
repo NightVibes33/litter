@@ -164,13 +164,13 @@ targets:
     deploymentTarget: "18.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.SideStore
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.KittyStore
         PRODUCT_MODULE_NAME: SideStore
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStore $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStoreCore $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared"
     sources:
-      - path: Sources/SideStoreEmbedded
+      - path: Sources/KittyStoreEmbedded
       - path: ../../ThirdParty/SideStore/Source/AltStore
         excludes:
           - AppDelegate.swift
@@ -296,6 +296,7 @@ targets:
         embed: true
     postBuildScripts:
       - name: Embed AltSign Dynamic Framework
+        basedOnDependencyAnalysis: false
         script: |
           set -eu
           if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
@@ -412,6 +413,7 @@ targets:
           embed_framework_with_prefix SemanticVersion_ 1
           embed_framework_with_prefix KeychainAccess_ 1
       - name: Embed Upstream Store Sources
+        basedOnDependencyAnalysis: false
         script: |
           set -eu
           RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
@@ -438,10 +440,11 @@ targets:
             fi
             echo "Embedded upstream $label source at $destination"
           }
-          copy_upstream_source SideStore "$SRCROOT/../../ThirdParty/SideStore/Source"
+          copy_upstream_source KittyStore "$SRCROOT/../../ThirdParty/SideStore/Source"
           copy_upstream_source Feather "$SRCROOT/../../ThirdParty/Feather/Source"
           copy_upstream_source LocalDevVPN "$SRCROOT/../../ThirdParty/SideStore/LocalDevVPN-Source"
       - name: Package Private BuildKit Assets
+        basedOnDependencyAnalysis: false
         script: |
           set -eu
           ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
@@ -457,6 +460,7 @@ targets:
           cp -R -L "$ASSET_ROOT" "$TMP_DIR/BuildKitAssets"
           (cd "$TMP_DIR" && ditto -c -k --norsrc --keepParent BuildKitAssets "$DEST")
       - name: Embed Private BuildKit Frameworks
+        basedOnDependencyAnalysis: false
         script: |
           set -eu
           if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then

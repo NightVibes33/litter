@@ -65,6 +65,7 @@
 			<string>KittyStore General</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>kittystore</string>
 				<string>sidestore</string>
 			</array>
 		</dict>
@@ -75,6 +76,7 @@
 			<string>KittyStore Backup</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>kittystore-com.sigkitten.litter.KittyStore</string>
 				<string>sidestore-com.SideStore.SideStore</string>
 			</array>
 		</dict>
@@ -88,6 +90,7 @@
 	</array>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
+		<string>kittystore-com.sigkitten.litter.KittyStore</string>
 		<string>sidestore-com.SideStore.SideStore</string>
 		<string>sidestore-com.SideStore.SideStore.Beta</string>
 	</array>
@@ -113,7 +116,7 @@
 	</array>
 	<key>OSLogPreferences</key>
 	<dict>
-		<key>com.SideStore.SideStore</key>
+		<key>com.sigkitten.litter.KittyStore</key>
 		<dict>
 			<key>AltJIT</key>
 			<dict>
@@ -236,7 +239,7 @@
 			<key>UTTypeIconFiles</key>
 			<array/>
 			<key>UTTypeIdentifier</key>
-			<string>org.sidestore.mobiledevicepairing</string>
+			<string>org.kittystore.mobiledevicepairing</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

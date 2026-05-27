@@ -2,9 +2,9 @@ import SwiftUI
 import UIKit
 import SideStore
 
-struct SideStoreHostView: UIViewControllerRepresentable {
+struct KittyStoreHostView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
-        SideStoreEmbeddedFactory.makeRootViewController()
+        KittyStoreEmbeddedFactory.makeRootViewController()
     }
 
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
@@ -18,7 +18,7 @@ struct KittyStoreRouteView: View {
             Color(.systemBackground)
                 .ignoresSafeArea()
 
-            SideStoreHostView()
+            KittyStoreHostView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea()
 

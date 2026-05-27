@@ -37,7 +37,7 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
         LLog.bootstrap()
         Task { @MainActor in
-            SideStoreEmbeddedFactory.bootstrap()
+            KittyStoreEmbeddedFactory.bootstrap()
         }
 
         #if targetEnvironment(macCatalyst)

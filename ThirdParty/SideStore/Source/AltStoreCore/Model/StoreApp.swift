@@ -699,6 +699,14 @@ public extension StoreApp
         
         return URL(string: "https://raw.githubusercontent.com/NightVibes33/litter/main/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png")!
     }
+
+    func applyEmbeddedKittyStoreMetadata()
+    {
+        self.name = "KittyStore"
+        self.developerName = "Litter"
+        self.localizedDescription = "KittyStore is Litter's embedded sideloading and update store."
+        self.iconURL = Self.sideStoreAppIconURL
+    }
     
     class func makeAltStoreApp(version: String, buildVersion: String?, in context: NSManagedObjectContext) -> StoreApp
     {
@@ -714,11 +722,8 @@ public extension StoreApp
         #endif
         
         let app = StoreApp(context: context)
-        app.name = "KittyStore"
         app.bundleIdentifier = placeholderBundleId
-        app.developerName = "Litter"
-        app.localizedDescription = "KittyStore is Litter's embedded sideloading and update store."
-        app.iconURL = sideStoreAppIconURL        
+        app.applyEmbeddedKittyStoreMetadata()
         app.screenshotURLs = []
         app.sourceIdentifier = placeholderSourceID
         

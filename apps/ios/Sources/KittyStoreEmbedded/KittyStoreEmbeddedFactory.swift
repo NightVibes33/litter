@@ -3,7 +3,7 @@ import Nuke
 import UIKit
 import AltStoreCore
 
-public enum SideStoreEmbeddedFactory {
+public enum KittyStoreEmbeddedFactory {
     @MainActor
     public static func makeRootViewController() -> UIViewController {
         KittyStoreRootViewController()
@@ -11,12 +11,12 @@ public enum SideStoreEmbeddedFactory {
 
     @MainActor
     public static func bootstrap() {
-        SideStoreEmbeddedRuntime.prepareForLaunch()
+        KittyStoreEmbeddedRuntime.prepareForLaunch()
     }
 
     @MainActor
     public static func startTransportIfPossible() {
-        SideStoreEmbeddedRuntime.startTransportIfPossible()
+        KittyStoreEmbeddedRuntime.startTransportIfPossible()
     }
 }
 
@@ -36,11 +36,11 @@ open class AppDelegate: NSObject, UIApplicationDelegate {
 
     public override init() {
         super.init()
-        SideStoreEmbeddedRuntime.consoleLogProvider = { [weak self] in self?.consoleLog }
+        KittyStoreEmbeddedRuntime.consoleLogProvider = { [weak self] in self?.consoleLog }
     }
 }
 
-private enum SideStoreEmbeddedRuntime {
+private enum KittyStoreEmbeddedRuntime {
     @MainActor private static var didPrepare = false
     @MainActor private static var didStart = false
     @MainActor private static var didFinishStartup = false
@@ -91,9 +91,9 @@ private enum SideStoreEmbeddedRuntime {
         DatabaseManager.shared.start { error in
             Task { @MainActor in
                 if let error {
-                    print("[SideStoreEmbedded] Failed to start DatabaseManager: \(error)")
+                    print("[KittyStoreEmbedded] Failed to start DatabaseManager: \(error)")
                 } else {
-                    print("[SideStoreEmbedded] Started DatabaseManager.")
+                    print("[KittyStoreEmbedded] Started DatabaseManager.")
                 }
                 finishStartup(error: error)
             }
@@ -112,7 +112,7 @@ private enum SideStoreEmbeddedRuntime {
             AppManager.shared.update()
             AppManager.shared.updateAllSources { result in
                 if case .failure(let error) = result {
-                    print("[SideStoreEmbedded] Failed to update sources on startup: \(error.localizedDescription)")
+                    print("[KittyStoreEmbedded] Failed to update sources on startup: \(error.localizedDescription)")
                 }
             }
         }
@@ -140,7 +140,7 @@ private enum SideStoreEmbeddedRuntime {
         guard FileManager.default.fileExists(atPath: pairingURL.path),
               let pairingFile = try? String(contentsOf: pairingURL),
               !pairingFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            print("[SideStoreEmbedded] Pairing file not imported yet; minimuxer startup deferred.")
+            print("[KittyStoreEmbedded] Pairing file not imported yet; minimuxer startup deferred.")
             return
         }
 
@@ -151,10 +151,10 @@ private enum SideStoreEmbeddedRuntime {
             let loggingEnabled = UserDefaults.standard.isMinimuxerConsoleLoggingEnabled
             try minimuxerStartWithLogger(pairingFile, documentsDirectory, loggingEnabled)
             startAutoMounter(documentsDirectory)
-            print("[SideStoreEmbedded] Started minimuxer for embedded KittyStore.")
+            print("[KittyStoreEmbedded] Started minimuxer for embedded KittyStore.")
         } catch {
             didStartMinimuxer = false
-            print("[SideStoreEmbedded] Failed to start minimuxer: \(error.localizedDescription)")
+            print("[KittyStoreEmbedded] Failed to start minimuxer: \(error.localizedDescription)")
         }
         #endif
     }
@@ -164,11 +164,11 @@ private enum SideStoreEmbeddedRuntime {
 
         let pipeline = ImagePipeline { configuration in
             do {
-                let dataCache = try DataCache(name: "io.sidestore.Nuke")
+                let dataCache = try DataCache(name: "com.sigkitten.litter.kittystore.Nuke")
                 dataCache.sizeLimit = 512 * 1024 * 1024
                 configuration.dataCache = dataCache
             } catch {
-                print("[SideStoreEmbedded] Failed to create SideStore image cache: \(error.localizedDescription)")
+                print("[KittyStoreEmbedded] Failed to create KittyStore image cache: \(error.localizedDescription)")
             }
         }
 
@@ -184,9 +184,13 @@ private final class KittyStoreRootViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        view.clipsToBounds = true
+        view.insetsLayoutMarginsFromSafeArea = false
+        edgesForExtendedLayout = [.all]
+        extendedLayoutIncludesOpaqueBars = true
         showSplashView()
 
-        SideStoreEmbeddedRuntime.startIfNeeded { [weak self] error in
+        KittyStoreEmbeddedRuntime.startIfNeeded { [weak self] error in
             guard let self else { return }
             if let error {
                 self.showUnavailable(message: "KittyStore could not start the embedded store database.\n\n\(error.localizedDescription)")
@@ -199,9 +203,6 @@ private final class KittyStoreRootViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         applyBranding()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.applyBranding()
-        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -246,22 +247,21 @@ private final class KittyStoreRootViewController: UIViewController {
 
         embed(viewController)
         applyBranding()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.applyBranding()
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.applyBranding()
-        }
     }
 
     private func showUnavailable(message: String) {
         guard embeddedViewController == nil else { return }
-        embed(SideStoreUnavailableViewController(message: message))
+        embed(KittyStoreUnavailableViewController(message: message))
     }
 
     private func embed(_ viewController: UIViewController) {
         addChild(viewController)
+        viewController.edgesForExtendedLayout = [.all]
+        viewController.extendedLayoutIncludesOpaqueBars = true
+        viewController.additionalSafeAreaInsets = .zero
         viewController.view.translatesAutoresizingMaskIntoConstraints = false
+        viewController.view.insetsLayoutMarginsFromSafeArea = false
+        viewController.view.backgroundColor = .systemBackground
         viewController.view.alpha = 0
         view.addSubview(viewController.view)
         NSLayoutConstraint.activate([
@@ -480,7 +480,7 @@ private final class KittyStoreSplashView: UIView {
     }
 }
 
-private final class SideStoreUnavailableViewController: UIViewController {
+private final class KittyStoreUnavailableViewController: UIViewController {
     private let message: String
 
     init(message: String) {
@@ -515,9 +515,9 @@ private final class SideStoreUnavailableViewController: UIViewController {
 }
 
 public func startEMProxy(bind_addr: String) {
-    print("[SideStoreEmbedded] em_proxy is not linked in Litter yet; startEMProxy(\(bind_addr)) ignored.")
+    print("[KittyStoreEmbedded] em_proxy is not linked in Litter yet; startEMProxy(\(bind_addr)) ignored.")
 }
 
 public func stopEMProxy() {
-    print("[SideStoreEmbedded] em_proxy is not linked in Litter yet; stopEMProxy() ignored.")
+    print("[KittyStoreEmbedded] em_proxy is not linked in Litter yet; stopEMProxy() ignored.")
 }

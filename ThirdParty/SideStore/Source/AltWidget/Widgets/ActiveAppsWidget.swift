@@ -120,7 +120,7 @@ private struct ActiveAppsWidgetView: View
                 LazyVStack(spacing: 12) {
                     ForEach(Array(entry.apps.enumerated()), id: \.offset) { index, app in
                     
-                        let icon: UIImage = app.icon ?? UIImage(named: "SideStore")!
+                        let icon: UIImage = app.icon ?? UIImage(named: "KittyStore")!
                         
                         // 1024x1024 images are not supported by previews but supported by device
                         // so we scale the image to 97% so as to reduce its actual size but not too much

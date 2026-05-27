@@ -70,7 +70,7 @@ enum KittyStoreMinimuxerBridge {
         #if targetEnvironment(simulator)
         return LocalDevVPNProbe(isReady: true, endpointReachable: true, detail: "Simulator build treats the KittyStore minimuxer transport as ready.")
         #else
-        configureSideStoreNetworkBridge()
+        configureKittyStoreNetworkBridge()
         let ready = Minimuxer.ready()
         let endpointReachable = Minimuxer.testLocalDevVPNConnection()
         let detail: String
@@ -94,24 +94,24 @@ enum KittyStoreMinimuxerBridge {
             do {
                 let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
                     ?? FileManager.default.temporaryDirectory
-                configureSideStoreNetworkBridge()
+                configureKittyStoreNetworkBridge()
                 try Minimuxer.startWithLogger(
                     pairingFile: pairingFileContents,
                     logPath: documentsURL.absoluteString,
                     isConsoleLoggingEnabled: consoleLoggingEnabled
                 )
                 guard let udid = Minimuxer.fetchUDID(), !udid.isEmpty else {
-                    return Result(exitCode: 69, status: "sidestore-udid-missing", log: "minimuxer did not return a device UDID.\n")
+                    return Result(exitCode: 69, status: "kittystore-udid-missing", log: "minimuxer did not return a device UDID.\n")
                 }
-                return Result(exitCode: 0, status: "sidestore-udid-ok", log: udid + "\n")
+                return Result(exitCode: 0, status: "kittystore-udid-ok", log: udid + "\n")
             } catch {
-                return Result(exitCode: 70, status: "sidestore-udid-failed", log: "\(error.localizedDescription)\n\(String(describing: error))\n")
+                return Result(exitCode: 70, status: "kittystore-udid-failed", log: "\(error.localizedDescription)\n\(String(describing: error))\n")
             }
         }.value
         #else
         return Result(
             exitCode: 78,
-            status: "sidestore-minimuxer-not-linked",
+            status: "kittystore-minimuxer-not-linked",
             log: "KittyStore minimuxer is not linked into this Litter build.\n"
         )
         #endif
@@ -129,7 +129,7 @@ enum KittyStoreMinimuxerBridge {
                     ?? FileManager.default.temporaryDirectory
                 let documentsPath = documentsURL.absoluteString
 
-                configureSideStoreNetworkBridge()
+                configureKittyStoreNetworkBridge()
                 log.append("KittyStore minimuxer installed-app browse")
                 log.append("- Log path: \(documentsPath)")
 
@@ -156,7 +156,7 @@ enum KittyStoreMinimuxerBridge {
         #else
         return KittyStoreInstalledAppsResult(
             exitCode: 78,
-            status: "sidestore-minimuxer-not-linked",
+            status: "kittystore-minimuxer-not-linked",
             log: "KittyStore minimuxer is not linked into this Litter build.\n",
             apps: []
         )
@@ -179,7 +179,7 @@ enum KittyStoreMinimuxerBridge {
                     ?? FileManager.default.temporaryDirectory
                 let documentsPath = documentsURL.absoluteString
 
-                configureSideStoreNetworkBridge()
+                configureKittyStoreNetworkBridge()
                 log.append("KittyStore minimuxer transport")
                 log.append("- Action: \(action.rawValue)")
                 log.append("- Bundle ID: \(bundleIdentifier)")
@@ -223,7 +223,7 @@ enum KittyStoreMinimuxerBridge {
         #else
         return Result(
             exitCode: 78,
-            status: "sidestore-minimuxer-not-linked",
+            status: "kittystore-minimuxer-not-linked",
             log: """
             KittyStore minimuxer is not linked into this Litter build.
             Rebuild the iOS app with tools/scripts/build-sidestore-minimuxer.sh and KITTYSTORE_MINIMUXER_LINKED enabled so the vendored KittyStore minimuxer bridge is compiled into the app process.
@@ -244,7 +244,7 @@ enum KittyStoreMinimuxerBridge {
                     ?? FileManager.default.temporaryDirectory
                 let documentsPath = documentsURL.absoluteString
 
-                configureSideStoreNetworkBridge()
+                configureKittyStoreNetworkBridge()
                 log.append("KittyStore minimuxer remove")
                 log.append("- Bundle ID: \(bundleIdentifier)")
                 log.append("- Log path: \(documentsPath)")
@@ -271,7 +271,7 @@ enum KittyStoreMinimuxerBridge {
         #else
         return Result(
             exitCode: 78,
-            status: "sidestore-minimuxer-not-linked",
+            status: "kittystore-minimuxer-not-linked",
             log: """
             KittyStore minimuxer is not linked into this Litter build.
             Rebuild the iOS app with tools/scripts/build-sidestore-minimuxer.sh and KITTYSTORE_MINIMUXER_LINKED enabled so the vendored KittyStore minimuxer bridge is compiled into the app process.
@@ -281,7 +281,7 @@ enum KittyStoreMinimuxerBridge {
     }
 
     #if KITTYSTORE_MINIMUXER_LINKED
-    private static func configureSideStoreNetworkBridge() {
+    private static func configureKittyStoreNetworkBridge() {
         #if !targetEnvironment(simulator)
         setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)
         Minimuxer.retargetUsbmuxdAddr()

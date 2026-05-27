@@ -958,7 +958,7 @@ private extension SettingsViewController
             UserDefaults.standard.removeObject(forKey: "litter.feather.signing.pairing.record.v1")
             UserDefaults.standard.isPairingReset = false
             if self.isEmbeddedKittyStoreHost {
-                SideStoreEmbeddedFactory.startTransportIfPossible()
+                KittyStoreEmbeddedFactory.startTransportIfPossible()
             }
             let toastView = ToastView(text: NSLocalizedString("Pairing File Imported", comment: ""), detailText: NSLocalizedString("KittyStore saved it for installs, refreshes, and Feather signing.", comment: ""))
             toastView.show(in: self)

@@ -153,7 +153,7 @@ private struct AppDetailWidgetView: View
 
     func backgroundView(icon: UIImage? = nil, tintColor: UIColor? = nil) -> some View
     {
-        let icon = icon ?? UIImage(named: "SideStore")!
+        let icon = icon ?? UIImage(named: "KittyStore")!
         let tintColor = tintColor ?? .gray
         
         let imageHeight = 60 as CGFloat

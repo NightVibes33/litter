@@ -151,16 +151,16 @@ enum KittyStoreSideStoreSigningBridge {
 
             return OperationResult(
                 exitCode: 0,
-                status: "sidestore-appleid-sign-ok",
+                status: "kittystore-appleid-sign-ok",
                 log: "Signed IPA with KittyStore Apple ID flow.\nInput: \(ipaURL.path)\nOutput: \(outputURL.path)\nTeam: \(auth.team.name) (\(auth.team.identifier))\nOriginal bundle ID: \(prepared.originalBundleIdentifier)\nSigned bundle ID: \(prepared.mainBundleIdentifier)\nProfiles: \(prepared.profiles.map { $0.bundleIdentifier }.joined(separator: ", "))\n",
                 signedIPAPath: outputURL.path,
                 provisioningProfileData: prepared.mainProfile.data
             )
         } catch {
-            return OperationResult(exitCode: 70, status: "sidestore-appleid-sign-failed", log: error.localizedDescription + "\n", signedIPAPath: nil, provisioningProfileData: nil)
+            return OperationResult(exitCode: 70, status: "kittystore-appleid-sign-failed", log: error.localizedDescription + "\n", signedIPAPath: nil, provisioningProfileData: nil)
         }
         #else
-        return OperationResult(exitCode: 78, status: "sidestore-altsign-not-linked", log: unavailableError.localizedDescription + "\n", signedIPAPath: nil, provisioningProfileData: nil)
+        return OperationResult(exitCode: 78, status: "kittystore-altsign-not-linked", log: unavailableError.localizedDescription + "\n", signedIPAPath: nil, provisioningProfileData: nil)
         #endif
     }
 
@@ -192,7 +192,7 @@ enum KittyStoreSideStoreSigningBridge {
             } catch {
                 return OperationResult(
                     exitCode: 65,
-                    status: "sidestore-certificate-validation-failed",
+                    status: "kittystore-certificate-validation-failed",
                     log: "KittyStore AltSign rejected the imported .p12/profile before signing. \(error.localizedDescription)\n",
                     signedIPAPath: nil,
                     provisioningProfileData: nil
@@ -200,25 +200,25 @@ enum KittyStoreSideStoreSigningBridge {
             }
 
             guard let certificate = ALTCertificate(p12Data: certificateData, password: certificatePassword) else {
-                return OperationResult(exitCode: 65, status: "sidestore-certificate-invalid", log: "AltSign could not open the .p12 identity. The password may be wrong or the file may not contain a signing identity.\n", signedIPAPath: nil, provisioningProfileData: nil)
+                return OperationResult(exitCode: 65, status: "kittystore-certificate-invalid", log: "AltSign could not open the .p12 identity. The password may be wrong or the file may not contain a signing identity.\n", signedIPAPath: nil, provisioningProfileData: nil)
             }
             guard certificate.privateKey != nil else {
-                return OperationResult(exitCode: 65, status: "sidestore-certificate-no-private-key", log: "AltSign opened the certificate but it does not contain a private key.\n", signedIPAPath: nil, provisioningProfileData: nil)
+                return OperationResult(exitCode: 65, status: "kittystore-certificate-no-private-key", log: "AltSign opened the certificate but it does not contain a private key.\n", signedIPAPath: nil, provisioningProfileData: nil)
             }
             guard let profile = ALTProvisioningProfile(data: provisioningProfileData) else {
-                return OperationResult(exitCode: 66, status: "sidestore-profile-invalid", log: "AltSign could not parse the mobileprovision profile.\n", signedIPAPath: nil, provisioningProfileData: nil)
+                return OperationResult(exitCode: 66, status: "kittystore-profile-invalid", log: "AltSign could not parse the mobileprovision profile.\n", signedIPAPath: nil, provisioningProfileData: nil)
             }
 
             let requestedTeamID = rawTeamID.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
             let profileTeamID = profile.teamIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
             let teamID = requestedTeamID.isEmpty ? profileTeamID : requestedTeamID
             guard !teamID.isEmpty else {
-                return OperationResult(exitCode: 64, status: "sidestore-team-missing", log: "KittyStore AltSign signing requires a team ID from the selected Apple account or the imported provisioning profile.\n", signedIPAPath: nil, provisioningProfileData: nil)
+                return OperationResult(exitCode: 64, status: "kittystore-team-missing", log: "KittyStore AltSign signing requires a team ID from the selected Apple account or the imported provisioning profile.\n", signedIPAPath: nil, provisioningProfileData: nil)
             }
             if !profileTeamID.isEmpty, profileTeamID != teamID {
                 return OperationResult(
                     exitCode: 67,
-                    status: "sidestore-profile-team-mismatch",
+                    status: "kittystore-profile-team-mismatch",
                     log: "Provisioning profile team ID \(profileTeamID) does not match selected team \(teamID).\n",
                     signedIPAPath: nil,
                     provisioningProfileData: nil
@@ -228,7 +228,7 @@ enum KittyStoreSideStoreSigningBridge {
             if !profile.certificates.contains(where: { $0.serialNumber == certificate.serialNumber }) {
                 return OperationResult(
                     exitCode: 67,
-                    status: "sidestore-profile-certificate-mismatch",
+                    status: "kittystore-profile-certificate-mismatch",
                     log: "The imported provisioning profile does not include the selected signing certificate.\n",
                     signedIPAPath: nil,
                     provisioningProfileData: nil
@@ -240,7 +240,7 @@ enum KittyStoreSideStoreSigningBridge {
             if !profileBundleID.isEmpty, !requestedBundleID.isEmpty, !profileBundleIdentifierAllows(requestedBundleID, profileBundleIdentifier: profileBundleID) {
                 return OperationResult(
                     exitCode: 67,
-                    status: "sidestore-profile-bundle-mismatch",
+                    status: "kittystore-profile-bundle-mismatch",
                     log: "Provisioning profile bundle ID \(profileBundleID) does not match \(requestedBundleID).\n",
                     signedIPAPath: nil,
                     provisioningProfileData: nil
@@ -282,16 +282,16 @@ enum KittyStoreSideStoreSigningBridge {
             try? fileManager.removeItem(at: signedArchiveURL)
             return OperationResult(
                 exitCode: 0,
-                status: "sidestore-altsign-sign-ok",
+                status: "kittystore-altsign-sign-ok",
                 log: "Signed IPA with KittyStore AltSign.\nInput: \(ipaURL.path)\nOutput: \(outputURL.path)\nProfile: \(profile.name) / \(profile.bundleIdentifier)\nTeam: \(teamID)\nOriginal bundle ID: \(prepared.originalBundleIdentifier)\nSigned bundle ID: \(prepared.mainBundleIdentifier)\n",
                 signedIPAPath: outputURL.path,
                 provisioningProfileData: profile.data
             )
         } catch {
-            return OperationResult(exitCode: 70, status: "sidestore-altsign-sign-failed", log: error.localizedDescription + "\n", signedIPAPath: nil, provisioningProfileData: nil)
+            return OperationResult(exitCode: 70, status: "kittystore-altsign-sign-failed", log: error.localizedDescription + "\n", signedIPAPath: nil, provisioningProfileData: nil)
         }
         #else
-        return OperationResult(exitCode: 78, status: "sidestore-altsign-not-linked", log: unavailableError.localizedDescription + "\n", signedIPAPath: nil, provisioningProfileData: nil)
+        return OperationResult(exitCode: 78, status: "kittystore-altsign-not-linked", log: unavailableError.localizedDescription + "\n", signedIPAPath: nil, provisioningProfileData: nil)
         #endif
     }
 

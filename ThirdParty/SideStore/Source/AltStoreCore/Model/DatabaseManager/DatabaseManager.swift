@@ -413,9 +413,7 @@ private extension DatabaseManager
             if isEmbeddedSideStoreRuntime
             {
                 altStoreSource.name = "KittyStore Official"
-                storeApp.name = "KittyStore"
-                storeApp.developerName = "Litter"
-                storeApp.localizedDescription = "KittyStore is Litter's embedded sideloading and update store."
+                storeApp.applyEmbeddedKittyStoreMetadata()
 
                 if let installedApp = storeApp.installedApp
                 {
@@ -534,7 +532,7 @@ private extension DatabaseManager
 
             if isEmbeddedSideStoreRuntime
             {
-                print("[SideStoreEmbedded] Skipping self-app bundle cache for embedded Litter runtime.")
+                print("[KittyStoreEmbedded] Skipping self-app bundle cache for embedded Litter runtime.")
             }
 
             if replaceCachedApp
