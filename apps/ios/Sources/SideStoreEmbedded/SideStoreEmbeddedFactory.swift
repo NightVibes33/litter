@@ -6,15 +6,7 @@ import AltStoreCore
 public enum SideStoreEmbeddedFactory {
     @MainActor
     public static func makeRootViewController() -> UIViewController {
-        SideStoreEmbeddedRuntime.prepareForLaunch()
-        LaunchViewController.isEmbeddedHostMode = true
-
-        let storyboard = UIStoryboard(name: "Main", bundle: Bundle(for: AppDelegate.self))
-        guard let viewController = storyboard.instantiateInitialViewController() else {
-            return SideStoreUnavailableViewController(message: "KittyStore could not load the embedded SideStore launch screen.")
-        }
-
-        return viewController
+        KittyStoreRootViewController()
     }
 
     @MainActor
@@ -143,19 +135,20 @@ private enum SideStoreEmbeddedRuntime {
 
 private final class KittyStoreRootViewController: UIViewController {
     private var embeddedViewController: UIViewController?
-    private var loadingView: UIView?
+    private var splashView: KittyStoreSplashView?
+    private var didRequestStoreInterface = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        showLoadingView()
+        showSplashView()
 
         SideStoreEmbeddedRuntime.startIfNeeded { [weak self] error in
             guard let self else { return }
             if let error {
                 self.showUnavailable(message: "KittyStore could not start the embedded store database.\n\n\(error.localizedDescription)")
             } else {
-                self.showStoreInterface()
+                self.showStoreInterfaceAfterSplash()
             }
         }
     }
@@ -165,40 +158,26 @@ private final class KittyStoreRootViewController: UIViewController {
         applyBranding()
     }
 
-    private func showLoadingView() {
-        let container = UIView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-
-        let activityIndicator = UIActivityIndicatorView(style: .large)
-        activityIndicator.translatesAutoresizingMaskIntoConstraints = false
-        activityIndicator.startAnimating()
-
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = "Opening KittyStore..."
-        label.textColor = .secondaryLabel
-        label.font = .preferredFont(forTextStyle: .body)
-        label.textAlignment = .center
-
-        container.addSubview(activityIndicator)
-        container.addSubview(label)
-        view.addSubview(container)
-
+    private func showSplashView() {
+        let splashView = KittyStoreSplashView()
+        splashView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(splashView)
         NSLayoutConstraint.activate([
-            container.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            container.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            container.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-
-            activityIndicator.topAnchor.constraint(equalTo: container.topAnchor),
-            activityIndicator.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-
-            label.topAnchor.constraint(equalTo: activityIndicator.bottomAnchor, constant: 12),
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            label.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            splashView.topAnchor.constraint(equalTo: view.topAnchor),
+            splashView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            splashView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            splashView.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
+        self.splashView = splashView
+    }
 
-        loadingView = container
+    private func showStoreInterfaceAfterSplash() {
+        guard !didRequestStoreInterface else { return }
+        didRequestStoreInterface = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            self?.showStoreInterface()
+        }
     }
 
     private func showStoreInterface() {
@@ -206,6 +185,13 @@ private final class KittyStoreRootViewController: UIViewController {
 
         let storyboard = UIStoryboard(name: "Main", bundle: Bundle(for: AppDelegate.self))
         let viewController = storyboard.instantiateViewController(withIdentifier: "tabBarController")
+
+        if let tabBarController = viewController as? UITabBarController,
+           let viewControllers = tabBarController.viewControllers,
+           viewControllers.indices.contains(2) {
+            tabBarController.selectedIndex = 2
+        }
+
         embed(viewController)
         applyBranding()
     }
@@ -216,11 +202,9 @@ private final class KittyStoreRootViewController: UIViewController {
     }
 
     private func embed(_ viewController: UIViewController) {
-        loadingView?.removeFromSuperview()
-        loadingView = nil
-
         addChild(viewController)
         viewController.view.translatesAutoresizingMaskIntoConstraints = false
+        viewController.view.alpha = 0
         view.addSubview(viewController.view)
         NSLayoutConstraint.activate([
             viewController.view.topAnchor.constraint(equalTo: view.topAnchor),
@@ -230,6 +214,14 @@ private final class KittyStoreRootViewController: UIViewController {
         ])
         viewController.didMove(toParent: self)
         embeddedViewController = viewController
+
+        UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut]) {
+            viewController.view.alpha = 1
+            self.splashView?.alpha = 0
+        } completion: { _ in
+            self.splashView?.removeFromSuperview()
+            self.splashView = nil
+        }
     }
 
     private func applyBranding() {
@@ -282,6 +274,98 @@ private final class KittyStoreRootViewController: UIViewController {
         view.subviews.forEach { subview in
             applyBranding(to: subview)
         }
+    }
+}
+
+private final class KittyStoreSplashView: UIView {
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let activityIndicator = UIActivityIndicatorView(style: .medium)
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .systemBackground
+        buildView()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func buildView() {
+        let iconContainer = UIView()
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.backgroundColor = .secondarySystemBackground
+        iconContainer.layer.cornerRadius = 28
+        iconContainer.layer.cornerCurve = .continuous
+        iconContainer.layer.shadowColor = UIColor.black.cgColor
+        iconContainer.layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.35 : 0.14
+        iconContainer.layer.shadowOffset = CGSize(width: 0, height: 8)
+        iconContainer.layer.shadowRadius = 18
+
+        iconView.image = Self.appIconImage() ?? UIImage(systemName: "storefront.fill")
+        iconView.contentMode = .scaleAspectFill
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.layer.cornerRadius = 24
+        iconView.layer.cornerCurve = .continuous
+        iconView.clipsToBounds = true
+        iconContainer.addSubview(iconView)
+
+        titleLabel.text = "KittyStore"
+        titleLabel.font = .systemFont(ofSize: 30, weight: .bold)
+        titleLabel.textColor = .label
+        titleLabel.textAlignment = .center
+        titleLabel.adjustsFontForContentSizeCategory = true
+
+        subtitleLabel.text = "Loading store"
+        subtitleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.textAlignment = .center
+        subtitleLabel.adjustsFontForContentSizeCategory = true
+
+        activityIndicator.startAnimating()
+
+        let stackView = UIStackView(arrangedSubviews: [iconContainer, titleLabel, subtitleLabel, activityIndicator])
+        stackView.axis = .vertical
+        stackView.alignment = .center
+        stackView.spacing = 10
+        stackView.setCustomSpacing(16, after: iconContainer)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            stackView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stackView.leadingAnchor.constraint(greaterThanOrEqualTo: layoutMarginsGuide.leadingAnchor),
+            stackView.trailingAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.trailingAnchor),
+
+            iconContainer.widthAnchor.constraint(equalToConstant: 116),
+            iconContainer.heightAnchor.constraint(equalToConstant: 116),
+            iconView.topAnchor.constraint(equalTo: iconContainer.topAnchor),
+            iconView.bottomAnchor.constraint(equalTo: iconContainer.bottomAnchor),
+            iconView.leadingAnchor.constraint(equalTo: iconContainer.leadingAnchor),
+            iconView.trailingAnchor.constraint(equalTo: iconContainer.trailingAnchor)
+        ])
+    }
+
+    private static func appIconImage() -> UIImage? {
+        let primaryIcon = (Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any])?["CFBundlePrimaryIcon"] as? [String: Any]
+        let iconFiles = primaryIcon?["CFBundleIconFiles"] as? [String]
+        let names = Array((iconFiles ?? []).reversed()) + ["AppIcon60x60", "AppIcon", "Icon-1024", "brand_logo"]
+
+        for name in names {
+            if let image = UIImage(named: name) {
+                return image
+            }
+            if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+               let image = UIImage(contentsOfFile: url.path) {
+                return image
+            }
+        }
+
+        return nil
     }
 }
 
