@@ -697,13 +697,13 @@ public extension StoreApp
             }
         }
         
-        return URL(string: "https://sidestore.io/apps-v2.json/apps/sidestore/icon.png")!
+        return URL(string: "https://raw.githubusercontent.com/NightVibes33/litter/main/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png")!
     }
     
     class func makeAltStoreApp(version: String, buildVersion: String?, in context: NSManagedObjectContext) -> StoreApp
     {
         let placeholderBundleId = StoreApp.altstoreAppID
-        let placeholderDownloadURL = URL(string: "https://sidestore.io")!
+        let placeholderDownloadURL = URL(string: "https://github.com/NightVibes33/litter")!
         let placeholderSourceID = Source.altStoreIdentifier
         let placeholderVersion = "0.0.0"
         let placeholderDate = Date.distantPast

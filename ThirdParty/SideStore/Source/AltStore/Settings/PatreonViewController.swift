@@ -9,6 +9,13 @@
 import UIKit
 import SafariServices
 
+private enum KittyStoreSupportLinks
+{
+    static let support = URL(string: "https://buymeacoffee.com/zyn3")!
+    static let social = URL(string: "https://x.com/xboxsignout999_?s=21&t=k6RkcjRI6uMwGvJ_q6XC7A")!
+    static let repository = URL(string: "https://github.com/NightVibes33/litter")!
+}
+
 final class PatreonViewController: UICollectionViewController, UICollectionViewDelegateFlowLayout
 {
     private var prototypeAboutHeader: AboutPatreonHeaderView!
@@ -70,27 +77,21 @@ final class PatreonViewController: UICollectionViewController, UICollectionViewD
 
     @objc func openPatreonURL(_ sender: UIButton)
     {
-        let patreonURL = URL(string: "https://www.patreon.com/SideStoreIO")!
-        
-        let safariViewController = SFSafariViewController(url: patreonURL)
+        let safariViewController = SFSafariViewController(url: KittyStoreSupportLinks.support)
         safariViewController.preferredControlTintColor = self.view.tintColor
         self.present(safariViewController, animated: true, completion: nil)
     }
     
     @objc func openTwitterURL(_ sender: UIButton)
     {
-        let twitterURL = URL(string: "https://twitter.com/sidestoreio")!
-        
-        let safariViewController = SFSafariViewController(url: twitterURL)
+        let safariViewController = SFSafariViewController(url: KittyStoreSupportLinks.social)
         safariViewController.preferredControlTintColor = self.view.tintColor
         self.present(safariViewController, animated: true, completion: nil)
     }
     
     @objc func openInstagramURL(_ sender: UIButton)
     {
-        let twitterURL = URL(string: "https://instagram.com/sidestore.io")!
-        
-        let safariViewController = SFSafariViewController(url: twitterURL)
+        let safariViewController = SFSafariViewController(url: KittyStoreSupportLinks.repository)
         safariViewController.preferredControlTintColor = self.view.tintColor
         self.present(safariViewController, animated: true, completion: nil)
     }

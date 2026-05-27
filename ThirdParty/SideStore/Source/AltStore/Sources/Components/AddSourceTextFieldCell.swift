@@ -19,7 +19,7 @@ class AddSourceTextFieldCell: UICollectionViewCell
     {
         self.textField = UITextField(frame: frame)
         self.textField.translatesAutoresizingMaskIntoConstraints = false
-        self.textField.placeholder = "apps.sidestore.io"
+        self.textField.placeholder = "github.com/NightVibes33/litter"
         self.textField.textContentType = .URL
 //        self.textField.keyboardType = .URL    // we can add multiple sources now delimited by spaces/newline so we use normal keyboard not url keyboard
         self.textField.returnKeyType = .done

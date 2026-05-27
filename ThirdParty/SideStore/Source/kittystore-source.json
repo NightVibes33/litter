@@ -1,0 +1,9 @@
+{
+  "name": "KittyStore Official",
+  "identifier": "com.nightvibes33.kittystore",
+  "sourceURL": "https://raw.githubusercontent.com/NightVibes33/litter/main/ThirdParty/SideStore/Source/kittystore-source.json",
+  "iconURL": "https://raw.githubusercontent.com/NightVibes33/litter/main/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png",
+  "website": "https://github.com/NightVibes33/litter",
+  "apps": [],
+  "news": []
+}

@@ -13,9 +13,9 @@ private extension URL
 {
     // TODO: @mahee96: update this to a non-branch specific (prod-ready) location like github.io repo similar to anisette servers URL list
     #if STAGING
-   static let sources = URL(string: "https://raw.githubusercontent.com/SideStore/SideStore/develop/trustedapps.json")!
+   static let sources = URL(string: "https://raw.githubusercontent.com/NightVibes33/litter/main/ThirdParty/SideStore/Source/trustedapps.json")!
     #else
-   static let sources = URL(string: "https://raw.githubusercontent.com/SideStore/SideStore/develop/trustedapps.json")!
+   static let sources = URL(string: "https://raw.githubusercontent.com/NightVibes33/litter/main/ThirdParty/SideStore/Source/trustedapps.json")!
     #endif
 }
 

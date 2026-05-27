@@ -18,6 +18,13 @@ import AltStoreCore
 import CAltSign
 import UniformTypeIdentifiers
 
+private enum KittyStoreExternalLinks
+{
+    static let repository = URL(string: "https://github.com/NightVibes33/litter")!
+    static let issues = URL(string: "https://github.com/NightVibes33/litter/issues")!
+    static let social = URL(string: "https://x.com/xboxsignout999_?s=21&t=k6RkcjRI6uMwGvJ_q6XC7A")!
+}
+
 extension SettingsViewController
 {
     private enum Section: Int, CaseIterable
@@ -526,7 +533,7 @@ private extension SettingsViewController
             }
             else
             {
-                settingsHeaderFooterView.secondaryLabel.text = NSLocalizedString("Support the KittyStore Team by following our socials or becoming a patron!", comment: "")
+                settingsHeaderFooterView.secondaryLabel.text = NSLocalizedString("Support the KittyStore Team on Buy Me a Coffee, X, or GitHub.", comment: "")
             }
 
         case .account:
@@ -863,7 +870,7 @@ private extension SettingsViewController
         }
 
         alertController.addAction(UIAlertAction(title: NSLocalizedString("Help", comment: ""), style: .default) { _ in
-            if let url = URL(string: "https://docs.sidestore.io/docs/advanced/pairing-file") { UIApplication.shared.open(url) }
+            UIApplication.shared.open(KittyStoreExternalLinks.repository)
         })
         alertController.addAction(UIAlertAction(title: NSLocalizedString("Cancel", comment: ""), style: .cancel))
         alertController.popoverPresentationController?.sourceView = self.tableView
@@ -958,69 +965,47 @@ private extension SettingsViewController
     
     func openTwitter(username: String)
     {
-        let twitterAppURL = URL(string: "twitter://user?screen_name=" + username)!
-        UIApplication.shared.open(twitterAppURL, options: [:]) { (success) in
-            if success
-            {
-                if let selectedIndexPath = self.tableView.indexPathForSelectedRow
-                {
-                    self.tableView.deselectRow(at: selectedIndexPath, animated: true)
-                }
-            }
-            else
-            {
-                let safariURL = URL(string: "https://twitter.com/" + username)!
-                
-                let safariViewController = SFSafariViewController(url: safariURL)
-                safariViewController.preferredControlTintColor = .altPrimary
-                self.present(safariViewController, animated: true, completion: nil)
-            }
-        }
+        self.openKittyStoreSocialProfile()
     }
     
     func openMastodon(username: String)
     {
-        // Rely on universal links to open app.
-        
-        let components = username.split(separator: "@")
-        guard components.count == 2 else { return }
-        
-        let server = String(components[1])
-        let username = "@" + String(components[0])
-        
-        guard let serverURL = URL(string: "https://" + server) else { return }
-        
-        let mastodonURL = serverURL.appendingPathComponent(username)
-        UIApplication.shared.open(mastodonURL, options: [:])
+        self.openKittyStoreSocialProfile()
     }
     
     func openThreads(username: String)
     {
-        // Rely on universal links to open app.
-        
-        let safariURL = URL(string: "https://www.threads.net/@" + username)!
-        UIApplication.shared.open(safariURL, options: [:])
+        self.openKittyStoreSocialProfile()
+    }
+
+    func openKittyStoreSocialProfile()
+    {
+        UIApplication.shared.open(KittyStoreExternalLinks.social, options: [:]) { _ in
+            if let selectedIndexPath = self.tableView.indexPathForSelectedRow
+            {
+                self.tableView.deselectRow(at: selectedIndexPath, animated: true)
+            }
+        }
     }
     
     @IBAction func followAltStoreMastodon()
     {
-        self.openMastodon(username: "@sidestoreio@fosstodon.org")
+        self.openKittyStoreSocialProfile()
     }
     
     @IBAction func followAltStoreThreads()
     {
-        self.openThreads(username: "sidestore.io")
+        self.openKittyStoreSocialProfile()
     }
     
     @IBAction func followAltStoreTwitter()
     {
-        self.openTwitter(username: "sidestoreio")
+        self.openKittyStoreSocialProfile()
     }
     
     @IBAction func followAltStoreGitHub()
     {
-        let safariURL = URL(string: "https://github.com/NightVibes33/litter")!
-        UIApplication.shared.open(safariURL, options: [:])
+        UIApplication.shared.open(KittyStoreExternalLinks.repository, options: [:])
     }
 }
 
@@ -1258,9 +1243,9 @@ extension SettingsViewController
             let row = CreditsRow.allCases[indexPath.row]
             switch row
             {
-            case .developer: self.openTwitter(username: "sidestoreio")
-            case .operations: self.openTwitter(username: "sidestoreio")
-            case .designer: self.openTwitter(username: "lit_ritt")
+            case .developer: self.openKittyStoreSocialProfile()
+            case .operations: self.openKittyStoreSocialProfile()
+            case .designer: self.openKittyStoreSocialProfile()
             case .softwareLicenses: break
             }
             
@@ -1278,11 +1263,9 @@ extension SettingsViewController
                 
                 // Option 1: GitHub
                 alertController.addAction(UIAlertAction(title: "GitHub", style: .default) { _ in
-                    if let githubURL = URL(string: "https://github.com/NightVibes33/litter/issues") {
-                        let safariViewController = SFSafariViewController(url: githubURL)
-                        safariViewController.preferredControlTintColor = .altPrimary
-                        self.present(safariViewController, animated: true, completion: nil)
-                    }
+                    let safariViewController = SFSafariViewController(url: KittyStoreExternalLinks.issues)
+                    safariViewController.preferredControlTintColor = .altPrimary
+                    self.present(safariViewController, animated: true, completion: nil)
                 })
                 
                 // Option 2: Mail

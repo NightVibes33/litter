@@ -379,7 +379,7 @@ private extension ErrorLogViewController
     
     func searchFAQ(for loggedError: LoggedError)
     {
-        let staticURL = URL(string: "https://docs.sidestore.io/docs/troubleshooting/error-codes")!
+        let staticURL = URL(string: "https://github.com/NightVibes33/litter/issues")!
         let safariViewController = SFSafariViewController(url: staticURL)
         safariViewController.preferredControlTintColor = .altPrimary
         self.present(safariViewController, animated: true)

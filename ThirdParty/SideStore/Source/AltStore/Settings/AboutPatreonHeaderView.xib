@@ -36,7 +36,7 @@
                                                 <stackView opaque="NO" contentMode="scaleToFill" axis="vertical" spacing="2" translatesAutoresizingMaskIntoConstraints="NO" id="hkS-oz-wiT">
                                                     <rect key="frame" x="0.0" y="0.0" width="278" height="55"/>
                                                     <subviews>
-                                                        <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="SideTeam" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" minimumScaleFactor="0.5" translatesAutoresizingMaskIntoConstraints="NO" id="DTd-Yu-HXr" userLabel="Team name">
+                                                        <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="KittyStore Team" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" minimumScaleFactor="0.5" translatesAutoresizingMaskIntoConstraints="NO" id="DTd-Yu-HXr" userLabel="Team name">
                                                             <rect key="frame" x="0.0" y="0.0" width="278" height="21.5"/>
                                                             <fontDescription key="fontDescription" type="boldSystem" pointSize="18"/>
                                                             <color key="textColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
@@ -62,11 +62,11 @@
                                     <color key="backgroundColor" white="1" alpha="0.13" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                     <string key="text">Thank you for using KittyStore!
         
-Subscribing to the patreon supports us and makes sure we can continue developing KittyStore for you.
+Buying us a coffee supports us and makes sure we can continue developing KittyStore for you.
     
 Following us on social media allows us to give quick updates and spread the word about sideloading!
         
--SideTeam</string>
+-KittyStore Team</string>
                                     <color key="textColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                     <fontDescription key="fontDescription" type="system" pointSize="16"/>
                                     <textInputTraits key="textInputTraits" autocapitalizationType="sentences"/>
@@ -83,7 +83,7 @@ Following us on social media allows us to give quick updates and spread the word
                                         <constraint firstAttribute="height" constant="51" id="l4o-vb-cMy"/>
                                     </constraints>
                                     <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="19"/>
-                                    <state key="normal" title="Become a patron!">
+                                    <state key="normal" title="Buy us a coffee!">
                                         <color key="titleColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                     </state>
                                 </button>
@@ -94,7 +94,7 @@ Following us on social media allows us to give quick updates and spread the word
                                         <constraint firstAttribute="height" constant="51" id="m0M-GX-KKG"/>
                                     </constraints>
                                     <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="19"/>
-                                    <state key="normal" title="Follow us on Twitter!">
+                                    <state key="normal" title="Follow us on X!">
                                         <color key="titleColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                     </state>
                                 </button>
@@ -105,7 +105,7 @@ Following us on social media allows us to give quick updates and spread the word
                                         <constraint firstAttribute="height" constant="51" id="kDo-b8-6tZ"/>
                                     </constraints>
                                     <fontDescription key="fontDescription" type="system" weight="semibold" pointSize="19"/>
-                                    <state key="normal" title="Follow us on Instagram!">
+                                    <state key="normal" title="Open our repo!">
                                         <color key="titleColor" white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                                     </state>
                                 </button>
