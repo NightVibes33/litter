@@ -605,12 +605,14 @@ jobs:
             DEVELOPMENT_TEAM="" \
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
-            KITTYSTORE_MINIMUXER_LDFLAGS="-lminimuxer-ios -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork" \
-            KITTYSTORE_MINIMUXER_SWIFT_FLAGS="-D KITTYSTORE_MINIMUXER_LINKED" \
             2>&1 | tee build/xcodebuild-archive.log
 
           if grep -F "was built for newer 'iOS' version" build/xcodebuild-archive.log; then
             echo "::error::A linked object was built for a newer iOS deployment target than Litter. Rebuild the vendored static libraries with LITTER_MINIMUXER_MIN_IOS=18.0." >&2
+            exit 1
+          fi
+          if awk '/\/Applications\/Litter\.app\/Litter/ && /-lminimuxer-ios/ { found = 1 } END { exit found ? 0 : 1 }' build/xcodebuild-archive.log; then
+            echo "::error::Litter main executable links the KittyStore minimuxer static library; keep minimuxer isolated to the dynamically loaded KittyStore framework." >&2
             exit 1
           fi
 
@@ -679,11 +681,17 @@ jobs:
           PY
           }
           scan_binary "$APP_PATH/$EXECUTABLE"
-          if /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq '@rpath/SideStore.framework/SideStore'; then
-            echo "::error::Litter launch-links SideStore.framework; KittyStore must stay dynamically loaded after launch." >&2
-            /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2
-            exit 1
-          fi
+          for forbidden_dependency in \
+            '@rpath/SideStore.framework/SideStore' \
+            '@rpath/Minimuxer.framework/Minimuxer' \
+            '@rpath/RustBridge.framework/RustBridge'
+          do
+            if /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq "$forbidden_dependency"; then
+              echo "::error::Litter launch-links $forbidden_dependency; KittyStore/minimuxer must stay dynamically loaded after launch." >&2
+              /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2
+              exit 1
+            fi
+          done
           if [ ! -f "$APP_PATH/Frameworks/SideStore.framework/SideStore" ]; then
             echo "::error::Litter IPA is missing embedded SideStore.framework for KittyStore dynamic loading." >&2
             exit 1
