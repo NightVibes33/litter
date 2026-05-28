@@ -20,6 +20,18 @@ public enum KittyStoreEmbeddedFactory {
     }
 }
 
+@MainActor
+@objc(KittyStoreEmbeddedEntryPoint)
+public final class KittyStoreEmbeddedEntryPoint: NSObject {
+    @objc public static func makeRootViewController() -> UIViewController {
+        KittyStoreEmbeddedFactory.makeRootViewController()
+    }
+
+    @objc public static func startTransportIfPossible() {
+        KittyStoreEmbeddedFactory.startTransportIfPossible()
+    }
+}
+
 open class AppDelegate: NSObject, UIApplicationDelegate {
     public static let openPatreonSettingsDeepLinkNotification = Notification.Name(Bundle.Info.appbundleIdentifier + ".OpenPatreonSettingsDeepLinkNotification")
     public static let importAppDeepLinkNotification = Notification.Name(Bundle.Info.appbundleIdentifier + ".ImportAppDeepLinkNotification")

@@ -679,6 +679,16 @@ jobs:
           PY
           }
           scan_binary "$APP_PATH/$EXECUTABLE"
+          if /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq '@rpath/SideStore.framework/SideStore'; then
+            echo "::error::Litter launch-links SideStore.framework; KittyStore must stay dynamically loaded after launch." >&2
+            /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2
+            exit 1
+          fi
+          if [ ! -f "$APP_PATH/Frameworks/SideStore.framework/SideStore" ]; then
+            echo "::error::Litter IPA is missing embedded SideStore.framework for KittyStore dynamic loading." >&2
+            exit 1
+          fi
+          echo "Verified KittyStore framework is embedded without launch-linking Litter."
           verify_ios_minos "$APP_PATH/$EXECUTABLE"
           verify_ios_minos "$APP_PATH/Frameworks/SideStore.framework/SideStore"
           verify_ios_minos "$APP_PATH/Frameworks/Minimuxer.framework/Minimuxer"
