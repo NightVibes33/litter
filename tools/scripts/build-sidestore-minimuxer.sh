@@ -35,6 +35,52 @@ require_cmd cargo
 require_cmd rustup
 require_cmd xcrun
 
+MIN_IOS="${LITTER_MINIMUXER_MIN_IOS:-18.0}"
+IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+IOS_CLANG="$(xcrun --sdk iphoneos --find clang)"
+IOS_CLANGXX="$(xcrun --sdk iphoneos --find clang++)"
+
+append_env_flag() {
+  local name="$1"
+  local value="$2"
+  local current="${!name:-}"
+  if [ -n "$current" ]; then
+    export "$name=$current $value"
+  else
+    export "$name=$value"
+  fi
+}
+
+export IPHONEOS_DEPLOYMENT_TARGET="$MIN_IOS"
+export SDKROOT="$IOS_SDK"
+export CC_aarch64_apple_ios="${CC_aarch64_apple_ios:-$IOS_CLANG}"
+export CXX_aarch64_apple_ios="${CXX_aarch64_apple_ios:-$IOS_CLANGXX}"
+append_env_flag CFLAGS_aarch64_apple_ios "-isysroot $IOS_SDK -miphoneos-version-min=$MIN_IOS"
+append_env_flag CXXFLAGS_aarch64_apple_ios "-isysroot $IOS_SDK -miphoneos-version-min=$MIN_IOS"
+append_env_flag BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios "--target=arm64-apple-ios$MIN_IOS -isysroot $IOS_SDK"
+append_env_flag CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS "-C link-arg=-miphoneos-version-min=$MIN_IOS"
+
+if [ "$SKIP_SIM" != "true" ]; then
+  SIM_SDK="$(xcrun --sdk iphonesimulator --show-sdk-path)"
+  SIM_CLANG="$(xcrun --sdk iphonesimulator --find clang)"
+  SIM_CLANGXX="$(xcrun --sdk iphonesimulator --find clang++)"
+  export IPHONESIMULATOR_DEPLOYMENT_TARGET="$MIN_IOS"
+  export CC_aarch64_apple_ios_sim="${CC_aarch64_apple_ios_sim:-$SIM_CLANG}"
+  export CXX_aarch64_apple_ios_sim="${CXX_aarch64_apple_ios_sim:-$SIM_CLANGXX}"
+  export CC_x86_64_apple_ios="${CC_x86_64_apple_ios:-$SIM_CLANG}"
+  export CXX_x86_64_apple_ios="${CXX_x86_64_apple_ios:-$SIM_CLANGXX}"
+  append_env_flag CFLAGS_aarch64_apple_ios_sim "-isysroot $SIM_SDK -mios-simulator-version-min=$MIN_IOS"
+  append_env_flag CXXFLAGS_aarch64_apple_ios_sim "-isysroot $SIM_SDK -mios-simulator-version-min=$MIN_IOS"
+  append_env_flag CFLAGS_x86_64_apple_ios "-isysroot $SIM_SDK -mios-simulator-version-min=$MIN_IOS"
+  append_env_flag CXXFLAGS_x86_64_apple_ios "-isysroot $SIM_SDK -mios-simulator-version-min=$MIN_IOS"
+  append_env_flag BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios_sim "--target=arm64-apple-ios$MIN_IOS-simulator -isysroot $SIM_SDK"
+  append_env_flag BINDGEN_EXTRA_CLANG_ARGS_x86_64_apple_ios "--target=x86_64-apple-ios$MIN_IOS-simulator -isysroot $SIM_SDK"
+  append_env_flag CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS "-C link-arg=-mios-simulator-version-min=$MIN_IOS"
+  append_env_flag CARGO_TARGET_X86_64_APPLE_IOS_RUSTFLAGS "-C link-arg=-mios-simulator-version-min=$MIN_IOS"
+fi
+
+echo "==> Using iOS deployment target $MIN_IOS for KittyStore minimuxer Rust libraries"
+
 if ! command -v bindgen >/dev/null 2>&1; then
   echo "==> Installing bindgen-cli for aws-lc-sys"
   cargo install --force --locked bindgen-cli --version 0.69.5

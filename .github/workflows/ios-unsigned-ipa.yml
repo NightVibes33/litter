@@ -538,6 +538,7 @@ jobs:
           set -euo pipefail
           ARCHIVE_PATH="$PWD/build/Litter.xcarchive"
           rm -rf "$ARCHIVE_PATH" build/unsigned-ipa Payload
+          mkdir -p build
           BASE_MARKETING_VERSION="$(python3 - <<'PY'
           import re
           from pathlib import Path
@@ -605,7 +606,13 @@ jobs:
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
             KITTYSTORE_MINIMUXER_LDFLAGS="-lminimuxer-ios -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork" \
-            KITTYSTORE_MINIMUXER_SWIFT_FLAGS="-D KITTYSTORE_MINIMUXER_LINKED"
+            KITTYSTORE_MINIMUXER_SWIFT_FLAGS="-D KITTYSTORE_MINIMUXER_LINKED" \
+            2>&1 | tee build/xcodebuild-archive.log
+
+          if grep -F "was built for newer 'iOS' version" build/xcodebuild-archive.log; then
+            echo "::error::A linked object was built for a newer iOS deployment target than Litter. Rebuild the vendored static libraries with LITTER_MINIMUXER_MIN_IOS=18.0." >&2
+            exit 1
+          fi
 
       - name: Verify embedded dynamic frameworks
         shell: bash
@@ -639,7 +646,43 @@ jobs:
               fi
             done < <(/usr/bin/otool -L "$binary" | /usr/bin/awk 'NR > 1 { print $1 }' | /usr/bin/grep '^@rpath/.*\.framework/' || true)
           }
+          verify_ios_minos() {
+            local binary="$1"
+            if [ ! -f "$binary" ]; then
+              return 0
+            fi
+            if ! /usr/bin/file "$binary" | /usr/bin/grep -q 'Mach-O'; then
+              return 0
+            fi
+            if [ ! -x /usr/bin/vtool ]; then
+              echo "::warning::vtool is unavailable; skipping iOS minOS verification for $binary" >&2
+              return 0
+            fi
+            local minos
+            minos="$(/usr/bin/vtool -show-build "$binary" 2>/dev/null | /usr/bin/awk 'tolower($1) == "platform" && $2 == "IOS" { ios = 1 } ios && $1 == "minos" { print $2; exit }')"
+            if [ -z "$minos" ]; then
+              return 0
+            fi
+            python3 - "$minos" "$binary" <<'PY'
+          import sys
+
+          minos = sys.argv[1]
+          binary = sys.argv[2]
+
+          def version(value):
+              parts = [int(part) for part in value.split('.')]
+              return tuple((parts + [0, 0, 0])[:3])
+
+          if version(minos) > version('18.0'):
+              print(f"::error::{binary} has iOS minOS {minos}; launch-linked KittyStore binaries must stay at iOS 18.0 or lower.", file=sys.stderr)
+              sys.exit(1)
+          PY
+          }
           scan_binary "$APP_PATH/$EXECUTABLE"
+          verify_ios_minos "$APP_PATH/$EXECUTABLE"
+          verify_ios_minos "$APP_PATH/Frameworks/SideStore.framework/SideStore"
+          verify_ios_minos "$APP_PATH/Frameworks/Minimuxer.framework/Minimuxer"
+          verify_ios_minos "$APP_PATH/Frameworks/RustBridge.framework/RustBridge"
           if [ -d "$APP_PATH/Frameworks" ]; then
             for framework_dir in "$APP_PATH"/Frameworks/*.framework; do
               if [ -d "$framework_dir" ]; then

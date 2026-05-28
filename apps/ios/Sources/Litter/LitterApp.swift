@@ -36,10 +36,6 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
         OpenAIApiKeyStore.shared.applyToEnvironment()
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
         LLog.bootstrap()
-        Task { @MainActor in
-            KittyStoreEmbeddedFactory.bootstrap()
-        }
-
         #if targetEnvironment(macCatalyst)
         // On unsandboxed Mac Catalyst, send the spawned codex child a
         // SIGTERM during termination so it does not outlive the app.
