@@ -128,7 +128,7 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
-        OTHER_LDFLAGS: "$(inherited) -lrust_bridge -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork"
+        OTHER_LDFLAGS: "$(inherited) -lrust_bridge -lminimuxer-ios -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork"
         "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework/ios-arm64"
         "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework/ios-arm64-simulator"
     sources:
