@@ -682,12 +682,11 @@ jobs:
           }
           scan_binary "$APP_PATH/$EXECUTABLE"
           for forbidden_dependency in \
-            '@rpath/SideStore.framework/SideStore' \
             '@rpath/Minimuxer.framework/Minimuxer' \
             '@rpath/RustBridge.framework/RustBridge'
           do
             if /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq "$forbidden_dependency"; then
-              echo "::error::Litter launch-links $forbidden_dependency; KittyStore/minimuxer must stay dynamically loaded after launch." >&2
+              echo "::error::Litter directly launch-links $forbidden_dependency; keep minimuxer isolated behind the KittyStore framework." >&2
               /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2
               exit 1
             fi
@@ -696,7 +695,7 @@ jobs:
             echo "::error::Litter IPA is missing embedded SideStore.framework for KittyStore dynamic loading." >&2
             exit 1
           fi
-          echo "Verified KittyStore framework is embedded without launch-linking Litter."
+          echo "Verified KittyStore framework is embedded and minimuxer is not directly linked by Litter."
           verify_ios_minos "$APP_PATH/$EXECUTABLE"
           verify_ios_minos "$APP_PATH/Frameworks/SideStore.framework/SideStore"
           verify_ios_minos "$APP_PATH/Frameworks/Minimuxer.framework/Minimuxer"

@@ -3,8 +3,9 @@ import UIKit
 import UserNotifications
 import Combine
 import os
+import SideStore
 
-class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
     private var pendingPushToken: Data?
     private var pendingNotificationThreadKey: ThreadKey?
     private var splashWindow: UIWindow?
@@ -35,6 +36,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         OpenAIApiKeyStore.shared.applyToEnvironment()
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
         LLog.bootstrap()
+        Task { @MainActor in
+            KittyStoreEmbeddedFactory.bootstrap()
+        }
         #if targetEnvironment(macCatalyst)
         // On unsandboxed Mac Catalyst, send the spawned codex child a
         // SIGTERM during termination so it does not outlive the app.

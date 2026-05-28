@@ -292,7 +292,6 @@ targets:
         embed: true
       - target: SideStore
         embed: true
-        link: false
       - target: LitterLiveActivity
         embed: true
       - target: LitterWatch
