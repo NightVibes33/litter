@@ -31,10 +31,10 @@ settings:
     LITTER_RELEASE_SOURCE_ASSET_NAME: litter-altstore-source.json
     LITTER_RELEASE_STABLE_TAG: app-source
     LITTER_RELEASE_TAG_PREFIX: litter-v
-    OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty $(KITTYSTORE_MINIMUXER_LDFLAGS)"
+    OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
     HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
     SWIFT_INCLUDE_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
-    OTHER_SWIFT_FLAGS: "$(inherited) $(KITTYSTORE_MINIMUXER_SWIFT_FLAGS)"
+    OTHER_SWIFT_FLAGS: "$(inherited)"
     CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
     "LIBRARY_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(PROJECT_DIR)/GeneratedRust/ios-device"
     "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(PROJECT_DIR)/GeneratedRust/ios-sim"
@@ -151,6 +151,7 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
+        OTHER_LDFLAGS: "$(inherited) -lminimuxer-ios -liconv -lsqlite3 -framework Security -framework CoreFoundation -framework SystemConfiguration -framework CFNetwork"
     sources:
       - path: ../../ThirdParty/SideStore/Source/Dependencies/minimuxer/Sources
     dependencies:
@@ -650,7 +651,7 @@ targets:
           APP_CODE_SIGN_STYLE: Automatic
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
-          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty $(KITTYSTORE_MINIMUXER_LDFLAGS)"
+          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
         Release:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic
@@ -757,7 +758,7 @@ targets:
           APP_CODE_SIGN_STYLE: Automatic
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
-          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty $(KITTYSTORE_MINIMUXER_LDFLAGS)"
+          OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
         Release:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic
