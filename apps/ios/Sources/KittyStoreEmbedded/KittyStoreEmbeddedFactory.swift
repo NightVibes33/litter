@@ -108,7 +108,6 @@ private enum KittyStoreEmbeddedRuntime {
         didFinishStartup = true
 
         if error == nil {
-            startMinimuxerIfPossible()
             AppManager.shared.update()
             AppManager.shared.updateAllSources { result in
                 if case .failure(let error) = result {
