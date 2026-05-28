@@ -191,6 +191,17 @@ require_absent "release build does not enable Litter minimuxer bridge" 'KITTYSTO
 require_absent "release build does not statically link minimuxer into Litter" 'KITTYSTORE_MINIMUXER_LDFLAGS="-lminimuxer-ios' ".github/workflows/ios-unsigned-ipa.yml"
 require_absent "project does not expose global minimuxer linker switch" "KITTYSTORE_MINIMUXER_LDFLAGS" "apps/ios/project.yml"
 require_absent "project does not expose global minimuxer Swift switch" "KITTYSTORE_MINIMUXER_SWIFT_FLAGS" "apps/ios/project.yml"
+if ! awk '
+  /^  Litter:/ { in_target = 1; next }
+  in_target && /^  [^ ].*:/ { in_target = 0 }
+  in_target && /^      - path: Sources\/Litter$/ { in_litter_sources = 1; next }
+  in_litter_sources && /^      - path:/ { in_litter_sources = 0 }
+  in_litter_sources && /^    [A-Za-z0-9_]+:/ { in_litter_sources = 0 }
+  in_litter_sources && /- Generated\/Minimuxer\/\*\*/ { found = 1 }
+  END { exit found ? 0 : 1 }
+' "$ROOT_DIR/apps/ios/project.yml"; then
+  fail "iOS Litter target must exclude generated KittyStore minimuxer bridge sources"
+fi
 require_grep "KittyStore framework targets own native link flags" "-lminimuxer-ios" "apps/ios/project.yml"
 require_grep "RustBridge owns native minimuxer dependency" "-lrust_bridge -lminimuxer-ios" "apps/ios/project.yml"
 require_grep "CI rejects Litter static minimuxer link" "Litter main executable links the KittyStore minimuxer static library" ".github/workflows/ios-unsigned-ipa.yml"
