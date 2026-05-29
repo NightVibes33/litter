@@ -59,15 +59,19 @@ private enum KittyStoreDynamicLoader {
         for url in candidates {
             guard FileManager.default.fileExists(atPath: url.path), let bundle = Bundle(url: url) else { continue }
             if bundle.isLoaded { return bundle }
-            var loadError: NSError?
-            if bundle.loadAndReturnError(&loadError) {
+            do {
+                try bundle.loadAndReturnError()
                 return bundle
+            } catch {
+                throw NSError(
+                    domain: "KittyStoreDynamicLoader",
+                    code: 3,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "KittyStore framework failed to load from \(url.path).",
+                        NSUnderlyingErrorKey: error
+                    ]
+                )
             }
-            throw loadError ?? NSError(
-                domain: "KittyStoreDynamicLoader",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "KittyStore framework failed to load from \(url.path)."]
-            )
         }
         let checked = candidates.map(\.path).joined(separator: "\n")
         throw NSError(
