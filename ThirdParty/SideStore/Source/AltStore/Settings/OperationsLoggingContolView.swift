@@ -21,7 +21,7 @@ private final class DummyConformance: EnableJITContext
 
 struct OperationsLoggingControlView: View {
     let TITLE = "Operations Logging"
-    let BACKGROUND_COLOR = Color(.settingsBackground)
+    let BACKGROUND_COLOR = Color(UIColor.altSettingsBackground)
     
     var viewModel = OperationsLoggingControl()
 
@@ -234,7 +234,7 @@ struct OperationsLoggingControlView: View {
 //        .listStyle(.plain)
 //        .listStyle(InsetGroupedListStyle()) // Or PlainListStyle for iOS 15
 //        .background(Color.clear)
-//        .background(Color(.settingsBackground))
+//        .background(Color(UIColor.altSettingsBackground))
 //        .onAppear(perform: {
 //            // cache the current background color
 //            UITableView.appearance().backgroundColor = UIColor.red

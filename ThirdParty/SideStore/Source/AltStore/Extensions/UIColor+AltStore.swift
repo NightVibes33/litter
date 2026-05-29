@@ -12,7 +12,17 @@ extension UIColor
 {
     private static let altStoreBundle = Bundle(for: AppDelegate.self)
 
-    static let altBackground = UIColor(named: "Background", in: altStoreBundle, compatibleWith: nil) ?? .systemBackground
+    static func altAssetColor(named name: String, fallback: UIColor) -> UIColor {
+        UIColor(named: name, in: altStoreBundle, compatibleWith: nil) ?? fallback
+    }
+
+    static let altBackground = altAssetColor(named: "Background", fallback: .systemBackground)
+    static let altGradientTop = altAssetColor(named: "GradientTop", fallback: .systemBlue)
+    static let altGradientBottom = altAssetColor(named: "GradientBottom", fallback: .systemIndigo)
+    static let altDarkButtonBackground = altAssetColor(named: "DarkButtonBackground", fallback: .secondarySystemFill)
+    static let altSettingsBackground = altAssetColor(named: "SettingsBackground", fallback: .systemGroupedBackground)
+    static let altSettingsHighlighted = altAssetColor(named: "SettingsHighlighted", fallback: .systemBlue)
+    static let altBlurTint = altAssetColor(named: "BlurTint", fallback: .secondarySystemBackground)
 }
 
 extension UIColor

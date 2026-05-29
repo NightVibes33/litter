@@ -364,7 +364,7 @@ private extension AppBannerView
             
             self.button.style = .pill
             
-            self.backgroundEffectView.contentView.backgroundColor = UIColor(resource: .blurTint)
+            self.backgroundEffectView.contentView.backgroundColor = UIColor.altBlurTint
             self.backgroundEffectView.backgroundColor = tintColor
             
         case .source:

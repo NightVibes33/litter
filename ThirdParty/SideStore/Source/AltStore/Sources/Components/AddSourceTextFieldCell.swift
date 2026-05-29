@@ -32,7 +32,7 @@ class AddSourceTextFieldCell: UICollectionViewCell
             if traits.userInterfaceStyle == .dark
             {
                 //TODO: Change once we update UIColor.altPrimary to match 2.0 icon.
-                return UIColor(resource: .gradientTop)
+                return UIColor.altGradientTop
             }
             else
             {

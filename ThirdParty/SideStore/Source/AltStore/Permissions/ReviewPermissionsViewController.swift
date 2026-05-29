@@ -75,7 +75,7 @@ class ReviewPermissionsViewController: UICollectionViewController
         
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(resource: .gradientTop)
+        appearance.backgroundColor = UIColor.altGradientTop
         appearance.titleTextAttributes = [.foregroundColor: UIColor.white]
         appearance.buttonAppearance = buttonAppearance
         self.navigationItem.standardAppearance = appearance
@@ -88,14 +88,14 @@ class ReviewPermissionsViewController: UICollectionViewController
         if #available(iOS 16, *)
         {
             self.collectionView.backgroundView = UIHostingConfiguration {
-                LinearGradient(colors: [Color(UIColor(resource: .gradientTop)), Color(.gradientBottom)], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [Color(UIColor.altGradientTop), Color(UIColor.altGradientBottom)], startPoint: .top, endPoint: .bottom)
             }
             .margins(.all, 0)
             .makeContentView()
         }
         else
         {
-            self.collectionView.backgroundColor = UIColor(resource: .gradientBottom)
+            self.collectionView.backgroundColor = UIColor.altGradientBottom
         }
         
         self.dataSource.proxy = self
@@ -123,7 +123,7 @@ extension ReviewPermissionsViewController
             
             var configuration = UICollectionLayoutListConfiguration(appearance: .insetGrouped)
             configuration.showsSeparators = true
-            configuration.separatorConfiguration.color = UIColor(resource: .gradientBottom).withAlphaComponent(0.7)
+            configuration.separatorConfiguration.color = UIColor.altGradientBottom.withAlphaComponent(0.7)
             configuration.separatorConfiguration.bottomSeparatorInsets.leading = 20
             configuration.backgroundColor = .clear
             
@@ -236,7 +236,7 @@ extension ReviewPermissionsViewController
             }
             
             var backgroundConfig = UIBackgroundConfiguration.listGroupedCell()
-            backgroundConfig.backgroundColor = UIColor(resource: .darkButtonBackground)
+            backgroundConfig.backgroundColor = UIColor.altDarkButtonBackground
             backgroundConfig.visualEffect = nil
             cell.backgroundConfiguration = backgroundConfig
         }
