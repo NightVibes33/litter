@@ -164,6 +164,7 @@ require_grep "SideStore target compiles upstream SideStore helpers" "../../Third
 require_grep "SideStore target explicitly embeds Main storyboard" "Base.lproj/Main.storyboard" "apps/ios/project.yml"
 require_grep "SideStore target explicitly embeds Settings storyboard" "Settings/Settings.storyboard" "apps/ios/project.yml"
 require_grep "SideStore target explicitly embeds resources asset catalog" "Resources/Assets.xcassets" "apps/ios/project.yml"
+require_grep "SideStore resources use XcodeGen resource build phase" "buildPhase: resources" "apps/ios/project.yml"
 require_grep "AltStoreCore framework target" "AltStoreCore:" "apps/ios/project.yml"
 require_grep "AltStoreCore target compiles upstream source" "../../ThirdParty/SideStore/Source/AltStoreCore" "apps/ios/project.yml"
 require_grep "Roxas framework target" "Roxas:" "apps/ios/project.yml"

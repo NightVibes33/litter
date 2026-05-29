@@ -195,23 +195,38 @@ targets:
           - Tests/**
           - Utils/misc/**
           - EMProxyWrapper.swift
-    resources:
       - path: ../../ThirdParty/SideStore/Source/AltStore/Base.lproj/Main.storyboard
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Authentication/Authentication.storyboard
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Components/AppBannerView.xib
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/My Apps/InstalledAppsCollectionHeaderView.xib
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/My Apps/UpdateCollectionViewCell.xib
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/News/NewsCollectionViewCell.xib
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/Assets.xcassets
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/Icons.xcassets
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/AltIcons.plist
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/ReleaseEntitlements.plist
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/Silence.m4a
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Settings/AboutPatreonHeaderView.xib
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Settings/Settings.storyboard
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Settings/SettingsHeaderFooterView.xib
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Sources/Sources.storyboard
+        buildPhase: resources
       - path: ../../ThirdParty/SideStore/Source/AltStore/Sources/Components/SourceHeaderView.xib
+        buildPhase: resources
     dependencies:
       - target: AltStoreCore
       - target: Roxas
