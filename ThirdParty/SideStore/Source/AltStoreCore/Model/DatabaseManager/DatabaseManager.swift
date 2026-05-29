@@ -415,7 +415,7 @@ private extension DatabaseManager
                 altStoreSource.name = "KittyStore Official"
                 storeApp.applyEmbeddedKittyStoreMetadata()
 
-                if let installedApp = storeApp.installedApp
+                for installedApp in InstalledApp.embeddedHostApps(in: context)
                 {
                     context.delete(installedApp)
                 }

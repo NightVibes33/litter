@@ -280,6 +280,76 @@ public extension InstalledApp
 
 public extension InstalledApp
 {
+    public static var hidesEmbeddedHostApps: Bool
+    {
+        let value = Bundle.main.object(forInfoDictionaryKey: "LitterEmbedsSideStore")
+        if let isEmbedded = value as? Bool { return isEmbedded }
+        if let isEmbedded = value as? NSNumber { return isEmbedded.boolValue }
+        if let isEmbedded = value as? String { return (isEmbedded as NSString).boolValue }
+
+        return Bundle.main.bundleIdentifier == Bundle.Info.orgbundleIdentifier
+    }
+
+    static var embeddedHostBundleIdentifiers: [String]
+    {
+        let identifiers = [
+            StoreApp.altstoreAppID,
+            Bundle.Info.appbundleIdentifier,
+            Bundle.Info.orgbundleIdentifier,
+            Bundle.main.bundleIdentifier
+        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        return Array(Set(identifiers.filter { !$0.isEmpty }))
+    }
+
+    public var isEmbeddedHostApp: Bool
+    {
+        guard Self.hidesEmbeddedHostApps else { return false }
+        let hiddenBundleIdentifiers = Set(Self.embeddedHostBundleIdentifiers)
+
+        if hiddenBundleIdentifiers.contains(self.bundleIdentifier) { return true }
+        if hiddenBundleIdentifiers.contains(self.resignedBundleIdentifier) { return true }
+        if let storeBundleIdentifier = self.storeApp?.bundleIdentifier,
+           hiddenBundleIdentifiers.contains(storeBundleIdentifier)
+        {
+            return true
+        }
+
+        return false
+    }
+
+    class func embeddedHostAppsPredicate() -> NSPredicate?
+    {
+        guard Self.hidesEmbeddedHostApps else { return nil }
+        let hiddenBundleIdentifiers = Self.embeddedHostBundleIdentifiers
+        guard !hiddenBundleIdentifiers.isEmpty else { return nil }
+
+        return NSPredicate(format: "(%K IN %@) OR (%K IN %@) OR (%K IN %@)",
+                           #keyPath(InstalledApp.bundleIdentifier), hiddenBundleIdentifiers,
+                           #keyPath(InstalledApp.resignedBundleIdentifier), hiddenBundleIdentifiers,
+                           #keyPath(InstalledApp.storeApp.bundleIdentifier), hiddenBundleIdentifiers)
+    }
+
+    class func embeddedHostApps(in context: NSManagedObjectContext) -> [InstalledApp]
+    {
+        guard let predicate = Self.embeddedHostAppsPredicate() else { return [] }
+        return InstalledApp.all(satisfying: predicate, in: context)
+    }
+
+    class func excludingEmbeddedHostAppsPredicate(_ predicate: NSPredicate) -> NSPredicate
+    {
+        guard Self.hidesEmbeddedHostApps else { return predicate }
+        let hiddenBundleIdentifiers = Self.embeddedHostBundleIdentifiers
+        guard !hiddenBundleIdentifiers.isEmpty else { return predicate }
+
+        let hiddenPredicate = NSPredicate(format: "NOT (%K IN %@) AND NOT (%K IN %@) AND (%K == nil OR NOT (%K IN %@))",
+                                          #keyPath(InstalledApp.bundleIdentifier), hiddenBundleIdentifiers,
+                                          #keyPath(InstalledApp.resignedBundleIdentifier), hiddenBundleIdentifiers,
+                                          #keyPath(InstalledApp.storeApp.bundleIdentifier),
+                                          #keyPath(InstalledApp.storeApp.bundleIdentifier), hiddenBundleIdentifiers)
+        return NSCompoundPredicate(andPredicateWithSubpredicates: [predicate, hiddenPredicate])
+    }
+
     @nonobjc class func fetchRequest() -> NSFetchRequest<InstalledApp>
     {
         return NSFetchRequest<InstalledApp>(entityName: "InstalledApp")
@@ -289,7 +359,8 @@ public extension InstalledApp
     {
         let fetchRequest = InstalledApp.fetchRequest() as NSFetchRequest<InstalledApp>
         
-        fetchRequest.predicate = NSPredicate(format: "%K == YES", #keyPath(InstalledApp.hasUpdate))
+        let predicate = NSPredicate(format: "%K == YES", #keyPath(InstalledApp.hasUpdate))
+        fetchRequest.predicate = InstalledApp.excludingEmbeddedHostAppsPredicate(predicate)
         
         return fetchRequest
     }
@@ -297,13 +368,16 @@ public extension InstalledApp
     class func activeAppsFetchRequest() -> NSFetchRequest<InstalledApp>
     {
         let fetchRequest = InstalledApp.fetchRequest() as NSFetchRequest<InstalledApp>
-        fetchRequest.predicate = NSPredicate(format: "%K == YES", #keyPath(InstalledApp.isActive))
+        let predicate = NSPredicate(format: "%K == YES", #keyPath(InstalledApp.isActive))
+        fetchRequest.predicate = InstalledApp.excludingEmbeddedHostAppsPredicate(predicate)
         print("Active Apps Fetch Request: \(String(describing: fetchRequest.predicate))")
         return fetchRequest
     }
     
     class func fetchAltStore(in context: NSManagedObjectContext) -> InstalledApp?
     {
+        guard !InstalledApp.hidesEmbeddedHostApps else { return nil }
+
         let predicate = NSPredicate(format: "%K == %@", #keyPath(InstalledApp.bundleIdentifier), StoreApp.altstoreAppID)
         print("Fetch 'AltStore' Predicate: \(String(describing: predicate))")
         let altStore = InstalledApp.first(satisfying: predicate, in: context)
@@ -324,8 +398,9 @@ public extension InstalledApp
                                     #keyPath(InstalledApp.storeApp),
                                     #keyPath(InstalledApp.storeApp.isPledgeRequired),
                                     #keyPath(InstalledApp.storeApp.isPledged))
+        let filteredPredicate = InstalledApp.excludingEmbeddedHostAppsPredicate(predicate)
         
-        var installedApps = InstalledApp.all(satisfying: predicate,
+        var installedApps = InstalledApp.all(satisfying: filteredPredicate,
                                              sortedBy: [NSSortDescriptor(keyPath: \InstalledApp.expirationDate, ascending: true)],
                                              in: context)
         
@@ -364,8 +439,9 @@ public extension InstalledApp
                                     #keyPath(InstalledApp.storeApp.isPledgeRequired),
                                     #keyPath(InstalledApp.storeApp.isPledged)
         )
+        let filteredPredicate = InstalledApp.excludingEmbeddedHostAppsPredicate(predicate)
         
-        var installedApps = InstalledApp.all(satisfying: predicate,
+        var installedApps = InstalledApp.all(satisfying: filteredPredicate,
                                              sortedBy: [NSSortDescriptor(keyPath: \InstalledApp.expirationDate, ascending: true)],
                                              in: context)
         

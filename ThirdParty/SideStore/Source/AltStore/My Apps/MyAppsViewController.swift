@@ -2015,6 +2015,7 @@ extension MyAppsViewController
         case .updates, .noUpdates: return nil
         case .activeApps, .inactiveApps:
             let installedApp = self.dataSource.item(at: indexPath)
+            guard !installedApp.isEmbeddedHostApp else { return nil }
             
             return UIContextMenuConfiguration(identifier: indexPath as NSIndexPath, previewProvider: nil) { (suggestedActions) -> UIMenu? in
                 let menu = self.contextMenu(for: installedApp)
@@ -2083,7 +2084,7 @@ extension MyAppsViewController: UICollectionViewDelegateFlowLayout
     
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, referenceSizeForHeaderInSection section: Int) -> CGSize
     {
-        let section = Section.allCases[section]
+        guard let section = Section(rawValue: section) else { return .zero }
         switch section
         {
         case .noUpdates: return .zero
@@ -2099,7 +2100,7 @@ extension MyAppsViewController: UICollectionViewDelegateFlowLayout
     
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, referenceSizeForFooterInSection section: Int) -> CGSize
     {
-        let section = Section.allCases[section]
+        guard let section = Section(rawValue: section) else { return .zero }
         
         func appIDsFooterSize() -> CGSize
         {
@@ -2133,7 +2134,7 @@ extension MyAppsViewController: UICollectionViewDelegateFlowLayout
     
     func collectionView(_ myCV: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, insetForSectionAt section: Int) -> UIEdgeInsets
     {
-        let section = Section.allCases[section]
+        guard let section = Section(rawValue: section) else { return .zero }
         switch section
         {
         case .noUpdates where self.updatesDataSource.itemCount != 0: return .zero
