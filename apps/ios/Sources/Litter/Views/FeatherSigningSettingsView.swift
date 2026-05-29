@@ -13,6 +13,8 @@ struct FeatherSigningSettingsView: View {
     @State private var isWorking = false
     @State private var lastOutput: String?
     @State private var alert: SigningAlert?
+    @State private var pendingSignedInstall: PendingSignedInstall?
+    @State private var isInstallPromptPresented = false
 
     private var missingItems: [String] {
         readinessMissing()
@@ -66,6 +68,22 @@ struct FeatherSigningSettingsView: View {
         }
         .alert(item: $alert) { alert in
             Alert(title: Text(alert.title), message: Text(alert.message), dismissButton: .default(Text("OK")))
+        }
+        .confirmationDialog("Signed IPA Ready", isPresented: $isInstallPromptPresented, titleVisibility: .visible) {
+            if let pendingSignedInstall {
+                Button("Install Signed IPA") {
+                    installSignedArtifact(pendingSignedInstall, refresh: false)
+                }
+            }
+            Button("Keep File", role: .cancel) {
+                pendingSignedInstall = nil
+            }
+        } message: {
+            if let pendingSignedInstall {
+                Text(pendingSignedInstall.ipaPath)
+            } else {
+                Text("The signed IPA was created.")
+            }
         }
         .task { refresh() }
         .onDisappear { options.save() }
@@ -202,6 +220,7 @@ struct FeatherSigningSettingsView: View {
             Button { openLocalDevVPN() } label: {
                 Label("Open LocalDevVPN", systemImage: "link")
             }
+            .buttonStyle(.plain)
         }
     }
 
@@ -395,30 +414,54 @@ struct FeatherSigningSettingsView: View {
         Button {
             activePicker = picker
         } label: {
-            LabeledContent {
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.headline)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
-            } label: {
-                Label(title, systemImage: systemImage)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
+            .contentShape(Rectangle())
+            .padding(.vertical, 2)
         }
+        .buttonStyle(.plain)
     }
 
     private func statusRow(_ title: String, value: String, ready: Bool) -> some View {
-        LabeledContent {
-            Text(value)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
-        } label: {
-            Label(title, systemImage: ready ? "checkmark.circle.fill" : "exclamationmark.circle")
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: ready ? "checkmark.circle.fill" : "exclamationmark.circle")
+                .font(.headline)
                 .foregroundStyle(ready ? Color.accentColor : Color.secondary)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(value)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
         }
+        .padding(.vertical, 2)
     }
 
     private func fileCollectionRow(_ title: String, records: [FeatherSigningFileRecord], picker: SigningFilePicker, clearAction: @escaping () -> Void) -> some View {
@@ -555,12 +598,69 @@ struct FeatherSigningSettingsView: View {
                     let artifacts = result.fakefsArtifacts.isEmpty ? "" : "\nArtifacts:\n" + result.fakefsArtifacts.joined(separator: "\n")
                     let warning = pairingWarning.map { "\n\nPairing staging warning:\n\($0)" } ?? ""
                     lastOutput = "Plan: \(path ?? "in-app only")\nStatus: \(result.status)\nExit: \(result.exitCode)\n\n\(result.log)\(artifacts)\(warning)"
+                    if result.exitCode == 0, options.postSigningAction == .none,
+                       let pending = pendingInstallArtifact(from: result) {
+                        pendingSignedInstall = pending
+                        isInstallPromptPresented = true
+                    }
                 }
             } catch {
                 await MainActor.run {
                     isWorking = false
                     alert = SigningAlert(title: "Signing Failed", message: error.localizedDescription)
                 }
+            }
+        }
+    }
+
+    private func pendingInstallArtifact(from result: KittyStoreSigningResult) -> PendingSignedInstall? {
+        if let artifact = result.signedArtifacts.first {
+            return PendingSignedInstall(
+                ipaPath: artifact.fakefsPath,
+                bundleIdentifier: artifact.bundleIdentifier,
+                profilePath: snapshot.provisioningProfile?.fakefsPath
+            )
+        }
+        guard let path = result.fakefsArtifacts.first else { return nil }
+        return PendingSignedInstall(
+            ipaPath: path,
+            bundleIdentifier: options.bundleIdentifier,
+            profilePath: snapshot.provisioningProfile?.fakefsPath
+        )
+    }
+
+    private func installSignedArtifact(_ pending: PendingSignedInstall, refresh: Bool) {
+        isInstallPromptPresented = false
+        pendingSignedInstall = nil
+        let currentSnapshot = FeatherSigningMaterialStore.snapshot(checkRevocation: false)
+        let bundleID = pending.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bundleID.isEmpty else {
+            alert = SigningAlert(title: "Install Needs Bundle ID", message: "The signed IPA did not report a bundle identifier. Set Identifier before signing, then try again.")
+            return
+        }
+        guard let pairing = currentSnapshot.pairingFile else {
+            alert = SigningAlert(title: "Pairing File Required", message: "Import a pairing file before installing the signed IPA.")
+            return
+        }
+        isWorking = true
+        Task {
+            let pairingWarning = await FeatherSigningMaterialStore.preparePairingFakefsIfNeeded()
+            let result = await LitterBuildKit.shared.installKittyStoreIPA(
+                ipaPath: pending.ipaPath,
+                bundleIdentifier: bundleID,
+                pairingPath: pairing.fakefsPath,
+                profilePath: pending.profilePath,
+                refresh: refresh
+            )
+            await MainActor.run {
+                isWorking = false
+                self.refresh()
+                let warning = pairingWarning.map { "\n\nPairing staging warning:\n\($0)" } ?? ""
+                lastOutput = "Install Signed IPA\nStatus: \(result.status)\nExit: \(result.exitCode)\n\n\(result.log)\(warning)"
+                alert = SigningAlert(
+                    title: result.exitCode == 0 ? "Install Started" : "Install Failed",
+                    message: result.exitCode == 0 ? "KittyStore sent the signed IPA to the device installer." : result.log
+                )
             }
         }
     }
@@ -596,6 +696,13 @@ struct FeatherSigningSettingsView: View {
         }
         return unique
     }
+}
+
+private struct PendingSignedInstall: Identifiable {
+    let id = UUID()
+    var ipaPath: String
+    var bundleIdentifier: String
+    var profilePath: String?
 }
 
 private enum SigningFilePicker: String, Identifiable {

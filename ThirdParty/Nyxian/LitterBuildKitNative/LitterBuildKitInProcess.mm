@@ -1733,8 +1733,12 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
 
     NSString *fakefsPath = LBIString(plan, @"outputFakefsPath");
     if(fakefsPath.length == 0) { fakefsPath = [fakefsBuildDir stringByAppendingPathComponent:outputHost.lastPathComponent]; }
+    NSDictionary *finalInfo = [NSDictionary dictionaryWithContentsOfFile:[appDir stringByAppendingPathComponent:@"Info.plist"]] ?: @{};
+    NSString *effectiveBundleID = [finalInfo[@"CFBundleIdentifier"] isKindOfClass:NSString.class] ? finalInfo[@"CFBundleIdentifier"] : bundleID;
+    if(effectiveBundleID.length == 0) { effectiveBundleID = @""; }
     [log appendFormat:@"Signed IPA artifact: %@ -> %@\n", outputHost, fakefsPath];
-    NSArray *artifacts = @[@{@"hostPath": outputHost, @"fakefsPath": fakefsPath}];
+    [log appendFormat:@"Signed IPA bundle identifier: %@\n", effectiveBundleID.length > 0 ? effectiveBundleID : @"unknown"];
+    NSArray *artifacts = @[@{@"hostPath": outputHost, @"fakefsPath": fakefsPath, @"bundleIdentifier": effectiveBundleID}];
     return LBICopyResponseWithArtifacts(0, @"kittystore-sign-ok", log, artifacts);
 }
 #endif

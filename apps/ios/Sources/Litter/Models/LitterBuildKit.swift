@@ -207,11 +207,17 @@ private struct BuildKitHostStaging: Sendable {
     var fakefsProjectPath: String?
 }
 
+struct KittyStoreSigningArtifact: Sendable, Equatable {
+    var fakefsPath: String
+    var bundleIdentifier: String
+}
+
 struct KittyStoreSigningResult: Sendable {
     var exitCode: Int
     var status: String
     var log: String
     var fakefsArtifacts: [String]
+    var signedArtifacts: [KittyStoreSigningArtifact] = []
 }
 
 struct LitterBuildKitStatus: Equatable, Sendable {
@@ -423,12 +429,14 @@ actor LitterBuildKit {
             prelude: staging.log,
             staging: staging
         )
-        return KittyStoreSigningResult(
+        let signingResult = KittyStoreSigningResult(
             exitCode: result.exitCode,
             status: result.status,
             log: result.log,
-            fakefsArtifacts: result.artifacts.compactMap { $0.fakefsPath }.filter { !$0.isEmpty }
+            fakefsArtifacts: result.artifacts.compactMap { $0.fakefsPath }.filter { !$0.isEmpty },
+            signedArtifacts: Self.signedArtifacts(from: result.artifacts)
         )
+        return await applyKittyStorePostSigningActionIfNeeded(signingResult, planJSON: planJSON)
     }
 
     func installKittyStoreIPA(ipaPath: String, bundleIdentifier: String, pairingPath: String, profilePath: String?, refresh: Bool) async -> KittyStoreSigningResult {
@@ -444,7 +452,43 @@ actor LitterBuildKit {
             exitCode: result.exitCode,
             status: result.status,
             log: result.log,
-            fakefsArtifacts: result.artifacts.compactMap { $0.fakefsPath }.filter { !$0.isEmpty }
+            fakefsArtifacts: result.artifacts.compactMap { $0.fakefsPath }.filter { !$0.isEmpty },
+            signedArtifacts: Self.signedArtifacts(from: result.artifacts)
+        )
+    }
+
+    private func applyKittyStorePostSigningActionIfNeeded(_ signingResult: KittyStoreSigningResult, planJSON: String) async -> KittyStoreSigningResult {
+        guard signingResult.exitCode == 0,
+              let plan = Self.jsonDictionary(planJSON) else { return signingResult }
+        let action = Self.nestedString(plan, "properties", "postSigningAction").lowercased()
+        guard action == "install" || action == "refresh" else { return signingResult }
+        guard let artifact = signingResult.signedArtifacts.first else {
+            return KittyStoreSigningResult(
+                exitCode: 74,
+                status: "kittystore-post-signing-missing-artifact",
+                log: signingResult.log + "\nPost-signing \(action) requested, but the signer did not return a signed IPA artifact.\n",
+                fakefsArtifacts: signingResult.fakefsArtifacts,
+                signedArtifacts: signingResult.signedArtifacts
+            )
+        }
+        let fallbackBundleID = Self.nestedString(plan, "app", "bundleIdentifier")
+        let bundleID = artifact.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallbackBundleID : artifact.bundleIdentifier
+        let pairing = Self.nestedString(plan, "signing", "pairingFile")
+        var profile: String? = Self.nestedString(plan, "signing", "provisioningProfile")
+        if profile?.isEmpty == true || profile == "embedded" { profile = nil }
+        let installResult = await installKittyStoreIPA(
+            ipaPath: artifact.fakefsPath,
+            bundleIdentifier: bundleID,
+            pairingPath: pairing,
+            profilePath: profile,
+            refresh: action == "refresh"
+        )
+        return KittyStoreSigningResult(
+            exitCode: installResult.exitCode,
+            status: installResult.status,
+            log: signingResult.log + "\nPost-signing \(action):\n" + installResult.log,
+            fakefsArtifacts: signingResult.fakefsArtifacts,
+            signedArtifacts: signingResult.signedArtifacts
         )
     }
 
@@ -3538,6 +3582,25 @@ actor LitterBuildKit {
         return text
     }
 
+    private static func signedArtifacts(from artifacts: [NativeDriverArtifact]) -> [KittyStoreSigningArtifact] {
+        artifacts.compactMap { artifact in
+            guard let path = artifact.fakefsPath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty else { return nil }
+            return KittyStoreSigningArtifact(
+                fakefsPath: path,
+                bundleIdentifier: artifact.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            )
+        }
+    }
+
+    private static func jsonDictionary(_ text: String) -> [String: Any]? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+
+    private static func nestedString(_ dictionary: [String: Any], _ first: String, _ second: String) -> String {
+        jsonString((dictionary[first] as? [String: Any])?[second]) ?? ""
+    }
+
     private static func jsonString(_ value: Any?) -> String? {
         switch value {
         case let string as String:
@@ -3937,6 +4000,7 @@ private struct NativeDriverRequest: Encodable, Sendable {
 private struct NativeDriverArtifact: Decodable, Sendable {
     var hostPath: String
     var fakefsPath: String?
+    var bundleIdentifier: String?
 }
 
 private struct NativeDriverResponse: Decodable, Sendable {

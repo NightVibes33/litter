@@ -52,28 +52,38 @@ public class Muxer {
             throw MinimuxerError.PairingFile
         }
         
-        cachedPairingDict = pairingDict
-        cachedPairingXml  = pairingXml
+        let hasRemotePairingRecord = pairingDict["PairRecordData"] is Data && pairingDict["private_key"] is Data
+        let hasLockdownPairingRecord = pairingDict["UDID"] is String
 
-        if let _ = pairingDict["private_key"] as? Data {
-            print("[minimuxer] INFO: RPPairing file detected")
-            isrppairing = true
-        } else if let _ = pairingDict["UDID"] as? String {
-            print("[minimuxer] INFO: Lockdown pairing file detected")
-        } else {
-            print("[minimuxer] ERROR: Pairing file missing UDID")
+        guard hasRemotePairingRecord || hasLockdownPairingRecord else {
+            print("[minimuxer] ERROR: Pairing file missing UDID or remote PairRecordData")
             throw MinimuxerError.PairingFile
         }
 
-        started = true
-        
-        if isrppairing {
-            try RustIdevice.setRpPairingFile(pairingFile)
-        } else {
-            Thread.detachNewThread { listenLoop() }
-            Heartbeat.startBeat()
+        cachedPairingDict = pairingDict
+        cachedPairingXml  = pairingXml
+        isrppairing = hasRemotePairingRecord
+        Install.provider = nil
+
+        do {
+            if isrppairing {
+                print("[minimuxer] INFO: RPPairing file detected")
+                try RustIdevice.setRpPairingFile(pairingFile)
+            } else {
+                print("[minimuxer] INFO: Lockdown pairing file detected")
+                Thread.detachNewThread { listenLoop() }
+                Heartbeat.startBeat()
+            }
+            started = true
+            print("[minimuxer] minimuxer has started!")
+        } catch {
+            cachedPairingDict = nil
+            cachedPairingXml = nil
+            isrppairing = false
+            started = false
+            Install.provider = nil
+            throw error
         }
-        print("[minimuxer] minimuxer has started!")
     }
 
     // MARK: - Listener

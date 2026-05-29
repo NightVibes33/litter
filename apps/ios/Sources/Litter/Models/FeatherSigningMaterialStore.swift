@@ -245,9 +245,10 @@ enum FeatherSigningMaterialStore {
         try writeReplacing(normalizedData, to: sideStorePairingURL)
         let fakefsPath = "/root/.litter/kittystore/pairing/ALTPairingFile.mobiledevicepairing"
         let warning = await stageFakefsFile(data: normalizedData, path: fakefsPath)
-        let record = FeatherSigningFileRecord(id: UUID().uuidString, displayName: sanitizedFileName(url.lastPathComponent, fallback: "ALTPairingFile.mobiledevicepairing"), appPath: sideStorePairingURL.path, fakefsPath: fakefsPath, byteCount: Int64(normalizedData.count), importedAt: Date(), detail: "Saved for KittyStore minimuxer and Feather heartbeat")
+        let detail = pairingRecordDetail(data: normalizedData)
+        let record = FeatherSigningFileRecord(id: UUID().uuidString, displayName: sanitizedFileName(url.lastPathComponent, fallback: "ALTPairingFile.mobiledevicepairing"), appPath: sideStorePairingURL.path, fakefsPath: fakefsPath, byteCount: Int64(normalizedData.count), importedAt: Date(), detail: detail)
         saveRecord(record, key: pairingRecordKey)
-        return FeatherSigningImportResult(title: "Pairing File Saved", message: "Saved \(record.displayName) to KittyStore and Feather document paths." + (warning.map { "\n\nFakefs staging warning:\n\($0)" } ?? ""))
+        return FeatherSigningImportResult(title: "Pairing File Saved", message: "Saved \(record.displayName) to KittyStore and Feather document paths.\n\(detail)" + (warning.map { "\n\nFakefs staging warning:\n\($0)" } ?? ""))
     }
 
     static func importIPA(from url: URL) async throws -> FeatherSigningImportResult {
@@ -417,6 +418,7 @@ enum FeatherSigningMaterialStore {
         let attributes = (try? fileManager.attributesOfItem(atPath: url.path)) ?? [:]
         let byteCount = (attributes[.size] as? NSNumber)?.int64Value ?? 0
         let importedAt = (attributes[.modificationDate] as? Date) ?? Date()
+        let detail = (try? Data(contentsOf: url)).map(pairingRecordDetail(data:)) ?? "Imported in KittyStore Settings"
         let record = FeatherSigningFileRecord(
             id: "kittystore-pairing-file",
             displayName: url.lastPathComponent,
@@ -424,7 +426,7 @@ enum FeatherSigningMaterialStore {
             fakefsPath: "/root/.litter/kittystore/pairing/ALTPairingFile.mobiledevicepairing",
             byteCount: byteCount,
             importedAt: importedAt,
-            detail: "Imported in KittyStore Settings"
+            detail: detail
         )
         saveRecord(record, key: pairingRecordKey)
         return record
@@ -478,6 +480,35 @@ enum FeatherSigningMaterialStore {
         }
     }
 
+
+    private static func pairingRecordDetail(data: Data) -> String {
+        if let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+           let dictionary = plist as? [String: Any] {
+            return pairingRecordDetail(dictionary: dictionary)
+        }
+        if let text = String(data: data, encoding: .utf8), isValidPairingText(text) {
+            if lockdownPairingKeys.allSatisfy({ text.contains($0) }) {
+                return "Lockdown pairing file imported (UDID present)"
+            }
+            if remotePairingKeys.allSatisfy({ text.contains($0) }) {
+                return "Remote pairing file imported"
+            }
+        }
+        return "Pairing file imported"
+    }
+
+    private static func pairingRecordDetail(dictionary: [String: Any]) -> String {
+        let keys = Set(dictionary.keys)
+        let hasLockdownRecord = lockdownPairingKeys.isSubset(of: keys)
+        let hasRemotePairingRecord = remotePairingKeys.isSubset(of: keys)
+        if hasLockdownRecord {
+            return hasRemotePairingRecord ? "Lockdown pairing file imported (UDID present; remote keys ignored for minimuxer)" : "Lockdown pairing file imported (UDID present)"
+        }
+        if hasRemotePairingRecord {
+            return "Remote pairing file imported"
+        }
+        return "Pairing file imported"
+    }
 
     private static func isValidPairingDictionary(_ dictionary: [String: Any]) -> Bool {
         let keys = Set(dictionary.keys)
