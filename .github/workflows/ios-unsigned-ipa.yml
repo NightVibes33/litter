@@ -612,7 +612,7 @@ jobs:
             exit 1
           fi
           if awk '/\/Applications\/Litter\.app\/Litter/ && /-lminimuxer-ios/ { found = 1 } END { exit found ? 0 : 1 }' build/xcodebuild-archive.log; then
-            echo "::error::Litter main executable links the KittyStore minimuxer static library; keep minimuxer isolated to the dynamically loaded KittyStore framework." >&2
+            echo "::error::Litter main executable links the KittyStore minimuxer static library; keep minimuxer isolated to the embedded KittyStore framework." >&2
             exit 1
           fi
 
@@ -682,7 +682,6 @@ jobs:
           }
           scan_binary "$APP_PATH/$EXECUTABLE"
           for forbidden_dependency in \
-            '@rpath/SideStore.framework/SideStore' \
             '@rpath/Minimuxer.framework/Minimuxer' \
             '@rpath/RustBridge.framework/RustBridge'
           do
@@ -692,11 +691,16 @@ jobs:
               exit 1
             fi
           done
-          if [ ! -f "$APP_PATH/Frameworks/SideStore.framework/SideStore" ]; then
-            echo "::error::Litter IPA is missing embedded SideStore.framework for KittyStore dynamic loading." >&2
+          if ! /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq '@rpath/SideStore.framework/SideStore'; then
+            echo "::error::Litter no longer launch-links SideStore.framework; this regresses the 1.5.52 KittyStore launch path." >&2
+            /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2
             exit 1
           fi
-          echo "Verified KittyStore framework is embedded and SideStore/minimuxer are not directly launch-linked by Litter."
+          if [ ! -f "$APP_PATH/Frameworks/SideStore.framework/SideStore" ]; then
+            echo "::error::Litter IPA is missing embedded SideStore.framework for KittyStore launch." >&2
+            exit 1
+          fi
+          echo "Verified KittyStore framework is embedded, launch-linked by Litter, and minimuxer native frameworks are not directly launch-linked by Litter."
           require_any_resource() {
             local label="$1"
             shift
