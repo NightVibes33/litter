@@ -48,6 +48,19 @@
     
     NSArray<RSTCellContentChangeOperation *> *operations = [self.rst_operations copy];
     self.rst_operations = nil;
+
+    for (RSTCellContentChangeOperation *operation in operations)
+    {
+        if (operation.change.sectionIndex != RSTUnknownSectionIndex)
+        {
+            // Section-level Core Data updates are fragile with composite data sources:
+            // a child fetched-results controller can report an inserted section while
+            // the composed collection view already exposes that section as empty.
+            // UIKit treats that as an invalid batch update, so reload instead.
+            [self reloadData];
+            return;
+        }
+    }
     
     // According to documentation:
     // Move is reported when an object changes in a manner that affects its position in the results.  An update of the object is assumed in this case, no separate update message is sent to the delegate.
