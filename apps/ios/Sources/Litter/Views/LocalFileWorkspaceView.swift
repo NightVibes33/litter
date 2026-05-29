@@ -1171,6 +1171,7 @@ private final class LocalFileWorkspaceModel {
             LocalFileShortcut(source: .quick, path: "/root/projects", title: "Projects", subtitle: "/root/projects", systemImage: "folder.fill.badge.gearshape", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/root/.litter/builds", title: "Builds", subtitle: "~/.litter/builds", systemImage: "hammer.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/mnt/apps", title: "App Files", subtitle: "/mnt/apps", systemImage: "externaldrive.fill", kind: .directory),
+            LocalFileShortcut(source: .quick, path: IshFS.nativeContainerMountPath, title: "App Container", subtitle: IshFS.nativeContainerMountPath, systemImage: "internaldrive.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/mnt/codex", title: "Codex Home", subtitle: "/mnt/codex", systemImage: "folder.badge.gearshape", kind: .directory)
         ]
         if showAdvancedLocations {

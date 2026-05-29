@@ -70,6 +70,12 @@ enum LitterPlatform {
                 let output = codexBridge.output.trimmingCharacters(in: .whitespacesAndNewlines)
                 NSLog("[ish] /root/.codex bridge foreground repair failed rc=\(codexBridge.exitCode): \(output)")
             }
+
+            let nativeContainerBridge = await IshFS.repairNativeContainerBridge()
+            if nativeContainerBridge.exitCode != 0 {
+                let output = nativeContainerBridge.output.trimmingCharacters(in: .whitespacesAndNewlines)
+                NSLog("[ish] /mnt/container bridge foreground repair failed rc=\(nativeContainerBridge.exitCode): \(output)")
+            }
         }
 #endif
     }
@@ -124,6 +130,12 @@ enum LitterPlatform {
         if codexBridge.exitCode != 0 {
             let output = codexBridge.output.trimmingCharacters(in: .whitespacesAndNewlines)
             NSLog("[ish] /root/.codex bridge repair failed rc=\(codexBridge.exitCode): \(output)")
+        }
+
+        let nativeContainerBridge = await IshFS.repairNativeContainerBridgeOnReadyRuntime()
+        if nativeContainerBridge.exitCode != 0 {
+            let output = nativeContainerBridge.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            NSLog("[ish] /mnt/container bridge repair failed rc=\(nativeContainerBridge.exitCode): \(output)")
         }
 
         let preflight = ishRuntimePreflight()

@@ -11,16 +11,14 @@ struct MountedFoldersView: View {
     @State private var store = UserMountStore.shared
     @State private var pickerMode: PickerMode?
     @State private var pendingRemoval: UserMount?
+    @State private var containerMountStatus: MountStatus?
+    @State private var isMountingContainer = false
 
     var body: some View {
         NavigationStack {
             ZStack {
                 LitterTheme.backgroundGradient.ignoresSafeArea()
-                if store.mounts.isEmpty {
-                    emptyState
-                } else {
-                    list
-                }
+                list
             }
             .navigationTitle("Mounted folders")
             .navigationBarTitleDisplayMode(.inline)
@@ -30,8 +28,17 @@ struct MountedFoldersView: View {
                         .foregroundColor(LitterTheme.accent)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        pickerMode = .add
+                    Menu {
+                        Button {
+                            Task { await mountNativeContainer() }
+                        } label: {
+                            Label(containerMountStatus == .mounted ? "Remount App Container" : "Mount App Container", systemImage: "internaldrive")
+                        }
+                        Button {
+                            pickerMode = .add
+                        } label: {
+                            Label("Add Folder", systemImage: "plus")
+                        }
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -65,6 +72,9 @@ struct MountedFoldersView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .task {
+            await refreshNativeContainerStatus()
+        }
     }
 
     // MARK: - List
@@ -72,8 +82,13 @@ struct MountedFoldersView: View {
     private var list: some View {
         ScrollView {
             VStack(spacing: 10) {
-                ForEach(store.mounts) { mount in
-                    row(for: mount)
+                nativeContainerRow
+                if store.mounts.isEmpty {
+                    noUserMountsNote
+                } else {
+                    ForEach(store.mounts) { mount in
+                        row(for: mount)
+                    }
                 }
                 footerExplainer
             }
@@ -81,6 +96,68 @@ struct MountedFoldersView: View {
             .padding(.top, 12)
             .padding(.bottom, 24)
         }
+    }
+
+    private var nativeContainerRow: some View {
+        let status = containerMountStatus
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                statusIcon(for: status)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("App Container")
+                        .litterFont(.subheadline)
+                        .foregroundColor(LitterTheme.textPrimary)
+                    Text(IshFS.nativeContainerMountPath)
+                        .litterMonoFont(size: 11)
+                        .foregroundColor(LitterTheme.textMuted)
+                }
+                Spacer()
+                Menu {
+                    Button {
+                        Task { await mountNativeContainer() }
+                    } label: {
+                        Label(status == .mounted ? "Remount App Container" : "Mount App Container", systemImage: "arrow.clockwise")
+                    }
+                    Button {
+                        Task { await refreshNativeContainerStatus() }
+                    } label: {
+                        Label("Check Status", systemImage: "checkmark.circle")
+                    }
+                } label: {
+                    Group {
+                        if isMountingContainer {
+                            ProgressView()
+                                .tint(LitterTheme.textSecondary)
+                        } else {
+                            Image(systemName: "ellipsis.circle")
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
+                    }
+                    .frame(width: 24, height: 24)
+                }
+                .disabled(isMountingContainer)
+            }
+            Text(NSHomeDirectory())
+                .litterFont(.caption)
+                .foregroundColor(LitterTheme.textSecondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+            if let detail = statusDetail(for: status) {
+                Text(detail)
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.danger)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(LitterTheme.surface.opacity(0.6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(LitterTheme.textMuted.opacity(0.18), lineWidth: 0.6)
+        )
     }
 
     private func row(for mount: UserMount) -> some View {
@@ -138,6 +215,15 @@ struct MountedFoldersView: View {
         )
     }
 
+    private var noUserMountsNote: some View {
+        Text("No extra user folders mounted. Pick a folder from Files to make it available inside iSH at /mnt/<name>.")
+            .litterFont(.caption)
+            .foregroundColor(LitterTheme.textMuted)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+    }
+
     private var footerExplainer: some View {
         Text("Mounts persist across launches. Removing only detaches the mount inside iSH; files in the source folder are not deleted.")
             .litterFont(.caption)
@@ -146,38 +232,28 @@ struct MountedFoldersView: View {
             .padding(.top, 8)
     }
 
-    // MARK: - Empty state
+    // MARK: - Helpers
 
-    private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "externaldrive.badge.icloud")
-                .font(.system(size: 44, weight: .light))
-                .foregroundColor(LitterTheme.accent)
-            Text("No folders mounted")
-                .litterFont(.headline)
-                .foregroundColor(LitterTheme.textPrimary)
-            Text("Pick a folder from Files (iCloud Drive, On My iPhone, or a third-party provider) to make it available inside iSH at /mnt/<name>.")
-                .litterFont(.caption)
-                .foregroundColor(LitterTheme.textSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Button {
-                pickerMode = .add
-            } label: {
-                Text("Add folder")
-                    .litterFont(.subheadline)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-            }
-            .background(
-                Capsule().fill(LitterTheme.accent)
-            )
-            .foregroundColor(LitterTheme.textOnAccent)
-        }
-        .padding(.horizontal, 24)
+    @MainActor
+    private func refreshNativeContainerStatus() async {
+        let result = await IshFS.nativeContainerMountStatus()
+        containerMountStatus = result.exitCode == 0 ? .mounted : nil
     }
 
-    // MARK: - Helpers
+    @MainActor
+    private func mountNativeContainer() async {
+        guard !isMountingContainer else { return }
+        isMountingContainer = true
+        let result = await IshFS.repairNativeContainerBridge()
+        containerMountStatus = mountStatus(from: result, fallback: "mount -t real returned \(result.exitCode)")
+        isMountingContainer = false
+    }
+
+    private func mountStatus(from result: IshFS.Result, fallback: String) -> MountStatus {
+        guard result.exitCode != 0 else { return .mounted }
+        let message = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return .mountFailed(rc: result.exitCode, message: message.isEmpty ? fallback : message)
+    }
 
     private func handlePick(result: Result<[URL], Error>, mode: PickerMode?) {
         switch result {

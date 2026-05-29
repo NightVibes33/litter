@@ -339,6 +339,12 @@ require_grep "README real LocalDevVPN launcher" "localdevvpn://" "README.md"
 require_grep "README LocalDevVPN and pairing hard requirement" "direct install/refresh/remove/list operations stay blocked until LocalDevVPN is enabled and a pairing file is imported" "README.md"
 require_grep "README SideStore/Feather attribution" "SideStore, AltStore, Feather, LocalDevVPN" "README.md"
 require_grep "README installable AltSource versions" "version-history first" "README.md"
+require_grep "Native container mount path" 'nativeContainerMountPath = "/mnt/container"' "apps/ios/Sources/Litter/Models/IshFS.swift"
+require_grep "Native container bridge command" "repairNativeContainerBridge" "apps/ios/Sources/Litter/Models/IshFS.swift"
+require_grep "Native container remount on launch" "repairNativeContainerBridgeOnReadyRuntime" "apps/ios/Sources/Litter/Models/LitterPlatform.swift"
+require_grep "Native container mounted folders action" "Mount App Container" "apps/ios/Sources/Litter/Views/MountedFoldersView.swift"
+require_grep "Native container file browser shortcut" "App Container" "apps/ios/Sources/Litter/Views/LocalFileWorkspaceView.swift"
+require_grep "Native container file browser path" "IshFS.nativeContainerMountPath" "apps/ios/Sources/Litter/Views/LocalFileWorkspaceView.swift"
 
 if [ "$missing" -ne 0 ]; then
   exit 1

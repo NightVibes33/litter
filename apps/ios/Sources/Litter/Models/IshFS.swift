@@ -10,6 +10,8 @@ import Foundation
 /// via the exec hook — this is only for UI that has to read fakefs state
 /// directly (the directory picker, primarily).
 enum IshFS {
+    static let nativeContainerMountPath = "/mnt/container"
+
     struct Result {
         let exitCode: Int32
         let output: String
@@ -67,6 +69,43 @@ enum IshFS {
         }.value
     }
 
+    /// Mount the native app container inside the iSH fakefs at `/mnt/container`.
+    /// This exposes Documents, Library/Application Support, caches, logs, and
+    /// the fakefs backing store without requiring a picked folder bookmark.
+    @discardableResult
+    static func repairNativeContainerBridge() async -> Result {
+        guard LitterPlatform.supportsLocalRuntime else { return Result(exitCode: 0, output: "") }
+        return await Task.detached(priority: .utility) {
+            do {
+                try await LitterPlatform.ensureLocalRuntimeReady()
+            } catch {
+                return Result(exitCode: -6, output: error.localizedDescription)
+            }
+            return repairNativeContainerBridgeOnReadyRuntimeSync()
+        }.value
+    }
+
+    /// Use only after the iSH kernel has been bootstrapped. This avoids a
+    /// recursive readiness call from `LitterPlatform.performLocalRuntimeReadiness()`.
+    @discardableResult
+    static func repairNativeContainerBridgeOnReadyRuntime() async -> Result {
+        guard LitterPlatform.supportsLocalRuntime else { return Result(exitCode: 0, output: "") }
+        return await Task.detached(priority: .utility) {
+            repairNativeContainerBridgeOnReadyRuntimeSync()
+        }.value
+    }
+
+    static func nativeContainerMountStatus() async -> Result {
+        await run("""
+        if mount | grep ' \(nativeContainerMountPath) ' | grep ' type real ' >/dev/null 2>&1; then
+          echo mounted
+          exit 0
+        fi
+        echo not-mounted
+        exit 1
+        """)
+    }
+
     private static func repairCodexHomeBridgeOnReadyRuntimeSync() -> Result {
         let fm = FileManager.default
         let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -116,6 +155,33 @@ enum IshFS {
         mkdir -p /root/.codex/skills /root/.codex/skills/.system /root/.codex/plugins/cache/openai-curated
         chmod 700 /root/.codex 2>/dev/null || true
         mount | grep ' /mnt/codex ' | grep ' type real ' >/dev/null
+        """
+        let res = ishRun(cmd: script, cwd: "")
+        var output = String(data: res.output, encoding: .utf8) ?? ""
+        if res.exitCode < 0 && output.isEmpty {
+            output = diagnostic(for: res.exitCode)
+        }
+        return Result(exitCode: res.exitCode, output: output)
+    }
+
+    private static func repairNativeContainerBridgeOnReadyRuntimeSync() -> Result {
+        let nativeHome = NSHomeDirectory().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !nativeHome.isEmpty else {
+            return Result(exitCode: -7, output: "Could not resolve native app container.")
+        }
+
+        let script = """
+        set -eu
+        native=\(shellQuote(nativeHome))
+        target=\(shellQuote(nativeContainerMountPath))
+        mkdir -p "$target"
+        if mount | grep " $target " | grep ' type real ' >/dev/null 2>&1; then
+          echo "$target"
+          exit 0
+        fi
+        mount -t real "$native" "$target"
+        mount | grep " $target " | grep ' type real ' >/dev/null
+        echo "$target"
         """
         let res = ishRun(cmd: script, cwd: "")
         var output = String(data: res.output, encoding: .utf8) ?? ""
