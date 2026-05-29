@@ -14,8 +14,8 @@ class ConsoleLog {
     private static let CONSOLE_LOG_NAME_PREFIX = "console"
     private static let CONSOLE_LOG_EXTN = ".log"
     
-    private lazy var consoleLogger: ConsoleLogger = {
-        let logFileHandle = createLogFileHandle()
+    private lazy var consoleLogger: ConsoleLogger? = {
+        guard let logFileHandle = createLogFileHandle() else { return nil }
         let fileOutputStream = FileOutputStream(logFileHandle)
         
         return UnBufferedConsoleLogger(stream: fileOutputStream)
@@ -26,7 +26,7 @@ class ConsoleLog {
         let docsDir = FileManager.default.documentsDirectory
         let consoleLogsDir = docsDir.appendingPathComponent(ConsoleLog.CONSOLE_LOGS_DIRECTORY)
         if !FileManager.default.fileExists(atPath: consoleLogsDir.path) {
-            try! FileManager.default.createDirectory(at: consoleLogsDir, withIntermediateDirectories: true, attributes: nil)
+            try? FileManager.default.createDirectory(at: consoleLogsDir, withIntermediateDirectories: true, attributes: nil)
         }
         return consoleLogsDir
     }()
@@ -51,21 +51,21 @@ class ConsoleLog {
     }()
     
     
-    private func createLogFileHandle() -> FileHandle {
+    private func createLogFileHandle() -> FileHandle? {
         if !FileManager.default.fileExists(atPath: logFileURL.path) {
             FileManager.default.createFile(atPath: logFileURL.path, contents: nil, attributes: nil)
         }
         
         // return the file handle
-        return try! FileHandle(forWritingTo: logFileURL)
+        return try? FileHandle(forWritingTo: logFileURL)
     }
     
     func startCapturing() {
-        consoleLogger.startCapturing()
+        consoleLogger?.startCapturing()
     }
     
     func stopCapturing() {
-        consoleLogger.stopCapturing()
+        consoleLogger?.stopCapturing()
     }
 }
 

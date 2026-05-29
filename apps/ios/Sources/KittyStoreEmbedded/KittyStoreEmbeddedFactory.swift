@@ -63,6 +63,55 @@ private enum KittyStoreEmbeddedRuntime {
     static var consoleLogProvider: (() -> ConsoleLog?)?
 
     @MainActor
+    static func resourcePreflightError() -> Error? {
+        let missing = requiredResourceFailures()
+        guard !missing.isEmpty else { return nil }
+        return KittyStoreResourcePreflightError(missingResources: missing)
+    }
+
+    @MainActor
+    private static func requiredResourceFailures() -> [String] {
+        let storeBundle = Bundle(for: AppDelegate.self)
+        let coreBundle = Bundle(for: DatabaseManager.self)
+        var missing: [String] = []
+
+        func require(_ label: String, _ name: String, _ ext: String?, in bundle: Bundle) {
+            if bundle.url(forResource: name, withExtension: ext) == nil {
+                let resource = ext.map { "\(name).\($0)" } ?? name
+                missing.append("\(label): missing \(resource) in \(bundle.bundlePath)")
+            }
+        }
+
+        require("KittyStore main storyboard", "Main", "storyboardc", in: storeBundle)
+        require("KittyStore authentication storyboard", "Authentication", "storyboardc", in: storeBundle)
+        require("KittyStore settings storyboard", "Settings", "storyboardc", in: storeBundle)
+        require("KittyStore sources storyboard", "Sources", "storyboardc", in: storeBundle)
+        require("KittyStore app banner nib", "AppBannerView", "nib", in: storeBundle)
+        require("KittyStore update cell nib", "UpdateCollectionViewCell", "nib", in: storeBundle)
+        require("KittyStore installed apps header nib", "InstalledAppsCollectionHeaderView", "nib", in: storeBundle)
+        require("KittyStore news cell nib", "NewsCollectionViewCell", "nib", in: storeBundle)
+        require("KittyStore settings header/footer nib", "SettingsHeaderFooterView", "nib", in: storeBundle)
+        require("KittyStore about header nib", "AboutPatreonHeaderView", "nib", in: storeBundle)
+        require("KittyStore source header nib", "SourceHeaderView", "nib", in: storeBundle)
+        require("KittyStore asset catalog", "Assets", "car", in: storeBundle)
+        require("KittyStore alternate icons manifest", "AltIcons", "plist", in: storeBundle)
+        require("KittyStore release entitlements", "ReleaseEntitlements", "plist", in: storeBundle)
+        require("KittyStore silent audio", "Silence", "m4a", in: storeBundle)
+        require("AltStoreCore Core Data model", "AltStore", "momd", in: coreBundle)
+        require("AltStoreCore permissions manifest", "Permissions", "plist", in: coreBundle)
+
+        if UIColor(named: "Background", in: storeBundle, compatibleWith: nil) == nil {
+            missing.append("KittyStore color asset: missing Background in \(storeBundle.bundlePath)")
+        }
+
+        if UIColor(named: "SettingsHighlighted", in: storeBundle, compatibleWith: nil) == nil {
+            missing.append("KittyStore color asset: missing SettingsHighlighted in \(storeBundle.bundlePath)")
+        }
+
+        return missing
+    }
+
+    @MainActor
     static func prepareForLaunch() {
         guard !didPrepare else { return }
         didPrepare = true
@@ -94,6 +143,12 @@ private enum KittyStoreEmbeddedRuntime {
         guard !didStart else { return }
         didStart = true
         prepareForLaunch()
+
+        if let error = resourcePreflightError() {
+            print("[KittyStoreEmbedded] Resource preflight failed: \(error.localizedDescription)")
+            finishStartup(error: error)
+            return
+        }
 
         guard !DatabaseManager.shared.isStarted else {
             finishStartup(error: nil)
@@ -187,6 +242,15 @@ private enum KittyStoreEmbeddedRuntime {
     }
 }
 
+
+private struct KittyStoreResourcePreflightError: LocalizedError {
+    let missingResources: [String]
+
+    var errorDescription: String? {
+        "KittyStore is missing required embedded resources.\n" + missingResources.joined(separator: "\n")
+    }
+}
+
 private final class KittyStoreRootViewController: UIViewController {
     private var embeddedViewController: UIViewController?
     private var splashView: KittyStoreSplashView?
@@ -251,8 +315,19 @@ private final class KittyStoreRootViewController: UIViewController {
     private func showStoreInterface() {
         guard embeddedViewController == nil else { return }
 
+        if let error = KittyStoreEmbeddedRuntime.resourcePreflightError() {
+            showUnavailable(message: error.localizedDescription)
+            return
+        }
+
+        let bundle = Bundle(for: AppDelegate.self)
+        guard bundle.url(forResource: "Main", withExtension: "storyboardc") != nil else {
+            showUnavailable(message: "KittyStore could not find Main.storyboardc in \(bundle.bundlePath).")
+            return
+        }
+
         LaunchViewController.isEmbeddedHostMode = true
-        let storyboard = UIStoryboard(name: "Main", bundle: Bundle(for: AppDelegate.self))
+        let storyboard = UIStoryboard(name: "Main", bundle: bundle)
         let viewController = storyboard.instantiateViewController(withIdentifier: "tabBarController")
 
         if let tabBarController = viewController as? UITabBarController,

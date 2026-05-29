@@ -1446,7 +1446,8 @@ private extension AppManager
         
         let sourceURL = resignedApp.fileURL
         
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
         let resignedAppsURL = documentsURL.appendingPathComponent("ResignedApps")
         // Create the ResignedApps subfolder if it doesn't exist
         do {

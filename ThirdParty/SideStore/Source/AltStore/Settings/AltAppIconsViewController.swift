@@ -84,7 +84,9 @@ class AltAppIconsViewController: UICollectionViewController
         
         do
         {
-            let fileURL = Bundle.main.url(forResource: "AltIcons", withExtension: "plist")!
+            guard let fileURL = Bundle(for: AppDelegate.self).url(forResource: "AltIcons", withExtension: "plist") else {
+                throw NSError(domain: "KittyStore", code: 1, userInfo: [NSLocalizedDescriptionKey: "AltIcons.plist is missing from the KittyStore framework bundle."])
+            }
             let data = try Data(contentsOf: fileURL)
             
             let icons = try PropertyListDecoder().decode([Section: [AltIcon]].self, from: data)

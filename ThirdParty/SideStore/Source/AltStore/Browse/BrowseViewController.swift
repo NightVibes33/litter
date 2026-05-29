@@ -681,7 +681,7 @@ extension BrowseViewController: UIViewControllerPreviewingDelegate
 #Preview(traits: .portrait) {
     DatabaseManager.shared.startForPreview()
    
-    let storyboard = UIStoryboard(name: "Main", bundle: .main)
+    let storyboard = UIStoryboard(name: "Main", bundle: Bundle(for: AppDelegate.self))
     let browseViewController = storyboard.instantiateViewController(identifier: "browseViewController") { coder in
         BrowseViewController(source: nil, coder: coder)
     }

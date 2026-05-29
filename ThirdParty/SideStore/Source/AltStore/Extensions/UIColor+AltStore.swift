@@ -12,7 +12,7 @@ extension UIColor
 {
     private static let altStoreBundle = Bundle(for: AppDelegate.self)
 
-    static let altBackground = UIColor(named: "Background", in: altStoreBundle, compatibleWith: nil)!
+    static let altBackground = UIColor(named: "Background", in: altStoreBundle, compatibleWith: nil) ?? .systemBackground
 }
 
 extension UIColor

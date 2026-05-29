@@ -14,7 +14,7 @@ import AltSign
 
 private extension UIColor
 {
-    static let altInvertedPrimary = UIColor(named: "SettingsHighlighted", in: Bundle(for: AppDelegate.self), compatibleWith: nil)!
+    static let altInvertedPrimary = UIColor(named: "SettingsHighlighted", in: Bundle(for: AppDelegate.self), compatibleWith: nil) ?? .systemBlue
 }
 
 typealias AuthenticationError = AuthenticationErrorCode.Error

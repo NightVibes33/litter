@@ -682,6 +682,7 @@ jobs:
           }
           scan_binary "$APP_PATH/$EXECUTABLE"
           for forbidden_dependency in \
+            '@rpath/SideStore.framework/SideStore' \
             '@rpath/Minimuxer.framework/Minimuxer' \
             '@rpath/RustBridge.framework/RustBridge'
           do
@@ -695,7 +696,43 @@ jobs:
             echo "::error::Litter IPA is missing embedded SideStore.framework for KittyStore dynamic loading." >&2
             exit 1
           fi
-          echo "Verified KittyStore framework is embedded and minimuxer is not directly linked by Litter."
+          echo "Verified KittyStore framework is embedded and SideStore/minimuxer are not directly launch-linked by Litter."
+          require_any_resource() {
+            local label="$1"
+            shift
+            local candidate
+            for candidate in "$@"; do
+              if [ -e "$candidate" ]; then
+                echo "Verified KittyStore resource: $label -> $candidate"
+                return 0
+              fi
+            done
+            echo "::error::Missing KittyStore resource: $label" >&2
+            printf '%s\n' 'Checked paths:' >&2
+            for candidate in "$@"; do
+              printf '  %s\n' "$candidate" >&2
+            done
+            missing=1
+          }
+          SIDE_FRAMEWORK="$APP_PATH/Frameworks/SideStore.framework"
+          CORE_FRAMEWORK="$APP_PATH/Frameworks/AltStoreCore.framework"
+          require_any_resource "Main storyboard" "$SIDE_FRAMEWORK/Base.lproj/Main.storyboardc" "$SIDE_FRAMEWORK/Main.storyboardc"
+          require_any_resource "Authentication storyboard" "$SIDE_FRAMEWORK/Authentication.storyboardc"
+          require_any_resource "Settings storyboard" "$SIDE_FRAMEWORK/Settings.storyboardc"
+          require_any_resource "Sources storyboard" "$SIDE_FRAMEWORK/Sources.storyboardc"
+          require_any_resource "AppBannerView nib" "$SIDE_FRAMEWORK/AppBannerView.nib"
+          require_any_resource "UpdateCollectionViewCell nib" "$SIDE_FRAMEWORK/UpdateCollectionViewCell.nib"
+          require_any_resource "InstalledAppsCollectionHeaderView nib" "$SIDE_FRAMEWORK/InstalledAppsCollectionHeaderView.nib"
+          require_any_resource "NewsCollectionViewCell nib" "$SIDE_FRAMEWORK/NewsCollectionViewCell.nib"
+          require_any_resource "SettingsHeaderFooterView nib" "$SIDE_FRAMEWORK/SettingsHeaderFooterView.nib"
+          require_any_resource "AboutPatreonHeaderView nib" "$SIDE_FRAMEWORK/AboutPatreonHeaderView.nib"
+          require_any_resource "SourceHeaderView nib" "$SIDE_FRAMEWORK/SourceHeaderView.nib"
+          require_any_resource "SideStore asset catalog" "$SIDE_FRAMEWORK/Assets.car"
+          require_any_resource "AltIcons manifest" "$SIDE_FRAMEWORK/AltIcons.plist"
+          require_any_resource "Release entitlements" "$SIDE_FRAMEWORK/ReleaseEntitlements.plist"
+          require_any_resource "Silence audio" "$SIDE_FRAMEWORK/Silence.m4a"
+          require_any_resource "AltStoreCore Core Data model" "$CORE_FRAMEWORK/AltStore.momd"
+          require_any_resource "AltStoreCore permissions manifest" "$CORE_FRAMEWORK/Permissions.plist"
           verify_ios_minos "$APP_PATH/$EXECUTABLE"
           verify_ios_minos "$APP_PATH/Frameworks/SideStore.framework/SideStore"
           verify_ios_minos "$APP_PATH/Frameworks/Minimuxer.framework/Minimuxer"

@@ -16,7 +16,7 @@ final class BackgroundTaskManager
     
     private let audioEngine: AVAudioEngine
     private let player: AVAudioPlayerNode
-    private let audioFile: AVAudioFile
+    private let audioFile: AVAudioFile?
     
     private let audioEngineQueue: DispatchQueue
     
@@ -28,16 +28,12 @@ final class BackgroundTaskManager
         self.player = AVAudioPlayerNode()
         self.audioEngine.attach(self.player)
         
-        do
-        {
-            let audioFileURL = Bundle.main.url(forResource: "Silence", withExtension: "m4a")!
-            
-            self.audioFile = try AVAudioFile(forReading: audioFileURL)
-            self.audioEngine.connect(self.player, to: self.audioEngine.mainMixerNode, format: self.audioFile.processingFormat)
-        }
-        catch
-        {
-            fatalError("Error. \(error)")
+        if let audioFileURL = Bundle(for: BackgroundTaskManager.self).url(forResource: "Silence", withExtension: "m4a"),
+           let audioFile = try? AVAudioFile(forReading: audioFileURL) {
+            self.audioFile = audioFile
+            self.audioEngine.connect(self.player, to: self.audioEngine.mainMixerNode, format: audioFile.processingFormat)
+        } else {
+            self.audioFile = nil
         }
         
         self.audioEngineQueue = DispatchQueue(label: "com.altstore.BackgroundTaskManager")
@@ -57,6 +53,13 @@ extension BackgroundTaskManager
         }
         
         self.audioEngineQueue.sync {
+            guard self.audioFile != nil else {
+                taskHandler(.failure(BackgroundTaskManagerError.missingSilenceAudio)) {
+                    finish()
+                }
+                return
+            }
+
             do
             {
                 try AVAudioSession.sharedInstance().setCategory(.playback, options: .mixWithOthers)
@@ -92,11 +95,20 @@ private extension BackgroundTaskManager
 {
     func scheduleAudioFile()
     {
-        self.player.scheduleFile(self.audioFile, at: nil) {
+        guard let audioFile else { return }
+        self.player.scheduleFile(audioFile, at: nil) {
             self.audioEngineQueue.async {
                 guard self.isPlaying else { return }
                 self.scheduleAudioFile()
             }
         }
+    }
+}
+
+private enum BackgroundTaskManagerError: LocalizedError {
+    case missingSilenceAudio
+
+    var errorDescription: String? {
+        "KittyStore could not find Silence.m4a in its embedded framework bundle."
     }
 }

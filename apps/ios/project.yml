@@ -180,11 +180,38 @@ targets:
           - AltStore-Bridging-Header.h
           - Intents/**
           - Extensions/INInteraction+AltStore.swift
+          - Base.lproj/**
+          - Authentication/*.storyboard
+          - Components/*.xib
+          - My Apps/*.xib
+          - News/*.xib
+          - Resources/**
+          - Settings/*.storyboard
+          - Settings/*.xib
+          - Sources/*.storyboard
+          - Sources/Components/*.xib
       - path: ../../ThirdParty/SideStore/Source/SideStore
         excludes:
           - Tests/**
           - Utils/misc/**
           - EMProxyWrapper.swift
+    resources:
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Base.lproj/Main.storyboard
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Authentication/Authentication.storyboard
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Components/AppBannerView.xib
+      - path: ../../ThirdParty/SideStore/Source/AltStore/My Apps/InstalledAppsCollectionHeaderView.xib
+      - path: ../../ThirdParty/SideStore/Source/AltStore/My Apps/UpdateCollectionViewCell.xib
+      - path: ../../ThirdParty/SideStore/Source/AltStore/News/NewsCollectionViewCell.xib
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/Assets.xcassets
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/Icons.xcassets
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/AltIcons.plist
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/ReleaseEntitlements.plist
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Resources/Silence.m4a
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Settings/AboutPatreonHeaderView.xib
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Settings/Settings.storyboard
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Settings/SettingsHeaderFooterView.xib
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Sources/Sources.storyboard
+      - path: ../../ThirdParty/SideStore/Source/AltStore/Sources/Components/SourceHeaderView.xib
     dependencies:
       - target: AltStoreCore
       - target: Roxas
@@ -292,6 +319,7 @@ targets:
         embed: true
       - target: SideStore
         embed: true
+        link: false
       - target: LitterLiveActivity
         embed: true
       - target: LitterWatch

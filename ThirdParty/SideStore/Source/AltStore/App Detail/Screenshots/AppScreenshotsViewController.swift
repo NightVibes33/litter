@@ -176,7 +176,7 @@ extension AppScreenshotsViewController
     let fetchRequest = StoreApp.fetchRequest()
     let storeApp = try! DatabaseManager.shared.viewContext.fetch(fetchRequest).first!
     
-    let storyboard = UIStoryboard(name: "Main", bundle: .main)
+    let storyboard = UIStoryboard(name: "Main", bundle: Bundle(for: AppDelegate.self))
     let appViewConttroller = storyboard.instantiateViewController(withIdentifier: "appViewController") as! AppViewController
     appViewConttroller.app = storeApp
     

@@ -61,6 +61,7 @@ final class AppModel {
     }
 
     private nonisolated static let _prewarmResult: RustBridges = {
+        LitterCrashReporter.mark("AppModel.prewarmResult.begin")
         // Boot the iSH kernel BEFORE any Rust bridge construction so the exec
         // hook is wired up before the first command can be issued. Idempotent
         // — the AppDelegate call site is a no-op on second invocation.
@@ -70,7 +71,7 @@ final class AppModel {
         rc.setCredentialProvider(provider: SwiftSshCredentialProvider())
         rc.setSlingshotCredentialProvider(provider: SwiftSlingshotCredentialProvider())
         rc.setMultiClankerAndQuicEnabled(enabled: true)
-        return RustBridges(
+        let bridges = RustBridges(
             store: AppStore(),
             client: AppClient(),
             discovery: DiscoveryBridge(),
@@ -78,6 +79,8 @@ final class AppModel {
             ssh: SshBridge(),
             reconnectController: rc
         )
+        LitterCrashReporter.mark("AppModel.prewarmResult.end")
+        return bridges
     }()
 
     static let shared = AppModel()
@@ -130,13 +133,16 @@ final class AppModel {
         ssh: SshBridge? = nil,
         reconnectController: ReconnectController? = nil
     ) {
+        LitterCrashReporter.mark("AppModel.init.begin")
         let bridges = Self._prewarmResult
+        LitterCrashReporter.mark("AppModel.init.bridges-ready")
         self.store = store ?? bridges.store
         self.client = client ?? bridges.client
         self.discovery = discovery ?? bridges.discovery
         self.serverBridge = serverBridge ?? bridges.serverBridge
         self.ssh = ssh ?? bridges.ssh
         self.reconnectController = reconnectController ?? bridges.reconnectController
+        LitterCrashReporter.mark("AppModel.init.end")
 
         // Register the saved-apps directory with the Rust client so the
         // dynamic-tool finalize hook can auto-upsert on `show_widget` calls.
