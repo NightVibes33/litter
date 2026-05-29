@@ -128,9 +128,79 @@ func fetchUDID() -> String? {
     return "XXXXX-XXXX-XXXXX-XXXX"
     #else
     print("[KittyStore] fetchUDID() invoked")
-    return Minimuxer.fetchUDID()
+    if let udid = Minimuxer.fetchUDID()?.trimmingCharacters(in: .whitespacesAndNewlines), !udid.isEmpty {
+        return udid
+    }
+    if let udid = storedPairingUDID() {
+        print("[KittyStore] fetchUDID() using imported pairing fallback")
+        return udid
+    }
+    return nil
     #endif
 }
+
+#if !targetEnvironment(simulator)
+private func storedPairingUDID() -> String? {
+    let fileManager = FileManager.default
+    let documentsURL = fileManager.documentsDirectory.appendingPathComponent(pairingFileName)
+    if let udid = pairingUDID(from: documentsURL) { return udid }
+
+    if !UserDefaults.standard.isPairingReset,
+       let bundledURL = Bundle.main.url(forResource: "ALTPairingFile", withExtension: "mobiledevicepairing"),
+       let udid = pairingUDID(from: bundledURL) {
+        return udid
+    }
+
+    if !UserDefaults.standard.isPairingReset,
+       let plistString = Bundle.main.object(forInfoDictionaryKey: "ALTPairingFile") as? String,
+       !plistString.isEmpty,
+       !plistString.contains("insert pairing file here") {
+        return pairingUDID(from: Data(plistString.utf8))
+    }
+
+    return nil
+}
+
+private func pairingUDID(from url: URL) -> String? {
+    guard let data = try? Data(contentsOf: url) else { return nil }
+    return pairingUDID(from: data)
+}
+
+private func pairingUDID(from data: Data, depth: Int = 0) -> String? {
+    guard depth < 3,
+          let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+          let dictionary = plist as? [String: Any] else {
+        return nil
+    }
+
+    for key in ["UDID", "UniqueDeviceID", "SerialNumber", "Identifier", "identifier"] {
+        if let udid = normalizedUDID(dictionary[key]) { return udid }
+    }
+
+    if let pairRecordData = dictionary["PairRecordData"] as? Data,
+       let udid = pairingUDID(from: pairRecordData, depth: depth + 1) {
+        return udid
+    }
+
+    return nil
+}
+
+private func normalizedUDID(_ value: Any?) -> String? {
+    let string: String?
+    if let raw = value as? String {
+        string = raw
+    } else if let number = value as? NSNumber {
+        string = number.stringValue
+    } else {
+        string = nil
+    }
+
+    guard let udid = string?.trimmingCharacters(in: .whitespacesAndNewlines), !udid.isEmpty else {
+        return nil
+    }
+    return udid
+}
+#endif
 
 func debugApp(_ appId: String) throws {
     defer { print("[KittyStore] debugApp(appId) completed") }

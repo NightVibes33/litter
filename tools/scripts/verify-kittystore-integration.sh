@@ -228,6 +228,8 @@ require_grep "Litter app imports launch-linked SideStore" "import SideStore" "ap
 require_grep "Litter app delegate subclasses SideStore delegate" "SideStore.AppDelegate" "apps/ios/Sources/Litter/LitterApp.swift"
 require_grep "KittyStore host imports launch-linked SideStore" "import SideStore" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 require_grep "KittyStore host directly calls embedded factory" "KittyStoreEmbeddedFactory.makeRootViewController()" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
+require_grep "KittyStore host starts transport on entry" "KittyStoreEmbeddedFactory.startTransportIfPossible()" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
+require_grep "KittyStore route uses non-overlapping header layout" "VStack(spacing: 0)" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 require_absent "KittyStore host no longer uses Objective-C dynamic loader" "KittyStoreDynamicLoader" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 require_grep "KittyStore runtime resource preflight" "resourcePreflightError" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift"
 require_grep "CI verifies KittyStore storyboard resource" "Main.storyboardc" ".github/workflows/ios-unsigned-ipa.yml"
@@ -248,6 +250,8 @@ require_grep "KittyStore local source has app list" '"apps": [' "ThirdParty/Side
 require_grep "KittyStore embedded pairing help docs" "kittystore-pairing-file.md" "ThirdParty/SideStore/Source/AltStore/Settings/SettingsViewController.swift"
 require_grep "KittyStore install failure propagation" "self.finish(.failure(error))" "ThirdParty/SideStore/Source/AltStore/Operations/SendAppOperation.swift"
 require_grep "KittyStore embedded transport startup" "startTransportIfPossible" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift"
+require_grep "KittyStore sign-in falls back to imported pairing UDID" "storedPairingUDID" "ThirdParty/SideStore/Source/SideStore/MinimuxerWrapper.swift"
+require_grep "KittyStore sign-in reads nested pairing record UDID" "PairRecordData" "ThirdParty/SideStore/Source/SideStore/MinimuxerWrapper.swift"
 require_grep "KittyStore minimuxer bridge is compile-gated" "#if KITTYSTORE_MINIMUXER_LINKED" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
 require_grep "KittyStore optional minimuxer import" "import Minimuxer" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
 
