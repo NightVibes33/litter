@@ -1271,9 +1271,9 @@ jobs:
           SOURCE_BASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${SOURCE_TAG}"
           SOURCE_URL="${SOURCE_BASE_URL}/litter-altstore-source.json"
           APP_ICON_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/apps/ios/Sources/Litter/Assets.xcassets/AppIcon.appiconset/Icon-1024.png"
-          SOURCE_ICON_PATH="tools/assets/ZYN-source-icon.heic"
-          SOURCE_ICON_DEST="build/unsigned-ipa/ZYN-source-icon.heic"
-          SOURCE_ICON_URL="${SOURCE_BASE_URL}/ZYN-source-icon.heic"
+          SOURCE_ICON_PATH="tools/assets/kittystore-source-icon.heic"
+          SOURCE_ICON_DEST="build/unsigned-ipa/kittystore-source-icon.heic"
+          SOURCE_ICON_URL="${SOURCE_BASE_URL}/kittystore-source-icon.heic"
           PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           if [ ! -s "$IPA_PATH" ]; then
@@ -1655,7 +1655,7 @@ jobs:
               })
 
           source = {
-              "name": "ZYN",
+              "name": "KittyStore",
               "identifier": "com.nightvibes33.zyn.source",
               "sourceURL": os.environ["SOURCE_URL"],
               "subtitle": "Litter unsigned IPA source",

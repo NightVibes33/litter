@@ -176,8 +176,8 @@ private extension NewsViewController
             cell.contentView.layoutMargins.left = self.view.layoutMargins.left
             cell.contentView.layoutMargins.right = self.view.layoutMargins.right
             
-            cell.titleLabel.text = newsItem.title
-            cell.captionLabel.text = newsItem.caption
+            cell.titleLabel.text = KittyStoreBranding.text(newsItem.title)
+            cell.captionLabel.text = KittyStoreBranding.text(newsItem.caption)
             cell.contentBackgroundView.backgroundColor = newsItem.tintColor
             
             cell.imageView.image = nil

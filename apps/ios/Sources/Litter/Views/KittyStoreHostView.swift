@@ -31,8 +31,10 @@ struct KittyStoreRouteView: View {
 
             KittyStoreHostView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .bottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea(.container, edges: .bottom)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .background(Color(.systemBackground).ignoresSafeArea())

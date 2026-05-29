@@ -1,10 +1,10 @@
 {
-  "name": "ZYN",
+  "name": "KittyStore",
   "identifier": "com.nightvibes33.zyn.source",
   "sourceURL": "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json",
   "subtitle": "Litter unsigned IPA source",
   "description": "The Litter app entry installs the latest compatible build. Historical IPA downloads are listed as source news items so every published IPA remains reachable from this source.",
-  "iconURL": "https://github.com/NightVibes33/litter/releases/download/app-source/ZYN-source-icon.heic",
+  "iconURL": "https://github.com/NightVibes33/litter/releases/download/app-source/kittystore-source-icon.heic",
   "developerName": "NightVibes33",
   "apps": [
     {
@@ -561,7 +561,7 @@
           "version": "1.5.0",
           "buildVersion": "117",
           "date": "2026-05-17T04:10:57Z",
-          "localizedDescription": "Unsigned Litter IPA for KittyStore/AltStore re-signing.\n\nUpdate history:\n- Use stable app source for update checks (be7786fa)\n- Fix Swift linker sysroot normalization (51073495)\n- Set ZYN source metadata (b10150dd)\n\nBuild details:\n- App version: 1.5.0\n- Build: 117\n- Commit: be7786fa6111151e38264ab63070905cbf323462\n- Build mode: fast-device\n- SHA-256: 1d43f94a8b1a2c230dd51336a12480bd01972d809af6acf6cdc138a1515c9446\n\nThis IPA is unsigned and must be signed by KittyStore, AltStore, Feather, or another signing tool before installation.\n",
+          "localizedDescription": "Unsigned Litter IPA for KittyStore/AltStore re-signing.\n\nUpdate history:\n- Use stable app source for update checks (be7786fa)\n- Fix Swift linker sysroot normalization (51073495)\n- Set KittyStore source metadata (b10150dd)\n\nBuild details:\n- App version: 1.5.0\n- Build: 117\n- Commit: be7786fa6111151e38264ab63070905cbf323462\n- Build mode: fast-device\n- SHA-256: 1d43f94a8b1a2c230dd51336a12480bd01972d809af6acf6cdc138a1515c9446\n\nThis IPA is unsigned and must be signed by KittyStore, AltStore, Feather, or another signing tool before installation.\n",
           "downloadURL": "https://github.com/NightVibes33/litter/releases/download/litter-v117/Litter-v117.ipa",
           "size": 418429924,
           "minOSVersion": "18.0",

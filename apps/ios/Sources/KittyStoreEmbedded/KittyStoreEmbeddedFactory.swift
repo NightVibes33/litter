@@ -330,10 +330,12 @@ private final class KittyStoreRootViewController: UIViewController {
         let storyboard = UIStoryboard(name: "Main", bundle: bundle)
         let viewController = storyboard.instantiateViewController(withIdentifier: "tabBarController")
 
-        if let tabBarController = viewController as? UITabBarController,
-           let viewControllers = tabBarController.viewControllers,
-           viewControllers.indices.contains(2) {
-            tabBarController.selectedIndex = 2
+        if let tabBarController = viewController as? UITabBarController {
+            if let viewControllers = tabBarController.viewControllers,
+               viewControllers.indices.contains(2) {
+                tabBarController.selectedIndex = 2
+            }
+            configureTabBar(tabBarController)
         }
 
         embed(viewController)
@@ -385,29 +387,25 @@ private final class KittyStoreRootViewController: UIViewController {
     }
 
     private static func branded(_ text: String?) -> String? {
-        guard let text else { return nil }
-
-        return text
-            .replacingOccurrences(of: "SideStore/AltStore", with: "KittyStore/AltStore")
-            .replacingOccurrences(of: "SideStore and AltStore", with: "KittyStore and AltStore")
-            .replacingOccurrences(of: "SideStore or AltStore", with: "KittyStore or AltStore")
-            .replacingOccurrences(of: "SideStore-compatible", with: "KittyStore-compatible")
-            .replacingOccurrences(of: "SideStore", with: "KittyStore")
-            .replacingOccurrences(of: "Side Store", with: "KittyStore")
-            .replacingOccurrences(of: "AltServer", with: "LocalDevVPN")
-            .replacingOccurrences(of: "KittyStore KittyStore", with: "KittyStore")
-            .replacingOccurrences(of: "KittyStore/KittyStore", with: "KittyStore/AltStore")
+        KittyStoreBranding.text(text)
     }
 
     private static func branded(_ attributedText: NSAttributedString?) -> NSAttributedString? {
-        guard let attributedText,
-              let brandedText = branded(attributedText.string),
-              brandedText != attributedText.string else {
-            return attributedText
+        KittyStoreBranding.attributedText(attributedText)
+    }
+
+    private func configureTabBar(_ tabBarController: UITabBarController) {
+        tabBarController.view.backgroundColor = .systemBackground
+        tabBarController.tabBar.isTranslucent = false
+
+        let appearance = UITabBarAppearance()
+        appearance.configureWithDefaultBackground()
+        appearance.backgroundColor = .systemBackground
+
+        tabBarController.tabBar.standardAppearance = appearance
+        if #available(iOS 15.0, *) {
+            tabBarController.tabBar.scrollEdgeAppearance = appearance
         }
-        let copy = NSMutableAttributedString(attributedString: attributedText)
-        copy.mutableString.setString(brandedText)
-        return copy
     }
 
     private static func brand(_ item: UIBarItem?) {
