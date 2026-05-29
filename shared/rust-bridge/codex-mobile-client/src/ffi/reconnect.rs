@@ -368,6 +368,9 @@ async fn reconnect_saved_servers_inner(
         .map(|s| s.server_id.clone())
         .collect();
 
+    let should_reconnect_local = servers
+        .iter()
+        .any(|server| server.id == "local" || server.source == "local");
     let local_display_name = resolved_local_display_name(&snapshot, &servers, "local");
 
     let has_local = snapshot
@@ -375,7 +378,7 @@ async fn reconnect_saved_servers_inner(
         .values()
         .any(|server| server.is_local && server_counts_as_connected_for_reconnect(server));
     let mut local_result: Option<ReconnectResult> = None;
-    if !has_local {
+    if !has_local && should_reconnect_local {
         info!("ReconnectController: ensuring local server connected");
         let config = ServerConfig {
             server_id: "local".to_string(),
@@ -402,6 +405,8 @@ async fn reconnect_saved_servers_inner(
                 warn!("ReconnectController: local server connect failed: {}", e);
             }
         }
+    } else if !has_local {
+        info!("ReconnectController: skipping local server reconnect; no local saved record synced");
     }
 
     let credential_provider = credential_provider.lock().await;
