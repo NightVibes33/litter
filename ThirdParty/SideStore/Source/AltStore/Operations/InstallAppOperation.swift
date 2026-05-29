@@ -11,8 +11,6 @@ import AltStoreCore
 import AltSign
 import Roxas
 
-let shortcutURLonDelay = URL(string: "shortcuts://run-shortcut?name=TurnOnDataDelay")!
-
 @objc(InstallAppOperation)
 final class InstallAppOperation: ResultOperation<InstalledApp>
 {
@@ -213,11 +211,6 @@ final class InstallAppOperation: ResultOperation<InstalledApp>
                             let alert = UIAlertController(title: "Finish Refresh", message: "Please reopen KittyStore after the process is finished. To finish refreshing, KittyStore must be moved to the background. You can go to the Home Screen manually or tap Continue. Please reopen KittyStore after doing this.", preferredStyle: .alert)
                             alert.addAction(UIAlertAction(title: NSLocalizedString("Continue", comment: ""), style: .default, handler: { _ in
                                 print("Going home")
-                                // Cell Shortcut
-                                if self.context.shouldTurnOffData {
-                                    UIApplication.shared.open(shortcutURLonDelay, options: [:]) { _ in
-                                        print("Cell OFF Shortcut finished execution.")}
-                                }
                                 UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
                             }))
 
@@ -233,10 +226,6 @@ final class InstallAppOperation: ResultOperation<InstalledApp>
                                 }
                             }
                         }
-                    }
-                    // Cell Shortcut
-                    if self.context.shouldTurnOffData {
-                        UIApplication.shared.open(shortcutURLonDelay, options: [:]) { _ in print("Cell OFF Shortcut finished execution.")}
                     }
                     UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
                 }

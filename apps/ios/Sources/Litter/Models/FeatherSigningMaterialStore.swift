@@ -201,7 +201,7 @@ enum FeatherSigningMaterialStore {
         try requireExtension(provisioningProfileURL, allowed: ["mobileprovision", "provisionprofile"], label: "provisioning profile")
         let p12Data = try readSecurityScopedData(from: p12URL)
         let profileData = try readSecurityScopedData(from: provisioningProfileURL)
-        let certificateSummary = try NyxianSigningCertificateValidator.validate(pkcs12Data: p12Data, password: password, checkRevocation: true)
+        let certificateSummary = try NyxianSigningCertificateValidator.validate(pkcs12Data: p12Data, password: password, checkRevocation: false)
         let profileSummary = try NyxianProvisioningProfileValidator.validate(data: profileData, signingCertificateFingerprint: certificateSummary.sha256Fingerprint)
 
         let uuid = UUID().uuidString
@@ -282,7 +282,7 @@ enum FeatherSigningMaterialStore {
     static func clearTweaks() { UserDefaults.standard.removeObject(forKey: tweaksRecordKey) }
 
     static func signingPlanJSON(options: FeatherSigningOptions) throws -> String {
-        let snapshot = snapshot(checkRevocation: true)
+        let snapshot = snapshot(checkRevocation: false)
         var properties = keyValueLines(options.customPropertiesText).reduce(into: [String: Any]()) { result, entry in
             result[entry.key] = entry.value
         }

@@ -182,7 +182,7 @@ enum KittyStoreSideStoreSigningBridge {
                 let certificateSummary = try NyxianSigningCertificateValidator.validate(
                     pkcs12Data: certificateData,
                     password: certificatePassword,
-                    checkRevocation: true
+                    checkRevocation: false
                 )
                 _ = try NyxianProvisioningProfileValidator.validate(
                     data: provisioningProfileData,

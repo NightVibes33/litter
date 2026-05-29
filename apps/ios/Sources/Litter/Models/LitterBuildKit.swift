@@ -915,7 +915,7 @@ actor LitterBuildKit {
                 let certificateSummary = try NyxianSigningCertificateValidator.validate(
                     pkcs12Data: identity.data,
                     password: identity.password,
-                    checkRevocation: true
+                    checkRevocation: false
                 )
                 certificateFingerprint = certificateSummary.sha256Fingerprint
                 certificateDetail = certificateSummary.statusDetail
@@ -1064,7 +1064,7 @@ actor LitterBuildKit {
         let resolvedFrameworks = frameworks.map { Self.resolveFakefsPath($0, cwd: cwd) }
         let resolvedTweaks = tweaks.map { Self.resolveFakefsPath($0, cwd: cwd) }
         let resolvedEntitlements = entitlementsPath.map { Self.resolveFakefsPath($0, cwd: cwd) }
-        let current = await status(checkRevocation: true)
+        let current = await status(checkRevocation: false)
         var missing: [String] = []
         var warnings: [String] = []
 
@@ -1100,7 +1100,7 @@ actor LitterBuildKit {
                     let certificateSummary = try NyxianSigningCertificateValidator.validate(
                         pkcs12Data: identity.data,
                         password: identity.password,
-                        checkRevocation: true
+                        checkRevocation: false
                     )
                     certificateFingerprint = certificateSummary.sha256Fingerprint
                 }

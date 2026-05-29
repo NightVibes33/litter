@@ -3,6 +3,14 @@ import Darwin
 import Foundation
 import Security
 
+#if canImport(AltSign)
+import AltSign
+#endif
+
+#if canImport(CAltSign)
+import CAltSign
+#endif
+
 struct NyxianSigningCertificateSummary: Codable, Equatable, Sendable {
     var commonName: String
     var sha256Fingerprint: String
@@ -19,9 +27,9 @@ struct NyxianSigningCertificateSummary: Codable, Equatable, Sendable {
     var importMessage: String {
         let profile = provisioningProfileName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if profile.isEmpty {
-            return "Imported \(commonName). Password, private key, trust, and revocation checks passed."
+            return "Imported \(commonName). Password, private key, and trust checks passed."
         }
-        return "Imported \(commonName). Password, private key, trust, revocation, and \(profile) match passed."
+        return "Imported \(commonName). Password, private key, trust, and \(profile) match passed."
     }
 
     var statusDetail: String {
@@ -672,7 +680,17 @@ enum NyxianSigningCertificateValidator {
             throw NyxianSigningCertificateValidationError.incorrectPassword
         }
         guard importStatus == errSecSuccess else {
+            #if canImport(AltSign)
+            return try validateWithAltSign(
+                pkcs12Data: data,
+                password: password,
+                checkRevocation: checkRevocation,
+                requireEmbeddedProfileMatch: requireEmbeddedProfileMatch,
+                securityImportStatus: importStatus
+            )
+            #else
             throw NyxianSigningCertificateValidationError.invalidPKCS12(importStatus)
+            #endif
         }
         guard let items = importedItems as? [[String: Any]],
               let item = items.first(where: { $0[kSecImportItemIdentity as String] != nil }),
@@ -729,6 +747,71 @@ enum NyxianSigningCertificateValidator {
             validatedAt: Date()
         )
     }
+
+    #if canImport(AltSign)
+    private static func validateWithAltSign(
+        pkcs12Data data: Data,
+        password: String,
+        checkRevocation: Bool,
+        requireEmbeddedProfileMatch: Bool,
+        securityImportStatus: OSStatus
+    ) throws -> NyxianSigningCertificateSummary {
+        guard let altCertificate = ALTCertificate(p12Data: data, password: password) else {
+            throw NyxianSigningCertificateValidationError.invalidPKCS12(securityImportStatus)
+        }
+        guard altCertificate.privateKey != nil else {
+            throw NyxianSigningCertificateValidationError.noPrivateKey(errSecDecode)
+        }
+        guard let storedCertificateData = altCertificate.data,
+              let certificateData = derCertificateData(from: storedCertificateData) else {
+            throw NyxianSigningCertificateValidationError.noCertificate(errSecDecode)
+        }
+
+        let commonName = altCertificate.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Signing certificate" : altCertificate.name
+        let expiresAt = certificateExpirationDate(from: certificateData)
+        if let expiresAt, expiresAt <= Date() {
+            throw NyxianSigningCertificateValidationError.expired(expiresAt)
+        }
+
+        var matchedProvisioningProfile: EmbeddedProvisioningProfile?
+        do {
+            let provisioningProfile = try EmbeddedProvisioningProfile.load()
+            if provisioningProfile.developerCertificates.isEmpty {
+                if requireEmbeddedProfileMatch { throw NyxianSigningCertificateValidationError.provisioningProfileHasNoDeveloperCertificates }
+            } else if provisioningProfile.developerCertificates.contains(certificateData) {
+                matchedProvisioningProfile = provisioningProfile
+            } else if requireEmbeddedProfileMatch {
+                throw NyxianSigningCertificateValidationError.certificateDoesNotMatchProvisioningProfile(commonName)
+            }
+        } catch let error as NyxianSigningCertificateValidationError {
+            if requireEmbeddedProfileMatch { throw error }
+        }
+
+        if let certificate = SecCertificateCreateWithData(nil, certificateData as CFData) {
+            try evaluateTrust(certificate: certificate, certificateChain: [certificate], checkRevocation: checkRevocation)
+        }
+
+        return NyxianSigningCertificateSummary(
+            commonName: commonName,
+            sha256Fingerprint: sha256Fingerprint(for: certificateData),
+            expiresAt: expiresAt,
+            provisioningProfileName: matchedProvisioningProfile?.name,
+            provisioningProfileUUID: matchedProvisioningProfile?.uuid,
+            validatedAt: Date()
+        )
+    }
+
+    private static func derCertificateData(from data: Data) -> Data? {
+        let marker = Data("-----BEGIN CERTIFICATE-----".utf8)
+        guard data.starts(with: marker) else { return data }
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        let base64 = text
+            .split(separator: "\n")
+            .filter { !$0.hasPrefix("-----") }
+            .joined()
+        return Data(base64Encoded: base64)
+    }
+    #endif
 
     private static func certificateCommonName(_ certificate: SecCertificate) -> String {
         let summary = SecCertificateCopySubjectSummary(certificate) as String?
@@ -977,6 +1060,10 @@ private struct EmbeddedProvisioningProfile {
 
 private enum NyxianProvisioningProfilePlist {
     static func extractPlistData(from data: Data) -> Data? {
+        if (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) != nil {
+            return data
+        }
+
         let startMarker = Data("<?xml".utf8)
         let endMarker = Data("</plist>".utf8)
         guard let start = data.range(of: startMarker)?.lowerBound,

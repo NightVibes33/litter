@@ -1637,29 +1637,13 @@ jobs:
           versions.sort(key=lambda item: (semver_key(item["version"]), build_key(item.get("buildVersion", "0")), item.get("date", "")), reverse=True)
 
           archive_news = []
-          for entry in versions:
-              download_url = entry.get("downloadURL", "")
-              if not download_url:
-                  continue
-              version = str(entry.get("version") or "unknown")
-              build = str(entry.get("buildVersion") or "0")
-              archive_news.append({
-                  "title": f"Litter {version} IPA",
-                  "identifier": f"litter-ipa-{slug(version)}-{slug(build)}",
-                  "caption": f"Direct IPA download for Litter {version} build {build}.",
-                  "date": str(entry.get("date") or os.environ["PUBLISHED_AT"]),
-                  "tintColor": "06B6D4",
-                  "url": download_url,
-                  "appID": os.environ["BUNDLE_ID"],
-                  "notify": False,
-              })
 
           source = {
               "name": "ZYN",
               "identifier": "com.nightvibes33.zyn.source",
               "sourceURL": os.environ["SOURCE_URL"],
               "subtitle": "Litter unsigned IPA source",
-              "description": "The Litter app entry installs the latest compatible build. Historical IPA downloads are listed as source news items so every published IPA remains reachable from this source.",
+              "description": "The Litter app entry installs the latest compatible build. Historical builds remain available in the app version history.",
               "iconURL": os.environ["SOURCE_ICON_URL"],
               "developerName": "NightVibes33",
               "apps": [
@@ -1688,10 +1672,10 @@ jobs:
           Path("build/unsigned-ipa/litter-update.json").write_text(json.dumps(update, indent=2) + "\n")
           Path("build/unsigned-ipa/litter-altstore-source.json").write_text(json.dumps(source, indent=2) + "\n")
           print(f"AltStore source versions: {len(versions)}")
-          print(f"AltStore source IPA download cards: {len(archive_news)}")
+          print("AltStore source app-linked news cards: disabled")
           PY
 
-          python3 tools/scripts/verify-altstore-source.py "$SOURCE_PATH" --require-news-downloads
+          python3 tools/scripts/verify-altstore-source.py "$SOURCE_PATH"
 
           retry_release_command() {
             label="$1"

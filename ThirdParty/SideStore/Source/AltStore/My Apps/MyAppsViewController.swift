@@ -1647,7 +1647,7 @@ extension MyAppsViewController
 {
     override func collectionView(_ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String, at indexPath: IndexPath) -> UICollectionReusableView
     {
-        let section = Section(rawValue: indexPath.section)!
+        guard let section = Section(rawValue: indexPath.section) else { return UICollectionReusableView() }
         
         switch section
         {
@@ -1764,7 +1764,7 @@ extension MyAppsViewController
     
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath)
     {
-        let section = Section.allCases[indexPath.section]
+        guard let section = Section(rawValue: indexPath.section) else { return }
         switch section
         {
         case .updates:
@@ -2007,7 +2007,9 @@ extension MyAppsViewController
     
     override func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration?
     {
-        let section = Section(rawValue: indexPath.section)!
+        guard let section = Section(rawValue: indexPath.section),
+              indexPath.section < collectionView.numberOfSections,
+              indexPath.item < collectionView.numberOfItems(inSection: indexPath.section) else { return nil }
         switch section
         {
         case .updates, .noUpdates: return nil
@@ -2024,7 +2026,10 @@ extension MyAppsViewController
     override func collectionView(_ collectionView: UICollectionView, previewForHighlightingContextMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview?
     {
         guard let indexPath = configuration.identifier as? NSIndexPath else { return nil }
-        guard let cell = collectionView.cellForItem(at: indexPath as IndexPath) as? InstalledAppCollectionViewCell else { return nil }
+        let swiftIndexPath = indexPath as IndexPath
+        guard swiftIndexPath.section < collectionView.numberOfSections,
+              swiftIndexPath.item < collectionView.numberOfItems(inSection: swiftIndexPath.section),
+              let cell = collectionView.cellForItem(at: swiftIndexPath) as? InstalledAppCollectionViewCell else { return nil }
         
         let parameters = UIPreviewParameters()
         parameters.backgroundColor = .clear
@@ -2044,7 +2049,7 @@ extension MyAppsViewController: UICollectionViewDelegateFlowLayout
 {
     func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize
     {
-        let section = Section.allCases[indexPath.section]
+        guard let section = Section(rawValue: indexPath.section) else { return .zero }
         switch section
         {
         case .noUpdates:
@@ -2142,7 +2147,8 @@ extension MyAppsViewController: UICollectionViewDragDelegate
 {
     func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: UIDragSession, at indexPath: IndexPath) -> [UIDragItem]
     {
-        switch Section(rawValue: indexPath.section)!
+        guard let section = Section(rawValue: indexPath.section) else { return [] }
+        switch section
         {
         case .updates, .noUpdates:
             return []
@@ -2464,7 +2470,7 @@ extension MyAppsViewController: UIViewControllerPreviewingDelegate
             let cell = self.collectionView.cellForItem(at: indexPath)
         else { return nil }
         
-        let section = Section.allCases[indexPath.section]
+        guard let section = Section(rawValue: indexPath.section) else { return nil }
         switch section
         {
         case .updates:

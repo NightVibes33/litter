@@ -530,14 +530,15 @@ private extension BrowseViewController
 
 private extension BrowseViewController
 {
-    @IBAction func performAppAction(_ sender: PillButton)
+    func showDetails(for app: StoreApp)
     {
-        let point = self.collectionView.convert(sender.center, from: sender.superview)
-        guard let indexPath = self.collectionView.indexPathForItem(at: point) else { return }
-        
-        let app = self.dataSource.item(at: indexPath)
-        
-        // if let installedApp = app.installedApp, !installedApp.isUpdateAvailable
+        let appViewController = AppViewController.makeAppViewController(app: app)
+        let navigationController = self.navigationController ?? self.presentingViewController?.navigationController
+        navigationController?.pushViewController(appViewController, animated: true)
+    }
+
+    func performPrimaryAction(for app: StoreApp, at indexPath: IndexPath)
+    {
         if let installedApp = app.installedApp, !installedApp.hasUpdate
         {
             self.open(installedApp)
@@ -546,6 +547,36 @@ private extension BrowseViewController
         {
             self.install(app, at: indexPath)
         }
+    }
+
+    func appContextMenu(for app: StoreApp, at indexPath: IndexPath) -> UIMenu
+    {
+        let details = UIAction(title: NSLocalizedString("View Details", comment: ""), image: UIImage(systemName: "info.circle")) { [weak self] _ in
+            self?.showDetails(for: app)
+        }
+
+        if let installedApp = app.installedApp, !installedApp.hasUpdate
+        {
+            let open = UIAction(title: NSLocalizedString("Open", comment: ""), image: UIImage(systemName: "arrow.up.forward.app")) { [weak self] _ in
+                self?.open(installedApp)
+            }
+            return UIMenu(title: app.name, children: [details, open])
+        }
+
+        let title = app.installedApp?.hasUpdate == true ? NSLocalizedString("Update", comment: "") : NSLocalizedString("Install", comment: "")
+        let install = UIAction(title: title, image: UIImage(systemName: "square.and.arrow.down")) { [weak self] _ in
+            self?.install(app, at: indexPath)
+        }
+        return UIMenu(title: app.name, children: [details, install])
+    }
+
+    @IBAction func performAppAction(_ sender: PillButton)
+    {
+        let point = self.collectionView.convert(sender.center, from: sender.superview)
+        guard let indexPath = self.collectionView.indexPathForItem(at: point) else { return }
+
+        let app = self.dataSource.item(at: indexPath)
+        self.performPrimaryAction(for: app, at: indexPath)
     }
     
     func install(_ app: StoreApp, at indexPath: IndexPath)
@@ -644,11 +675,31 @@ extension BrowseViewController: UICollectionViewDelegateFlowLayout
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath)
     {
         let app = self.dataSource.item(at: indexPath)
-        let appViewController = AppViewController.makeAppViewController(app: app)
-        
-        // Fall back to presentingViewController.navigationController in case we're being used for search results.
-        let navigationController = self.navigationController ?? self.presentingViewController?.navigationController
-        navigationController?.pushViewController(appViewController, animated: true)
+        self.showDetails(for: app)
+    }
+
+    override func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration?
+    {
+        guard indexPath.section < collectionView.numberOfSections,
+              indexPath.item < collectionView.numberOfItems(inSection: indexPath.section) else { return nil }
+        let app = self.dataSource.item(at: indexPath)
+        return UIContextMenuConfiguration(identifier: indexPath as NSIndexPath, previewProvider: {
+            AppViewController.makeAppViewController(app: app)
+        }) { [weak self] _ in
+            self?.appContextMenu(for: app, at: indexPath)
+        }
+    }
+
+    override func collectionView(_ collectionView: UICollectionView, willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration, animator: UIContextMenuInteractionCommitAnimating)
+    {
+        guard let indexPath = configuration.identifier as? NSIndexPath else { return }
+        let swiftIndexPath = indexPath as IndexPath
+        guard swiftIndexPath.section < collectionView.numberOfSections,
+              swiftIndexPath.item < collectionView.numberOfItems(inSection: swiftIndexPath.section) else { return }
+        let app = self.dataSource.item(at: swiftIndexPath)
+        animator.addCompletion { [weak self] in
+            self?.showDetails(for: app)
+        }
     }
 }
 

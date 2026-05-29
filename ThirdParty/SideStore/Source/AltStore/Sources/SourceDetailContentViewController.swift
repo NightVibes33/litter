@@ -316,8 +316,8 @@ extension SourceDetailContentViewController
     {
         let supplementaryView = collectionView.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: kind, for: indexPath)
         
-        let section = Section(rawValue: indexPath.section)!
-        let kind = ElementKind(rawValue: kind)!
+        guard let section = Section(rawValue: indexPath.section),
+              let kind = ElementKind(rawValue: kind) else { return supplementaryView }
         switch (section, kind)
         {
         case (.news, _):
@@ -348,7 +348,9 @@ extension SourceDetailContentViewController
     
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath)
     {
-        let section = Section(rawValue: indexPath.section)!
+        guard let section = Section(rawValue: indexPath.section),
+              indexPath.section < collectionView.numberOfSections,
+              indexPath.item < collectionView.numberOfItems(inSection: indexPath.section) else { return }
         let item = self.dataSource.item(at: indexPath)
         
         switch (section, item)
@@ -373,6 +375,50 @@ extension SourceDetailContentViewController
         default: break
         }
     }
+
+    override func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration?
+    {
+        guard let section = Section(rawValue: indexPath.section),
+              indexPath.section < collectionView.numberOfSections,
+              indexPath.item < collectionView.numberOfItems(inSection: indexPath.section) else { return nil }
+
+        let item = self.dataSource.item(at: indexPath)
+        let storeApp: StoreApp?
+        switch (section, item)
+        {
+        case (.featuredApps, let app as StoreApp):
+            storeApp = app
+        case (.news, let newsItem as NewsItem):
+            storeApp = newsItem.storeApp
+        default:
+            storeApp = nil
+        }
+        guard let storeApp else { return nil }
+
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: {
+            AppViewController.makeAppViewController(app: storeApp)
+        }) { [weak self] _ in
+            guard let self else { return nil }
+            let details = UIAction(title: NSLocalizedString("View Details", comment: ""), image: UIImage(systemName: "info.circle")) { [weak self] _ in
+                let appViewController = AppViewController.makeAppViewController(app: storeApp)
+                self?.navigationController?.pushViewController(appViewController, animated: true)
+            }
+
+            if let installedApp = storeApp.installedApp, !installedApp.hasUpdate {
+                let open = UIAction(title: NSLocalizedString("Open", comment: ""), image: UIImage(systemName: "arrow.up.forward.app")) { [weak self] _ in
+                    self?.open(installedApp)
+                }
+                return UIMenu(title: storeApp.name, children: [details, open])
+            } else {
+                let title = storeApp.installedApp?.hasUpdate == true ? NSLocalizedString("Update", comment: "") : NSLocalizedString("Install", comment: "")
+                let install = UIAction(title: title, image: UIImage(systemName: "square.and.arrow.down")) { [weak self] _ in
+                    guard let self else { return }
+                    Task<Void, Never> { await self.downloadApp(storeApp) }
+                }
+                return UIMenu(title: storeApp.name, children: [details, install])
+            }
+        }
+    }
 }
 
 private extension SourceDetailContentViewController
@@ -382,7 +428,7 @@ private extension SourceDetailContentViewController
         let point = self.collectionView.convert(sender.center, from: sender.superview)
         guard let indexPath = self.collectionView.indexPathForItem(at: point) else { return }
         
-        let storeApp = self.dataSource.item(at: indexPath) as! StoreApp
+        guard let storeApp = self.dataSource.item(at: indexPath) as? StoreApp else { return }
         
         // if let installedApp = storeApp.installedApp, !installedApp.isUpdateAvailable
         if let installedApp = storeApp.installedApp, !installedApp.hasUpdate

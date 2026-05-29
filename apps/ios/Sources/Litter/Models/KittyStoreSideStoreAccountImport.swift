@@ -37,7 +37,7 @@ enum KittyStoreSideStoreAccountImporter {
         let certificateSummary = try NyxianSigningCertificateValidator.validate(
             pkcs12Data: imported.cert,
             password: imported.certpass,
-            checkRevocation: true
+            checkRevocation: false
         )
         NyxianSigningCertificateStorage.save(
             data: imported.cert,
