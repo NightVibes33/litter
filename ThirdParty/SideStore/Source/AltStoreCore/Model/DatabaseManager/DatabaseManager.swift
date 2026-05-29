@@ -354,12 +354,7 @@ private extension DatabaseManager
 {
     var isLitterEmbeddedSideStoreRuntime: Bool
     {
-        let value = Bundle.main.object(forInfoDictionaryKey: "LitterEmbedsSideStore")
-        if let isEmbedded = value as? Bool { return isEmbedded }
-        if let isEmbedded = value as? NSNumber { return isEmbedded.boolValue }
-        if let isEmbedded = value as? String { return (isEmbedded as NSString).boolValue }
-
-        return Bundle.main.bundleIdentifier == "com.sigkitten.litter"
+        return InstalledApp.hidesEmbeddedHostApps
     }
 
     func prepareDatabase(completionHandler: @escaping (Result<Void, Error>) -> Void)

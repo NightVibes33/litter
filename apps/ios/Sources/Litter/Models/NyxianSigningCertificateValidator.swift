@@ -27,9 +27,9 @@ struct NyxianSigningCertificateSummary: Codable, Equatable, Sendable {
     var importMessage: String {
         let profile = provisioningProfileName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if profile.isEmpty {
-            return "Imported \(commonName). Password, private key, and trust checks passed."
+            return "Imported \(commonName). Password, private key, and certificate checks passed."
         }
-        return "Imported \(commonName). Password, private key, trust, and \(profile) match passed."
+        return "Imported \(commonName). Password, private key, and \(profile) match passed."
     }
 
     var statusDetail: String {
@@ -731,12 +731,14 @@ enum NyxianSigningCertificateValidator {
             if requireEmbeddedProfileMatch { throw error }
         }
 
-        let chain = certificateChain(from: item)
-        try evaluateTrust(
-            certificate: certificate,
-            certificateChain: chain.isEmpty ? [certificate] : chain,
-            checkRevocation: checkRevocation
-        )
+        if checkRevocation {
+            let chain = certificateChain(from: item)
+            try evaluateTrust(
+                certificate: certificate,
+                certificateChain: chain.isEmpty ? [certificate] : chain,
+                checkRevocation: checkRevocation
+            )
+        }
 
         return NyxianSigningCertificateSummary(
             commonName: commonName,
@@ -787,7 +789,7 @@ enum NyxianSigningCertificateValidator {
             if requireEmbeddedProfileMatch { throw error }
         }
 
-        if let certificate = SecCertificateCreateWithData(nil, certificateData as CFData) {
+        if checkRevocation, let certificate = SecCertificateCreateWithData(nil, certificateData as CFData) {
             try evaluateTrust(certificate: certificate, certificateChain: [certificate], checkRevocation: checkRevocation)
         }
 

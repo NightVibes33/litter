@@ -287,6 +287,10 @@ public extension InstalledApp
         if let isEmbedded = value as? NSNumber { return isEmbedded.boolValue }
         if let isEmbedded = value as? String { return (isEmbedded as NSString).boolValue }
 
+        if Bundle.Info.orgbundleIdentifier == "com.sigkitten.litter" { return true }
+        if Bundle.Info.appbundleIdentifier.hasPrefix("com.sigkitten.litter") { return true }
+        if Bundle.main.bundleIdentifier?.hasPrefix("com.sigkitten.litter") == true { return true }
+
         return Bundle.main.bundleIdentifier == Bundle.Info.orgbundleIdentifier
     }
 
@@ -302,6 +306,18 @@ public extension InstalledApp
         return Array(Set(identifiers.filter { !$0.isEmpty }))
     }
 
+    static var embeddedHostNames: [String]
+    {
+        return ["Litter", "KittyStore"]
+    }
+
+    static func isEmbeddedHostName(_ name: String?) -> Bool
+    {
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmedName.isEmpty else { return false }
+        return Set(Self.embeddedHostNames).contains(trimmedName)
+    }
+
     public var isEmbeddedHostApp: Bool
     {
         guard Self.hidesEmbeddedHostApps else { return false }
@@ -314,6 +330,8 @@ public extension InstalledApp
         {
             return true
         }
+        if Self.isEmbeddedHostName(self.name) { return true }
+        if Self.isEmbeddedHostName(self.storeApp?.name) { return true }
 
         return false
     }
@@ -322,12 +340,15 @@ public extension InstalledApp
     {
         guard Self.hidesEmbeddedHostApps else { return nil }
         let hiddenBundleIdentifiers = Self.embeddedHostBundleIdentifiers
-        guard !hiddenBundleIdentifiers.isEmpty else { return nil }
+        let hiddenNames = Self.embeddedHostNames
+        guard !hiddenBundleIdentifiers.isEmpty || !hiddenNames.isEmpty else { return nil }
 
-        return NSPredicate(format: "(%K IN %@) OR (%K IN %@) OR (%K IN %@)",
+        return NSPredicate(format: "(%K IN %@) OR (%K IN %@) OR (%K IN %@) OR (%K IN %@) OR (%K IN %@)",
                            #keyPath(InstalledApp.bundleIdentifier), hiddenBundleIdentifiers,
                            #keyPath(InstalledApp.resignedBundleIdentifier), hiddenBundleIdentifiers,
-                           #keyPath(InstalledApp.storeApp.bundleIdentifier), hiddenBundleIdentifiers)
+                           #keyPath(InstalledApp.storeApp.bundleIdentifier), hiddenBundleIdentifiers,
+                           #keyPath(InstalledApp.name), hiddenNames,
+                           #keyPath(InstalledApp.storeApp.name), hiddenNames)
     }
 
     class func embeddedHostApps(in context: NSManagedObjectContext) -> [InstalledApp]
@@ -340,13 +361,17 @@ public extension InstalledApp
     {
         guard Self.hidesEmbeddedHostApps else { return predicate }
         let hiddenBundleIdentifiers = Self.embeddedHostBundleIdentifiers
-        guard !hiddenBundleIdentifiers.isEmpty else { return predicate }
+        let hiddenNames = Self.embeddedHostNames
+        guard !hiddenBundleIdentifiers.isEmpty || !hiddenNames.isEmpty else { return predicate }
 
-        let hiddenPredicate = NSPredicate(format: "NOT (%K IN %@) AND NOT (%K IN %@) AND (%K == nil OR NOT (%K IN %@))",
+        let hiddenPredicate = NSPredicate(format: "NOT (%K IN %@) AND NOT (%K IN %@) AND (%K == nil OR NOT (%K IN %@)) AND NOT (%K IN %@) AND (%K == nil OR NOT (%K IN %@))",
                                           #keyPath(InstalledApp.bundleIdentifier), hiddenBundleIdentifiers,
                                           #keyPath(InstalledApp.resignedBundleIdentifier), hiddenBundleIdentifiers,
                                           #keyPath(InstalledApp.storeApp.bundleIdentifier),
-                                          #keyPath(InstalledApp.storeApp.bundleIdentifier), hiddenBundleIdentifiers)
+                                          #keyPath(InstalledApp.storeApp.bundleIdentifier), hiddenBundleIdentifiers,
+                                          #keyPath(InstalledApp.name), hiddenNames,
+                                          #keyPath(InstalledApp.storeApp.name),
+                                          #keyPath(InstalledApp.storeApp.name), hiddenNames)
         return NSCompoundPredicate(andPredicateWithSubpredicates: [predicate, hiddenPredicate])
     }
 

@@ -83,6 +83,14 @@ public class LockDownInstall: InstallProvider {
 
     public func installIpa(bundleId: String) throws {
         print("[minimuxer] Installing app for bundle ID: \(bundleId)")
+        let deviceIP = try DeviceEndpoint.shared.ip()
+        print("[minimuxer] Install: verifying device connectivity at \(deviceIP)...")
+        guard Minimuxer.testDeviceConnection(ifaddr: deviceIP) else {
+            print("[minimuxer] ERROR: Device not reachable before install")
+            throw MinimuxerError.NoConnection
+        }
+        print("[minimuxer] Install: device reachable, fetching device handle")
+
         let device = try Device.getFirstDevice()
         guard let inst = RustInstProxy.connect(device: device.internalInstance, label: "ideviceinstaller") else {
             print("[minimuxer] ERROR: Unable to start instproxy")

@@ -16,6 +16,18 @@ struct KittyStoreHostView: UIViewControllerRepresentable {
     }
 }
 
+private enum KittyStoreHostPalette {
+    static var background: Color {
+        let bundle = Bundle(for: SideStore.AppDelegate.self)
+        let fallback = UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0.1098, green: 0.1098, blue: 0.1176, alpha: 1)
+                : .systemBackground
+        }
+        return Color(uiColor: UIColor(named: "Background", in: bundle, compatibleWith: nil) ?? fallback)
+    }
+}
+
 struct KittyStoreRouteView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
@@ -24,7 +36,7 @@ struct KittyStoreRouteView: View {
     var body: some View {
         VStack(spacing: 0) {
             headerBar
-                .background(.ultraThinMaterial)
+                .background(KittyStoreHostPalette.background)
                 .overlay(alignment: .bottom) {
                     Divider()
                 }
@@ -37,7 +49,7 @@ struct KittyStoreRouteView: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .background(Color(.systemBackground).ignoresSafeArea())
+        .background(KittyStoreHostPalette.background.ignoresSafeArea())
     }
 
     private var headerBar: some View {

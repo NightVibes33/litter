@@ -258,7 +258,7 @@ private final class KittyStoreRootViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .altBackground
         view.clipsToBounds = true
         view.insetsLayoutMarginsFromSafeArea = false
         view.layoutMargins = .zero
@@ -359,7 +359,7 @@ private final class KittyStoreRootViewController: UIViewController {
         viewController.view.directionalLayoutMargins = .zero
         viewController.view.preservesSuperviewLayoutMargins = false
         viewController.view.clipsToBounds = true
-        viewController.view.backgroundColor = .systemBackground
+        viewController.view.backgroundColor = .altBackground
         viewController.view.alpha = 0
         view.addSubview(viewController.view)
         NSLayoutConstraint.activate([
@@ -395,12 +395,12 @@ private final class KittyStoreRootViewController: UIViewController {
     }
 
     private func configureTabBar(_ tabBarController: UITabBarController) {
-        tabBarController.view.backgroundColor = .systemBackground
+        tabBarController.view.backgroundColor = .altBackground
         tabBarController.tabBar.isTranslucent = false
 
         let appearance = UITabBarAppearance()
         appearance.configureWithDefaultBackground()
-        appearance.backgroundColor = .systemBackground
+        appearance.backgroundColor = .altBackground
 
         tabBarController.tabBar.standardAppearance = appearance
         if #available(iOS 15.0, *) {
@@ -497,7 +497,7 @@ private final class KittyStoreSplashView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .systemBackground
+        backgroundColor = .altBackground
         buildView()
     }
 
@@ -596,7 +596,7 @@ private final class KittyStoreUnavailableViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        view.backgroundColor = .altBackground
 
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false

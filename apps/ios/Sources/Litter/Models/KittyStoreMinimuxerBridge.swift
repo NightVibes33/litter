@@ -105,7 +105,7 @@ enum KittyStoreMinimuxerBridge {
                 }
                 return Result(exitCode: 0, status: "kittystore-udid-ok", log: udid + "\n")
             } catch {
-                return Result(exitCode: 70, status: "kittystore-udid-failed", log: "\(error.localizedDescription)\n\(String(describing: error))\n")
+                return Result(exitCode: 70, status: "kittystore-udid-failed", log: Self.transportFailureLog(for: error))
             }
         }.value
         #else
@@ -150,7 +150,7 @@ enum KittyStoreMinimuxerBridge {
                 }
                 return KittyStoreInstalledAppsResult(exitCode: 0, status: "kittystore-installed-ok", log: log.joined(separator: "\n") + "\n", apps: apps)
             } catch {
-                return KittyStoreInstalledAppsResult(exitCode: 70, status: "kittystore-installed-failed", log: "\(error.localizedDescription)\n\(String(describing: error))\n", apps: [])
+                return KittyStoreInstalledAppsResult(exitCode: 70, status: "kittystore-installed-failed", log: Self.transportFailureLog(for: error), apps: [])
             }
         }.value
         #else
@@ -217,7 +217,7 @@ enum KittyStoreMinimuxerBridge {
                 return Result(exitCode: 0, status: status, log: log.joined(separator: "\n") + "\n")
             } catch {
                 let status = action == .install ? "kittystore-install-failed" : "kittystore-refresh-failed"
-                return Result(exitCode: 70, status: status, log: "\(error.localizedDescription)\n\(String(describing: error))\n")
+                return Result(exitCode: 70, status: status, log: Self.transportFailureLog(for: error))
             }
         }.value
         #else
@@ -265,7 +265,7 @@ enum KittyStoreMinimuxerBridge {
                 }
                 return Result(exitCode: 0, status: "kittystore-remove-ok", log: log.joined(separator: "\n") + "\n")
             } catch {
-                return Result(exitCode: 70, status: "kittystore-remove-failed", log: "\(error.localizedDescription)\n\(String(describing: error))\n")
+                return Result(exitCode: 70, status: "kittystore-remove-failed", log: Self.transportFailureLog(for: error))
             }
         }.value
         #else
@@ -281,6 +281,21 @@ enum KittyStoreMinimuxerBridge {
     }
 
     #if KITTYSTORE_MINIMUXER_LINKED
+    private static func transportFailureLog(for error: Error) -> String {
+        let rawDescription = "\(error.localizedDescription)\n\(String(describing: error))"
+        let details = rawDescription.lowercased()
+        if details.contains("connection reset")
+            || details.contains("code: 54")
+            || details.contains("broken pipe")
+            || details.contains("network is down")
+            || details.contains("not connected")
+            || (details.contains("socket") && details.contains("reset"))
+        {
+            return "Unable to connect to the device. Make sure LocalDevVPN is enabled, this iPhone is on Wi-Fi, and the imported pairing file still matches this device.\n\(String(describing: error))\n"
+        }
+        return rawDescription + "\n"
+    }
+
     private static func configureKittyStoreNetworkBridge() {
         #if !targetEnvironment(simulator)
         setenv("USBMUXD_SOCKET_ADDRESS", "127.0.0.1:27015", 1)

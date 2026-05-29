@@ -77,7 +77,11 @@ func installProvisioningProfiles(_ profileData: Data) throws {
     print("[KittyStore] installProvisioningProfiles(profileData) is no-op on simulator")
     #else
     print("[KittyStore] installProvisioningProfiles(profileData) invoked")
-    try Minimuxer.installProvisioningProfile(profile: profileData)
+    do {
+        try Minimuxer.installProvisioningProfile(profile: profileData)
+    } catch {
+        throw normalizedMinimuxerTransportError(error)
+    }
     #endif
 }
 
@@ -87,7 +91,11 @@ func removeProvisioningProfile(_ id: String) throws {
     print("[KittyStore] removeProvisioningProfile(id) is no-op on simulator")
     #else
     print("[KittyStore] removeProvisioningProfile(id) invoked")
-    try Minimuxer.removeProvisioningProfile(id: id)
+    do {
+        try Minimuxer.removeProvisioningProfile(id: id)
+    } catch {
+        throw normalizedMinimuxerTransportError(error)
+    }
     #endif
 }
 
@@ -97,7 +105,11 @@ func removeApp(_ bundleId: String) throws {
     print("[KittyStore] removeApp(bundleId) is no-op on simulator")
     #else
     print("[KittyStore] removeApp(bundleId) invoked")
-    try Minimuxer.removeApp(bundleId: bundleId)
+    do {
+        try Minimuxer.removeApp(bundleId: bundleId)
+    } catch {
+        throw normalizedMinimuxerTransportError(error)
+    }
     #endif
 }
 
@@ -107,7 +119,11 @@ func yeetAppAFC(_ bundleId: String, _ rawBytes: Data) throws {
     print("[KittyStore] yeetAppAFC(bundleId, rawBytes) is no-op on simulator")
     #else
     print("[KittyStore] yeetAppAFC(bundleId, rawBytes) invoked")
-    try Minimuxer.yeetAppAfc(bundleId: bundleId, ipaBytes: rawBytes)
+    do {
+        try Minimuxer.yeetAppAfc(bundleId: bundleId, ipaBytes: rawBytes)
+    } catch {
+        throw normalizedMinimuxerTransportError(error)
+    }
     #endif
 }
 
@@ -117,8 +133,41 @@ func installIPA(_ bundleId: String) throws {
     print("[KittyStore] installIPA(bundleId) is no-op on simulator")
     #else
     print("[KittyStore] installIPA(bundleId) invoked")
-    try Minimuxer.installIpa(bundleId: bundleId)
+    try ensureMinimuxerInstallTransportReady()
+    do {
+        try Minimuxer.installIpa(bundleId: bundleId)
+    } catch {
+        throw normalizedMinimuxerTransportError(error)
+    }
     #endif
+}
+
+private func ensureMinimuxerInstallTransportReady() throws {
+    #if targetEnvironment(simulator)
+    return
+    #else
+    guard isMinimuxerReady else {
+        throw MinimuxerError.NoConnection
+    }
+    #endif
+}
+
+private func normalizedMinimuxerTransportError(_ error: Error) -> Error {
+    if error is MinimuxerError { return error }
+
+    let details = "\(error.localizedDescription)\n\(String(describing: error))".lowercased()
+    if details.contains("connection reset")
+        || details.contains("code: 54")
+        || details.contains("broken pipe")
+        || details.contains("network is down")
+        || details.contains("not connected")
+        || (details.contains("socket") && details.contains("reset"))
+    {
+        print("[KittyStore] normalized minimuxer transport error: \(error)")
+        return MinimuxerError.NoConnection
+    }
+
+    return error
 }
 
 func fetchUDID() -> String? {
