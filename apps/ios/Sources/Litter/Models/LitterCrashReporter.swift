@@ -7,6 +7,8 @@ import UIKit
 
 enum LitterCrashReporter {
     private nonisolated(unsafe) static var installed = false
+    private nonisolated(unsafe) static let installLock = NSLock()
+    private nonisolated(unsafe) static let fileLock = NSLock()
     private nonisolated(unsafe) static var fatalSignalFD: CInt = -1
     private nonisolated(unsafe) static var previousExceptionHandler: NSUncaughtExceptionHandler?
     private static let reportsFolderName = "LitterCrashReports"
@@ -14,6 +16,8 @@ enum LitterCrashReporter {
     private static let fatalSignalName = "fatal-signal-latest.txt"
 
     static func install() {
+        installLock.lock()
+        defer { installLock.unlock() }
         guard !installed else { return }
         installed = true
 
@@ -173,6 +177,8 @@ enum LitterCrashReporter {
     }
 
     private static func append(_ text: String, to url: URL) {
+        fileLock.lock()
+        defer { fileLock.unlock() }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         guard let data = text.data(using: .utf8) else { return }
         if FileManager.default.fileExists(atPath: url.path),
@@ -186,6 +192,8 @@ enum LitterCrashReporter {
     }
 
     private static func write(_ text: String, to url: URL) {
+        fileLock.lock()
+        defer { fileLock.unlock() }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? text.data(using: .utf8)?.write(to: url, options: .atomic)
     }

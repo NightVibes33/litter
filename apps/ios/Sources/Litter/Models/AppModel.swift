@@ -174,24 +174,36 @@ final class AppModel {
     }
 
     func start() {
-        guard updateTask == nil else { return }
+        LitterCrashReporter.mark("AppModel.start.begin")
+        guard updateTask == nil else {
+            LitterCrashReporter.mark("AppModel.start.already-running")
+            return
+        }
         LocalConnectorBroker.shared.start()
+        LitterCrashReporter.mark("AppModel.start.connector")
         let subscription = store.subscribeUpdates()
+        LitterCrashReporter.mark("AppModel.start.subscription")
         self.subscription = subscription
         updateTask = Task.detached(priority: .userInitiated) { [weak self, subscription] in
             guard let self else { return }
+            LitterCrashReporter.mark("AppModel.updateTask.refresh.begin")
             await self.refreshSnapshot()
+            LitterCrashReporter.mark("AppModel.updateTask.refresh.end")
             while !Task.isCancelled {
                 do {
                     let update = try await subscription.nextUpdate()
+                    LitterCrashReporter.mark("AppModel.updateTask.update.begin")
                     await self.handleStoreUpdate(update)
+                    LitterCrashReporter.mark("AppModel.updateTask.update.end")
                 } catch {
                     if Task.isCancelled { break }
+                    LitterCrashReporter.mark("AppModel.updateTask.error")
                     await self.recordStoreSubscriptionError(error)
                     break
                 }
             }
         }
+        LitterCrashReporter.mark("AppModel.start.end")
     }
 
     func stop() {
