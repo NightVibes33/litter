@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import AltStoreCore
 
 extension UIColor
 {
@@ -16,13 +17,30 @@ extension UIColor
         UIColor(named: name, in: altStoreBundle, compatibleWith: nil) ?? fallback
     }
 
-    static let altBackground = altAssetColor(named: "Background", fallback: .systemBackground)
-    static let altGradientTop = altAssetColor(named: "GradientTop", fallback: .systemBlue)
-    static let altGradientBottom = altAssetColor(named: "GradientBottom", fallback: .systemIndigo)
+    static var altBackground: UIColor {
+        LitterSharedThemeColors.background(fallback: altAssetColor(named: "Background", fallback: .systemBackground))
+    }
+
+    static var altGradientTop: UIColor {
+        LitterSharedThemeColors.accentStrong(fallback: altAssetColor(named: "GradientTop", fallback: .systemBlue))
+    }
+
+    static var altGradientBottom: UIColor {
+        LitterSharedThemeColors.accent(fallback: altAssetColor(named: "GradientBottom", fallback: .systemIndigo))
+    }
+
     static let altDarkButtonBackground = altAssetColor(named: "DarkButtonBackground", fallback: .secondarySystemFill)
-    static let altSettingsBackground = altAssetColor(named: "SettingsBackground", fallback: .systemGroupedBackground)
-    static let altSettingsHighlighted = altAssetColor(named: "SettingsHighlighted", fallback: .systemBlue)
-    static let altBlurTint = altAssetColor(named: "BlurTint", fallback: .secondarySystemBackground)
+    static var altSettingsBackground: UIColor {
+        LitterSharedThemeColors.background(fallback: altAssetColor(named: "SettingsBackground", fallback: .systemGroupedBackground))
+    }
+
+    static var altSettingsHighlighted: UIColor {
+        LitterSharedThemeColors.accentStrong(fallback: altAssetColor(named: "SettingsHighlighted", fallback: .systemBlue))
+    }
+
+    static var altBlurTint: UIColor {
+        LitterSharedThemeColors.surface(fallback: altAssetColor(named: "BlurTint", fallback: .secondarySystemBackground))
+    }
 }
 
 extension UIColor

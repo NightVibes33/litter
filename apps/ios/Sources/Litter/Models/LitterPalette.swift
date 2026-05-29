@@ -21,6 +21,7 @@ enum LitterPalette {
         )
     }
 
+    static var background: Pair    { pair("background", lightFallback: "#FFFFFF", darkFallback: "#1C1C1E") }
     static var accent: Pair        { pair("accent", lightFallback: "#4A4A4A", darkFallback: "#B0B0B0") }
     static var accentStrong: Pair   { pair("accentStrong", lightFallback: "#00995D", darkFallback: "#00FF9C") }
     static var textPrimary: Pair    { pair("textPrimary", lightFallback: "#1A1A1A", darkFallback: "#FFFFFF") }

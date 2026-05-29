@@ -38,6 +38,7 @@ enum LitterTheme {
 
     static var accent: Color        { adaptive(light: light.accent, dark: dark.accent) }
     static var accentStrong: Color   { adaptive(light: light.accentStrong, dark: dark.accentStrong) }
+    static var background: Color     { adaptive(light: light.background, dark: dark.background) }
     static var textPrimary: Color    { adaptive(light: light.textPrimary, dark: dark.textPrimary) }
     static var textSecondary: Color  { adaptive(light: light.textSecondary, dark: dark.textSecondary) }
     static var textMuted: Color      { adaptive(light: light.textMuted, dark: dark.textMuted) }

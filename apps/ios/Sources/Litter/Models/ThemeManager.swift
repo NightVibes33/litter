@@ -225,6 +225,7 @@ final class ThemeManager {
         shared.set(family, forKey: "fontFamily")
         shared.set(appearanceMode.rawValue, forKey: Self.appearanceModeKey)
         let pairs: [(String, String, String)] = [
+            ("background", lightTheme.background, darkTheme.background),
             ("surface", lightTheme.surface, darkTheme.surface),
             ("surfaceLight", lightTheme.surfaceLight, darkTheme.surfaceLight),
             ("textPrimary", lightTheme.textPrimary, darkTheme.textPrimary),

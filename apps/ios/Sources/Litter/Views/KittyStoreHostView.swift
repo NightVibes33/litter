@@ -3,28 +3,27 @@ import UIKit
 import SideStore
 
 struct KittyStoreHostView: UIViewControllerRepresentable {
+    @Environment(ThemeManager.self) private var themeManager
+
     @MainActor
     func makeUIViewController(context: Context) -> UIViewController {
         let viewController = KittyStoreEmbeddedFactory.makeRootViewController()
+        KittyStoreEmbeddedFactory.applyCurrentTheme(to: viewController)
         KittyStoreEmbeddedFactory.startTransportIfPossible()
         return viewController
     }
 
     @MainActor
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        _ = themeManager.themeVersion
+        KittyStoreEmbeddedFactory.applyCurrentTheme(to: uiViewController)
         KittyStoreEmbeddedFactory.startTransportIfPossible()
     }
 }
 
 private enum KittyStoreHostPalette {
     static var background: Color {
-        let bundle = Bundle(for: SideStore.AppDelegate.self)
-        let fallback = UIColor { traits in
-            traits.userInterfaceStyle == .dark
-                ? UIColor(red: 0.1098, green: 0.1098, blue: 0.1176, alpha: 1)
-                : .systemBackground
-        }
-        return Color(uiColor: UIColor(named: "Background", in: bundle, compatibleWith: nil) ?? fallback)
+        LitterTheme.background
     }
 }
 

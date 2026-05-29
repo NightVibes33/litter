@@ -18,6 +18,11 @@ public enum KittyStoreEmbeddedFactory {
     public static func startTransportIfPossible() {
         KittyStoreEmbeddedRuntime.startTransportIfPossible()
     }
+
+    @MainActor
+    public static func applyCurrentTheme(to viewController: UIViewController) {
+        KittyStoreRootViewController.applyCurrentTheme(to: viewController)
+    }
 }
 
 @MainActor
@@ -29,6 +34,10 @@ public final class KittyStoreEmbeddedEntryPoint: NSObject {
 
     @objc public static func startTransportIfPossible() {
         KittyStoreEmbeddedFactory.startTransportIfPossible()
+    }
+
+    @objc public static func applyCurrentTheme(to viewController: UIViewController) {
+        KittyStoreEmbeddedFactory.applyCurrentTheme(to: viewController)
     }
 }
 
@@ -252,9 +261,18 @@ private struct KittyStoreResourcePreflightError: LocalizedError {
 }
 
 private final class KittyStoreRootViewController: UIViewController {
+    private static let litterThemeDidChange = Notification.Name("com.litter.themeDidChange")
+
     private var embeddedViewController: UIViewController?
     private var splashView: KittyStoreSplashView?
     private var didRequestStoreInterface = false
+    private var themeObserver: NSObjectProtocol?
+
+    deinit {
+        if let themeObserver {
+            NotificationCenter.default.removeObserver(themeObserver)
+        }
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -268,6 +286,7 @@ private final class KittyStoreRootViewController: UIViewController {
         edgesForExtendedLayout = [.all]
         extendedLayoutIncludesOpaqueBars = true
         showSplashView()
+        observeThemeChanges()
 
         KittyStoreEmbeddedRuntime.startIfNeeded { [weak self] error in
             guard let self else { return }
@@ -342,6 +361,17 @@ private final class KittyStoreRootViewController: UIViewController {
         applyBranding()
     }
 
+    private func observeThemeChanges() {
+        guard themeObserver == nil else { return }
+        themeObserver = NotificationCenter.default.addObserver(
+            forName: Self.litterThemeDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyBranding()
+        }
+    }
+
     private func showUnavailable(message: String) {
         guard embeddedViewController == nil else { return }
         embed(KittyStoreUnavailableViewController(message: message))
@@ -360,6 +390,7 @@ private final class KittyStoreRootViewController: UIViewController {
         viewController.view.preservesSuperviewLayoutMargins = false
         viewController.view.clipsToBounds = true
         viewController.view.backgroundColor = .altBackground
+        Self.applyCurrentTheme(to: viewController)
         viewController.view.alpha = 0
         view.addSubview(viewController.view)
         NSLayoutConstraint.activate([
@@ -381,7 +412,11 @@ private final class KittyStoreRootViewController: UIViewController {
     }
 
     private func applyBranding() {
+        Self.applyCurrentTheme(to: self)
+        Self.applyCurrentTheme(to: view)
+
         guard let embeddedViewController else { return }
+        Self.applyCurrentTheme(to: embeddedViewController)
         Self.applyBranding(to: embeddedViewController)
         Self.applyBranding(to: view)
     }
@@ -395,12 +430,84 @@ private final class KittyStoreRootViewController: UIViewController {
     }
 
     private func configureTabBar(_ tabBarController: UITabBarController) {
+        Self.applyTabBarTheme(to: tabBarController)
+    }
+
+    private static func brand(_ item: UIBarItem?) {
+        item?.title = branded(item?.title)
+        item?.accessibilityLabel = branded(item?.accessibilityLabel)
+    }
+
+    static func applyCurrentTheme(to viewController: UIViewController) {
+        viewController.view.backgroundColor = .altBackground
+        viewController.view.tintColor = .altPrimary
+        applyCurrentTheme(to: viewController.view)
+
+        if let tabBarController = viewController as? UITabBarController {
+            applyTabBarTheme(to: tabBarController)
+            tabBarController.viewControllers?.forEach { child in
+                applyCurrentTheme(to: child)
+            }
+        }
+
+        if let navigationController = viewController as? UINavigationController {
+            applyNavigationTheme(to: navigationController)
+            navigationController.viewControllers.forEach { child in
+                applyCurrentTheme(to: child)
+            }
+        }
+
+        if let splitViewController = viewController as? UISplitViewController {
+            splitViewController.viewControllers.forEach { child in
+                applyCurrentTheme(to: child)
+            }
+        }
+
+        viewController.children.forEach { child in
+            applyCurrentTheme(to: child)
+        }
+
+        if let presentedViewController = viewController.presentedViewController {
+            applyCurrentTheme(to: presentedViewController)
+        }
+    }
+
+    static func applyCurrentTheme(to view: UIView) {
+        switch view {
+        case let collectionView as UICollectionView:
+            collectionView.backgroundColor = .altBackground
+        case let tableView as UITableView:
+            tableView.backgroundColor = .altSettingsBackground
+        case let navigationBar as UINavigationBar:
+            navigationBar.tintColor = .altPrimary
+        case let tabBar as UITabBar:
+            tabBar.tintColor = .altPrimary
+            tabBar.backgroundColor = .altBackground
+        default:
+            break
+        }
+
+        view.subviews.forEach { subview in
+            applyCurrentTheme(to: subview)
+        }
+    }
+
+    private static func applyTabBarTheme(to tabBarController: UITabBarController) {
         tabBarController.view.backgroundColor = .altBackground
+        tabBarController.view.tintColor = .altPrimary
+        tabBarController.tabBar.tintColor = .altPrimary
+        tabBarController.tabBar.backgroundColor = .altBackground
         tabBarController.tabBar.isTranslucent = false
 
         let appearance = UITabBarAppearance()
         appearance.configureWithDefaultBackground()
         appearance.backgroundColor = .altBackground
+        appearance.stackedLayoutAppearance.selected.iconColor = .altPrimary
+        appearance.stackedLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.altPrimary]
+        appearance.inlineLayoutAppearance.selected.iconColor = .altPrimary
+        appearance.inlineLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.altPrimary]
+        appearance.compactInlineLayoutAppearance.selected.iconColor = .altPrimary
+        appearance.compactInlineLayoutAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor.altPrimary]
 
         tabBarController.tabBar.standardAppearance = appearance
         if #available(iOS 15.0, *) {
@@ -408,9 +515,24 @@ private final class KittyStoreRootViewController: UIViewController {
         }
     }
 
-    private static func brand(_ item: UIBarItem?) {
-        item?.title = branded(item?.title)
-        item?.accessibilityLabel = branded(item?.accessibilityLabel)
+    private static func applyNavigationTheme(to navigationController: UINavigationController) {
+        navigationController.view.backgroundColor = .altBackground
+        navigationController.view.tintColor = .altPrimary
+        navigationController.navigationBar.tintColor = .altPrimary
+
+        let standardAppearance = navigationController.navigationBar.standardAppearance
+        standardAppearance.backgroundColor = .altBackground
+        navigationController.navigationBar.standardAppearance = standardAppearance
+
+        if let compactAppearance = navigationController.navigationBar.compactAppearance {
+            compactAppearance.backgroundColor = .altBackground
+            navigationController.navigationBar.compactAppearance = compactAppearance
+        }
+
+        if let scrollEdgeAppearance = navigationController.navigationBar.scrollEdgeAppearance {
+            scrollEdgeAppearance.backgroundColor = .altBackground
+            navigationController.navigationBar.scrollEdgeAppearance = scrollEdgeAppearance
+        }
     }
 
     private static func applyBranding(to viewController: UIViewController) {
