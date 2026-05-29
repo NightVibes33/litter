@@ -13,12 +13,6 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
     private var contentReady = false
     private var splashDismissed = false
 
-    override init() {
-        super.init()
-        LitterCrashReporter.install()
-        LitterCrashReporter.mark("AppDelegate.init")
-    }
-
     weak var appRuntime: AppRuntimeController? {
         didSet {
             if let token = pendingPushToken {
@@ -39,19 +33,13 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
     }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-        LitterCrashReporter.install()
-        LitterCrashReporter.mark("AppDelegate.didFinishLaunching.begin")
         OpenAIApiKeyStore.shared.applyToEnvironment()
-        LitterCrashReporter.mark("AppDelegate.didFinishLaunching.api-key-env")
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
-        LitterCrashReporter.mark("AppDelegate.didFinishLaunching.platform-bootstrap")
         LLog.bootstrap()
-        LitterCrashReporter.mark("AppDelegate.didFinishLaunching.llog-bootstrap")
         Task { @MainActor in
-            LitterCrashReporter.mark("KittyStore.bootstrap.begin")
             KittyStoreEmbeddedFactory.bootstrap()
-            LitterCrashReporter.mark("KittyStore.bootstrap.end")
         }
+
         #if targetEnvironment(macCatalyst)
         // On unsandboxed Mac Catalyst, send the spawned codex child a
         // SIGTERM during termination so it does not outlive the app.
@@ -76,20 +64,16 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
             OpenAIApiKeyStore.shared.applyToEnvironment()
             guard let appRuntime = self?.appRuntime else { return }
             Task { @MainActor in
-                await appRuntime.restoreMissingLocalAuthStateIfNeeded(allowLocalRuntimeBootstrap: false)
+                await appRuntime.restoreMissingLocalAuthStateIfNeeded()
             }
         }
 
         LLog.info("lifecycle", "application did finish launching")
-        LitterCrashReporter.mark("AppDelegate.didFinishLaunching.notifications-registered")
         // Pre-initialize Rust bridges (tokio runtime) on a background thread
         // before SwiftUI accesses AppModel.shared, avoiding a priority inversion
         // where the main thread blocks on lower-QoS tokio worker init.
-        LitterCrashReporter.mark("AppModel.prewarmRustBridges.schedule")
         DispatchQueue.global(qos: .userInitiated).async {
-            LitterCrashReporter.mark("AppModel.prewarmRustBridges.begin")
             AppModel.prewarmRustBridges()
-            LitterCrashReporter.mark("AppModel.prewarmRustBridges.end")
         }
         application.registerForRemoteNotifications()
         UNUserNotificationCenter.current().delegate = self
@@ -123,7 +107,6 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
             CloudKVSBridge.shared.start()
         }
         showSplashWindow()
-        LitterCrashReporter.mark("AppDelegate.didFinishLaunching.splash-window-scheduled")
         scheduleKeyboardWarmup()
         // Start pushing state to the paired Apple Watch, gated behind the
         // experimental feature flag. Flip the `appleWatch` feature in
@@ -133,7 +116,6 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
                 WatchCompanionBridge.shared.start()
             }
         }
-        LitterCrashReporter.mark("AppDelegate.didFinishLaunching.end")
         return true
     }
 
@@ -170,10 +152,8 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
 
     /// Called by ContentView when the main UI has appeared.
     func signalContentReady() {
-        LitterCrashReporter.mark("AppDelegate.signalContentReady.begin")
         contentReady = true
         tryDismissSplash()
-        LitterCrashReporter.mark("AppDelegate.signalContentReady.end")
     }
 
     private func tryDismissSplash() {
@@ -187,7 +167,6 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
     }
 
     private func dismissSplash() {
-        LitterCrashReporter.mark("AppDelegate.dismissSplash.begin")
         splashDismissed = true
         guard let window = splashWindow else { return }
         UIView.animate(withDuration: 0.35, animations: {
@@ -196,7 +175,6 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
             window.isHidden = true
             window.rootViewController = nil
             self.splashWindow = nil
-            LitterCrashReporter.mark("AppDelegate.dismissSplash.end")
         })
     }
 
@@ -359,27 +337,12 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
 @main
 struct LitterApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @State private var appModel: AppModel
-    @State private var voiceRuntime: VoiceRuntimeController
-    @State private var appRuntime: AppRuntimeController
-    @State private var themeManager: ThemeManager
-    @State private var wallpaperManager: WallpaperManager
+    @State private var appModel = AppModel.shared
+    @State private var voiceRuntime = VoiceRuntimeController.shared
+    @State private var appRuntime = AppRuntimeController.shared
+    @State private var themeManager = ThemeManager.shared
+    @State private var wallpaperManager = WallpaperManager.shared
     @Environment(\.scenePhase) private var scenePhase
-
-    init() {
-        LitterCrashReporter.install()
-        LitterCrashReporter.mark("LitterApp.init.begin")
-        _appModel = State(initialValue: AppModel.shared)
-        LitterCrashReporter.mark("LitterApp.init.appModel")
-        _voiceRuntime = State(initialValue: VoiceRuntimeController.shared)
-        LitterCrashReporter.mark("LitterApp.init.voiceRuntime")
-        _appRuntime = State(initialValue: AppRuntimeController.shared)
-        LitterCrashReporter.mark("LitterApp.init.appRuntime")
-        _themeManager = State(initialValue: ThemeManager.shared)
-        LitterCrashReporter.mark("LitterApp.init.themeManager")
-        _wallpaperManager = State(initialValue: WallpaperManager.shared)
-        LitterCrashReporter.mark("LitterApp.init.end")
-    }
 
     @SceneBuilder
     var body: some Scene {
@@ -400,25 +363,18 @@ struct LitterApp: App {
 
     private var mainWindowGroup: some Scene {
         WindowGroup {
-            ContentView(onMainContentReady: {
-                appDelegate.signalContentReady()
-            })
+            ContentView()
                 .environment(appModel)
                 .environment(appRuntime)
                 .environment(voiceRuntime)
                 .environment(themeManager)
                 .environment(wallpaperManager)
                 .task {
-                    LitterCrashReporter.mark("LitterApp.WindowGroup.task.begin")
                     appModel.start()
-                    LitterCrashReporter.mark("LitterApp.WindowGroup.task.appModel-start")
                     voiceRuntime.bind(appModel: appModel)
-                    LitterCrashReporter.mark("LitterApp.WindowGroup.task.voice-bind")
                     appRuntime.bind(appModel: appModel, voiceRuntime: voiceRuntime)
-                    LitterCrashReporter.mark("LitterApp.WindowGroup.task.runtime-bind")
                     appDelegate.appRuntime = appRuntime
                     appRuntime.appDidBecomeActive()
-                    LitterCrashReporter.mark("LitterApp.WindowGroup.task.active")
                     #if targetEnvironment(macCatalyst)
                     LocalCodexBootstrap.shared.startIfNeeded(appModel: appModel)
                     #endif
@@ -433,7 +389,6 @@ struct LitterApp: App {
                 }
         }
         .onChange(of: scenePhase) { _, newPhase in
-            LitterCrashReporter.mark("LitterApp.scenePhase.\(newPhase.debugName).begin")
             LLog.info("lifecycle", "scenePhase changed", fields: ["phase": newPhase.debugName])
             switch newPhase {
             case .background:
@@ -445,7 +400,6 @@ struct LitterApp: App {
             default:
                 break
             }
-            LitterCrashReporter.mark("LitterApp.scenePhase.\(newPhase.debugName).end")
         }
     }
 }
@@ -484,7 +438,6 @@ struct ContentView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(AppRuntimeController.self) private var appRuntime
     @Environment(ThemeManager.self) private var themeManager
-    let onMainContentReady: () -> Void
     @State private var appState = AppState()
     @State private var stableSafeAreaInsets = StableSafeAreaInsets()
     @State private var conversationWarmup = ConversationWarmupCoordinator()
@@ -494,10 +447,6 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.large.rawValue
-
-    init(onMainContentReady: @escaping () -> Void = {}) {
-        self.onMainContentReady = onMainContentReady
-    }
 
     private var textScale: CGFloat {
         ConversationTextSize.clamped(rawValue: textSizeStep).scale
@@ -538,14 +487,12 @@ struct ContentView: View {
             }
             .ignoresSafeArea(.container)
             .task {
-                LitterCrashReporter.mark("ContentView.geometryTask.begin")
                 if composerBottomInset <= 0, geometry.safeAreaInsets.bottom > 0 {
                     composerBottomInset = geometry.safeAreaInsets.bottom
                 }
                 stableSafeAreaInsets.start(
                     fallback: max(composerBottomInset, geometry.safeAreaInsets.bottom)
                 )
-                LitterCrashReporter.mark("ContentView.geometryTask.end")
             }
             .onChange(of: stableSafeAreaInsets.bottomInset) { (_: CGFloat, nextInset: CGFloat) in
                 guard nextInset > 0 else { return }
@@ -566,7 +513,6 @@ struct ContentView: View {
         }
         #endif
         .onAppear {
-            LitterCrashReporter.mark("ContentView.onAppear")
             themeManager.syncSystemColorScheme(colorScheme)
             let forceDiscoveryForUITest =
                 ProcessInfo.processInfo.environment["CODEXIOS_UI_TEST_FORCE_DISCOVERY"] == "1"
@@ -601,9 +547,7 @@ struct ContentView: View {
             appState.showModelSelector = false
         }
         .onChange(of: appModel.snapshot) { _, nextSnapshot in
-            LitterCrashReporter.mark("ContentView.snapshotChange.begin threads=\(nextSnapshot?.threads.count ?? 0)")
             appRuntime.handleSnapshot(nextSnapshot)
-            LitterCrashReporter.mark("ContentView.snapshotChange.end")
         }
         .sheet(isPresented: $bindableAppState.showServerPicker) {
             NavigationStack {
@@ -642,12 +586,9 @@ struct ContentView: View {
         .ignoresSafeArea(.container, edges: [.top, .bottom])
         .id(themeManager.themeVersion)
         .onAppear {
-            LitterCrashReporter.mark("HomeNavigationView.onAppear")
             if !splashDismissed {
-                LitterCrashReporter.mark("HomeNavigationView.contentReady.begin")
                 splashDismissed = true
-                onMainContentReady()
-                LitterCrashReporter.mark("HomeNavigationView.contentReady.end")
+                (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
             }
         }
     }
@@ -1049,17 +990,11 @@ private struct HomeNavigationView: View {
     var body: some View {
         rootNavigationContent
         .task {
-            LitterCrashReporter.mark("HomeNavigationView.task.begin")
             homeDashboardModel.bind(appModel: appModel)
-            LitterCrashReporter.mark("HomeNavigationView.task.bind")
             updateHomeDashboardActivity()
-            LitterCrashReporter.mark("HomeNavigationView.task.activity")
             hydratePinnedThreadsIfNeeded()
-            LitterCrashReporter.mark("HomeNavigationView.task.hydrate")
             seedInitialConversationIfNeeded(activeKey: appModel.snapshot?.activeThread)
-            LitterCrashReporter.mark("HomeNavigationView.task.seed")
             presentFirstRunOnboardingIfNeeded()
-            LitterCrashReporter.mark("HomeNavigationView.task.end")
         }
         .onChange(of: appModel.snapshot?.activeThread) { _, newKey in
             seedInitialConversationIfNeeded(activeKey: newKey)

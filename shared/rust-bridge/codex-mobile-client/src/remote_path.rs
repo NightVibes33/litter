@@ -1,7 +1,7 @@
 //! Cross-platform remote path handling.
 //!
 //! `std::path::Path` uses the *host* OS separator, which is always `/` on
-//! iOS. When manipulating paths on a remote Windows machine we need
+//! iOS/Android. When manipulating paths on a remote Windows machine we need
 //! string-based handling that knows the remote OS's conventions.
 
 /// Normalize a user-facing cwd before it is sent to the app-server.

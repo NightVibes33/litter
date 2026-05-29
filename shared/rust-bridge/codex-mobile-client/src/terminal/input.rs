@@ -54,7 +54,7 @@ impl TerminalKeyMods {
 
 /// Key code. Subset of the W3C UI-events code list plus a catch-all
 /// `Other` for keys we haven't mapped yet. Platform translation tables
-/// (UIKeyboardHIDUsage on iOS) decode into
+/// (UIKeyboardHIDUsage on iOS, KeyEvent.KEYCODE_* on Android) decode into
 /// these.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum TerminalKeyCode {
@@ -110,7 +110,7 @@ pub struct TerminalKeyEvent {
     pub code: TerminalKeyCode,
     pub mods: TerminalKeyMods,
     /// Text the platform thinks this key generates (already with mod
-    /// processing on iOS). Empty for non-printable keys.
+    /// processing on iOS / Android). Empty for non-printable keys.
     pub text: String,
     pub repeat: bool,
 }

@@ -9,14 +9,14 @@ When a patch fails to apply, prefer `git apply --3way` first (handles line-numbe
 ---
 
 ## `ios-exec-hook.patch`
-Lets iOS install a function pointer that core's exec layer calls instead of `fork+exec` (forbidden in the App Store sandbox). Also installs an argv preflight that normalizes local iSH shell invocations.
+Lets iOS install a function pointer that core's exec layer calls instead of `fork+exec` (forbidden in the App Store sandbox), and lets Android install an argv[0] resolver that maps `git` etc. to bundled `lib<tool>.so` paths in the app's nativeLibraryDir. Also installs an argv preflight that rewrites `/tmp/...` paths to the platform's real tempdir.
 
 Touches `core/src/exec.rs` and `core/src/unified_exec/process_manager.rs`.
 
-Consumed by `shared/rust-bridge/codex-mobile-client/src/ish_exec.rs` (`set_ios_exec_hook`) and `shell_preflight.rs` (`set_mobile_exec_preflight`).
+Consumed by `shared/rust-bridge/codex-mobile-client/src/ish_exec.rs` (`set_ios_exec_hook`), `android_exec.rs` (`set_android_tool_resolver`), and `shell_preflight.rs` (`set_mobile_exec_preflight`).
 
 ## `mobile-code-mode-stub.patch`
-Replaces the V8 JavaScript runtime in `code-mode` with a stub on iOS and Linux. Mobile builds can't link `v8` (binary size, JIT entitlements), and the stub returns "exec is unavailable on mobile targets in this build" when invoked.
+Replaces the V8 JavaScript runtime in `code-mode` with a stub on iOS, Android, and Linux. Mobile builds can't link `v8` (binary size, JIT entitlements), and the stub returns "exec is unavailable on mobile targets in this build" when invoked.
 
 Touches `code-mode/Cargo.toml`, `code-mode/src/lib.rs`, adds `code-mode/src/runtime_stub.rs` and `service_stub.rs`.
 
@@ -28,7 +28,7 @@ Adds `approval_policy` and `sandbox` to `ThreadReadResponse` so mobile clients c
 Touches `app-server-protocol/src/protocol/v2/thread.rs` and `app-server/src/request_processors/thread_processor.rs`.
 
 ## `mobile-shell-snapshot-timeout.patch`
-Drops the shell-snapshot timeout from 10s -> 2s on iOS. The mobile shell environment is minimal and snapshot probes nearly always time out at the upstream default, adding 10s to every thread start.
+Drops the shell-snapshot timeout from 10s → 2s on iOS/Android. The mobile shell environment is minimal and snapshot probes nearly always time out at the upstream default, adding 10s to every thread start.
 
 Touches `core/src/shell_snapshot.rs`.
 
@@ -48,6 +48,11 @@ Consumed by the SSH/Alleycat remote transport paths in `shared/rust-bridge/codex
 Lets `AbsolutePathBuf` deserialize Windows-style absolute paths on POSIX (and vice versa) without trying to canonicalize them through `path_absolutize::Absolutize` (which would mangle them by joining onto a POSIX cwd). Required because litter mobile clients consume thread metadata from servers running on either OS.
 
 Touches `utils/absolute-path/src/lib.rs`.
+
+## `android-installation-id-lock.patch`
+Skip `File::lock()` on Android when persisting the installation id. Android's libstd returns `Unsupported` for that syscall, but the mobile app is the sole consumer of app-private storage so the lock isn't load-bearing.
+
+Touches `core/src/installation_id.rs`.
 
 ## `dynamic-tool-call-arguments-delta.patch`
 Adds streaming delta notifications for dynamic tool-call argument JSON. The model emits `response.function_call_arguments.delta` SSE events; this patch surfaces them as `EventMsg::DynamicToolCallArgumentsDelta` and `ServerNotification::DynamicToolCallArgumentsDelta` so mobile clients can render partial tool-call output before the call finalizes.
@@ -103,4 +108,4 @@ When `client_controlled_handoff: true`, suppresses upstream's automatic "route h
 
 Touches `protocol/src/protocol.rs`, `app-server-protocol/src/protocol/{common.rs,v2/realtime.rs}`, `app-server/src/{message_processor.rs,request_processors.rs,request_processors/turn_processor.rs}`, `core/src/{realtime_conversation.rs,session/handlers.rs}`.
 
-Consumed by `shared/rust-bridge/codex-mobile-client/src/session/voice_handoff.rs::HandoffManager` and the iOS `VoiceRuntimeController`, which use `HandoffAction::ResolveHandoff` and `HandoffAction::FinalizeHandoff` to drive the resolution flow.
+Consumed by `shared/rust-bridge/codex-mobile-client/src/session/voice_handoff.rs::HandoffManager` and the iOS/Android `VoiceRuntimeController`s, which use `HandoffAction::ResolveHandoff` and `HandoffAction::FinalizeHandoff` to drive the resolution flow.

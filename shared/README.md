@@ -1,7 +1,7 @@
 # Shared
 
-Shared code and contracts for the iOS app.
+Cross-platform code and contracts.
 
-- `rust-bridge/` for Rust bridge code consumed by Swift.
-- `third_party/` for shared vendored dependencies, including Codex.
+- `rust-bridge/` for Rust bridge code used by iOS and Android.
+- `third_party/` for shared vendored dependencies (including Codex).
 - `protocol/` for shared JSON-RPC/protocol artifacts.

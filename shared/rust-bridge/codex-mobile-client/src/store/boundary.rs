@@ -130,7 +130,7 @@ pub struct AppThreadStateRecord {
     pub goal: Option<AppThreadGoal>,
     /// Mirrors `AppThreadSnapshot.older_turns_cursor`. Included so
     /// `ThreadMetadataChanged` events carry pagination state through to
-    /// the platform mappers; without this the Swift projection
+    /// the platform mappers; without this the Kotlin/Swift projection
     /// coerces it back to `None` on every metadata update and
     /// `load_thread_turns_page` appears to lose its cursor.
     pub older_turns_cursor: Option<String>,

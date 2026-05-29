@@ -2,7 +2,7 @@
 //!
 //! Converts upstream `Vec<Turn>` (from `thread/resume`, `thread/fork`, etc.)
 //! into `Vec<HydratedConversationItem>` — a flat, UI-ready model that both
-//! Swift renders directly via UniFFI.
+//! iOS and Android render directly via UniFFI.
 
 use std::path::Path;
 use std::path::PathBuf;

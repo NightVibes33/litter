@@ -11,14 +11,10 @@ function json(data: unknown, status = 200): Response {
 }
 
 function decodeJWSPayload(jws: string): any {
-  try {
-    const parts = jws.split(".")
-    if (parts.length !== 3) return null
-    const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/")
-    return JSON.parse(atob(padded))
-  } catch {
-    return null
-  }
+  const parts = jws.split(".")
+  if (parts.length !== 3) return null
+  const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/")
+  return JSON.parse(atob(padded))
 }
 
 async function handleAppleWebhook(request: Request, env: Env): Promise<Response> {
@@ -88,20 +84,9 @@ export default {
       }
 
       const body = (await request.json()) as RegisterRequest
-      if (body.platform !== "ios") {
-        return json({ error: "unsupported platform" }, 400)
-      }
-      if (typeof body.pushToken !== "string" || body.pushToken.trim().length === 0) {
-        return json({ error: "missing pushToken" }, 400)
-      }
-
       const id = env.PUSH_REGISTRATION.newUniqueId()
       const stub = env.PUSH_REGISTRATION.get(id)
-      const regResp = await stub.fetch(new Request("https://do/", { method: "PUT", body: JSON.stringify(body) }))
-      if (!regResp.ok) {
-        const errorText = await regResp.text()
-        return json({ error: errorText || "registration failed" }, regResp.status)
-      }
+      await stub.fetch(new Request("https://do/", { method: "PUT", body: JSON.stringify(body) }))
 
       return json({ id: id.toString() })
     }

@@ -2,7 +2,7 @@
 //!
 //! Renders to a ghostty.conf file the platform feeds to `ghostty_config_new` +
 //! `ghostty_config_load_file` + `ghostty_*_update_config`. Keeping the
-//! palette/preset table in Rust lets Swift show the same theme list
+//! palette/preset table in Rust lets iOS + Android show the same theme list
 //! without duplicating colour values.
 
 use std::fmt::Write;

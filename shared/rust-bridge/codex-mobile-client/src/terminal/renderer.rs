@@ -1,8 +1,8 @@
 //! Cross-platform terminal renderer surface owned by Rust.
 //!
-//! `TerminalRenderer` is the UniFFI object that Swift
+//! `TerminalRenderer` is the UniFFI object that platform code (Swift/Kotlin)
 //! drives. It owns Ghostty-surface state (focus, occlusion, draw coalescing)
-//! that needs to stay identical across Litter surfaces. The actual `ghostty_*` C
+//! that needs to be identical on iOS and Android. The actual `ghostty_*` C
 //! calls live in platform glue that implements `TerminalRendererBackend`.
 //!
 //! This file lands the foundation slice (focus, occlusion, draw cadence).
@@ -12,7 +12,7 @@
 //! Draw cadence: callers signal `notify_needs_draw()` whenever shared state
 //! changes (e.g. new PTY bytes); a tokio tick task wakes ~every 16 ms, checks
 //! the dirty flag, and asks the backend to redraw at most once per tick. This
-//! replaces the iOS always-on `CADisplayLink`
+//! replaces the iOS always-on `CADisplayLink` and the Android Choreographer
 //! self-reschedule loop with on-demand redraws.
 
 use std::path::PathBuf;
@@ -59,7 +59,7 @@ pub trait TerminalRendererBackend: Send + Sync {
     fn set_occlusion(&self, occluded: bool);
 
     /// Ask the platform to advance its native terminal render loop once.
-    /// Reserved for renderers that need draw work routed through a callback because their context is
+    /// Android routes draw work through this because its EGL context is
     /// owned by the view thread. UIKit Ghostty surfaces render on Ghostty's
     /// renderer thread, so iOS only drains the app mailbox on main.
     fn request_redraw(&self);
@@ -124,7 +124,7 @@ struct RendererInner {
     stopped: AtomicBool,
     rt: Arc<tokio::runtime::Runtime>,
     /// Directory to write rendered ghostty.conf files into. Platform sets
-    /// this once at construction time (for example, the iOS Caches dir).
+    /// this once at construction time (e.g. iOS Caches dir, Android cacheDir).
     config_dir: Mutex<Option<PathBuf>>,
     /// OSC 7/8/133/0/2 parser. The renderer tees PTY bytes here via
     /// [`TerminalRenderer::feed_output`] so platform code only has to
@@ -172,7 +172,7 @@ impl TerminalRenderer {
     }
 
     /// Set the directory where `apply_config` writes the generated ghostty
-    /// config file. iOS passes `<Caches>/litter/terminal`.
+    /// config file. iOS passes `<Caches>/litter/terminal`; Android passes
     /// `<cacheDir>/litter/terminal`. The directory is created on demand.
     pub fn set_config_dir(&self, path: String) {
         let mut guard = self.inner.config_dir.lock().unwrap();
@@ -258,7 +258,7 @@ impl TerminalRenderer {
     }
 
     /// Bracket-paste `text` and dispatch the wrapped bytes. The renderer
-    /// applies the wrapping so Litter keeps one paste convention.
+    /// applies the wrapping so iOS + Android share one paste convention.
     pub fn send_paste(&self, text: String) {
         if let Some(backend) = self.inner.current_backend() {
             backend.dispatch_paste(encode_text(&text, true));

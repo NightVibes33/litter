@@ -29,7 +29,7 @@ Do not open attribution PRs that split those names into separate people. If auth
 - Stylistic-only changes (renames, formatting, comment cleanup).
 - New features without prior discussion in an issue.
 - PRs that depend on other unmerged PRs.
-- Anything that breaks supported iOS workflows without a clear reason.
+- Anything that breaks parity between iOS and Android without a clear reason.
 - Commits that include private certificates, Apple ID credentials, provisioning profiles, API tokens, private BuildKit asset ZIPs, or Apple SDK payloads.
 
 ## BuildKit, signing, and sideloading changes

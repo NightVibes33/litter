@@ -61,16 +61,16 @@ final class AppModel {
     }
 
     private nonisolated static let _prewarmResult: RustBridges = {
-        LitterCrashReporter.mark("AppModel.prewarmResult.begin")
-        // Normalize local-runtime defaults without booting iSH during app launch.
-        // The kernel is started only when a local shell feature explicitly needs it.
+        // Boot the iSH kernel BEFORE any Rust bridge construction so the exec
+        // hook is wired up before the first command can be issued. Idempotent
+        // — the AppDelegate call site is a no-op on second invocation.
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
 
         let rc = ReconnectController()
         rc.setCredentialProvider(provider: SwiftSshCredentialProvider())
         rc.setSlingshotCredentialProvider(provider: SwiftSlingshotCredentialProvider())
         rc.setMultiClankerAndQuicEnabled(enabled: true)
-        let bridges = RustBridges(
+        return RustBridges(
             store: AppStore(),
             client: AppClient(),
             discovery: DiscoveryBridge(),
@@ -78,8 +78,6 @@ final class AppModel {
             ssh: SshBridge(),
             reconnectController: rc
         )
-        LitterCrashReporter.mark("AppModel.prewarmResult.end")
-        return bridges
     }()
 
     static let shared = AppModel()
@@ -132,16 +130,13 @@ final class AppModel {
         ssh: SshBridge? = nil,
         reconnectController: ReconnectController? = nil
     ) {
-        LitterCrashReporter.mark("AppModel.init.begin")
         let bridges = Self._prewarmResult
-        LitterCrashReporter.mark("AppModel.init.bridges-ready")
         self.store = store ?? bridges.store
         self.client = client ?? bridges.client
         self.discovery = discovery ?? bridges.discovery
         self.serverBridge = serverBridge ?? bridges.serverBridge
         self.ssh = ssh ?? bridges.ssh
         self.reconnectController = reconnectController ?? bridges.reconnectController
-        LitterCrashReporter.mark("AppModel.init.end")
 
         // Register the saved-apps directory with the Rust client so the
         // dynamic-tool finalize hook can auto-upsert on `show_widget` calls.
@@ -173,36 +168,24 @@ final class AppModel {
     }
 
     func start() {
-        LitterCrashReporter.mark("AppModel.start.begin")
-        guard updateTask == nil else {
-            LitterCrashReporter.mark("AppModel.start.already-running")
-            return
-        }
+        guard updateTask == nil else { return }
         LocalConnectorBroker.shared.start()
-        LitterCrashReporter.mark("AppModel.start.connector")
         let subscription = store.subscribeUpdates()
-        LitterCrashReporter.mark("AppModel.start.subscription")
         self.subscription = subscription
         updateTask = Task.detached(priority: .userInitiated) { [weak self, subscription] in
             guard let self else { return }
-            LitterCrashReporter.mark("AppModel.updateTask.refresh.begin")
             await self.refreshSnapshot()
-            LitterCrashReporter.mark("AppModel.updateTask.refresh.end")
             while !Task.isCancelled {
                 do {
                     let update = try await subscription.nextUpdate()
-                    LitterCrashReporter.mark("AppModel.updateTask.update.begin")
                     await self.handleStoreUpdate(update)
-                    LitterCrashReporter.mark("AppModel.updateTask.update.end")
                 } catch {
                     if Task.isCancelled { break }
-                    LitterCrashReporter.mark("AppModel.updateTask.error")
                     await self.recordStoreSubscriptionError(error)
                     break
                 }
             }
         }
-        LitterCrashReporter.mark("AppModel.start.end")
     }
 
     func stop() {
@@ -660,7 +643,7 @@ final class AppModel {
         await refreshSnapshot()
     }
 
-    func restoreStoredLocalAuthState(serverId: String, allowLocalRuntimeBootstrap: Bool = true) async {
+    func restoreStoredLocalAuthState(serverId: String) async {
         let storedApiKey: String?
         if let rawApiKey = await loadStoredLocalApiKey() {
             let trimmedApiKey = rawApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -706,18 +689,13 @@ final class AppModel {
 
         guard storedApiKey != nil else { return }
         OpenAIApiKeyStore.shared.applyToEnvironment()
-        guard !LitterPlatform.supportsLocalRuntime || allowLocalRuntimeBootstrap || LitterPlatform.isLocalRuntimeReady else {
-            LLog.info("auth", "deferring stored local API key reconnect until local runtime is ready", fields: ["serverId": serverId])
-            return
-        }
         guard await reconnectLocalServerForStoredApiKeyRestore(serverId: serverId) else { return }
         if let storedApiKey, await loginStoredLocalApiKeyAuth(serverId: serverId, apiKey: storedApiKey) {
             await refreshSnapshot()
         }
     }
 
-    func restoreMissingLocalAuthStateIfNeeded(allowLocalRuntimeBootstrap: Bool = true) async {
-        guard !LitterPlatform.supportsLocalRuntime || allowLocalRuntimeBootstrap || LitterPlatform.isLocalRuntimeReady else { return }
+    func restoreMissingLocalAuthStateIfNeeded() async {
         guard let snapshot else { return }
         let localServerIds = snapshot.servers
             .filter { $0.isLocal && $0.account == nil }
@@ -726,7 +704,7 @@ final class AppModel {
         guard !localServerIds.isEmpty else { return }
 
         for serverId in localServerIds {
-            await restoreStoredLocalAuthState(serverId: serverId, allowLocalRuntimeBootstrap: allowLocalRuntimeBootstrap)
+            await restoreStoredLocalAuthState(serverId: serverId)
         }
         await refreshSnapshot()
     }

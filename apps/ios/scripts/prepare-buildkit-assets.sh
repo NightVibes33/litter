@@ -125,23 +125,7 @@ PY_MANIFEST
 if [[ -n "$ASSET_URL" ]]; then
   ASSET_ZIP="$TMP_DIR/LitterBuildKitAssets.zip"
   echo "==> Downloading private BuildKit assets"
-  curl_args=(
-    -fsSL
-    --retry 8
-    --retry-delay 10
-    --retry-max-time 900
-    --connect-timeout 30
-    --max-time 900
-    --speed-time 60
-    --speed-limit 1024
-    -o "$ASSET_ZIP"
-  )
-  if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
-    curl_args+=(--retry-all-errors)
-  fi
-  if curl --help all 2>/dev/null | grep -q -- '--retry-connrefused'; then
-    curl_args+=(--retry-connrefused)
-  fi
+  curl_args=(-fsSL --retry 3 -o "$ASSET_ZIP")
   if [[ -n "$ASSET_TOKEN" ]]; then
     curl_args+=(-H "Authorization: Bearer $ASSET_TOKEN")
     curl_args+=(-H "X-GitHub-Api-Version: 2022-11-28")

@@ -198,23 +198,6 @@ struct SettingsView: View {
         Section {
             NavigationLink(value: SettingsRoute.signing) {
                 HStack(spacing: 10) {
-                    Image(systemName: "link.badge.plus")
-                        .foregroundColor(LitterTheme.accent)
-                        .frame(width: 20)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Pairing File")
-                            .litterFont(.subheadline)
-                            .foregroundColor(LitterTheme.textPrimary)
-                        Text("Import .mobiledevicepairing for KittyStore installs")
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textSecondary)
-                    }
-                }
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-
-            NavigationLink(value: SettingsRoute.signing) {
-                HStack(spacing: 10) {
                     Image(systemName: "signature")
                         .foregroundColor(LitterTheme.accent)
                         .frame(width: 20)
@@ -222,7 +205,7 @@ struct SettingsView: View {
                         Text("Signing")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("Feather certificates, LocalDevVPN, and IPA signing")
+                        Text("Feather certificates, pairing, LocalDevVPN, and IPA signing")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
@@ -515,40 +498,22 @@ struct SettingsView: View {
 
     private var supportSection: some View {
         Section {
-            supportExternalLink(urlString: "https://buymeacoffee.com/zyn3", icon: "cup.and.saucer.fill", title: "Buy Me a Coffee")
-            supportExternalLink(urlString: "https://x.com/xboxsignout999_?s=21&t=k6RkcjRI6uMwGvJ_q6XC7A", icon: "person.crop.circle.badge.checkmark", title: "X")
-            supportExternalLink(urlString: "https://github.com/NightVibes33/litter", icon: "chevron.left.forwardslash.chevron.right", title: "GitHub Repo")
-
             NavigationLink {
                 TipJarView()
             } label: {
-                supportLinkRow(icon: "pawprint.fill", title: "Tip the Kitty")
+                HStack(spacing: 10) {
+                    Image(systemName: "pawprint.fill")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    Text("Tip the Kitty")
+                        .litterFont(.subheadline)
+                        .foregroundColor(LitterTheme.textPrimary)
+                }
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Support")
                 .foregroundColor(LitterTheme.textSecondary)
-        }
-    }
-
-    @ViewBuilder
-    private func supportExternalLink(urlString: String, icon: String, title: String) -> some View {
-        if let url = URL(string: urlString) {
-            Link(destination: url) {
-                supportLinkRow(icon: icon, title: title)
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-        }
-    }
-
-    private func supportLinkRow(icon: String, title: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .foregroundColor(LitterTheme.accent)
-                .frame(width: 20)
-            Text(title)
-                .litterFont(.subheadline)
-                .foregroundColor(LitterTheme.textPrimary)
         }
     }
 

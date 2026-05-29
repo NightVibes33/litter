@@ -1,14 +1,15 @@
 //! Shared terminal session surface.
 //!
 //! Platform renderers own libghostty/Metal/GL integration. This module owns the
-//! backend lifecycle and raw PTY byte stream that Swift feeds into its
-//! renderer surface.
+//! backend lifecycle and raw PTY byte stream that Swift/Kotlin feed into their
+//! renderer surfaces.
 
 mod backend;
 mod config;
 mod input;
 mod links;
 mod local_ish;
+mod local_proot;
 mod osc;
 mod remote_alleycat;
 mod renderer;

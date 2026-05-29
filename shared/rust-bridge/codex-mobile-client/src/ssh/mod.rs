@@ -1,7 +1,7 @@
 //! SSH bootstrap client for remote server setup.
 //!
 //! Pure Rust SSH2 client (via `russh`) that replaces platform-specific
-//! SSH support for Litter remote sessions.
+//! SSH libraries (Citadel on iOS, JSch on Android).
 //!
 //! The implementation is split across submodules; this file only contains
 //! the [`SshClient`] struct, its constants, and a few cross-module
@@ -70,7 +70,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
 
-/// Default base port for remote Codex server.
+/// Default base port for remote Codex server (matches Android).
 const DEFAULT_REMOTE_PORT: u16 = 8390;
 /// Number of candidate ports to try.
 const PORT_CANDIDATES: u16 = 21;
@@ -108,7 +108,7 @@ fn append_bridge_log(level: LogLevelName, line: &str) {
     log_rust(level, "ssh", "bridge", line.to_string(), None);
 }
 
-pub(super) fn append_mobile_debug_log(line: &str) {
+pub(super) fn append_android_debug_log(line: &str) {
     append_bridge_log(LogLevelName::Debug, line);
 }
 

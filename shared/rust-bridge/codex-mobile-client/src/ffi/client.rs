@@ -320,7 +320,7 @@ impl AppClient {
     // server. Platforms read from here to render agent labels, icons,
     // BETA badges, sort order, and capability-driven UI (e.g. Amp's
     // reasoning-effort lock) without baking knowledge of specific
-    // agents into Swift.
+    // agents into Swift / Kotlin.
 
     /// Look up the cached metadata for a single agent by `name`. Returns
     /// `None` when no probe has populated it yet (cold start) or when
@@ -419,7 +419,7 @@ impl AppClient {
     }
 
     /// Register the directory where `saved_apps.rs` persists the app
-    /// index + per-app files. The iOS app calls this once at
+    /// index + per-app files. Platforms (iOS/Android) call this once at
     /// process start with the same path they pass to `saved_apps_list`.
     /// When set, the `show_widget` auto-upsert hook in the dynamic-tool
     /// handler uses this directory to persist finalized widgets.
@@ -1771,7 +1771,7 @@ pub struct PairHostStartResult {
 }
 
 /// Owning wrapper around a spawned `codex app-server` process. Exposed
-/// to Swift as a UniFFI Object so the platform can hold it for the
+/// to Swift/Kotlin as a UniFFI Object so the platform can hold it for the
 /// lifetime of the app and call `stop()` on termination.
 #[derive(uniffi::Object)]
 pub struct LocalServerProcessHandle {

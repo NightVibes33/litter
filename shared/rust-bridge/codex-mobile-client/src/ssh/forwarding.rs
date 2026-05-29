@@ -17,7 +17,7 @@ use tracing::{debug, error, info, warn};
 use crate::shell_quoting::{cmd_quote, posix_quote as shell_quote};
 
 use super::{
-    ForwardTask, RemoteShell, SshClient, SshError, SshExecIo, append_mobile_debug_log,
+    ForwardTask, RemoteShell, SshClient, SshError, SshExecIo, append_android_debug_log,
     build_posix_exec_command, port_forward::proxy_connection,
 };
 
@@ -114,7 +114,7 @@ impl SshClient {
                     Ok(v) => v,
                     Err(e) => {
                         warn!("port forward accept error: {e}");
-                        append_mobile_debug_log(&format!(
+                        append_android_debug_log(&format!(
                             "ssh_forward_accept_error listen=127.0.0.1:{} remote={}:{} error={}",
                             actual_port, remote_host, remote_port, e
                         ));
@@ -123,7 +123,7 @@ impl SshClient {
                 };
 
                 debug!("port forward: accepted connection from {peer_addr}");
-                append_mobile_debug_log(&format!(
+                append_android_debug_log(&format!(
                     "ssh_forward_accept listen=127.0.0.1:{} remote={}:{} peer={}",
                     actual_port, remote_host, remote_port, peer_addr
                 ));
@@ -146,7 +146,7 @@ impl SshClient {
                             Ok(ch) => ch,
                             Err(e) => {
                                 error!("port forward: open direct-tcpip failed: {e}");
-                                append_mobile_debug_log(&format!(
+                                append_android_debug_log(&format!(
                                     "ssh_forward_direct_tcpip_failed listen=127.0.0.1:{} remote={}:{} peer={} error={}",
                                     actual_port, remote_host, remote_port, peer_addr, e
                                 ));
@@ -155,7 +155,7 @@ impl SshClient {
                         }
                     };
 
-                    append_mobile_debug_log(&format!(
+                    append_android_debug_log(&format!(
                         "ssh_forward_direct_tcpip_opened listen=127.0.0.1:{} remote={}:{} peer={}",
                         actual_port, remote_host, remote_port, peer_addr
                     ));
@@ -171,7 +171,7 @@ impl SshClient {
                     .await
                     {
                         debug!("port forward proxy ended: {e}");
-                        append_mobile_debug_log(&format!(
+                        append_android_debug_log(&format!(
                             "ssh_forward_proxy_error listen=127.0.0.1:{} remote={}:{} peer={} error={}",
                             actual_port, remote_host, remote_port, peer_addr, e
                         ));
@@ -237,14 +237,14 @@ impl SshClient {
                     Ok(n) => {
                         let text = String::from_utf8_lossy(&buf[..n]);
                         for line in text.lines().filter(|line| !line.trim().is_empty()) {
-                            append_mobile_debug_log(&format!(
+                            append_android_debug_log(&format!(
                                 "ssh_app_server_proxy_stderr remote={} line={}",
                                 remote_label, line
                             ));
                         }
                     }
                     Err(error) => {
-                        append_mobile_debug_log(&format!(
+                        append_android_debug_log(&format!(
                             "ssh_app_server_proxy_stderr_error remote={} error={}",
                             remote_label, error
                         ));

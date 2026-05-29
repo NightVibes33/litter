@@ -35,7 +35,7 @@ enum LitterPlatform {
     static let supportsLocalRuntime = !isCatalyst
     static let supportsVoiceRuntime = !isCatalyst
 
-    private enum LocalRuntimeBootstrapState: Equatable {
+    private enum LocalRuntimeBootstrapState {
         case idle
         case starting
         case ready
@@ -50,29 +50,22 @@ enum LitterPlatform {
         bootstrapLock.unlock()
     }
 
-    private static var currentLocalRuntimeBootstrapState: LocalRuntimeBootstrapState {
-        bootstrapLock.lock()
-        let state = bootstrapState
-        bootstrapLock.unlock()
-        return state
-    }
-
-    static var isLocalRuntimeReady: Bool {
-        currentLocalRuntimeBootstrapState == .ready
-    }
-
     static func bootstrapLocalRuntimeIfNeeded() {
 #if !targetEnvironment(macCatalyst)
-        migrateWorkDirIfHostPath()
-        LitterCrashReporter.mark("LitterPlatform.bootstrapLocalRuntime.deferred")
+        Task.detached(priority: .utility) {
+            do {
+                try await LitterPlatform.ensureLocalRuntimeReady()
+            } catch {
+                NSLog("[ish] bootstrap/readiness failed: \(error.localizedDescription)")
+            }
+        }
 #endif
     }
 
     static func repairLocalRuntimeBridgesIfNeeded() {
 #if !targetEnvironment(macCatalyst)
-        guard isLocalRuntimeReady else { return }
         Task.detached(priority: .utility) {
-            let codexBridge = await IshFS.repairCodexHomeBridgeOnReadyRuntime()
+            let codexBridge = await IshFS.repairCodexHomeBridge()
             if codexBridge.exitCode != 0 {
                 let output = codexBridge.output.trimmingCharacters(in: .whitespacesAndNewlines)
                 NSLog("[ish] /root/.codex bridge foreground repair failed rc=\(codexBridge.exitCode): \(output)")
@@ -148,7 +141,6 @@ enum LitterPlatform {
         }
 
         await LitterBuildKit.shared.startFakefsRequestMonitor()
-        await LocalConnectorBroker.shared.publishManifestIfLocalRuntimeReady()
     }
 
     private static func isAlreadyBootstrapped(_ error: Error) -> Bool {

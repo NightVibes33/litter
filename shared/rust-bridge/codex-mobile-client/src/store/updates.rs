@@ -66,7 +66,7 @@ pub enum AppStoreUpdateRecord {
     /// auto-upsert hook for a finalized `show_widget`, or one of the
     /// handwritten Save-as-App / rename / delete / replace-html /
     /// save-state calls. Payload-free: platforms respond by calling
-    /// their existing `SavedAppsStore.reload()` (or equivalent Swift
+    /// their existing `SavedAppsStore.reload()` (or equivalent Kotlin
     /// flow) to pull a fresh snapshot. Introduced in R3 to give the
     /// Apps list live reactivity without a separate subscription
     /// surface.

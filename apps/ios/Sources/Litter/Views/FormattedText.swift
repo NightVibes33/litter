@@ -3,8 +3,8 @@ import SwiftUI
 /// Drop-in replacement for `Text` that applies inline formatting such as
 /// plugin-reference pills (`[@Name](plugin://plugin-name@marketplace)`).
 ///
-/// Parsing lives in shared Rust (`parsePluginRefs`) so Swift UI and
-/// runtime parsing stay in sync. Falls back to plain `Text` when the input contains nothing to
+/// Parsing lives in shared Rust (`parsePluginRefs`) so iOS/Android stay in
+/// sync. Falls back to plain `Text` when the input contains nothing to
 /// format. Style via modifiers on this view: `.font(...)`,
 /// `.foregroundStyle(...)`. Pills always render with the accent color.
 struct FormattedText: View {

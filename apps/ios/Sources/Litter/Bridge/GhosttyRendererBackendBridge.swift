@@ -48,7 +48,7 @@ final class GhosttyRendererBackendBridge: TerminalRendererBackend, @unchecked Se
     func requestRedraw() {
         // UIKit Ghostty surfaces render through Ghostty's own renderer thread.
         // Ghostty's wakeup callback drains the app mailbox; this Rust-side
-        // renderer callback is not used by the iOS display-link path.
+        // renderer callback only exists for Android's app-thread EGL path.
     }
 
     func applyConfigFile(path: String) {

@@ -1,5 +1,5 @@
 //! Mobile preferences: small, JSON-serialized user preferences shared across
-//! iOS. Persisted to a single file in a platform-provided
+//! iOS and Android. Persisted to a single file in a platform-provided
 //! directory so the platforms can point it at local storage today and at a
 //! cloud-synced directory (iCloud ubiquity container / Drive app-data mirror)
 //! later without Rust changes.

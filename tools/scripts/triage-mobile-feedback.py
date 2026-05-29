@@ -90,11 +90,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     run_parser.add_argument("--state-dir", default=str(DEFAULT_STATE_DIR), help="Local triage state directory.")
     run_parser.add_argument("--fetcher", default=str(DEFAULT_FETCHER), help="Path to fetch-mobile-store-artifacts.py.")
     run_parser.add_argument("--store-artifacts-dir", help="Ingest an existing store fetch directory instead of fetching.")
-    run_parser.add_argument("--skip-store", action="store_true", help="Skip TestFlight ingestion.")
+    run_parser.add_argument("--skip-store", action="store_true", help="Skip TestFlight/Play ingestion.")
     run_parser.add_argument("--skip-ios", action="store_true", help="Pass through to the store fetcher.")
+    run_parser.add_argument("--skip-android", action="store_true", help="Pass through to the store fetcher.")
     run_parser.add_argument("--ios-bundle-id", help="Pass through to the store fetcher.")
+    run_parser.add_argument("--android-package", help="Pass through to the store fetcher.")
     run_parser.add_argument("--ios-version", help="Pass through to the store fetcher.")
     run_parser.add_argument("--asc-bin", help="Pass through to the store fetcher.")
+    run_parser.add_argument("--play-service-account-json", help="Pass through to the store fetcher.")
+    run_parser.add_argument("--play-env-file", help="Pass through to the store fetcher.")
     run_parser.add_argument("--no-download-ios-screenshots", action="store_true", help="Pass through to the store fetcher.")
     run_parser.add_argument("--skip-github", action="store_true", help="Skip GitHub issue/PR ingestion.")
     run_parser.add_argument("--github-repo", help="owner/repo. Defaults to the origin remote.")
@@ -122,7 +126,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         choices=("active", "all", *STATUSES),
         help="Filter by status.",
     )
-    list_parser.add_argument("--source", choices=("github", "testflight"), help="Filter by source.")
+    list_parser.add_argument("--source", choices=("github", "testflight", "play"), help="Filter by source.")
 
     return parser.parse_args(command_argv)
 
@@ -312,6 +316,14 @@ def maybe_read_json(path: pathlib.Path) -> dict[str, Any]:
     return json.loads(path.read_text())
 
 
+def first_user_comment(review: dict[str, Any]) -> dict[str, Any]:
+    for comment in reversed(review.get("comments") or []):
+        user_comment = comment.get("userComment") or {}
+        if user_comment:
+            return user_comment
+    return {}
+
+
 def one_line(value: str | None, *, fallback: str, limit: int = 120) -> str:
     text = " ".join((value or "").strip().split())
     if not text:
@@ -357,13 +369,7 @@ def item_record(
     }
 
 
-def normalize_github_items(
-    github_payload: dict[str, Any],
-    *,
-    state_dir: pathlib.Path,
-    run_dir: pathlib.Path,
-    run_id: str,
-) -> list[dict[str, Any]]:
+def normalize_github_items(github_payload: dict[str, Any], *, state_dir: pathlib.Path, run_dir: pathlib.Path, run_id: str) -> list[dict[str, Any]]:
     repo = github_payload.get("repo", "unknown/repo")
     artifact = rel_to_state(run_dir / "github" / "issues.json", state_dir)
     items = []
@@ -406,6 +412,8 @@ def normalize_store_items(store_dir: pathlib.Path, *, state_dir: pathlib.Path, r
 
     ios_feedback = maybe_read_json(store_dir / "ios" / "feedback.json").get("data") or []
     ios_crashes = maybe_read_json(store_dir / "ios" / "crashes.json").get("data") or []
+    android_reviews = maybe_read_json(store_dir / "android" / "reviews.json").get("reviews") or []
+    android_metadata = maybe_read_json(store_dir / "android" / "metadata.json")
 
     feedback_artifact = rel_to_state(store_dir / "ios" / "feedback.json", state_dir)
     for row in ios_feedback:
@@ -468,7 +476,60 @@ def normalize_store_items(store_dir: pathlib.Path, *, state_dir: pathlib.Path, r
             )
         )
 
+    review_artifact = rel_to_state(store_dir / "android" / "reviews.json", state_dir)
+    for review in android_reviews:
+        comment = first_user_comment(review)
+        review_id = review.get("reviewId", "unknown")
+        rating = comment.get("starRating", "unknown")
+        items.append(
+            item_record(
+                item_id=f"play:review:{review_id}",
+                source="play",
+                kind="review",
+                title=one_line(comment.get("text"), fallback=f"Play review {review_id}"),
+                source_created_at=review.get("normalizedLastModified"),
+                source_updated_at=review.get("normalizedLastModified"),
+                source_state="submitted",
+                details=(
+                    f"rating: {rating} | "
+                    f"app version: {comment.get('appVersionName', 'unknown')} | "
+                    f"device: {comment.get('device', 'unknown')}"
+                ),
+                url=None,
+                artifact_refs=[review_artifact],
+                run_id=run_id,
+            )
+        )
 
+    issue_refs = [
+        rel_to_state(store_dir / "android" / "error-issues.json", state_dir),
+        rel_to_state(store_dir / "android" / "error-reports.json", state_dir),
+    ]
+    for issue in android_metadata.get("summarizedIssues") or []:
+        issue_id = issue.get("issueId", "unknown")
+        details = (
+            f"location: {issue.get('location', 'unknown')} | "
+            f"reports: {issue.get('errorReportCount', 0)} | "
+            f"raw reports: {issue.get('rawReportCount', 0)} | "
+            f"users: {issue.get('distinctUsers', 'unknown')}"
+        )
+        if issue.get("sampleReportFirstLine"):
+            details += f" | sample: {one_line(issue.get('sampleReportFirstLine'), fallback='', limit=120)}"
+        items.append(
+            item_record(
+                item_id=f"play:crash-issue:{issue_id}",
+                source="play",
+                kind="crash-issue",
+                title=one_line(issue.get("cause"), fallback=f"Play crash issue {issue_id}"),
+                source_created_at=None,
+                source_updated_at=issue.get("lastErrorReportTime"),
+                source_state="open",
+                details=details,
+                url=issue.get("issueUri"),
+                artifact_refs=issue_refs,
+                run_id=run_id,
+            )
+        )
 
     return items
 
@@ -667,12 +728,16 @@ def run_store_fetch(args: argparse.Namespace, *, run_dir: pathlib.Path, since: d
     ]
     passthrough_flags = [
         "skip_ios",
+        "skip_android",
         "no_download_ios_screenshots",
     ]
     passthrough_values = [
         "ios_bundle_id",
+        "android_package",
         "ios_version",
         "asc_bin",
+        "play_service_account_json",
+        "play_env_file",
     ]
     for name in passthrough_flags:
         if getattr(args, name):

@@ -20,8 +20,7 @@ Litter is a SwiftUI iOS app that talks to Codex through `shared/rust-bridge`. It
 
 iPhone-local model downloading and inference are not part of the app. Private or local models should run on a computer and be added through the AI Providers screen as an OpenAI-compatible `/v1` endpoint.
 
-The repository also contains CI lanes for unsigned sideload IPAs, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline. Public source contains the Nyxian and BuildKit integration code, but the Apple SDK payload and compiled private BuildKit frameworks are not committed. Current supported build work is iOS, watchOS, Mac Catalyst, shared Rust, and BuildKit.
-
+The repository also contains CI lanes for unsigned sideload IPAs, TestFlight, Mac Catalyst, and a private BuildKit asset pipeline. Public source contains the Nyxian and BuildKit integration code, but the Apple SDK payload and compiled private BuildKit frameworks are not committed.
 
 Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com/dnakov). This fork is maintained by [NightVibes33](https://github.com/NightVibes33). In this repo, NightVibes, NightVibes33, NightVibes3, ZYN, and Zyn refer to the same fork maintainer, not separate contributors. Accepted upstream contributors and third-party attribution are tracked in [AUTHORS.md](AUTHORS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
@@ -38,7 +37,8 @@ Original creator/upstream maintainer: [Daniel Nakov / dnakov](https://github.com
 
 ```text
 apps/ios/                  SwiftUI app. project.yml is the XcodeGen source of truth.
-shared/rust-bridge/        Rust mobile bridge, UniFFI API, iSH runtime, SSH, Slingshot, terminal, and app-server transport.
+apps/android/              Android app, Compose UI, proot/Ghostty integration, and release lanes.
+shared/rust-bridge/        Rust mobile bridge, UniFFI API, iSH/proot runtime, SSH, Slingshot, terminal, and app-server transport.
 shared/third_party/codex/  Upstream Codex submodule used by the bridge.
 shared/third_party/ghostty/ Pinned Ghostty renderer submodule used by the terminal work.
 patches/codex/             Local Codex patches applied during sync/build.
@@ -59,6 +59,7 @@ On macOS, install Xcode, Rust, XcodeGen, and the expected mobile toolchains, the
 ```bash
 make ios-device-fast      # fast iOS device build
 make ios-sim-fast         # fast simulator build
+make android-emulator-fast # fast Android emulator build
 make rust-check           # host cargo check for shared Rust crates
 make rust-test            # host cargo test for shared Rust crates
 ```
@@ -149,7 +150,7 @@ Nyxian run/install mode needs more than compiler files. The installed app also n
 
 KittyStore validates imported signing material before it is treated as usable. A bad `.p12` password, missing private key, untrusted certificate, or revoked certificate keeps Nyxian run/install blocked and shows the failure in status instead of silently accepting broken credentials. The Feather-style signing workspace validates per-app provisioning profiles for parse errors, expiration, missing developer certificates, bundle ID mismatch, and profile/certificate mismatch before certificate signing starts. BuildKit Settings reports this state as diagnostics instead of owning duplicate Apple ID or certificate forms.
 
-Litter is open source, but it is not MIT licensed. The project is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store distribution. See [LICENSE](LICENSE). Third-party source imports and submodules keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Litter is open source, but it is not MIT licensed. The project is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and Google Play distribution. See [LICENSE](LICENSE). Third-party source imports and submodules keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The Anisette picker can load SideStore's public server list from `https://servers.sidestore.io/servers.json`, falls back to known SideStore-compatible servers, and allows a custom server URL. Anisette only supplies Apple authentication metadata. It does not install apps by itself.
 
@@ -242,7 +243,7 @@ KittyStore stages those inputs into the native BuildKit driver and uses the vend
 
 The repo now keeps full source snapshots for SideStore (`ThirdParty/SideStore/Source`), Feather (`ThirdParty/Feather/Source`), and LocalDevVPN (`ThirdParty/SideStore/LocalDevVPN-Source`) at the exact upstream commits recorded in `ThirdParty/UPSTREAMS.md`. SideStore and Feather submodules are populated inside those source snapshots too, including SideStore AltSign, minimuxer, em_proxy, apps-v2, Roxas, MarkdownAttributedString, libimobiledevice, libplist, libusbmuxd, libimobiledevice-glue, plus Feather Zsign and IDeviceKitten. The iOS app target also embeds those full source folders as IPA bundle resources, so the shipped app carries the upstream SideStore, Feather, and LocalDevVPN source snapshots instead of only small reference files. Smaller app-reference snapshots remain in `ThirdParty/SideStore/AppReference` and `ThirdParty/Feather/AppReference` for verifier-friendly layout checks. The iOS IPA workflow also builds the vendored SideStore `minimuxer` Rust bridge through `tools/scripts/build-sidestore-minimuxer.sh`, links it into Litter with `KITTYSTORE_MINIMUXER_LINKED`, and treats the real LocalDevVPN app/tunnel as the required transport for SideStore-style on-device install/refresh/remove/list operations. Litter does not claim ownership of SideStore, Feather, or their supporting tools; SideStore, AltStore, Feather, LocalDevVPN, minimuxer, em_proxy, Jitterbug, and Zsign are credited in `THIRD_PARTY_NOTICES.md`.
 
-Bots get a matching fakefs command surface so they do not have to scrape UI state: `litter-kittystore-status`, `litter-kittystore-config`, `litter-kittystore-source`, `litter-kittystore-versions`, `litter-kittystore-validate-profile`, `litter-kittystore-plan`, `litter-kittystore-sign`, `litter-kittystore-install`, `litter-kittystore-refresh`, `litter-kittystore-remove`, and `litter-kittystore-installed`. Source config, source, version, status, profile validation, and plan commands return JSON or write JSON to `/root`; `litter-kittystore-sign` routes through native BuildKit and publishes the signed IPA back into fakefs when the private assets include the Feather/Zsign signer. Install/refresh/remove/installed-app browsing run the linked SideStore minimuxer bridge with a signed IPA or bundle ID, imported pairing file, optional provisioning profile, and LocalDevVPN connected; builds that do not include the bridge return `kittystore-minimuxer-not-linked` instead of pretending install is available.
+Bots get a matching fakefs command surface so they do not have to scrape UI state: `litter-kittystore-status`, `litter-kittystore-config`, `litter-kittystore-source`, `litter-kittystore-versions`, `litter-kittystore-validate-profile`, `litter-kittystore-plan`, `litter-kittystore-sign`, `litter-kittystore-install`, `litter-kittystore-refresh`, `litter-kittystore-remove`, and `litter-kittystore-installed`. Source config, source, version, status, profile validation, and plan commands return JSON or write JSON to `/root`; `litter-kittystore-sign` routes through native BuildKit and publishes the signed IPA back into fakefs when the private assets include the Feather/Zsign signer. Install/refresh/remove/installed-app browsing run the linked SideStore minimuxer bridge with a signed IPA or bundle ID, imported pairing file, optional provisioning profile, and LocalDevVPN connected; builds that do not include the bridge return `sidestore-minimuxer-not-linked` instead of pretending install is available.
 
 All IPAs from this workflow are unsigned. They must be signed by SideStore, AltStore, Feather, or another signing tool before installation.
 
@@ -263,12 +264,16 @@ All IPAs from this workflow are unsigned. They must be signed by SideStore, AltS
 | `make ios-device-fast` | Fast iOS device build using the raw device staticlib lane. |
 | `make ios-sim-fast` | Fast simulator build. |
 | `make ios` | Full iOS package lane. |
+| `make android-emulator-fast` | Fast Android emulator build. |
+| `make android-alpine-fs` | Prepare the bundled Android Alpine fakefs. |
+| `make proot-android` | Build Android proot executable artifacts. |
 | `make ghostty-ios` | Build pinned Ghostty iOS renderer artifacts. |
+| `make ghostty-android` | Build pinned Ghostty Android renderer artifacts. |
 | `make sync-ghostty` | Sync the pinned Ghostty submodule while preserving the Litter mobile patch. |
 | `make watch-register` | Register a newly paired Apple Watch for CLI install flows. |
 | `make rust-check` | Host `cargo check` for shared Rust crates. |
 | `make rust-test` | Host `cargo test` for shared Rust crates. |
-| `make bindings` | Regenerate UniFFI Swift bindings. |
+| `make bindings` | Regenerate UniFFI Swift/Kotlin bindings. |
 | `make xcgen` | Regenerate `Litter.xcodeproj` from `apps/ios/project.yml`. |
 | `make alpine-fs` | Prepare the bundled iOS Alpine fakefs. |
 | `make nyxian-vendor` | Refresh the focused upstream Nyxian/LLVM-On-iOS BuildKit source import while preserving Litter's bridge. |
@@ -284,23 +289,23 @@ Litter began in Daniel Nakov's original upstream repository, `dnakov/litter`, an
 
 | Contributor | Main credited work |
 |---|---|
-| Daniel Nakov (`dnakov`) | Original creator/upstream maintainer; iOS app architecture, Rust/Codex bridge, SSH/local runtime, iSH/Alpine work, terminal/Ghostty work, watch features, mobile UI, releases, and `kittylitter`/Alleycat. |
+| Daniel Nakov (`dnakov`) | Original creator/upstream maintainer; iOS and Android app architecture, Rust/Codex bridge, SSH/local runtime, iSH/Alpine work, terminal/Ghostty/proot work, watch features, mobile UI, releases, and `kittylitter`/Alleycat. |
 | NightVibes33 | Fork maintainer; BuildKit asset CI/downloads, focused Nyxian import work, BuildKit IPA wiring, local model workflow polish, model import/download UX, file workspace fixes, and distribution repo maintenance. |
 | Zyn | Unsigned IPA path, iOS skills bridge, AI provider/local model foundation, fakefs file workspace, native llama/TurboQuant work, local agent workspace, main-chat local model routing, and on-device Swift BuildKit integration. |
 | Codex | AI-assisted implementation commits for local model tooling, BuildKit hardening, diagnostics, local file browser/runtime UX, CI, xcodebuild compatibility, and Swift toolchain support. |
-| Maky (`makyinmars`) | iOS session UX, composer/session cleanup, iOS Codex RPC bridge coverage, workspace/sidebar UX, skills/edit/rename/fork flows, tool-calling/picker UX, agent identity/collaboration flows, remote-host agent logos, iOS 18 support, search themes, server pill polish, SSH credential entry, theme mode, and AMP support. |
-| D-DRUMROLL / Dixith-dev (`Dixith-dev`) | OpenCode mobile shell support, discovery/settings polish, Settings popover title alignment, dropdown positioning, and session deletion fixes. |
-| Kaynan Sampaio de Camargo (`kaynansc`) | Editable saved server connections, reconnect/edit sheet behavior, Input Required modal dismissal, OpenAI base URL setting, thread-scoped prompts/rate limits, and runtime-channel response routing. |
-| Franklin | iOS file search and commands, identifier/signing cleanup, session search, fonts/UX, model-list exposure, iOS exec hook work, iOS 18 support work, search themes, and iOS CI/CD fixes. |
-| sigkitten | Mobile IPC/runtime work, session loading, transcript/thread reuse, permissions, native math parsing, iOS tests, generative UI Rust migration, Rust bridge cleanup, signing/provisioning, reconnect/notification behavior, and pets overlay. |
-| tabrobotics | OpenCode mobile shell work, bundled Codex server and Node proxy support, discovery/local bridge fixes, CI archive fallback, input/model selector polish. |
+| Maky (`makyinmars`) | Android/iOS session UX, composer/session cleanup, iOS Codex RPC bridge coverage, workspace/sidebar UX, skills/edit/rename/fork flows, tool-calling/picker UX, agent identity/collaboration flows, remote-host agent logos, iOS 18 support, search themes, server pill polish, SSH credential entry, theme mode, and AMP support. |
+| D-DRUMROLL / Dixith-dev (`Dixith-dev`) | Android keyboard fixes, OpenCode mobile shell support, Android home/discovery/settings polish, Settings popover title alignment, dropdown positioning, and session deletion fixes. |
+| Kaynan Sampaio de Camargo (`kaynansc`) | Editable saved server connections, Android SSH credential prompt parity, reconnect/edit sheet behavior, Input Required modal dismissal, OpenAI base URL setting, thread-scoped prompts/rate limits, and runtime-channel response routing. |
+| Franklin | iOS/Android file search and commands, Android picker fixes, identifier/signing cleanup, session search, fonts/UX, model-list exposure, iOS exec hook work, iOS 18 support work, search themes, and iOS CI/CD fixes. |
+| sigkitten | Mobile IPC/runtime work, session loading, transcript/thread reuse, permissions, native math parsing, iOS tests, Android runtime/UI fixes, generative UI Rust migration, Rust bridge cleanup, signing/provisioning, reconnect/notification behavior, and pets overlay. |
+| tabrobotics | Android OpenCode/mobile shell work, bundled Codex server and Node proxy support, discovery/local bridge fixes, CI archive fallback, Gradle/lint fixes, Android image upload fixes, and input/model selector polish. |
 | eagle.one / onegaop | Folder grouping for sessions in the sidebar plus related screenshot/homepage documentation. |
-| kkellyoffical | Conversation text selection, message selection preservation, markdown callback stabilization, and user bubble styling restoration. |
+| kkellyoffical | Android conversation text selection, message selection preservation, markdown callback stabilization, user bubble styling restoration, and Android JVM test stabilization. |
 | Coy Geek (`coygeek`) | iOS transcript display controls and UI test coverage. |
 | Niklas Sheth | iOS composer editing fix that avoids forcing selection while editing text. |
 | researchoor | Live Activity timer cleanup and completed-session idle indicator. |
 | Sina Rabiei (`nssina`) | Mac SSH setup documentation for exposing Codex sessions in Litter. |
-| Paul Pincente (`pincente`) | Large-screen discovery modal and focus navigation improvements. |
+| Paul Pincente (`pincente`) | Android large-screen discovery modal and TV focus navigation improvements. |
 | frixa / frixaco | SSH bootstrap compatibility for Macs using Fish as the default shell. |
 | ryanchen01 | Expanded resolver SSH probe behavior. |
 | Jason Penilla (`jpenilla`) | SSH detection for Codex installed through Bun. |

@@ -177,6 +177,22 @@ ensure_host_llvm_on_path() {
     "/opt/local/bin"
   )
 
+  if [ -n "${ANDROID_NDK_HOME:-}" ]; then
+    for candidate in "$ANDROID_NDK_HOME"/toolchains/llvm/prebuilt/*/bin; do
+      llvm_candidates+=("$candidate")
+    done
+  fi
+
+  if [ -n "${ANDROID_NDK_ROOT:-}" ]; then
+    for candidate in "$ANDROID_NDK_ROOT"/toolchains/llvm/prebuilt/*/bin; do
+      llvm_candidates+=("$candidate")
+    done
+  fi
+
+  for candidate in /opt/homebrew/share/android-commandlinetools/ndk/*/toolchains/llvm/prebuilt/*/bin; do
+    llvm_candidates+=("$candidate")
+  done
+
   for candidate in "${llvm_candidates[@]}"; do
     if [ -x "$candidate/clang" ] && [ -x "$candidate/ld.lld" ]; then
       case ":$PATH:" in

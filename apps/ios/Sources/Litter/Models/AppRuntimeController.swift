@@ -15,16 +15,12 @@ final class AppRuntimeController {
     @ObservationIgnored private var lastLiveActivitySyncTime: CFAbsoluteTime = 0
 
     func bind(appModel: AppModel, voiceRuntime: VoiceRuntimeController) {
-        LitterCrashReporter.mark("AppRuntime.bind.begin")
         self.appModel = appModel
         self.voiceRuntime = voiceRuntime
         lifecycle.requestNotificationPermissionIfNeeded()
-        LitterCrashReporter.mark("AppRuntime.bind.notifications")
         reachability.bind(appModel: appModel)
         reachability.start()
-        LitterCrashReporter.mark("AppRuntime.bind.reachability")
         loadAndPushAlleycatSecretKey(client: appModel.client)
-        LitterCrashReporter.mark("AppRuntime.bind.end")
     }
 
     /// Load the persisted iroh device secret key from the keychain (if
@@ -87,9 +83,9 @@ final class AppRuntimeController {
         await lifecycle.reconnectServer(serverId: serverId, appModel: appModel)
     }
 
-    func restoreMissingLocalAuthStateIfNeeded(allowLocalRuntimeBootstrap: Bool = true) async {
+    func restoreMissingLocalAuthStateIfNeeded() async {
         guard let appModel else { return }
-        await appModel.restoreMissingLocalAuthStateIfNeeded(allowLocalRuntimeBootstrap: allowLocalRuntimeBootstrap)
+        await appModel.restoreMissingLocalAuthStateIfNeeded()
     }
 
     func openThreadFromNotification(key: ThreadKey) async {
@@ -121,28 +117,22 @@ final class AppRuntimeController {
     }
 
     func handleSnapshot(_ snapshot: AppSnapshotRecord?) {
-        LitterCrashReporter.mark("AppRuntime.handleSnapshot.begin tracked=\(snapshot?.threadsWithTrackedTurns.count ?? 0)")
         let now = CFAbsoluteTimeGetCurrent()
         let elapsed = now - lastLiveActivitySyncTime
         if elapsed >= 3.0 {
             lastLiveActivitySyncTime = now
             liveActivities.sync(snapshot)
-            LitterCrashReporter.mark("AppRuntime.handleSnapshot.sync-now")
         } else if !pendingLiveActivitySync {
             pendingLiveActivitySync = true
             let delay = 3.0 - elapsed
-            LitterCrashReporter.mark("AppRuntime.handleSnapshot.deferred")
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(delay))
                 guard let self else { return }
                 self.pendingLiveActivitySync = false
                 self.lastLiveActivitySyncTime = CFAbsoluteTimeGetCurrent()
-                LitterCrashReporter.mark("AppRuntime.handleSnapshot.deferred-sync.begin")
                 self.liveActivities.sync(self.appModel?.snapshot)
-                LitterCrashReporter.mark("AppRuntime.handleSnapshot.deferred-sync.end")
             }
         }
-        LitterCrashReporter.mark("AppRuntime.handleSnapshot.end")
     }
 
     func appDidEnterBackground() {
@@ -161,23 +151,16 @@ final class AppRuntimeController {
     }
 
     func appDidBecomeActive() {
-        LitterCrashReporter.mark("AppRuntime.appDidBecomeActive.begin")
-        guard let appModel else {
-            LitterCrashReporter.mark("AppRuntime.appDidBecomeActive.no-model")
-            return
-        }
+        guard let appModel else { return }
         LitterPlatform.repairLocalRuntimeBridgesIfNeeded()
-        LitterCrashReporter.mark("AppRuntime.appDidBecomeActive.repair")
         // Keep lifecycle state in sync even when foreground recovery exits early
         // for an already-running voice session.
         appModel.reconnectController.noteAppBecameActive()
-        LitterCrashReporter.mark("AppRuntime.appDidBecomeActive.note")
         lifecycle.appDidBecomeActive(
             appModel: appModel,
             hasActiveVoiceSession: voiceRuntime?.activeVoiceSession != nil,
             liveActivities: liveActivities
         )
-        LitterCrashReporter.mark("AppRuntime.appDidBecomeActive.end")
     }
 
     func handleBackgroundPush() async {

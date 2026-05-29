@@ -1,6 +1,6 @@
 //! Generative UI dynamic tool specs and `visualize_read_me` handler.
 //!
-//! The tool specs are defined here so the iOS app can register
+//! The tool specs are defined here so both iOS and Android can register
 //! the same tools via a single UniFFI call. The `visualize_read_me`
 //! response is assembled from embedded markdown guidelines.
 
@@ -124,7 +124,7 @@ pub fn handle_show_widget(arguments: &serde_json::Value) -> Result<String, Strin
 // ── Tool spec generation ────────────────────────────────────────────────
 
 /// Returns the generative UI dynamic tool specs for registration on
-/// thread/start. Called from iOS when the experimental
+/// thread/start. Called from both iOS and Android when the experimental
 /// feature is enabled.
 #[uniffi::export]
 pub fn generative_ui_dynamic_tool_specs() -> Vec<AppDynamicToolSpec> {

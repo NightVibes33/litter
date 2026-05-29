@@ -1,5 +1,5 @@
 //! UniFFI-exported `ReconnectController` — shared reconnection orchestration
-//! consumed by the iOS app.
+//! consumed by both iOS and Android.
 
 use crate::ffi::shared::{shared_mobile_client, shared_runtime};
 use crate::mobile_client::MobileClient;
@@ -211,7 +211,7 @@ impl ReconnectController {
 
         // Run the probe body on the shared tokio runtime: the probe awaits
         // session.request_client(...), which uses tokio primitives and would
-        // panic ("no reactor running") when polled from Swift
+        // panic ("no reactor running") when polled from the Swift/Kotlin
         // foreign async executor.
         let _ = self
             .rt
@@ -368,9 +368,6 @@ async fn reconnect_saved_servers_inner(
         .map(|s| s.server_id.clone())
         .collect();
 
-    let should_reconnect_local = servers
-        .iter()
-        .any(|server| server.id == "local" || server.source == "local");
     let local_display_name = resolved_local_display_name(&snapshot, &servers, "local");
 
     let has_local = snapshot
@@ -378,7 +375,7 @@ async fn reconnect_saved_servers_inner(
         .values()
         .any(|server| server.is_local && server_counts_as_connected_for_reconnect(server));
     let mut local_result: Option<ReconnectResult> = None;
-    if !has_local && should_reconnect_local {
+    if !has_local {
         info!("ReconnectController: ensuring local server connected");
         let config = ServerConfig {
             server_id: "local".to_string(),
@@ -405,8 +402,6 @@ async fn reconnect_saved_servers_inner(
                 warn!("ReconnectController: local server connect failed: {}", e);
             }
         }
-    } else if !has_local {
-        info!("ReconnectController: skipping local server reconnect; no local saved record synced");
     }
 
     let credential_provider = credential_provider.lock().await;

@@ -1,0 +1,11 @@
+default_platform(:android)
+
+platform :android do
+  lane :screenshots do
+    gradle(
+      task: ":app:assembleDebug :app:assembleDebugAndroidTest",
+      project_dir: ".."
+    )
+    screengrab
+  end
+end

@@ -1,8 +1,9 @@
 import { sendSilentPush } from "./apns"
+import { sendFCMPush } from "./fcm"
 import { ContentState, Env, RegisterRequest } from "./types"
 
 interface StoredRegistration {
-  platform: "ios"
+  platform: "ios" | "android"
   pushToken: string
   apnsEnvironment: "production" | "sandbox"
   intervalSeconds: number
@@ -26,28 +27,12 @@ export class PushRegistration implements DurableObject {
 
     if (request.method === "PUT" && url.pathname === "/") {
       const body = (await request.json()) as RegisterRequest
-      if (body.platform !== "ios") {
-        return new Response("unsupported platform", { status: 400 })
-      }
-      if (typeof body.pushToken !== "string" || body.pushToken.trim().length === 0) {
-        return new Response("missing pushToken", { status: 400 })
-      }
-      const apnsEnvironment = body.apnsEnvironment ?? "production"
-      if (apnsEnvironment !== "production" && apnsEnvironment !== "sandbox") {
-        return new Response("invalid APNs environment", { status: 400 })
-      }
-      const intervalSeconds = typeof body.intervalSeconds === "number" && Number.isFinite(body.intervalSeconds) && body.intervalSeconds > 0
-        ? body.intervalSeconds
-        : 30
-      const ttlSeconds = typeof body.ttlSeconds === "number" && Number.isFinite(body.ttlSeconds) && body.ttlSeconds > 0
-        ? body.ttlSeconds
-        : 7200
       const reg: StoredRegistration = {
-        platform: "ios",
-        pushToken: body.pushToken.trim(),
-        apnsEnvironment,
-        intervalSeconds,
-        ttlSeconds,
+        platform: body.platform,
+        pushToken: body.pushToken,
+        apnsEnvironment: body.apnsEnvironment ?? "production",
+        intervalSeconds: body.intervalSeconds ?? 30,
+        ttlSeconds: body.ttlSeconds ?? 7200,
         pushCount: 0,
         createdAt: Date.now(),
         contentState: body.contentState,
@@ -78,10 +63,21 @@ export class PushRegistration implements DurableObject {
 
     reg.pushCount++
 
-    const result = await sendSilentPush(this.env, reg.pushToken, reg.apnsEnvironment)
-    if (result.gone) {
-      await this.state.storage.deleteAll()
-      return
+    if (reg.platform === "ios") {
+      const result = await sendSilentPush(this.env, reg.pushToken, reg.apnsEnvironment)
+      if (result.gone) {
+        await this.state.storage.deleteAll()
+        return
+      }
+    } else {
+      const result = await sendFCMPush(this.env, reg.pushToken, {
+        ...(reg.contentState ?? {}),
+        elapsedSeconds: Math.floor((now - reg.createdAt) / 1000),
+      })
+      if (result.unregistered) {
+        await this.state.storage.deleteAll()
+        return
+      }
     }
 
     await this.state.storage.put("reg", reg)

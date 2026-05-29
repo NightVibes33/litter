@@ -2,11 +2,11 @@
 
 Last verified public build:
 
-- Commit: `d45ea1c4`
+- Commit: `ae9c4ad`
 - Workflow: `Build Unsigned iOS IPA`
-- Run: https://github.com/NightVibes33/litter/actions/runs/26510892012
-- Result: green after retrying unsigned IPA release publishing
-- Artifact mode: unsigned KittyStore/AltStore-compatible IPA for re-signing
+- Run: https://github.com/NightVibes33/litter/actions/runs/25643963735
+- Result: green after restoring Files workspace navigation and local-model skill prompt routing
+- Artifact mode: unsigned SideStore/AltStore IPA for re-signing
 
 Current BuildKit state:
 
@@ -20,12 +20,15 @@ Latest implementation note:
 - Settings -> BuildKit can store a private GitHub token in Keychain, download `LitterBuildKitAssets.zip` from a private release, verify SHA256, extract the ZIP, and install assets atomically.
 - Private CI can authenticate private asset downloads with `LITTER_BUILDKIT_ASSET_TOKEN`; native driver loadability still requires the private framework to be embedded/codesigned in the sideload IPA.
 
-Latest changes after the last verified build:
+Latest local changes awaiting CI verification:
 
-- `0e2854a7` fixes the embedded KittyStore archive blocker by moving store metadata mutation behind `StoreApp.applyEmbeddedKittyStoreMetadata()`.
-- `0e2854a7` also removes delayed embedded-store rebranding passes, renames the host/embedded glue to KittyStore, rebrands widget fallback assets/status codes, and keeps legacy SideStore URL schemes only as compatibility aliases.
-- `0e2854a7` makes `apps/ios/scripts/regenerate-project.sh` POSIX `sh` compatible and marks intentional XcodeGen script phases with `basedOnDependencyAnalysis: false`.
-- CI run https://github.com/NightVibes33/litter/actions/runs/26528958664 was in progress when this note was updated.
+- Added `litter-nyxian-status` readiness diagnostics and local-model tool exposure.
+- Added focused Nyxian vendor/build/verify scripts and make targets for private asset packs.
+- Added in-process unsigned IPA packaging and fakefs artifact export for BuildKit jobs.
+- Updated README/development/audit docs with exact readiness gates, focused vendor state, and known limits.
+- Focused Nyxian source import is recorded in `ThirdParty/Nyxian/VENDOR_LOCK.json`; full upstream refresh should run on macOS/CI, not iSH fakefs.
+
+- Latest source-import hardening: `tools/scripts/verify-nyxian-source-import.sh` now verifies Builder.swift, LiveContainer/ZSign, the iOS arm64 OpenSSL slice, VENDOR_LOCK, and the bundled in-app Nyxian manifest.
 
 Current runner asset workflow:
 

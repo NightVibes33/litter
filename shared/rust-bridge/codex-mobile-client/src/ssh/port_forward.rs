@@ -8,7 +8,7 @@ use russh::ChannelMsg;
 use russh::client::Msg;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::append_mobile_debug_log;
+use super::append_android_debug_log;
 
 pub(super) async fn proxy_connection(
     local: tokio::net::TcpStream,
@@ -32,7 +32,7 @@ pub(super) async fn proxy_connection(
                 Ok(0) => break,
                 Ok(n) => {
                     if ssh_writer.write_all(&buf[..n]).await.is_err() {
-                        append_mobile_debug_log(&format!(
+                        append_android_debug_log(&format!(
                             "ssh_forward_local_to_remote_write_failed listen=127.0.0.1:{} remote={}:{} peer={}",
                             local_port, local_to_remote_remote_host, remote_port, peer_addr
                         ));
@@ -40,7 +40,7 @@ pub(super) async fn proxy_connection(
                     }
                 }
                 Err(error) => {
-                    append_mobile_debug_log(&format!(
+                    append_android_debug_log(&format!(
                         "ssh_forward_local_read_error listen=127.0.0.1:{} remote={}:{} peer={} error={}",
                         local_port, local_to_remote_remote_host, remote_port, peer_addr, error
                     ));
@@ -56,7 +56,7 @@ pub(super) async fn proxy_connection(
         match ssh_channel.wait().await {
             Some(ChannelMsg::Data { data }) => {
                 if local_write.write_all(&data).await.is_err() {
-                    append_mobile_debug_log(&format!(
+                    append_android_debug_log(&format!(
                         "ssh_forward_local_write_failed listen=127.0.0.1:{} remote={}:{} peer={}",
                         local_port, remote_host, remote_port, peer_addr
                     ));
@@ -64,21 +64,21 @@ pub(super) async fn proxy_connection(
                 }
             }
             Some(ChannelMsg::Eof) => {
-                append_mobile_debug_log(&format!(
+                append_android_debug_log(&format!(
                     "ssh_forward_channel_eof listen=127.0.0.1:{} remote={}:{} peer={}",
                     local_port, remote_host, remote_port, peer_addr
                 ));
                 break;
             }
             Some(ChannelMsg::Close) => {
-                append_mobile_debug_log(&format!(
+                append_android_debug_log(&format!(
                     "ssh_forward_channel_close listen=127.0.0.1:{} remote={}:{} peer={}",
                     local_port, remote_host, remote_port, peer_addr
                 ));
                 break;
             }
             None => {
-                append_mobile_debug_log(&format!(
+                append_android_debug_log(&format!(
                     "ssh_forward_channel_ended listen=127.0.0.1:{} remote={}:{} peer={}",
                     local_port, remote_host, remote_port, peer_addr
                 ));

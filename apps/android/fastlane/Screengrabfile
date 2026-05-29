@@ -1,0 +1,7 @@
+app_package_name "com.sigkitten.litter.android"
+use_tests_in_packages ["com.litter.android"]
+app_apk_path "../app/build/outputs/apk/debug/app-debug.apk"
+tests_apk_path "../app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+locales ["en-US"]
+clear_previous_screenshots true
+output_directory "./screenshots"

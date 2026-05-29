@@ -1087,7 +1087,6 @@ private final class LocalFileWorkspaceModel {
 
     private var favoriteItems: [LocalFileStoredShortcut] = []
     private var recentItems: [LocalFileStoredShortcut] = []
-    private var reloadGeneration: UInt64 = 0
 
     private static let showHiddenKey = "local_file_workspace_show_hidden_v1"
     private static let showAdvancedLocationsKey = "local_file_workspace_show_advanced_locations_v1"
@@ -1228,27 +1227,17 @@ private final class LocalFileWorkspaceModel {
     }
 
     func reload(path: String) async {
-        reloadGeneration &+= 1
-        let generation = reloadGeneration
-        let includeHidden = showHidden
         isLoading = true
         errorMessage = nil
-        defer {
-            if generation == reloadGeneration {
-                isLoading = false
-            }
-        }
         do {
-            let nextEntries = try await IshFS.listDirectory(path: path, includeHidden: includeHidden)
-            guard generation == reloadGeneration, !Task.isCancelled else { return }
-            entries = nextEntries
+            entries = try await IshFS.listDirectory(path: path, includeHidden: showHidden)
             currentPath = path
             selectedPaths = selectedPaths.intersection(Set(entries.map(\.path)))
         } catch {
-            guard generation == reloadGeneration, !Task.isCancelled else { return }
             entries = []
             errorMessage = error.localizedDescription
         }
+        isLoading = false
     }
 
     func open(_ entry: LocalFileEntry) async {
@@ -1324,26 +1313,12 @@ private final class LocalFileWorkspaceModel {
 
     func deleteSelectedEntries() async throws {
         let targets = selectedEntries
-        var failures: [String] = []
         for entry in targets {
-            do {
-                try await IshFS.delete(path: entry.path)
-                removeStoredPath(entry.path)
-                selectedPaths.remove(entry.path)
-            } catch {
-                failures.append("\(entry.name): \(error.localizedDescription)")
-            }
+            try await IshFS.delete(path: entry.path)
+            removeStoredPath(entry.path)
         }
         clearSelection()
         await reload()
-        if !failures.isEmpty {
-            let failureText = failures.joined(separator: "\n")
-            throw NSError(
-                domain: "LocalFileWorkspace",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "Could not delete \(failures.count) item(s):\n\(failureText)"]
-            )
-        }
     }
 
     func export(entries: [LocalFileEntry]) async throws -> [URL] {
@@ -1353,12 +1328,7 @@ private final class LocalFileWorkspaceModel {
                 let archivePath = "/tmp/litter-share-\(UUID().uuidString).tar.gz"
                 let result = await IshFS.compress(path: entry.path, destination: archivePath)
                 guard result.exitCode == 0 else { throw makeError("Could not prepare \(entry.name) for sharing", result: result) }
-                do {
-                    urls.append(try await IshFS.copyFileToTemporaryURL(path: archivePath, suggestedFileName: "\(entry.name).tar.gz"))
-                } catch {
-                    _ = await IshFS.run("rm -f \(IshFS.shellQuote(archivePath))")
-                    throw error
-                }
+                urls.append(try await IshFS.copyFileToTemporaryURL(path: archivePath, suggestedFileName: "\(entry.name).tar.gz"))
                 _ = await IshFS.run("rm -f \(IshFS.shellQuote(archivePath))")
             } else {
                 urls.append(try await IshFS.copyFileToTemporaryURL(path: entry.path, suggestedFileName: entry.name))
@@ -2631,7 +2601,7 @@ struct LitterTerminalPanel: View {
         } else if target.isEmpty {
             shellCommand = "cd && pwd"
         } else {
-            shellCommand = "cd \(IshFS.shellQuote(cdDestination(from: target))) && pwd"
+            shellCommand = "cd \(target) && pwd"
         }
 
         let result = await executeTerminalCommand(shellCommand, cwd: startCwd)
