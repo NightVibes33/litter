@@ -186,7 +186,16 @@ final class LocalConnectorBroker: @unchecked Sendable {
         LocalConnectorBrokerErrorResponse(ok: false, error: .init(code: code, message: message))
     }
 
+    func publishManifestIfLocalRuntimeReady() async {
+        guard withStateLock({ isRunning }) else { return }
+        await publishManifest()
+    }
+
     private func publishManifest() async {
+        guard LitterPlatform.isLocalRuntimeReady else {
+            LLog.info("connectors", "deferring connector broker manifest publish until local runtime is ready")
+            return
+        }
         let manifest = LocalConnectorBrokerManifest(
             version: 1,
             service: "litter-local-connector-broker",
@@ -216,6 +225,7 @@ final class LocalConnectorBroker: @unchecked Sendable {
     }
 
     private func unpublishManifest() async {
+        guard LitterPlatform.isLocalRuntimeReady else { return }
         _ = await IshFS.run("rm -f \(IshFS.shellQuote(Self.manifestPath))")
     }
 

@@ -649,18 +649,24 @@ private final class LitterOnboardingReadinessStore: ObservableObject {
         isRefreshing = true
         setAllChecking()
 
-        let shell = await IshFS.run("true")
-        update(.shell, status: shell.exitCode == 0 ? .ready : .warning, detail: shell.exitCode == 0 ? "Commands can launch through the embedded iSH runtime." : shell.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        if LitterPlatform.isLocalRuntimeReady {
+            let shell = await IshFS.run("true")
+            update(.shell, status: shell.exitCode == 0 ? .ready : .warning, detail: shell.exitCode == 0 ? "Commands can launch through the embedded iSH runtime." : shell.output.trimmingCharacters(in: .whitespacesAndNewlines))
 
-        do {
-            let entries = try await IshFS.listDirectory(path: HomeAnchor.path, includeHidden: true)
-            update(.workspace, status: .ready, detail: "Listed \(entries.count) items under /root.")
-        } catch {
-            update(.workspace, status: .warning, detail: error.localizedDescription)
+            do {
+                let entries = try await IshFS.listDirectory(path: HomeAnchor.path, includeHidden: true)
+                update(.workspace, status: .ready, detail: "Listed \(entries.count) items under /root.")
+            } catch {
+                update(.workspace, status: .warning, detail: error.localizedDescription)
+            }
+
+            let pathCheck = await IshFS.run("[ -d /root ] && [ -d /usr/local/bin ] && [ -d /root/litter ]")
+            update(.paths, status: pathCheck.exitCode == 0 ? .ready : .warning, detail: pathCheck.exitCode == 0 ? "/root, /root/litter, and /usr/local/bin are visible." : "/root/litter or /usr/local/bin is missing. Run the filesystem doctor from BuildKit settings if tools are unavailable.")
+        } else {
+            update(.shell, status: .warning, detail: "Local shell diagnostics are deferred until a local runtime feature is opened.")
+            update(.workspace, status: .warning, detail: "Workspace checks are deferred until the local runtime is started.")
+            update(.paths, status: .warning, detail: "Fakefs path checks are deferred until the local runtime is started.")
         }
-
-        let pathCheck = await IshFS.run("[ -d /root ] && [ -d /usr/local/bin ] && [ -d /root/litter ]")
-        update(.paths, status: pathCheck.exitCode == 0 ? .ready : .warning, detail: pathCheck.exitCode == 0 ? "/root, /root/litter, and /usr/local/bin are visible." : "/root/litter or /usr/local/bin is missing. Run the filesystem doctor from BuildKit settings if tools are unavailable.")
 
         let connectedCount = appModel.snapshot?.servers.filter { $0.health == .connected }.count ?? 0
         if connectedCount > 0 {

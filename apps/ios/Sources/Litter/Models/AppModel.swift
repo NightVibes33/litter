@@ -62,9 +62,8 @@ final class AppModel {
 
     private nonisolated static let _prewarmResult: RustBridges = {
         LitterCrashReporter.mark("AppModel.prewarmResult.begin")
-        // Boot the iSH kernel BEFORE any Rust bridge construction so the exec
-        // hook is wired up before the first command can be issued. Idempotent
-        // — the AppDelegate call site is a no-op on second invocation.
+        // Normalize local-runtime defaults without booting iSH during app launch.
+        // The kernel is started only when a local shell feature explicitly needs it.
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
 
         let rc = ReconnectController()
@@ -661,7 +660,7 @@ final class AppModel {
         await refreshSnapshot()
     }
 
-    func restoreStoredLocalAuthState(serverId: String) async {
+    func restoreStoredLocalAuthState(serverId: String, allowLocalRuntimeBootstrap: Bool = true) async {
         let storedApiKey: String?
         if let rawApiKey = await loadStoredLocalApiKey() {
             let trimmedApiKey = rawApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -707,13 +706,18 @@ final class AppModel {
 
         guard storedApiKey != nil else { return }
         OpenAIApiKeyStore.shared.applyToEnvironment()
+        guard !LitterPlatform.supportsLocalRuntime || allowLocalRuntimeBootstrap || LitterPlatform.isLocalRuntimeReady else {
+            LLog.info("auth", "deferring stored local API key reconnect until local runtime is ready", fields: ["serverId": serverId])
+            return
+        }
         guard await reconnectLocalServerForStoredApiKeyRestore(serverId: serverId) else { return }
         if let storedApiKey, await loginStoredLocalApiKeyAuth(serverId: serverId, apiKey: storedApiKey) {
             await refreshSnapshot()
         }
     }
 
-    func restoreMissingLocalAuthStateIfNeeded() async {
+    func restoreMissingLocalAuthStateIfNeeded(allowLocalRuntimeBootstrap: Bool = true) async {
+        guard !LitterPlatform.supportsLocalRuntime || allowLocalRuntimeBootstrap || LitterPlatform.isLocalRuntimeReady else { return }
         guard let snapshot else { return }
         let localServerIds = snapshot.servers
             .filter { $0.isLocal && $0.account == nil }
@@ -722,7 +726,7 @@ final class AppModel {
         guard !localServerIds.isEmpty else { return }
 
         for serverId in localServerIds {
-            await restoreStoredLocalAuthState(serverId: serverId)
+            await restoreStoredLocalAuthState(serverId: serverId, allowLocalRuntimeBootstrap: allowLocalRuntimeBootstrap)
         }
         await refreshSnapshot()
     }

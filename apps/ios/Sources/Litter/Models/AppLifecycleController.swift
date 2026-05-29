@@ -55,7 +55,8 @@ final class AppLifecycleController {
         LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.reconnectRecords.begin")
         let servers = await reconnectRecords(
             appModel: appModel,
-            rememberedOnly: true
+            rememberedOnly: true,
+            allowLocalRuntimeBootstrap: false
         )
         LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.reconnectRecords.end count=\(servers.count)")
         appModel.reconnectController.setMultiClankerAndQuicEnabled(enabled: true)
@@ -68,9 +69,9 @@ final class AppLifecycleController {
         let results = await appModel.reconnectController.reconnectSavedServers()
         await appModel.refreshSnapshot()
         for result in results where result.needsLocalAuthRestore {
-            await appModel.restoreStoredLocalAuthState(serverId: result.serverId)
+            await appModel.restoreStoredLocalAuthState(serverId: result.serverId, allowLocalRuntimeBootstrap: false)
         }
-        await appModel.restoreMissingLocalAuthStateIfNeeded()
+        await appModel.restoreMissingLocalAuthStateIfNeeded(allowLocalRuntimeBootstrap: false)
         await appModel.refreshSnapshot()
         // If reconnecting saved alleycat servers triggered the iroh
         // endpoint bind, the Rust side may have generated a fresh
@@ -432,23 +433,15 @@ final class AppLifecycleController {
                 "refreshKeys": Array(keysToRefresh).map(\.debugLabel)
             ]
         )
-        if LitterPlatform.supportsLocalRuntime {
-            LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.localRuntime.begin")
-            do {
-                try await LitterPlatform.ensureLocalRuntimeReady()
-                LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.localRuntime.end")
-            } catch {
-                LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.localRuntime.error")
-                logLocalRuntimeUnavailable(error, fields: ["phase": "foregroundRecovery"])
-            }
-        }
+        LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.localRuntime.deferred")
         // Always attempt to reconnect saved servers on foreground return.
         // The ReconnectController skips servers whose health != .disconnected,
         // so this is cheap when everything is still connected.
         LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.reconnectRecords.begin")
         let servers = await reconnectRecords(
             appModel: appModel,
-            rememberedOnly: true
+            rememberedOnly: true,
+            allowLocalRuntimeBootstrap: false
         )
         LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.reconnectRecords.end count=\(servers.count)")
         appModel.reconnectController.setMultiClankerAndQuicEnabled(enabled: true)
@@ -479,16 +472,16 @@ final class AppLifecycleController {
         await appModel.refreshSnapshot()
         LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.refreshAfterActive")
         for result in results where result.needsLocalAuthRestore {
-            await appModel.restoreStoredLocalAuthState(serverId: result.serverId)
+            await appModel.restoreStoredLocalAuthState(serverId: result.serverId, allowLocalRuntimeBootstrap: false)
         }
-        await appModel.restoreMissingLocalAuthStateIfNeeded()
+        await appModel.restoreMissingLocalAuthStateIfNeeded(allowLocalRuntimeBootstrap: false)
         LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.restoreAuth.end")
 
         if needsInitialReconnect {
             LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.initialReconnect.begin")
             let retryResults = await appModel.reconnectController.reconnectSavedServers()
             for result in retryResults where result.needsLocalAuthRestore {
-                await appModel.restoreStoredLocalAuthState(serverId: result.serverId)
+                await appModel.restoreStoredLocalAuthState(serverId: result.serverId, allowLocalRuntimeBootstrap: false)
             }
             await appModel.refreshSnapshot()
             LitterCrashReporter.mark("AppLifecycle.foregroundRecovery.initialReconnect.end count=\(retryResults.count)")
@@ -708,7 +701,8 @@ final class AppLifecycleController {
 
     private func reconnectRecords(
         appModel: AppModel,
-        rememberedOnly: Bool = false
+        rememberedOnly: Bool = false,
+        allowLocalRuntimeBootstrap: Bool = true
     ) async -> [SavedServerRecord] {
         let records = SavedServerStore.reconnectRecords(
             localDisplayName: appModel.resolvedLocalServerDisplayName(),
@@ -718,6 +712,9 @@ final class AppLifecycleController {
         return records
 #else
         guard records.contains(where: isLocalReconnectRecord) else { return records }
+        guard allowLocalRuntimeBootstrap else {
+            return records.filter { !isLocalReconnectRecord($0) }
+        }
         do {
             try await LitterPlatform.ensureLocalRuntimeReady()
             return records

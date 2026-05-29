@@ -76,7 +76,7 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
             OpenAIApiKeyStore.shared.applyToEnvironment()
             guard let appRuntime = self?.appRuntime else { return }
             Task { @MainActor in
-                await appRuntime.restoreMissingLocalAuthStateIfNeeded()
+                await appRuntime.restoreMissingLocalAuthStateIfNeeded(allowLocalRuntimeBootstrap: false)
             }
         }
 

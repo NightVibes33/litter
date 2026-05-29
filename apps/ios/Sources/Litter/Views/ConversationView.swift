@@ -2530,7 +2530,9 @@ private struct ConversationInputBar: View {
     }
 
     private func loadSkills(forceReload: Bool = false, showErrors: Bool) async {
-        _ = await IshFS.repairCodexHomeBridge()
+        if LitterPlatform.isLocalRuntimeReady {
+            _ = await IshFS.repairCodexHomeBridgeOnReadyRuntime()
+        }
 
         guard appModel.snapshot?.servers.first(where: { $0.serverId == snapshot.threadKey.serverId })?.canUseTransportActions == true else {
             let loadedSkills = InstalledSkillCatalog.merge(serverSkills: [])
