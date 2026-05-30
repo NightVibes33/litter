@@ -1168,7 +1168,9 @@ private extension AppManager
     {
         let progress = Progress.discreteProgress(totalUnitCount: 100)
         
-        let context = InstallAppOperationContext(bundleIdentifier: app.bundleIdentifier, authenticatedContext: group.context)
+        let initialBundleIdentifier = app.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let context = context ?? InstallAppOperationContext(bundleIdentifier: initialBundleIdentifier, authenticatedContext: group.context)
+        context.fillMissingBundleIdentifier(from: initialBundleIdentifier)
         assert(context.authenticatedContext === group.context)
         
         context.beginInstallationHandler = { (installedApp) in
@@ -1199,6 +1201,7 @@ private extension AppManager
             do
             {
                 let app = try result.get()
+                context.fillMissingBundleIdentifier(from: app.bundleIdentifier)
                 context.app = app
                 
                 if cacheApp
@@ -1216,7 +1219,8 @@ private extension AppManager
         
         /* Verify App */
         let permissionsMode = UserDefaults.shared.permissionCheckingDisabled ? .none : permissionReviewMode
-        let verifyOperation = VerifyAppOperation(permissionsMode: permissionsMode, context: context, customBundleId: app.bundleIdentifier)
+        let verifyBundleIdentifier = initialBundleIdentifier.isEmpty ? nil : initialBundleIdentifier
+        let verifyOperation = VerifyAppOperation(permissionsMode: permissionsMode, context: context, customBundleId: verifyBundleIdentifier)
         verifyOperation.resultHandler = { (result) in
             do
             {

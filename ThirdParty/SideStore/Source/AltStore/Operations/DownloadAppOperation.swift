@@ -173,6 +173,7 @@ private extension DownloadAppOperation
             do
             {
                 let application = try result.get()
+                self.context.fillMissingBundleIdentifier(from: application.bundleIdentifier)
                 
                 if self.context.bundleIdentifier == StoreApp.dolphinAppID, self.context.bundleIdentifier != application.bundleIdentifier
                 {
@@ -193,6 +194,7 @@ private extension DownloadAppOperation
                         try FileManager.default.copyItem(at: application.fileURL, to: self.destinationURL, shouldReplace: true)
                         
                         guard let copiedApplication = ALTApplication(fileURL: self.destinationURL) else { throw OperationError.invalidApp }
+                        self.context.fillMissingBundleIdentifier(from: copiedApplication.bundleIdentifier)
                         self.finish(.success(copiedApplication))
                         
                         self.progress.completedUnitCount += 1
@@ -265,6 +267,7 @@ private extension DownloadAppOperation
                     }
                     
                     guard let application = ALTApplication(fileURL: appBundleURL) else { throw OperationError.invalidApp }
+                    self.context.fillMissingBundleIdentifier(from: application.bundleIdentifier)
 
                     // perform cleanup of the temp files
                     if(FileManager.default.fileExists(atPath: fileURL.path)){

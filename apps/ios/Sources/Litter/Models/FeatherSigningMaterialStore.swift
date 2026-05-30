@@ -1,4 +1,12 @@
 import Foundation
+import UIKit
+#if canImport(AltSign)
+import AltSign
+#endif
+
+#if canImport(ZsignSwift)
+import ZsignSwift
+#endif
 
 struct FeatherSigningFileRecord: Codable, Equatable, Identifiable, Sendable {
     var id: String
@@ -8,6 +16,11 @@ struct FeatherSigningFileRecord: Codable, Equatable, Identifiable, Sendable {
     var byteCount: Int64
     var importedAt: Date
     var detail: String
+    var appName: String? = nil
+    var bundleIdentifier: String? = nil
+    var appVersion: String? = nil
+    var buildVersion: String? = nil
+    var iconAppPath: String? = nil
 
     var shortDetail: String {
         if !detail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return detail }
@@ -34,6 +47,15 @@ struct FeatherSigningImportResult: Sendable {
     var message: String
 }
 
+struct FeatherSigningRunResult: Equatable, Sendable {
+    var exitCode: Int
+    var status: String
+    var log: String
+    var signedIPAAppPath: String?
+    var signedIPAFakefsPath: String?
+    var bundleIdentifier: String
+}
+
 struct FeatherSigningOptions: Codable, Equatable, Sendable {
     enum SigningMode: String, Codable, CaseIterable, Identifiable, Sendable {
         case certificate = "certificate"
@@ -46,6 +68,9 @@ struct FeatherSigningOptions: Codable, Equatable, Sendable {
         case `default` = "default"
         case force = "force"
         case adhoc = "adhoc"
+
+        static var allCases: [SigningType] { [.default, .force] }
+
         var id: String { rawValue }
         var label: String {
             switch self {
@@ -93,6 +118,9 @@ struct FeatherSigningOptions: Codable, Equatable, Sendable {
         case none
         case install
         case refresh
+
+        static var allCases: [PostSigningAction] { [.none, .install] }
+
         var id: String { rawValue }
         var label: String {
             switch self {
@@ -134,18 +162,35 @@ struct FeatherSigningOptions: Codable, Equatable, Sendable {
     static func load() -> FeatherSigningOptions {
         guard let data = UserDefaults.standard.data(forKey: FeatherSigningMaterialStore.optionsKey),
               let options = try? JSONDecoder().decode(FeatherSigningOptions.self, from: data) else {
-            return .defaults
+            return .defaults.normalizedForFeatherCertificate
         }
-        return options
+        return options.normalizedForFeatherCertificate
+    }
+
+    var normalizedForFeatherCertificate: FeatherSigningOptions {
+        var copy = self
+        copy.signingMode = .certificate
+        if copy.signingType == .adhoc { copy.signingType = .default }
+        if copy.postSigningAction == .refresh { copy.postSigningAction = .install }
+        return copy
     }
 
     func save() {
-        guard let data = try? JSONEncoder().encode(self) else { return }
+        let normalized = normalizedForFeatherCertificate
+        guard let data = try? JSONEncoder().encode(normalized) else { return }
         UserDefaults.standard.set(data, forKey: FeatherSigningMaterialStore.optionsKey)
     }
 }
 
 enum FeatherSigningMaterialStore {
+    private struct ImportedIPAMetadata {
+        var appName: String
+        var bundleIdentifier: String
+        var appVersion: String
+        var buildVersion: String
+        var iconAppPath: String?
+    }
+
     static let optionsKey = "signing_options"
     private static let certificateRecordKey = "litter.feather.signing.certificate.record.v1"
     private static let provisioningProfileRecordKey = "litter.feather.signing.mobileprovision.record.v1"
@@ -252,8 +297,23 @@ enum FeatherSigningMaterialStore {
     }
 
     static func importIPA(from url: URL) async throws -> FeatherSigningImportResult {
-        let record = try await importFile(from: url, allowedExtensions: ["ipa", "tipa"], label: "IPA", appSubdirectory: "Unsigned", fakefsSubdirectory: "imports", recordKey: importedIPARecordKey, append: false)
-        return FeatherSigningImportResult(title: "IPA Imported", message: "\(record.displayName)\n\(record.fakefsPath)")
+        var record = try await importFile(from: url, allowedExtensions: ["ipa", "tipa"], label: "IPA", appSubdirectory: "Unsigned", fakefsSubdirectory: "imports", recordKey: importedIPARecordKey, append: false)
+        do {
+            let metadata = try ipaMetadata(from: URL(fileURLWithPath: record.appPath), id: record.id)
+            record.displayName = metadata.appName.isEmpty ? record.displayName : metadata.appName
+            record.appName = metadata.appName
+            record.bundleIdentifier = metadata.bundleIdentifier
+            record.appVersion = metadata.appVersion
+            record.buildVersion = metadata.buildVersion
+            record.iconAppPath = metadata.iconAppPath
+            record.detail = ipaDetail(metadata)
+            saveRecord(record, key: importedIPARecordKey)
+            return FeatherSigningImportResult(title: "IPA Imported", message: "\(record.displayName)\n\(record.detail)\n\(record.fakefsPath)")
+        } catch {
+            record.detail = "Imported, but metadata could not be read: \(error.localizedDescription)"
+            saveRecord(record, key: importedIPARecordKey)
+            return FeatherSigningImportResult(title: "IPA Imported", message: "\(record.displayName)\n\(record.fakefsPath)\n\nMetadata warning: \(error.localizedDescription)")
+        }
     }
 
     static func importEntitlements(from url: URL) async throws -> FeatherSigningImportResult {
@@ -284,16 +344,20 @@ enum FeatherSigningMaterialStore {
 
     static func signingPlanJSON(options: FeatherSigningOptions) throws -> String {
         let snapshot = snapshot(checkRevocation: false)
+        let resolvedAppName = resolvedAppName(snapshot: snapshot, options: options)
+        let resolvedBundleIdentifier = resolvedBundleIdentifier(snapshot: snapshot, options: options)
+        let resolvedAppVersion = resolvedAppVersion(snapshot: snapshot, options: options)
         let customProperties = keyValueLines(options.customPropertiesText).reduce(into: [String: Any]()) { result, entry in
             result[entry.key] = entry.value
         }
         let removeDylibs = lines(options.removeDylibsText)
         let removeFiles = lines(options.removeFilesText)
         let properties = FeatherSigningUpstreamAdapter.properties(options: options, customProperties: customProperties)
+        let missing = readinessMissing(snapshot: snapshot, options: options)
         let featherOptions = FeatherSigningUpstreamAdapter.optionsPayload(
-            appName: options.appName,
-            appVersion: options.appVersion,
-            appIdentifier: options.bundleIdentifier,
+            appName: resolvedAppName,
+            appVersion: resolvedAppVersion,
+            appIdentifier: resolvedBundleIdentifier,
             entitlementsFile: snapshot.entitlements?.fakefsPath ?? "",
             signingType: options.signingType.rawValue,
             injectionFiles: snapshot.dylibs.map(\.fakefsPath) + snapshot.tweaks.map(\.fakefsPath),
@@ -306,10 +370,10 @@ enum FeatherSigningMaterialStore {
         let plan: [String: Any] = [
             "schemaVersion": 1,
             "kind": "KittyStoreSigningPlan",
-            "mode": options.signingMode.rawValue,
+            "mode": "certificate",
             "sourceURL": AppReleaseSource.current.stableSourceURLString,
             "createdAt": ISO8601DateFormatter().string(from: Date()),
-            "app": ["name": options.appName, "bundleIdentifier": options.bundleIdentifier, "version": options.appVersion, "ipa": snapshot.importedIPA?.fakefsPath ?? ""],
+            "app": ["name": resolvedAppName, "bundleIdentifier": resolvedBundleIdentifier, "version": resolvedAppVersion, "ipa": snapshot.importedIPA?.fakefsPath ?? ""],
             "signing": [
                 "type": options.signingType.rawValue,
                 "certificateReady": snapshot.certificateState.isUsable,
@@ -332,7 +396,7 @@ enum FeatherSigningMaterialStore {
             "properties": properties,
             "featherOptions": featherOptions,
             "upstream": FeatherSigningUpstreamAdapter.provenance(),
-            "readiness": ["ready": snapshot.importedIPA != nil, "missing": readinessMissing(snapshot: snapshot, options: options)]
+            "readiness": ["ready": snapshot.importedIPA != nil && missing.isEmpty, "missing": missing]
         ]
         let data = try JSONSerialization.data(withJSONObject: plan, options: [.prettyPrinted, .sortedKeys])
         guard let text = String(data: data, encoding: .utf8) else {
@@ -340,6 +404,272 @@ enum FeatherSigningMaterialStore {
         }
         return text + "\n"
     }
+
+    static func signImportedIPA(options rawOptions: FeatherSigningOptions) async -> FeatherSigningRunResult {
+        let options = rawOptions.normalizedForFeatherCertificate
+        #if canImport(ZsignSwift) && canImport(AltSign)
+        do {
+            return try await signImportedIPAWithFeatherZsign(options: options)
+        } catch {
+            return FeatherSigningRunResult(exitCode: 70, status: "feather-zsign-failed", log: error.localizedDescription + "\n", signedIPAAppPath: nil, signedIPAFakefsPath: nil, bundleIdentifier: "")
+        }
+        #else
+        return FeatherSigningRunResult(
+            exitCode: 78,
+            status: "feather-zsign-not-linked",
+            log: "Feather signing requires the vendored Feather ZsignSwift package. Re-run XcodeGen and build with ThirdParty/Feather/Source/Zsign linked.\n",
+            signedIPAAppPath: nil,
+            signedIPAFakefsPath: nil,
+            bundleIdentifier: ""
+        )
+        #endif
+    }
+
+    static func signedIPAURL(appPath: String) -> URL? {
+        let cleaned = appPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+        let url = URL(fileURLWithPath: cleaned)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+#if canImport(ZsignSwift) && canImport(AltSign)
+    private static func signImportedIPAWithFeatherZsign(options: FeatherSigningOptions) async throws -> FeatherSigningRunResult {
+        let currentSnapshot = Self.snapshot(checkRevocation: false)
+        guard let importedIPA = currentSnapshot.importedIPA else {
+            throw NSError(domain: "FeatherSigning", code: 64, userInfo: [NSLocalizedDescriptionKey: "Import an IPA before signing."])
+        }
+        guard let certificate = currentSnapshot.certificate else {
+            throw NSError(domain: "FeatherSigning", code: 64, userInfo: [NSLocalizedDescriptionKey: "Import a .p12/.pfx certificate before signing."])
+        }
+        guard let provisioningProfile = currentSnapshot.provisioningProfile else {
+            throw NSError(domain: "FeatherSigning", code: 64, userInfo: [NSLocalizedDescriptionKey: "Import a matching .mobileprovision before signing."])
+        }
+        guard let identity = NyxianSigningCertificateStorage.loadIdentity() else {
+            throw NSError(domain: "FeatherSigning", code: 64, userInfo: [NSLocalizedDescriptionKey: "The saved certificate password could not be loaded."])
+        }
+        if !currentSnapshot.dylibs.isEmpty || !currentSnapshot.frameworksAndPlugins.isEmpty || !currentSnapshot.tweaks.isEmpty {
+            throw NSError(domain: "FeatherSigning", code: 78, userInfo: [NSLocalizedDescriptionKey: "Direct Feather signing currently supports certificate signing, Info.plist changes, entitlements, remove files, and remove dylibs. Clear imported dylibs/frameworks/tweaks or use the native Feather runner for injection."])
+        }
+
+        let fileManager = FileManager.default
+        let runID = UUID().uuidString
+        let ipaURL = URL(fileURLWithPath: importedIPA.appPath)
+        let certificateURL = URL(fileURLWithPath: certificate.appPath)
+        let profileURL = URL(fileURLWithPath: provisioningProfile.appPath)
+        let profileData = try Data(contentsOf: profileURL)
+        let certificateSummary = try NyxianSigningCertificateValidator.validate(pkcs12Data: identity.data, password: identity.password, checkRevocation: false)
+        let profileSummary = try NyxianProvisioningProfileValidator.validate(data: profileData, signingCertificateFingerprint: certificateSummary.sha256Fingerprint)
+
+        let outputDirectory = workspaceRoot.appendingPathComponent("Signed", isDirectory: true).appendingPathComponent(runID, isDirectory: true)
+        let workingDirectory = workspaceRoot.appendingPathComponent("SigningWork", isDirectory: true).appendingPathComponent(runID, isDirectory: true)
+        try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: workingDirectory) }
+
+        let appBundleURL = try fileManager.unzipAppBundle(at: ipaURL, toDirectory: workingDirectory)
+        guard let application = ALTApplication(fileURL: appBundleURL) else {
+            throw NSError(domain: "FeatherSigning", code: 65, userInfo: [NSLocalizedDescriptionKey: "Feather could not read an app bundle from the imported IPA."])
+        }
+
+        let originalBundleIdentifier = application.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedBundleIdentifier = resolvedBundleIdentifier(snapshot: currentSnapshot, options: options)
+        let effectiveBundleIdentifier = featherCertificateBundleIdentifier(requested: requestedBundleIdentifier, original: originalBundleIdentifier, profile: profileSummary.bundleIdentifier)
+        _ = try NyxianProvisioningProfileValidator.validate(data: profileData, signingCertificateFingerprint: certificateSummary.sha256Fingerprint, requestedBundleIdentifier: effectiveBundleIdentifier)
+
+        try applyFeatherModifications(to: appBundleURL, originalBundleIdentifier: originalBundleIdentifier, effectiveBundleIdentifier: effectiveBundleIdentifier, options: options)
+
+        var zsignError: Error?
+        var didRunZsign = false
+        if options.signingType != .force {
+            didRunZsign = true
+            let signed = Zsign.sign(
+                appPath: appBundleURL.relativePath,
+                provisionPath: profileURL.relativePath,
+                p12Path: certificateURL.relativePath,
+                p12Password: identity.password,
+                entitlementsPath: currentSnapshot.entitlements?.appPath ?? "",
+                removeProvision: !options.removeProvisioning,
+                completion: { _, error in
+                    zsignError = error
+                }
+            )
+            if !signed {
+                throw zsignError ?? NSError(domain: "FeatherSigning", code: 70, userInfo: [NSLocalizedDescriptionKey: "Feather Zsign failed without a specific error."])
+            }
+            if let zsignError { throw zsignError }
+        }
+
+        let signedArchiveURL = try fileManager.zipAppBundle(at: appBundleURL)
+        let outputName = signedIPAFileName(importedIPA: importedIPA, application: application)
+        let outputURL = outputDirectory.appendingPathComponent(outputName, isDirectory: false)
+        if fileManager.fileExists(atPath: outputURL.path) { try fileManager.removeItem(at: outputURL) }
+        try fileManager.copyItem(at: signedArchiveURL, to: outputURL)
+        try? fileManager.removeItem(at: signedArchiveURL)
+
+        let fakefsPath = "/root/.litter/kittystore/signed/\(runID)/\(outputName)"
+        let fakefsWarning = await stageFakefsItem(from: outputURL, to: fakefsPath)
+        if options.deleteAfterSigning {
+            try? fileManager.removeItem(at: ipaURL)
+            UserDefaults.standard.removeObject(forKey: importedIPARecordKey)
+        }
+
+        let zsignLine = didRunZsign ? "- signed with Feather ZsignSwift" : "- modified only using Feather's onlyModify option"
+        let warningLine = fakefsWarning.map { "\nFakefs staging warning: \($0)" } ?? ""
+        let log = """
+        Feather certificate signing completed.
+        - input: \(ipaURL.path)
+        - output: \(outputURL.path)
+        - fakefs: \(fakefsPath)
+        - profile: \(profileSummary.name) / \(profileSummary.bundleIdentifier)
+        - certificate: \(certificateSummary.commonName)
+        - original bundle ID: \(originalBundleIdentifier)
+        - signed bundle ID: \(effectiveBundleIdentifier)
+        \(zsignLine)\(warningLine)
+        """
+        return FeatherSigningRunResult(exitCode: 0, status: "feather-zsign-ok", log: log, signedIPAAppPath: outputURL.path, signedIPAFakefsPath: fakefsPath, bundleIdentifier: effectiveBundleIdentifier)
+    }
+
+    private static func applyFeatherModifications(to appBundleURL: URL, originalBundleIdentifier: String, effectiveBundleIdentifier: String, options: FeatherSigningOptions) throws {
+        try removeFeatherPresetFiles(for: appBundleURL)
+        try removeBrokenWatchAppsIfNeeded(for: appBundleURL)
+        try removeFiles(lines(options.removeFilesText), from: appBundleURL)
+        try rewriteFeatherInfoPlist(in: appBundleURL, bundleIdentifier: effectiveBundleIdentifier, options: options)
+        if !effectiveBundleIdentifier.isEmpty, effectiveBundleIdentifier != originalBundleIdentifier {
+            try modifyPluginIdentifiers(old: originalBundleIdentifier, new: effectiveBundleIdentifier, for: appBundleURL)
+        }
+        if let appName = nonEmpty(options.appName) {
+            try modifyLocaleDisplayNames(appName, for: appBundleURL)
+        }
+        if !lines(options.removeDylibsText).isEmpty {
+            guard let execPath = Bundle(url: appBundleURL)?.executableURL?.relativePath else {
+                throw NSError(domain: "FeatherSigning", code: 66, userInfo: [NSLocalizedDescriptionKey: "Could not locate the app executable for remove-dylib processing."])
+            }
+            if !Zsign.removeDylibs(appExecutable: execPath, using: lines(options.removeDylibsText)) {
+                throw NSError(domain: "FeatherSigning", code: 70, userInfo: [NSLocalizedDescriptionKey: "Feather Zsign failed while removing dylib load paths."])
+            }
+        }
+    }
+
+    private static func rewriteFeatherInfoPlist(in bundleURL: URL, bundleIdentifier: String, options: FeatherSigningOptions) throws {
+        let infoPlistURL = bundleURL.appendingPathComponent("Info.plist")
+        guard let infoDictionary = NSMutableDictionary(contentsOf: infoPlistURL) else {
+            throw NSError(domain: "FeatherSigning", code: 66, userInfo: [NSLocalizedDescriptionKey: "Could not read Info.plist at \(infoPlistURL.path)."])
+        }
+        if options.fileSharing { infoDictionary["UISupportsDocumentBrowser"] = true }
+        if options.iTunesFileSharing { infoDictionary["UIFileSharingEnabled"] = true }
+        if options.proMotion { infoDictionary["CADisableMinimumFrameDurationOnPhone"] = true }
+        if options.gameMode { infoDictionary["GCSupportsGameMode"] = true }
+        if options.iPadFullscreen { infoDictionary["UIRequiresFullScreen"] = true }
+        if options.removeURLScheme { infoDictionary.removeObject(forKey: "CFBundleURLTypes") }
+        if options.appAppearance != .default { infoDictionary["UIUserInterfaceStyle"] = options.appAppearance.rawValue }
+        if options.minimumRequirement != .default { infoDictionary["MinimumOSVersion"] = options.minimumRequirement.rawValue }
+        infoDictionary.removeObject(forKey: "UISupportedDevices")
+        if !bundleIdentifier.isEmpty { infoDictionary[kCFBundleIdentifierKey as String] = bundleIdentifier }
+        if let appName = nonEmpty(options.appName) {
+            infoDictionary["CFBundleDisplayName"] = appName
+            infoDictionary["CFBundleName"] = appName
+        }
+        if let appVersion = nonEmpty(options.appVersion) {
+            infoDictionary["CFBundleShortVersionString"] = appVersion
+            infoDictionary["CFBundleVersion"] = appVersion
+        }
+        guard infoDictionary.write(to: infoPlistURL, atomically: true) else {
+            throw NSError(domain: "FeatherSigning", code: 66, userInfo: [NSLocalizedDescriptionKey: "Could not write Info.plist at \(infoPlistURL.path)."])
+        }
+    }
+
+    private static func modifyPluginIdentifiers(old oldIdentifier: String, new newIdentifier: String, for app: URL) throws {
+        guard !oldIdentifier.isEmpty, !newIdentifier.isEmpty else { return }
+        for bundleURL in enumerateFiles(at: app, where: { $0.hasSuffix(".app") || $0.hasSuffix(".appex") }) {
+            let infoPlistURL = bundleURL.appendingPathComponent("Info.plist")
+            guard let infoDict = NSDictionary(contentsOf: infoPlistURL)?.mutableCopy() as? NSMutableDictionary else { continue }
+            var didChange = false
+            if let oldValue = infoDict["CFBundleIdentifier"] as? String {
+                let newValue = oldValue.replacingOccurrences(of: oldIdentifier, with: newIdentifier)
+                if oldValue != newValue { infoDict["CFBundleIdentifier"] = newValue; didChange = true }
+            }
+            if let oldValue = infoDict["WKCompanionAppBundleIdentifier"] as? String {
+                let newValue = oldValue.replacingOccurrences(of: oldIdentifier, with: newIdentifier)
+                if oldValue != newValue { infoDict["WKCompanionAppBundleIdentifier"] = newValue; didChange = true }
+            }
+            if let extensionDict = (infoDict["NSExtension"] as? NSDictionary)?.mutableCopy() as? NSMutableDictionary {
+                if let attributes = (extensionDict["NSExtensionAttributes"] as? NSDictionary)?.mutableCopy() as? NSMutableDictionary,
+                   let oldValue = attributes["WKAppBundleIdentifier"] as? String {
+                    let newValue = oldValue.replacingOccurrences(of: oldIdentifier, with: newIdentifier)
+                    if oldValue != newValue { attributes["WKAppBundleIdentifier"] = newValue; extensionDict["NSExtensionAttributes"] = attributes; didChange = true }
+                }
+                if let oldValue = extensionDict["NSExtensionFileProviderDocumentGroup"] as? String {
+                    let newValue = oldValue.replacingOccurrences(of: oldIdentifier, with: newIdentifier)
+                    if oldValue != newValue { extensionDict["NSExtensionFileProviderDocumentGroup"] = newValue; didChange = true }
+                }
+                infoDict["NSExtension"] = extensionDict
+            }
+            if didChange { infoDict.write(to: infoPlistURL, atomically: true) }
+        }
+    }
+
+    private static func modifyLocaleDisplayNames(_ name: String, for app: URL) throws {
+        let localizationBundles = try FileManager.default.contentsOfDirectory(at: app, includingPropertiesForKeys: nil).filter { $0.pathExtension == "lproj" }
+        for bundleURL in localizationBundles {
+            let plistURL = bundleURL.appendingPathComponent("InfoPlist.strings")
+            guard FileManager.default.fileExists(atPath: plistURL.path), let dictionary = NSMutableDictionary(contentsOf: plistURL) else { continue }
+            dictionary["CFBundleDisplayName"] = name
+            dictionary.write(toFile: plistURL.path, atomically: true)
+        }
+    }
+
+    private static func removeFeatherPresetFiles(for app: URL) throws {
+        var files = ["_CodeSignature", "embedded.mobileprovision", "com.apple.WatchPlaceholder", "SignedByEsign"].map { app.appendingPathComponent($0) }
+        files += enumerateFiles(at: app, where: { $0.hasSuffix("_CodeSignature") })
+        for file in files { try removeFileIfExists(file) }
+    }
+
+    private static func removeBrokenWatchAppsIfNeeded(for app: URL) throws {
+        let watchDir = app.appendingPathComponent("Watch")
+        guard FileManager.default.fileExists(atPath: watchDir.path) else { return }
+        let contents = try FileManager.default.contentsOfDirectory(at: watchDir, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        for watchApp in contents where watchApp.pathExtension == "app" {
+            let infoPlist = watchApp.appendingPathComponent("Info.plist")
+            if !FileManager.default.fileExists(atPath: infoPlist.path) { try? FileManager.default.removeItem(at: watchApp) }
+        }
+    }
+
+    private static func removeFiles(_ components: [String], from app: URL) throws {
+        for component in components { try removeFileIfExists(app.appendingPathComponent(component)) }
+    }
+
+    private static func removeFileIfExists(_ url: URL) throws {
+        if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+    }
+
+    private static func enumerateFiles(at base: URL, where predicate: (String) -> Bool) -> [URL] {
+        guard let fileEnum = FileManager.default.enumerator(atPath: base.path) else { return [] }
+        var results: [URL] = []
+        while let file = fileEnum.nextObject() as? String {
+            if predicate(file) { results.append(base.appendingPathComponent(file)) }
+        }
+        return results
+    }
+
+    private static func featherCertificateBundleIdentifier(requested: String, original: String, profile: String) -> String {
+        let requested = requested.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !requested.isEmpty { return requested }
+        let profile = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !profile.isEmpty, !profile.hasSuffix(".*") { return profile }
+        return original.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func signedIPAFileName(importedIPA: FeatherSigningFileRecord, application: ALTApplication) -> String {
+        let appName = nonEmpty(importedIPA.appName) ?? nonEmpty(application.name) ?? nonEmpty(importedIPA.displayName) ?? "Signed"
+        let baseName = (appName as NSString).deletingPathExtension
+        return sanitizedFileName("\(baseName)-FeatherSigned.ipa", fallback: "Signed-FeatherSigned.ipa")
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+#endif
 
     static func preparePairingFakefsIfNeeded() async -> String? {
         guard let record = loadPairingRecord() else { return nil }
@@ -389,22 +719,69 @@ enum FeatherSigningMaterialStore {
         return record
     }
 
+    private static func ipaMetadata(from ipaURL: URL, id: String) throws -> ImportedIPAMetadata {
+        #if canImport(AltSign)
+        let fileManager = FileManager.default
+        let workingDirectory = workspaceRoot
+            .appendingPathComponent("Metadata", isDirectory: true)
+            .appendingPathComponent(id + "-" + UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: workingDirectory) }
+
+        let appBundleURL = try fileManager.unzipAppBundle(at: ipaURL, toDirectory: workingDirectory)
+        guard let application = ALTApplication(fileURL: appBundleURL) else {
+            throw NSError(domain: "FeatherSigningMaterialStore", code: 65, userInfo: [NSLocalizedDescriptionKey: "AltSign could not read an app bundle from the IPA."])
+        }
+
+        let iconPath: String?
+        if let iconData = application.icon?.pngData() {
+            let iconURL = workspaceRoot
+                .appendingPathComponent("Icons", isDirectory: true)
+                .appendingPathComponent(id, isDirectory: true)
+                .appendingPathComponent("AppIcon.png", isDirectory: false)
+            try writeReplacing(iconData, to: iconURL)
+            iconPath = iconURL.path
+        } else {
+            iconPath = nil
+        }
+
+        return ImportedIPAMetadata(
+            appName: application.name.trimmingCharacters(in: .whitespacesAndNewlines),
+            bundleIdentifier: application.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines),
+            appVersion: application.version.trimmingCharacters(in: .whitespacesAndNewlines),
+            buildVersion: application.buildVersion.trimmingCharacters(in: .whitespacesAndNewlines),
+            iconAppPath: iconPath
+        )
+        #else
+        throw NSError(domain: "FeatherSigningMaterialStore", code: 65, userInfo: [NSLocalizedDescriptionKey: "AltSign is not linked into this build, so IPA metadata cannot be read."])
+        #endif
+    }
+
+    private static func ipaDetail(_ metadata: ImportedIPAMetadata) -> String {
+        let version = metadata.appVersion.isEmpty ? "" : (metadata.buildVersion.isEmpty ? metadata.appVersion : "\(metadata.appVersion) (\(metadata.buildVersion))")
+        return [metadata.bundleIdentifier, version]
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: "\n")
+    }
+
+    private static func resolvedAppName(snapshot: FeatherSigningMaterialSnapshot, options: FeatherSigningOptions) -> String {
+        firstNonEmpty(options.appName, snapshot.importedIPA?.appName, snapshot.importedIPA?.displayName)
+    }
+
+    private static func resolvedBundleIdentifier(snapshot: FeatherSigningMaterialSnapshot, options: FeatherSigningOptions) -> String {
+        firstNonEmpty(options.bundleIdentifier, snapshot.importedIPA?.bundleIdentifier)
+    }
+
+    private static func resolvedAppVersion(snapshot: FeatherSigningMaterialSnapshot, options: FeatherSigningOptions) -> String {
+        firstNonEmpty(options.appVersion, snapshot.importedIPA?.appVersion)
+    }
+
     private static func readinessMissing(snapshot: FeatherSigningMaterialSnapshot, options: FeatherSigningOptions) -> [String] {
         var missing: [String] = []
         if snapshot.importedIPA == nil { missing.append("IPA") }
-        switch options.signingMode {
-        case .certificate:
-            if !snapshot.certificateState.isUsable { missing.append("validated .p12 certificate") }
-            if snapshot.provisioningProfile == nil, options.signingType != .adhoc { missing.append(".mobileprovision profile") }
-        case .appleID:
-            if !NyxianAppleIDStore.isLoggedIn { missing.append("Apple ID login") }
-            if snapshot.pairingFile == nil { missing.append("pairing file") }
-            if !snapshot.localDevVPNState.isConnected { missing.append("LocalDevVPN") }
-        }
-        if options.postSigningAction != .none {
-            if snapshot.pairingFile == nil { missing.append("pairing file for install/refresh") }
-            if !snapshot.localDevVPNState.isConnected { missing.append("LocalDevVPN for install/refresh") }
-        }
+        if snapshot.importedIPA != nil, resolvedBundleIdentifier(snapshot: snapshot, options: options).isEmpty { missing.append("bundle identifier") }
+        if !snapshot.certificateState.isUsable { missing.append("validated .p12 certificate") }
+        if snapshot.provisioningProfile == nil { missing.append(".mobileprovision profile") }
         return missing
     }
 
@@ -635,5 +1012,13 @@ enum FeatherSigningMaterialStore {
             values[parts[0].trimmingCharacters(in: .whitespacesAndNewlines)] = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return values
+    }
+
+    private static func firstNonEmpty(_ values: String?...) -> String {
+        for value in values {
+            let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return ""
     }
 }

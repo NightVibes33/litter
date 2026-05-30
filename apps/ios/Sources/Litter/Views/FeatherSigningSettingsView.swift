@@ -15,6 +15,8 @@ struct FeatherSigningSettingsView: View {
     @State private var alert: SigningAlert?
     @State private var pendingSignedInstall: PendingSignedInstall?
     @State private var isInstallPromptPresented = false
+    @State private var signedIPAShareItem: FeatherSignedIPAShareItem?
+    @State private var signedIPAInstallServer = FeatherSignedIPAInstallServer()
 
     private var missingItems: [String] {
         readinessMissing()
@@ -49,7 +51,7 @@ struct FeatherSigningSettingsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Reset") {
-                    options = .defaults
+                    options = FeatherSigningOptions.defaults.normalizedForFeatherCertificate
                     options.save()
                     refresh()
                 }
@@ -72,7 +74,7 @@ struct FeatherSigningSettingsView: View {
         .confirmationDialog("Signed IPA Ready", isPresented: $isInstallPromptPresented, titleVisibility: .visible) {
             if let pendingSignedInstall {
                 Button("Install Signed IPA") {
-                    installSignedArtifact(pendingSignedInstall, refresh: false)
+                    installSignedArtifact(pendingSignedInstall)
                 }
             }
             Button("Keep File", role: .cancel) {
@@ -85,9 +87,15 @@ struct FeatherSigningSettingsView: View {
                 Text("The signed IPA was created.")
             }
         }
-        .task { refresh() }
+        .sheet(item: $signedIPAShareItem) { item in
+            FeatherSignedIPAActivitySheet(activityItems: [item.url])
+        }
+        .task {
+            options = options.normalizedForFeatherCertificate
+            refresh()
+        }
         .onDisappear { options.save() }
-        .onChange(of: options) { _, newValue in newValue.save() }
+        .onChange(of: options) { _, newValue in newValue.normalizedForFeatherCertificate.save() }
     }
 
     private var customizationSection: some View {
@@ -97,10 +105,10 @@ struct FeatherSigningSettingsView: View {
                     appIconPreview
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(snapshot.importedIPA?.displayName ?? "No IPA Selected")
+                        Text(snapshot.importedIPA?.appName ?? snapshot.importedIPA?.displayName ?? "No IPA Selected")
                             .font(.headline)
                             .lineLimit(2)
-                        Text(snapshot.importedIPA?.shortDetail ?? "Import an .ipa or .tipa before signing")
+                        Text(importedIPASubtitle)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
@@ -139,63 +147,51 @@ struct FeatherSigningSettingsView: View {
 
     private var signingSection: some View {
         featherSection("Signing") {
-            Picker("Signing Account", selection: $options.signingMode) {
-                ForEach(FeatherSigningOptions.SigningMode.allCases) { value in
-                    Text(value.label).tag(value)
-                }
-            }
-
-            if options.signingMode == .certificate {
-                if snapshot.certificateState.isUsable {
-                    certificateCard
-                } else {
-                    Text("No Certificate")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                pickerButton(
-                    title: p12URL == nil ? "Import Certificate File" : "Certificate File",
-                    subtitle: p12URL?.lastPathComponent,
-                    systemImage: "key.fill",
-                    picker: .p12
-                )
-
-                pickerButton(
-                    title: profileURL == nil ? "Import Provisioning File" : "Provisioning File",
-                    subtitle: profileURL?.lastPathComponent,
-                    systemImage: "doc.badge.gearshape",
-                    picker: .profile
-                )
-
-                SecureField("Certificate Password", text: $p12Password)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                TextField("Nickname (Optional)", text: $certificateNickname)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-
-                Button {
-                    saveCertificate()
-                } label: {
-                    Label("Save Certificate", systemImage: "checkmark.seal.fill")
-                }
-                .disabled(p12URL == nil || profileURL == nil || isWorking)
-
-                if snapshot.certificate != nil || snapshot.provisioningProfile != nil {
-                    Button(role: .destructive) {
-                        FeatherSigningMaterialStore.clearCertificate()
-                        refresh()
-                    } label: {
-                        Label("Clear Certificate", systemImage: "trash")
-                    }
-                }
+            if snapshot.certificateState.isUsable {
+                certificateCard
             } else {
-                statusRow("KittyStore Apple ID", value: NyxianAppleIDStore.load()?.statusDetail ?? "Sign in from KittyStore Settings", ready: NyxianAppleIDStore.isLoggedIn)
+                Text("No Certificate")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
-            pairingRows
+            pickerButton(
+                title: p12URL == nil ? "Import Certificate File" : "Certificate File",
+                subtitle: p12URL?.lastPathComponent,
+                systemImage: "key.fill",
+                picker: .p12
+            )
+
+            pickerButton(
+                title: profileURL == nil ? "Import Provisioning File" : "Provisioning File",
+                subtitle: profileURL?.lastPathComponent,
+                systemImage: "doc.badge.gearshape",
+                picker: .profile
+            )
+
+            SecureField("Certificate Password", text: $p12Password)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            TextField("Nickname (Optional)", text: $certificateNickname)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            Button {
+                saveCertificate()
+            } label: {
+                Label("Save Certificate", systemImage: "checkmark.seal.fill")
+            }
+            .disabled(p12URL == nil || profileURL == nil || isWorking)
+
+            if snapshot.certificate != nil || snapshot.provisioningProfile != nil {
+                Button(role: .destructive) {
+                    FeatherSigningMaterialStore.clearCertificate()
+                    refresh()
+                } label: {
+                    Label("Clear Certificate", systemImage: "trash")
+                }
+            }
 
             Picker("Signing Type", selection: $options.signingType) {
                 ForEach(FeatherSigningOptions.SigningType.allCases) { value in
@@ -203,24 +199,7 @@ struct FeatherSigningSettingsView: View {
                 }
             }
         } footer: {
-            Text("Certificate signing uses a .p12/.pfx plus a matching .mobileprovision. Apple ID signing uses the account already signed in inside KittyStore Settings.")
-        }
-    }
-
-    private var pairingRows: some View {
-        Group {
-            statusRow("Pairing File", value: snapshot.pairingFile?.shortDetail ?? "Missing", ready: snapshot.pairingFile != nil)
-            pickerButton(
-                title: snapshot.pairingFile == nil ? "Import Pairing File" : "Replace Pairing File",
-                subtitle: snapshot.pairingFile?.displayName,
-                systemImage: "link.badge.plus",
-                picker: .pairing
-            )
-            statusRow("LocalDevVPN", value: snapshot.localDevVPNState.isConnected ? "Ready" : "Not Ready", ready: snapshot.localDevVPNState.isConnected)
-            Button { openLocalDevVPN() } label: {
-                Label("Open LocalDevVPN", systemImage: "link")
-            }
-            .buttonStyle(.plain)
+            Text("Feather signing uses the saved .p12/.pfx and matching .mobileprovision. Apple ID signing stays in KittyStore.")
         }
     }
 
@@ -343,15 +322,35 @@ struct FeatherSigningSettingsView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color(uiColor: .secondarySystemBackground))
-            Image(systemName: "app.fill")
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(.secondary)
+            if let iconPath = snapshot.importedIPA?.iconAppPath,
+               let icon = UIImage(contentsOfFile: iconPath) {
+                Image(uiImage: icon)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "app.fill")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .frame(width: 58, height: 58)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color(uiColor: .separator).opacity(0.18), lineWidth: 1)
         }
+    }
+
+    private var importedIPASubtitle: String {
+        guard let record = snapshot.importedIPA else { return "Import an .ipa or .tipa before signing" }
+        let version = [record.appVersion, record.buildVersion]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let details = [record.bundleIdentifier, version]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return details.isEmpty ? record.shortDetail : details.joined(separator: " - ")
     }
 
     private var certificateCard: some View {
@@ -587,19 +586,22 @@ struct FeatherSigningSettingsView: View {
     private func startSigning() {
         isWorking = true
         Task {
-            let pairingWarning = await FeatherSigningMaterialStore.preparePairingFakefsIfNeeded()
             do {
-                let plan = try FeatherSigningMaterialStore.signingPlanJSON(options: options)
+                let normalizedOptions = options.normalizedForFeatherCertificate
+                let plan = try FeatherSigningMaterialStore.signingPlanJSON(options: normalizedOptions)
                 let path = await FeatherSigningMaterialStore.writeLatestPlan(plan)
-                let result = await LitterBuildKit.shared.signKittyStorePlan(planJSON: plan)
+                let result = await FeatherSigningMaterialStore.signImportedIPA(options: normalizedOptions)
                 await MainActor.run {
+                    options = normalizedOptions
                     isWorking = false
                     refresh()
-                    let artifacts = result.fakefsArtifacts.isEmpty ? "" : "\nArtifacts:\n" + result.fakefsArtifacts.joined(separator: "\n")
-                    let warning = pairingWarning.map { "\n\nPairing staging warning:\n\($0)" } ?? ""
-                    lastOutput = "Plan: \(path ?? "in-app only")\nStatus: \(result.status)\nExit: \(result.exitCode)\n\n\(result.log)\(artifacts)\(warning)"
-                    if result.exitCode == 0, options.postSigningAction == .none,
-                       let pending = pendingInstallArtifact(from: result) {
+                    let artifact = result.signedIPAFakefsPath.map { "\nArtifact:\n\($0)" } ?? ""
+                    lastOutput = "Plan: \(path ?? "in-app only")\nStatus: \(result.status)\nExit: \(result.exitCode)\n\n\(result.log)\(artifact)"
+                    if result.exitCode == 0, let appPath = result.signedIPAAppPath {
+                        let pending = PendingSignedInstall(
+                            ipaPath: appPath,
+                            bundleIdentifier: result.bundleIdentifier
+                        )
                         pendingSignedInstall = pending
                         isInstallPromptPresented = true
                     }
@@ -613,55 +615,42 @@ struct FeatherSigningSettingsView: View {
         }
     }
 
-    private func pendingInstallArtifact(from result: KittyStoreSigningResult) -> PendingSignedInstall? {
-        if let artifact = result.signedArtifacts.first {
-            return PendingSignedInstall(
-                ipaPath: artifact.fakefsPath,
-                bundleIdentifier: artifact.bundleIdentifier,
-                profilePath: snapshot.provisioningProfile?.fakefsPath
-            )
-        }
-        guard let path = result.fakefsArtifacts.first else { return nil }
-        return PendingSignedInstall(
-            ipaPath: path,
-            bundleIdentifier: options.bundleIdentifier,
-            profilePath: snapshot.provisioningProfile?.fakefsPath
-        )
+    private var resolvedPendingBundleIdentifier: String {
+        let explicit = options.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !explicit.isEmpty { return explicit }
+        return snapshot.importedIPA?.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
-    private func installSignedArtifact(_ pending: PendingSignedInstall, refresh: Bool) {
+    private func installSignedArtifact(_ pending: PendingSignedInstall) {
         isInstallPromptPresented = false
         pendingSignedInstall = nil
-        let currentSnapshot = FeatherSigningMaterialStore.snapshot(checkRevocation: false)
-        let bundleID = pending.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !bundleID.isEmpty else {
-            alert = SigningAlert(title: "Install Needs Bundle ID", message: "The signed IPA did not report a bundle identifier. Set Identifier before signing, then try again.")
+        guard let url = FeatherSigningMaterialStore.signedIPAURL(appPath: pending.ipaPath) else {
+            alert = SigningAlert(title: "Signed IPA Missing", message: "The signed IPA could not be found at \(pending.ipaPath).")
             return
         }
-        guard let pairing = currentSnapshot.pairingFile else {
-            alert = SigningAlert(title: "Pairing File Required", message: "Import a pairing file before installing the signed IPA.")
-            return
-        }
-        isWorking = true
-        Task {
-            let pairingWarning = await FeatherSigningMaterialStore.preparePairingFakefsIfNeeded()
-            let result = await LitterBuildKit.shared.installKittyStoreIPA(
-                ipaPath: pending.ipaPath,
-                bundleIdentifier: bundleID,
-                pairingPath: pairing.fakefsPath,
-                profilePath: pending.profilePath,
-                refresh: refresh
+        let appName = snapshot.importedIPA?.appName ?? snapshot.importedIPA?.displayName ?? url.deletingPathExtension().lastPathComponent
+        let appVersion = snapshot.importedIPA?.appVersion ?? "1.0"
+        let iconURL = snapshot.importedIPA?.iconAppPath.map { URL(fileURLWithPath: $0) }
+        do {
+            let installURL = try signedIPAInstallServer.start(
+                payloadURL: url,
+                bundleIdentifier: pending.bundleIdentifier,
+                appName: appName,
+                appVersion: appVersion,
+                iconURL: iconURL
             )
-            await MainActor.run {
-                isWorking = false
-                self.refresh()
-                let warning = pairingWarning.map { "\n\nPairing staging warning:\n\($0)" } ?? ""
-                lastOutput = "Install Signed IPA\nStatus: \(result.status)\nExit: \(result.exitCode)\n\n\(result.log)\(warning)"
-                alert = SigningAlert(
-                    title: result.exitCode == 0 ? "Install Started" : "Install Failed",
-                    message: result.exitCode == 0 ? "KittyStore sent the signed IPA to the device installer." : result.log
-                )
+            lastOutput = "Feather install server ready\nBundle ID: \(pending.bundleIdentifier)\nPath: \(url.path)"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                UIApplication.shared.open(installURL) { success in
+                    if !success {
+                        signedIPAShareItem = FeatherSignedIPAShareItem(url: url)
+                        alert = SigningAlert(title: "Install Link Blocked", message: "iOS did not open the Feather install link. The signed IPA share sheet is open as a fallback.")
+                    }
+                }
             }
+        } catch {
+            signedIPAShareItem = FeatherSignedIPAShareItem(url: url)
+            alert = SigningAlert(title: "Install Server Failed", message: "\(error.localizedDescription)\n\nThe signed IPA share sheet is open as a fallback.")
         }
     }
 
@@ -669,27 +658,12 @@ struct FeatherSigningSettingsView: View {
         snapshot = FeatherSigningMaterialStore.snapshot(checkRevocation: false)
     }
 
-    private func openLocalDevVPN() {
-        guard let url = URL(string: "localdevvpn://enable?scheme=sidestore") else { return }
-        UIApplication.shared.open(url)
-    }
-
     private func readinessMissing() -> [String] {
         var missing: [String] = []
         if snapshot.importedIPA == nil { missing.append("IPA") }
-        switch options.signingMode {
-        case .certificate:
-            if !snapshot.certificateState.isUsable { missing.append("certificate") }
-            if snapshot.provisioningProfile == nil, options.signingType != .adhoc { missing.append("provisioning profile") }
-        case .appleID:
-            if !NyxianAppleIDStore.isLoggedIn { missing.append("Apple ID") }
-            if snapshot.pairingFile == nil { missing.append("pairing file") }
-            if !snapshot.localDevVPNState.isConnected { missing.append("LocalDevVPN") }
-        }
-        if options.postSigningAction != .none {
-            if snapshot.pairingFile == nil { missing.append("pairing file") }
-            if !snapshot.localDevVPNState.isConnected { missing.append("LocalDevVPN") }
-        }
+        if snapshot.importedIPA != nil, resolvedPendingBundleIdentifier.isEmpty { missing.append("bundle identifier") }
+        if !snapshot.certificateState.isUsable { missing.append("certificate") }
+        if snapshot.provisioningProfile == nil { missing.append("provisioning profile") }
         var unique: [String] = []
         for item in missing where !unique.contains(item) {
             unique.append(item)
@@ -702,7 +676,6 @@ private struct PendingSignedInstall: Identifiable {
     let id = UUID()
     var ipaPath: String
     var bundleIdentifier: String
-    var profilePath: String?
 }
 
 private enum SigningFilePicker: String, Identifiable {
@@ -801,6 +774,21 @@ private struct SheetButton: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
+}
+
+private struct FeatherSignedIPAShareItem: Identifiable {
+    let id = UUID()
+    var url: URL
+}
+
+private struct FeatherSignedIPAActivitySheet: UIViewControllerRepresentable {
+    var activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 private struct SigningAlert: Identifiable {

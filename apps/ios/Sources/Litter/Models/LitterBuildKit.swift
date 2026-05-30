@@ -1322,7 +1322,8 @@ actor LitterBuildKit {
         }
         let current = await status(checkRevocation: true)
         let ipa = Self.optionValue(tokens: tokens, names: ["--ipa"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
-        let pairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let explicitPairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"])
+        let pairing = await Self.resolveOptionalPairingPath(explicitPairing, cwd: cwd)
         let profile = Self.optionValue(tokens: tokens, names: ["--profile", "--provisioning-profile"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
         let bundleID = Self.optionValue(tokens: tokens, names: ["--bundle-id", "--identifier"]) ?? ""
         var missing: [String] = []
@@ -1344,6 +1345,7 @@ actor LitterBuildKit {
             "command": command,
             "ipa": ipa ?? "",
             "pairingFile": pairing ?? "",
+            "pairingFileDefaulted": explicitPairing == nil && pairing != nil,
             "provisioningProfile": profile ?? "",
             "bundleIdentifier": bundleID,
             "ready": missing.isEmpty,
@@ -1396,7 +1398,8 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 0, status: "kittystore-installed-help", log: "Usage: litter-kittystore-installed --pairing /root/device.mobiledevicepairing\nLists user-installed apps through the vendored SideStore minimuxer installation_proxy browse path.\n")
         }
         let current = await status(checkRevocation: false)
-        let pairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let explicitPairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"])
+        let pairing = await Self.resolveOptionalPairingPath(explicitPairing, cwd: cwd)
         var missing: [String] = []
         if !current.localDevVPNConnected { missing.append("LocalDevVPN is not detected") }
         if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer transport is unavailable in this IPA") }
@@ -1408,6 +1411,7 @@ actor LitterBuildKit {
         var payload: [String: Any] = [
             "command": "litter-kittystore-installed",
             "pairingFile": pairing ?? "",
+            "pairingFileDefaulted": explicitPairing == nil && pairing != nil,
             "ready": missing.isEmpty,
             "missing": missing,
             "kittyStoreTransport": [
@@ -1452,7 +1456,8 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 0, status: "kittystore-remove-help", log: "Usage: litter-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing\nRemoves an installed app through the vendored SideStore minimuxer transport.\n")
         }
         let current = await status(checkRevocation: true)
-        let pairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
+        let explicitPairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"])
+        let pairing = await Self.resolveOptionalPairingPath(explicitPairing, cwd: cwd)
         let bundleID = Self.optionValue(tokens: tokens, names: ["--bundle-id", "--identifier"]) ?? ""
         var missing: [String] = []
         if !current.localDevVPNConnected { missing.append("LocalDevVPN is not detected") }
@@ -1466,6 +1471,7 @@ actor LitterBuildKit {
         var payload: [String: Any] = [
             "command": "litter-kittystore-remove",
             "pairingFile": pairing ?? "",
+            "pairingFileDefaulted": explicitPairing == nil && pairing != nil,
             "bundleIdentifier": bundleID,
             "ready": missing.isEmpty,
             "missing": missing,
@@ -3215,6 +3221,23 @@ actor LitterBuildKit {
         if token.hasPrefix("/") { return normalizedFakefsPath(token) }
         return normalizedFakefsPath((cwd as NSString).appendingPathComponent(token))
     }
+
+    private static func resolveOptionalPairingPath(_ token: String?, cwd: String) async -> String? {
+        if let token, !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return resolveFakefsPath(token, cwd: cwd)
+        }
+
+        for candidate in defaultPairingFileCandidates {
+            if await IshFS.exists(path: candidate) { return candidate }
+        }
+        return nil
+    }
+
+    private static let defaultPairingFileCandidates = [
+        "/root/.litter/kittystore/pairing/ALTPairingFile.mobiledevicepairing",
+        "/root/ALTPairingFile.mobiledevicepairing",
+        "/root/pairingFile.plist"
+    ]
 
     private static func normalizedPairingFileContents(path: String) async throws -> String {
         try normalizePairingFileData(try await IshFS.readFileData(path: path, maxBytes: 2_000_000))

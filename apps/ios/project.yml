@@ -73,6 +73,8 @@ packages:
     from: "1.7.1"
   AltSign:
     path: ../../ThirdParty/SideStore/AltSign
+  Zsign:
+    path: ../../ThirdParty/Feather/Source/Zsign
 targets:
   Roxas:
     type: framework
@@ -332,6 +334,8 @@ targets:
       - package: AltSign
         product: AltSign-Dynamic
         embed: true
+      - package: Zsign
+        product: ZsignSwift
       - target: SideStore
         embed: true
       - target: LitterLiveActivity

@@ -60,7 +60,7 @@ final class AuthenticatedOperationContext: OperationContext
 @dynamicMemberLookup
 class AppOperationContext
 {
-    let bundleIdentifier: String
+    private(set) var bundleIdentifier: String
     let authenticatedContext: AuthenticatedOperationContext
     
     var app: ALTApplication?
@@ -91,6 +91,17 @@ class AppOperationContext
     {
         self.bundleIdentifier = bundleIdentifier
         self.authenticatedContext = authenticatedContext
+    }
+
+    func fillMissingBundleIdentifier(from candidate: String)
+    {
+        let current = self.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard current.isEmpty else { return }
+
+        let value = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+
+        self.bundleIdentifier = value
     }
     
     subscript<T>(dynamicMember keyPath: WritableKeyPath<AuthenticatedOperationContext, T>) -> T

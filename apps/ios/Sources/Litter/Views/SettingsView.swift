@@ -205,7 +205,7 @@ struct SettingsView: View {
                         Text("Signing")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("Feather certificates, pairing, LocalDevVPN, and IPA signing")
+                        Text("Feather certificates and IPA signing")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }

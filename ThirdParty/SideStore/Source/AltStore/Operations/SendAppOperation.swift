@@ -38,7 +38,13 @@ final class SendAppOperation: ResultOperation<()>
             return self.finish(.failure(OperationError.invalidParameters("SendAppOperation.main: self.resignedApp is nil")))
         }
 
-        let app = AnyApp(name: resignedApp.name, bundleIdentifier: self.context.bundleIdentifier, url: resignedApp.fileURL, storeApp: nil)
+        self.context.fillMissingBundleIdentifier(from: resignedApp.bundleIdentifier)
+        let bundleIdentifier = self.context.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bundleIdentifier.isEmpty else {
+            return self.finish(.failure(OperationError.invalidParameters("SendAppOperation.main: app bundle identifier is missing")))
+        }
+
+        let app = AnyApp(name: resignedApp.name, bundleIdentifier: bundleIdentifier, url: resignedApp.fileURL, storeApp: nil)
         let fileURL = InstalledApp.refreshedIPAURL(for: app)
         print("AFC App `fileURL`: \(fileURL.absoluteString)")
 

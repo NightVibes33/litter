@@ -44,6 +44,12 @@ final class InstallAppOperation: ResultOperation<InstalledApp>
         else {
             return self.finish(.failure(OperationError.invalidParameters("InstallAppOperation.main: self.context.certificate or self.context.resignedApp or self.context.provisioningProfiles is nil")))
         }
+        self.context.fillMissingBundleIdentifier(from: self.context.app?.bundleIdentifier ?? "")
+        self.context.fillMissingBundleIdentifier(from: resignedApp.bundleIdentifier)
+        let bundleIdentifier = self.context.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bundleIdentifier.isEmpty else {
+            return self.finish(.failure(OperationError.invalidParameters("InstallAppOperation.main: app bundle identifier is missing")))
+        }
 
         @Managed var appVersion = self.context.appVersion
         let storeBuildVersion = $appVersion.buildVersion
@@ -56,14 +62,14 @@ final class InstallAppOperation: ResultOperation<InstalledApp>
             let installedApp: InstalledApp
             
             // Fetch + update rather than insert + resolve merge conflicts to prevent potential context-level conflicts.
-            if let app = InstalledApp.first(satisfying: NSPredicate(format: "%K == %@", #keyPath(InstalledApp.bundleIdentifier), self.context.bundleIdentifier), in: backgroundContext)
+            if let app = InstalledApp.first(satisfying: NSPredicate(format: "%K == %@", #keyPath(InstalledApp.bundleIdentifier), bundleIdentifier), in: backgroundContext)
             {
                 installedApp = app
             }
             else
             {
                 installedApp = InstalledApp(resignedApp: resignedApp,
-                                            originalBundleIdentifier: self.context.bundleIdentifier,
+                                            originalBundleIdentifier: bundleIdentifier,
                                             certificateSerialNumber: certificate.serialNumber,
                                             storeBuildVersion: storeBuildVersion,
                                             context: backgroundContext)
@@ -92,7 +98,7 @@ final class InstallAppOperation: ResultOperation<InstalledApp>
                     guard let appExtensionBundle = Bundle(url: fileURL) else { continue }
                     guard let appExtension = ALTApplication(fileURL: appExtensionBundle.bundleURL) else { continue }
                     
-                    let parentBundleID = self.context.bundleIdentifier
+                    let parentBundleID = bundleIdentifier
                     let resignedParentBundleID = resignedApp.bundleIdentifier
                     
                     let resignedBundleID = appExtension.bundleIdentifier

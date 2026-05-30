@@ -291,7 +291,7 @@ struct BuildKitSettingsView: View {
 
     private var signingSection: some View {
         Section {
-            Text("Apple ID sign-in and 2FA stay inside KittyStore Settings. Settings > Signing owns Feather certificate import, provisioning profiles, pairing files, LocalDevVPN status, and signing options. BuildKit only reports whether those inputs are ready for the native runner.")
+            Text("Apple ID sign-in, 2FA, pairing, and LocalDevVPN stay inside KittyStore. Settings > Signing owns Feather certificate import, provisioning profiles, and certificate-only IPA signing options. BuildKit only reports whether native runner inputs are ready.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
