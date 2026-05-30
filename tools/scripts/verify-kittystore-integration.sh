@@ -341,6 +341,8 @@ require_grep "KittyStore minimuxer retarget wrapper" "retargetUsbmuxdAddr" "tool
 require_grep "KittyStore RustBridge CI build" "Building KittyStore RustBridge for iOS device" "tools/scripts/build-sidestore-minimuxer.sh"
 require_grep "SideStore RustBridge static library staging" "librust_bridge.a" "tools/scripts/build-sidestore-minimuxer.sh"
 require_grep "SideStore LocalDevVPN connection probe" "testLocalDevVPNConnection" "tools/scripts/build-sidestore-minimuxer.sh"
+require_grep "SideStore install passes CFBundleIdentifier option" "install(path: path, bundleId: bundleId)" "ThirdParty/SideStore/Source/Dependencies/minimuxer/Sources/Install.swift"
+require_grep "SideStore RustBridge install returns device error" "rust_bridge_instproxy_install_with_bundle_id" "ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/src/bridge.rs"
 require_grep "SideStore local_user preservation" "local_user" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
 require_grep "SideStore adiPB preservation" "adiPB" "apps/ios/Sources/Litter/Models/KittyStoreSideStoreAccountImport.swift"
 require_grep "SideStore ADI status" "hasSideStoreADI" "apps/ios/Sources/Litter/Models/NyxianSigningCertificateValidator.swift"

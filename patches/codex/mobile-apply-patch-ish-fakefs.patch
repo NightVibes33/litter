@@ -1,0 +1,44 @@
+diff --git a/codex-rs/exec-server/src/environment.rs b/codex-rs/exec-server/src/environment.rs
+index 1d7d6e7..07c05f7 100644
+--- a/codex-rs/exec-server/src/environment.rs
++++ b/codex-rs/exec-server/src/environment.rs
+@@ -64,13 +64,19 @@ impl EnvironmentManagerArgs {
+ impl EnvironmentManager {
+     /// Builds a test-only manager without configured sandbox helper paths.
+     pub fn default_for_tests() -> Self {
++        Self::local_only_with_file_system(Arc::new(LocalFileSystem::unsandboxed()))
++    }
++
++    /// Builds a test-only local manager with a caller-provided filesystem.
++    pub fn local_only_with_file_system(file_system: Arc<dyn ExecutorFileSystem>) -> Self {
++        let local_environment = Arc::new(Environment::local_with_file_system(file_system));
+         Self {
+             default_environment: Some(LOCAL_ENVIRONMENT_ID.to_string()),
+             environments: RwLock::new(HashMap::from([(
+                 LOCAL_ENVIRONMENT_ID.to_string(),
+-                Arc::new(Environment::default_for_tests()),
++                Arc::clone(&local_environment),
+             )])),
+-            local_environment: Arc::new(Environment::default_for_tests()),
++            local_environment,
+         }
+     }
+
+@@ -314,11 +320,16 @@ pub struct Environment {
+ impl Environment {
+     /// Builds a test-only local environment without configured sandbox helper paths.
+     pub fn default_for_tests() -> Self {
++        Self::local_with_file_system(Arc::new(LocalFileSystem::unsandboxed()))
++    }
++
++    /// Builds a test-only local environment with a caller-provided filesystem.
++    pub fn local_with_file_system(file_system: Arc<dyn ExecutorFileSystem>) -> Self {
+         Self {
+             exec_server_url: None,
+             remote_transport: None,
+             exec_backend: Arc::new(LocalProcess::default()),
+-            filesystem: Arc::new(LocalFileSystem::unsandboxed()),
++            filesystem: file_system,
+             http_client: Arc::new(ReqwestHttpClient),
+             local_runtime_paths: None,
+         }

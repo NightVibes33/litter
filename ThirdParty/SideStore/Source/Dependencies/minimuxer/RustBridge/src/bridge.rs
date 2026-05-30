@@ -6,6 +6,7 @@
 //
 
 use crate::post17;
+use plist::{Dictionary, Value};
 use plist_plus::Plist;
 use rusty_libimobiledevice::idevice::{get_first_device, Device};
 use rusty_libimobiledevice::services::afc::{AfcClient, AfcFileMode};
@@ -272,6 +273,31 @@ pub extern "C" fn rust_bridge_instproxy_install(
     let c = unsafe { &*client };
     let path = unsafe { CStr::from_ptr(path).to_str().unwrap() };
     c.0.install(path, None).is_ok()
+}
+
+#[no_mangle]
+pub extern "C" fn rust_bridge_instproxy_install_with_bundle_id(
+    client: *mut InstProxyWrapper,
+    path: *const c_char,
+    bundle_id: *const c_char,
+) -> *mut c_char {
+    let c = unsafe { &*client };
+    let path = unsafe { CStr::from_ptr(path).to_str().unwrap() };
+    let bundle_id = unsafe { CStr::from_ptr(bundle_id).to_str().unwrap() };
+
+    let mut client_opts = Dictionary::new();
+    client_opts.insert("CFBundleIdentifier".into(), bundle_id.to_string().into());
+    let client_opts = Plist::from_rusty_plist(&Value::Dictionary(client_opts))
+        .unwrap()
+        .clone();
+
+    match c.0.install(path, Some(client_opts)) {
+        Ok(_) => std::ptr::null_mut(),
+        Err((error, description)) => {
+            let message = format!("{error:?}: {description}").replace('\0', "\\0");
+            to_char(message)
+        }
+    }
 }
 
 #[no_mangle]

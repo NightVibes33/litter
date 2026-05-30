@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use async_trait::async_trait;
 use base64::Engine as _;
@@ -191,7 +191,11 @@ fn run_apply_patch_in_process(argv: &[String], cwd: &Path) -> (i32, Vec<u8>) {
     (code, output)
 }
 
-struct IshFakefsFileSystem;
+pub(crate) fn fakefs_file_system() -> Arc<dyn ExecutorFileSystem> {
+    Arc::new(IshFakefsFileSystem)
+}
+
+pub(crate) struct IshFakefsFileSystem;
 
 #[async_trait]
 impl ExecutorFileSystem for IshFakefsFileSystem {
@@ -200,7 +204,7 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         path: &AbsolutePathBuf,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<Vec<u8>> {
-        reject_sandbox_context(sandbox)?;
+        accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let command = format!("base64 < {}", posix_quote(&path));
         let output = run_ish_fs_command("read_file", &command)?;
@@ -219,7 +223,7 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         contents: Vec<u8>,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<()> {
-        reject_sandbox_context(sandbox)?;
+        accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let encoded = BASE64_STANDARD.encode(contents);
         let command = format!(
@@ -236,7 +240,7 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         options: CreateDirectoryOptions,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<()> {
-        reject_sandbox_context(sandbox)?;
+        accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let command = if options.recursive {
             format!("mkdir -p {}", posix_quote(&path))
@@ -251,7 +255,7 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         path: &AbsolutePathBuf,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<FileMetadata> {
-        reject_sandbox_context(sandbox)?;
+        accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let command = format!(
             "p={}; if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then exit 2; fi; \
@@ -285,7 +289,7 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         path: &AbsolutePathBuf,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<Vec<ReadDirectoryEntry>> {
-        reject_sandbox_context(sandbox)?;
+        accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let command = format!(
             "p={}; [ -d \"$p\" ] || exit 2; \
@@ -322,7 +326,7 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         options: RemoveOptions,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<()> {
-        reject_sandbox_context(sandbox)?;
+        accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let missing_branch = if options.force { "exit 0" } else { "exit 2" };
         let command = if options.recursive {
@@ -348,7 +352,7 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         options: CopyOptions,
         sandbox: Option<&FileSystemSandboxContext>,
     ) -> FileSystemResult<()> {
-        reject_sandbox_context(sandbox)?;
+        accept_fakefs_sandbox_context(sandbox)?;
         let source_path = path_string(source_path);
         let destination_path = path_string(destination_path);
         let command = if options.recursive {
@@ -368,13 +372,9 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
     }
 }
 
-fn reject_sandbox_context(sandbox: Option<&FileSystemSandboxContext>) -> FileSystemResult<()> {
-    if sandbox.is_some() {
-        return Err(io::Error::new(
-            io::ErrorKind::PermissionDenied,
-            "path-outside-edit-workspace: iSH fakefs apply_patch does not support host sandbox contexts",
-        ));
-    }
+fn accept_fakefs_sandbox_context(
+    _sandbox: Option<&FileSystemSandboxContext>,
+) -> FileSystemResult<()> {
     Ok(())
 }
 

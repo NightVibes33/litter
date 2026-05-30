@@ -67,6 +67,9 @@ internal func _rust_bridge_instproxy_new(_ device: UnsafeMutableRawPointer?, _ l
 @_silgen_name("rust_bridge_instproxy_install")
 internal func _rust_bridge_instproxy_install(_ client: UnsafeMutableRawPointer?, _ path: UnsafePointer<Int8>?) -> Bool
 
+@_silgen_name("rust_bridge_instproxy_install_with_bundle_id")
+internal func _rust_bridge_instproxy_install_with_bundle_id(_ client: UnsafeMutableRawPointer?, _ path: UnsafePointer<Int8>?, _ bundleId: UnsafePointer<Int8>?) -> UnsafeMutablePointer<Int8>?
+
 @_silgen_name("rust_bridge_instproxy_uninstall")
 internal func _rust_bridge_instproxy_uninstall(_ client: UnsafeMutableRawPointer?, _ bundle_id: UnsafePointer<Int8>?) -> Bool
 
@@ -228,6 +231,11 @@ public final class RustInstProxy {
     }
     public func install(path: String) -> Bool {
         return _rust_bridge_instproxy_install(ptr, path)
+    }
+    public func install(path: String, bundleId: String) -> String? {
+        guard let message = _rust_bridge_instproxy_install_with_bundle_id(ptr, path, bundleId) else { return nil }
+        defer { _rust_bridge_free_string(message) }
+        return String(cString: message)
     }
     public func uninstall(bundleId: String) -> Bool {
         return _rust_bridge_instproxy_uninstall(ptr, bundleId)

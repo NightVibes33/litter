@@ -15,6 +15,13 @@ Touches `core/src/exec.rs` and `core/src/unified_exec/process_manager.rs`.
 
 Consumed by `shared/rust-bridge/codex-mobile-client/src/ish_exec.rs` (`set_ios_exec_hook`), `android_exec.rs` (`set_android_tool_resolver`), and `shell_preflight.rs` (`set_mobile_exec_preflight`).
 
+## `mobile-apply-patch-ish-fakefs.patch`
+Adds an exec-server constructor that lets Litter iOS start Codex with the iSH fakefs-backed filesystem. This keeps direct `apply_patch` tool calls on the same fakefs path layer as shell commands instead of using upstream's host local filesystem sandbox helpers.
+
+Touches `exec-server/src/environment.rs`.
+
+Consumed by `shared/rust-bridge/codex-mobile-client/src/session/connection.rs`, which passes `ish_exec::fakefs_file_system()` to the in-process Codex runtime on iOS.
+
 ## `mobile-code-mode-stub.patch`
 Replaces the V8 JavaScript runtime in `code-mode` with a stub on iOS, Android, and Linux. Mobile builds can't link `v8` (binary size, JIT entitlements), and the stub returns "exec is unavailable on mobile targets in this build" when invoked.
 
