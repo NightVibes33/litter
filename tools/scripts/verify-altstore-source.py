@@ -36,6 +36,61 @@ def require_http_ipa_url(value: str, context: str) -> None:
         fail(f"{context} downloadURL must be a GitHub release asset URL: {value!r}")
 
 
+def require_https_image_url(value: str, context: str) -> None:
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.netloc:
+        fail(f"{context} has invalid screenshot URL {value!r}")
+    if not parsed.path.lower().endswith((".png", ".jpg", ".jpeg", ".heic", ".webp")):
+        fail(f"{context} screenshot URL must point directly at an image: {value!r}")
+
+
+def validate_screenshot_collection(items: object, context: str) -> int:
+    if not isinstance(items, list) or not items:
+        fail(f"{context} must be a non-empty screenshot list")
+
+    count = 0
+    for index, item in enumerate(items):
+        item_context = f"{context}[{index}]"
+        if isinstance(item, str):
+            require_https_image_url(item.strip(), item_context)
+        elif isinstance(item, dict):
+            image_url = require_string(item, "imageURL", item_context)
+            require_https_image_url(image_url, item_context)
+            for dimension in ("width", "height"):
+                value = item.get(dimension)
+                if not isinstance(value, int) or value <= 0:
+                    fail(f"{item_context} must include positive integer {dimension!r}")
+        else:
+            fail(f"{item_context} must be a screenshot URL string or object")
+        count += 1
+    return count
+
+
+def require_app_screenshots(app: dict, context: str) -> None:
+    count = 0
+
+    if "screenshotURLs" in app:
+        count += validate_screenshot_collection(app.get("screenshotURLs"), f"{context}.screenshotURLs")
+
+    if "screenshots" in app:
+        screenshots = app.get("screenshots")
+        if isinstance(screenshots, list):
+            count += validate_screenshot_collection(screenshots, f"{context}.screenshots")
+        elif isinstance(screenshots, dict):
+            found_device_collection = False
+            for device in ("iphone", "ipad"):
+                if device in screenshots:
+                    found_device_collection = True
+                    count += validate_screenshot_collection(screenshots.get(device), f"{context}.screenshots.{device}")
+            if not found_device_collection:
+                fail(f"{context}.screenshots must include iphone or ipad screenshots")
+        else:
+            fail(f"{context}.screenshots must be an object or list")
+
+    if count == 0:
+        fail(f"{context} must include app screenshots")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="Path to litter-altstore-source.json")
@@ -43,6 +98,17 @@ def main() -> int:
         "--require-news-downloads",
         action="store_true",
         help="Require every app version download URL to also appear as a direct source news item.",
+    )
+    parser.add_argument(
+        "--require-screenshots",
+        action="store_true",
+        help="Require every app entry to include screenshotURLs or screenshots metadata.",
+    )
+    parser.add_argument(
+        "--max-news-items",
+        type=int,
+        default=None,
+        help="Fail if source news contains more than this many items.",
     )
     args = parser.parse_args()
 
@@ -55,11 +121,15 @@ def main() -> int:
     if not isinstance(apps, list) or not apps:
         fail("source must contain at least one app")
 
+    news = source.get("news", [])
+    if args.require_news_downloads or args.max_news_items is not None:
+        if not isinstance(news, list):
+            fail("source news must be a list")
+        if args.max_news_items is not None and len(news) > args.max_news_items:
+            fail(f"source news has {len(news)} item(s), expected at most {args.max_news_items}")
+
     news_urls = set()
     if args.require_news_downloads:
-        news = source.get("news")
-        if not isinstance(news, list):
-            fail("source news must be a list when --require-news-downloads is used")
         for index, item in enumerate(news):
             if not isinstance(item, dict):
                 fail(f"news[{index}] must be an object")
@@ -74,7 +144,10 @@ def main() -> int:
     for app_index, app in enumerate(apps):
         if not isinstance(app, dict):
             fail(f"apps[{app_index}] must be an object")
-        bundle_id = require_string(app, "bundleIdentifier", f"apps[{app_index}]")
+        app_context = f"apps[{app_index}]"
+        bundle_id = require_string(app, "bundleIdentifier", app_context)
+        if args.require_screenshots:
+            require_app_screenshots(app, app_context)
         versions = app.get("versions")
         if not isinstance(versions, list) or not versions:
             fail(f"app {bundle_id} must contain installable versions")
