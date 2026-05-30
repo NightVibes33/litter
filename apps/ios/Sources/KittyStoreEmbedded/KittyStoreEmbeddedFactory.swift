@@ -2,8 +2,83 @@ import Foundation
 import Nuke
 import UIKit
 import AltStoreCore
+import Minimuxer
 
 public enum KittyStoreEmbeddedFactory {
+    public struct MinimuxerProbe: Sendable {
+        public let isReady: Bool
+        public let endpointReachable: Bool
+        public let detail: String
+    }
+
+    public static var isMinimuxerTransportAvailable: Bool { true }
+
+    public static func probeLocalDevVPN() -> MinimuxerProbe {
+        #if targetEnvironment(simulator)
+        return MinimuxerProbe(
+            isReady: true,
+            endpointReachable: true,
+            detail: "Simulator build treats the SideStore minimuxer transport as ready."
+        )
+        #else
+        bindTunnelConfig()
+        retargetUsbmuxdAddr()
+        let ready = isMinimuxerReady
+        let endpointReachable = Minimuxer.testDeviceConnection(ifaddr: "10.7.0.1")
+        let detail: String
+        if ready {
+            detail = "SideStore minimuxer is ready through LocalDevVPN."
+        } else if endpointReachable {
+            detail = "LocalDevVPN 10.7.0.1 is reachable. Pairing will be checked during install or refresh."
+        } else {
+            detail = "LocalDevVPN 10.7.0.1 is not reachable yet."
+        }
+        return MinimuxerProbe(isReady: ready, endpointReachable: endpointReachable, detail: detail)
+        #endif
+    }
+
+    public static func startMinimuxer(pairingFile: String, logPath: String, loggingEnabled: Bool) throws {
+        #if targetEnvironment(simulator)
+        return
+        #else
+        retargetUsbmuxdAddr()
+        try minimuxerStartWithLogger(pairingFile, logPath, loggingEnabled)
+        startAutoMounter(logPath)
+        #endif
+    }
+
+    public static func fetchDeviceUDID() -> String? {
+        fetchUDID()
+    }
+
+    public static func installProvisioningProfile(_ profileData: Data) throws {
+        try installProvisioningProfiles(profileData)
+    }
+
+    public static func stageIPA(bundleIdentifier: String, ipaBytes: Data) throws {
+        try yeetAppAFC(bundleIdentifier, ipaBytes)
+    }
+
+    public static func installStagedIPA(bundleIdentifier: String) throws {
+        try installIPA(bundleIdentifier)
+    }
+
+    public static func removeInstalledApp(bundleIdentifier: String) throws {
+        try removeApp(bundleIdentifier)
+    }
+
+    public static func installedAppsPlist() throws -> String {
+        #if targetEnvironment(simulator)
+        return """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0"><array/></plist>
+        """
+        #else
+        return try Minimuxer.listInstalledAppsPlist()
+        #endif
+    }
+
     @MainActor
     public static func makeRootViewController() -> UIViewController {
         KittyStoreRootViewController()

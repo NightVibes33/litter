@@ -13,6 +13,7 @@ public protocol InstallProvider {
     func yeetAppAfc(bundleId: String, ipaBytes: Data) throws
     func installIpa(bundleId: String) throws
     func removeApp(bundleId: String) throws
+    func listInstalledAppsPlist() throws -> String
 }
 
 public class Install {
@@ -39,6 +40,10 @@ public class Install {
     }
     public static func removeApp(bundleId: String) throws {
         try getProvider().removeApp(bundleId: bundleId)
+    }
+
+    public static func listInstalledAppsPlist() throws -> String {
+        try getProvider().listInstalledAppsPlist()
     }
 }
 
@@ -120,6 +125,28 @@ public class LockDownInstall: InstallProvider {
         }
         print("[minimuxer] Remove done!")
     }
+
+    public func listInstalledAppsPlist() throws -> String {
+        print("[minimuxer] Listing user-installed apps")
+        let deviceIP = try DeviceEndpoint.shared.ip()
+        print("[minimuxer] ListApps: verifying device connectivity at \(deviceIP)...")
+        guard Minimuxer.testDeviceConnection(ifaddr: deviceIP) else {
+            print("[minimuxer] ERROR: Device not reachable before list apps")
+            throw MinimuxerError.NoConnection
+        }
+
+        let device = try Device.getFirstDevice()
+        guard let inst = RustInstProxy.connect(device: device.internalInstance, label: "minimuxer-list-apps") else {
+            print("[minimuxer] ERROR: Unable to start instproxy")
+            throw MinimuxerError.CreateInstproxy
+        }
+
+        guard let apps = inst.listApps() else {
+            print("[minimuxer] ERROR: Unable to lookup installed apps")
+            throw MinimuxerError.LookupApps
+        }
+        return apps
+    }
 }
 
 public class RPInstall: InstallProvider {
@@ -131,5 +158,8 @@ public class RPInstall: InstallProvider {
     }
     public func removeApp(bundleId: String) throws {
         try RustIdevice.removeApp(bundleId: bundleId)
+    }
+    public func listInstalledAppsPlist() throws -> String {
+        throw MinimuxerError.LookupApps
     }
 }

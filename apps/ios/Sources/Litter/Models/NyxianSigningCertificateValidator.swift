@@ -244,7 +244,6 @@ enum NyxianLocalDevVPNDetector {
     static func currentState() -> NyxianLocalDevVPNState {
         let tunnelInterfaces = activeTunnelInterfaces()
 
-        #if KITTYSTORE_MINIMUXER_LINKED
         let probe = KittyStoreMinimuxerBridge.probeLocalDevVPN()
         if probe.isReady {
             return NyxianLocalDevVPNState(
@@ -258,23 +257,17 @@ enum NyxianLocalDevVPNDetector {
                 detail: "LocalDevVPN tunnel reachable. Pairing will be verified during install or refresh."
             )
         }
-        let tunnelText = tunnelInterfaces.isEmpty ? "No active LocalDevVPN tunnel detected." : "Detected \(tunnelInterfaces.count) tunnel interface(s), but LocalDevVPN 10.7.0.1 is not reachable yet."
-        return NyxianLocalDevVPNState(
-            isConnected: false,
-            detail: "\(tunnelText) Open LocalDevVPN, connect the tunnel, then retry."
-        )
-        #else
-        if tunnelInterfaces.isEmpty {
+        if !tunnelInterfaces.isEmpty {
             return NyxianLocalDevVPNState(
-                isConnected: false,
-                detail: "KittyStore minimuxer is not linked, and no active tunnel interface was found."
+                isConnected: true,
+                detail: "Detected \(tunnelInterfaces.count) active tunnel interface(s). Pairing and device reachability will still be checked during install or refresh."
             )
         }
+
         return NyxianLocalDevVPNState(
-            isConnected: true,
-            detail: "Detected \(tunnelInterfaces.count) active tunnel interface(s). This build cannot run the minimuxer probe directly, so pairing and device reachability will still be checked during install or refresh."
+            isConnected: false,
+            detail: "No active LocalDevVPN tunnel detected. Open LocalDevVPN, connect the tunnel, then retry."
         )
-        #endif
     }
 
     private static func activeTunnelInterfaces() -> [String] {

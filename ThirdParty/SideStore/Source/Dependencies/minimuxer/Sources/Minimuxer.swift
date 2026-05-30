@@ -146,6 +146,10 @@ public struct Minimuxer {
         try Install.removeApp(bundleId: bundleId)
     }
 
+    public static func listInstalledAppsPlist() throws -> String {
+        try Install.listInstalledAppsPlist()
+    }
+
     public static func debugApp(appId: String) throws {
         try JIT.debugApp(appId: appId)
     }

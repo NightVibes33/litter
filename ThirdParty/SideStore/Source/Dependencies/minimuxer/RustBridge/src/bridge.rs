@@ -311,6 +311,31 @@ pub extern "C" fn rust_bridge_instproxy_lookup(
 }
 
 #[no_mangle]
+pub extern "C" fn rust_bridge_instproxy_list_apps(
+    client: *mut InstProxyWrapper,
+) -> *mut c_char {
+    let c = unsafe { &*client };
+    let client_opts = InstProxyClient::create_return_attributes(
+        vec![("ApplicationType".to_string(), Plist::new_string("User"))],
+        vec![
+            "ApplicationType",
+            "CFBundleDisplayName",
+            "CFBundleExecutable",
+            "CFBundleIdentifier",
+            "CFBundleName",
+            "CFBundleShortVersionString",
+            "CFBundleVersion",
+            "Container",
+            "Path",
+        ],
+    );
+    match c.0.lookup(vec![], Some(client_opts)) {
+        Ok(apps) => to_char(apps.to_string()),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn rust_bridge_instproxy_get_path_for_bundle_identifier(
     client: *mut InstProxyWrapper,
     bundle_id: *const c_char,

@@ -1186,13 +1186,13 @@ actor LitterBuildKit {
             if !current.appleIDConfigured { missing.append("Apple ID login is missing in BuildKit settings") }
             if resolvedPairing == nil { missing.append("--pairing is required for apple-id signing") }
             if !current.localDevVPNConnected { missing.append("LocalDevVPN is required for apple-id signing") }
-            if !KittyStoreMinimuxerBridge.isLinked { missing.append("KittyStore minimuxer bridge is not linked into this IPA") }
+            if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer transport is unavailable in this IPA") }
         }
         if postSigningAction != "none" {
             if signingType == "adhoc" { missing.append("Ad hoc signed IPAs cannot be installed/refreshed on stock iOS through the KittyStore minimuxer path") }
             if resolvedPairing == nil { missing.append("--pairing is required for post-signing install/refresh") }
             if !current.localDevVPNConnected { missing.append("LocalDevVPN is required for post-signing install/refresh") }
-            if !KittyStoreMinimuxerBridge.isLinked { missing.append("KittyStore minimuxer bridge is not linked into this IPA") }
+            if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer transport is unavailable in this IPA") }
         }
         if !current.canBuildUnsignedIPA { warnings.append("Unsigned IPA BuildKit packaging is not ready on this install") }
 
@@ -1301,7 +1301,7 @@ actor LitterBuildKit {
     private func kittyStoreInstallOrRefresh(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: 0, status: "kittystore-install-help", log: "Usage: \(command) --ipa /root/App.ipa --bundle-id com.example.app --pairing /root/device.mobiledevicepairing [--profile /root/App.mobileprovision]\nRuns the KittyStore minimuxer install/refresh bridge when this IPA was built with the vendored minimuxer sources linked.\n")
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-install-help", log: "Usage: \(command) --ipa /root/App.ipa --bundle-id com.example.app --pairing /root/device.mobiledevicepairing [--profile /root/App.mobileprovision]\nRuns the vendored SideStore minimuxer install/refresh transport.\n")
         }
         let current = await status(checkRevocation: true)
         let ipa = Self.optionValue(tokens: tokens, names: ["--ipa"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
@@ -1310,7 +1310,7 @@ actor LitterBuildKit {
         let bundleID = Self.optionValue(tokens: tokens, names: ["--bundle-id", "--identifier"]) ?? ""
         var missing: [String] = []
         if !current.localDevVPNConnected { missing.append("LocalDevVPN is not detected") }
-        if !KittyStoreMinimuxerBridge.isLinked { missing.append("KittyStore minimuxer bridge is not linked into this IPA") }
+        if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer transport is unavailable in this IPA") }
         if bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { missing.append("Bundle identifier is required for KittyStore install/refresh") }
         if let ipa {
             if !(await IshFS.exists(path: ipa)) { missing.append("IPA does not exist: \(ipa)") }
@@ -1376,13 +1376,13 @@ actor LitterBuildKit {
     private func kittyStoreInstalledApps(args: String, cwd: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: 0, status: "kittystore-installed-help", log: "Usage: litter-kittystore-installed --pairing /root/device.mobiledevicepairing\nLists user-installed apps through the KittyStore minimuxer installation_proxy browse path when this IPA was built with the vendored minimuxer sources linked.\n")
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-installed-help", log: "Usage: litter-kittystore-installed --pairing /root/device.mobiledevicepairing\nLists user-installed apps through the vendored SideStore minimuxer installation_proxy browse path.\n")
         }
         let current = await status(checkRevocation: false)
         let pairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
         var missing: [String] = []
         if !current.localDevVPNConnected { missing.append("LocalDevVPN is not detected") }
-        if !KittyStoreMinimuxerBridge.isLinked { missing.append("KittyStore minimuxer bridge is not linked into this IPA") }
+        if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer transport is unavailable in this IPA") }
         if let pairing {
             if !(await IshFS.exists(path: pairing)) { missing.append("Pairing file does not exist: \(pairing)") }
         } else {
@@ -1432,14 +1432,14 @@ actor LitterBuildKit {
     private func kittyStoreRemove(args: String, cwd: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
-            return BuildKitCommandResult(exitCode: 0, status: "kittystore-remove-help", log: "Usage: litter-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing\nRemoves an installed app through the KittyStore minimuxer bridge when this IPA was built with the vendored minimuxer sources linked.\n")
+            return BuildKitCommandResult(exitCode: 0, status: "kittystore-remove-help", log: "Usage: litter-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing\nRemoves an installed app through the vendored SideStore minimuxer transport.\n")
         }
         let current = await status(checkRevocation: true)
         let pairing = Self.optionValue(tokens: tokens, names: ["--pairing", "--pairing-file"]).map { Self.resolveFakefsPath($0, cwd: cwd) }
         let bundleID = Self.optionValue(tokens: tokens, names: ["--bundle-id", "--identifier"]) ?? ""
         var missing: [String] = []
         if !current.localDevVPNConnected { missing.append("LocalDevVPN is not detected") }
-        if !KittyStoreMinimuxerBridge.isLinked { missing.append("KittyStore minimuxer bridge is not linked into this IPA") }
+        if !KittyStoreMinimuxerBridge.isLinked { missing.append("SideStore minimuxer transport is unavailable in this IPA") }
         if bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { missing.append("Bundle identifier is required for KittyStore remove") }
         if let pairing {
             if !(await IshFS.exists(path: pairing)) { missing.append("Pairing file does not exist: \(pairing)") }
@@ -3707,7 +3707,7 @@ actor LitterBuildKit {
         - litter-kittystore-remove --bundle-id com.example.app --pairing /root/device.mobiledevicepairing
         - litter-kittystore-installed --pairing /root/device.mobiledevicepairing
 
-        The source/version/status/plan commands are bot-safe. Sign uses the native Feather/Zsign path when private BuildKit assets include it. Install/refresh/remove/installed require a pairing file, LocalDevVPN, and the vendored KittyStore minimuxer bridge when the iOS IPA is built with KITTYSTORE_MINIMUXER_LINKED.
+        The source/version/status/plan commands are bot-safe. Sign uses the native Feather/Zsign path when private BuildKit assets include it. Install/refresh/remove/installed require a pairing file, LocalDevVPN, and the vendored SideStore minimuxer transport embedded in KittyStore.
         """
     }
 
@@ -3770,7 +3770,7 @@ actor LitterBuildKit {
         Nyxian run/install signing: \(status.canRunNyxianApps ? "ready" : "blocked")
         LocalDevVPN install/refresh transport: \(status.localDevVPNConnected ? "detected" : "not detected")
         LocalDevVPN detail: \(status.localDevVPNDetail)
-        KittyStore minimuxer bridge: \(KittyStoreMinimuxerBridge.isLinked ? "linked" : "not linked")
+        SideStore minimuxer transport: \(KittyStoreMinimuxerBridge.isLinked ? "linked" : "not linked")
         Full on-device install/refresh: \((status.canInstallOrRefreshOnDevice && KittyStoreMinimuxerBridge.isLinked) ? "ready" : "blocked")
         BuildKit root: \(status.buildKitRoot)
         Toolchain root: \(status.toolchainRoot)

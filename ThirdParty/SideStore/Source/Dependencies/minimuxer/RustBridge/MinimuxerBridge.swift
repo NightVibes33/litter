@@ -73,6 +73,9 @@ internal func _rust_bridge_instproxy_uninstall(_ client: UnsafeMutableRawPointer
 @_silgen_name("rust_bridge_instproxy_lookup")
 internal func _rust_bridge_instproxy_lookup(_ client: UnsafeMutableRawPointer?, _ app_id: UnsafePointer<Int8>?) -> UnsafeMutablePointer<Int8>?
 
+@_silgen_name("rust_bridge_instproxy_list_apps")
+internal func _rust_bridge_instproxy_list_apps(_ client: UnsafeMutableRawPointer?) -> UnsafeMutablePointer<Int8>?
+
 @_silgen_name("rust_bridge_instproxy_get_path_for_bundle_identifier")
 internal func _rust_bridge_instproxy_get_path_for_bundle_identifier(_ client: UnsafeMutableRawPointer?, _ bundle_id: UnsafePointer<Int8>?) -> UnsafeMutablePointer<Int8>?
 
@@ -236,6 +239,12 @@ public final class RustInstProxy {
     }
     public func getPathForBundleIdentifier(bundleId: String) -> String? {
         guard let p = _rust_bridge_instproxy_get_path_for_bundle_identifier(ptr, bundleId) else { return nil }
+        defer { _rust_bridge_free_string(p) }
+        return String(cString: p)
+    }
+
+    public func listApps() -> String? {
+        guard let p = _rust_bridge_instproxy_list_apps(ptr) else { return nil }
         defer { _rust_bridge_free_string(p) }
         return String(cString: p)
     }
