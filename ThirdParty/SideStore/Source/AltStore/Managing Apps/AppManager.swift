@@ -382,7 +382,7 @@ extension AppManager
     func remove(@AsyncManaged _ source: Source, presentingViewController: UIViewController) async throws
     {
         let (sourceName, sourceID) = await $source.perform { ($0.name, $0.identifier) }
-        guard sourceID != Source.altStoreIdentifier else {
+        guard !Source.isProtectedDefaultSourceID(sourceID) else {
             throw OperationError.forbidden(failureReason: NSLocalizedString("The default KittyStore source cannot be removed.", comment: ""))
         }
         

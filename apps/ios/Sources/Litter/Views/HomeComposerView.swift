@@ -32,6 +32,7 @@ struct HomeComposerView: View {
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var voiceManager = VoiceTranscriptionManager()
     @State private var isSubmitting = false
+    @State private var isExternalizingOversizedPaste = false
     @State private var errorMessage: String?
     @State private var pluginCacheByCwd: [String: [PluginSummary]] = [:]
     @State private var pluginUnsupportedCwds: Set<String> = []
@@ -68,6 +69,7 @@ struct HomeComposerView: View {
             || !attachments.isEmpty
             || voiceManager.isRecording
             || voiceManager.isTranscribing
+            || isExternalizingOversizedPaste
     }
 
     var body: some View {
@@ -105,7 +107,7 @@ struct HomeComposerView: View {
                 pluginMentions: pluginMentionSelections,
                 rateLimits: nil,
                 contextPercent: nil,
-                isTurnActive: isSubmitting,
+                isTurnActive: isSubmitting || isExternalizingOversizedPaste,
                 showModeChip: false,
                 voiceManager: voiceManager,
                 allowsVoiceInput: project != nil,
@@ -138,6 +140,10 @@ struct HomeComposerView: View {
             }
         }
         .onChange(of: inputText) { _, newValue in
+            if ConversationAttachmentSupport.shouldExternalizeComposerText(newValue) {
+                externalizeOversizedComposerTextIfNeeded(newValue)
+                return
+            }
             scheduleHomePopupRefresh(for: newValue)
         }
         .onChange(of: isActive) { _, active in
@@ -228,6 +234,10 @@ struct HomeComposerView: View {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         let pendingAttachments = attachments
         guard !text.isEmpty || !pendingAttachments.isEmpty else { return }
+        guard !isExternalizingOversizedPaste else {
+            errorMessage = "Finishing pasted text attachment."
+            return
+        }
         guard !isSubmitting else { return }
         guard let project else {
             errorMessage = "Pick a project before sending."
@@ -295,6 +305,46 @@ struct HomeComposerView: View {
                 onThreadCreated(threadKey)
             } catch {
                 errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func externalizeOversizedComposerTextIfNeeded(_ value: String) {
+        guard !isExternalizingOversizedPaste,
+              ConversationAttachmentSupport.shouldExternalizeComposerText(value) else { return }
+        guard let project else {
+            inputText = ConversationAttachmentSupport.truncatedComposerPlaceholder(for: value)
+            composerSelectionRange = NSRange(location: (inputText as NSString).length, length: 0)
+            errorMessage = "Oversized paste was truncated because no project is selected."
+            return
+        }
+
+        let pastedText = value
+        isExternalizingOversizedPaste = true
+        errorMessage = nil
+        Task { @MainActor in
+            do {
+                let attachment = try await ConversationAttachmentSupport.importPastedTextToFakeFS(
+                    text: pastedText,
+                    destinationDirectory: project.cwd
+                )
+                if inputText == pastedText {
+                    inputText = ConversationAttachmentSupport.oversizedPastePlaceholder(
+                        fileName: attachment.displayName,
+                        originalCharacterCount: pastedText.count,
+                        text: pastedText
+                    )
+                    composerSelectionRange = NSRange(location: (inputText as NSString).length, length: 0)
+                }
+                if !attachments.contains(where: { $0.fakefsPath == attachment.fakefsPath }) {
+                    attachments.append(attachment)
+                }
+                isExternalizingOversizedPaste = false
+            } catch {
+                inputText = ConversationAttachmentSupport.truncatedComposerPlaceholder(for: pastedText)
+                composerSelectionRange = NSRange(location: (inputText as NSString).length, length: 0)
+                errorMessage = "Oversized paste was truncated: \(error.localizedDescription)"
+                isExternalizingOversizedPaste = false
             }
         }
     }

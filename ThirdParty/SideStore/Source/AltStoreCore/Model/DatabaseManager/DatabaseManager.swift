@@ -357,6 +357,22 @@ private extension DatabaseManager
         return InstalledApp.hidesEmbeddedHostApps
     }
 
+    func removeEmbeddedSeededSources(in context: NSManagedObjectContext)
+    {
+        let oldLitterSourceURL = URL(string: "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json")!
+        let oldLitterSourceID = try? Source.sourceID(from: oldLitterSourceURL)
+        let seededSources = Source.all(in: context).filter { source in
+            if source.groupID == Source.altStoreGroupIdentifier { return true }
+            if let oldLitterSourceID, source.identifier == oldLitterSourceID { return true }
+            if source.sourceURL.absoluteString == oldLitterSourceURL.absoluteString { return true }
+            return false
+        }
+        for source in seededSources
+        {
+            context.delete(source)
+        }
+    }
+
     func prepareDatabase(completionHandler: @escaping (Result<Void, Error>) -> Void)
     {
         guard !Bundle.isAppExtension() else { return completionHandler(.success(())) }
@@ -371,6 +387,35 @@ private extension DatabaseManager
             }
 
             let isEmbeddedSideStoreRuntime = self.isLitterEmbeddedSideStoreRuntime
+            if isEmbeddedSideStoreRuntime
+            {
+                self.removeEmbeddedSeededSources(in: context)
+
+                for installedApp in InstalledApp.embeddedHostApps(in: context)
+                {
+                    context.delete(installedApp)
+                }
+
+                if let storeApp = StoreApp.first(satisfying: NSPredicate(format: "%K == %@", #keyPath(StoreApp.bundleIdentifier), StoreApp.altstoreAppID), in: context)
+                {
+                    context.delete(storeApp)
+                }
+
+                do
+                {
+                    try context.save()
+                    Task(priority: .high) {
+                        await self.updateFeaturedSortIDs()
+                        completionHandler(.success(()))
+                    }
+                }
+                catch
+                {
+                    completionHandler(.failure(error))
+                }
+                return
+            }
+
             let altStoreSource: Source
             
             if let source = Source.first(satisfying: NSPredicate(format: "%K == %@", #keyPath(Source.identifier), Source.altStoreIdentifier), in: context)
@@ -405,31 +450,6 @@ private extension DatabaseManager
                 storeApp.source = altStoreSource
             }
 
-            if isEmbeddedSideStoreRuntime
-            {
-                altStoreSource.name = "KittyStore Official"
-                storeApp.applyEmbeddedKittyStoreMetadata()
-
-                for installedApp in InstalledApp.embeddedHostApps(in: context)
-                {
-                    context.delete(installedApp)
-                }
-
-                do
-                {
-                    try context.save()
-                    Task(priority: .high) {
-                        await self.updateFeaturedSortIDs()
-                        completionHandler(.success(()))
-                    }
-                }
-                catch
-                {
-                    completionHandler(.failure(error))
-                }
-                return
-            }
-                        
             let serialNumber = Bundle.main.object(forInfoDictionaryKey: Bundle.Info.certificateID) as? String
             let installedApp: InstalledApp
             

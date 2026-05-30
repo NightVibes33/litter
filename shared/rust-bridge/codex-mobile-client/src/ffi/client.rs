@@ -1315,8 +1315,12 @@ impl AppClient {
             let spritesheet_path =
                 crate::pets::local_spritesheet_path(&entry.summary.source_path, spritesheet_file)
                     .map_err(ClientError::Serialization)?;
-            let spritesheet_bytes =
-                read_remote_file_bytes(c.as_ref(), &server_id, &spritesheet_path).await?;
+            let spritesheet_bytes = if pet_runtime_is_local(c.as_ref(), &server_id)? {
+                std::fs::read(&spritesheet_path)
+                    .map_err(|error| ClientError::Rpc(format!("file read failed: {error}")))?
+            } else {
+                read_remote_file_bytes(c.as_ref(), &server_id, &spritesheet_path).await?
+            };
             crate::pets::package_from_parts(
                 entry.summary.source_path,
                 &entry.manifest_json,
@@ -2022,7 +2026,9 @@ async fn scan_remote_pets(
     client: &MobileClient,
     server_id: &str,
 ) -> Result<Vec<RemotePetScanEntry>, ClientError> {
-    ensure_pet_runtime_available(client, server_id)?;
+    if pet_runtime_is_local(client, server_id)? {
+        return scan_local_pets();
+    }
 
     let script = r#"root="${CODEX_HOME:-$HOME/.codex}/pets"
 [ -d "$root" ] || exit 0
@@ -2087,13 +2093,85 @@ done"#;
     Ok(entries)
 }
 
-fn ensure_pet_runtime_available(client: &MobileClient, server_id: &str) -> Result<(), ClientError> {
-    let runtime_kinds = client
+fn scan_local_pets() -> Result<Vec<RemotePetScanEntry>, ClientError> {
+    let root = local_pet_root()?;
+    scan_local_pet_root(&root)
+}
+
+fn local_pet_root() -> Result<std::path::PathBuf, ClientError> {
+    if let Ok(codex_home) = std::env::var("CODEX_HOME")
+        && !codex_home.trim().is_empty()
+    {
+        return Ok(std::path::PathBuf::from(codex_home).join("pets"));
+    }
+    if let Ok(home) = std::env::var("HOME")
+        && !home.trim().is_empty()
+    {
+        return Ok(std::path::PathBuf::from(home).join(".codex").join("pets"));
+    }
+    Err(ClientError::Rpc(
+        "local CODEX_HOME is not available for pet scan".to_string(),
+    ))
+}
+
+fn scan_local_pet_root(root: &std::path::Path) -> Result<Vec<RemotePetScanEntry>, ClientError> {
+    if !root.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut entries = Vec::new();
+    for entry in std::fs::read_dir(root)
+        .map_err(|error| ClientError::Rpc(format!("pet scan failed: {error}")))?
+    {
+        let entry = entry.map_err(|error| ClientError::Rpc(format!("pet scan failed: {error}")))?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let manifest_path = path.join("pet.json");
+        if !manifest_path.is_file() {
+            continue;
+        }
+
+        let manifest_json = std::fs::read_to_string(&manifest_path)
+            .map_err(|error| ClientError::Rpc(format!("pet manifest read failed: {error}")))?;
+        let source_path = path.to_string_lossy().into_owned();
+        let mut summary =
+            crate::pets::summary_from_manifest(source_path.clone(), &manifest_json, false);
+        if let Some(spritesheet_file) = summary.spritesheet_path.as_deref() {
+            let spritesheet_path =
+                crate::pets::local_spritesheet_path(&source_path, spritesheet_file)
+                    .map_err(ClientError::Serialization)?;
+            summary.has_valid_spritesheet = std::fs::metadata(&spritesheet_path)
+                .map(|metadata| metadata.is_file())
+                .unwrap_or(false);
+            if summary.has_valid_spritesheet {
+                summary.validation_error = None;
+            } else if summary.validation_error.is_none() {
+                summary.validation_error = Some(format!("{spritesheet_file} is missing"));
+            }
+        }
+        entries.push(RemotePetScanEntry {
+            summary,
+            manifest_json,
+        });
+    }
+    entries.sort_by(|a, b| {
+        a.summary
+            .display_name
+            .to_lowercase()
+            .cmp(&b.summary.display_name.to_lowercase())
+    });
+    Ok(entries)
+}
+
+fn pet_runtime_is_local(client: &MobileClient, server_id: &str) -> Result<bool, ClientError> {
+    let session = client
         .get_session(server_id)
-        .map_err(|error| ClientError::Rpc(error.to_string()))?
-        .runtime_kinds();
+        .map_err(|error| ClientError::Rpc(error.to_string()))?;
+    let runtime_kinds = session.runtime_kinds();
     if runtime_kinds.contains(&"codex".to_string()) {
-        return Ok(());
+        return Ok(session.config().is_local);
     }
     Err(ClientError::Rpc(
         "pets require a connected Codex runtime; select the Codex Alleycat agent or connect to a Codex server".to_string(),
@@ -3007,7 +3085,7 @@ mod tests {
     use super::{
         ImageViewSource, append_missing_amp_mode_models, choose_saved_app_update_server_id,
         image_read_command, is_mobile_hidden_skill, normalize_model_info_for_runtime,
-        normalized_image_path, splice_generative_ui_preamble,
+        normalized_image_path, scan_local_pet_root, splice_generative_ui_preamble,
     };
     use crate::store::snapshot::ServerTransportDiagnostics;
     use crate::store::{AppSnapshot, ServerHealthSnapshot, ServerSnapshot};
@@ -3096,6 +3174,47 @@ mod tests {
                 .collect::<HashMap<_, _>>(),
             ..AppSnapshot::default()
         }
+    }
+
+    fn unique_temp_dir(name: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock before unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "codex-mobile-client-{name}-{}-{nanos}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn local_pet_scan_reads_codex_home_packages() {
+        let root = unique_temp_dir("pets");
+        let pet_dir = root.join("local-buddy");
+        std::fs::create_dir_all(&pet_dir).expect("create pet dir");
+        std::fs::write(
+            pet_dir.join("pet.json"),
+            r#"{"id":"local-buddy","displayName":"Local Buddy","spritesheetPath":"spritesheet.webp"}"#,
+        )
+        .expect("write manifest");
+        std::fs::write(pet_dir.join("spritesheet.webp"), b"webp bytes").expect("write sheet");
+
+        let entries = scan_local_pet_root(&root).expect("scan local pets");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].summary.id, "local-buddy");
+        assert_eq!(entries[0].summary.display_name, "Local Buddy");
+        assert!(entries[0].summary.has_valid_spritesheet);
+        assert!(entries[0].summary.validation_error.is_none());
+        assert!(entries[0].manifest_json.contains("local-buddy"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_pet_scan_missing_root_is_empty() {
+        let root = unique_temp_dir("missing-pets");
+        let entries = scan_local_pet_root(&root).expect("scan missing local pets root");
+        assert!(entries.is_empty());
     }
 
     #[test]

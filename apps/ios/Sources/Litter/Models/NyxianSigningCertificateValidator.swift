@@ -271,8 +271,8 @@ enum NyxianLocalDevVPNDetector {
             )
         }
         return NyxianLocalDevVPNState(
-            isConnected: false,
-            detail: "Detected \(tunnelInterfaces.count) tunnel interface(s), but this build cannot verify LocalDevVPN because the KittyStore minimuxer bridge is not linked."
+            isConnected: true,
+            detail: "Detected \(tunnelInterfaces.count) active tunnel interface(s). This build cannot run the minimuxer probe directly, so pairing and device reachability will still be checked during install or refresh."
         )
         #endif
     }

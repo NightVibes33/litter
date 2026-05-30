@@ -148,7 +148,7 @@ private extension SourcesViewController
             let source = self.dataSource.item(at: indexPath)
             var actions: [UIContextualAction] = []
             
-            if source.identifier != Source.altStoreIdentifier
+            if !Source.isProtectedDefaultSource(source)
             {
                 // Prevent users from removing AltStore source.
                 
@@ -274,7 +274,7 @@ private extension SourcesViewController
             let accessibilityLabel = source.name + "\n" + text + ".\n" + numberOfAppsText
             cell.bannerView.accessibilityLabel = accessibilityLabel
                         
-            if source.identifier != Source.altStoreIdentifier
+            if !Source.isProtectedDefaultSource(source)
             {
                 cell.accessories = [.delete(displayed: .whenEditing)]
             }

@@ -1537,6 +1537,7 @@ private struct ConversationInputBar: View {
     @State private var pluginLoadingCwds: Set<String> = []
     @State private var pluginMentionSelections: [PluginMentionSelection] = []
     @State private var voiceManager = VoiceTranscriptionManager()
+    @State private var isExternalizingOversizedPaste = false
     @State private var showMicPermissionAlert = false
     @State private var hasLoggedFirstFocus = false
     @State private var hasLoggedKeyboardShown = false
@@ -1634,6 +1635,10 @@ private struct ConversationInputBar: View {
             composerSurface
         }
         .onChange(of: inputText) { _, next in
+            if ConversationAttachmentSupport.shouldExternalizeComposerText(next) {
+                externalizeOversizedComposerTextIfNeeded(next)
+                return
+            }
             scheduleComposerPopupRefresh(for: next)
         }
         .onChange(of: snapshot.composerPrefillRequest?.id) { _, _ in
@@ -1691,7 +1696,7 @@ private struct ConversationInputBar: View {
                 goalActions: makeGoalCardActions(),
                 rateLimits: snapshot.rateLimits,
                 contextPercent: contextPercent(),
-                isTurnActive: isTurnActive,
+                isTurnActive: isTurnActive || isExternalizingOversizedPaste,
                 showModeChip: showModeChip,
                 voiceManager: voiceManager,
                 showAttachMenu: $showAttachMenu,
@@ -1840,6 +1845,10 @@ private struct ConversationInputBar: View {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         let pendingAttachments = attachments
         guard !text.isEmpty || !pendingAttachments.isEmpty else { return }
+        guard !isExternalizingOversizedPaste else {
+            slashErrorMessage = "Finishing pasted text attachment."
+            return
+        }
         if let request = snapshot.pendingUserInputRequest {
             appState.dismissPendingUserInput(id: request.id)
         }
@@ -1860,6 +1869,40 @@ private struct ConversationInputBar: View {
         let pluginMentions = collectPluginMentionsForSubmission(text)
         pluginMentionSelections = []
         onSend(text, pendingAttachments, skillMentions, pluginMentions)
+    }
+
+    private func externalizeOversizedComposerTextIfNeeded(_ value: String) {
+        guard !isExternalizingOversizedPaste,
+              ConversationAttachmentSupport.shouldExternalizeComposerText(value) else { return }
+
+        let pastedText = value
+        isExternalizingOversizedPaste = true
+        slashErrorMessage = nil
+        taskBag.run {
+            do {
+                let attachment = try await ConversationAttachmentSupport.importPastedTextToFakeFS(
+                    text: pastedText,
+                    destinationDirectory: workDir
+                )
+                if inputText == pastedText {
+                    inputText = ConversationAttachmentSupport.oversizedPastePlaceholder(
+                        fileName: attachment.displayName,
+                        originalCharacterCount: pastedText.count,
+                        text: pastedText
+                    )
+                    composerSelectionRange = NSRange(location: (inputText as NSString).length, length: 0)
+                }
+                if !attachments.contains(where: { $0.fakefsPath == attachment.fakefsPath }) {
+                    attachments.append(attachment)
+                }
+                isExternalizingOversizedPaste = false
+            } catch {
+                inputText = ConversationAttachmentSupport.truncatedComposerPlaceholder(for: pastedText)
+                composerSelectionRange = NSRange(location: (inputText as NSString).length, length: 0)
+                slashErrorMessage = "Oversized paste was truncated: \(error.localizedDescription)"
+                isExternalizingOversizedPaste = false
+            }
+        }
     }
 
     private func dismissPendingUserInput() {

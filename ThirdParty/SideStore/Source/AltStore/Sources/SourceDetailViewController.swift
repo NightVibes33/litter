@@ -164,7 +164,7 @@ class SourceDetailViewController: HeaderContentViewController<SourceHeaderView, 
     {
         super.update()
         
-        if self.source.identifier == Source.altStoreIdentifier
+        if Source.isProtectedDefaultSource(self.source)
         {
             // Users can't remove default AltStore source, so hide buttons.
             self.addButton.isHidden = true

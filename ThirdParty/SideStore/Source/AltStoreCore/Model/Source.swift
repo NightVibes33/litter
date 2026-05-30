@@ -20,23 +20,33 @@ public extension Source
     #if STAGING
     
     #if ALPHA
-    static let altStoreSourceURL = URL(string: "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json")!
+    static let altStoreSourceURL = URL(string: "https://apps.sidestore.io/")!
     #else
-    static let altStoreSourceURL = URL(string: "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json")!
+    static let altStoreSourceURL = URL(string: "https://apps.sidestore.io/")!
     #endif
     
     #else
     
     #if ALPHA
-    static let altStoreSourceURL = URL(string: "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json")!
+    static let altStoreSourceURL = URL(string: "https://sidestore.io/apps-v2.json/")!
     #else
-    static let altStoreSourceURL = URL(string: "https://github.com/NightVibes33/litter/releases/download/app-source/litter-altstore-source.json")!
+    static let altStoreSourceURL = URL(string: "https://sidestore.io/apps-v2.json/")!
     #endif
     
     #endif
     
     // normalized url is the source identifier (or) p-key!
     static let altStoreIdentifier = try! Source.sourceID(from: altStoreSourceURL)
+
+    static func isProtectedDefaultSourceID(_ identifier: String) -> Bool
+    {
+        return !InstalledApp.hidesEmbeddedHostApps && identifier == Source.altStoreIdentifier
+    }
+
+    static func isProtectedDefaultSource(_ source: Source) -> Bool
+    {
+        return Source.isProtectedDefaultSourceID(source.identifier)
+    }
 }
 
  public extension Source

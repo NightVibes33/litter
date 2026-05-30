@@ -72,7 +72,49 @@ struct PreparedImageAttachment {
 
 enum ConversationAttachmentSupport {
     private static let attachmentMaxPixelSize = 2_048
+    static let oversizedPasteCharacterLimit = 12_000
+    static let oversizedPasteByteLimit = 48_000
+    private static let oversizedPastePreviewLimit = 900
 
+    static func shouldExternalizeComposerText(_ text: String) -> Bool {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return text.count > oversizedPasteCharacterLimit || Data(text.utf8).count > oversizedPasteByteLimit
+    }
+
+    static func oversizedPastePlaceholder(fileName: String, originalCharacterCount: Int, text: String) -> String {
+        """
+        Attached oversized paste as `\(fileName)`.
+
+        Preview:
+        \(previewText(text))
+
+        Original length: \(originalCharacterCount) characters.
+        """
+    }
+
+    static func truncatedComposerPlaceholder(for text: String) -> String {
+        """
+        [Oversized paste truncated from \(text.count) characters]
+
+        \(previewText(text))
+        """
+    }
+
+    static func importPastedTextToFakeFS(text: String, destinationDirectory: String) async throws -> ConversationAttachment {
+        let directory = normalizedFakefsDirectory(destinationDirectory)
+        try await IshFS.createDirectoryIfNeeded(path: directory)
+        let preferredName = "pasted-text-\(Int(Date().timeIntervalSince1970)).txt"
+        let targetName = try await availableImportName(preferredName: preferredName, directory: directory)
+        let targetPath = fakefsJoin(directory, targetName)
+        try await IshFS.writeTextFile(path: targetPath, text: text)
+        let byteCount = Int64(Data(text.utf8).count)
+        return ConversationAttachment(
+            kind: .file,
+            displayName: targetName,
+            detail: "pasted text / \(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file))",
+            fakefsPath: targetPath
+        )
+    }
 
     static func imageAttachment(_ image: UIImage, name: String = "Image") -> ConversationAttachment? {
         guard let prepared = prepareImage(image),
@@ -154,6 +196,13 @@ enum ConversationAttachmentSupport {
     private static func nonEmptyString(_ value: String?) -> String? {
         guard let value, !value.isEmpty else { return nil }
         return value
+    }
+
+    private static func previewText(_ text: String, maxCharacters: Int = oversizedPastePreviewLimit) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > maxCharacters else { return trimmed }
+        let end = trimmed.index(trimmed.startIndex, offsetBy: maxCharacters)
+        return String(trimmed[..<end]) + "\n..."
     }
 
     static func linkedFakefsPaths(in text: String) -> [String] {

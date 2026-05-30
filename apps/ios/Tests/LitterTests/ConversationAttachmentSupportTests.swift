@@ -35,6 +35,31 @@ final class ConversationAttachmentSupportTests: XCTestCase {
         XCTAssertEqual(ConversationAttachmentSupport.normalizeLinkedFakefsPath("litter-file://root/tmp/test.png"), "/root/tmp/test.png")
     }
 
+    func testOversizedPasteDetectionUsesCharacterAndByteLimits() {
+        XCTAssertFalse(ConversationAttachmentSupport.shouldExternalizeComposerText("short paste"))
+
+        let characterHeavy = String(repeating: "a", count: ConversationAttachmentSupport.oversizedPasteCharacterLimit + 1)
+        XCTAssertTrue(ConversationAttachmentSupport.shouldExternalizeComposerText(characterHeavy))
+
+        let byteHeavy = String(repeating: "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}", count: 2_000)
+        XCTAssertLessThan(byteHeavy.count, ConversationAttachmentSupport.oversizedPasteCharacterLimit)
+        XCTAssertTrue(ConversationAttachmentSupport.shouldExternalizeComposerText(byteHeavy))
+    }
+
+    func testOversizedPastePlaceholderKeepsPreviewShort() {
+        let paste = String(repeating: "0123456789", count: 1_300)
+
+        let placeholder = ConversationAttachmentSupport.oversizedPastePlaceholder(
+            fileName: "pasted-text-1.txt",
+            originalCharacterCount: paste.count,
+            text: paste
+        )
+
+        XCTAssertTrue(placeholder.contains("pasted-text-1.txt"))
+        XCTAssertTrue(placeholder.contains("Original length: \(paste.count) characters."))
+        XCTAssertLessThan(placeholder.count, 1_200)
+    }
+
     func testLinkedComputerFileAttachmentKeepsWindowsPathAsMentionPath() throws {
         let attachment = try XCTUnwrap(
             ConversationAttachmentSupport.attachmentForLinkedFile(

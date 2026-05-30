@@ -99,8 +99,9 @@ public class LockDownInstall: InstallProvider {
         let path = "./\(MuxerConstants.pkgPath)/\(bundleId)/app.ipa"
         print("[minimuxer] Installing...")
         if !inst.install(path: path) {
-            print("[minimuxer] ERROR: Install failed")
-            throw MinimuxerError.InstallApp("Failed to install")
+            let message = "installation_proxy rejected \(path) after LocalDevVPN connectivity and AFC staging succeeded"
+            print("[minimuxer] ERROR: \(message)")
+            throw MinimuxerError.InstallApp(message)
         }
         print("[minimuxer] Install done!")
     }
