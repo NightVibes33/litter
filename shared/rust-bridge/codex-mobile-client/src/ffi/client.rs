@@ -3146,7 +3146,7 @@ Widget construction guidelines (for reference when making UI decisions):\n\n\
 #[cfg(test)]
 mod tests {
     use super::{
-        ImageViewSource, append_missing_amp_mode_models, choose_saved_app_update_server_id,
+        ImageViewSource, append_cached_models_for_failed_runtimes, runtime_exposes_model_choices, append_missing_amp_mode_models, choose_saved_app_update_server_id,
         image_read_command, is_mobile_hidden_skill, normalize_model_info_for_runtime,
         normalized_image_path, scan_local_pet_root, splice_generative_ui_preamble,
     };
@@ -3155,7 +3155,7 @@ mod tests {
     use crate::types::models::{AbsolutePath, AppDynamicToolSpec, SkillMetadata, SkillScope};
     use crate::types::{AgentRuntimeKind, ModelInfo, ReasoningEffort, ReasoningEffortOption};
     use crate::widget_guidelines::GENERATIVE_UI_PREAMBLE;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
     fn show_widget_spec() -> AppDynamicToolSpec {
         AppDynamicToolSpec {
@@ -3361,6 +3361,49 @@ mod tests {
             &mut model,
             "amp".to_string()
         ));
+    }
+
+    #[test]
+    fn shell_runtime_does_not_expose_model_choices() {
+        assert!(!runtime_exposes_model_choices("shell"));
+        assert!(runtime_exposes_model_choices("amp"));
+        assert!(runtime_exposes_model_choices("codex"));
+    }
+
+    #[test]
+    fn failed_runtime_cache_preserves_only_failed_runtime_models() {
+        let mut models = vec![test_model("smart", "amp".to_string())];
+        let mut seen_model_ids = models
+            .iter()
+            .map(|model| (model.agent_runtime_kind.clone(), model.id.clone()))
+            .collect::<HashSet<_>>();
+        let cached_models = vec![
+            test_model("opus", "claude".to_string()),
+            test_model("gpt-5.5", "codex".to_string()),
+            test_model("smart", "amp".to_string()),
+        ];
+        let failed_runtime_kinds = HashSet::from(["claude".to_string()]);
+
+        append_cached_models_for_failed_runtimes(
+            &mut models,
+            &mut seen_model_ids,
+            &cached_models,
+            &failed_runtime_kinds,
+        );
+
+        assert!(models.iter().any(|model| {
+            model.agent_runtime_kind == "claude".to_string() && model.id == "opus"
+        }));
+        assert!(!models.iter().any(|model| {
+            model.agent_runtime_kind == "codex".to_string() && model.id == "gpt-5.5"
+        }));
+        assert_eq!(
+            models
+                .iter()
+                .filter(|model| model.agent_runtime_kind == "amp".to_string() && model.id == "smart")
+                .count(),
+            1
+        );
     }
 
     #[test]
