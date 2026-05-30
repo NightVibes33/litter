@@ -414,15 +414,78 @@ enum FeatherSigningMaterialStore {
             return FeatherSigningRunResult(exitCode: 70, status: "feather-zsign-failed", log: error.localizedDescription + "\n", signedIPAAppPath: nil, signedIPAFakefsPath: nil, bundleIdentifier: "")
         }
         #else
-        return FeatherSigningRunResult(
-            exitCode: 78,
-            status: "feather-zsign-not-linked",
-            log: "Feather signing requires the vendored Feather ZsignSwift package. Re-run XcodeGen and build with ThirdParty/Feather/Source/Zsign linked.\n",
-            signedIPAAppPath: nil,
-            signedIPAFakefsPath: nil,
-            bundleIdentifier: ""
-        )
+        return await signImportedIPAWithSideStoreAltSign(options: options)
         #endif
+    }
+
+    private static func signImportedIPAWithSideStoreAltSign(options: FeatherSigningOptions) async -> FeatherSigningRunResult {
+        let currentSnapshot = Self.snapshot(checkRevocation: false)
+        guard let importedIPA = currentSnapshot.importedIPA else {
+            return FeatherSigningRunResult(exitCode: 64, status: "feather-ipa-missing", log: "Import an IPA before signing.\n", signedIPAAppPath: nil, signedIPAFakefsPath: nil, bundleIdentifier: "")
+        }
+        guard currentSnapshot.certificate != nil else {
+            return FeatherSigningRunResult(exitCode: 64, status: "feather-certificate-missing", log: "Import a .p12/.pfx certificate before signing.\n", signedIPAAppPath: nil, signedIPAFakefsPath: nil, bundleIdentifier: "")
+        }
+        guard let provisioningProfile = currentSnapshot.provisioningProfile else {
+            return FeatherSigningRunResult(exitCode: 64, status: "feather-profile-missing", log: "Import a matching .mobileprovision before signing.\n", signedIPAAppPath: nil, signedIPAFakefsPath: nil, bundleIdentifier: "")
+        }
+        guard let identity = NyxianSigningCertificateStorage.loadIdentity() else {
+            return FeatherSigningRunResult(exitCode: 64, status: "feather-certificate-password-missing", log: "The saved certificate password could not be loaded.\n", signedIPAAppPath: nil, signedIPAFakefsPath: nil, bundleIdentifier: "")
+        }
+        if !currentSnapshot.dylibs.isEmpty || !currentSnapshot.frameworksAndPlugins.isEmpty || !currentSnapshot.tweaks.isEmpty || !lines(options.removeDylibsText).isEmpty {
+            return FeatherSigningRunResult(
+                exitCode: 78,
+                status: "feather-zsign-options-unavailable",
+                log: "This fast build uses the linked SideStore AltSign certificate signer. Clear dylib/framework/tweak injection and remove-dylib options, then sign again.\n",
+                signedIPAAppPath: nil,
+                signedIPAFakefsPath: nil,
+                bundleIdentifier: ""
+            )
+        }
+
+        do {
+            let outputDirectory = workspaceRoot
+                .appendingPathComponent("Signed", isDirectory: true)
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            let profileURL = URL(fileURLWithPath: provisioningProfile.appPath)
+            let profileData = try Data(contentsOf: profileURL)
+            let result = await KittyStoreSideStoreSigningBridge.signIPAWithImportedIdentity(
+                ipaURL: URL(fileURLWithPath: importedIPA.appPath),
+                outputDirectory: outputDirectory,
+                bundleIdentifier: resolvedBundleIdentifier(snapshot: currentSnapshot, options: options),
+                appName: resolvedAppName(snapshot: currentSnapshot, options: options),
+                appVersion: resolvedAppVersion(snapshot: currentSnapshot, options: options),
+                teamID: "",
+                teamName: nil,
+                certificateData: identity.data,
+                certificatePassword: identity.password,
+                provisioningProfileData: profileData
+            )
+            guard result.exitCode == 0, let signedIPAPath = result.signedIPAPath else {
+                return FeatherSigningRunResult(exitCode: result.exitCode, status: result.status, log: result.log, signedIPAAppPath: result.signedIPAPath, signedIPAFakefsPath: nil, bundleIdentifier: "")
+            }
+
+            let outputURL = URL(fileURLWithPath: signedIPAPath)
+            let fakefsPath = "/root/.litter/kittystore/signed/\(outputDirectory.lastPathComponent)/\(outputURL.lastPathComponent)"
+            let fakefsWarning = await stageFakefsItem(from: outputURL, to: fakefsPath)
+            if options.deleteAfterSigning {
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: importedIPA.appPath))
+                UserDefaults.standard.removeObject(forKey: importedIPARecordKey)
+            }
+
+            let warningLine = fakefsWarning.map { "\nFakefs staging warning: \($0)" } ?? ""
+            let log = """
+            Feather certificate signing completed.
+            - signed with SideStore AltSign certificate path
+            - input: \(importedIPA.appPath)
+            - output: \(signedIPAPath)
+            - fakefs: \(fakefsPath)
+            \(result.log.trimmingCharacters(in: .whitespacesAndNewlines))\(warningLine)
+            """
+            return FeatherSigningRunResult(exitCode: 0, status: "feather-altsign-ok", log: log, signedIPAAppPath: signedIPAPath, signedIPAFakefsPath: fakefsPath, bundleIdentifier: resolvedBundleIdentifier(snapshot: currentSnapshot, options: options))
+        } catch {
+            return FeatherSigningRunResult(exitCode: 70, status: "feather-altsign-failed", log: error.localizedDescription + "\n", signedIPAAppPath: nil, signedIPAFakefsPath: nil, bundleIdentifier: "")
+        }
     }
 
     static func signedIPAURL(appPath: String) -> URL? {
