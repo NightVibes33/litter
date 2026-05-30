@@ -75,10 +75,13 @@ jobs:
       LITTER_BUILDKIT_ASSET_SHA256: ${{ secrets.LITTER_BUILDKIT_ASSET_SHA256 }}
       LITTER_BUILDKIT_ASSET_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
       GITHUB_TOKEN: ${{ github.token }}
-      LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || (secrets.LITTER_BUILDKIT_ASSET_URL != '' && secrets.LITTER_BUILDKIT_ASSET_SHA256 != '' && 'nyxian-private' || 'fast-device') }}
-      LITTER_NYXIAN_PRIVATE_BUILD: ${{ ((github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private') || (github.event_name == 'push' && secrets.LITTER_BUILDKIT_ASSET_URL != '' && secrets.LITTER_BUILDKIT_ASSET_SHA256 != '')) && '1' || '0' }}
-      LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ ((github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private') || (github.event_name == 'push' && secrets.LITTER_BUILDKIT_ASSET_URL != '' && secrets.LITTER_BUILDKIT_ASSET_SHA256 != '')) && '1' || '0' }}
-      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ ((github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private') || (github.event_name == 'push' && secrets.LITTER_BUILDKIT_ASSET_URL != '' && secrets.LITTER_BUILDKIT_ASSET_SHA256 != '')) && '1' || '0' }}
+      # Push builds must stay launch-safe and fast. The private Nyxian lane is
+      # available only by manual dispatch so ordinary pushes do not fail when
+      # optional BuildKit asset secrets are present but unavailable/stale.
+      LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
+      LITTER_NYXIAN_PRIVATE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
+      LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
+      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
 
     steps:
       - name: Checkout
