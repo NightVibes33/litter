@@ -45,6 +45,7 @@ patches/codex/             Local Codex patches applied during sync/build.
 patches/ghostty/           Litter mobile embedding patch for the Ghostty renderer.
 ThirdParty/Nyxian/         Nyxian/CoreCompiler/LLVM-On-iOS source used by BuildKit.
 ThirdParty/SideStore/      SideStore/AltSign/minimuxer/LocalDevVPN integration source and references.
+ThirdParty/Feather/        Feather/Zsign source snapshots and signing-flow references used by KittyStore signing.
 tools/scripts/             Build, release, BuildKit asset, and verification scripts.
 docs/                      Development notes, screenshots, badges, and release docs.
 .github/workflows/         Unsigned IPA, BuildKit asset, mobile release, TestFlight, and Mac CI.
@@ -80,7 +81,7 @@ The iOS app target deploys to iOS 18.0. The unsigned IPA workflow runs on `macos
 
 The SwiftUI app owns the native interface: home, conversations, settings, file workspace, terminal panel, account and Keychain flows, PiP, CarPlay, Watch surfaces, and BuildKit controls. The Rust bridge owns Codex app-server communication, session hydration, Slingshot pairing, SSH bridge behavior, remote path handling, saved apps/widgets, permission state, iSH command execution, and the UniFFI surface consumed by Swift.
 
-The local runtime is not the iOS host shell. Commands run inside an embedded persistent iSH Alpine Linux fakefs. The default home is `/root`; Litter creates `/root/litter`, `/root/.litter/builds`, and `/usr/local/bin`; app Documents can be bridged through `/mnt/apps`; and Codex home is bridged to `/root/.codex` so installed skills are visible to the app runtime.
+The local runtime is not the iOS host shell. Commands run inside an embedded persistent iSH Alpine Linux fakefs. The default home is `/root`; Litter creates `/root/litter`, `/root/.litter/builds`, and `/usr/local/bin`; app Documents are bridged through `/mnt/apps`; the native app container is repaired at `/mnt/container`; and Codex home is bridged to `/root/.codex` so installed skills are visible to the app runtime.
 
 Before exposing local shell tools, Litter runs a native preflight command. If simple commands such as `true`, `pwd`, or `ls` fail with bootstrap errors, debug the iSH runtime bridge first. PATH, Swift, and BuildKit checks come after the fakefs is bootstrapped.
 
@@ -96,7 +97,7 @@ Before exposing local shell tools, Litter runs a native preflight command. If si
 
 ## Files And Terminal
 
-The Files button opens the iSH workspace rooted at `/root`. It uses the same fakefs command bridge used by Codex tool calls and the terminal panel, so file actions operate on the same filesystem the bot sees.
+The Files button opens the iSH workspace rooted at `/root`. It uses the same fakefs command bridge used by Codex tool calls and the terminal panel, so file actions operate on the same filesystem the bot sees. Native app storage is also available through the repaired `/mnt/container` mount for diagnostics, logs, app documents, caches, and the fakefs backing store.
 
 The file workspace includes list/grid views, breadcrumbs, search, sorting, filters, hidden-file toggles, quick locations, favorites, recents, inspectors, archive/build-artifact detection, and bot-context path copying. It also exposes file operations for creating, renaming, moving, duplicating, deleting, making executable, sharing, compressing, extracting, importing from iOS Files, and editing text/code files.
 
@@ -148,7 +149,7 @@ Important packaging rule: changing `ThirdParty/Nyxian/LitterBuildKitNative/**` d
 
 Nyxian run/install mode needs more than compiler files. The installed app also needs the Apple ID and signing state used by the original Nyxian flow: an Apple ID login saved in Keychain, a SideStore-compatible Anisette server, the matching `.p12` signing identity, and the embedded provisioning profile from the signed Litter install.
 
-KittyStore validates imported signing material before it is treated as usable. A bad `.p12` password, missing private key, untrusted certificate, or revoked certificate keeps Nyxian run/install blocked and shows the failure in status instead of silently accepting broken credentials. The Feather-style signing workspace validates per-app provisioning profiles for parse errors, expiration, missing developer certificates, bundle ID mismatch, and profile/certificate mismatch before certificate signing starts. BuildKit Settings reports this state as diagnostics instead of owning duplicate Apple ID or certificate forms.
+KittyStore validates imported signing material before it is treated as usable. A bad `.p12` password or missing private key keeps Nyxian run/install blocked and shows the failure in status instead of silently accepting broken credentials. Imported Apple developer certificates are accepted from the PKCS#12 identity and optional provisioning-profile match; iOS system trust or revocation failures are not treated as import failures for user-supplied signing certificates. The Feather-style signing workspace validates per-app provisioning profiles for parse errors, expiration, missing developer certificates, bundle ID mismatch, and profile/certificate mismatch before certificate signing starts. BuildKit Settings reports this state as diagnostics instead of owning duplicate Apple ID or certificate forms.
 
 Litter is open source, but it is not MIT licensed. The project is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and Google Play distribution. See [LICENSE](LICENSE). Third-party source imports and submodules keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
@@ -229,6 +230,8 @@ Manual build modes are:
 - `release-device`: full device lane. Rebuilds Rust instead of using the fast-device shortcut.
 - `nyxian-private`: private/manual lane. Embeds verified private BuildKit assets and keeps `PlugIns/LiveProcess.appex`, the NSExtension required by original Nyxian/emexDE. This is not the default public IPA lane.
 
+Push builds can enter the `nyxian-private` path automatically when private BuildKit asset secrets are configured. For a launch-safe public IPA that skips private asset preparation, dispatch `Build Unsigned iOS IPA` manually with `build_mode=fast-device`.
+
 Every successful IPA build creates or updates a versioned GitHub release named `litter-v${VERSION}` and uploads the IPA, checksum, metadata, update JSON, source JSON, and release notes. The stable `app-source` release is also updated with `litter-altstore-source.json`, `litter-update.json`, and the source icon.
 
 The in-app updater and KittyStore BuildKit commands read their app-source repository from the `LITTER_RELEASE_OWNER`, `LITTER_RELEASE_REPO`, `LITTER_RELEASE_MANIFEST_ASSET_NAME`, `LITTER_RELEASE_SOURCE_ASSET_NAME`, `LITTER_RELEASE_STABLE_TAG`, and `LITTER_RELEASE_TAG_PREFIX` build settings. The default remains `NightVibes33/litter`, but forks and rebranded builds can point the app at their own release/source repo without editing Swift code. Inside an installed build, bots can use `litter-kittystore-config --repo owner/repo` to persist the same source override at runtime, or `litter-kittystore-config --reset` to return to the compiled defaults.
@@ -237,7 +240,7 @@ The AltStore/SideStore source is version-history first. Every successful version
 
 The in-app KittyStore tab hosts the real SideStore five-tab surface: News, Sources, Browse, My Apps, and Settings. News is a store feed, Sources owns SideStore/AltStore source lists, Browse aggregates apps from loaded sources instead of being tied to Litter, My Apps is reserved for installed-device actions through minimuxer, and SideStore Settings owns the Apple ID sign-in, 2FA prompt, Anisette, and account/team flow. Feather-style signing lives beside it in Settings > Signing: IPA customization, certificate/provisioning selection, pairing import, LocalDevVPN launch/status, advanced Modify rows, Entitlements, Tweaks, Properties, and Start Signing.
 
-Settings > Signing does not duplicate SideStore's login UI. It reads the saved SideStore Apple ID state and owns the Feather-side inputs: `.p12` certificate import, certificate password validation, provisioning-profile import, pairing-file import, LocalDevVPN launch/status, and Feather signing options. Apple ID signing requires the account already signed in through SideStore plus a pairing file; certificate signing requires a validated `.p12` plus a matching `.mobileprovision` or embedded provisioning profile. Any on-device install, refresh, remove, or installed-app listing also requires LocalDevVPN to be enabled and the pairing file to be present. Pairing files are saved to both SideStore's `ALTPairingFile.mobiledevicepairing` document path and Feather's `pairingFile.plist` path, then staged into fakefs for bots and BuildKit. BuildKit Settings is intentionally read-only for this state now, so SideStore account transport and Feather signing options are not duplicated.
+Settings > Signing does not duplicate SideStore's login UI. It reads the saved SideStore Apple ID state and owns the Feather-side inputs: `.p12` certificate import, certificate password validation, provisioning-profile import, pairing-file import, LocalDevVPN launch/status, and Feather signing options. Apple ID signing requires the account already signed in through SideStore plus a pairing file; certificate signing requires a validated `.p12` plus a matching `.mobileprovision` or embedded provisioning profile. Certificate import validates the PKCS#12 password, private key, and optional profile match; it does not require the imported developer certificate to pass iOS system trust. Any on-device install, refresh, remove, or installed-app listing also requires LocalDevVPN to be enabled and the pairing file to be present. Pairing files are saved to both SideStore's `ALTPairingFile.mobiledevicepairing` document path and Feather's `pairingFile.plist` path, then staged into fakefs for bots and BuildKit. BuildKit Settings is intentionally read-only for this state now, so SideStore account transport and Feather signing options are not duplicated.
 
 KittyStore stages those inputs into the native BuildKit driver and uses the vendored Feather/Zsign signing engine when the private BuildKit assets are rebuilt with `LITTER_BUILDKIT_ENABLE_KITTYSTORE_SIGNER=1`. The native signer supports default, force, and ad-hoc signing modes, dylib injection, dylib load-command removal, app-relative file removal, framework/plugin copying, entitlement edits, Feather-style Info.plist properties such as app appearance, minimum iOS version, file sharing, ProMotion, Game Mode, iPad fullscreen, URL-scheme removal, and tweak payload collection from dylibs, folders, zip files, and `.deb` packages that contain `data.tar` or `data.tar.gz`.
 
@@ -251,8 +254,8 @@ All IPAs from this workflow are unsigned. They must be signed by SideStore, AltS
 
 - Local commands run inside iSH Alpine Linux, not the iOS host filesystem.
 - The embedded Codex server, terminal, and command bridge wait for iSH readiness before accepting fakefs commands. If a restored session hands Rust an iOS sandbox path, Litter maps the command cwd back to `/root` before dispatching into iSH.
-- The fakefs can see `/root`, `/tmp`, `/usr/local/bin`, `/root/.codex`, `/root/litter`, and app-provided mounts such as `/mnt/apps`.
-- The fakefs cannot directly see arbitrary iOS sandbox paths such as `/private/var/mobile/...`; Litter stages native BuildKit files through app storage when native code must read them.
+- The fakefs can see `/root`, `/tmp`, `/usr/local/bin`, `/root/.codex`, `/root/litter`, app-provided mounts such as `/mnt/apps`, and the native app container bridge at `/mnt/container`.
+- The fakefs cannot directly see arbitrary iOS sandbox paths unless Litter mounts them with `mount -t real`; user-picked folders use the mounted-folders UI, the app container bridge uses `/mnt/container`, and native BuildKit inputs are staged through app storage when native code must read them.
 - `litter-dev-bootstrap` repairs expected fakefs utilities where possible. Some tools may still require Alpine packages.
 - Shell failures with exit `-6` mean the iSH runtime was not ready or not bootstrapped. Start debugging at runtime/session initialization before looking at PATH, Swift, or BuildKit.
 - PTY or streaming command errors usually mean the command RPC path and client process id handling need attention, not that the fakefs files disappeared.
