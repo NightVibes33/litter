@@ -5,6 +5,8 @@ import AltStoreCore
 import Minimuxer
 
 public enum KittyStoreEmbeddedFactory {
+    private static let consoleLog = ConsoleLog()
+
     public struct MinimuxerProbe: Sendable {
         public let isReady: Bool
         public let endpointReachable: Bool
@@ -86,6 +88,7 @@ public enum KittyStoreEmbeddedFactory {
 
     @MainActor
     public static func bootstrap() {
+        KittyStoreEmbeddedRuntime.consoleLogProvider = { consoleLog }
         KittyStoreEmbeddedRuntime.prepareForLaunch()
     }
 
@@ -103,16 +106,168 @@ public enum KittyStoreEmbeddedFactory {
 @MainActor
 @objc(KittyStoreEmbeddedEntryPoint)
 public final class KittyStoreEmbeddedEntryPoint: NSObject {
-    @objc public static func makeRootViewController() -> UIViewController {
+    @objc(bootstrap)
+    public static func bootstrap() {
+        KittyStoreEmbeddedFactory.bootstrap()
+    }
+
+    @objc(makeRootViewController)
+    public static func makeRootViewController() -> UIViewController {
         KittyStoreEmbeddedFactory.makeRootViewController()
     }
 
-    @objc public static func startTransportIfPossible() {
+    @objc(startTransportIfPossible)
+    public static func startTransportIfPossible() {
         KittyStoreEmbeddedFactory.startTransportIfPossible()
     }
 
-    @objc public static func applyCurrentTheme(to viewController: UIViewController) {
+    @objc(applyCurrentThemeTo:)
+    public static func applyCurrentTheme(to viewController: UIViewController) {
         KittyStoreEmbeddedFactory.applyCurrentTheme(to: viewController)
+    }
+}
+
+@objc(KittyStoreMinimuxerTransportEntryPoint)
+public final class KittyStoreMinimuxerTransportEntryPoint: NSObject {
+    @objc(availability:)
+    public static func availability(_ request: NSDictionary) -> NSDictionary {
+        success(["available": KittyStoreEmbeddedFactory.isMinimuxerTransportAvailable])
+    }
+
+    @objc(probeLocalDevVPN:)
+    public static func probeLocalDevVPN(_ request: NSDictionary) -> NSDictionary {
+        let probe = KittyStoreEmbeddedFactory.probeLocalDevVPN()
+        return success([
+            "isReady": probe.isReady,
+            "endpointReachable": probe.endpointReachable,
+            "detail": probe.detail
+        ])
+    }
+
+    @objc(startMinimuxer:)
+    public static func startMinimuxer(_ request: NSDictionary) -> NSDictionary {
+        do {
+            let pairingFile = stringValue(request["pairingFile"])
+            let logPath = stringValue(request["logPath"])
+            let loggingEnabled = boolValue(request["loggingEnabled"])
+            try KittyStoreEmbeddedFactory.startMinimuxer(
+                pairingFile: pairingFile,
+                logPath: logPath,
+                loggingEnabled: loggingEnabled
+            )
+            return success()
+        } catch {
+            return failure(error)
+        }
+    }
+
+    @objc(fetchDeviceUDID:)
+    public static func fetchDeviceUDID(_ request: NSDictionary) -> NSDictionary {
+        success(["value": KittyStoreEmbeddedFactory.fetchDeviceUDID() ?? ""])
+    }
+
+    @objc(installedAppsPlist:)
+    public static func installedAppsPlist(_ request: NSDictionary) -> NSDictionary {
+        do {
+            return success(["value": try KittyStoreEmbeddedFactory.installedAppsPlist()])
+        } catch {
+            return failure(error)
+        }
+    }
+
+    @objc(installProvisioningProfile:)
+    public static func installProvisioningProfile(_ request: NSDictionary) -> NSDictionary {
+        do {
+            guard let profileData = dataValue(request["profileData"]) else {
+                return failure("Missing provisioning profile data.")
+            }
+            try KittyStoreEmbeddedFactory.installProvisioningProfile(profileData)
+            return success()
+        } catch {
+            return failure(error)
+        }
+    }
+
+    @objc(stageIPA:)
+    public static func stageIPA(_ request: NSDictionary) -> NSDictionary {
+        do {
+            let bundleIdentifier = stringValue(request["bundleIdentifier"])
+            guard let ipaBytes = dataValue(request["ipaBytes"]) else {
+                return failure("Missing IPA bytes.")
+            }
+            try KittyStoreEmbeddedFactory.stageIPA(bundleIdentifier: bundleIdentifier, ipaBytes: ipaBytes)
+            return success()
+        } catch {
+            return failure(error)
+        }
+    }
+
+    @objc(installStagedIPA:)
+    public static func installStagedIPA(_ request: NSDictionary) -> NSDictionary {
+        do {
+            try KittyStoreEmbeddedFactory.installStagedIPA(bundleIdentifier: stringValue(request["bundleIdentifier"]))
+            return success()
+        } catch {
+            return failure(error)
+        }
+    }
+
+    @objc(removeInstalledApp:)
+    public static func removeInstalledApp(_ request: NSDictionary) -> NSDictionary {
+        do {
+            try KittyStoreEmbeddedFactory.removeInstalledApp(bundleIdentifier: stringValue(request["bundleIdentifier"]))
+            return success()
+        } catch {
+            return failure(error)
+        }
+    }
+
+    private static func success(_ values: [String: Any] = [:]) -> NSDictionary {
+        var response = values
+        response["ok"] = true
+        return response as NSDictionary
+    }
+
+    private static func failure(_ error: Error) -> NSDictionary {
+        failure("\(error.localizedDescription)\n\(String(describing: error))")
+    }
+
+    private static func failure(_ message: String) -> NSDictionary {
+        [
+            "ok": false,
+            "error": message,
+            "localizedDescription": message
+        ] as NSDictionary
+    }
+
+    private static func stringValue(_ value: Any?) -> String {
+        if let string = value as? String {
+            return string
+        }
+        if let number = value as? NSNumber {
+            return number.stringValue
+        }
+        return ""
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool {
+        if let bool = value as? Bool {
+            return bool
+        }
+        if let number = value as? NSNumber {
+            return number.boolValue
+        }
+        return false
+    }
+
+    private static func dataValue(_ value: Any?) -> Data? {
+        if let data = value as? Data {
+            return data
+        }
+        if let data = value as? NSData {
+            return data as Data
+        }
+        return nil
     }
 }
 

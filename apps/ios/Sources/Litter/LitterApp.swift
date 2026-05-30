@@ -3,9 +3,8 @@ import UIKit
 import UserNotifications
 import Combine
 import os
-import SideStore
 
-class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
+class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     private var pendingPushToken: Data?
     private var pendingNotificationThreadKey: ThreadKey?
     private var splashWindow: UIWindow?
@@ -37,7 +36,7 @@ class AppDelegate: SideStore.AppDelegate, UNUserNotificationCenterDelegate {
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
         LLog.bootstrap()
         Task { @MainActor in
-            KittyStoreEmbeddedFactory.bootstrap()
+            KittyStoreEmbeddedBridge.bootstrap()
         }
 
         #if targetEnvironment(macCatalyst)

@@ -1,23 +1,22 @@
 import SwiftUI
 import UIKit
-import SideStore
 
 struct KittyStoreHostView: UIViewControllerRepresentable {
     @Environment(ThemeManager.self) private var themeManager
 
     @MainActor
     func makeUIViewController(context: Context) -> UIViewController {
-        let viewController = KittyStoreEmbeddedFactory.makeRootViewController()
-        KittyStoreEmbeddedFactory.applyCurrentTheme(to: viewController)
-        KittyStoreEmbeddedFactory.startTransportIfPossible()
+        let viewController = KittyStoreEmbeddedBridge.makeRootViewController()
+        KittyStoreEmbeddedBridge.applyCurrentTheme(to: viewController)
+        KittyStoreEmbeddedBridge.startTransportIfPossible()
         return viewController
     }
 
     @MainActor
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
         _ = themeManager.themeVersion
-        KittyStoreEmbeddedFactory.applyCurrentTheme(to: uiViewController)
-        KittyStoreEmbeddedFactory.startTransportIfPossible()
+        KittyStoreEmbeddedBridge.applyCurrentTheme(to: uiViewController)
+        KittyStoreEmbeddedBridge.startTransportIfPossible()
     }
 }
 

@@ -1,5 +1,4 @@
 import Foundation
-import SideStore
 
 struct KittyStoreInstalledDeviceApp: Identifiable, Equatable, Sendable {
     var bundleIdentifier: String
@@ -49,7 +48,7 @@ enum KittyStoreMinimuxerBridge {
     }
 
     static var isLinked: Bool {
-        KittyStoreEmbeddedFactory.isMinimuxerTransportAvailable
+        KittyStoreEmbeddedBridge.isMinimuxerTransportAvailable
     }
 
     static var isRuntimeReady: Bool {
@@ -57,7 +56,7 @@ enum KittyStoreMinimuxerBridge {
     }
 
     static func probeLocalDevVPN() -> LocalDevVPNProbe {
-        let probe = KittyStoreEmbeddedFactory.probeLocalDevVPN()
+        let probe = KittyStoreEmbeddedBridge.probeLocalDevVPN()
         return LocalDevVPNProbe(
             isReady: probe.isReady,
             endpointReachable: probe.endpointReachable,
@@ -69,12 +68,12 @@ enum KittyStoreMinimuxerBridge {
         await Task.detached(priority: .userInitiated) {
             do {
                 let documentsPath = documentsLogPath()
-                try KittyStoreEmbeddedFactory.startMinimuxer(
+                try KittyStoreEmbeddedBridge.startMinimuxer(
                     pairingFile: pairingFileContents,
                     logPath: documentsPath,
                     loggingEnabled: consoleLoggingEnabled
                 )
-                guard let udid = KittyStoreEmbeddedFactory.fetchDeviceUDID(), !udid.isEmpty else {
+                guard let udid = try KittyStoreEmbeddedBridge.fetchDeviceUDID(), !udid.isEmpty else {
                     return Result(exitCode: 69, status: "kittystore-udid-missing", log: "SideStore minimuxer did not return a device UDID.\n")
                 }
                 return Result(exitCode: 0, status: "kittystore-udid-ok", log: udid + "\n")
@@ -95,18 +94,18 @@ enum KittyStoreMinimuxerBridge {
                 log.append("SideStore minimuxer installed-app browse")
                 log.append("- Log path: \(documentsPath)")
 
-                try KittyStoreEmbeddedFactory.startMinimuxer(
+                try KittyStoreEmbeddedBridge.startMinimuxer(
                     pairingFile: pairingFileContents,
                     logPath: documentsPath,
                     loggingEnabled: consoleLoggingEnabled
                 )
                 log.append("- SideStore minimuxer started with the imported pairing file")
 
-                let plistText = try KittyStoreEmbeddedFactory.installedAppsPlist()
+                let plistText = try KittyStoreEmbeddedBridge.installedAppsPlist()
                 let apps = try Self.parseInstalledApps(plistText: plistText)
                 log.append("- loaded \(apps.count) user-installed app(s) through installation_proxy")
 
-                let udid = KittyStoreEmbeddedFactory.fetchDeviceUDID() ?? ""
+                let udid = try KittyStoreEmbeddedBridge.fetchDeviceUDID() ?? ""
                 if !udid.isEmpty {
                     log.append("- device UDID: \(udid)")
                 }
@@ -135,7 +134,7 @@ enum KittyStoreMinimuxerBridge {
                 log.append("- Bundle ID: \(bundleIdentifier)")
                 log.append("- Log path: \(documentsPath)")
 
-                try KittyStoreEmbeddedFactory.startMinimuxer(
+                try KittyStoreEmbeddedBridge.startMinimuxer(
                     pairingFile: pairingFileContents,
                     logPath: documentsPath,
                     loggingEnabled: consoleLoggingEnabled
@@ -143,7 +142,7 @@ enum KittyStoreMinimuxerBridge {
                 log.append("- SideStore minimuxer started with the imported pairing file")
 
                 if let provisioningProfileData {
-                    try KittyStoreEmbeddedFactory.installProvisioningProfile(provisioningProfileData)
+                    try KittyStoreEmbeddedBridge.installProvisioningProfile(provisioningProfileData)
                     log.append("- provisioning profile installed through misagent")
                 }
 
@@ -154,12 +153,12 @@ enum KittyStoreMinimuxerBridge {
 
                 let ipaBytes = try Data(contentsOf: ipaURL, options: [.mappedIfSafe])
                 log.append("- loaded signed IPA bytes: \(ipaBytes.count)")
-                try KittyStoreEmbeddedFactory.stageIPA(bundleIdentifier: bundleIdentifier, ipaBytes: ipaBytes)
+                try KittyStoreEmbeddedBridge.stageIPA(bundleIdentifier: bundleIdentifier, ipaBytes: ipaBytes)
                 log.append("- staged IPA into PublicStaging over AFC")
-                try KittyStoreEmbeddedFactory.installStagedIPA(bundleIdentifier: bundleIdentifier)
+                try KittyStoreEmbeddedBridge.installStagedIPA(bundleIdentifier: bundleIdentifier)
                 log.append("- install request sent through installation_proxy")
 
-                let udid = KittyStoreEmbeddedFactory.fetchDeviceUDID() ?? ""
+                let udid = try KittyStoreEmbeddedBridge.fetchDeviceUDID() ?? ""
                 if !udid.isEmpty {
                     log.append("- device UDID: \(udid)")
                 }
@@ -186,17 +185,17 @@ enum KittyStoreMinimuxerBridge {
                 log.append("- Bundle ID: \(bundleIdentifier)")
                 log.append("- Log path: \(documentsPath)")
 
-                try KittyStoreEmbeddedFactory.startMinimuxer(
+                try KittyStoreEmbeddedBridge.startMinimuxer(
                     pairingFile: pairingFileContents,
                     logPath: documentsPath,
                     loggingEnabled: consoleLoggingEnabled
                 )
                 log.append("- SideStore minimuxer started with the imported pairing file")
 
-                try KittyStoreEmbeddedFactory.removeInstalledApp(bundleIdentifier: bundleIdentifier)
+                try KittyStoreEmbeddedBridge.removeInstalledApp(bundleIdentifier: bundleIdentifier)
                 log.append("- uninstall request sent through installation_proxy")
 
-                let udid = KittyStoreEmbeddedFactory.fetchDeviceUDID() ?? ""
+                let udid = try KittyStoreEmbeddedBridge.fetchDeviceUDID() ?? ""
                 if !udid.isEmpty {
                     log.append("- device UDID: \(udid)")
                 }
