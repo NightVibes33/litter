@@ -9,7 +9,8 @@ ASSET_DIR="${LITTER_BUILDKIT_ASSET_DIR:-}"
 ASSET_ZIP="${LITTER_BUILDKIT_ASSET_ZIP:-}"
 ASSET_URL="${LITTER_BUILDKIT_ASSET_URL:-}"
 ASSET_SHA256="${LITTER_BUILDKIT_ASSET_SHA256:-}"
-ASSET_TOKEN="${LITTER_BUILDKIT_ASSET_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
+ASSET_TOKEN="${LITTER_BUILDKIT_ASSET_TOKEN:-}"
+ASSET_FALLBACK_TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -122,18 +123,34 @@ manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 PY_MANIFEST
 }
 
-if [[ -n "$ASSET_URL" ]]; then
-  ASSET_ZIP="$TMP_DIR/LitterBuildKitAssets.zip"
-  echo "==> Downloading private BuildKit assets"
-  curl_args=(-fsSL --retry 3 -o "$ASSET_ZIP")
-  if [[ -n "$ASSET_TOKEN" ]]; then
-    curl_args+=(-H "Authorization: Bearer $ASSET_TOKEN")
+download_asset_zip() {
+  local token="$1"
+  local label="$2"
+  local -a curl_args=(-fsSL --retry 3 -o "$ASSET_ZIP")
+
+  if [[ -n "$token" ]]; then
+    curl_args+=(-H "Authorization: Bearer $token")
     curl_args+=(-H "X-GitHub-Api-Version: 2022-11-28")
   fi
   if [[ "$ASSET_URL" == *"api.github.com"*"/releases/assets/"* ]]; then
     curl_args+=(-H "Accept: application/octet-stream")
   fi
+
+  rm -f "$ASSET_ZIP"
+  echo "==> Downloading private BuildKit assets ($label)"
   curl "${curl_args[@]}" "$ASSET_URL"
+}
+
+if [[ -n "$ASSET_URL" ]]; then
+  ASSET_ZIP="$TMP_DIR/LitterBuildKitAssets.zip"
+  if ! download_asset_zip "$ASSET_TOKEN" "configured token"; then
+    if [[ -n "$ASSET_FALLBACK_TOKEN" && "$ASSET_FALLBACK_TOKEN" != "$ASSET_TOKEN" ]]; then
+      echo "==> Private BuildKit asset download failed with configured token; retrying with GitHub token"
+      download_asset_zip "$ASSET_FALLBACK_TOKEN" "GitHub token"
+    else
+      exit 1
+    fi
+  fi
 fi
 
 if [[ -n "$ASSET_ZIP" ]]; then
