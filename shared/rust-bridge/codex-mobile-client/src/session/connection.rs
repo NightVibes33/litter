@@ -701,17 +701,6 @@ impl ServerSession {
         let feedback = CodexFeedback::new();
         let session_source = SessionSource::VSCode;
 
-        #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]
-        let environment_manager = Arc::new(
-            codex_exec_server::EnvironmentManager::local_only_with_file_system(
-                crate::ish_exec::fakefs_file_system(),
-            ),
-        );
-        #[cfg(not(all(target_os = "ios", not(target_abi = "macabi"))))]
-        let environment_manager = Arc::new(
-            codex_exec_server::EnvironmentManager::default_for_tests(),
-        );
-
         let args = InProcessStartArgs {
             arg0_paths: Arg0DispatchPaths::default(),
             config: Arc::new(resolved_config),
@@ -723,7 +712,9 @@ impl ServerSession {
             log_db: None,
             state_db: Some(state_db),
             thread_config_loader: Arc::new(codex_config::NoopThreadConfigLoader),
-            environment_manager,
+            environment_manager: Arc::new(
+                codex_exec_server::EnvironmentManager::default_for_tests(),
+            ),
             config_warnings: Vec::new(),
             session_source,
             enable_codex_api_key_env: true,
