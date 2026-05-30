@@ -23,6 +23,9 @@ private extension UIAction.Identifier
 {
     static let showDetails = UIAction.Identifier("io.sidestore.showDetails")
     static let showError = UIAction.Identifier("io.sidestore.showError")
+    static let refreshSource = UIAction.Identifier("io.sidestore.refreshSource")
+    static let editSource = UIAction.Identifier("io.sidestore.editSource")
+    static let removeSource = UIAction.Identifier("io.sidestore.removeSource")
 }
 
 final class SourcesViewController: UICollectionViewController
@@ -407,6 +410,32 @@ private extension SourcesViewController
         self.present(alertController, animated: true, completion: nil)
     }
     
+    func refresh(_ source: Source)
+    {
+        self.navigationItem.leftBarButtonItem?.isIndicatingActivity = true
+        let context = DatabaseManager.shared.persistentContainer.newBackgroundContext()
+        AppManager.shared.fetchSource(sourceURL: source.sourceURL, managedObjectContext: context) { [weak self] result in
+            context.perform {
+                do
+                {
+                    _ = try result.get()
+                    try context.save()
+                    DispatchQueue.main.async {
+                        self?.navigationItem.leftBarButtonItem?.isIndicatingActivity = false
+                        self?.update()
+                    }
+                }
+                catch
+                {
+                    DispatchQueue.main.async {
+                        self?.navigationItem.leftBarButtonItem?.isIndicatingActivity = false
+                        self?.present(error)
+                    }
+                }
+            }
+        }
+    }
+
     func remove(_ source: Source, completionHandler: ((Bool) -> Void)? = nil)
     {
         Task<Void, Never> {
@@ -483,6 +512,42 @@ extension SourcesViewController
         
         let source = self.dataSource.item(at: indexPath)
         self.showSourceDetails(for: source)
+    }
+
+    override func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration?
+    {
+        guard indexPath.section < collectionView.numberOfSections,
+              indexPath.item < collectionView.numberOfItems(inSection: indexPath.section) else { return nil }
+
+        let source = self.dataSource.item(at: indexPath)
+        return UIContextMenuConfiguration(identifier: indexPath as NSIndexPath, previewProvider: nil) { [weak self] _ in
+            guard let self else { return nil }
+
+            var actions: [UIMenuElement] = [
+                UIAction(title: NSLocalizedString("Refresh Source", comment: ""), image: UIImage(systemName: "arrow.clockwise"), identifier: .refreshSource) { [weak self] _ in
+                    self?.refresh(source)
+                },
+                UIAction(title: NSLocalizedString("Edit Source", comment: ""), image: UIImage(systemName: "pencil"), identifier: .editSource) { [weak self] _ in
+                    self?.showSourceDetails(for: source)
+                }
+            ]
+
+            if let error = source.error
+            {
+                actions.append(UIAction(title: NSLocalizedString("View Error", comment: ""), image: UIImage(systemName: "exclamationmark.circle.fill"), identifier: .showError) { [weak self] _ in
+                    self?.present(error)
+                })
+            }
+
+            if !Source.isProtectedDefaultSource(source)
+            {
+                actions.append(UIAction(title: NSLocalizedString("Remove Source", comment: ""), image: UIImage(systemName: "trash.fill"), identifier: .removeSource, attributes: .destructive) { [weak self] _ in
+                    self?.remove(source)
+                })
+            }
+
+            return UIMenu(title: "", children: actions)
+        }
     }
 }
 

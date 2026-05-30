@@ -1203,6 +1203,26 @@ actor LitterBuildKit {
             }
         }
 
+        var planProperties: [String: Any] = properties
+        planProperties["postSigningAction"] = postSigningAction
+        planProperties["installAfterSigning"] = String(postSigningAction == "install")
+        planProperties["refreshAfterSigning"] = String(postSigningAction == "refresh")
+        planProperties["deleteAfterSigning"] = String(deleteAfterSigning)
+        if planProperties["injectPath"] == nil { planProperties["injectPath"] = "@executable_path" }
+        if planProperties["injectFolder"] == nil { planProperties["injectFolder"] = "/Frameworks/" }
+        let featherOptions = FeatherSigningUpstreamAdapter.optionsPayload(
+            appName: name ?? "",
+            appVersion: version ?? "",
+            appIdentifier: bundleID ?? "",
+            entitlementsFile: resolvedEntitlements ?? "",
+            signingType: signingType,
+            injectionFiles: resolvedDylibs + resolvedTweaks,
+            frameworkAndPluginFiles: resolvedFrameworks,
+            disInjectionFiles: removeDylibs,
+            removeFiles: removeFiles,
+            properties: planProperties
+        )
+
         let plan: [String: Any] = [
             "schemaVersion": 1,
             "kind": "KittyStoreSigningPlan",
@@ -1235,12 +1255,9 @@ actor LitterBuildKit {
                 "tweaks": resolvedTweaks,
                 "entitlements": entitlementsValue
             ],
-            "properties": properties.merging([
-                "postSigningAction": postSigningAction,
-                "installAfterSigning": String(postSigningAction == "install"),
-                "refreshAfterSigning": String(postSigningAction == "refresh"),
-                "deleteAfterSigning": String(deleteAfterSigning)
-            ]) { _, new in new },
+            "properties": planProperties,
+            "featherOptions": featherOptions,
+            "upstream": FeatherSigningUpstreamAdapter.provenance(),
             "readiness": [
                 "ready": missing.isEmpty,
                 "missing": missing,

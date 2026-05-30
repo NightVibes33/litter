@@ -284,28 +284,24 @@ enum FeatherSigningMaterialStore {
 
     static func signingPlanJSON(options: FeatherSigningOptions) throws -> String {
         let snapshot = snapshot(checkRevocation: false)
-        var properties = keyValueLines(options.customPropertiesText).reduce(into: [String: Any]()) { result, entry in
+        let customProperties = keyValueLines(options.customPropertiesText).reduce(into: [String: Any]()) { result, entry in
             result[entry.key] = entry.value
         }
-        properties["appAppearance"] = options.appAppearance.rawValue
-        properties["minimumAppRequirement"] = options.minimumRequirement.rawValue
-        properties["injectPath"] = options.injectPath.rawValue
-        properties["injectFolder"] = options.injectFolder.rawValue
-        properties["injectIntoExtensions"] = options.injectIntoExtensions
-        properties["fileSharing"] = options.fileSharing
-        properties["iTunesFileSharing"] = options.iTunesFileSharing
-        properties["proMotion"] = options.proMotion
-        properties["gameMode"] = options.gameMode
-        properties["ipadFullscreen"] = options.iPadFullscreen
-        properties["removeURLScheme"] = options.removeURLScheme
-        properties["removeProvisioning"] = options.removeProvisioning
-        properties["changeLanguageFilesForCustomDisplayName"] = options.forceLocalize
-        properties["experiment_supportLiquidGlass"] = options.supportLiquidGlass
-        properties["experiment_replaceSubstrateWithEllekit"] = options.replaceSubstrateWithElleKit
-        properties["postSigningAction"] = options.postSigningAction.rawValue
-        properties["installAfterSigning"] = options.postSigningAction == .install
-        properties["refreshAfterSigning"] = options.postSigningAction == .refresh
-        properties["deleteAfterSigning"] = options.deleteAfterSigning
+        let removeDylibs = lines(options.removeDylibsText)
+        let removeFiles = lines(options.removeFilesText)
+        let properties = FeatherSigningUpstreamAdapter.properties(options: options, customProperties: customProperties)
+        let featherOptions = FeatherSigningUpstreamAdapter.optionsPayload(
+            appName: options.appName,
+            appVersion: options.appVersion,
+            appIdentifier: options.bundleIdentifier,
+            entitlementsFile: snapshot.entitlements?.fakefsPath ?? "",
+            signingType: options.signingType.rawValue,
+            injectionFiles: snapshot.dylibs.map(\.fakefsPath) + snapshot.tweaks.map(\.fakefsPath),
+            frameworkAndPluginFiles: snapshot.frameworksAndPlugins.map(\.fakefsPath),
+            disInjectionFiles: removeDylibs,
+            removeFiles: removeFiles,
+            properties: properties
+        )
 
         let plan: [String: Any] = [
             "schemaVersion": 1,
@@ -327,13 +323,15 @@ enum FeatherSigningMaterialStore {
             ],
             "modify": [
                 "existingDylibs": snapshot.dylibs.map(\.fakefsPath),
-                "removeDylibs": lines(options.removeDylibsText),
-                "removeFiles": lines(options.removeFilesText),
+                "removeDylibs": removeDylibs,
+                "removeFiles": removeFiles,
                 "frameworksAndPlugins": snapshot.frameworksAndPlugins.map(\.fakefsPath),
                 "tweaks": snapshot.tweaks.map(\.fakefsPath),
                 "entitlements": snapshot.entitlements.flatMap { try? String(contentsOfFile: $0.appPath, encoding: .utf8) } ?? ""
             ],
             "properties": properties,
+            "featherOptions": featherOptions,
+            "upstream": FeatherSigningUpstreamAdapter.provenance(),
             "readiness": ["ready": snapshot.importedIPA != nil, "missing": readinessMissing(snapshot: snapshot, options: options)]
         ]
         let data = try JSONSerialization.data(withJSONObject: plan, options: [.prettyPrinted, .sortedKeys])
