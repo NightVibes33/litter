@@ -245,6 +245,32 @@ struct SettingsView: View {
 
     private var localToolsSection: some View {
         Section {
+            Button {
+                UserDefaults.standard.set("emexDE", forKey: "litterPendingMainRoute")
+                appState.showSettings = false
+                dismiss()
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "hammer.fill")
+                        .foregroundColor(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("emexDE")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Open the on-device Swift and iOS development app")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .litterFont(size: 13, weight: .semibold)
+                        .foregroundColor(LitterTheme.textSecondary)
+                }
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+
             NavigationLink(value: SettingsRoute.terminal) {
                 HStack(spacing: 10) {
                     Image(systemName: "terminal")

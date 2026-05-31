@@ -83,6 +83,8 @@ require_path "KittyStore Nuke compatibility glue" "apps/ios/Sources/KittyStoreEm
 require_path "KittyStore minimuxer bridge" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
 require_path "KittyStore embedded factory" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift"
 require_path "KittyStore host view" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
+require_path "emexDE source submodule" "ThirdParty/EmexDE/Source/README.md"
+require_path "emexDE route view" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
 if [ -e "$ROOT_DIR/apps/ios/Sources/Litter/Views/KittyStoreView.swift" ]; then
   fail "handmade KittyStore SwiftUI view is still present: apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 fi
@@ -186,6 +188,10 @@ require_absent "KittyStore logging settings does not rely on generated asset col
 require_grep "KittyStore Nuke 12 URL loader compatibility" "func loadImage(" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreNukeCompatibility.swift"
 require_grep "Settings route opens Feather signing" "FeatherSigningSettingsView()" "apps/ios/Sources/Litter/Views/SettingsView.swift"
 require_grep "Settings route enum includes signing" "case signing" "apps/ios/Sources/Litter/Views/SettingsView.swift"
+require_grep "Settings opens emexDE app" "litterPendingMainRoute" "apps/ios/Sources/Litter/Views/SettingsView.swift"
+require_grep "Main route consumes emexDE settings request" "case \"emexDE\"" "apps/ios/Sources/Litter/LitterApp.swift"
+require_grep "Main navigation opens emexDE route" "EmexDERouteView()" "apps/ios/Sources/Litter/LitterApp.swift"
+require_grep "emexDE route uses UIKit host" "EmexDEHostView()" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
 require_grep "Feather signing stores upstream options key" "signing_options" "apps/ios/Sources/Litter/Models/FeatherSigningMaterialStore.swift"
 require_grep "Feather signing upstream options adapter reference" "OptionsManager.swift" "apps/ios/Sources/Litter/Models/FeatherSigningUpstreamAdapter.swift"
 require_grep "Feather signing plan exports upstream options" "FeatherSigningUpstreamAdapter.optionsPayload" "apps/ios/Sources/Litter/Models/FeatherSigningMaterialStore.swift"

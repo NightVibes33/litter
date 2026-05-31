@@ -690,6 +690,7 @@ private struct HomeNavigationView: View {
     @AppStorage(LitterOnboardingState.replayRequestedKey) private var onboardingReplayRequested = false
     @AppStorage(LitterOnboardingState.fileWorkspaceInitialDirectoryKey) private var fileWorkspaceInitialDirectory = HomeAnchor.path
     @AppStorage("litterSettingsRequestedRoute") private var requestedSettingsRoute = ""
+    @AppStorage("litterPendingMainRoute") private var pendingMainRoute = ""
     @AppStorage("litterTerminalInitialDirectory") private var terminalInitialDirectory = HomeAnchor.path
     @AppStorage("developerToolsEnabled") private var developerToolsEnabled = false
     @State private var experimentalFeatures = ExperimentalFeatures.shared
@@ -731,6 +732,8 @@ private struct HomeNavigationView: View {
         case newThread
         /// KittyLitter-branded sideload/update source.
         case kittyStore
+        /// EmexDE on-device development environment.
+        case emexDE
         /// Real local iSH file workspace.
         case filesWorkspace
         /// Saved apps list — always-visible.
@@ -969,6 +972,8 @@ private struct HomeNavigationView: View {
                     .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                 case .kittyStore:
                     KittyStoreRouteView()
+                case .emexDE:
+                    EmexDERouteView()
                 case .filesWorkspace:
                     LocalFileWorkspaceView()
                 case .appsList:
@@ -1001,6 +1006,8 @@ private struct HomeNavigationView: View {
         .onChange(of: navigationPath.count) { _, _ in
             updateHomeDashboardActivity()
         }
+        .onAppear { consumePendingMainRoute() }
+        .onChange(of: pendingMainRoute) { _, _ in consumePendingMainRoute() }
         .onChange(of: pinnedThreadHydrationSignature) { _, _ in
             hydratePinnedThreadsIfNeeded()
         }
@@ -1584,6 +1591,40 @@ private struct HomeNavigationView: View {
         }
 
         navigationPath.append(.kittyStore)
+    }
+
+    private func openEmexDE() {
+        appState.showModelSelector = false
+        appState.showSettings = false
+        showProjectPicker = false
+        directoryPickerSheet = nil
+
+        if navigationPath.contains(where: { route in
+            if case .emexDE = route { return true }
+            return false
+        }) {
+            while let last = navigationPath.last {
+                if case .emexDE = last { break }
+                navigationPath.removeLast()
+            }
+            return
+        }
+
+        navigationPath.append(.emexDE)
+    }
+
+    private func consumePendingMainRoute() {
+        let raw = pendingMainRoute.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
+        pendingMainRoute = ""
+        switch raw {
+        case "emexDE":
+            openEmexDE()
+        case "kittyStore":
+            openKittyStore()
+        default:
+            break
+        }
     }
 
     /// Swap the hero composer out for the freshly-created conversation in

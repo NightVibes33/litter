@@ -10,3 +10,7 @@
 	path = ThirdParty/SideStore/AltSign
 	url = https://github.com/SideStore/AltSign.git
 	branch = master
+[submodule "ThirdParty/EmexDE/Source"]
+	path = ThirdParty/EmexDE/Source
+	url = https://github.com/emexlab/emexDE.git
+	shallow = true

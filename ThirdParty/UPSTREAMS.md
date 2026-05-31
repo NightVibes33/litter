@@ -83,6 +83,14 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 - LocalDevVPN tunnel-provider path: `ThirdParty/SideStore/LocalDevVPN-TunnelProv`
 - License: minimuxer is AGPL-3.0, see `ThirdParty/SideStore/minimuxer/LICENSE`; rusty_libimobiledevice, plist_plus, and libtatsu are LGPL-2.1-or-later; LocalDevVPN keeps its upstream terms.
 
+## emexDE
+
+- emexDE reference repo: https://github.com/emexlab/emexDE.git
+- emexDE submodule commit: `7391378dcec0262bf741572f1fe97c49cfc621dc`
+- emexDE source path: `ThirdParty/EmexDE/Source`
+- Litter opens emexDE from Settings as the replacement surface for the old private BuildKit toolbox entry point.
+- License: AGPL-3.0-or-later, see `ThirdParty/EmexDE/Source/LICENSE`.
+
 ## Ghostty
 
 - Ghostty renderer repo: https://github.com/ghostty-org/ghostty.git
