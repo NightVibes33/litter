@@ -602,8 +602,12 @@ struct FeatherSigningSettingsView: View {
                             ipaPath: appPath,
                             bundleIdentifier: result.bundleIdentifier
                         )
-                        pendingSignedInstall = pending
-                        isInstallPromptPresented = true
+                        if normalizedOptions.postSigningAction == .install {
+                            installSignedArtifact(pending)
+                        } else {
+                            pendingSignedInstall = pending
+                            isInstallPromptPresented = true
+                        }
                     }
                 }
             } catch {
@@ -628,9 +632,60 @@ struct FeatherSigningSettingsView: View {
             alert = SigningAlert(title: "Signed IPA Missing", message: "The signed IPA could not be found at \(pending.ipaPath).")
             return
         }
-        let appName = snapshot.importedIPA?.appName ?? snapshot.importedIPA?.displayName ?? url.deletingPathExtension().lastPathComponent
-        let appVersion = snapshot.importedIPA?.appVersion ?? "1.0"
-        let iconURL = snapshot.importedIPA?.iconAppPath.map { URL(fileURLWithPath: $0) }
+
+        let installSnapshot = FeatherSigningMaterialStore.snapshot(checkRevocation: false)
+        if let pairingRecord = installSnapshot.pairingFile, installSnapshot.localDevVPNState.isConnected {
+            isWorking = true
+            lastOutput = "Installing signed IPA through Kittystore minimuxer...\nBundle ID: \(pending.bundleIdentifier)\nPath: \(url.path)"
+            Task {
+                do {
+                    let pairingContents = try String(contentsOf: URL(fileURLWithPath: pairingRecord.appPath), encoding: .utf8)
+                    let profileData: Data?
+                    if let provisioningProfile = installSnapshot.provisioningProfile {
+                        profileData = try Data(contentsOf: URL(fileURLWithPath: provisioningProfile.appPath), options: [.mappedIfSafe])
+                    } else {
+                        profileData = nil
+                    }
+                    let result = await KittyStoreMinimuxerBridge.installOrRefresh(
+                        action: .install,
+                        bundleIdentifier: pending.bundleIdentifier,
+                        pairingFileContents: pairingContents,
+                        ipaURL: url,
+                        provisioningProfileData: profileData,
+                        consoleLoggingEnabled: true
+                    )
+                    let output = "Install Status: \(result.status)\nExit: \(result.exitCode)\n\n\(result.log)\nSigned IPA:\n\(url.path)"
+                    let fakefsLogPath = await FeatherSigningMaterialStore.writeLatestInstallLog(output)
+                    await MainActor.run {
+                        isWorking = false
+                        refresh()
+                        let logPathLine = fakefsLogPath.map { "\nInstall log:\n\($0)" } ?? ""
+                        lastOutput = output + logPathLine
+                        if result.exitCode == 0 {
+                            alert = SigningAlert(title: "Install Sent", message: "Kittystore sent the signed IPA to the device through LocalDevVPN.")
+                        } else {
+                            signedIPAShareItem = FeatherSignedIPAShareItem(url: url)
+                            alert = SigningAlert(title: "Install Failed", message: "\(result.log)\n\nThe signed IPA share sheet is open as a fallback.")
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        isWorking = false
+                        signedIPAShareItem = FeatherSignedIPAShareItem(url: url)
+                        alert = SigningAlert(title: "Install Setup Failed", message: "\(error.localizedDescription)\n\nThe signed IPA share sheet is open as a fallback.")
+                    }
+                }
+            }
+            return
+        }
+
+        startLocalSignedIPAInstallServer(pending: pending, url: url, installSnapshot: installSnapshot)
+    }
+
+    private func startLocalSignedIPAInstallServer(pending: PendingSignedInstall, url: URL, installSnapshot: FeatherSigningMaterialSnapshot) {
+        let appName = installSnapshot.importedIPA?.appName ?? installSnapshot.importedIPA?.displayName ?? url.deletingPathExtension().lastPathComponent
+        let appVersion = installSnapshot.importedIPA?.appVersion ?? "1.0"
+        let iconURL = installSnapshot.importedIPA?.iconAppPath.map { URL(fileURLWithPath: $0) }
         do {
             let installURL = try signedIPAInstallServer.start(
                 payloadURL: url,
@@ -672,7 +727,7 @@ struct FeatherSigningSettingsView: View {
     }
 }
 
-private struct PendingSignedInstall: Identifiable {
+private struct PendingSignedInstall: Identifiable, Sendable {
     let id = UUID()
     var ipaPath: String
     var bundleIdentifier: String

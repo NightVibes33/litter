@@ -757,6 +757,17 @@ enum FeatherSigningMaterialStore {
         }
     }
 
+    static func writeLatestInstallLog(_ log: String) async -> String? {
+        let path = "/root/.litter/kittystore/logs/latest-install.txt"
+        do {
+            try await IshFS.createDirectoryIfNeeded(path: "/root/.litter/kittystore/logs")
+            try await IshFS.writeTextFile(path: path, text: log.hasSuffix("\n") ? log : log + "\n")
+            return path
+        } catch {
+            return nil
+        }
+    }
+
     private static func importFile(from url: URL, allowedExtensions: Set<String>, label: String, appSubdirectory: String, fakefsSubdirectory: String, recordKey: String, append: Bool, allowDirectory: Bool = false) async throws -> FeatherSigningFileRecord {
         let isDirectory = try resourceIsDirectoryScoped(url)
         if isDirectory {

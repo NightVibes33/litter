@@ -206,6 +206,8 @@ require_absent "Feather certificate signing no longer reads KittyStore account s
 require_absent "Feather certificate signing no longer calls BuildKit signer" "signKittyStorePlan" "apps/ios/Sources/Litter/Views/FeatherSigningSettingsView.swift"
 require_absent "Feather certificate signing no longer calls KittyStore minimuxer install" "installKittyStoreIPA" "apps/ios/Sources/Litter/Views/FeatherSigningSettingsView.swift"
 require_grep "Feather certificate signing uses direct runner" "FeatherSigningMaterialStore.signImportedIPA" "apps/ios/Sources/Litter/Views/FeatherSigningSettingsView.swift"
+require_grep "Feather signed IPA install uses minimuxer" "KittyStoreMinimuxerBridge.installOrRefresh" "apps/ios/Sources/Litter/Views/FeatherSigningSettingsView.swift"
+require_grep "Feather signed IPA install writes fakefs log" "FeatherSigningMaterialStore.writeLatestInstallLog" "apps/ios/Sources/Litter/Views/FeatherSigningSettingsView.swift"
 require_grep "Feather certificate signing direct runner uses AltSign bridge" "KittyStoreSideStoreSigningBridge.signIPAWithImportedIdentity" "apps/ios/Sources/Litter/Models/FeatherSigningMaterialStore.swift"
 require_grep "Feather signed IPA install server uses itms-services" "itms-services://?action=download-manifest" "apps/ios/Sources/Litter/Models/FeatherSignedIPAInstallServer.swift"
 require_grep "Feather signed IPA install server uses local listener" "NWListener" "apps/ios/Sources/Litter/Models/FeatherSignedIPAInstallServer.swift"

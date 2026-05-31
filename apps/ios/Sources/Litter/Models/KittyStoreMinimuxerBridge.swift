@@ -209,7 +209,7 @@ enum KittyStoreMinimuxerBridge {
     private static func documentsLogPath() -> String {
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return documentsURL.absoluteString
+        return documentsURL.path
     }
 
     private static func transportFailureLog(for error: Error) -> String {
