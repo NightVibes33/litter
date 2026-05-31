@@ -26,6 +26,7 @@ on:
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
       - 'ThirdParty/Nyxian/**'
+      - 'ThirdParty/EmexDE/**'
       - 'ThirdParty/Feather/**'
       - 'ThirdParty/SideStore/**'
       - 'ThirdParty/UPSTREAMS.md'
@@ -57,7 +58,7 @@ concurrency:
 jobs:
   build-unsigned-ipa:
     name: Build unsigned KittyStore/AltStore IPA
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 90
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"

@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   prepare-release-assets:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 90
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -106,7 +106,7 @@ jobs:
 
   upload-testflight:
     needs: prepare-release-assets
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 150
     environment: release
     env:

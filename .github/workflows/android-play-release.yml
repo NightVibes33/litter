@@ -44,7 +44,7 @@ permissions:
 
 jobs:
   shared-prep:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 60
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"

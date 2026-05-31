@@ -85,6 +85,9 @@ require_path "KittyStore embedded factory" "apps/ios/Sources/KittyStoreEmbedded/
 require_path "KittyStore host view" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 require_path "emexDE source submodule" "ThirdParty/EmexDE/Source/README.md"
 require_path "emexDE route view" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
+require_path "emexDE LLVM-On-iOS submodule" "ThirdParty/EmexDE/Source/LLVM-On-iOS/Scripts"
+require_path "emexDE TrollStore submodule" "ThirdParty/EmexDE/Source/TrollStore/Makefile"
+require_path "emexDE embedded factory" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
 if [ -e "$ROOT_DIR/apps/ios/Sources/Litter/Views/KittyStoreView.swift" ]; then
   fail "handmade KittyStore SwiftUI view is still present: apps/ios/Sources/Litter/Views/KittyStoreView.swift"
 fi
@@ -192,6 +195,22 @@ require_grep "Settings opens emexDE app" "litterPendingMainRoute" "apps/ios/Sour
 require_grep "Main route consumes emexDE settings request" "case \"emexDE\"" "apps/ios/Sources/Litter/LitterApp.swift"
 require_grep "Main navigation opens emexDE route" "EmexDERouteView()" "apps/ios/Sources/Litter/LitterApp.swift"
 require_grep "emexDE route uses UIKit host" "EmexDEHostView()" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
+require_grep "emexDE host imports embedded module" "import emexDE" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
+require_grep "emexDE host opens embedded factory" "EmexDEEmbeddedFactory.makeRootViewController" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
+require_grep "emexDE CoreCompiler target" "CoreCompiler:" "apps/ios/project.yml"
+require_grep "emexDE MobileDevelopmentKit target" "MobileDevelopmentKit:" "apps/ios/project.yml"
+require_grep "emexDE framework target" "emexDE:" "apps/ios/project.yml"
+require_grep "emexDE LiveProcess target" "LiveProcess:" "apps/ios/project.yml"
+require_grep "emexDE target compiles upstream Nyxian" "../../ThirdParty/EmexDE/Source/Nyxian" "apps/ios/project.yml"
+require_grep "emexDE target uses upstream bridge" "SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/bridge.h" "apps/ios/project.yml"
+require_grep "emexDE target embeds LiveProcess" "target: LiveProcess" "apps/ios/project.yml"
+require_grep "emexDE route boots upstream projects" "ContentViewController()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
+require_grep "emexDE route boots upstream settings" "SettingsViewController()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
+require_grep "emexDE route checks LiveProcess" "liveProcessIsAvailable()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
+require_grep "emexDE runtime resources embedded" "Embed emexDE Runtime Resources" "apps/ios/project.yml"
+require_grep "emexDE unsigned IPA workflow path" "ThirdParty/EmexDE/**" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "iOS unsigned IPA uses Intel macOS 26 runner" "runs-on: macos-26-intel" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "iOS TestFlight uses Intel macOS 26 runner" "runs-on: macos-26-intel" ".github/workflows/ios-testflight.yml"
 require_grep "Feather signing stores upstream options key" "signing_options" "apps/ios/Sources/Litter/Models/FeatherSigningMaterialStore.swift"
 require_grep "Feather signing upstream options adapter reference" "OptionsManager.swift" "apps/ios/Sources/Litter/Models/FeatherSigningUpstreamAdapter.swift"
 require_grep "Feather signing plan exports upstream options" "FeatherSigningUpstreamAdapter.optionsPayload" "apps/ios/Sources/Litter/Models/FeatherSigningMaterialStore.swift"
@@ -408,6 +427,10 @@ require_grep "Native container remount on launch" "repairNativeContainerBridgeOn
 require_grep "Native container mounted folders action" "Mount App Container" "apps/ios/Sources/Litter/Views/MountedFoldersView.swift"
 require_grep "Native container file browser shortcut" "App Container" "apps/ios/Sources/Litter/Views/LocalFileWorkspaceView.swift"
 require_grep "Native container file browser path" "IshFS.nativeContainerMountPath" "apps/ios/Sources/Litter/Views/LocalFileWorkspaceView.swift"
+
+if grep -R "^[[:space:]]*runs-on: macos-26$" "$ROOT_DIR/.github/workflows" >/dev/null 2>&1; then
+  fail "macOS 26 workflows must use the Intel runner label macos-26-intel"
+fi
 
 if [ "$missing" -ne 0 ]; then
   exit 1

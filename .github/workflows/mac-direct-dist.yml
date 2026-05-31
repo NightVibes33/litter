@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   prepare-release-assets:
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 90
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -93,7 +93,7 @@ jobs:
 
   build-and-notarize:
     needs: prepare-release-assets
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 90
     environment: release
     env:

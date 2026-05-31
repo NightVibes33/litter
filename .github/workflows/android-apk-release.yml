@@ -51,7 +51,7 @@ jobs:
   shared-prep:
     needs: detect-android-changes
     if: needs.detect-android-changes.outputs.run_release == 'true'
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 60
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"

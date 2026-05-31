@@ -88,7 +88,8 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 - emexDE reference repo: https://github.com/emexlab/emexDE.git
 - emexDE submodule commit: `7391378dcec0262bf741572f1fe97c49cfc621dc`
 - emexDE source path: `ThirdParty/EmexDE/Source`
-- Litter opens emexDE from Settings as the replacement surface for the old private BuildKit toolbox entry point.
+- Required nested upstream submodules: `ThirdParty/EmexDE/Source/LLVM-On-iOS`, `ThirdParty/EmexDE/Source/TrollStore`, and `ThirdParty/EmexDE/Source/TrollStore/ChOma`.
+- Litter opens emexDE from Settings as the replacement surface for the old private BuildKit toolbox entry point; the iOS target now builds an embedded `emexDE` module from the upstream Nyxian UI, CoreCompiler, MobileDevelopmentKit, and LiveProcess sources.
 - License: AGPL-3.0-or-later, see `ThirdParty/EmexDE/Source/LICENSE`.
 
 ## Ghostty

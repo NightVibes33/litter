@@ -73,6 +73,30 @@ packages:
     from: "1.7.1"
   AltSign:
     path: ../../ThirdParty/SideStore/AltSign
+  EmexDERunestone:
+    url: https://github.com/emexlab/Runestone
+    exactVersion: "0.0.2"
+  EmexDESwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    exactVersion: "1.13.0"
+  EmexDETreeSitterObjc:
+    url: https://github.com/tree-sitter-grammars/tree-sitter-objc.git
+    branch: master
+  EmexDETreeSitterC:
+    url: https://github.com/tree-sitter/tree-sitter-c.git
+    exactVersion: "0.20.2"
+  EmexDETreeSitterCPP:
+    url: https://github.com/tree-sitter/tree-sitter-cpp.git
+    exactVersion: "0.23.4"
+  EmexDETreeSitterXML:
+    url: https://github.com/tree-sitter-grammars/tree-sitter-xml.git
+    branch: master
+  EmexDETreeSitterSwift:
+    url: https://github.com/emexlab/tree-sitter-swift
+    branch: main
+  EmexDEUIOnboarding:
+    url: https://github.com/lascic/UIOnboarding.git
+    exactVersion: "2.0.5"
 targets:
   Roxas:
     type: framework
@@ -253,6 +277,202 @@ targets:
         product: Nuke
       - target: Minimuxer
 
+  CoreCompiler:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.emexde.CoreCompiler
+        PRODUCT_MODULE_NAME: CoreCompiler
+        GENERATE_INFOPLIST_FILE: "YES"
+        DEFINES_MODULE: "YES"
+        CLANG_ENABLE_MODULES: "YES"
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
+        SWIFT_VERSION: "6.0"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Linker"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
+    sources:
+      - path: ../../ThirdParty/EmexDE/Source/CoreCompiler
+        headerVisibility: public
+        excludes:
+          - CoreCompiler.docc/**
+          - CoreCompilerSupportLibs/**
+
+  MobileDevelopmentKit:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.emexde.MobileDevelopmentKit
+        PRODUCT_MODULE_NAME: MobileDevelopmentKit
+        GENERATE_INFOPLIST_FILE: "YES"
+        DEFINES_MODULE: "YES"
+        CLANG_ENABLE_MODULES: "YES"
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
+        SWIFT_VERSION: "6.0"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/PhaseEngine $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools/Linker $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers"
+    sources:
+      - path: ../../ThirdParty/EmexDE/Source/MobileDevelopmentKit
+        headerVisibility: public
+        excludes:
+          - MobileDevelopmentKit.docc/**
+    dependencies:
+      - target: CoreCompiler
+
+  emexDE:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.emexde
+        PRODUCT_MODULE_NAME: emexDE
+        GENERATE_INFOPLIST_FILE: "YES"
+        DEFINES_MODULE: "YES"
+        CLANG_ENABLE_MODULES: "YES"
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
+        SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/bridge.h
+        OTHER_CFLAGS: "$(inherited) -DHOST_ENV"
+        OTHER_LDFLAGS: "$(inherited) -lc++ -lz -larchive"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/CoreCompilerSupportLibs $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
+        FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
+    sources:
+      - path: Sources/EmexDEEmbedded
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian
+        headerVisibility: public
+        excludes:
+          - UI/AppDelegate.swift
+          - Preview Content/**
+          - Nyxian.entitlements
+          - bridge-jb.h
+          - LindChain/JBSupport/Shell.m
+          - LindChain/JBSupport/tshelper
+          - LindChain/LiveContainer/LCBootstrap.m
+          - LindChain/LiveContainer/Tweaks/Dead10ccFix.m
+          - LindChain/LiveContainer/Tweaks/Dyld.m
+          - LindChain/LiveContainer/Tweaks/NSFileManager+GuestHooks.m
+          - LindChain/LiveContainer/Tweaks/NSUserDefaults.m
+          - LindChain/LiveContainer/Tweaks/SecItem.m
+          - LindChain/LiveContainer/Tweaks/UIKit+GuestHooksInit.m
+          - LindChain/ProcEnvironment/application.m
+          - LindChain/ProcEnvironment/cred.c
+          - LindChain/ProcEnvironment/ioctl.c
+          - LindChain/ProcEnvironment/libproc.m
+          - LindChain/ProcEnvironment/posix_spawn.m
+          - LindChain/ProcEnvironment/proxy.m
+          - LindChain/ProcEnvironment/syscall.c
+          - LindChain/ProcEnvironment/sysctl.c
+          - LindChain/ProcEnvironment/tfp.c
+          - LindChain/ProcEnvironment/vfork.c
+          - LindChain/OpenSSL.xcframework/**
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/Assets.xcassets
+        buildPhase: resources
+    resources:
+      - path: ../../ThirdParty/EmexDE/Source/Shared
+        type: folder
+    dependencies:
+      - target: CoreCompiler
+      - target: MobileDevelopmentKit
+      - sdk: MobileCoreServices.framework
+      - sdk: UniformTypeIdentifiers.framework
+      - sdk: libarchive.tbd
+      - sdk: libz.tbd
+      - framework: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/OpenSSL.xcframework
+      - package: EmexDERunestone
+        product: Runestone
+      - package: EmexDESwiftTerm
+        product: SwiftTerm
+      - package: EmexDETreeSitterObjc
+        product: TreeSitterObjc
+      - package: EmexDETreeSitterC
+        product: TreeSitterC
+      - package: EmexDETreeSitterCPP
+        product: TreeSitterCPP
+      - package: EmexDETreeSitterXML
+        product: TreeSitterXML
+      - package: EmexDETreeSitterSwift
+        product: TreeSitterSwift
+      - package: EmexDEUIOnboarding
+        product: UIOnboarding
+
+  LiveProcess:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    entitlements:
+      path: ../../ThirdParty/EmexDE/Source/LiveProcess/LiveProcess.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.LiveProcess
+        PRODUCT_NAME: LiveProcess
+        INFOPLIST_FILE: ../../ThirdParty/EmexDE/Source/LiveProcess/Info.plist
+        CLANG_ENABLE_MODULES: "YES"
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
+        OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
+        OTHER_LDFLAGS: "$(inherited) -Wl,-U,_OBJC_CLASS_$_FBSSceneParameters -Wl,-U,_OBJC_CLASS_$_LSApplicationWorkspace -lc++ -lz -larchive"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain"
+        FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain"
+    sources:
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess
+        headerVisibility: public
+        excludes:
+          - Info.plist
+          - LiveProcess.entitlements
+          - Media.xcassets/**
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain
+        headerVisibility: public
+        excludes:
+          - JBSupport/Shell.m
+          - JBSupport/tshelper
+          - Utils/Zip.m
+          - Utils/Swizzle.m
+          - Utils/CFTools.c
+          - LiveContainer/LCBootstrap.m
+          - LiveContainer/LCMachOUtils.m
+          - LiveContainer/Tweaks/Dead10ccFix.m
+          - LiveContainer/Tweaks/Dyld.m
+          - LiveContainer/Tweaks/NSFileManager+GuestHooks.m
+          - LiveContainer/Tweaks/NSUserDefaults.m
+          - LiveContainer/Tweaks/SecItem.m
+          - LiveContainer/Tweaks/UIKit+GuestHooksInit.m
+          - LiveContainer/utils.m
+          - LiveContainer/ZSign/Utils.mm
+          - Private/mach/fileport.m
+          - ProcEnvironment/application.m
+          - ProcEnvironment/attrstrnilfix.m
+          - ProcEnvironment/cred.c
+          - ProcEnvironment/environment.m
+          - ProcEnvironment/ioctl.c
+          - ProcEnvironment/libproc.m
+          - ProcEnvironment/Object/ArchiveObject.m
+          - ProcEnvironment/Object/FDMapObject.m
+          - ProcEnvironment/Object/FDObject.m
+          - ProcEnvironment/Object/MachOObject.m
+          - ProcEnvironment/Object/PEMachPort.m
+          - ProcEnvironment/Object/PEObject.m
+          - ProcEnvironment/panic.m
+          - ProcEnvironment/posix_spawn.m
+          - ProcEnvironment/proxy.m
+          - ProcEnvironment/Surface/extra/relax.c
+          - ProcEnvironment/syscall.c
+          - ProcEnvironment/Syscall/mach_syscall_client.c
+          - ProcEnvironment/sysctl.c
+          - ProcEnvironment/tfp.c
+          - ProcEnvironment/Utils/fd.c
+          - ProcEnvironment/Utils/ktfp.c
+          - ProcEnvironment/vfork.c
+          - OpenSSL.xcframework/**
+    resources:
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/Media.xcassets
+    dependencies:
+      - sdk: libarchive.tbd
+      - sdk: libz.tbd
+      - framework: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/OpenSSL.xcframework
+
   Litter:
     type: application
     platform: iOS
@@ -333,6 +553,16 @@ targets:
         product: AltSign-Dynamic
         embed: true
       - target: SideStore
+        embed: true
+      - target: CoreCompiler
+        embed: true
+      - target: MobileDevelopmentKit
+        embed: true
+      - target: emexDE
+        embed: true
+      - target: LiveProcess
+        embed: true
+      - framework: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/OpenSSL.xcframework
         embed: true
       - target: LitterLiveActivity
         embed: true
@@ -487,6 +717,24 @@ targets:
           copy_upstream_source KittyStore "$SRCROOT/../../ThirdParty/SideStore/Source"
           copy_upstream_source Feather "$SRCROOT/../../ThirdParty/Feather/Source"
           copy_upstream_source LocalDevVPN "$SRCROOT/../../ThirdParty/SideStore/LocalDevVPN-Source"
+          copy_upstream_source emexDE "$SRCROOT/../../ThirdParty/EmexDE/Source"
+      - name: Embed emexDE Runtime Resources
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          EMEXDE_ROOT="$SRCROOT/../../ThirdParty/EmexDE/Source"
+          if [ ! -d "$EMEXDE_ROOT/Shared" ]; then
+            echo "error: missing emexDE Shared runtime resources" >&2
+            exit 1
+          fi
+          rm -rf "$RESOURCES_DIR/Shared"
+          /usr/bin/ditto "$EMEXDE_ROOT/Shared" "$RESOURCES_DIR/Shared"
+          if [ -f "$EMEXDE_ROOT/Nyxian/LindChain/JBSupport/tshelper" ]; then
+            /usr/bin/ditto "$EMEXDE_ROOT/Nyxian/LindChain/JBSupport/tshelper" "$RESOURCES_DIR/tshelper"
+            /bin/chmod 755 "$RESOURCES_DIR/tshelper" || true
+          fi
+          echo "Embedded emexDE Shared runtime resources"
       - name: Package Private BuildKit Assets
         basedOnDependencyAnalysis: false
         script: |
