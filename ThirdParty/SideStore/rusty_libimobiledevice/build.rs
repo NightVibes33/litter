@@ -317,8 +317,35 @@ fn configure_for_target(config: &mut autotools::Config) {
         return;
     };
 
+    env::set_var("PKG_CONFIG_ALLOW_CROSS", "1");
     config.config_option("host", Some(host));
     config.env("ac_cv_c_undeclared_builtin_options", "-fno-builtin");
+
+    if let Some(cpp) = cargo_target_env("CPP", &target) {
+        config.env("CPP", cpp);
+    } else if let Some(cc) = cargo_target_env("CC", &target) {
+        config.env("CPP", format!("{cc} -E"));
+    }
+
+    if let Some(cxxcpp) = cargo_target_env("CXXCPP", &target) {
+        config.env("CXXCPP", cxxcpp);
+    } else if let Some(cxx) = cargo_target_env("CXX", &target) {
+        config.env("CXXCPP", format!("{cxx} -E"));
+    }
+
+    if let Some(ar) = cargo_target_env("AR", &target) {
+        config.env("AR", ar);
+    }
+    if let Some(ranlib) = cargo_target_env("RANLIB", &target) {
+        config.env("RANLIB", ranlib);
+    }
+}
+
+fn cargo_target_env(name: &str, target: &str) -> Option<String> {
+    let target = target.replace('-', "_");
+    env::var(format!("{name}_{target}"))
+        .ok()
+        .or_else(|| env::var(name).ok())
 }
 
 fn autotools_host_for_target(target: &str) -> Option<&'static str> {
