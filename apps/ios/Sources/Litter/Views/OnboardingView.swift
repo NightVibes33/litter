@@ -179,7 +179,7 @@ struct OnboardingView: View {
                 .init(icon: "bubble.left.and.text.bubble.right", title: "AI threads", detail: "Start, resume, fork, and inspect coding sessions."),
                 .init(icon: "folder", title: "Fakefs files", detail: "Browse the same /root runtime the bot uses."),
                 .init(icon: "terminal", title: "Shared terminal", detail: "Run commands directly in the embedded iSH shell."),
-                .init(icon: "hammer", title: "Swift BuildKit", detail: "Check Swift and build iOS artifacts when assets are installed.")
+                .init(icon: "hammer", title: "emexDE", detail: "Open the full embedded iOS development environment.")
             ])
         }
     }
@@ -226,16 +226,16 @@ struct OnboardingView: View {
             checkCard(readiness.check(.buildKit))
             heroPanel(
                 systemImage: "hammer.fill",
-                title: "iOS-only build tools",
-                detail: "BuildKit focuses on commands that matter on iPhone: swift, swiftc, litter-swift-check, self-test, build status, and unsigned IPA packaging."
+                title: "emexDE development app",
+                detail: "emexDE replaces the old Nyxian BuildKit settings path with the full embedded Swift and iOS development app."
             )
             commandStrip(["swift --version", "litter-swift-check hello.swift", "litter-swift-selftest", "litter-build-status"])
             actionPanel(
                 icon: "shippingbox.fill",
-                title: "Private assets unlock native builds",
-                detail: "Full Swift/iOS compilation needs the private BuildKit asset bundle with CoreCompiler, support libraries, native driver, and iPhoneOS SDK.",
-                primaryTitle: "Open BuildKit",
-                primaryAction: { finishAndOpen { onOpenSettingsRoute("buildKit") } },
+                title: "Full app instead of BuildKit",
+                detail: "Use emexDE as the user-facing on-device development app. The old Nyxian BuildKit screen is no longer the settings path.",
+                primaryTitle: "Open emexDE",
+                primaryAction: { finishAndOpen { onOpenSettingsRoute("emexDE") } },
                 secondaryTitle: "Terminal",
                 secondaryAction: { finishAndOpen { onOpenTerminal(HomeAnchor.path) } }
             )
@@ -508,7 +508,7 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
         case .welcome: return "Build with Litter"
         case .runtime: return "Pick your runtime"
         case .workspace: return "Files and terminal"
-        case .buildKit: return "Swift on iPhone"
+        case .buildKit: return "emexDE on iPhone"
         case .personalize: return "Make it yours"
         case .checklist: return "You are ready"
         }
@@ -519,7 +519,7 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
         case .welcome: return "A practical tour of the workspace you will use every day."
         case .runtime: return "Use hosted AI or connect a computer for local/private models."
         case .workspace: return "The bot, file browser, and terminal share the same iSH fakefs."
-        case .buildKit: return "Understand what works on device and what needs private assets."
+        case .buildKit: return "Open the embedded iOS development app instead of the old BuildKit screen."
         case .personalize: return "Tune the interface without losing the developer workflow."
         case .checklist: return "Live checks show what is ready and what needs setup."
         }
@@ -593,7 +593,7 @@ private enum LitterOnboardingCheckKind: String, CaseIterable, Identifiable {
         case .workspace: return "File browser access"
         case .paths: return "Expected fakefs paths"
         case .runtime: return "Conversation route"
-        case .buildKit: return "Swift BuildKit"
+        case .buildKit: return "emexDE"
         }
     }
 }
@@ -660,7 +660,7 @@ private final class LitterOnboardingReadinessStore: ObservableObject {
         }
 
         let pathCheck = await IshFS.run("[ -d /root ] && [ -d /usr/local/bin ] && [ -d /root/litter ]")
-        update(.paths, status: pathCheck.exitCode == 0 ? .ready : .warning, detail: pathCheck.exitCode == 0 ? "/root, /root/litter, and /usr/local/bin are visible." : "/root/litter or /usr/local/bin is missing. Run the filesystem doctor from BuildKit settings if tools are unavailable.")
+        update(.paths, status: pathCheck.exitCode == 0 ? .ready : .warning, detail: pathCheck.exitCode == 0 ? "/root, /root/litter, and /usr/local/bin are visible." : "/root/litter or /usr/local/bin is missing. Open emexDE or Terminal if tools are unavailable.")
 
         let connectedCount = appModel.snapshot?.servers.filter { $0.health == .connected }.count ?? 0
         if connectedCount > 0 {
@@ -715,7 +715,7 @@ private enum LitterOnboardingDemoWorkspace {
     litter-swift-check hello.swift
     ```
 
-    If BuildKit assets are installed, you can also try:
+    If native build assets are installed, you can also try:
 
     ```sh
     swiftc hello.swift -o hello

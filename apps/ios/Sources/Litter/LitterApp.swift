@@ -1164,8 +1164,10 @@ private struct HomeNavigationView: View {
     }
 
     private func openOnboardingSettingsRoute(_ route: String) {
-        if route == SettingsRoute.buildKit.rawValue {
+        if route == SettingsRoute.buildKit.rawValue || route == "emexDE" {
             developerToolsEnabled = true
+            openEmexDE()
+            return
         }
         requestedSettingsRoute = route
         appState.showSettings = true

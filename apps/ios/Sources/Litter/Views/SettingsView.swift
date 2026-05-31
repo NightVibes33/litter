@@ -86,7 +86,8 @@ struct SettingsView: View {
                 case .aiProviders:
                     AIProviderSettingsView()
                 case .buildKit:
-                    BuildKitSettingsView()
+                    Color.clear
+                        .onAppear { openMainAppRoute("emexDE") }
                 }
             }
             .onAppear { consumeRequestedSettingsRoute() }
@@ -155,7 +156,7 @@ struct SettingsView: View {
                         Text("Replay Onboarding")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("Review setup, files, terminal, runtimes, and BuildKit")
+                        Text("Review setup, files, terminal, runtimes, and emexDE")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
@@ -245,32 +246,6 @@ struct SettingsView: View {
 
     private var localToolsSection: some View {
         Section {
-            Button {
-                UserDefaults.standard.set("emexDE", forKey: "litterPendingMainRoute")
-                appState.showSettings = false
-                dismiss()
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "hammer.fill")
-                        .foregroundColor(LitterTheme.accent)
-                        .frame(width: 20)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("emexDE")
-                            .litterFont(.subheadline)
-                            .foregroundColor(LitterTheme.textPrimary)
-                        Text("Open the on-device Swift and iOS development app")
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textSecondary)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .litterFont(size: 13, weight: .semibold)
-                        .foregroundColor(LitterTheme.textSecondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
-
             NavigationLink(value: SettingsRoute.terminal) {
                 HStack(spacing: 10) {
                     Image(systemName: "terminal")
@@ -327,13 +302,22 @@ struct SettingsView: View {
         }
     }
 
+    private func openMainAppRoute(_ route: String) {
+        UserDefaults.standard.set(route, forKey: "litterPendingMainRoute")
+        appState.showSettings = false
+        dismiss()
+    }
+
     private func consumeRequestedSettingsRoute() {
-        let raw = requestedSettingsRoute
-        guard let route = SettingsRoute(rawValue: raw) else { return }
+        let raw = requestedSettingsRoute.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return }
         requestedSettingsRoute = ""
-        if route == .buildKit {
+        if raw == SettingsRoute.buildKit.rawValue || raw == "emexDE" {
             developerToolsEnabled = true
+            openMainAppRoute("emexDE")
+            return
         }
+        guard let route = SettingsRoute(rawValue: raw) else { return }
         navigationPath = [route]
     }
 
@@ -506,7 +490,7 @@ struct SettingsView: View {
                         Text("Developer Tools")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("Show BuildKit, Nyxian, and local build controls")
+                        Text("Show emexDE and advanced local build controls")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
@@ -602,23 +586,28 @@ struct SettingsView: View {
 
     private var buildKitSection: some View {
         Section {
-            NavigationLink {
-                BuildKitSettingsView()
+            Button {
+                openMainAppRoute("emexDE")
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "hammer.fill")
                         .foregroundColor(LitterTheme.accent)
                         .frame(width: 20)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("BuildKit")
+                        Text("emexDE")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("Nyxian-powered Swift checks and unsigned IPA commands")
+                        Text("Open the embedded replacement for Nyxian BuildKit")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .litterFont(size: 13, weight: .semibold)
+                        .foregroundColor(LitterTheme.textSecondary)
                 }
             }
+            .buttonStyle(.plain)
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Developer")
