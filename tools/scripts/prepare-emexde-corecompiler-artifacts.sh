@@ -85,6 +85,7 @@ install_swift_headers() {
     "$archive_root/stdlib/public/SwiftShims"
   cp -R "$swift_source/include/." "$LLVM_HEADERS/"
   cp -R "$swift_source/stdlib/public/SwiftShims/." "$LLVM_HEADERS/"
+  rm -f "$LLVM_HEADERS/module.modulemap"
 }
 
 if ! find "$SUPPORT" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
@@ -106,6 +107,10 @@ if [ ! -f "$LLVM_HEADERS/swift/Basic/InitializeSwiftModules.h" ]; then
 fi
 if [ ! -f "$LLVM_HEADERS/swift/FrontendTool/FrontendTool.h" ]; then
   echo "error: missing Swift frontend header at $LLVM_HEADERS/swift/FrontendTool/FrontendTool.h" >&2
+  exit 1
+fi
+if [ -f "$LLVM_HEADERS/module.modulemap" ]; then
+  echo "error: Swift root module map conflicts with Xcode public header copy at $LLVM_HEADERS/module.modulemap" >&2
   exit 1
 fi
 
