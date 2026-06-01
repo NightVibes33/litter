@@ -118,21 +118,7 @@ jobs:
         with:
           path: |
             ~/Library/Caches/Homebrew
-          key: homebrew-ios-${{ runner.os }}-xcodegen-cmake-meson-ninja-llvm-v4
-
-      - name: Install Xcode project dependency
-        run: |
-          set -euo pipefail
-          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
-          brew list meson >/dev/null 2>&1 || brew install meson
-          brew list ninja >/dev/null 2>&1 || brew install ninja
-          brew list llvm >/dev/null 2>&1 || brew install llvm
-          brew list cmake >/dev/null 2>&1 || brew install cmake
-          brew list autoconf >/dev/null 2>&1 || brew install autoconf
-          brew list automake >/dev/null 2>&1 || brew install automake
-          brew list libtool >/dev/null 2>&1 || brew install libtool
-          brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
-          brew list curl >/dev/null 2>&1 || brew install curl
+          key: homebrew-ios-${{ runner.os }}-xcodegen-native-tools-v5
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -407,6 +393,18 @@ jobs:
             find apps/ios/GeneratedRust -maxdepth 3 -type f -print 2>/dev/null | sed -n '1,80p' || true
           fi
 
+      - name: Install Rust rebuild dependencies
+        if: steps.rust_prebuilt.outputs.available != 'true'
+        run: |
+          set -euo pipefail
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          brew list autoconf >/dev/null 2>&1 || brew install autoconf
+          brew list automake >/dev/null 2>&1 || brew install automake
+          brew list libtool >/dev/null 2>&1 || brew install libtool
+
       - name: Warm Rust dependency cache
         if: steps.rust_prebuilt.outputs.available != 'true'
         run: |
@@ -612,6 +610,15 @@ jobs:
             echo "Cached KittyStore minimuxer bridge outputs are incomplete; rebuilding."
           fi
 
+      - name: Install KittyStore minimuxer rebuild dependencies
+        if: steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
+        run: |
+          set -euo pipefail
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+
       - name: Build KittyStore minimuxer bridge
         if: steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
         run: |
@@ -689,6 +696,7 @@ jobs:
       - name: Generate Xcode project
         run: |
           set -euo pipefail
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           time make xcgen
 
       - name: Build unsigned archive
