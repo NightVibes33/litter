@@ -290,6 +290,7 @@ targets:
         CLANG_ENABLE_MODULES: "YES"
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         SWIFT_VERSION: "6.0"
+        SWIFT_INSTALL_OBJC_HEADER: "NO"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Linker"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
     sources:
