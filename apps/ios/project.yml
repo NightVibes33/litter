@@ -356,7 +356,7 @@ targets:
         SWIFT_VERSION: "5.0"
         SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/bridge.h
         SWIFT_OBJC_INTERFACE_HEADER_NAME: emexDE-Swift.h
-        OTHER_CFLAGS: "$(inherited) -DHOST_ENV -include limits.h"
+        OTHER_CFLAGS: "$(inherited) -DHOST_ENV -include $(SRCROOT)/Sources/EmexDEEmbedded/EmexDECompilerPrefix.h"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz -larchive -framework OpenSSL"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
