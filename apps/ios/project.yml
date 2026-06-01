@@ -431,7 +431,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.LiveProcess
         PRODUCT_NAME: LiveProcess
         INFOPLIST_FILE: ../../ThirdParty/EmexDE/Source/LiveProcess/Info.plist
-        APPLICATION_EXTENSION_API_ONLY: "NO"
+        APPLICATION_EXTENSION_API_ONLY: "YES"
         CLANG_ENABLE_MODULES: "YES"
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
@@ -482,6 +482,8 @@ targets:
           - ProcEnvironment/Object/MachOObject.m
           - ProcEnvironment/Object/PEMachPort.m
           - ProcEnvironment/Object/PEObject.m
+          - ProcEnvironment/Process/PEProcess.m
+          - WindowServer/NXWindowServer.m
           - ProcEnvironment/panic.m
           - ProcEnvironment/posix_spawn.m
           - ProcEnvironment/proxy.m

@@ -195,6 +195,24 @@ jobs:
           restore-keys: |
             ios-generated-assets-${{ runner.os }}-
 
+      - name: Restore Alpine filesystem cache
+        id: alpine_fs_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/ios/Resources/fs
+            .build-stamps/alpine-fs-*
+          key: ios-alpine-fs-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/scripts/download-alpine-fs.sh') }}
+          restore-keys: |
+            ios-alpine-fs-v1-${{ runner.os }}-
+
+      - name: Restore Xcode SourcePackages cache
+        uses: actions/cache@v4
+        with:
+          path: build/DerivedData/SourcePackages
+          key: ios-xcode-sourcepackages-v1-${{ runner.os }}-${{ hashFiles('apps/ios/project.yml') }}
+          restore-keys: |
+            ios-xcode-sourcepackages-v1-${{ runner.os }}-
 
       - name: Ensure Swift UniFFI binding
         run: |
@@ -433,6 +451,15 @@ jobs:
           set -euo pipefail
           time make alpine-fs
 
+      - name: Save Alpine filesystem cache
+        if: steps.alpine_fs_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/ios/Resources/fs
+            .build-stamps/alpine-fs-*
+          key: ${{ steps.alpine_fs_cache.outputs.cache-primary-key }}
+
       - name: Compute private BuildKit source fingerprint
         id: buildkit_fingerprint
         if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
@@ -526,15 +553,138 @@ jobs:
           path: apps/ios/Sources/Litter/Resources/BuildKitAssets
           key: ${{ steps.buildkit_assets_cache.outputs.cache-primary-key }}
 
+      - name: Restore KittyStore minimuxer bridge cache
+        id: minimuxer_bridge_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/ios/GeneratedRust/ios-device/libminimuxer-ios.a
+            apps/ios/Sources/Litter/Generated/Minimuxer
+            apps/ios/GeneratedRust/Headers/Minimuxer
+            ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework
+            ThirdParty/SideStore/minimuxer/generated
+            ThirdParty/SideStore/minimuxer/target/libminimuxer-ios.a
+            ~/.cargo/bin/bindgen
+          key: ios-minimuxer-bridge-v1-${{ runner.os }}-xcode26-ios18-${{ hashFiles('tools/scripts/build-sidestore-minimuxer.sh', 'ThirdParty/SideStore/minimuxer/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.toml', 'ThirdParty/SideStore/minimuxer/src/**', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.lock', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/src/**') }}
+
+      - name: Check KittyStore minimuxer bridge cache
+        id: minimuxer_bridge_prebuilt
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.minimuxer_bridge_cache.outputs.cache-hit }}" != "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No exact KittyStore minimuxer bridge cache hit."
+            exit 0
+          fi
+
+          missing=0
+          require_nonempty() {
+            local path="$1"
+            if [ ! -s "$path" ]; then
+              echo "Missing cached minimuxer output: $path"
+              missing=1
+            else
+              ls -lh "$path"
+            fi
+          }
+          require_nonempty apps/ios/GeneratedRust/ios-device/libminimuxer-ios.a
+          require_nonempty apps/ios/Sources/Litter/Generated/Minimuxer/SwiftBridgeCore.generated.swift
+          require_nonempty apps/ios/Sources/Litter/Generated/Minimuxer/minimuxer.generated.swift
+          require_nonempty apps/ios/Sources/Litter/Generated/Minimuxer/minimuxer-helpers.generated.swift
+          require_nonempty apps/ios/GeneratedRust/Headers/Minimuxer/SwiftBridgeCore.h
+          require_nonempty apps/ios/GeneratedRust/Headers/Minimuxer/minimuxer.h
+          require_nonempty apps/ios/GeneratedRust/Headers/Minimuxer/minimuxer-Bridging-Header.h
+          require_nonempty apps/ios/GeneratedRust/Headers/Minimuxer/module.modulemap
+          require_nonempty ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework/ios-arm64/librust_bridge.a
+          if ! grep -q "startWithLogger" apps/ios/Sources/Litter/Generated/Minimuxer/minimuxer.generated.swift; then
+            echo "Cached minimuxer Swift bridge is stale: missing startWithLogger."
+            missing=1
+          fi
+          if ! grep -q "installIpa" apps/ios/Sources/Litter/Generated/Minimuxer/minimuxer.generated.swift; then
+            echo "Cached minimuxer Swift bridge is stale: missing installIpa."
+            missing=1
+          fi
+          if [ "$missing" -eq 0 ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Using cached KittyStore minimuxer bridge outputs."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Cached KittyStore minimuxer bridge outputs are incomplete; rebuilding."
+          fi
+
       - name: Build KittyStore minimuxer bridge
+        if: steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
         run: |
           set -euo pipefail
           time tools/scripts/build-sidestore-minimuxer.sh
 
+      - name: Save KittyStore minimuxer bridge cache
+        if: steps.minimuxer_bridge_cache.outputs.cache-hit != 'true' && steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/ios/GeneratedRust/ios-device/libminimuxer-ios.a
+            apps/ios/Sources/Litter/Generated/Minimuxer
+            apps/ios/GeneratedRust/Headers/Minimuxer
+            ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework
+            ThirdParty/SideStore/minimuxer/generated
+            ThirdParty/SideStore/minimuxer/target/libminimuxer-ios.a
+            ~/.cargo/bin/bindgen
+          key: ${{ steps.minimuxer_bridge_cache.outputs.cache-primary-key }}
+
+      - name: Restore emexDE CoreCompiler artifact cache
+        id: emexde_corecompiler_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
+          key: ios-emexde-corecompiler-artifacts-v1-${{ runner.os }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.swift') }}
+
+      - name: Check emexDE CoreCompiler artifact cache
+        id: emexde_corecompiler_prebuilt
+        run: |
+          set -euo pipefail
+          support_source="ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
+          if [ "${{ steps.emexde_corecompiler_cache.outputs.cache-hit }}" != "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No exact emexDE CoreCompiler artifact cache hit."
+            exit 0
+          fi
+          missing=0
+          require_nonempty() {
+            local path="$1"
+            if [ ! -s "$path" ]; then
+              echo "Missing cached CoreCompiler artifact: $path"
+              missing=1
+            else
+              ls -lh "$path"
+            fi
+          }
+          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/llvm.a"
+          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/llvm/Support/Threading.h"
+          if ! find "$support_source" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
+            echo "Cached CoreCompiler support dylibs are missing."
+            missing=1
+          fi
+          if [ "$missing" -eq 0 ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Using cached emexDE CoreCompiler support artifacts."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Cached emexDE CoreCompiler artifacts are incomplete; rebuilding."
+          fi
+
       - name: Prepare emexDE CoreCompiler artifacts
+        if: steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         run: |
           set -euo pipefail
           time tools/scripts/prepare-emexde-corecompiler-artifacts.sh
+
+      - name: Save emexDE CoreCompiler artifact cache
+        if: steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
+          key: ${{ steps.emexde_corecompiler_cache.outputs.cache-primary-key }}
 
       - name: Generate Xcode project
         run: |
