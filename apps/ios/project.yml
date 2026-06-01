@@ -40,11 +40,11 @@ settings:
     "LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(PROJECT_DIR)/GeneratedRust/ios-sim"
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
     DEVELOPMENT_TEAM: UH66Q8ZAYG
-    # Xcode 15+ explicit-module builds. First clean build is slightly
-    # slower, but module graphs are cached per-target after that, so
-    # incremental Swift compiles in the app target drop substantially.
-    SWIFT_ENABLE_EXPLICIT_MODULES: "YES"
-    CLANG_ENABLE_EXPLICIT_MODULES: "YES"
+    # GitHub's iOS 26 runner can fail while generating Swift explicit
+    # system PCMs for Foundation, so the unsigned IPA lane stays on the
+    # normal module path and relies on the workflow caches above.
+    SWIFT_ENABLE_EXPLICIT_MODULES: "NO"
+    CLANG_ENABLE_EXPLICIT_MODULES: "NO"
 
 packages:
   Hairball:
