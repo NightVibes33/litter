@@ -670,6 +670,7 @@ jobs:
           require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/llvm/Support/Threading.h"
           require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/swift/Basic/InitializeSwiftModules.h"
           require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/swift/FrontendTool/FrontendTool.h"
+          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/swift/Config.h"
           if [ -f "$support_source/LLVM.xcframework/ios-arm64/Headers/module.modulemap" ]; then
             echo "Cached Swift root module map conflicts with Xcode public header copy."
             missing=1
