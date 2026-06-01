@@ -94,3 +94,5 @@ skills-lock.json
 
 # Vercel local project metadata
 .vercel/
+# Downloaded emexDE binary artifacts
+ThirdParty/EmexDE/Prebuilt/

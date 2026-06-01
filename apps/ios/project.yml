@@ -277,30 +277,6 @@ targets:
         product: Nuke
       - target: Minimuxer
 
-  CoreCompiler:
-    type: framework
-    platform: iOS
-    deploymentTarget: "18.0"
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.emexde.CoreCompiler
-        PRODUCT_MODULE_NAME: CoreCompiler
-        GENERATE_INFOPLIST_FILE: "YES"
-        DEFINES_MODULE: "YES"
-        CLANG_ENABLE_MODULES: "YES"
-        CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
-        SWIFT_VERSION: "6.0"
-        SWIFT_INSTALL_OBJC_HEADER: "NO"
-        APPLICATION_EXTENSION_API_ONLY: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Linker"
-        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
-    sources:
-      - path: ../../ThirdParty/EmexDE/Source/CoreCompiler
-        headerVisibility: public
-        excludes:
-          - CoreCompiler.docc/**
-          - CoreCompilerSupportLibs/**
-
   MobileDevelopmentKit:
     type: framework
     platform: iOS
@@ -315,14 +291,15 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         SWIFT_VERSION: "6.0"
         APPLICATION_EXTENSION_API_ONLY: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/PhaseEngine $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools/Linker $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/PhaseEngine $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools/Linker $(SRCROOT)/../../ThirdParty/EmexDE/Prebuilt/CoreCompiler.framework/Headers"
+        FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Prebuilt"
     sources:
       - path: ../../ThirdParty/EmexDE/Source/MobileDevelopmentKit
         headerVisibility: public
         excludes:
           - MobileDevelopmentKit.docc/**
     dependencies:
-      - target: CoreCompiler
+      - framework: ../../ThirdParty/EmexDE/Prebuilt/CoreCompiler.framework
 
   emexDE:
     type: framework
@@ -340,10 +317,10 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/bridge.h
         OTHER_CFLAGS: "$(inherited) -DHOST_ENV"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz -larchive -framework OpenSSL"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
-        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/CoreCompilerSupportLibs $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
-        "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64 $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
-        "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Prebuilt/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Prebuilt/CoreCompilerSupportLibs"
+        "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64 $(SRCROOT)/../../ThirdParty/EmexDE/Prebuilt $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
+        "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator $(SRCROOT)/../../ThirdParty/EmexDE/Prebuilt $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
     sources:
       - path: Sources/EmexDEEmbedded
       - path: ../../ThirdParty/EmexDE/Source/Nyxian
@@ -379,7 +356,7 @@ targets:
       - path: ../../ThirdParty/EmexDE/Source/Shared
         type: folder
     dependencies:
-      - target: CoreCompiler
+      - framework: ../../ThirdParty/EmexDE/Prebuilt/CoreCompiler.framework
       - target: MobileDevelopmentKit
       - sdk: MobileCoreServices.framework
       - sdk: UniformTypeIdentifiers.framework
@@ -418,9 +395,9 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
         OTHER_LDFLAGS: "$(inherited) -Wl,-U,_OBJC_CLASS_$_FBSSceneParameters -Wl,-U,_OBJC_CLASS_$_LSApplicationWorkspace -lc++ -lz -larchive -framework OpenSSL"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain"
-        "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64"
-        "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Prebuilt/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64 $(SRCROOT)/../../ThirdParty/EmexDE/Prebuilt"
+        "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator $(SRCROOT)/../../ThirdParty/EmexDE/Prebuilt"
     sources:
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess
         headerVisibility: project
@@ -477,7 +454,7 @@ targets:
     resources:
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/Media.xcassets
     dependencies:
-      - target: CoreCompiler
+      - framework: ../../ThirdParty/EmexDE/Prebuilt/CoreCompiler.framework
       - target: MobileDevelopmentKit
       - sdk: libarchive.tbd
       - sdk: libz.tbd
@@ -563,7 +540,7 @@ targets:
         embed: true
       - target: SideStore
         embed: true
-      - target: CoreCompiler
+      - framework: ../../ThirdParty/EmexDE/Prebuilt/CoreCompiler.framework
         embed: true
       - target: MobileDevelopmentKit
         embed: true
@@ -685,6 +662,33 @@ targets:
             sign_if_requested "$destination"
             echo "Embedded $name.framework from $source"
           }
+          embed_emexde_corecompiler_artifacts() {
+            prebuilt_root="$SRCROOT/../../ThirdParty/EmexDE/Prebuilt"
+            framework_source="$prebuilt_root/CoreCompiler.framework"
+            support_source="$prebuilt_root/CoreCompilerSupportLibs"
+            if [ ! -f "$framework_source/CoreCompiler" ]; then
+              echo "error: missing emexDE CoreCompiler prebuilt framework at $framework_source" >&2
+              exit 1
+            fi
+            mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+            framework_destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/CoreCompiler.framework"
+            rm -rf "$framework_destination"
+            /usr/bin/ditto "$framework_source" "$framework_destination"
+            sign_if_requested "$framework_destination"
+
+            if ! find "$support_source" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
+              echo "error: missing emexDE CoreCompilerSupportLibs at $support_source" >&2
+              exit 1
+            fi
+            find "$support_source" -maxdepth 1 -type f -name '*.dylib' -print | while IFS= read -r dylib; do
+              destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$(/usr/bin/basename "$dylib")"
+              rm -f "$destination"
+              /usr/bin/ditto "$dylib" "$destination"
+              sign_if_requested "$destination"
+            done
+            echo "Embedded emexDE CoreCompiler runtime artifacts"
+          }
+          embed_emexde_corecompiler_artifacts
           embed_framework_if_present AltSign-Dynamic 1
           embed_framework_if_present AltStoreCore 1
           embed_framework_if_present Roxas 1

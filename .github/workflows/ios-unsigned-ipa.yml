@@ -36,6 +36,7 @@ on:
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
       - 'tools/scripts/build-sidestore-minimuxer.sh'
+      - 'tools/scripts/prepare-emexde-corecompiler-artifacts.sh'
       - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
@@ -76,13 +77,12 @@ jobs:
       LITTER_BUILDKIT_ASSET_SHA256: ${{ secrets.LITTER_BUILDKIT_ASSET_SHA256 }}
       LITTER_BUILDKIT_ASSET_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
       GITHUB_TOKEN: ${{ github.token }}
-      # Push builds must stay launch-safe and fast. The private Nyxian lane is
-      # available only by manual dispatch so ordinary pushes do not fail when
-      # optional BuildKit asset secrets are present but unavailable/stale.
+      # Push builds stay independent from private BuildKit SDK assets. The
+      # manual Nyxian lane still exists for full BuildKit asset packaging.
       LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
       LITTER_NYXIAN_PRIVATE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
       LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
-      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
+      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: "1"
 
     steps:
       - name: Checkout
@@ -530,6 +530,11 @@ jobs:
         run: |
           set -euo pipefail
           time tools/scripts/build-sidestore-minimuxer.sh
+
+      - name: Prepare emexDE CoreCompiler artifacts
+        run: |
+          set -euo pipefail
+          time tools/scripts/prepare-emexde-corecompiler-artifacts.sh
 
       - name: Generate Xcode project
         run: |
@@ -1115,16 +1120,19 @@ jobs:
           fi
 
           forbidden=0
-          for item in             "$APP_PATH/LitterBuildKitAssets.zip"             "$APP_PATH/Frameworks/CoreCompiler.framework"             "$APP_PATH/Frameworks/LitterBuildKitNative.framework"; do
+          for item in             "$APP_PATH/LitterBuildKitAssets.zip"             "$APP_PATH/Frameworks/LitterBuildKitNative.framework"; do
             if [ -e "$item" ]; then
               echo "::error::Launch-safe IPA must not embed private BuildKit payload: $item" >&2
               forbidden=1
             fi
           done
 
-          if find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print -quit | grep -q .; then
-            echo "::error::Launch-safe IPA must not embed compiler support dylibs" >&2
-            find "$APP_PATH/Frameworks" -maxdepth 1 -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print >&2
+          if [ ! -f "$APP_PATH/Frameworks/CoreCompiler.framework/CoreCompiler" ]; then
+            echo "::error::Archived app is missing emexDE CoreCompiler.framework" >&2
+            forbidden=1
+          fi
+          if ! find "$APP_PATH/Frameworks" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
+            echo "::error::Archived app is missing emexDE CoreCompiler support dylibs" >&2
             forbidden=1
           fi
 
@@ -1136,7 +1144,7 @@ jobs:
           if [ "$forbidden" -ne 0 ]; then
             exit 1
           fi
-          echo "Launch-safe IPA keeps private BuildKit compiler payload external. Install assets from BuildKit settings when needed."
+          echo "Launch-safe IPA includes emexDE CoreCompiler runtime but keeps private BuildKit SDK assets external."
 
       - name: Package KittyStore/AltStore IPA artifact
         run: |
@@ -1153,9 +1161,8 @@ jobs:
           cp -R "$APP_PATH" Payload/
           APP_BUNDLE="Payload/$(basename "$APP_PATH")"
 
-          # KittyStore/AltStore re-sign the IPA after download. Normal builds stay
-          # extension-free for launch safety. The manual nyxian-private lane keeps
-          # only the LiveProcess NSExtension required by original Nyxian/emexDE.
+          # KittyStore/AltStore re-sign the IPA after download. Keep only the
+          # LiveProcess NSExtension required by original Nyxian/emexDE.
           find "$APP_BUNDLE" -name _CodeSignature -type d -prune -exec rm -rf {} +
           find "$APP_BUNDLE" -name embedded.mobileprovision -type f -delete
           find "$APP_BUNDLE" -name CodeResources -type f -delete
@@ -1164,12 +1171,13 @@ jobs:
           if [ "${LITTER_PRESERVE_NYXIAN_LIVEPROCESS:-0}" = "1" ]; then
             mkdir -p "$APP_BUNDLE/PlugIns"
             LIVEPROCESS_SRC="build/nyxian-liveprocess/LiveProcess.appex"
-            if [ ! -d "$LIVEPROCESS_SRC" ]; then
-              echo "::error::nyxian-private build is missing staged LiveProcess.appex" >&2
+            if [ -d "$LIVEPROCESS_SRC" ]; then
+              rm -rf "$APP_BUNDLE/PlugIns/LiveProcess.appex"
+              cp -R "$LIVEPROCESS_SRC" "$APP_BUNDLE/PlugIns/LiveProcess.appex"
+            elif [ ! -d "$APP_BUNDLE/PlugIns/LiveProcess.appex" ]; then
+              echo "::error::IPA is missing LiveProcess.appex for the Nyxian/emexDE runtime" >&2
               exit 1
             fi
-            rm -rf "$APP_BUNDLE/PlugIns/LiveProcess.appex"
-            cp -R "$LIVEPROCESS_SRC" "$APP_BUNDLE/PlugIns/LiveProcess.appex"
             find "$APP_BUNDLE/PlugIns" -mindepth 1 -maxdepth 1 -type d ! -name 'LiveProcess.appex' -prune -exec rm -rf {} +
             rm -rf "$APP_BUNDLE/Watch" "$APP_BUNDLE/AppClips"
             find "$APP_BUNDLE" -name _CodeSignature -type d -prune -exec rm -rf {} +
@@ -1178,11 +1186,11 @@ jobs:
             find "$APP_BUNDLE" -name '*.xcent' -type f -delete
             /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$APP_BUNDLE/PlugIns/LiveProcess.appex/Info.plist" >/dev/null
             if find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision \) -print -quit | grep -q .; then
-              echo "::error::nyxian-private IPA still contains stale signatures or mobileprovisions." >&2
+              echo "::error::Unsigned sideload IPA still contains stale signatures or mobileprovisions." >&2
               find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision \) -print >&2
               exit 1
             fi
-            echo "nyxian-private IPA keeps PlugIns/LiveProcess.appex for the Nyxian runtime."
+            echo "IPA keeps PlugIns/LiveProcess.appex for the Nyxian/emexDE runtime."
           else
             rm -rf "$APP_BUNDLE/PlugIns" "$APP_BUNDLE/Watch" "$APP_BUNDLE/AppClips"
             if find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print -quit | grep -q .; then
