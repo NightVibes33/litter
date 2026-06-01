@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import <NXBootstrap.h>
 
 typedef NS_ENUM(NSInteger, NotifLevel) {
     NotifLevelNote = 0,

@@ -1,5 +1,113 @@
 #import "emexDE-Swift.h"
 
+@implementation NXBootstrap {
+    NSURL *_rootURL;
+}
+
++ (instancetype)shared
+{
+    static NXBootstrap *bootstrap;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        bootstrap = [[NXBootstrap alloc] init];
+    });
+    return bootstrap;
+}
+
+- (NSURL *)rootURL
+{
+    if(_rootURL == nil)
+    {
+        NSString *documentsPath = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
+        _rootURL = [NSURL fileURLWithPath:documentsPath isDirectory:YES];
+    }
+    return _rootURL;
+}
+
+- (NSURL *)sdkURL
+{
+    return [self.rootURL URLByAppendingPathComponent:@"SDK/iPhoneOS26.5.sdk"];
+}
+
+- (NSURL *)includeURL
+{
+    return [self.rootURL URLByAppendingPathComponent:@"Include"];
+}
+
+- (NSURL *)projectsURL
+{
+    return [self.rootURL URLByAppendingPathComponent:@"Projects"];
+}
+
+- (NSURL *)cacheURL
+{
+    return [self.rootURL URLByAppendingPathComponent:@"Cache"];
+}
+
+- (NSURL *)bootstrapPlistURL
+{
+    return [self.rootURL URLByAppendingPathComponent:@"bootstrap.plist"];
+}
+
+- (NSURL *)swiftURL
+{
+    return [self.rootURL URLByAppendingPathComponent:@"swift"];
+}
+
+- (NSURL *)swiftModuleCacheURL
+{
+    return [self.rootURL URLByAppendingPathComponent:@"ModuleCache"];
+}
+
+- (UInt64)version
+{
+    return NXBOOTSTRAP_NEWEST_VERSION;
+}
+
+- (BOOL)isInstalled
+{
+    return YES;
+}
+
+- (void)bootstrap
+{
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    for(NSURL *url in @[self.rootURL, self.projectsURL, self.cacheURL, self.swiftModuleCacheURL])
+    {
+        [fileManager createDirectoryAtURL:url withIntermediateDirectories:YES attributes:nil error:nil];
+    }
+}
+
+- (NSString *)relativeToBootstrapWithAbsolutePath:(NSString *)path
+{
+    NSString *rootPath = self.rootURL.path;
+    if(![path hasPrefix:rootPath]) return nil;
+    NSString *relativePath = [path substringFromIndex:rootPath.length];
+    if([relativePath hasPrefix:@"/"])
+    {
+        relativePath = [relativePath substringFromIndex:1];
+    }
+    return relativePath;
+}
+
+- (void)clearURL:(NSURL *)url
+{
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    [fileManager removeItemAtURL:url error:nil];
+    [fileManager createDirectoryAtURL:url withIntermediateDirectories:YES attributes:nil error:nil];
+}
+
+- (void)waitTillDone
+{
+}
+
+- (BOOL)isNewest
+{
+    return YES;
+}
+
+@end
+
 @implementation NXOSVersion
 
 static double NXOSVersionNumericValue(NSString *versionString)
