@@ -58,6 +58,35 @@ tar -xJf "$TMP_DIR/LLVM.xcframework.tar.xz" -C "$DEST"
 
 SUPPORT="$DEST"
 LLVM_ROOT="$DEST/LLVM.xcframework/ios-arm64"
+LLVM_HEADERS="$LLVM_ROOT/Headers"
+SWIFT_BRANCH="${EMEXDE_SWIFT_BRANCH:-swift-6.3.2-RELEASE}"
+
+install_swift_headers() {
+  if [ -f "$LLVM_HEADERS/swift/Basic/InitializeSwiftModules.h" ]; then
+    return 0
+  fi
+
+  echo "Swift compiler headers are missing from LLVM.xcframework; fetching $SWIFT_BRANCH headers"
+  swift_archive="$TMP_DIR/swift-$SWIFT_BRANCH.tar.gz"
+  swift_source="$TMP_DIR/swift-source"
+  mkdir -p "$swift_source"
+  curl -fL --retry 3 --retry-delay 5 --max-time 300 \
+    "https://github.com/swiftlang/swift/archive/refs/tags/$SWIFT_BRANCH.tar.gz" \
+    -o "$swift_archive"
+
+  archive_root="$(tar -tzf "$swift_archive" | sed -n '1s#/.*##p')"
+  if [ -z "$archive_root" ]; then
+    echo "error: could not determine Swift source archive root" >&2
+    exit 1
+  fi
+
+  tar -xzf "$swift_archive" -C "$swift_source" --strip-components 1 \
+    "$archive_root/include" \
+    "$archive_root/stdlib/public/SwiftShims"
+  cp -R "$swift_source/include/." "$LLVM_HEADERS/"
+  cp -R "$swift_source/stdlib/public/SwiftShims/." "$LLVM_HEADERS/"
+}
+
 if ! find "$SUPPORT" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
   echo "error: missing CoreCompiler support dylibs in $SUPPORT" >&2
   exit 1
@@ -66,8 +95,17 @@ if [ ! -f "$LLVM_ROOT/llvm.a" ]; then
   echo "error: missing LLVM static library at $LLVM_ROOT/llvm.a" >&2
   exit 1
 fi
-if [ ! -f "$LLVM_ROOT/Headers/llvm/Support/Threading.h" ]; then
-  echo "error: missing LLVM headers in $LLVM_ROOT/Headers" >&2
+if [ ! -f "$LLVM_HEADERS/llvm/Support/Threading.h" ]; then
+  echo "error: missing LLVM headers in $LLVM_HEADERS" >&2
+  exit 1
+fi
+install_swift_headers
+if [ ! -f "$LLVM_HEADERS/swift/Basic/InitializeSwiftModules.h" ]; then
+  echo "error: missing Swift compiler header at $LLVM_HEADERS/swift/Basic/InitializeSwiftModules.h" >&2
+  exit 1
+fi
+if [ ! -f "$LLVM_HEADERS/swift/FrontendTool/FrontendTool.h" ]; then
+  echo "error: missing Swift frontend header at $LLVM_HEADERS/swift/FrontendTool/FrontendTool.h" >&2
   exit 1
 fi
 
