@@ -411,6 +411,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.LiveProcess
         PRODUCT_NAME: LiveProcess
         INFOPLIST_FILE: ../../ThirdParty/EmexDE/Source/LiveProcess/Info.plist
+        APPLICATION_EXTENSION_API_ONLY: "NO"
         CLANG_ENABLE_MODULES: "YES"
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
@@ -471,6 +472,8 @@ targets:
     resources:
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/Media.xcassets
     dependencies:
+      - target: CoreCompiler
+      - target: MobileDevelopmentKit
       - sdk: libarchive.tbd
       - sdk: libz.tbd
 
