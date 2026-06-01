@@ -364,6 +364,7 @@ targets:
         "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
     sources:
       - path: Sources/EmexDEEmbedded
+      - path: ../../ThirdParty/EmexDE/Source/CoreCompiler/CCBaseSwift.swift
       - path: ../../ThirdParty/EmexDE/Source/Nyxian
         headerVisibility: project
         excludes:
