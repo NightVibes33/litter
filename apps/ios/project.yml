@@ -484,6 +484,7 @@ targets:
           - ProcEnvironment/Object/PEObject.m
           - ProcEnvironment/Process/PEProcess.m
           - WindowServer/NXWindowServer.m
+          - WindowServer/Session/NXWindowSessionTerminal.m
           - ProcEnvironment/panic.m
           - ProcEnvironment/posix_spawn.m
           - ProcEnvironment/proxy.m
