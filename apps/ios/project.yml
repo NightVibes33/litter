@@ -292,7 +292,7 @@ targets:
         SWIFT_VERSION: "6.0"
         SWIFT_INSTALL_OBJC_HEADER: "NO"
         APPLICATION_EXTENSION_API_ONLY: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Linker $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Linker $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/Headers $(TOOLCHAIN_DIR)/usr/include $(DT_TOOLCHAIN_DIR)/usr/include"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz"
     sources:
