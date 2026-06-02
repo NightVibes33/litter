@@ -581,11 +581,12 @@ def patch(root: Path) -> None:
     cc_root = root / "ThirdParty/EmexDE/Source/CoreCompiler"
     cc_driver = cc_root / "Tools/CCDriver.cpp"
     dependency_scanner = cc_root / "Tools/CCDependencyScanner.cpp"
+    cc_ast_unit = cc_root / "Tools/CCASTUnit.cpp"
     cc_compiler = cc_root / "Tools/Compiler/CCCompiler.cpp"
     swift_compiler = cc_root / "Tools/Compiler/CCSwiftCompiler.cpp"
     cc_utils = cc_root / "CCUtils.cpp"
 
-    missing = [p for p in (cc_driver, dependency_scanner, cc_compiler, swift_compiler, cc_utils) if not p.exists()]
+    missing = [p for p in (cc_driver, dependency_scanner, cc_ast_unit, cc_compiler, swift_compiler, cc_utils) if not p.exists()]
     if missing:
         raise SystemExit("Missing emexDE CoreCompiler source files: " + ", ".join(str(p) for p in missing))
 
@@ -600,6 +601,21 @@ def patch(root: Path) -> None:
         "DependencyScanningService constructor",
     )
     dependency_scanner.write_text(scanner_text)
+
+    ast_text = cc_ast_unit.read_text()
+    ast_text = replace_or_confirm(
+        ast_text,
+        "auto diagOpts = std::make_shared<DiagnosticOptions>();\n    IntrusiveRefCntPtr<DiagnosticsEngine> diags(new DiagnosticsEngine(diagID, *diagOpts, new clang::IgnoringDiagConsumer(), /*ShouldOwnClient=*/true));",
+        "IntrusiveRefCntPtr<DiagnosticOptions> diagOpts(new DiagnosticOptions());\n    IntrusiveRefCntPtr<DiagnosticsEngine> diags(new DiagnosticsEngine(diagID, diagOpts, new clang::IgnoringDiagConsumer(), /*ShouldOwnClient=*/true));",
+        "ASTUnit DiagnosticsEngine ownership",
+    )
+    ast_text = replace_or_confirm(
+        ast_text,
+        "                                                         diagOpts,\n                                                         diags,\n",
+        "                                                         diags,\n",
+        "ASTUnit LoadFromCommandLine diagnostics argument",
+    )
+    cc_ast_unit.write_text(ast_text)
 
     compiler_text = cc_compiler.read_text()
     compiler_text = replace_or_confirm(
@@ -623,6 +639,7 @@ def patch(root: Path) -> None:
     print("Patched emexDE CoreCompiler for unsigned iOS CI:")
     print(f"  {cc_driver}")
     print(f"  {dependency_scanner} (normalized dependency scanner constructor)")
+    print(f"  {cc_ast_unit} (normalized Clang diagnostics ownership)")
     print(f"  {cc_compiler} (normalized Clang diagnostics ownership)")
     print(f"  {swift_compiler}")
     print(f"  {cc_utils} (removed unused Swift compiler header include)")
