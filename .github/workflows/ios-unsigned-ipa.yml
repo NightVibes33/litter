@@ -83,7 +83,7 @@ jobs:
       LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
       LITTER_NYXIAN_PRIVATE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
       LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
-      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: "1"
+      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: "0"
 
     steps:
       - name: Checkout
@@ -1579,8 +1579,9 @@ jobs:
           cp -R "$APP_PATH" Payload/
           APP_BUNDLE="Payload/$(basename "$APP_PATH")"
 
-          # KittyStore/AltStore re-sign the IPA after download. Keep only the
-          # LiveProcess NSExtension required by original Nyxian/emexDE.
+          # KittyStore/AltStore re-sign the IPA after download. Keep the public
+          # unsigned payload small and extension-free so sideload signers do not
+          # have to recursively process embedded extension/watch/app clip bundles.
           find "$APP_BUNDLE" -name _CodeSignature -type d -prune -exec rm -rf {} +
           find "$APP_BUNDLE" -name embedded.mobileprovision -type f -delete
           find "$APP_BUNDLE" -name CodeResources -type f -delete
@@ -1621,6 +1622,17 @@ jobs:
               find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision -o -name '*.appex' \) -print >&2
               exit 1
             fi
+          fi
+
+          if [ -d "$APP_BUNDLE/UpstreamApps" ]; then
+            echo "::error::Unsigned sideload IPA must not embed expanded upstream source trees; keep provenance in repo/release metadata." >&2
+            find "$APP_BUNDLE/UpstreamApps" -maxdepth 2 -print >&2
+            exit 1
+          fi
+          if [ "${LITTER_PRESERVE_NYXIAN_LIVEPROCESS:-0}" != "1" ] && find "$APP_BUNDLE" \( -name '*.appex' -o -name Watch -o -name AppClips \) -print -quit | grep -q .; then
+            echo "::error::Unsigned sideload IPA still contains extension/watch/app clip payloads that can crash sideload signers." >&2
+            find "$APP_BUNDLE" \( -name '*.appex' -o -name Watch -o -name AppClips \) -print >&2
+            exit 1
           fi
 
           INFO_PLIST="$APP_BUNDLE/Info.plist"

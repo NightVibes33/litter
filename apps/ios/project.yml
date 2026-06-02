@@ -793,6 +793,10 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           set -eu
+          if [ "${LITTER_EMBED_UPSTREAM_SOURCE_TREES:-0}" != "1" ]; then
+            echo "Skipping expanded upstream source embedding for sideload-safe IPA packaging"
+            exit 0
+          fi
           RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
           DEST_ROOT="$RESOURCES_DIR/UpstreamApps"
           copy_upstream_source() {
