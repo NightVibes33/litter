@@ -757,7 +757,8 @@ jobs:
           terminal_session_shim = "\n".join([
               "#import <UIKit/UIKit.h>",
               "@class TerminalView;",
-              "@protocol TerminalViewDelegateObjC;",
+              "@protocol TerminalViewDelegateObjC <NSObject>",
+              "@end",
               "@interface TerminalViewObjC : UIView",
               "@property (nonatomic, weak, nullable) id<TerminalViewDelegateObjC> objcDelegate;",
               "@property (nonatomic, strong, nullable) NSFileHandle *ttyHandle;",
@@ -840,6 +841,7 @@ jobs:
           ])
           nxos_version_objc_shim = "\n".join([
               "#import <Foundation/Foundation.h>",
+              "#import <NXBootstrap.h>",
               "@interface NXOSVersion : NSObject",
               "+ (NXOSVersion *)hostVersion;",
               "+ (NXOSVersion *)maximumBuildVersion;",
