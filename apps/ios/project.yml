@@ -438,7 +438,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.LiveProcess
         PRODUCT_NAME: LiveProcess
         INFOPLIST_FILE: ../../ThirdParty/EmexDE/Source/LiveProcess/Info.plist
-        APPLICATION_EXTENSION_API_ONLY: "YES"
+        APPLICATION_EXTENSION_API_ONLY: "NO"
+        DEAD_CODE_STRIPPING: "NO"
         CLANG_ENABLE_MODULES: "YES"
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
@@ -449,61 +450,94 @@ targets:
     sources:
       - path: Sources/LiveProcessShims
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/main.m
         headerVisibility: project
-        excludes:
-          - Info.plist
-          - LiveProcess.entitlements
-          - Media.xcassets/**
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/ResecureDecoder.m
         headerVisibility: project
-        excludes:
-          - Core/Builder.swift
-          - Project/Project+Debug.swift
-          - Project/Project+NotificationServer.swift
-          - JBSupport/Shell.m
-          - JBSupport/tshelper
-          - Utils/Zip.m
-          - Utils/Swizzle.m
-          - Utils/CFTools.c
-          - LiveContainer/LCBootstrap.m
-          - LiveContainer/LCMachOUtils.m
-          - LiveContainer/Tweaks/Dead10ccFix.m
-          - LiveContainer/Tweaks/Dyld.m
-          - LiveContainer/Tweaks/NSFileManager+GuestHooks.m
-          - LiveContainer/Tweaks/NSUserDefaults.m
-          - LiveContainer/Tweaks/SecItem.m
-          - LiveContainer/Tweaks/UIKit+GuestHooksInit.m
-          - LiveContainer/utils.m
-          - LiveContainer/ZSign/Utils.mm
-          - Private/mach/fileport.m
-          - ProcEnvironment/application.m
-          - ProcEnvironment/attrstrnilfix.m
-          - ProcEnvironment/cred.c
-          - ProcEnvironment/environment.m
-          - ProcEnvironment/ioctl.c
-          - ProcEnvironment/libproc.m
-          - ProcEnvironment/Object/ArchiveObject.m
-          - ProcEnvironment/Object/FDMapObject.m
-          - ProcEnvironment/Object/FDObject.m
-          - ProcEnvironment/Object/MachOObject.m
-          - ProcEnvironment/Object/PEMachPort.m
-          - ProcEnvironment/Object/PEObject.m
-          - ProcEnvironment/Process/PEProcess.m
-          - WindowServer/NXWindowServer.m
-          - WindowServer/Session/NXWindowSessionTerminal.m
-          - ProcEnvironment/panic.m
-          - ProcEnvironment/posix_spawn.m
-          - ProcEnvironment/proxy.m
-          - ProcEnvironment/Surface/extra/relax.c
-          - ProcEnvironment/syscall.c
-          - ProcEnvironment/Syscall/mach_syscall_client.c
-          - ProcEnvironment/sysctl.c
-          - ProcEnvironment/tfp.c
-          - ProcEnvironment/Utils/fd.c
-          - ProcEnvironment/Utils/ktfp.c
-          - ProcEnvironment/vfork.c
-          - OpenSSL.xcframework/**
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/ServiceKit/Service.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationObject.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspaceInternal.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/containerd/PEContainerService.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Debugger/Utils.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/litehook/litehook.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/LCBootstrap.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/LCMachOUtils.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/Dead10ccFix.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/Dyld.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/NSFileManager+GuestHooks.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/NSUserDefaults.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/SecItem.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/UIKit+GuestHooksInit.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/utils.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/ZSign/Utils.mm
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/mach/fileport.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/application.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/attrstrnilfix.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/cred.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/environment.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/ioctl.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/libproc.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/ArchiveObject.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/FDMapObject.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/FDObject.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/PEMachPort.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/PEObject.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/panic.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/posix_spawn.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/proxy.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Surface/extra/relax.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/syscall.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Syscall/mach_syscall_client.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/sysctl.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/tfp.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/fd.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/ktfp.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/vfork.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/CFTools.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/Swizzle.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/Zip.m
+        headerVisibility: project
     resources:
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/Media.xcassets
     dependencies:
