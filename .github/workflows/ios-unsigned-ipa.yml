@@ -716,9 +716,23 @@ jobs:
                   source.write_text(normalized)
                   changed.append(source)
 
+          terminal_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/UIInit/Terminal.swift")
+          bridge_text = terminal_bridge.read_text()
+          bridge_replacements = {
+              "@objc protocol TerminalViewDelegateObjC: AnyObject": "@objc public protocol TerminalViewDelegateObjC: AnyObject",
+              "@objc class TerminalViewObjC: TerminalView": "@objc public class TerminalViewObjC: TerminalView",
+              "@objc var ttyHandle: FileHandle?": "@objc public var ttyHandle: FileHandle?",
+          }
+          for before, after in bridge_replacements.items():
+              if before not in bridge_text and after not in bridge_text:
+                  raise SystemExit(f"Missing expected emexDE terminal bridge declaration: {before}")
+              bridge_text = bridge_text.replace(before, after)
+          terminal_bridge.write_text(bridge_text)
+
           print(f"Normalized {len(changed)} emexDE generated Swift imports.")
           for source in changed:
               print(source)
+          print("Exposed emexDE TerminalViewObjC bridge declarations for generated ObjC header.")
           PY
 
       - name: Generate Xcode project
