@@ -37,6 +37,7 @@ on:
       - 'tools/scripts/build-litter-buildkit-native.sh'
       - 'tools/scripts/build-sidestore-minimuxer.sh'
       - 'tools/scripts/prepare-emexde-corecompiler-artifacts.sh'
+      - 'tools/scripts/patch-emexde-corecompiler-for-ios-ci.py'
       - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
@@ -802,6 +803,11 @@ jobs:
               print(source)
           print("Exposed emexDE Swift bridge declarations for generated ObjC headers.")
           PY
+
+      - name: Patch emexDE CoreCompiler Swift frontend for unsigned CI
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
 
       - name: Generate Xcode project
         run: |
