@@ -441,9 +441,16 @@ targets:
       path: ../../ThirdParty/EmexDE/Source/LiveProcess/LiveProcess.entitlements
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.LiveProcess
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.liveprocess
         PRODUCT_NAME: LiveProcess
         INFOPLIST_FILE: ../../ThirdParty/EmexDE/Source/LiveProcess/Info.plist
+        INFOPLIST_KEY_CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"
+        INFOPLIST_KEY_CFBundleExecutable: "$(EXECUTABLE_NAME)"
+        INFOPLIST_KEY_CFBundleDisplayName: LiveProcess
+        INFOPLIST_KEY_CFBundleName: LiveProcess
+        INFOPLIST_KEY_CFBundlePackageType: XPC!
+        INFOPLIST_KEY_CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        INFOPLIST_KEY_CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         APPLICATION_EXTENSION_API_ONLY: "YES"
         DEAD_CODE_STRIPPING: "NO"
         CLANG_ENABLE_MODULES: "YES"

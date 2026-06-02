@@ -897,6 +897,38 @@ jobs:
               raise SystemExit("Missing expected CoreCompiler Swift SDK lookup block")
           cc_driver.write_text(cc_driver_text.replace(cc_driver_before, cc_driver_after))
 
+          def ensure_liveprocess_info_plist_metadata():
+              plist_path = Path("ThirdParty/EmexDE/Source/LiveProcess/Info.plist")
+              plist_text = plist_path.read_text()
+              if "<key>CFBundleIdentifier</key>" in plist_text:
+                  return
+              plist_metadata = "\n".join([
+                  "\t<key>CFBundleDevelopmentRegion</key>",
+                  "\t<string>$(DEVELOPMENT_LANGUAGE)</string>",
+                  "\t<key>CFBundleDisplayName</key>",
+                  "\t<string>LiveProcess</string>",
+                  "\t<key>CFBundleExecutable</key>",
+                  "\t<string>$(EXECUTABLE_NAME)</string>",
+                  "\t<key>CFBundleIdentifier</key>",
+                  "\t<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>",
+                  "\t<key>CFBundleInfoDictionaryVersion</key>",
+                  "\t<string>6.0</string>",
+                  "\t<key>CFBundleName</key>",
+                  "\t<string>LiveProcess</string>",
+                  "\t<key>CFBundlePackageType</key>",
+                  "\t<string>XPC!</string>",
+                  "\t<key>CFBundleShortVersionString</key>",
+                  "\t<string>$(MARKETING_VERSION)</string>",
+                  "\t<key>CFBundleVersion</key>",
+                  "\t<string>$(CURRENT_PROJECT_VERSION)</string>",
+                  "",
+              ])
+              if "<dict>\n" not in plist_text:
+                  raise SystemExit("Missing LiveProcess Info.plist root dict")
+              plist_path.write_text(plist_text.replace("<dict>\n", "<dict>\n" + plist_metadata, 1))
+
+          ensure_liveprocess_info_plist_metadata()
+
           print(f"Normalized {len(changed)} emexDE generated Swift imports.")
           for source in changed:
               print(source)
@@ -1200,7 +1232,7 @@ jobs:
               CODE_SIGNING_REQUIRED=NO \
               CODE_SIGN_IDENTITY="" \
               DEVELOPMENT_TEAM="" \
-              PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.LiveProcess" \
+              PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.liveprocess" \
               CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
 
           LIVEPROCESS_APPEX="$(find "$BUILD_ROOT" -type d -name 'LiveProcess.appex' -print | head -n 1)"
@@ -1212,6 +1244,11 @@ jobs:
 
           cp -R "$LIVEPROCESS_APPEX" "$OUTPUT_ROOT/LiveProcess.appex"
           /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$OUTPUT_ROOT/LiveProcess.appex/Info.plist" >/dev/null
+          liveprocess_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$OUTPUT_ROOT/LiveProcess.appex/Info.plist" 2>/dev/null || true)"
+          if [ "$liveprocess_bundle_id" != "com.sigkitten.litter.liveprocess" ]; then
+            echo "::error::Nyxian LiveProcess.appex has invalid CFBundleIdentifier: ${liveprocess_bundle_id:-<missing>}" >&2
+            exit 1
+          fi
           echo "Nyxian LiveProcess extension staged at $OUTPUT_ROOT/LiveProcess.appex"
 
       - name: Save Nyxian SwiftPM package cache
@@ -1558,6 +1595,11 @@ jobs:
             find "$APP_BUNDLE" -name CodeResources -type f -delete
             find "$APP_BUNDLE" -name '*.xcent' -type f -delete
             /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$APP_BUNDLE/PlugIns/LiveProcess.appex/Info.plist" >/dev/null
+            liveprocess_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_BUNDLE/PlugIns/LiveProcess.appex/Info.plist" 2>/dev/null || true)"
+            if [ "$liveprocess_bundle_id" != "com.sigkitten.litter.liveprocess" ]; then
+              echo "::error::IPA LiveProcess.appex has invalid CFBundleIdentifier: ${liveprocess_bundle_id:-<missing>}" >&2
+              exit 1
+            fi
             if find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision \) -print -quit | grep -q .; then
               echo "::error::Unsigned sideload IPA still contains stale signatures or mobileprovisions." >&2
               find "$APP_BUNDLE" \( -name _CodeSignature -o -name embedded.mobileprovision \) -print >&2
