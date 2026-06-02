@@ -700,6 +700,27 @@ jobs:
           path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
           key: ${{ steps.emexde_corecompiler_cache.outputs.cache-primary-key }}
 
+      - name: Normalize emexDE generated Swift imports
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          changed = []
+          for source in Path("ThirdParty/EmexDE/Source").rglob("*"):
+              if source.suffix not in {".h", ".m", ".mm", ".cpp", ".hpp"}:
+                  continue
+              text = source.read_text(errors="ignore")
+              normalized = text.replace("#import <emexDE-Swift.h>", '#import "emexDE-Swift.h"')
+              if normalized != text:
+                  source.write_text(normalized)
+                  changed.append(source)
+
+          print(f"Normalized {len(changed)} emexDE generated Swift imports.")
+          for source in changed:
+              print(source)
+          PY
+
       - name: Generate Xcode project
         run: |
           set -euo pipefail
