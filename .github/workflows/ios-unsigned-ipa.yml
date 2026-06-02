@@ -1106,6 +1106,14 @@ jobs:
               exit 1
             fi
           done
+          for forbidden_dependency in             '@rpath/CoreCompiler.framework/CoreCompiler'             '@rpath/MobileDevelopmentKit.framework/MobileDevelopmentKit'             '@rpath/emexDE.framework/emexDE'
+          do
+            if /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq "$forbidden_dependency"; then
+              echo "::error::Litter directly launch-links $forbidden_dependency; load emexDE lazily from settings to avoid sideload launch crashes." >&2
+              /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2
+              exit 1
+            fi
+          done
           if ! /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq '@rpath/SideStore.framework/SideStore'; then
             echo "::error::Litter no longer launch-links SideStore.framework; this regresses the 1.5.52 KittyStore launch path." >&2
             /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2

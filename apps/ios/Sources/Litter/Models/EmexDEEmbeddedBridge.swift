@@ -4,6 +4,7 @@ import UIKit
 enum EmexDEEmbeddedBridge {
     @MainActor
     static func makeRootViewController() -> UIViewController {
+        loadEmbeddedFrameworksIfNeeded()
         if let viewController = invokeObject(
             classNames: embeddedFactoryClassNames,
             selectorName: "makeRootViewController"
@@ -17,6 +18,28 @@ enum EmexDEEmbeddedBridge {
         "EmexDEEmbeddedFactory",
         "emexDE.EmexDEEmbeddedFactory"
     ]
+
+    private static let embeddedFrameworkNames = [
+        "CoreCompiler",
+        "MobileDevelopmentKit",
+        "emexDE"
+    ]
+
+    @MainActor
+    private static var didAttemptFrameworkLoad = false
+
+    @MainActor
+    private static func loadEmbeddedFrameworksIfNeeded() {
+        guard !didAttemptFrameworkLoad else { return }
+        didAttemptFrameworkLoad = true
+
+        guard let frameworksURL = Bundle.main.privateFrameworksURL else { return }
+        for name in embeddedFrameworkNames {
+            let frameworkURL = frameworksURL.appendingPathComponent("\(name).framework", isDirectory: true)
+            guard let bundle = Bundle(url: frameworkURL), !bundle.isLoaded else { continue }
+            _ = bundle.load()
+        }
+    }
 
     private typealias ObjectNoArgIMP = @convention(c) (AnyObject, Selector) -> Unmanaged<AnyObject>?
 

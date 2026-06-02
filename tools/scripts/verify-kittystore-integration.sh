@@ -199,11 +199,15 @@ require_grep "Main navigation opens emexDE route" "EmexDERouteView()" "apps/ios/
 require_grep "emexDE route uses UIKit host" "EmexDEHostView()" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
 require_absent "emexDE host avoids Swift emexDE import bridge header failure" "import emexDE" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
 require_grep "emexDE host calls runtime embedded bridge" "EmexDEEmbeddedBridge.makeRootViewController()" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
+require_grep "Litter runtime bridge loads embedded emexDE framework lazily" "loadEmbeddedFrameworksIfNeeded()" "apps/ios/Sources/Litter/Models/EmexDEEmbeddedBridge.swift"
+require_grep "Litter runtime bridge locates private Frameworks directory" "Bundle.main.privateFrameworksURL" "apps/ios/Sources/Litter/Models/EmexDEEmbeddedBridge.swift"
 require_grep "Litter runtime bridge resolves embedded emexDE framework" "NSClassFromString" "apps/ios/Sources/Litter/Models/EmexDEEmbeddedBridge.swift"
 require_grep "emexDE runtime bridge resolves upstream factory" "EmexDEEmbeddedFactory" "apps/ios/Sources/Litter/Models/EmexDEEmbeddedBridge.swift"
 require_grep "emexDE CoreCompiler target" "CoreCompiler:" "apps/ios/project.yml"
 require_grep "emexDE MobileDevelopmentKit target" "MobileDevelopmentKit:" "apps/ios/project.yml"
 require_grep "emexDE framework target" "emexDE:" "apps/ios/project.yml"
+require_grep "Litter embeds emexDE without launch-time linking" "link: false" "apps/ios/project.yml"
+require_grep "CI rejects direct Litter emexDE framework links" "load emexDE lazily from settings" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "emexDE LiveProcess target" "LiveProcess:" "apps/ios/project.yml"
 require_grep "emexDE LiveProcess extension bundle id is Litter-prefixed" "PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.liveprocess" "apps/ios/project.yml"
 require_grep "emexDE LiveProcess extension plist gets processed bundle id" 'INFOPLIST_KEY_CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"' "apps/ios/project.yml"
@@ -315,7 +319,14 @@ require_grep "Litter runtime bridge resolves embedded KittyStore framework" "NSC
 require_grep "KittyStore minimuxer transport entry point" "KittyStoreMinimuxerTransportEntryPoint" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift"
 require_absent "Litter ObjC bridge avoids Minimuxer header autolink" "Minimuxer/" "apps/ios/Sources/Litter/Bridge/codex_bridge_objc.h"
 require_grep "Litter embeds KittyStore framework" "- target: SideStore" "apps/ios/project.yml"
-require_absent "Litter SideStore dependency does not disable linking" "link: false" "apps/ios/project.yml"
+if awk '
+  /- target: SideStore/ { in_side_store = 1; next }
+  in_side_store && /^      - / { in_side_store = 0 }
+  in_side_store && /link: false/ { found = 1 }
+  END { exit found ? 0 : 1 }
+' "$ROOT_DIR/apps/ios/project.yml"; then
+  fail "Litter SideStore dependency must stay launch-linked for the KittyStore route"
+fi
 require_grep "CI requires direct Litter SideStore framework link" "@rpath/SideStore.framework/SideStore" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "CI rejects direct Litter minimuxer framework links" "keep minimuxer isolated behind the KittyStore framework" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "Private BuildKit native refresh" "refresh_native_driver_if_needed" "apps/ios/scripts/prepare-buildkit-assets.sh"

@@ -641,10 +641,13 @@ targets:
         embed: true
       - target: CoreCompiler
         embed: true
+        link: false
       - target: MobileDevelopmentKit
         embed: true
+        link: false
       - target: emexDE
         embed: true
+        link: false
       - target: LiveProcess
         embed: true
       - target: LitterLiveActivity
