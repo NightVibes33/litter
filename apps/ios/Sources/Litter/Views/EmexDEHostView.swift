@@ -1,16 +1,13 @@
 import SwiftUI
 import UIKit
 
-#if !targetEnvironment(macCatalyst)
-import emexDE
-#endif
 
 struct EmexDEHostView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
         #if targetEnvironment(macCatalyst)
         EmexDEUnavailableViewController()
         #else
-        EmexDEEmbeddedFactory.makeRootViewController()
+        EmexDEEmbeddedBridge.makeRootViewController()
         #endif
     }
 
