@@ -722,6 +722,10 @@ jobs:
               "@objc protocol TerminalViewDelegateObjC: AnyObject": "@objc public protocol TerminalViewDelegateObjC: AnyObject",
               "@objc class TerminalViewObjC: TerminalView": "@objc public class TerminalViewObjC: TerminalView",
               "@objc var ttyHandle: FileHandle?": "@objc public var ttyHandle: FileHandle?",
+              "required init?(coder: NSCoder)": "public required init?(coder: NSCoder)",
+              "override func willMove(toWindow newWindow: UIWindow?)": "public override func willMove(toWindow newWindow: UIWindow?)",
+              "@objc func handleThemeChange(_ notification: Notification?)": "@objc public func handleThemeChange(_ notification: Notification?)",
+              "override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?)": "public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?)",
           }
           for before, after in bridge_replacements.items():
               if before not in bridge_text and after not in bridge_text:
@@ -729,10 +733,48 @@ jobs:
               bridge_text = bridge_text.replace(before, after)
           terminal_bridge.write_text(bridge_text)
 
+          os_version_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/FileList/iOSVersionPickerView.swift")
+          os_version_text = os_version_bridge.read_text()
+          os_version_replacements = {
+              "@objc class NXOSVersion: NSObject, Comparable": "@objc public class NXOSVersion: NSObject, Comparable",
+              "@objc let versionString: String": "@objc public let versionString: String",
+              "@objc let versionNumeric: Double": "@objc public let versionNumeric: Double",
+              "@objc private(set) var pickerVersionString: String": "@objc public private(set) var pickerVersionString: String",
+              "@objc static let hostVersion: NXOSVersion": "@objc public static let hostVersion: NXOSVersion",
+              "@objc static var minimumBuildVersion: NXOSVersion": "@objc public static var minimumBuildVersion: NXOSVersion",
+              "@objc static var maximumBuildVersion: NXOSVersion": "@objc public static var maximumBuildVersion: NXOSVersion",
+              "@objc static var iPadOSMinimumValidityVersion: NXOSVersion": "@objc public static var iPadOSMinimumValidityVersion: NXOSVersion",
+              "@objc init?(versionString inputString: String?)": "@objc public init?(versionString inputString: String?)",
+              "@objc override convenience init()": "@objc public override convenience init()",
+              "static func == (lhs: NXOSVersion, rhs: NXOSVersion) -> Bool": "public static func == (lhs: NXOSVersion, rhs: NXOSVersion) -> Bool",
+              "static func < (lhs: NXOSVersion, rhs: NXOSVersion) -> Bool": "public static func < (lhs: NXOSVersion, rhs: NXOSVersion) -> Bool",
+              "@objc override var description: String": "@objc public override var description: String",
+              "@objc override func isEqual(_ object: Any?) -> Bool": "@objc public override func isEqual(_ object: Any?) -> Bool",
+              "@objc override var hash: Int": "@objc public override var hash: Int",
+          }
+          for before, after in os_version_replacements.items():
+              if before not in os_version_text and after not in os_version_text:
+                  raise SystemExit(f"Missing expected emexDE NXOSVersion declaration: {before}")
+              os_version_text = os_version_text.replace(before, after)
+          os_version_bridge.write_text(os_version_text)
+
+          notification_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/Project/Project+NotificationServer.swift")
+          notification_text = notification_bridge.read_text()
+          notification_replacements = {
+              "@objc class NotificationServer: NSObject": "@objc public class NotificationServer: NSObject",
+              "@objc enum NotifLevel: Int": "@objc public enum NotifLevel: Int",
+              "@objc static func NotifyUser(": "@objc public static func NotifyUser(",
+          }
+          for before, after in notification_replacements.items():
+              if before not in notification_text and after not in notification_text:
+                  raise SystemExit(f"Missing expected emexDE notification bridge declaration: {before}")
+              notification_text = notification_text.replace(before, after)
+          notification_bridge.write_text(notification_text)
+
           print(f"Normalized {len(changed)} emexDE generated Swift imports.")
           for source in changed:
               print(source)
-          print("Exposed emexDE TerminalViewObjC bridge declarations for generated ObjC header.")
+          print("Exposed emexDE Swift bridge declarations for generated ObjC headers.")
           PY
 
       - name: Generate Xcode project

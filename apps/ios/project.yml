@@ -392,6 +392,11 @@ targets:
           - LindChain/ProcEnvironment/tfp.c
           - LindChain/ProcEnvironment/vfork.c
           - LindChain/ProcEnvironment/Surface/limits.h
+          - LindChain/ProcEnvironment/posix_spawn.h
+          - LindChain/ProcEnvironment/syscall.h
+          - LindChain/ProcEnvironment/sysctl.h
+          - LindChain/ProcEnvironment/Surface/sys/syscall.h
+          - LindChain/ProcEnvironment/Surface/sys/host/sysctl.h
           - LindChain/OpenSSL.xcframework/**
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/Assets.xcassets
         buildPhase: resources
