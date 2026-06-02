@@ -569,19 +569,52 @@ CC_EXPORT Boolean CCSwiftCompilerJobExecute(CCJobRef job,
 }
 '''
 
+def replace_or_confirm(text: str, old: str, new: str, label: str) -> str:
+    if old in text:
+        return text.replace(old, new, 1)
+    if new in text:
+        return text
+    raise SystemExit(f"Missing expected emexDE CoreCompiler compatibility block: {label}")
+
 
 def patch(root: Path) -> None:
     cc_root = root / "ThirdParty/EmexDE/Source/CoreCompiler"
     cc_driver = cc_root / "Tools/CCDriver.cpp"
+    dependency_scanner = cc_root / "Tools/CCDependencyScanner.cpp"
+    cc_compiler = cc_root / "Tools/Compiler/CCCompiler.cpp"
     swift_compiler = cc_root / "Tools/Compiler/CCSwiftCompiler.cpp"
     cc_utils = cc_root / "CCUtils.cpp"
 
-    missing = [p for p in (cc_driver, swift_compiler, cc_utils) if not p.exists()]
+    missing = [p for p in (cc_driver, dependency_scanner, cc_compiler, swift_compiler, cc_utils) if not p.exists()]
     if missing:
         raise SystemExit("Missing emexDE CoreCompiler source files: " + ", ".join(str(p) for p in missing))
 
     cc_driver.write_text(CCDRIVER_CPP)
     swift_compiler.write_text(CCSWIFT_COMPILER_CPP)
+
+    scanner_text = dependency_scanner.read_text()
+    scanner_text = replace_or_confirm(
+        scanner_text,
+        "new (&dependencyScanner->service) DependencyScanningService(ScanningMode::DependencyDirectivesScan, ScanningOutputFormat::Full, CASOptions{}, /*CAS=*/nullptr, /*Cache=*/nullptr, /*SharedFS=*/nullptr);",
+        "new (&dependencyScanner->service) DependencyScanningService(ScanningMode::DependencyDirectivesScan, ScanningOutputFormat::Full);",
+        "DependencyScanningService constructor",
+    )
+    dependency_scanner.write_text(scanner_text)
+
+    compiler_text = cc_compiler.read_text()
+    compiler_text = replace_or_confirm(
+        compiler_text,
+        "auto DiagOpts = std::make_shared<DiagnosticOptions>();\n    IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());\n    IntrusiveRefCntPtr<DiagnosticsEngine> Diags(new DiagnosticsEngine(DiagID, *DiagOpts, new IgnoringDiagConsumer(), /*ShouldOwnClient=*/true));",
+        "IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts(new DiagnosticOptions());\n    IntrusiveRefCntPtr<DiagnosticIDs> DiagID(new DiagnosticIDs());\n    IntrusiveRefCntPtr<DiagnosticsEngine> Diags(new DiagnosticsEngine(DiagID, DiagOpts, new IgnoringDiagConsumer(), /*ShouldOwnClient=*/true));",
+        "DiagnosticsEngine ownership",
+    )
+    compiler_text = replace_or_confirm(
+        compiler_text,
+        "CI,\n        std::make_shared<PCHContainerOperations>(),\n        DiagOpts,\n        Diags,\n        Act.release(),",
+        "CI,\n        std::make_shared<PCHContainerOperations>(),\n        Diags,\n        Act.release(),",
+        "ASTUnit diagnostics argument",
+    )
+    cc_compiler.write_text(compiler_text)
 
     utils_text = cc_utils.read_text()
     utils_text = utils_text.replace("#include <swift/Basic/InitializeSwiftModules.h>\n", "")
@@ -589,6 +622,8 @@ def patch(root: Path) -> None:
 
     print("Patched emexDE CoreCompiler for unsigned iOS CI:")
     print(f"  {cc_driver}")
+    print(f"  {dependency_scanner} (normalized dependency scanner constructor)")
+    print(f"  {cc_compiler} (normalized Clang diagnostics ownership)")
     print(f"  {swift_compiler}")
     print(f"  {cc_utils} (removed unused Swift compiler header include)")
 
