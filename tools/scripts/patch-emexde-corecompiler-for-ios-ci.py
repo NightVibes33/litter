@@ -170,8 +170,7 @@ CCDriverRef CCDriverCreate(CFAllocatorRef allocator, CFArrayRef arguments, CCDri
 
         try
         {
-            auto VFS = llvm::vfs::getRealFileSystem();
-            driverRef->clangDriver = std::make_unique<clang::driver::Driver>("clang", "", *driverRef->clangDiagnosticEngine, VFS);
+            driverRef->clangDriver = std::make_unique<clang::driver::Driver>("clang", "", *driverRef->clangDiagnosticEngine);
         }
         catch (...)
         {
