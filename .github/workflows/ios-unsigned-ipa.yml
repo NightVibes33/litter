@@ -752,6 +752,21 @@ jobs:
               bridge_text = bridge_text.replace(before, after)
           terminal_bridge.write_text(bridge_text)
 
+          terminal_session = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/WindowServer/Session/NXWindowSessionTerminal.m")
+          terminal_session_text = terminal_session.read_text()
+          terminal_session_shim = '''#import <UIKit/UIKit.h>
+@class TerminalView;
+@protocol TerminalViewDelegateObjC;
+@interface TerminalViewObjC : UIView
+@property (nonatomic, weak, nullable) id<TerminalViewDelegateObjC> objcDelegate;
+@property (nonatomic, strong, nullable) NSFileHandle *ttyHandle;
+- (nonnull instancetype)initWithFrame:(CGRect)frame masterFD:(int32_t)masterFD;
+@end'''
+          if '#import "emexDE-Swift.h"' not in terminal_session_text and terminal_session_shim not in terminal_session_text:
+              raise SystemExit("Missing expected emexDE terminal session Swift import")
+          terminal_session_text = terminal_session_text.replace('#import "emexDE-Swift.h"', terminal_session_shim)
+          terminal_session.write_text(terminal_session_text)
+
           os_version_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/FileList/iOSVersionPickerView.swift")
           os_version_text = os_version_bridge.read_text()
           os_version_replacements = {
