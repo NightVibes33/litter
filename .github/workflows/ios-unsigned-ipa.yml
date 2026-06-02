@@ -668,10 +668,28 @@ jobs:
           }
           require_nonempty "$support_source/LLVM.xcframework/ios-arm64/llvm.a"
           require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/llvm/Support/Threading.h"
-          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/swift/Basic/InitializeSwiftModules.h"
-          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/swift/FrontendTool/FrontendTool.h"
-          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/swift/Config.h"
-          if [ -f "$support_source/LLVM.xcframework/ios-arm64/Headers/module.modulemap" ]; then
+          swift_header_root="$support_source/LLVM.xcframework/ios-arm64/Headers"
+          swift_header_marker="$swift_header_root/swift/.emexde-swift-header-branch"
+          require_nonempty "$swift_header_root/swift/Basic/InitializeSwiftModules.h"
+          require_nonempty "$swift_header_root/swift/FrontendTool/FrontendTool.h"
+          require_nonempty "$swift_header_root/swift/Config.h"
+          require_nonempty "$swift_header_root/clang/Basic/PathRemapper.h"
+          require_nonempty "$swift_header_root/clang/CAS/CASOptions.h"
+          require_nonempty "$swift_header_root/llvm/CAS/ActionCache.h"
+          require_nonempty "$swift_header_root/llvm/Support/VirtualOutputBackend.h"
+          require_nonempty "$swift_header_root/swift/Option/Options.inc"
+          require_nonempty "$swift_header_root/swift/Runtime/CMakeConfig.h"
+          require_nonempty "$swift_header_root/lld/Common/Version.inc"
+          require_nonempty "$swift_header_marker"
+          if [ -s "$swift_header_marker" ] && [ "$(cat "$swift_header_marker")" != "swift-6.0.3-RELEASE" ]; then
+            echo "Cached Swift compiler header overlay is for $(cat "$swift_header_marker"), expected swift-6.0.3-RELEASE."
+            missing=1
+          fi
+          if [ -s "$swift_header_root/swift/AST/Identifier.h" ] && grep -q 'getTrailingObjects(NumArgs)' "$swift_header_root/swift/AST/Identifier.h"; then
+            echo "Cached Swift compiler headers use the newer TrailingObjects API and are incompatible with vendored LLVM 19."
+            missing=1
+          fi
+          if [ -f "$swift_header_root/module.modulemap" ]; then
             echo "Cached Swift root module map conflicts with Xcode public header copy."
             missing=1
           fi
@@ -770,6 +788,14 @@ jobs:
                   raise SystemExit(f"Missing expected emexDE notification bridge declaration: {before}")
               notification_text = notification_text.replace(before, after)
           notification_bridge.write_text(notification_text)
+
+          cc_driver = Path("ThirdParty/EmexDE/Source/CoreCompiler/Tools/CCDriver.cpp")
+          cc_driver_text = cc_driver.read_text()
+          cc_driver_before = '        case CCDriverTypeSwift:\n        {\n            if(!driver->swiftCompilation)\n            {\n                return nullptr;\n            }\n            const auto &Args = driver->swiftCompilation->getArgs();\n            if(const llvm::opt::Arg *A = Args.getLastArg(swift::options::OPT_sdk))\n            {\n                cxxstr = A->getValue();\n            }\n            break;\n        }\n'
+          cc_driver_after = '        case CCDriverTypeSwift:\n        {\n            for(size_t i = 0; i + 1 < driver->argStorage.size(); ++i)\n            {\n                if(driver->argStorage[i] == "-sdk")\n                {\n                    cxxstr = driver->argStorage[i + 1];\n                    break;\n                }\n            }\n            break;\n        }\n'
+          if cc_driver_before not in cc_driver_text and cc_driver_after not in cc_driver_text:
+              raise SystemExit("Missing expected CoreCompiler Swift SDK lookup block")
+          cc_driver.write_text(cc_driver_text.replace(cc_driver_before, cc_driver_after))
 
           print(f"Normalized {len(changed)} emexDE generated Swift imports.")
           for source in changed:
