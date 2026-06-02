@@ -738,8 +738,8 @@ jobs:
           terminal_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/UIInit/Terminal.swift")
           bridge_text = terminal_bridge.read_text()
           bridge_replacements = {
-              "@objc protocol TerminalViewDelegateObjC: AnyObject": "@objc public protocol TerminalViewDelegateObjC: AnyObject",
-              "@objc class TerminalViewObjC: TerminalView": "@objc public class TerminalViewObjC: TerminalView",
+              "@objc protocol TerminalViewDelegateObjC: AnyObject": "@objc(TerminalViewDelegateObjC) public protocol TerminalViewDelegateObjC: AnyObject",
+              "@objc class TerminalViewObjC: TerminalView": "@objc(TerminalViewObjC) public class TerminalViewObjC: TerminalView",
               "@objc var ttyHandle: FileHandle?": "@objc public var ttyHandle: FileHandle?",
               "required init?(coder: NSCoder)": "public required init?(coder: NSCoder)",
               "override func willMove(toWindow newWindow: UIWindow?)": "public override func willMove(toWindow newWindow: UIWindow?)",
@@ -773,7 +773,7 @@ jobs:
           os_version_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/FileList/iOSVersionPickerView.swift")
           os_version_text = os_version_bridge.read_text()
           os_version_replacements = {
-              "@objc class NXOSVersion: NSObject, Comparable": "@objc public class NXOSVersion: NSObject, Comparable",
+              "@objc class NXOSVersion: NSObject, Comparable": "@objc(NXOSVersion) public class NXOSVersion: NSObject, Comparable",
               "@objc let versionString: String": "@objc public let versionString: String",
               "@objc let versionNumeric: Double": "@objc public let versionNumeric: Double",
               "@objc private(set) var pickerVersionString: String": "@objc public private(set) var pickerVersionString: String",
@@ -798,7 +798,7 @@ jobs:
           notification_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/Project/Project+NotificationServer.swift")
           notification_text = notification_bridge.read_text()
           notification_replacements = {
-              "@objc class NotificationServer: NSObject": "@objc public class NotificationServer: NSObject",
+              "@objc class NotificationServer: NSObject": "@objc(NotificationServer) public class NotificationServer: NSObject",
               "@objc enum NotifLevel: Int": "@objc public enum NotifLevel: Int",
               "@objc static func NotifyUser(": "@objc public static func NotifyUser(",
           }
@@ -811,7 +811,7 @@ jobs:
           application_management_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/Settings/ApplicationManagement.swift")
           application_management_text = application_management_bridge.read_text()
           application_management_before = "class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
-          application_management_after = "@objc class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
+          application_management_after = "@objc(ApplicationManagementViewController) class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
           if application_management_before not in application_management_text and application_management_after not in application_management_text:
               raise SystemExit("Missing expected emexDE ApplicationManagementViewController declaration")
           application_management_bridge.write_text(application_management_text.replace(application_management_before, application_management_after))
