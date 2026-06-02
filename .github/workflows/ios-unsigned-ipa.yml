@@ -807,6 +807,86 @@ jobs:
               notification_text = notification_text.replace(before, after)
           notification_bridge.write_text(notification_text)
 
+          application_management_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/Settings/ApplicationManagement.swift")
+          application_management_text = application_management_bridge.read_text()
+          application_management_before = "class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
+          application_management_after = "@objc class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
+          if application_management_before not in application_management_text and application_management_after not in application_management_text:
+              raise SystemExit("Missing expected emexDE ApplicationManagementViewController declaration")
+          application_management_bridge.write_text(application_management_text.replace(application_management_before, application_management_after))
+
+          def replace_generated_swift_import(source_path, shim, label):
+              source = Path(source_path)
+              source_text = source.read_text()
+              marker = '#import "emexDE-Swift.h"'
+              if marker not in source_text:
+                  if shim and shim in source_text:
+                      return
+                  if not shim:
+                      return
+                  raise SystemExit(f"Missing expected emexDE Swift import for {label}")
+              source.write_text(source_text.replace(marker, shim))
+
+          notification_objc_shim = "\n".join([
+              "#import <Foundation/Foundation.h>",
+              "typedef NS_ENUM(NSInteger, NotifLevel) {",
+              "    NotifLevelNote = 0,",
+              "    NotifLevelWarning = 1,",
+              "    NotifLevelError = 2,",
+              "};",
+              "@interface NotificationServer : NSObject",
+              "+ (void)NotifyUserWithLevel:(NotifLevel)level notification:(NSString *)notification delay:(double)delay;",
+              "@end",
+          ])
+          nxos_version_objc_shim = "\n".join([
+              "#import <Foundation/Foundation.h>",
+              "@interface NXOSVersion : NSObject",
+              "+ (NXOSVersion *)hostVersion;",
+              "+ (NXOSVersion *)maximumBuildVersion;",
+              "@property (nonatomic, readonly, copy) NSString *versionString;",
+              "@property (nonatomic, readonly, copy) NSString *pickerVersionString;",
+              "@end",
+          ])
+          application_management_objc_shim = "\n".join([
+              "#import <Foundation/Foundation.h>",
+              "@class LDEApplicationObject;",
+              "@interface ApplicationManagementViewController : NSObject",
+              "+ (instancetype)shared;",
+              "- (void)applicationWasInstalled:(LDEApplicationObject *)app;",
+              "- (void)applicationWithBundleIdentifierWasUninstalled:(NSString *)bundleIdentifier;",
+              "@end",
+          ])
+          replace_generated_swift_import(
+              "ThirdParty/EmexDE/Source/Nyxian/NXBootstrap.m",
+              notification_objc_shim,
+              "NXBootstrap notification bridge",
+          )
+          replace_generated_swift_import(
+              "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Process/PEProcessManager.m",
+              notification_objc_shim,
+              "PEProcessManager notification bridge",
+          )
+          replace_generated_swift_import(
+              "ThirdParty/EmexDE/Source/Nyxian/LindChain/Project/NXTarget.m",
+              nxos_version_objc_shim,
+              "NXTarget OS version bridge",
+          )
+          replace_generated_swift_import(
+              "ThirdParty/EmexDE/Source/Nyxian/LindChain/Project/NXProject.m",
+              nxos_version_objc_shim,
+              "NXProject OS version bridge",
+          )
+          replace_generated_swift_import(
+              "ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m",
+              application_management_objc_shim,
+              "LDEApplicationWorkspace application-management bridge",
+          )
+          replace_generated_swift_import(
+              "ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport/Shell.m",
+              "",
+              "Shell unused Swift import",
+          )
+
           cc_driver = Path("ThirdParty/EmexDE/Source/CoreCompiler/Tools/CCDriver.cpp")
           cc_driver_text = cc_driver.read_text()
           cc_driver_before = '        case CCDriverTypeSwift:\n        {\n            if(!driver->swiftCompilation)\n            {\n                return nullptr;\n            }\n            const auto &Args = driver->swiftCompilation->getArgs();\n            if(const llvm::opt::Arg *A = Args.getLastArg(swift::options::OPT_sdk))\n            {\n                cxxstr = A->getValue();\n            }\n            break;\n        }\n'
