@@ -403,6 +403,7 @@ targets:
           - LindChain/ProcEnvironment/sysctl.h
           - LindChain/ProcEnvironment/Surface/sys/syscall.h
           - LindChain/ProcEnvironment/Surface/sys/host/sysctl.h
+          - LindChain/Private/Frameworks/**
           - LindChain/OpenSSL.xcframework/**
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/Assets.xcassets
         buildPhase: resources
@@ -832,6 +833,17 @@ targets:
           if [ -f "$EMEXDE_ROOT/Nyxian/LindChain/JBSupport/tshelper" ]; then
             /usr/bin/ditto "$EMEXDE_ROOT/Nyxian/LindChain/JBSupport/tshelper" "$RESOURCES_DIR/tshelper"
             /bin/chmod 755 "$RESOURCES_DIR/tshelper" || true
+          fi
+          EMEXDE_FRAMEWORK="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/emexDE.framework"
+          if [ -d "$EMEXDE_FRAMEWORK/Frameworks" ]; then
+            for private_framework in               FrontBoard.framework               FrontBoardServices.framework               RunningBoardServices.framework               BackBoardServices.framework
+            do
+              if [ -e "$EMEXDE_FRAMEWORK/Frameworks/$private_framework" ]; then
+                rm -rf "$EMEXDE_FRAMEWORK/Frameworks/$private_framework"
+                echo "Removed nested emexDE private framework stub: $private_framework"
+              fi
+            done
+            rmdir "$EMEXDE_FRAMEWORK/Frameworks" 2>/dev/null || true
           fi
           echo "Embedded emexDE Shared runtime resources"
       - name: Package Private BuildKit Assets
