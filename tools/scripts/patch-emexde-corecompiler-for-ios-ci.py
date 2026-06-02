@@ -50,6 +50,7 @@ CCDRIVER_CPP = r'''/*
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/VirtualFileSystem.h>
 #include <algorithm>
 #include <cassert>
 #include <memory>
@@ -164,12 +165,13 @@ CCDriverRef CCDriverCreate(CFAllocatorRef allocator, CFArrayRef arguments, CCDri
     if(type == CCDriverTypeClang)
     {
         IntrusiveRefCntPtr<clang::DiagnosticIDs> DiagID(new clang::DiagnosticIDs());
-        clang::DiagnosticOptions DiagOpts;
+        IntrusiveRefCntPtr<clang::DiagnosticOptions> DiagOpts(new clang::DiagnosticOptions());
         driverRef->clangDiagnosticEngine = IntrusiveRefCntPtr<clang::DiagnosticsEngine>(new clang::DiagnosticsEngine(DiagID, DiagOpts, new clang::IgnoringDiagConsumer(), true));
 
         try
         {
-            driverRef->clangDriver = std::make_unique<clang::driver::Driver>("clang", "", *driverRef->clangDiagnosticEngine);
+            auto VFS = llvm::vfs::getRealFileSystem();
+            driverRef->clangDriver = std::make_unique<clang::driver::Driver>("clang", "", *driverRef->clangDiagnosticEngine, VFS);
         }
         catch (...)
         {
