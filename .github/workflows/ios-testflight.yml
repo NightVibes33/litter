@@ -240,6 +240,7 @@ jobs:
     environment: release
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
+      EXPORT_SIGNING_STYLE: automatic
       SCCACHE_BUCKET: rust-cache
       SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
       SCCACHE_REGION: auto
@@ -281,13 +282,6 @@ jobs:
             ASC_ISSUER_ID
             ASC_PRIVATE_KEY_P8_B64
             IOS_TEAM_ID
-            IOS_DIST_CERT_P12_B64
-            IOS_DIST_CERT_PASSWORD
-            IOS_APP_STORE_PROFILE_B64
-            IOS_LIVE_ACTIVITY_APP_STORE_PROFILE_B64
-            IOS_LIVEPROCESS_APP_STORE_PROFILE_B64
-            IOS_WATCH_APP_STORE_PROFILE_B64
-            IOS_WATCH_COMP_APP_STORE_PROFILE_B64
           )
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -331,6 +325,7 @@ jobs:
           echo "ASC_PRIVATE_KEY_PATH=$ASC_KEY_PATH" >> "$GITHUB_ENV"
 
       - name: Install signing certificate and provisioning profiles
+        if: env.EXPORT_SIGNING_STYLE == 'manual'
         env:
           IOS_DIST_CERT_P12_B64: ${{ secrets.IOS_DIST_CERT_P12_B64 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
@@ -416,7 +411,7 @@ jobs:
           LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
           APP_STORE_APP_ID: ${{ secrets.IOS_APP_STORE_APP_ID }}
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-          EXPORT_SIGNING_STYLE: manual
+          EXPORT_SIGNING_STYLE: automatic
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           TESTFLIGHT_SKIP_UPLOAD: "1"
@@ -431,7 +426,7 @@ jobs:
           LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
           APP_STORE_APP_ID: ${{ secrets.IOS_APP_STORE_APP_ID }}
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-          EXPORT_SIGNING_STYLE: manual
+          EXPORT_SIGNING_STYLE: automatic
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           TESTFLIGHT_SKIP_BUILD: "1"
