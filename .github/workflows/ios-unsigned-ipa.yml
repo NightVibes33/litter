@@ -1240,7 +1240,7 @@ jobs:
               CODE_SIGNING_REQUIRED=NO \
               CODE_SIGN_IDENTITY="" \
               DEVELOPMENT_TEAM="" \
-              PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.liveprocess" \
+              PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.39A8Q3T3TR.liveprocess" \
               CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
 
           LIVEPROCESS_APPEX="$(find "$BUILD_ROOT" -type d -name 'LiveProcess.appex' -print | head -n 1)"
@@ -1253,7 +1253,7 @@ jobs:
           cp -R "$LIVEPROCESS_APPEX" "$OUTPUT_ROOT/LiveProcess.appex"
           /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$OUTPUT_ROOT/LiveProcess.appex/Info.plist" >/dev/null
           liveprocess_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$OUTPUT_ROOT/LiveProcess.appex/Info.plist" 2>/dev/null || true)"
-          if [ "$liveprocess_bundle_id" != "com.sigkitten.litter.liveprocess" ]; then
+          if [ "$liveprocess_bundle_id" != "com.sigkitten.litter.39A8Q3T3TR.liveprocess" ]; then
             echo "::error::Nyxian LiveProcess.appex has invalid CFBundleIdentifier: ${liveprocess_bundle_id:-<missing>}" >&2
             exit 1
           fi
@@ -1605,7 +1605,7 @@ jobs:
             find "$APP_BUNDLE" -name '*.xcent' -type f -delete
             /usr/libexec/PlistBuddy -c 'Print :NSExtension' "$APP_BUNDLE/PlugIns/LiveProcess.appex/Info.plist" >/dev/null
             liveprocess_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_BUNDLE/PlugIns/LiveProcess.appex/Info.plist" 2>/dev/null || true)"
-            if [ "$liveprocess_bundle_id" != "com.sigkitten.litter.liveprocess" ]; then
+            if [ "$liveprocess_bundle_id" != "com.sigkitten.litter.39A8Q3T3TR.liveprocess" ]; then
               echo "::error::IPA LiveProcess.appex has invalid CFBundleIdentifier: ${liveprocess_bundle_id:-<missing>}" >&2
               exit 1
             fi

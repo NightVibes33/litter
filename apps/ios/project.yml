@@ -461,6 +461,19 @@ targets:
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator"
+      configs:
+        Debug:
+          CODE_SIGN_STYLE: "$(LIVEPROCESS_CODE_SIGN_STYLE)"
+          LIVEPROCESS_CODE_SIGN_STYLE: Automatic
+          PROVISIONING_PROFILE_SPECIFIER: "$(LIVEPROCESS_PROVISIONING_PROFILE_SPECIFIER)"
+          LIVEPROCESS_PROVISIONING_PROFILE_SPECIFIER: ""
+        Release:
+          CODE_SIGN_STYLE: "$(LIVEPROCESS_CODE_SIGN_STYLE)"
+          LIVEPROCESS_CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY: "$(LIVEPROCESS_CODE_SIGN_IDENTITY)"
+          LIVEPROCESS_CODE_SIGN_IDENTITY: ""
+          PROVISIONING_PROFILE_SPECIFIER: "$(LIVEPROCESS_PROVISIONING_PROFILE_SPECIFIER)"
+          LIVEPROCESS_PROVISIONING_PROFILE_SPECIFIER: ""
     sources:
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/main.m
         headerVisibility: project
