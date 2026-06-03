@@ -27,6 +27,9 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY_P8_B64: ${{ secrets.ASC_PRIVATE_KEY_P8_B64 }}
+          TESTFLIGHT_SIGNING_SOURCE: p12
+          IOS_DIST_CERT_P12_B64: ${{ secrets.IOS_DIST_CERT_P12_B64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
         run: |
           set -euo pipefail
           for name in ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_P8_B64; do
@@ -54,6 +57,44 @@ jobs:
             exit 1
           fi
           echo "Found App Store Connect app id: $app_id"
+
+          if [[ "${TESTFLIGHT_SIGNING_SOURCE:-}" == "p12" ]]; then
+            for name in IOS_DIST_CERT_P12_B64 IOS_DIST_CERT_PASSWORD; do
+              if [[ -z "${!name:-}" ]]; then
+                echo "Missing required p12 signing secret: $name" >&2
+                exit 1
+              fi
+            done
+
+            CERT_PATH="$RUNNER_TEMP/preflight-dist-cert.p12"
+            KEYCHAIN_PATH="$RUNNER_TEMP/preflight-signing.keychain-db"
+            KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+            IMPORT_LOG="$RUNNER_TEMP/preflight-p12-import.log"
+            echo "$IOS_DIST_CERT_P12_B64" | base64 --decode > "$CERT_PATH"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            import_p12_with_password_variants() {
+              local decoded_password=""
+              if security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$IOS_DIST_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security >"$IMPORT_LOG" 2>&1; then
+                echo "Validated p12 import with configured password."
+                return 0
+              fi
+              if security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "" -T /usr/bin/codesign -T /usr/bin/security >"$IMPORT_LOG" 2>&1; then
+                echo "Validated p12 import with an empty password."
+                return 0
+              fi
+              if decoded_password="$(printf '%s' "$IOS_DIST_CERT_PASSWORD" | base64 --decode 2>/dev/null)" && [[ -n "$decoded_password" && "$decoded_password" != "$IOS_DIST_CERT_PASSWORD" ]]; then
+                if security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$decoded_password" -T /usr/bin/codesign -T /usr/bin/security >"$IMPORT_LOG" 2>&1; then
+                  echo "Validated p12 import with a base64-decoded password."
+                  return 0
+                fi
+              fi
+              echo "Unable to import IOS_DIST_CERT_P12_B64 with the stored password variants." >&2
+              cat "$IMPORT_LOG" >&2
+              return 1
+            }
+            import_p12_with_password_variants
+          fi
 
   prepare-release-assets:
     needs: testflight-preflight
@@ -558,7 +599,28 @@ jobs:
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH"
           security default-keychain -d user -s "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$IOS_DIST_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          import_p12_with_password_variants() {
+            local decoded_password=""
+            local import_log="$RUNNER_TEMP/p12-import.log"
+            if security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$IOS_DIST_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security >"$import_log" 2>&1; then
+              echo "Imported p12 with configured password."
+              return 0
+            fi
+            if security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "" -T /usr/bin/codesign -T /usr/bin/security >"$import_log" 2>&1; then
+              echo "Imported p12 with an empty password."
+              return 0
+            fi
+            if decoded_password="$(printf '%s' "$IOS_DIST_CERT_PASSWORD" | base64 --decode 2>/dev/null)" && [[ -n "$decoded_password" && "$decoded_password" != "$IOS_DIST_CERT_PASSWORD" ]]; then
+              if security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$decoded_password" -T /usr/bin/codesign -T /usr/bin/security >"$import_log" 2>&1; then
+                echo "Imported p12 with a base64-decoded password."
+                return 0
+              fi
+            fi
+            echo "Unable to import IOS_DIST_CERT_P12_B64 with the stored password variants." >&2
+            cat "$import_log" >&2
+            return 1
+          }
+          import_p12_with_password_variants
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
           mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
