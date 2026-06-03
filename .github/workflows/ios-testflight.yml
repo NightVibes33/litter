@@ -58,7 +58,7 @@ jobs:
   prepare-release-assets:
     needs: testflight-preflight
     runs-on: macos-26-intel
-    timeout-minutes: 90
+    timeout-minutes: 240
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       SCCACHE_BUCKET: rust-cache
@@ -95,10 +95,64 @@ jobs:
         with:
           targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios,i686-unknown-linux-musl
 
-      - name: Setup Zig (libghostty build)
-        uses: mlugg/setup-zig@v2
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
         with:
-          version: 0.15.2
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ios-cargo-registry-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.lock') }}
+          restore-keys: |
+            ios-cargo-registry-${{ runner.os }}-
+
+      - name: Restore TestFlight Rust generated cache
+        id: rust_generated_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/ios/GeneratedRust
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+          key: ios-testflight-rust-generated-mobile-release-v1-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/build-ghostty.sh', 'apps/ios/scripts/sync-ghostty.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**', 'patches/ghostty/**', 'shared/third_party/ghostty/**') }}
+          restore-keys: |
+            ios-testflight-rust-generated-mobile-release-v1-${{ runner.os }}-
+
+      - name: Validate TestFlight Rust generated cache
+        id: rust_generated_valid
+        run: |
+          set -euo pipefail
+          required=(
+            apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a
+            apps/ios/GeneratedRust/ios-device/libghostty.a
+            apps/ios/GeneratedRust/Headers/ghostty.h
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h
+            apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.modulemap
+            apps/ios/GeneratedRust/Headers/module.modulemap
+            apps/ios/GeneratedRust/.swift-bindings.hash
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+          )
+          missing=0
+          for path in "${required[@]}"; do
+            if [[ ! -s "$path" ]]; then
+              echo "missing generated asset: $path"
+              missing=1
+            fi
+          done
+          if [[ "$missing" == "0" ]]; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Restore Alpine filesystem cache
+        id: alpine_fs_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/ios/Resources/fs
+            .build-stamps/alpine-fs-*
+          key: ios-alpine-fs-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/scripts/download-alpine-fs.sh') }}
+          restore-keys: |
+            ios-alpine-fs-v1-
 
       - name: Setup sccache
         if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
@@ -131,7 +185,11 @@ jobs:
             unset RUSTC_WRAPPER SCCACHE_BUCKET SCCACHE_ENDPOINT SCCACHE_REGION SCCACHE_S3_KEY_PREFIX SCCACHE_S3_USE_SSL
             unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
           fi
-          ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
+          if [[ "${{ steps.rust_generated_valid.outputs.hit }}" == "true" ]]; then
+            echo "==> Using cached TestFlight Rust generated assets"
+          else
+            ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
+          fi
           if [[ "${SCCACHE_DISABLE:-0}" == "1" ]]; then
             make RUSTC_WRAPPER= SCCACHE_BUCKET= SCCACHE_ENDPOINT= AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= alpine-fs xcgen
           else
@@ -141,6 +199,24 @@ jobs:
             echo "==> sccache stats after iOS release prep"
             sccache --show-stats || true
           fi
+
+      - name: Save TestFlight Rust generated cache
+        if: steps.rust_generated_valid.outputs.hit != 'true' && steps.rust_generated_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/ios/GeneratedRust
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+          key: ${{ steps.rust_generated_cache.outputs.cache-primary-key }}
+
+      - name: Save Alpine filesystem cache
+        if: steps.alpine_fs_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/ios/Resources/fs
+            .build-stamps/alpine-fs-*
+          key: ${{ steps.alpine_fs_cache.outputs.cache-primary-key }}
 
       - name: Package iOS release prep artifact
         run: |
