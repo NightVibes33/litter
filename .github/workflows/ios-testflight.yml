@@ -410,7 +410,7 @@ jobs:
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       EXPORT_SIGNING_STYLE: manual
-      TESTFLIGHT_SIGNING_SOURCE: asc-generated
+      TESTFLIGHT_SIGNING_SOURCE: p12
       SCCACHE_BUCKET: rust-cache
       SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
       SCCACHE_REGION: auto
