@@ -101,9 +101,11 @@ jobs:
           version: 0.15.2
 
       - name: Setup sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
         uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Prime sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
         run: |
           export SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-ios.log"
           rm -f "$SCCACHE_ERROR_LOG"
@@ -116,16 +118,29 @@ jobs:
           CARGO_INCREMENTAL: "0"
           CARGO_BUILD_JOBS: "1"
           IOS_RUST_PROFILE: mobile-release
-          RUSTC_WRAPPER: sccache
         run: |
           set -euo pipefail
-          export SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-ios.log"
-          trap 'status=$?; echo "==> sccache stats"; sccache --show-stats || true; if [ -f "$SCCACHE_ERROR_LOG" ]; then echo "==> sccache error log"; tail -200 "$SCCACHE_ERROR_LOG" || true; fi; exit $status' EXIT
-          sccache --zero-stats || true
+          if [[ -n "${SCCACHE_ENDPOINT:-}" && -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]] && command -v sccache >/dev/null 2>&1; then
+            export RUSTC_WRAPPER=sccache
+            export SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-ios.log"
+            trap 'status=$?; echo "==> sccache stats"; sccache --show-stats || true; if [ -f "$SCCACHE_ERROR_LOG" ]; then echo "==> sccache error log"; tail -200 "$SCCACHE_ERROR_LOG" || true; fi; exit $status' EXIT
+            sccache --zero-stats || true
+          else
+            echo "==> sccache remote cache is not configured; building without RUSTC_WRAPPER"
+            export SCCACHE_DISABLE=1
+            unset RUSTC_WRAPPER SCCACHE_BUCKET SCCACHE_ENDPOINT SCCACHE_REGION SCCACHE_S3_KEY_PREFIX SCCACHE_S3_USE_SSL
+            unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
+          fi
           ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
-          make alpine-fs xcgen
-          echo "==> sccache stats after iOS release prep"
-          sccache --show-stats || true
+          if [[ "${SCCACHE_DISABLE:-0}" == "1" ]]; then
+            make RUSTC_WRAPPER= SCCACHE_BUCKET= SCCACHE_ENDPOINT= AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= alpine-fs xcgen
+          else
+            make alpine-fs xcgen
+          fi
+          if [[ "${SCCACHE_DISABLE:-0}" != "1" ]] && command -v sccache >/dev/null 2>&1; then
+            echo "==> sccache stats after iOS release prep"
+            sccache --show-stats || true
+          fi
 
       - name: Package iOS release prep artifact
         run: |
