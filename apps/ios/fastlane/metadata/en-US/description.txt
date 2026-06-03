@@ -1,4 +1,4 @@
-Litter is a native mobile client for Codex.
+Littër is a native mobile client for Codex.
 
 Connect to local or remote Codex servers, manage coding sessions from anywhere, and keep conversations moving without opening your laptop.
 
@@ -9,4 +9,4 @@ Features:
 - Review conversation history, reasoning, code blocks, and images in a mobile-native UI
 - Stay connected to the servers you control instead of sending your work through a hosted relay
 
-Litter is open source and built for people who want their coding agent with them wherever they are.
+Littër is open source and built for people who want their coding agent with them wherever they are.
