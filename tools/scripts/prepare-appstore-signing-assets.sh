@@ -7,6 +7,7 @@ set -euo pipefail
 : "${IOS_TEAM_ID:?IOS_TEAM_ID is required}"
 
 CERTIFICATE_TYPE="${CERTIFICATE_TYPE:-DISTRIBUTION}"
+REVOKE_EXISTING_LITTER_CI_DISTRIBUTION_CERTIFICATE_ON_LIMIT="${REVOKE_EXISTING_LITTER_CI_DISTRIBUTION_CERTIFICATE_ON_LIMIT:-0}"
 APP_BUNDLE_ID="${APP_BUNDLE_ID:-com.sigkitten.litter.39A8Q3T3TR}"
 LIVE_ACTIVITY_BUNDLE_ID="${LIVE_ACTIVITY_BUNDLE_ID:-${APP_BUNDLE_ID}.liveactivity}"
 LIVEPROCESS_BUNDLE_ID="${LIVEPROCESS_BUNDLE_ID:-${APP_BUNDLE_ID}.liveprocess}"
@@ -34,7 +35,53 @@ cert_path="$SIGNING_DIR/litter-appstore.cer"
 
 openssl req -new -newkey rsa:2048 -nodes     -keyout "$csr_key"     -out "$csr_path"     -subj "/CN=Litter App Store CI $RUN_LABEL/O=$IOS_TEAM_ID/C=US" >/dev/null 2>&1
 
-asc certificates create     --certificate-type "$CERTIFICATE_TYPE"     --csr "$csr_path"     --output json >"$cert_json"
+cert_error="$SIGNING_DIR/certificate-create.err"
+create_certificate() {
+    asc certificates create         --certificate-type "$CERTIFICATE_TYPE"         --csr "$csr_path"         --output json >"$cert_json" 2>"$cert_error"
+}
+
+revoke_litter_ci_distribution_certificates() {
+    local existing_json="$SIGNING_DIR/existing-certificates.json"
+    local existing_id matching_count
+    local matching_ids=()
+
+    asc certificates list --certificate-type "$CERTIFICATE_TYPE" --output json >"$existing_json"
+    echo "Existing $CERTIFICATE_TYPE certificates:"
+    jq -r '.data[]? | "- id=\(.id) name=\(.attributes.displayName // .attributes.name // "") type=\(.attributes.certificateType // .attributes.certificate_type // "") expires=\(.attributes.expirationDate // .attributes.expiration_date // "")"' "$existing_json"
+
+    while IFS= read -r existing_id; do
+        [[ -n "$existing_id" ]] || continue
+        matching_ids+=("$existing_id")
+    done < <(
+        jq -r '.data[]? |
+            select(((.attributes.displayName // .attributes.name // "") | tostring | contains("Litter App Store CI"))) |
+            .id' "$existing_json"
+    )
+
+    matching_count="${#matching_ids[@]}"
+    if [[ "$matching_count" -eq 0 ]]; then
+        echo "No Litter App Store CI $CERTIFICATE_TYPE certificates were found to revoke." >&2
+        echo "Refusing to revoke unrelated distribution certificates automatically." >&2
+        return 1
+    fi
+
+    for existing_id in "${matching_ids[@]}"; do
+        echo "Revoking stale Litter CI $CERTIFICATE_TYPE certificate: $existing_id"
+        asc certificates revoke --id "$existing_id" --confirm >/dev/null
+    done
+}
+
+if ! create_certificate; then
+    echo "Certificate creation failed:" >&2
+    cat "$cert_error" >&2
+    if [[ "$REVOKE_EXISTING_LITTER_CI_DISTRIBUTION_CERTIFICATE_ON_LIMIT" == "1" ]] && \
+        grep -Eiq 'current .*Distribution certificate|pending certificate request|certificate limit' "$cert_error"; then
+        revoke_litter_ci_distribution_certificates
+        create_certificate
+    else
+        exit 1
+    fi
+fi
 
 cert_id="$(jq -r '.data.id // empty' "$cert_json")"
 cert_content="$(jq -r '.data.attributes.certificateContent // .data.attributes.certificate_content // empty' "$cert_json")"

@@ -584,6 +584,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
           CERTIFICATE_TYPE: DISTRIBUTION
+          REVOKE_EXISTING_LITTER_CI_DISTRIBUTION_CERTIFICATE_ON_LIMIT: "1"
           APP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR
           LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
           LIVEPROCESS_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveprocess
