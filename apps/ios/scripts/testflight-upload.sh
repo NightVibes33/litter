@@ -27,6 +27,7 @@ LIVE_ACTIVITY_CODE_SIGN_IDENTITY="${LIVE_ACTIVITY_CODE_SIGN_IDENTITY:-Apple Dist
 LIVEPROCESS_CODE_SIGN_IDENTITY="${LIVEPROCESS_CODE_SIGN_IDENTITY:-Apple Distribution}"
 WATCH_CODE_SIGN_IDENTITY="${WATCH_CODE_SIGN_IDENTITY:-Apple Distribution}"
 WATCH_COMP_CODE_SIGN_IDENTITY="${WATCH_COMP_CODE_SIGN_IDENTITY:-Apple Distribution}"
+AUTOMATIC_ARCHIVE_CODE_SIGN_IDENTITY="${AUTOMATIC_ARCHIVE_CODE_SIGN_IDENTITY:-Apple Development}"
 EXPORT_SIGNING_STYLE="${EXPORT_SIGNING_STYLE:-automatic}"
 MARKETING_VERSION="${MARKETING_VERSION:-}"
 BUILD_NUMBER="${BUILD_NUMBER:-}"
@@ -250,11 +251,11 @@ if [[ "$TESTFLIGHT_SKIP_BUILD" != "1" ]]; then
             LIVEPROCESS_CODE_SIGN_STYLE=Automatic
             WATCH_CODE_SIGN_STYLE=Automatic
             WATCH_COMP_CODE_SIGN_STYLE=Automatic
-            APP_CODE_SIGN_IDENTITY="$APP_CODE_SIGN_IDENTITY"
-            LIVE_ACTIVITY_CODE_SIGN_IDENTITY="$LIVE_ACTIVITY_CODE_SIGN_IDENTITY"
-            LIVEPROCESS_CODE_SIGN_IDENTITY="$LIVEPROCESS_CODE_SIGN_IDENTITY"
-            WATCH_CODE_SIGN_IDENTITY="$WATCH_CODE_SIGN_IDENTITY"
-            WATCH_COMP_CODE_SIGN_IDENTITY="$WATCH_COMP_CODE_SIGN_IDENTITY"
+            APP_CODE_SIGN_IDENTITY="$AUTOMATIC_ARCHIVE_CODE_SIGN_IDENTITY"
+            LIVE_ACTIVITY_CODE_SIGN_IDENTITY="$AUTOMATIC_ARCHIVE_CODE_SIGN_IDENTITY"
+            LIVEPROCESS_CODE_SIGN_IDENTITY="$AUTOMATIC_ARCHIVE_CODE_SIGN_IDENTITY"
+            WATCH_CODE_SIGN_IDENTITY="$AUTOMATIC_ARCHIVE_CODE_SIGN_IDENTITY"
+            WATCH_COMP_CODE_SIGN_IDENTITY="$AUTOMATIC_ARCHIVE_CODE_SIGN_IDENTITY"
             -allowProvisioningUpdates
         )
     fi
@@ -346,7 +347,7 @@ verify_exported_ipa_signature() {
 
     echo "==> Verifying exported IPA signature"
     /usr/bin/codesign --verify --deep --strict --verbose=2 "$payload_app"
-    if ! /usr/bin/codesign -dv --verbose=4 "$payload_app" 2>&1 | grep -q "Authority=Apple"; then
+    if ! /usr/bin/codesign -dv --verbose=4 "$payload_app" 2>&1 | grep -q "Authority=Apple Distribution"; then
         echo "Exported IPA is not signed by an Apple distribution authority." >&2
         /usr/bin/codesign -dv --verbose=4 "$payload_app" 2>&1 || true
         exit 1
