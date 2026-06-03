@@ -854,6 +854,9 @@ targets:
             if /usr/bin/file "$item" 2>/dev/null | /usr/bin/grep -q 'Mach-O'; then
               /usr/bin/codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$item"
               echo "Signed Alpine fs native module: $item"
+            else
+              /bin/mv "$item" "$item.litter-elf"
+              echo "Hid Alpine fs non-Mach-O module from Apple code signing scan: $item"
             fi
           done
       - name: Embed emexDE Runtime Resources
