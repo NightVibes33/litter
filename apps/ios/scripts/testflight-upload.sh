@@ -355,6 +355,52 @@ if [[ ! -f "$IPA_PATH" ]]; then
     exit 1
 fi
 
+repair_exported_ipa_native_module_signatures() {
+    local ipa_path="$1"
+    local work_dir payload_app entitlements_plist signed_count repaired_ipa sign_identity
+
+    work_dir="$(mktemp -d "${TMPDIR:-/tmp}/litter-ipa-repair.XXXXXX")"
+    trap 'rm -rf "$work_dir"' RETURN
+
+    unzip -q "$ipa_path" -d "$work_dir"
+    payload_app="$(find "$work_dir/Payload" -maxdepth 1 -type d -name "*.app" | head -n 1)"
+    if [[ -z "$payload_app" ]]; then
+        echo "Unable to find Payload/*.app inside $ipa_path" >&2
+        exit 1
+    fi
+    if [[ ! -d "$payload_app/fs" ]]; then
+        return 0
+    fi
+
+    sign_identity="${APP_CODE_SIGN_IDENTITY:-Apple Distribution}"
+    signed_count=0
+    while IFS= read -r native_module; do
+        if /usr/bin/file "$native_module" 2>/dev/null | /usr/bin/grep -q 'Mach-O'; then
+            /usr/bin/codesign --force --sign "$sign_identity" --timestamp=none "$native_module"
+            signed_count=$((signed_count + 1))
+            echo "Signed exported IPA native module: ${native_module#$payload_app/}"
+        fi
+    done < <(find "$payload_app/fs" -type f \( -name "*.so" -o -name "*.dylib" \) -print)
+
+    if [[ "$signed_count" -eq 0 ]]; then
+        return 0
+    fi
+
+    entitlements_plist="$work_dir/app-entitlements.plist"
+    if /usr/bin/codesign -d --entitlements :- "$payload_app" >"$entitlements_plist" 2>/dev/null && [[ -s "$entitlements_plist" ]]; then
+        /usr/bin/codesign --force --sign "$sign_identity" --timestamp=none --entitlements "$entitlements_plist" "$payload_app"
+    else
+        /usr/bin/codesign --force --sign "$sign_identity" --timestamp=none "$payload_app"
+    fi
+
+    repaired_ipa="$work_dir/repaired.ipa"
+    (cd "$work_dir" && /usr/bin/zip -qry "$repaired_ipa" Payload)
+    cp "$repaired_ipa" "$ipa_path"
+    echo "Repacked exported IPA after signing $signed_count native fs module(s)"
+}
+
+repair_exported_ipa_native_module_signatures "$IPA_PATH"
+
 verify_exported_ipa_signature() {
     local ipa_path="$1"
     local work_dir payload_app signature_info strict_log relaxed_log
