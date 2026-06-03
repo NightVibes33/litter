@@ -218,13 +218,95 @@ jobs:
             .build-stamps/alpine-fs-*
           key: ${{ steps.alpine_fs_cache.outputs.cache-primary-key }}
 
+      - name: Restore emexDE CoreCompiler artifact cache
+        id: emexde_corecompiler_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
+          key: ios-emexde-corecompiler-artifacts-v1-${{ runner.os }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.swift') }}
+
+      - name: Check emexDE CoreCompiler artifact cache
+        id: emexde_corecompiler_prebuilt
+        run: |
+          set -euo pipefail
+          support_source="ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
+          if [ "${{ steps.emexde_corecompiler_cache.outputs.cache-hit }}" != "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No exact emexDE CoreCompiler artifact cache hit."
+            exit 0
+          fi
+          missing=0
+          require_nonempty() {
+            local path="$1"
+            if [ ! -s "$path" ]; then
+              echo "Missing cached CoreCompiler artifact: $path"
+              missing=1
+            else
+              ls -lh "$path"
+            fi
+          }
+          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/llvm.a"
+          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/llvm/Support/Threading.h"
+          swift_header_root="$support_source/LLVM.xcframework/ios-arm64/Headers"
+          swift_header_marker="$swift_header_root/swift/.emexde-swift-header-branch"
+          require_nonempty "$swift_header_root/swift/Basic/InitializeSwiftModules.h"
+          require_nonempty "$swift_header_root/swift/FrontendTool/FrontendTool.h"
+          require_nonempty "$swift_header_root/swift/Config.h"
+          require_nonempty "$swift_header_root/clang/Basic/PathRemapper.h"
+          require_nonempty "$swift_header_root/clang/CAS/CASOptions.h"
+          require_nonempty "$swift_header_root/llvm/CAS/ActionCache.h"
+          require_nonempty "$swift_header_root/llvm/Support/VirtualOutputBackend.h"
+          require_nonempty "$swift_header_root/swift/Option/Options.inc"
+          require_nonempty "$swift_header_root/swift/Runtime/CMakeConfig.h"
+          require_nonempty "$swift_header_root/lld/Common/Version.inc"
+          require_nonempty "$swift_header_marker"
+          if [ -s "$swift_header_marker" ] && [ "$(cat "$swift_header_marker")" != "swift-6.0.3-RELEASE" ]; then
+            echo "Cached Swift compiler header overlay is for $(cat "$swift_header_marker"), expected swift-6.0.3-RELEASE."
+            missing=1
+          fi
+          if [ -s "$swift_header_root/swift/AST/Identifier.h" ] && grep -q 'getTrailingObjects(NumArgs)' "$swift_header_root/swift/AST/Identifier.h"; then
+            echo "Cached Swift compiler headers use the newer TrailingObjects API and are incompatible with vendored LLVM 19."
+            missing=1
+          fi
+          if [ -f "$swift_header_root/module.modulemap" ]; then
+            echo "Cached Swift root module map conflicts with Xcode public header copy."
+            missing=1
+          fi
+          if ! find "$support_source" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
+            echo "Cached CoreCompiler support dylibs are missing."
+            missing=1
+          fi
+          if [ "$missing" -eq 0 ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Using cached emexDE CoreCompiler support artifacts."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Cached emexDE CoreCompiler artifacts are incomplete; rebuilding."
+          fi
+
+      - name: Prepare emexDE CoreCompiler artifacts
+        if: steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          time tools/scripts/prepare-emexde-corecompiler-artifacts.sh
+
+      - name: Save emexDE CoreCompiler artifact cache
+        if: steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
+          key: ${{ steps.emexde_corecompiler_cache.outputs.cache-primary-key }}
+
       - name: Package iOS release prep artifact
         run: |
           mkdir -p .ci-prep/ios
           tar -czf .ci-prep/ios/ios-release-prep.tgz -C . \
             apps/ios/Resources/fs \
             apps/ios/GeneratedRust \
-            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift \
+            ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
 
       - name: Upload iOS release prep artifact
         uses: actions/upload-artifact@v4
