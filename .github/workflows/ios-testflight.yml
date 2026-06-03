@@ -387,6 +387,11 @@ jobs:
           path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
           key: ${{ steps.emexde_corecompiler_cache.outputs.cache-primary-key }}
 
+      - name: Patch emexDE CoreCompiler Swift frontend for TestFlight CI
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
+
       - name: Package iOS release prep artifact
         run: |
           mkdir -p .ci-prep/ios
