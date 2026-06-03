@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${ASC_KEY_ID:?ASC_KEY_ID is required}"
+: "${ASC_ISSUER_ID:?ASC_ISSUER_ID is required}"
+: "${ASC_PRIVATE_KEY_PATH:?ASC_PRIVATE_KEY_PATH is required}"
+: "${IOS_TEAM_ID:?IOS_TEAM_ID is required}"
+
+APP_BUNDLE_ID="${APP_BUNDLE_ID:-com.sigkitten.litter.39A8Q3T3TR}"
+LIVE_ACTIVITY_BUNDLE_ID="${LIVE_ACTIVITY_BUNDLE_ID:-${APP_BUNDLE_ID}.liveactivity}"
+LIVEPROCESS_BUNDLE_ID="${LIVEPROCESS_BUNDLE_ID:-${APP_BUNDLE_ID}.liveprocess}"
+WATCH_BUNDLE_ID="${WATCH_BUNDLE_ID:-${APP_BUNDLE_ID}.watchkitapp}"
+WATCH_COMP_BUNDLE_ID="${WATCH_COMP_BUNDLE_ID:-${APP_BUNDLE_ID}.watchkitapp.complications}"
+RUN_LABEL="${GITHUB_RUN_ID:-local}-$(date +%Y%m%d%H%M%S)"
+SIGNING_DIR="${RUNNER_TEMP:-/tmp}/litter-appstore-signing"
+KEYCHAIN_PATH="${RUNNER_TEMP:-/tmp}/litter-appstore-signing.keychain-db"
+KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+
+mkdir -p "$SIGNING_DIR" "$HOME/Library/MobileDevice/Provisioning Profiles"
+
+export ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_PATH
+
+csr_key="$SIGNING_DIR/litter-appstore.key"
+csr_path="$SIGNING_DIR/litter-appstore.csr"
+cert_json="$SIGNING_DIR/certificate.json"
+cert_path="$SIGNING_DIR/litter-appstore.cer"
+
+openssl req -new -newkey rsa:2048 -nodes     -keyout "$csr_key"     -out "$csr_path"     -subj "/CN=Litter App Store CI $RUN_LABEL/O=$IOS_TEAM_ID/C=US" >/dev/null 2>&1
+
+asc certificates create     --certificate-type IOS_DISTRIBUTION     --csr "$csr_path"     --output json >"$cert_json"
+
+cert_id="$(jq -r '.data.id // empty' "$cert_json")"
+cert_content="$(jq -r '.data.attributes.certificateContent // .data.attributes.certificate_content // empty' "$cert_json")"
+if [[ -z "$cert_id" || -z "$cert_content" ]]; then
+    echo "Unable to create IOS_DISTRIBUTION certificate from App Store Connect response." >&2
+    cat "$cert_json" >&2
+    exit 1
+fi
+printf '%s' "$cert_content" | base64 --decode >"$cert_path"
+
+security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+security list-keychains -d user -s "$KEYCHAIN_PATH"
+security default-keychain -d user -s "$KEYCHAIN_PATH"
+security import "$csr_key" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign -T /usr/bin/security
+security import "$cert_path" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign -T /usr/bin/security
+security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+bundle_ids_json="$SIGNING_DIR/bundle-ids.json"
+asc bundle-ids list --paginate --output json >"$bundle_ids_json"
+
+find_bundle_resource_id() {
+    local identifier="$1"
+    jq -r --arg identifier "$identifier" '.data[]? | select(.attributes.identifier == $identifier) | .id' "$bundle_ids_json" | head -n 1
+}
+
+create_and_install_profile() {
+    local env_name="$1"
+    local identifier="$2"
+    local profile_name="$3"
+    local bundle_resource_id profile_json profile_id profile_path profile_uuid profile_display
+
+    bundle_resource_id="$(find_bundle_resource_id "$identifier")"
+    if [[ -z "$bundle_resource_id" ]]; then
+        echo "Missing App Store Connect bundle ID resource for $identifier" >&2
+        exit 1
+    fi
+
+    profile_json="$SIGNING_DIR/${env_name}.json"
+    profile_path="$SIGNING_DIR/${env_name}.mobileprovision"
+
+    asc profiles create         --name "$profile_name"         --profile-type IOS_APP_STORE         --bundle "$bundle_resource_id"         --certificate "$cert_id"         --output json >"$profile_json"
+
+    profile_id="$(jq -r '.data.id // empty' "$profile_json")"
+    if [[ -z "$profile_id" ]]; then
+        echo "Unable to create IOS_APP_STORE profile for $identifier" >&2
+        cat "$profile_json" >&2
+        exit 1
+    fi
+
+    asc profiles download --id "$profile_id" --output "$profile_path"
+    profile_uuid="$(security cms -D -i "$profile_path" | plutil -extract UUID raw -)"
+    profile_display="$(security cms -D -i "$profile_path" | plutil -extract Name raw -)"
+    cp "$profile_path" "$HOME/Library/MobileDevice/Provisioning Profiles/$profile_uuid.mobileprovision"
+    echo "$env_name=$profile_display" >>"$GITHUB_ENV"
+    echo "Installed App Store profile for $identifier: $profile_display"
+}
+
+create_and_install_profile APP_PROVISIONING_PROFILE_SPECIFIER "$APP_BUNDLE_ID" "Litter App Store CI $RUN_LABEL"
+create_and_install_profile LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER "$LIVE_ACTIVITY_BUNDLE_ID" "Litter Live Activity App Store CI $RUN_LABEL"
+create_and_install_profile LIVEPROCESS_PROVISIONING_PROFILE_SPECIFIER "$LIVEPROCESS_BUNDLE_ID" "Litter LiveProcess App Store CI $RUN_LABEL"
+create_and_install_profile WATCH_PROVISIONING_PROFILE_SPECIFIER "$WATCH_BUNDLE_ID" "Litter Watch App Store CI $RUN_LABEL"
+create_and_install_profile WATCH_COMP_PROVISIONING_PROFILE_SPECIFIER "$WATCH_COMP_BUNDLE_ID" "Litter Watch Complications App Store CI $RUN_LABEL"
+
+echo "APP_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
+echo "LIVE_ACTIVITY_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
+echo "LIVEPROCESS_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
+echo "WATCH_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
+echo "WATCH_COMP_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
+echo "Prepared generated App Store signing assets with certificate $cert_id."

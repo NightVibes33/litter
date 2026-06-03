@@ -409,7 +409,8 @@ jobs:
     environment: release
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
-      EXPORT_SIGNING_STYLE: automatic
+      EXPORT_SIGNING_STYLE: manual
+      TESTFLIGHT_SIGNING_SOURCE: asc-generated
       SCCACHE_BUCKET: rust-cache
       SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
       SCCACHE_REGION: auto
@@ -508,8 +509,23 @@ jobs:
           chmod 600 "$ASC_KEY_PATH"
           echo "ASC_PRIVATE_KEY_PATH=$ASC_KEY_PATH" >> "$GITHUB_ENV"
 
-      - name: Install signing certificate and provisioning profiles
-        if: env.EXPORT_SIGNING_STYLE == 'manual'
+      - name: Prepare generated App Store signing assets
+        if: env.EXPORT_SIGNING_STYLE == 'manual' && env.TESTFLIGHT_SIGNING_SOURCE == 'asc-generated'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          APP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR
+          LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
+          LIVEPROCESS_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveprocess
+          WATCH_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.watchkitapp
+          WATCH_COMP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.watchkitapp.complications
+        run: |
+          set -euo pipefail
+          tools/scripts/prepare-appstore-signing-assets.sh
+
+      - name: Install p12 signing certificate and provisioning profiles
+        if: env.EXPORT_SIGNING_STYLE == 'manual' && env.TESTFLIGHT_SIGNING_SOURCE == 'p12'
         env:
           IOS_DIST_CERT_P12_B64: ${{ secrets.IOS_DIST_CERT_P12_B64 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
@@ -595,7 +611,7 @@ jobs:
           LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
           APP_STORE_APP_ID: ${{ secrets.IOS_APP_STORE_APP_ID }}
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-          EXPORT_SIGNING_STYLE: automatic
+          EXPORT_SIGNING_STYLE: manual
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           TESTFLIGHT_SKIP_UPLOAD: "1"
@@ -610,7 +626,7 @@ jobs:
           LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
           APP_STORE_APP_ID: ${{ secrets.IOS_APP_STORE_APP_ID }}
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-          EXPORT_SIGNING_STYLE: automatic
+          EXPORT_SIGNING_STYLE: manual
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           TESTFLIGHT_SKIP_BUILD: "1"
