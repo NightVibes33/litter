@@ -41,6 +41,33 @@ POST_BUILD_SCRIPT_NAMES = (
     "Embed Private BuildKit Frameworks",
 )
 
+FAST_TARGET_NAMES = (
+    "CoreCompiler",
+    "MobileDevelopmentKit",
+    "emexDE",
+    "LiveProcess",
+)
+
+
+def remove_named_yaml_section(text: str, marker: str) -> str:
+    lines = text.splitlines(keepends=True)
+    output: list[str] = []
+    index = 0
+    while index < len(lines):
+        if lines[index] == marker:
+            index += 1
+            while index < len(lines):
+                line = lines[index]
+                if line.startswith("  ") and not line.startswith("    "):
+                    break
+                if line and not line.startswith(" ") and line.strip():
+                    break
+                index += 1
+            continue
+        output.append(lines[index])
+        index += 1
+    return "".join(output)
+
 
 def remove_named_post_build_script(text: str, name: str) -> str:
     lines = text.splitlines(keepends=True)
@@ -62,6 +89,9 @@ def remove_named_post_build_script(text: str, name: str) -> str:
 
 
 def transform(text: str) -> str:
+    for target in FAST_TARGET_NAMES:
+        text = remove_named_yaml_section(text, f"  {target}:\n")
+
     for block in DEPENDENCY_BLOCKS:
         text = text.replace(block, "")
 
@@ -83,6 +113,10 @@ def transform(text: str) -> str:
 
 def validate_fast_project(text: str) -> None:
     failures: list[str] = []
+    for target in FAST_TARGET_NAMES:
+        if f"  {target}:\n" in text:
+            failures.append(f"still has target definition: {target}")
+
     for block in DEPENDENCY_BLOCKS:
         if block in text:
             first = block.strip().splitlines()[0].strip()
