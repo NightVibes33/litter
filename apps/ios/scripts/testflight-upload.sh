@@ -357,8 +357,9 @@ fi
 
 repair_exported_ipa_native_module_signatures() {
     local ipa_path="$1"
-    local work_dir payload_app entitlements_plist signed_count repaired_ipa sign_identity
+    local work_dir payload_app entitlements_plist signed_count repaired_ipa sign_identity native_list
 
+    echo "==> Repairing exported IPA native module signatures"
     work_dir="$(mktemp -d "${TMPDIR:-/tmp}/litter-ipa-repair.XXXXXX")"
     trap 'rm -rf "$work_dir"' RETURN
 
@@ -368,21 +369,26 @@ repair_exported_ipa_native_module_signatures() {
         echo "Unable to find Payload/*.app inside $ipa_path" >&2
         exit 1
     fi
-    if [[ ! -d "$payload_app/fs" ]]; then
-        return 0
-    fi
+
+    native_list="$work_dir/native-modules.txt"
+    find "$payload_app" -type f \( -name "*.so" -o -name "*.dylib" \) -print >"$native_list"
+    echo "Found $(wc -l <"$native_list" | tr -d ' ') exported IPA native module candidate(s)"
 
     sign_identity="${APP_CODE_SIGN_IDENTITY:-Apple Distribution}"
     signed_count=0
     while IFS= read -r native_module; do
+        [[ -n "$native_module" ]] || continue
         if /usr/bin/file "$native_module" 2>/dev/null | /usr/bin/grep -q 'Mach-O'; then
             /usr/bin/codesign --force --sign "$sign_identity" --timestamp=none "$native_module"
             signed_count=$((signed_count + 1))
             echo "Signed exported IPA native module: ${native_module#$payload_app/}"
+        else
+            echo "Skipping non-Mach-O native module candidate: ${native_module#$payload_app/}"
         fi
-    done < <(find "$payload_app/fs" -type f \( -name "*.so" -o -name "*.dylib" \) -print)
+    done <"$native_list"
 
     if [[ "$signed_count" -eq 0 ]]; then
+        echo "No Mach-O native modules needed exported IPA signature repair"
         return 0
     fi
 
@@ -396,7 +402,7 @@ repair_exported_ipa_native_module_signatures() {
     repaired_ipa="$work_dir/repaired.ipa"
     (cd "$work_dir" && /usr/bin/zip -qry "$repaired_ipa" Payload)
     cp "$repaired_ipa" "$ipa_path"
-    echo "Repacked exported IPA after signing $signed_count native fs module(s)"
+    echo "Repacked exported IPA after signing $signed_count native module(s)"
 }
 
 repair_exported_ipa_native_module_signatures "$IPA_PATH"
