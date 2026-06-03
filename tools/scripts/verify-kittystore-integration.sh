@@ -194,6 +194,7 @@ require_grep "KittyStore Nuke 12 URL loader compatibility" "func loadImage(" "ap
 require_grep "Settings route opens Feather signing" "FeatherSigningSettingsView()" "apps/ios/Sources/Litter/Views/SettingsView.swift"
 require_grep "Settings route enum includes signing" "case signing" "apps/ios/Sources/Litter/Views/SettingsView.swift"
 require_grep "Settings opens emexDE app" "litterPendingMainRoute" "apps/ios/Sources/Litter/Views/SettingsView.swift"
+require_grep "Settings hides emexDE entry by default" "showsEmexDESettingsEntry = false" "apps/ios/Sources/Litter/Views/SettingsView.swift"
 require_grep "Main route consumes emexDE settings request" "case \"emexDE\"" "apps/ios/Sources/Litter/LitterApp.swift"
 require_grep "Main navigation opens emexDE route" "EmexDERouteView()" "apps/ios/Sources/Litter/LitterApp.swift"
 require_grep "emexDE route uses UIKit host" "EmexDEHostView()" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"

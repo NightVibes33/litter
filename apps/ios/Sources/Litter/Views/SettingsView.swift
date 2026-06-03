@@ -19,6 +19,8 @@ struct SettingsView: View {
     @State private var navigationPath: [SettingsRoute] = []
 
     @StateObject private var taskBag = ViewTaskBag()
+    private static let showsEmexDESettingsEntry = false
+
     private var localServer: AppServerSnapshot? {
         // Account management (ChatGPT login / API key) is local-only, always.
         // If the local Codex bridge hasn't spun up there's no login target, and
@@ -51,7 +53,7 @@ struct SettingsView: View {
                     experimentalSection
                     aiProvidersSection
                     diagnosticsSection
-                    if developerToolsEnabled {
+                    if developerToolsEnabled && Self.showsEmexDESettingsEntry {
                         buildKitSection
                     }
                     accountSection
@@ -156,7 +158,7 @@ struct SettingsView: View {
                         Text("Replay Onboarding")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("Review setup, files, terminal, runtimes, and emexDE")
+                        Text("Review setup, files, terminal, and runtimes")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
@@ -481,23 +483,25 @@ struct SettingsView: View {
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
-            Toggle(isOn: $developerToolsEnabled) {
-                HStack(spacing: 10) {
-                    Image(systemName: "wrench.and.screwdriver")
-                        .foregroundColor(LitterTheme.accent)
-                        .frame(width: 20)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Developer Tools")
-                            .litterFont(.subheadline)
-                            .foregroundColor(LitterTheme.textPrimary)
-                        Text("Show emexDE and advanced local build controls")
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textSecondary)
+            if Self.showsEmexDESettingsEntry {
+                Toggle(isOn: $developerToolsEnabled) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "wrench.and.screwdriver")
+                            .foregroundColor(LitterTheme.accent)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Developer Tools")
+                                .litterFont(.subheadline)
+                                .foregroundColor(LitterTheme.textPrimary)
+                            Text("Show advanced local build controls")
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
                     }
                 }
+                .tint(LitterTheme.accent)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
-            .tint(LitterTheme.accent)
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Experimental")
                 .foregroundColor(LitterTheme.textSecondary)
