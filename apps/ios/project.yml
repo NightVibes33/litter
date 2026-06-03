@@ -835,6 +835,27 @@ targets:
           copy_upstream_source Feather "$SRCROOT/../../ThirdParty/Feather/Source"
           copy_upstream_source LocalDevVPN "$SRCROOT/../../ThirdParty/SideStore/LocalDevVPN-Source"
           copy_upstream_source emexDE "$SRCROOT/../../ThirdParty/EmexDE/Source"
+      - name: Sign Alpine FS Native Modules
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
+            exit 0
+          fi
+          if [ "${CODE_SIGNING_ALLOWED:-NO}" != "YES" ] || [ -z "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+            echo "Skipping Alpine fs module signing because code signing is disabled"
+            exit 0
+          fi
+          FS_ROOT="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/fs"
+          if [ ! -d "$FS_ROOT" ]; then
+            exit 0
+          fi
+          find "$FS_ROOT" -type f \( -name '*.so' -o -name '*.dylib' \) -print | while IFS= read -r item; do
+            if /usr/bin/file "$item" 2>/dev/null | /usr/bin/grep -q 'Mach-O'; then
+              /usr/bin/codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$item"
+              echo "Signed Alpine fs native module: $item"
+            fi
+          done
       - name: Embed emexDE Runtime Resources
         basedOnDependencyAnalysis: false
         script: |
