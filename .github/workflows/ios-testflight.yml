@@ -156,6 +156,11 @@ jobs:
           sccache --start-server
           sccache --show-stats || true
 
+      - name: Normalize emexDE generated Swift imports for TestFlight prep
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
+
       - name: Prepare iOS release assets
         env:
           CARGO_INCREMENTAL: "0"
@@ -471,6 +476,11 @@ jobs:
           fi
 
           tar -xzf "$IOS_PREP_ROOT/ios-release-prep.tgz" -C .
+
+      - name: Normalize emexDE generated Swift imports for TestFlight archive
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
 
       - name: Patch emexDE CoreCompiler Swift frontend for TestFlight archive
         run: |
