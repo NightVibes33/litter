@@ -17,6 +17,11 @@ on:
 permissions:
   contents: write
 
+env:
+  LITTER_TESTFLIGHT_FAST: "1"
+  LITTER_TESTFLIGHT_SKIP_EMEXDE: "1"
+  INCLUDE_LIVEPROCESS: "0"
+
 jobs:
   testflight-preflight:
     runs-on: macos-26-intel
@@ -203,6 +208,7 @@ jobs:
           sccache --show-stats || true
 
       - name: Normalize emexDE generated Swift imports for TestFlight prep
+        if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1'
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
@@ -224,6 +230,9 @@ jobs:
             export SCCACHE_DISABLE=1
             unset RUSTC_WRAPPER SCCACHE_BUCKET SCCACHE_ENDPOINT SCCACHE_REGION SCCACHE_S3_KEY_PREFIX SCCACHE_S3_USE_SSL
             unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
+          fi
+          if [[ "${LITTER_TESTFLIGHT_FAST:-0}" == "1" ]]; then
+            python3 tools/scripts/patch-ios-testflight-fast-project.py
           fi
           if [[ "${{ steps.rust_generated_valid.outputs.hit }}" == "true" ]]; then
             echo "==> Using cached TestFlight Rust generated assets"
@@ -338,6 +347,7 @@ jobs:
           key: ${{ steps.minimuxer_bridge_cache.outputs.cache-primary-key }}
 
       - name: Restore emexDE CoreCompiler artifact cache
+        if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1'
         id: emexde_corecompiler_cache
         uses: actions/cache/restore@v4
         with:
@@ -345,6 +355,7 @@ jobs:
           key: ios-emexde-corecompiler-artifacts-v1-${{ runner.os }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.swift') }}
 
       - name: Check emexDE CoreCompiler artifact cache
+        if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1'
         id: emexde_corecompiler_prebuilt
         run: |
           set -euo pipefail
@@ -404,7 +415,7 @@ jobs:
           fi
 
       - name: Prepare emexDE CoreCompiler artifacts
-        if: steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -412,29 +423,35 @@ jobs:
           time tools/scripts/prepare-emexde-corecompiler-artifacts.sh
 
       - name: Save emexDE CoreCompiler artifact cache
-        if: steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1' && steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
           path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
           key: ${{ steps.emexde_corecompiler_cache.outputs.cache-primary-key }}
 
       - name: Patch emexDE CoreCompiler Swift frontend for TestFlight CI
+        if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1'
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
 
       - name: Package iOS release prep artifact
         run: |
+          set -euo pipefail
           mkdir -p .ci-prep/ios
-          tar -czf .ci-prep/ios/ios-release-prep.tgz -C . \
-            apps/ios/Resources/fs \
-            apps/ios/GeneratedRust \
-            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift \
-            apps/ios/Sources/Litter/Generated/Minimuxer \
-            ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework \
-            ThirdParty/SideStore/minimuxer/generated \
-            ThirdParty/SideStore/minimuxer/target/libminimuxer-ios.a \
-            ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
+          paths=(
+            apps/ios/Resources/fs
+            apps/ios/GeneratedRust
+            apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
+            apps/ios/Sources/Litter/Generated/Minimuxer
+            ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework
+            ThirdParty/SideStore/minimuxer/generated
+            ThirdParty/SideStore/minimuxer/target/libminimuxer-ios.a
+          )
+          if [[ "${LITTER_TESTFLIGHT_SKIP_EMEXDE:-0}" != "1" ]]; then
+            paths+=(ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs)
+          fi
+          tar -czf .ci-prep/ios/ios-release-prep.tgz -C . "${paths[@]}"
 
       - name: Upload iOS release prep artifact
         uses: actions/upload-artifact@v4
@@ -530,14 +547,22 @@ jobs:
           tar -xzf "$IOS_PREP_ROOT/ios-release-prep.tgz" -C .
 
       - name: Normalize emexDE generated Swift imports for TestFlight archive
+        if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1'
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
 
       - name: Patch emexDE CoreCompiler Swift frontend for TestFlight archive
+        if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1'
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
+
+      - name: Apply TestFlight fast project mode
+        if: env.LITTER_TESTFLIGHT_FAST == '1'
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-ios-testflight-fast-project.py
 
       - name: Decode App Store Connect API key
         env:
@@ -562,6 +587,7 @@ jobs:
           LIVEPROCESS_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveprocess
           WATCH_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.watchkitapp
           WATCH_COMP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.watchkitapp.complications
+          INCLUDE_LIVEPROCESS: "0"
         run: |
           set -euo pipefail
           tools/scripts/prepare-appstore-signing-assets.sh
@@ -678,6 +704,8 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           TESTFLIGHT_SKIP_UPLOAD: "1"
+          LITTER_TESTFLIGHT_FAST: "1"
+          INCLUDE_LIVEPROCESS: "0"
         run: |
           set -euo pipefail
           ./apps/ios/scripts/testflight-upload.sh
@@ -693,6 +721,8 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           TESTFLIGHT_SKIP_BUILD: "1"
+          LITTER_TESTFLIGHT_FAST: "1"
+          INCLUDE_LIVEPROCESS: "0"
         run: |
           set -euo pipefail
           ./apps/ios/scripts/testflight-upload.sh

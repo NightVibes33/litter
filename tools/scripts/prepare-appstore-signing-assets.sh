@@ -13,9 +13,15 @@ LIVEPROCESS_BUNDLE_ID="${LIVEPROCESS_BUNDLE_ID:-${APP_BUNDLE_ID}.liveprocess}"
 WATCH_BUNDLE_ID="${WATCH_BUNDLE_ID:-${APP_BUNDLE_ID}.watchkitapp}"
 WATCH_COMP_BUNDLE_ID="${WATCH_COMP_BUNDLE_ID:-${APP_BUNDLE_ID}.watchkitapp.complications}"
 RUN_LABEL="${GITHUB_RUN_ID:-local}-$(date +%Y%m%d%H%M%S)"
+INCLUDE_LIVEPROCESS="${INCLUDE_LIVEPROCESS:-1}"
 SIGNING_DIR="${RUNNER_TEMP:-/tmp}/litter-appstore-signing"
 KEYCHAIN_PATH="${RUNNER_TEMP:-/tmp}/litter-appstore-signing.keychain-db"
 KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+
+if [[ "$INCLUDE_LIVEPROCESS" != "0" && "$INCLUDE_LIVEPROCESS" != "1" ]]; then
+    echo "INCLUDE_LIVEPROCESS must be 0 or 1." >&2
+    exit 1
+fi
 
 mkdir -p "$SIGNING_DIR" "$HOME/Library/MobileDevice/Provisioning Profiles"
 
@@ -91,13 +97,17 @@ create_and_install_profile() {
 
 create_and_install_profile APP_PROVISIONING_PROFILE_SPECIFIER "$APP_BUNDLE_ID" "Litter App Store CI $RUN_LABEL"
 create_and_install_profile LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER "$LIVE_ACTIVITY_BUNDLE_ID" "Litter Live Activity App Store CI $RUN_LABEL"
-create_and_install_profile LIVEPROCESS_PROVISIONING_PROFILE_SPECIFIER "$LIVEPROCESS_BUNDLE_ID" "Litter LiveProcess App Store CI $RUN_LABEL"
+if [[ "$INCLUDE_LIVEPROCESS" == "1" ]]; then
+    create_and_install_profile LIVEPROCESS_PROVISIONING_PROFILE_SPECIFIER "$LIVEPROCESS_BUNDLE_ID" "Litter LiveProcess App Store CI $RUN_LABEL"
+fi
 create_and_install_profile WATCH_PROVISIONING_PROFILE_SPECIFIER "$WATCH_BUNDLE_ID" "Litter Watch App Store CI $RUN_LABEL"
 create_and_install_profile WATCH_COMP_PROVISIONING_PROFILE_SPECIFIER "$WATCH_COMP_BUNDLE_ID" "Litter Watch Complications App Store CI $RUN_LABEL"
 
 echo "APP_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
 echo "LIVE_ACTIVITY_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
-echo "LIVEPROCESS_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
+if [[ "$INCLUDE_LIVEPROCESS" == "1" ]]; then
+    echo "LIVEPROCESS_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
+fi
 echo "WATCH_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
 echo "WATCH_COMP_CODE_SIGN_IDENTITY=Apple Distribution" >>"$GITHUB_ENV"
 echo "Prepared generated App Store signing assets with certificate $cert_id."
