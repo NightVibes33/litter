@@ -492,6 +492,11 @@ jobs:
 
           tar -xzf "$IOS_PREP_ROOT/ios-release-prep.tgz" -C .
 
+      - name: Patch emexDE CoreCompiler Swift frontend for TestFlight archive
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
+
       - name: Decode App Store Connect API key
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
