@@ -18,7 +18,47 @@ permissions:
   contents: write
 
 jobs:
+  testflight-preflight:
+    runs-on: macos-26-intel
+    timeout-minutes: 10
+    steps:
+      - name: Validate App Store Connect app record
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY_P8_B64: ${{ secrets.ASC_PRIVATE_KEY_P8_B64 }}
+        run: |
+          set -euo pipefail
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_P8_B64; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          brew install jq
+          HOMEBREW_NO_AUTO_UPDATE=0 brew install asc
+
+          ASC_KEY_PATH="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          echo "$ASC_PRIVATE_KEY_P8_B64" | base64 --decode > "$ASC_KEY_PATH"
+          chmod 600 "$ASC_KEY_PATH"
+
+          app_json="$(asc apps list \
+            --bundle-id com.sigkitten.litter.39A8Q3T3TR \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            --output json)"
+          app_id="$(echo "$app_json" | jq -r '.data[0].id // empty')"
+          if [[ -z "$app_id" ]]; then
+            echo "Missing App Store Connect app record for bundle id com.sigkitten.litter.39A8Q3T3TR." >&2
+            echo "Create it in App Store Connect before running TestFlight upload." >&2
+            exit 1
+          fi
+          echo "Found App Store Connect app id: $app_id"
+
   prepare-release-assets:
+    needs: testflight-preflight
     runs-on: macos-26-intel
     timeout-minutes: 90
     env:
@@ -137,22 +177,26 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY_P8_B64: ${{ secrets.ASC_PRIVATE_KEY_P8_B64 }}
-          IOS_APP_STORE_APP_ID: ${{ secrets.IOS_APP_STORE_APP_ID }}
           IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
           IOS_DIST_CERT_P12_B64: ${{ secrets.IOS_DIST_CERT_P12_B64 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
           IOS_APP_STORE_PROFILE_B64: ${{ secrets.IOS_APP_STORE_PROFILE_B64 }}
+          IOS_LIVE_ACTIVITY_APP_STORE_PROFILE_B64: ${{ secrets.IOS_LIVE_ACTIVITY_APP_STORE_PROFILE_B64 }}
+          IOS_WATCH_APP_STORE_PROFILE_B64: ${{ secrets.IOS_WATCH_APP_STORE_PROFILE_B64 }}
+          IOS_WATCH_COMP_APP_STORE_PROFILE_B64: ${{ secrets.IOS_WATCH_COMP_APP_STORE_PROFILE_B64 }}
         run: |
           set -euo pipefail
           required=(
             ASC_KEY_ID
             ASC_ISSUER_ID
             ASC_PRIVATE_KEY_P8_B64
-            IOS_APP_STORE_APP_ID
             IOS_TEAM_ID
             IOS_DIST_CERT_P12_B64
             IOS_DIST_CERT_PASSWORD
             IOS_APP_STORE_PROFILE_B64
+            IOS_LIVE_ACTIVITY_APP_STORE_PROFILE_B64
+            IOS_WATCH_APP_STORE_PROFILE_B64
+            IOS_WATCH_COMP_APP_STORE_PROFILE_B64
           )
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -201,18 +245,24 @@ jobs:
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
           IOS_APP_STORE_PROFILE_B64: ${{ secrets.IOS_APP_STORE_PROFILE_B64 }}
           IOS_LIVE_ACTIVITY_APP_STORE_PROFILE_B64: ${{ secrets.IOS_LIVE_ACTIVITY_APP_STORE_PROFILE_B64 }}
+          IOS_WATCH_APP_STORE_PROFILE_B64: ${{ secrets.IOS_WATCH_APP_STORE_PROFILE_B64 }}
+          IOS_WATCH_COMP_APP_STORE_PROFILE_B64: ${{ secrets.IOS_WATCH_COMP_APP_STORE_PROFILE_B64 }}
         run: |
           set -euo pipefail
 
           CERT_PATH="$RUNNER_TEMP/dist-cert.p12"
           APP_PROFILE_PATH="$RUNNER_TEMP/app-store.mobileprovision"
           LIVE_ACTIVITY_PROFILE_PATH="$RUNNER_TEMP/live-activity-app-store.mobileprovision"
+          WATCH_PROFILE_PATH="$RUNNER_TEMP/watch-app-store.mobileprovision"
+          WATCH_COMP_PROFILE_PATH="$RUNNER_TEMP/watch-complications-app-store.mobileprovision"
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
 
           echo "$IOS_DIST_CERT_P12_B64" | base64 --decode > "$CERT_PATH"
           echo "$IOS_APP_STORE_PROFILE_B64" | base64 --decode > "$APP_PROFILE_PATH"
           echo "$IOS_LIVE_ACTIVITY_APP_STORE_PROFILE_B64" | base64 --decode > "$LIVE_ACTIVITY_PROFILE_PATH"
+          echo "$IOS_WATCH_APP_STORE_PROFILE_B64" | base64 --decode > "$WATCH_PROFILE_PATH"
+          echo "$IOS_WATCH_COMP_APP_STORE_PROFILE_B64" | base64 --decode > "$WATCH_COMP_PROFILE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -237,13 +287,15 @@ jobs:
 
           install_profile "$APP_PROFILE_PATH" "APP_PROVISIONING_PROFILE_SPECIFIER"
           install_profile "$LIVE_ACTIVITY_PROFILE_PATH" "LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER"
+          install_profile "$WATCH_PROFILE_PATH" "WATCH_PROVISIONING_PROFILE_SPECIFIER"
+          install_profile "$WATCH_COMP_PROFILE_PATH" "WATCH_COMP_PROVISIONING_PROFILE_SPECIFIER"
 
       - name: Resolve release inputs
         run: |
           set -euo pipefail
 
           SCHEME="Litter"
-          APP_BUNDLE_ID="com.sigkitten.litter"
+          APP_BUNDLE_ID="com.sigkitten.litter.39A8Q3T3TR"
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             BETA_GROUP_NAMES="${{ inputs.beta_group_names }}"
@@ -264,19 +316,14 @@ jobs:
 
       - name: Build TestFlight IPA
         env:
-          SCHEME: ${{ env.SCHEME }}
-          APP_BUNDLE_ID: ${{ env.APP_BUNDLE_ID }}
-          LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.liveactivity
+          SCHEME: Litter
+          APP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR
+          LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
           APP_STORE_APP_ID: ${{ secrets.IOS_APP_STORE_APP_ID }}
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-          APP_PROVISIONING_PROFILE_SPECIFIER: ${{ env.APP_PROVISIONING_PROFILE_SPECIFIER }}
-          LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER: ${{ env.LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER }}
           EXPORT_SIGNING_STYLE: manual
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_PRIVATE_KEY_PATH: ${{ env.ASC_PRIVATE_KEY_PATH }}
-          BETA_GROUP_NAMES: ${{ env.BETA_GROUP_NAMES }}
-          WAIT_FOR_PROCESSING: ${{ env.WAIT_FOR_PROCESSING }}
           TESTFLIGHT_SKIP_UPLOAD: "1"
         run: |
           set -euo pipefail
@@ -284,19 +331,14 @@ jobs:
 
       - name: Upload to TestFlight
         env:
-          SCHEME: ${{ env.SCHEME }}
-          APP_BUNDLE_ID: ${{ env.APP_BUNDLE_ID }}
-          LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.liveactivity
+          SCHEME: Litter
+          APP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR
+          LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
           APP_STORE_APP_ID: ${{ secrets.IOS_APP_STORE_APP_ID }}
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-          APP_PROVISIONING_PROFILE_SPECIFIER: ${{ env.APP_PROVISIONING_PROFILE_SPECIFIER }}
-          LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER: ${{ env.LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER }}
           EXPORT_SIGNING_STYLE: manual
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_PRIVATE_KEY_PATH: ${{ env.ASC_PRIVATE_KEY_PATH }}
-          BETA_GROUP_NAMES: ${{ env.BETA_GROUP_NAMES }}
-          WAIT_FOR_PROCESSING: ${{ env.WAIT_FOR_PROCESSING }}
           TESTFLIGHT_SKIP_BUILD: "1"
         run: |
           set -euo pipefail

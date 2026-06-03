@@ -23,7 +23,7 @@ struct RunningTurnSnapshot: Codable, Equatable {
 
 /// Reads/writes the running-turn snapshot in the shared App Group.
 enum RunningTurnStore {
-    static let appGroup = "group.com.sigkitten.litter"
+    static let appGroup = "group.com.sigkitten.litter.39A8Q3T3TR"
     static let key = "running.turn.v1"
     /// Snapshots older than this are treated as stale — the widget hides
     /// rather than show a frozen turn that may have ended off-screen.

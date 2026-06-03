@@ -2,7 +2,7 @@ import Foundation
 import WidgetKit
 
 /// Timeline entry shared by all three complications. Designed to round-trip
-/// through the `group.com.sigkitten.litter` App Group — the iOS app writes
+/// through the `group.com.sigkitten.litter.39A8Q3T3TR` App Group — the iOS app writes
 /// the current running-task snapshot into `UserDefaults` and complications
 /// read it on each reload.
 struct LitterComplicationEntry: TimelineEntry {
@@ -76,7 +76,7 @@ struct LitterComplicationPayload: Codable, Equatable {
 
 /// Reads complication data out of the shared App Group.
 enum LitterComplicationStore {
-    static let appGroup = "group.com.sigkitten.litter"
+    static let appGroup = "group.com.sigkitten.litter.39A8Q3T3TR"
     private static let key = "complication.snapshot.v1"
 
     static func current() -> LitterComplicationEntry {

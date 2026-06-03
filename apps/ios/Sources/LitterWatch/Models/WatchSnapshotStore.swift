@@ -4,7 +4,7 @@ import Foundation
 /// Mirrors `LitterComplicationStore` so the watch app can show last-known state
 /// on cold launch even when the phone is unreachable.
 enum WatchSnapshotStore {
-    static let appGroup = "group.com.sigkitten.litter"
+    static let appGroup = "group.com.sigkitten.litter.39A8Q3T3TR"
     static let payloadKey = "watch.snapshot.v1"
     static let timestampKey = "watch.snapshot.v1.timestamp"
 
