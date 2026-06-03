@@ -244,7 +244,19 @@ if [[ "$TESTFLIGHT_SKIP_BUILD" != "1" ]]; then
             WATCH_COMP_CODE_SIGN_IDENTITY="$WATCH_COMP_CODE_SIGN_IDENTITY"
         )
     else
-        archive_cmd+=(-allowProvisioningUpdates)
+        archive_cmd+=(
+            APP_CODE_SIGN_STYLE=Automatic
+            LIVE_ACTIVITY_CODE_SIGN_STYLE=Automatic
+            LIVEPROCESS_CODE_SIGN_STYLE=Automatic
+            WATCH_CODE_SIGN_STYLE=Automatic
+            WATCH_COMP_CODE_SIGN_STYLE=Automatic
+            APP_CODE_SIGN_IDENTITY="$APP_CODE_SIGN_IDENTITY"
+            LIVE_ACTIVITY_CODE_SIGN_IDENTITY="$LIVE_ACTIVITY_CODE_SIGN_IDENTITY"
+            LIVEPROCESS_CODE_SIGN_IDENTITY="$LIVEPROCESS_CODE_SIGN_IDENTITY"
+            WATCH_CODE_SIGN_IDENTITY="$WATCH_CODE_SIGN_IDENTITY"
+            WATCH_COMP_CODE_SIGN_IDENTITY="$WATCH_COMP_CODE_SIGN_IDENTITY"
+            -allowProvisioningUpdates
+        )
     fi
 
     if [[ "$EXPORT_SIGNING_STYLE" == "automatic" && "${#auth_args[@]}" -gt 0 ]]; then
@@ -317,6 +329,31 @@ if [[ ! -f "$IPA_PATH" ]]; then
     echo "Expected IPA at $IPA_PATH" >&2
     exit 1
 fi
+
+verify_exported_ipa_signature() {
+    local ipa_path="$1"
+    local work_dir payload_app
+
+    work_dir="$(mktemp -d "${TMPDIR:-/tmp}/litter-ipa-verify.XXXXXX")"
+    trap 'rm -rf "$work_dir"' RETURN
+
+    unzip -q "$ipa_path" -d "$work_dir"
+    payload_app="$(find "$work_dir/Payload" -maxdepth 1 -type d -name "*.app" | head -n 1)"
+    if [[ -z "$payload_app" ]]; then
+        echo "Unable to find Payload/*.app inside $ipa_path" >&2
+        exit 1
+    fi
+
+    echo "==> Verifying exported IPA signature"
+    /usr/bin/codesign --verify --deep --strict --verbose=2 "$payload_app"
+    if ! /usr/bin/codesign -dv --verbose=4 "$payload_app" 2>&1 | grep -q "Authority=Apple"; then
+        echo "Exported IPA is not signed by an Apple distribution authority." >&2
+        /usr/bin/codesign -dv --verbose=4 "$payload_app" 2>&1 || true
+        exit 1
+    fi
+}
+
+verify_exported_ipa_signature "$IPA_PATH"
 
 if [[ "$TESTFLIGHT_SKIP_UPLOAD" == "1" ]]; then
     echo "==> TestFlight build prepared"
