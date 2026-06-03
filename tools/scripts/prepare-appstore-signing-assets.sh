@@ -6,6 +6,7 @@ set -euo pipefail
 : "${ASC_PRIVATE_KEY_PATH:?ASC_PRIVATE_KEY_PATH is required}"
 : "${IOS_TEAM_ID:?IOS_TEAM_ID is required}"
 
+CERTIFICATE_TYPE="${CERTIFICATE_TYPE:-DISTRIBUTION}"
 APP_BUNDLE_ID="${APP_BUNDLE_ID:-com.sigkitten.litter.39A8Q3T3TR}"
 LIVE_ACTIVITY_BUNDLE_ID="${LIVE_ACTIVITY_BUNDLE_ID:-${APP_BUNDLE_ID}.liveactivity}"
 LIVEPROCESS_BUNDLE_ID="${LIVEPROCESS_BUNDLE_ID:-${APP_BUNDLE_ID}.liveprocess}"
@@ -27,12 +28,12 @@ cert_path="$SIGNING_DIR/litter-appstore.cer"
 
 openssl req -new -newkey rsa:2048 -nodes     -keyout "$csr_key"     -out "$csr_path"     -subj "/CN=Litter App Store CI $RUN_LABEL/O=$IOS_TEAM_ID/C=US" >/dev/null 2>&1
 
-asc certificates create     --certificate-type IOS_DISTRIBUTION     --csr "$csr_path"     --output json >"$cert_json"
+asc certificates create     --certificate-type "$CERTIFICATE_TYPE"     --csr "$csr_path"     --output json >"$cert_json"
 
 cert_id="$(jq -r '.data.id // empty' "$cert_json")"
 cert_content="$(jq -r '.data.attributes.certificateContent // .data.attributes.certificate_content // empty' "$cert_json")"
 if [[ -z "$cert_id" || -z "$cert_content" ]]; then
-    echo "Unable to create IOS_DISTRIBUTION certificate from App Store Connect response." >&2
+    echo "Unable to create $CERTIFICATE_TYPE certificate from App Store Connect response." >&2
     cat "$cert_json" >&2
     exit 1
 fi
