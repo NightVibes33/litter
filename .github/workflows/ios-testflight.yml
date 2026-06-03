@@ -218,6 +218,94 @@ jobs:
             .build-stamps/alpine-fs-*
           key: ${{ steps.alpine_fs_cache.outputs.cache-primary-key }}
 
+      - name: Restore KittyStore minimuxer bridge cache
+        id: minimuxer_bridge_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/ios/GeneratedRust/ios-device/libminimuxer-ios.a
+            apps/ios/Sources/Litter/Generated/Minimuxer
+            apps/ios/GeneratedRust/Headers/Minimuxer
+            ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework
+            ThirdParty/SideStore/minimuxer/generated
+            ThirdParty/SideStore/minimuxer/target/libminimuxer-ios.a
+            ~/.cargo/bin/bindgen
+          key: ios-minimuxer-bridge-v1-${{ runner.os }}-xcode26-ios18-${{ hashFiles('tools/scripts/build-sidestore-minimuxer.sh', 'ThirdParty/SideStore/minimuxer/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.toml', 'ThirdParty/SideStore/minimuxer/src/**', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.lock', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/src/**') }}
+
+      - name: Check KittyStore minimuxer bridge cache
+        id: minimuxer_bridge_prebuilt
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.minimuxer_bridge_cache.outputs.cache-hit }}" != "true" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No exact KittyStore minimuxer bridge cache hit."
+            exit 0
+          fi
+
+          missing=0
+          require_nonempty() {
+            local path="$1"
+            if [ ! -s "$path" ]; then
+              echo "Missing cached minimuxer output: $path"
+              missing=1
+            else
+              ls -lh "$path"
+            fi
+          }
+          require_nonempty apps/ios/GeneratedRust/ios-device/libminimuxer-ios.a
+          require_nonempty apps/ios/Sources/Litter/Generated/Minimuxer/SwiftBridgeCore.generated.swift
+          require_nonempty apps/ios/Sources/Litter/Generated/Minimuxer/minimuxer.generated.swift
+          require_nonempty apps/ios/Sources/Litter/Generated/Minimuxer/minimuxer-helpers.generated.swift
+          require_nonempty apps/ios/GeneratedRust/Headers/Minimuxer/SwiftBridgeCore.h
+          require_nonempty apps/ios/GeneratedRust/Headers/Minimuxer/minimuxer.h
+          require_nonempty apps/ios/GeneratedRust/Headers/Minimuxer/minimuxer-Bridging-Header.h
+          require_nonempty apps/ios/GeneratedRust/Headers/Minimuxer/module.modulemap
+          require_nonempty ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework/ios-arm64/librust_bridge.a
+          if ! grep -q "startWithLogger" apps/ios/Sources/Litter/Generated/Minimuxer/minimuxer.generated.swift; then
+            echo "Cached minimuxer Swift bridge is stale: missing startWithLogger."
+            missing=1
+          fi
+          if ! grep -q "installIpa" apps/ios/Sources/Litter/Generated/Minimuxer/minimuxer.generated.swift; then
+            echo "Cached minimuxer Swift bridge is stale: missing installIpa."
+            missing=1
+          fi
+          if [ "$missing" -eq 0 ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Using cached KittyStore minimuxer bridge outputs."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Cached KittyStore minimuxer bridge outputs are incomplete; rebuilding."
+          fi
+
+      - name: Install KittyStore minimuxer rebuild dependencies
+        if: steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
+        run: |
+          set -euo pipefail
+          brew list cmake >/dev/null 2>&1 || brew install cmake
+          brew list ninja >/dev/null 2>&1 || brew install ninja
+          brew list pkgconf >/dev/null 2>&1 || brew install pkgconf
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+
+      - name: Build KittyStore minimuxer bridge
+        if: steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
+        run: |
+          set -euo pipefail
+          time tools/scripts/build-sidestore-minimuxer.sh
+
+      - name: Save KittyStore minimuxer bridge cache
+        if: steps.minimuxer_bridge_cache.outputs.cache-hit != 'true' && steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/ios/GeneratedRust/ios-device/libminimuxer-ios.a
+            apps/ios/Sources/Litter/Generated/Minimuxer
+            apps/ios/GeneratedRust/Headers/Minimuxer
+            ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework
+            ThirdParty/SideStore/minimuxer/generated
+            ThirdParty/SideStore/minimuxer/target/libminimuxer-ios.a
+            ~/.cargo/bin/bindgen
+          key: ${{ steps.minimuxer_bridge_cache.outputs.cache-primary-key }}
+
       - name: Restore emexDE CoreCompiler artifact cache
         id: emexde_corecompiler_cache
         uses: actions/cache/restore@v4
@@ -306,6 +394,10 @@ jobs:
             apps/ios/Resources/fs \
             apps/ios/GeneratedRust \
             apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift \
+            apps/ios/Sources/Litter/Generated/Minimuxer \
+            ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework \
+            ThirdParty/SideStore/minimuxer/generated \
+            ThirdParty/SideStore/minimuxer/target/libminimuxer-ios.a \
             ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
 
       - name: Upload iOS release prep artifact
