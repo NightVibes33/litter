@@ -74,8 +74,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
+
+      - name: Checkout submodules with retry
+        run: |
+          set -euo pipefail
+          tools/scripts/checkout-submodules-with-retry.sh
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -418,8 +423,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
+
+      - name: Checkout submodules with retry
+        run: |
+          set -euo pipefail
+          tools/scripts/checkout-submodules-with-retry.sh
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
