@@ -225,7 +225,7 @@ jobs:
       - name: Prepare iOS release assets
         env:
           CARGO_INCREMENTAL: "0"
-          CARGO_BUILD_JOBS: "1"
+          CARGO_BUILD_JOBS: "2"
           IOS_RUST_PROFILE: mobile-release
         run: |
           set -euo pipefail
