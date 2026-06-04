@@ -61,7 +61,7 @@ struct ConversationView: View {
     var onMinigameDismiss: (() -> Void)? = nil
     var onMinigameRetry: (() -> Void)? = nil
     @AppStorage("workDir") private var workDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "/"
-    @AppStorage("conversationTextSizeStep") private var conversationTextSizeStep = ConversationTextSize.large.rawValue
+    @AppStorage("conversationTextSizeStep") private var conversationTextSizeStep = ConversationTextSize.tiny.rawValue
     @AppStorage("fastMode") private var fastMode = false
     @State private var messageActionError: String?
     @State private var pendingChatGPTAccountRetry: PendingChatGPTAccountSwitchRetry?

@@ -268,7 +268,7 @@ enum ConversationTextSize: Int, CaseIterable {
 
     static func clamped(rawValue: Int) -> ConversationTextSize {
         let bounded = min(max(rawValue, tiny.rawValue), huge.rawValue)
-        return ConversationTextSize(rawValue: bounded) ?? .large
+        return ConversationTextSize(rawValue: bounded) ?? .tiny
     }
 }
 

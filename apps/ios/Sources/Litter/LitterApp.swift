@@ -447,7 +447,7 @@ struct ContentView: View {
     @State private var splashDismissed = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.large.rawValue
+    @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.tiny.rawValue
 
     private var textScale: CGFloat {
         ConversationTextSize.clamped(rawValue: textSizeStep).scale
