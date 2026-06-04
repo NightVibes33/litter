@@ -166,7 +166,15 @@ elif [ "$DEVICE_ONLY" -eq 0 ] && [ "$SIM_ONLY" -eq 0 ] && [ "$MACABI_ONLY" -eq 0
 fi
 if [ "$NEEDS_GHOSTTY" -eq 1 ]; then
   echo "==> libghostty artifacts missing; building"
-  "$REPO_DIR/apps/ios/scripts/build-ghostty.sh"
+  ghostty_args=()
+  if [ "$DEVICE_ONLY" -eq 1 ]; then
+    ghostty_args+=(--device-only)
+  elif [ "$SIM_ONLY" -eq 1 ]; then
+    ghostty_args+=(--sim-only)
+  elif [ "$MACABI_ONLY" -eq 1 ]; then
+    ghostty_args+=(--macabi-only)
+  fi
+  "$REPO_DIR/apps/ios/scripts/build-ghostty.sh" "${ghostty_args[@]}"
 fi
 
 ensure_host_llvm_on_path() {

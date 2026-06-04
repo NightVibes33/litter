@@ -9,6 +9,33 @@ GENERATED_DIR="$IOS_DIR/GeneratedRust"
 STAGING_DIR="${GHOSTTY_BUILD_DIR:-$GENERATED_DIR/ghostty-build}"
 XCODE_DEVELOPER_DIR="${GHOSTTY_XCODE_DEVELOPER_DIR:-$(xcode-select -p)}"
 CLT_DEVELOPER_DIR="${GHOSTTY_CLT_DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
+DEVICE_ONLY=0
+SIM_ONLY=0
+MACABI_ONLY=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --device-only)
+            DEVICE_ONLY=1
+            ;;
+        --sim-only)
+            SIM_ONLY=1
+            ;;
+        --macabi-only)
+            MACABI_ONLY=1
+            ;;
+        *)
+            echo "usage: $(basename "$0") [--device-only|--sim-only|--macabi-only]" >&2
+            exit 1
+            ;;
+    esac
+done
+
+MODE_COUNT=$((DEVICE_ONLY + SIM_ONLY + MACABI_ONLY))
+if [ "$MODE_COUNT" -gt 1 ]; then
+    echo "error: choose only one Ghostty build mode" >&2
+    exit 1
+fi
 
 if [ ! -f "$GHOSTTY_DIR/build.zig" ]; then
     echo "error: Ghostty submodule is missing; run git submodule update --init --recursive shared/third_party/ghostty" >&2
@@ -223,14 +250,26 @@ build_slice() {
 }
 
 echo "==> Building Ghostty iOS static libraries from $(git -C "$GHOSTTY_DIR" rev-parse --short HEAD)..."
-build_slice "ios-device" "aarch64-ios.18.0" "" "$GENERATED_DIR/ios-device/libghostty.a"
-build_slice "ios-sim" "aarch64-ios.18.0-simulator" "apple_a17" "$GENERATED_DIR/ios-sim/libghostty.a"
-build_slice "ios-macabi-arm64" "aarch64-ios.18.0-macabi" "apple_m1" "$GENERATED_DIR/ios-macabi/libghostty.a"
+if [ "$SIM_ONLY" -eq 0 ] && [ "$MACABI_ONLY" -eq 0 ]; then
+    build_slice "ios-device" "aarch64-ios.18.0" "" "$GENERATED_DIR/ios-device/libghostty.a"
+fi
+if [ "$DEVICE_ONLY" -eq 0 ] && [ "$MACABI_ONLY" -eq 0 ]; then
+    build_slice "ios-sim" "aarch64-ios.18.0-simulator" "apple_a17" "$GENERATED_DIR/ios-sim/libghostty.a"
+fi
+if [ "$DEVICE_ONLY" -eq 0 ] && [ "$SIM_ONLY" -eq 0 ]; then
+    build_slice "ios-macabi-arm64" "aarch64-ios.18.0-macabi" "apple_m1" "$GENERATED_DIR/ios-macabi/libghostty.a"
+fi
 
 cp "$GHOSTTY_DIR/include/ghostty.h" "$GENERATED_DIR/Headers/ghostty.h"
 
 echo "==> Ghostty iOS artifacts installed:"
 echo "    $GENERATED_DIR/Headers/ghostty.h"
-echo "    $GENERATED_DIR/ios-device/libghostty.a"
-echo "    $GENERATED_DIR/ios-sim/libghostty.a"
-echo "    $GENERATED_DIR/ios-macabi/libghostty.a"
+if [ "$SIM_ONLY" -eq 0 ] && [ "$MACABI_ONLY" -eq 0 ]; then
+    echo "    $GENERATED_DIR/ios-device/libghostty.a"
+fi
+if [ "$DEVICE_ONLY" -eq 0 ] && [ "$MACABI_ONLY" -eq 0 ]; then
+    echo "    $GENERATED_DIR/ios-sim/libghostty.a"
+fi
+if [ "$DEVICE_ONLY" -eq 0 ] && [ "$SIM_ONLY" -eq 0 ]; then
+    echo "    $GENERATED_DIR/ios-macabi/libghostty.a"
+fi

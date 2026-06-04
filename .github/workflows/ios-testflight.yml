@@ -20,6 +20,7 @@ permissions:
 env:
   LITTER_TESTFLIGHT_FAST: "1"
   LITTER_TESTFLIGHT_SKIP_EMEXDE: "1"
+  LITTER_SKIP_ALLEYCAT_UPDATE: "1"
   INCLUDE_LIVEPROCESS: "0"
   SUBMODULE_CHECKOUT_JOBS: "3"
   SUBMODULE_CHECKOUT_PATHS: "shared/third_party/codex shared/third_party/ghostty ThirdParty/SideStore/AltSign"
