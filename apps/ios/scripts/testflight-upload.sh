@@ -391,22 +391,19 @@ repair_exported_ipa_native_module_signatures() {
     done <"$native_list"
 
     changed_count=$((signed_count + hidden_count))
-    if [[ "$changed_count" -eq 0 ]]; then
-        echo "No exported IPA native module packaging repair was needed"
-        return 0
-    fi
 
+    echo "Refreshing exported IPA root app signature seal"
     entitlements_plist="$work_dir/app-entitlements.plist"
     if /usr/bin/codesign -d --entitlements :- "$payload_app" >"$entitlements_plist" 2>/dev/null && [[ -s "$entitlements_plist" ]]; then
-        /usr/bin/codesign --force --sign "$sign_identity" --timestamp=none --entitlements "$entitlements_plist" "$payload_app"
+        /usr/bin/codesign --force --sign "$sign_identity" --timestamp=none --entitlements "$entitlements_plist" --generate-entitlement-der "$payload_app"
     else
-        /usr/bin/codesign --force --sign "$sign_identity" --timestamp=none "$payload_app"
+        /usr/bin/codesign --force --sign "$sign_identity" --timestamp=none --generate-entitlement-der "$payload_app"
     fi
 
     repaired_ipa="$work_dir/repaired.ipa"
     (cd "$work_dir" && /usr/bin/zip -qry "$repaired_ipa" Payload)
     cp "$repaired_ipa" "$ipa_path"
-    echo "Repacked exported IPA after signing $signed_count Mach-O module(s) and hiding $hidden_count non-Mach-O module(s)"
+    echo "Repacked exported IPA after refreshing the root app seal, signing $signed_count Mach-O module(s), and hiding $hidden_count non-Mach-O module(s)"
 }
 
 repair_exported_ipa_native_module_signatures "$IPA_PATH"
@@ -466,12 +463,12 @@ verify_exported_ipa_signature() {
     } >"$diagnostics_log" 2>&1
     cat "$diagnostics_log" >&2
 
-    if [[ "${ALLOW_XCODE_EXPORTED_SEAL_WARNING:-1}" == "1" ]] &&
+    if [[ "${ALLOW_XCODE_EXPORTED_SEAL_WARNING:-0}" == "1" ]] &&
         grep -q "a sealed resource is missing or invalid" "$strict_log" &&
         grep -q "a sealed resource is missing or invalid" "$relaxed_log" &&
         ! grep -Eq "code object is not signed|not signed at all|CSSMERR|invalid signature|bundle format unrecognized|main executable failed strict validation|code has no resources|unsealed contents present" "$strict_log" "$relaxed_log" "$diagnostics_log"; then
         echo "Xcode exported a distribution-signed IPA with a generic local sealed-resource warning, but all embedded signed code verified." >&2
-        echo "Continuing to App Store Connect upload for authoritative TestFlight validation." >&2
+        echo "ALLOW_XCODE_EXPORTED_SEAL_WARNING=1 is set, so continuing to App Store Connect upload for authoritative TestFlight validation." >&2
         return 0
     fi
 
