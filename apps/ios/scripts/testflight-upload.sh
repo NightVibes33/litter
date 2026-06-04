@@ -52,6 +52,11 @@ WHAT_TO_TEST_FILE="${WHAT_TO_TEST_FILE:-$TESTFLIGHT_WHATS_NEW_FILE}"
 AUTO_GENERATE_WHAT_TO_TEST="${AUTO_GENERATE_WHAT_TO_TEST:-1}"
 WHAT_TO_TEST_MAX_COMMITS="${WHAT_TO_TEST_MAX_COMMITS:-8}"
 AUTO_ASSIGN_ENCRYPTION_DECLARATION="${AUTO_ASSIGN_ENCRYPTION_DECLARATION:-1}"
+BETA_APP_DESCRIPTION_LOCALE="${BETA_APP_DESCRIPTION_LOCALE:-$WHAT_TO_TEST_LOCALE}"
+BETA_APP_DESCRIPTION="${BETA_APP_DESCRIPTION:-Littër lets testers verify the iOS app experience, KittyStore workflows, settings, and TestFlight distribution before public release.}"
+BETA_FEEDBACK_EMAIL="${BETA_FEEDBACK_EMAIL:-NightVibes33@users.noreply.github.com}"
+BETA_MARKETING_URL="${BETA_MARKETING_URL:-}"
+BETA_PRIVACY_POLICY_URL="${BETA_PRIVACY_POLICY_URL:-}"
 TESTFLIGHT_SKIP_BUILD="${TESTFLIGHT_SKIP_BUILD:-0}"
 TESTFLIGHT_SKIP_UPLOAD="${TESTFLIGHT_SKIP_UPLOAD:-0}"
 TESTFLIGHT_AUTO_BUMP_VERSION="${TESTFLIGHT_AUTO_BUMP_VERSION:-1}"
@@ -77,6 +82,8 @@ BUILD_METADATA_PATH="${BUILD_METADATA_PATH:-$BUILD_DIR/testflight-build.env}"
 
 require_cmd asc
 require_cmd jq
+require_cmd curl
+require_cmd openssl
 require_cmd xcodebuild
 require_cmd xcodegen
 
@@ -590,6 +597,154 @@ if [[ -n "$build_id" && -n "$WHAT_TO_TEST" ]]; then
             --whats-new "$WHAT_TO_TEST" \
             --output json >/dev/null
     fi
+fi
+
+app_store_connect_jwt() {
+    python3 - "$AUTH_KEY_PATH" "$AUTH_KEY_ID" "$AUTH_ISSUER_ID" <<'JWT_PY'
+import base64
+import json
+import subprocess
+import sys
+import time
+
+key_path, key_id, issuer_id = sys.argv[1:4]
+
+def b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+header = {"alg": "ES256", "kid": key_id, "typ": "JWT"}
+now = int(time.time())
+payload = {"iss": issuer_id, "iat": now, "exp": now + 1199, "aud": "appstoreconnect-v1"}
+unsigned = f"{b64url(json.dumps(header, separators=(',', ':')).encode())}.{b64url(json.dumps(payload, separators=(',', ':')).encode())}"
+der = subprocess.check_output(["openssl", "dgst", "-sha256", "-sign", key_path], input=unsigned.encode())
+
+index = 0
+if der[index] != 0x30:
+    raise SystemExit("unexpected ECDSA DER sequence")
+index += 1
+
+def read_length() -> int:
+    global index
+    first = der[index]
+    index += 1
+    if first < 0x80:
+        return first
+    count = first & 0x7F
+    value = int.from_bytes(der[index:index + count], "big")
+    index += count
+    return value
+
+_ = read_length()
+parts = []
+for _ in range(2):
+    if der[index] != 0x02:
+        raise SystemExit("unexpected ECDSA DER integer")
+    index += 1
+    length = read_length()
+    part = der[index:index + length]
+    index += length
+    while len(part) > 32 and part[0] == 0:
+        part = part[1:]
+    if len(part) > 32:
+        raise SystemExit("unexpected ECDSA integer length")
+    parts.append(part.rjust(32, b"\0"))
+print(unsigned + "." + b64url(parts[0] + parts[1]))
+JWT_PY
+}
+
+ensure_beta_app_localization() {
+    local app_id="$1"
+    local locale="$2"
+    local description="$3"
+    local token list_json localization_id body_file api_root
+
+    if [[ -z "$description" ]]; then
+        return 0
+    fi
+    if [[ -z "$AUTH_KEY_PATH" || -z "$AUTH_KEY_ID" || -z "$AUTH_ISSUER_ID" ]]; then
+        echo "Missing App Store Connect API key details for beta app localization update." >&2
+        exit 1
+    fi
+
+    api_root="https://api.appstoreconnect.apple.com/v1"
+    token="$(app_store_connect_jwt)"
+    list_json="$(curl -fsS \
+        -H "Authorization: Bearer $token" \
+        -H 'Accept: application/json' \
+        "$api_root/apps/$app_id/betaAppLocalizations?limit=200")"
+    localization_id="$(echo "$list_json" | jq -r --arg locale "$locale" '.data[]? | select(.attributes.locale == $locale) | .id' | head -n 1)"
+    body_file="$(mktemp "${TMPDIR:-/tmp}/beta-app-localization.XXXXXX.json")"
+
+    if [[ -n "$localization_id" ]]; then
+        BETA_APP_LOCALIZATION_ID="$localization_id" \
+        BETA_APP_DESCRIPTION="$description" \
+        BETA_FEEDBACK_EMAIL="$BETA_FEEDBACK_EMAIL" \
+        BETA_MARKETING_URL="$BETA_MARKETING_URL" \
+        BETA_PRIVACY_POLICY_URL="$BETA_PRIVACY_POLICY_URL" \
+        python3 - <<'BODY_PY' >"$body_file"
+import json
+import os
+attrs = {"description": os.environ["BETA_APP_DESCRIPTION"]}
+for env_name, api_name in (
+    ("BETA_FEEDBACK_EMAIL", "feedbackEmail"),
+    ("BETA_MARKETING_URL", "marketingUrl"),
+    ("BETA_PRIVACY_POLICY_URL", "privacyPolicyUrl"),
+):
+    value = os.environ.get(env_name, "").strip()
+    if value:
+        attrs[api_name] = value
+print(json.dumps({"data": {"type": "betaAppLocalizations", "id": os.environ["BETA_APP_LOCALIZATION_ID"], "attributes": attrs}}, separators=(",", ":")))
+BODY_PY
+        echo "==> Updating TestFlight beta app description for $locale"
+        curl -fsS -X PATCH \
+            -H "Authorization: Bearer $token" \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$body_file" \
+            "$api_root/betaAppLocalizations/$localization_id" >/dev/null
+    else
+        BETA_APP_ID="$app_id" \
+        BETA_APP_DESCRIPTION_LOCALE="$locale" \
+        BETA_APP_DESCRIPTION="$description" \
+        BETA_FEEDBACK_EMAIL="$BETA_FEEDBACK_EMAIL" \
+        BETA_MARKETING_URL="$BETA_MARKETING_URL" \
+        BETA_PRIVACY_POLICY_URL="$BETA_PRIVACY_POLICY_URL" \
+        python3 - <<'BODY_PY' >"$body_file"
+import json
+import os
+attrs = {
+    "locale": os.environ["BETA_APP_DESCRIPTION_LOCALE"],
+    "description": os.environ["BETA_APP_DESCRIPTION"],
+}
+for env_name, api_name in (
+    ("BETA_FEEDBACK_EMAIL", "feedbackEmail"),
+    ("BETA_MARKETING_URL", "marketingUrl"),
+    ("BETA_PRIVACY_POLICY_URL", "privacyPolicyUrl"),
+):
+    value = os.environ.get(env_name, "").strip()
+    if value:
+        attrs[api_name] = value
+print(json.dumps({
+    "data": {
+        "type": "betaAppLocalizations",
+        "attributes": attrs,
+        "relationships": {"app": {"data": {"type": "apps", "id": os.environ["BETA_APP_ID"]}}},
+    }
+}, separators=(",", ":")))
+BODY_PY
+        echo "==> Creating TestFlight beta app description for $locale"
+        curl -fsS -X POST \
+            -H "Authorization: Bearer $token" \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$body_file" \
+            "$api_root/betaAppLocalizations" >/dev/null
+    fi
+    rm -f "$body_file"
+}
+
+if [[ -n "$build_id" && -n "$BETA_APP_DESCRIPTION" ]]; then
+    ensure_beta_app_localization "$APP_STORE_APP_ID" "$BETA_APP_DESCRIPTION_LOCALE" "$BETA_APP_DESCRIPTION"
 fi
 
 if [[ "$ASSIGN_BETA_GROUP" == "1" && -n "$build_id" ]]; then
