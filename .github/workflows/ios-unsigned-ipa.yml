@@ -1355,15 +1355,16 @@ jobs:
             fi
           done
 
-          if [ ! -f "$APP_PATH/Frameworks/CoreCompiler.framework/CoreCompiler" ]; then
-            echo "::error::Archived app is missing emexDE CoreCompiler.framework" >&2
+          for framework in CoreCompiler.framework MobileDevelopmentKit.framework emexDE.framework LiveProcess.appex; do
+            if find "$APP_PATH" -path "*/$framework" -print -quit | grep -q .; then
+              echo "::error::Fast unsigned IPA must not embed hidden emexDE runtime payload: $framework" >&2
+              forbidden=1
+            fi
+          done
+          if find "$APP_PATH/Frameworks" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
+            echo "::error::Fast unsigned IPA must not embed emexDE CoreCompiler support dylibs" >&2
             forbidden=1
           fi
-          if ! find "$APP_PATH/Frameworks" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
-            echo "::error::Archived app is missing emexDE CoreCompiler support dylibs" >&2
-            forbidden=1
-          fi
-
           if find "$APP_PATH" -path '*/BuildKitAssets/SDK/*' -print -quit | grep -q .; then
             echo "::error::Launch-safe IPA must not embed expanded BuildKit SDK payload" >&2
             forbidden=1
@@ -1372,7 +1373,7 @@ jobs:
           if [ "$forbidden" -ne 0 ]; then
             exit 1
           fi
-          echo "Launch-safe IPA includes emexDE CoreCompiler runtime but keeps private BuildKit SDK assets external."
+          echo "Launch-safe IPA keeps emexDE, CoreCompiler, and private BuildKit SDK assets external."
 
       - name: Package KittyStore/AltStore IPA artifact
         run: |
