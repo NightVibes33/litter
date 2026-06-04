@@ -23,7 +23,7 @@ env:
   LITTER_SKIP_ALLEYCAT_UPDATE: "1"
   INCLUDE_LIVEPROCESS: "0"
   SUBMODULE_CHECKOUT_JOBS: "3"
-  SUBMODULE_CHECKOUT_PATHS: "shared/third_party/codex shared/third_party/ghostty ThirdParty/SideStore/AltSign"
+  SUBMODULE_CHECKOUT_PATHS: "shared/third_party/codex shared/third_party/ghostty"
 
 jobs:
   testflight-preflight:

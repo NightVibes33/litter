@@ -494,7 +494,7 @@ verify_testflight_fast_ipa_is_app_store_safe() {
 
     offenders_log="$work_dir/app-store-unsafe-frameworks.txt"
     find "$payload_app" -path '*/Frameworks/*.framework' -maxdepth 4 -print |
-        grep -E '/(SideStore|AltStoreCore|Roxas|Minimuxer|RustBridge)\.framework$' >"$offenders_log" || true
+        grep -E '/(AltSign-Dynamic|SideStore|AltStoreCore|Roxas|Minimuxer|RustBridge)\.framework$' >"$offenders_log" || true
     if [[ -s "$offenders_log" ]]; then
         echo "Fast TestFlight IPA still embeds App-Store-unsafe sideload/provisioning frameworks:" >&2
         cat "$offenders_log" >&2

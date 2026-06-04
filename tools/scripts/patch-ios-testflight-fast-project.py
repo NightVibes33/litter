@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[2]
 PROJECT_YML = ROOT / "apps/ios/project.yml"
 
 DEPENDENCY_BLOCKS = (
+    """      - package: AltSign
+        product: AltSign-Dynamic
+        embed: true
+""",
     """      - target: SideStore
         embed: true
 """,
@@ -51,6 +55,7 @@ FAST_TARGET_NAMES = (
     "emexDE",
     "LiveProcess",
     "SideStore",
+    "AltSign",
     "AltStoreCore",
     "Roxas",
     "Minimuxer",
@@ -99,6 +104,12 @@ def remove_named_post_build_script(text: str, name: str) -> str:
 def transform(text: str) -> str:
     text = text.replace("        PRODUCT_NAME: Littër\n", "        PRODUCT_NAME: Litter\n")
     text = text.replace("        INFOPLIST_KEY_LitterEmbedsSideStore: \"YES\"\n", "        INFOPLIST_KEY_LitterEmbedsSideStore: \"NO\"\n")
+    if "        INFOPLIST_KEY_LitterEmbedsSideStore: \"NO\"\n        OTHER_SWIFT_FLAGS: \"$(inherited) -DLITTER_APP_STORE_SAFE\"\n" not in text:
+        text = text.replace(
+            "        INFOPLIST_KEY_LitterEmbedsSideStore: \"NO\"\n",
+            "        INFOPLIST_KEY_LitterEmbedsSideStore: \"NO\"\n        OTHER_SWIFT_FLAGS: \"$(inherited) -DLITTER_APP_STORE_SAFE\"\n",
+            1,
+        )
 
     for target in FAST_TARGET_NAMES:
         text = remove_named_yaml_section(text, f"  {target}:\n")
@@ -147,7 +158,11 @@ def validate_fast_project(text: str) -> None:
         failures.append("still uses non-ASCII iOS PRODUCT_NAME")
     if "        INFOPLIST_KEY_LitterEmbedsSideStore: \"YES\"\n" in text:
         failures.append("still advertises embedded SideStore in TestFlight fast mode")
-    for unsafe in ("SideStore", "AltStoreCore", "Roxas", "Minimuxer", "RustBridge"):
+    if "        OTHER_SWIFT_FLAGS: \"$(inherited) -DLITTER_APP_STORE_SAFE\"\n" not in text:
+        failures.append("does not define LITTER_APP_STORE_SAFE for fast TestFlight")
+    if "        product: AltSign-Dynamic\n" in text:
+        failures.append("still links AltSign-Dynamic")
+    for unsafe in ("AltSign-Dynamic", "SideStore", "AltStoreCore", "Roxas", "Minimuxer", "RustBridge"):
         if f"embed_framework_if_present {unsafe} 1" in text:
             failures.append(f"still embeds app-store-unsafe framework: {unsafe}")
 
