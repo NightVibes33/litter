@@ -38,6 +38,7 @@ on:
       - 'tools/scripts/build-sidestore-minimuxer.sh'
       - 'tools/scripts/prepare-emexde-corecompiler-artifacts.sh'
       - 'tools/scripts/patch-emexde-corecompiler-for-ios-ci.py'
+      - 'tools/scripts/patch-ios-fast-device-project.py'
       - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
@@ -650,6 +651,7 @@ jobs:
           key: ${{ steps.minimuxer_bridge_cache.outputs.cache-primary-key }}
 
       - name: Restore emexDE CoreCompiler artifact cache
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         id: emexde_corecompiler_cache
         uses: actions/cache/restore@v4
         with:
@@ -657,6 +659,7 @@ jobs:
           key: ios-emexde-corecompiler-artifacts-v1-${{ runner.os }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.swift') }}
 
       - name: Check emexDE CoreCompiler artifact cache
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         id: emexde_corecompiler_prebuilt
         run: |
           set -euo pipefail
@@ -716,27 +719,36 @@ jobs:
           fi
 
       - name: Prepare emexDE CoreCompiler artifacts
-        if: steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         run: |
           set -euo pipefail
           time tools/scripts/prepare-emexde-corecompiler-artifacts.sh
 
       - name: Save emexDE CoreCompiler artifact cache
-        if: steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
           path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
           key: ${{ steps.emexde_corecompiler_cache.outputs.cache-primary-key }}
 
       - name: Normalize emexDE generated Swift imports
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
 
       - name: Patch emexDE CoreCompiler Swift frontend for unsigned CI
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
+
+      - name: Patch fast unsigned device project
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD != '1'
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-ios-fast-device-project.py
+          python3 tools/scripts/patch-ios-fast-device-project.py --check
 
       - name: Generate Xcode project
         run: |
