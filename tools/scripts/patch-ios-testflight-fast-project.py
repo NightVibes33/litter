@@ -89,6 +89,8 @@ def remove_named_post_build_script(text: str, name: str) -> str:
 
 
 def transform(text: str) -> str:
+    text = text.replace("        PRODUCT_NAME: Littër\n", "        PRODUCT_NAME: Litter\n")
+
     for target in FAST_TARGET_NAMES:
         text = remove_named_yaml_section(text, f"  {target}:\n")
 
@@ -132,6 +134,8 @@ def validate_fast_project(text: str) -> None:
         failures.append("still requires CoreCompiler.framework embedding")
     if "copy_upstream_source emexDE" in text:
         failures.append("still copies emexDE upstream source")
+    if "        PRODUCT_NAME: Littër\n" in text:
+        failures.append("still uses non-ASCII iOS PRODUCT_NAME")
 
     if failures:
         raise SystemExit("Fast TestFlight project patch failed:\n- " + "\n- ".join(failures))
@@ -155,7 +159,7 @@ def main() -> None:
         return
 
     PROJECT_YML.write_text(patched)
-    print("Applied fast TestFlight project patch: emexDE, CoreCompiler, MobileDevelopmentKit, and LiveProcess are not built or embedded.")
+    print("Applied fast TestFlight project patch: emexDE, CoreCompiler, MobileDevelopmentKit, and LiveProcess are not built or embedded; TestFlight uses an ASCII app wrapper while preserving the visible display name.")
 
 
 if __name__ == "__main__":
