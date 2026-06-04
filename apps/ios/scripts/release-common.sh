@@ -141,17 +141,23 @@ resolve_team_id() {
 
 resolve_next_build_number() {
     local app_store_app_id="$1"
-    local latest_build
+    local latest_build timestamp_build candidate_build
+
+    # App Store Connect can reject a build number that was just used by a
+    # previous upload record before that build appears in the latest-build list.
+    # A UTC seconds timestamp keeps push-triggered retries unique and increasing.
+    timestamp_build="$(date -u +%Y%m%d%H%M%S)"
+    candidate_build="$timestamp_build"
 
     latest_build="$(
         asc builds list --app "$app_store_app_id" --limit 1 --sort "-uploadedDate" --output json |
             jq -r '.data[0].attributes.version // empty'
     )"
-    if [[ "$latest_build" =~ ^[0-9]+$ ]]; then
-        printf '%s' "$((latest_build + 1))"
-    else
-        date +%Y%m%d%H%M
+    if [[ "$latest_build" =~ ^[0-9]+$ ]] && (( latest_build + 1 > candidate_build )); then
+        candidate_build="$((latest_build + 1))"
     fi
+
+    printf '%s' "$candidate_build"
 }
 
 find_build_id() {
