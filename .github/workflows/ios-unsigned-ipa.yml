@@ -84,6 +84,7 @@ jobs:
       LITTER_NYXIAN_PRIVATE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
       LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
       LITTER_PRESERVE_NYXIAN_LIVEPROCESS: "0"
+      LITTER_SKIP_ALLEYCAT_UPDATE: "1"
 
     steps:
       - name: Checkout
@@ -120,6 +121,11 @@ jobs:
           path: |
             ~/Library/Caches/Homebrew
           key: homebrew-ios-${{ runner.os }}-xcodegen-native-tools-v5
+
+      - name: Install Rust native build dependencies
+        run: |
+          set -euo pipefail
+          brew install meson ninja
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
