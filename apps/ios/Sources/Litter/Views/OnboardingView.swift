@@ -36,7 +36,7 @@ struct OnboardingView: View {
                 VStack(spacing: 0) {
                     header
                     TabView(selection: $page) {
-                        ForEach(LitterOnboardingPage.allCases) { page in
+                        ForEach(LitterOnboardingPage.visibleCases) { page in
                             pageContent(page)
                                 .tag(page)
                                 .padding(.horizontal, 20)
@@ -97,7 +97,7 @@ struct OnboardingView: View {
 
     private var pageDots: some View {
         HStack(spacing: 7) {
-            ForEach(LitterOnboardingPage.allCases) { item in
+            ForEach(LitterOnboardingPage.visibleCases) { item in
                 Capsule()
                     .fill(item == page ? LitterTheme.accent : LitterTheme.border.opacity(0.75))
                     .frame(width: item == page ? 22 : 7, height: 7)
@@ -117,19 +117,19 @@ struct OnboardingView: View {
             }
             .buttonStyle(.bordered)
             .tint(LitterTheme.textSecondary)
-            .disabled(page == LitterOnboardingPage.allCases.first)
+            .disabled(page == LitterOnboardingPage.visibleCases.first)
 
             Button {
-                if page == LitterOnboardingPage.allCases.last {
+                if page == LitterOnboardingPage.visibleCases.last {
                     onFinish()
                 } else {
                     moveNext()
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Text(page == LitterOnboardingPage.allCases.last ? "Get Started" : "Continue")
+                    Text(page == LitterOnboardingPage.visibleCases.last ? "Get Started" : "Continue")
                         .litterFont(.subheadline, weight: .semibold)
-                    Image(systemName: page == LitterOnboardingPage.allCases.last ? "checkmark" : "chevron.right")
+                    Image(systemName: page == LitterOnboardingPage.visibleCases.last ? "checkmark" : "chevron.right")
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: 42)
@@ -175,13 +175,20 @@ struct OnboardingView: View {
                 title: "Your iPhone coding workspace",
                 detail: "Litter brings AI chat, local files, a shared terminal, remote machines, and iOS build tools into one mobile workspace."
             )
-            featureGrid([
-                .init(icon: "bubble.left.and.text.bubble.right", title: "AI threads", detail: "Start, resume, fork, and inspect coding sessions."),
-                .init(icon: "folder", title: "Fakefs files", detail: "Browse the same /root runtime the bot uses."),
-                .init(icon: "terminal", title: "Shared terminal", detail: "Run commands directly in the embedded iSH shell."),
-                .init(icon: "hammer", title: "emexDE", detail: "Open the full embedded iOS development environment.")
-            ])
+            featureGrid(welcomeFeatures)
         }
+    }
+
+    private var welcomeFeatures: [OnboardingFeature] {
+        var features: [OnboardingFeature] = [
+            .init(icon: "bubble.left.and.text.bubble.right", title: "AI threads", detail: "Start, resume, fork, and inspect coding sessions."),
+            .init(icon: "folder", title: "Fakefs files", detail: "Browse the same /root runtime the bot uses."),
+            .init(icon: "terminal", title: "Shared terminal", detail: "Run commands directly in the embedded iSH shell.")
+        ]
+        if AppDistributionCapabilities.includesEmexDE {
+            features.append(.init(icon: "hammer", title: "emexDE", detail: "Open the full embedded iOS development environment."))
+        }
+        return features
     }
 
     private var runtimePage: some View {
@@ -501,6 +508,12 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
     case personalize
     case checklist
 
+    static var visibleCases: [LitterOnboardingPage] {
+        allCases.filter { page in
+            page != .buildKit || AppDistributionCapabilities.includesEmexDE
+        }
+    }
+
     var id: Int { rawValue }
 
     var title: String {
@@ -526,11 +539,13 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
     }
 
     var previous: LitterOnboardingPage? {
-        LitterOnboardingPage(rawValue: rawValue - 1)
+        guard let index = Self.visibleCases.firstIndex(of: self), index > 0 else { return nil }
+        return Self.visibleCases[index - 1]
     }
 
     var next: LitterOnboardingPage? {
-        LitterOnboardingPage(rawValue: rawValue + 1)
+        guard let index = Self.visibleCases.firstIndex(of: self), index + 1 < Self.visibleCases.count else { return nil }
+        return Self.visibleCases[index + 1]
     }
 }
 
@@ -585,6 +600,12 @@ private enum LitterOnboardingCheckKind: String, CaseIterable, Identifiable {
     case runtime
     case buildKit
 
+    static var visibleCases: [LitterOnboardingCheckKind] {
+        allCases.filter { kind in
+            kind != .buildKit || AppDistributionCapabilities.includesEmexDE
+        }
+    }
+
     var id: String { rawValue }
 
     var title: String {
@@ -635,7 +656,7 @@ private final class LitterOnboardingReadinessStore: ObservableObject {
     @Published private(set) var isRefreshing = false
 
     init() {
-        checks = LitterOnboardingCheckKind.allCases.map {
+        checks = LitterOnboardingCheckKind.visibleCases.map {
             LitterOnboardingCheck(kind: $0, status: .checking, detail: "Waiting to check.")
         }
     }
@@ -669,8 +690,10 @@ private final class LitterOnboardingReadinessStore: ObservableObject {
             update(.runtime, status: .warning, detail: "No connected route yet. Add a server or sign in from AI provider settings.")
         }
 
-        let buildKit = await LitterBuildKit.shared.status()
-        update(.buildKit, status: buildKit.isReadyForNativeBuilds ? .ready : .warning, detail: buildKit.readinessDetail)
+        if AppDistributionCapabilities.includesEmexDE {
+            let buildKit = await LitterBuildKit.shared.status()
+            update(.buildKit, status: buildKit.isReadyForNativeBuilds ? .ready : .warning, detail: buildKit.readinessDetail)
+        }
         isRefreshing = false
     }
 

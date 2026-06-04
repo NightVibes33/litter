@@ -19,7 +19,7 @@ struct SettingsView: View {
     @State private var navigationPath: [SettingsRoute] = []
 
     @StateObject private var taskBag = ViewTaskBag()
-    private static let showsEmexDESettingsEntry = false
+    private static var showsEmexDESettingsEntry: Bool { AppDistributionCapabilities.includesEmexDE }
 
     private var localServer: AppServerSnapshot? {
         // Account management (ChatGPT login / API key) is local-only, always.
@@ -44,7 +44,9 @@ struct SettingsView: View {
                     supportSection
                     gettingStartedSection
                     updatesSection
-                    signingSection
+                    if AppDistributionCapabilities.includesKittyStore {
+                        signingSection
+                    }
                     appearanceSection
                     fontSection
                     conversationSection
@@ -315,6 +317,7 @@ struct SettingsView: View {
         guard !raw.isEmpty else { return }
         requestedSettingsRoute = ""
         if raw == SettingsRoute.buildKit.rawValue || raw == "emexDE" {
+            guard AppDistributionCapabilities.includesEmexDE else { return }
             developerToolsEnabled = true
             openMainAppRoute("emexDE")
             return

@@ -53,7 +53,7 @@ AUTO_GENERATE_WHAT_TO_TEST="${AUTO_GENERATE_WHAT_TO_TEST:-1}"
 WHAT_TO_TEST_MAX_COMMITS="${WHAT_TO_TEST_MAX_COMMITS:-8}"
 AUTO_ASSIGN_ENCRYPTION_DECLARATION="${AUTO_ASSIGN_ENCRYPTION_DECLARATION:-1}"
 BETA_APP_DESCRIPTION_LOCALE="${BETA_APP_DESCRIPTION_LOCALE:-$WHAT_TO_TEST_LOCALE}"
-BETA_APP_DESCRIPTION="${BETA_APP_DESCRIPTION:-Littër lets testers verify the iOS app experience, KittyStore workflows, settings, and TestFlight distribution before public release.}"
+BETA_APP_DESCRIPTION="${BETA_APP_DESCRIPTION:-Littër lets testers verify the iOS app experience, settings, and TestFlight distribution before public release.}"
 BETA_FEEDBACK_EMAIL="${BETA_FEEDBACK_EMAIL:-NightVibes33@users.noreply.github.com}"
 BETA_MARKETING_URL="${BETA_MARKETING_URL:-}"
 BETA_PRIVACY_POLICY_URL="${BETA_PRIVACY_POLICY_URL:-}"
@@ -61,7 +61,7 @@ REVIEW_CONTACT_EMAIL="${REVIEW_CONTACT_EMAIL:-$BETA_FEEDBACK_EMAIL}"
 REVIEW_CONTACT_FIRST_NAME="${REVIEW_CONTACT_FIRST_NAME:-Night}"
 REVIEW_CONTACT_LAST_NAME="${REVIEW_CONTACT_LAST_NAME:-Vibes}"
 REVIEW_CONTACT_PHONE="${REVIEW_CONTACT_PHONE:-5558675309}"
-REVIEW_NOTES="${REVIEW_NOTES:-No sign-in is required. Please test the main app experience, settings, KittyStore flows, and TestFlight distribution behavior.}"
+REVIEW_NOTES="${REVIEW_NOTES:-No sign-in is required. Please test the main app experience, settings, and TestFlight distribution behavior.}"
 TESTFLIGHT_SKIP_BUILD="${TESTFLIGHT_SKIP_BUILD:-0}"
 TESTFLIGHT_SKIP_UPLOAD="${TESTFLIGHT_SKIP_UPLOAD:-0}"
 TESTFLIGHT_AUTO_BUMP_VERSION="${TESTFLIGHT_AUTO_BUMP_VERSION:-1}"
@@ -495,10 +495,6 @@ verify_testflight_fast_ipa_is_app_store_safe() {
         return 0
     fi
 
-    if [[ "${LITTER_TESTFLIGHT_ALLOW_KITTYSTORE:-0}" == "1" ]]; then
-        echo "==> Skipping fast TestFlight app-store-safe tooling check because KittyStore is intentionally embedded for beta validation"
-        return 0
-    fi
 
     echo "==> Checking fast TestFlight IPA for app-store-unsafe embedded tooling"
     work_dir="$(mktemp -d "${TMPDIR:-/tmp}/litter-ipa-appstore-safe.XXXXXX")"

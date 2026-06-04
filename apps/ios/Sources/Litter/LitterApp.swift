@@ -35,8 +35,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         OpenAIApiKeyStore.shared.applyToEnvironment()
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
         LLog.bootstrap()
-        Task { @MainActor in
-            KittyStoreEmbeddedBridge.bootstrap()
+        if AppDistributionCapabilities.includesKittyStore {
+            Task { @MainActor in
+                KittyStoreEmbeddedBridge.bootstrap()
+            }
         }
 
         #if targetEnvironment(macCatalyst)
@@ -971,9 +973,17 @@ private struct HomeNavigationView: View {
                     .toolbar(.hidden, for: .navigationBar)
                     .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                 case .kittyStore:
-                    KittyStoreRouteView()
+                    if AppDistributionCapabilities.includesKittyStore {
+                        KittyStoreRouteView()
+                    } else {
+                        LitterTheme.backgroundGradient.ignoresSafeArea()
+                    }
                 case .emexDE:
-                    EmexDERouteView()
+                    if AppDistributionCapabilities.includesEmexDE {
+                        EmexDERouteView()
+                    } else {
+                        LitterTheme.backgroundGradient.ignoresSafeArea()
+                    }
                 case .filesWorkspace:
                     LocalFileWorkspaceView()
                 case .appsList:
@@ -1165,6 +1175,7 @@ private struct HomeNavigationView: View {
 
     private func openOnboardingSettingsRoute(_ route: String) {
         if route == SettingsRoute.buildKit.rawValue || route == "emexDE" {
+            guard AppDistributionCapabilities.includesEmexDE else { return }
             developerToolsEnabled = true
             openEmexDE()
             return
@@ -1576,6 +1587,7 @@ private struct HomeNavigationView: View {
 
     /// Opens the KittyLitter-branded sideload source and update store.
     private func openKittyStore() {
+        guard AppDistributionCapabilities.includesKittyStore else { return }
         appState.showModelSelector = false
         appState.showSettings = false
         showProjectPicker = false
@@ -1596,6 +1608,7 @@ private struct HomeNavigationView: View {
     }
 
     private func openEmexDE() {
+        guard AppDistributionCapabilities.includesEmexDE else { return }
         appState.showModelSelector = false
         appState.showSettings = false
         showProjectPicker = false
@@ -1667,7 +1680,7 @@ private struct HomeNavigationView: View {
             onOpenProjectPicker: { showProjectPicker = true },
             onThreadCreated: { key in homeDashboardModel.pinThread(key) },
             onShowSettings: { appState.showSettings = true },
-            onShowStore: openKittyStore,
+            onShowStore: AppDistributionCapabilities.includesKittyStore ? openKittyStore : nil,
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
             onShowFiles: openFilesWorkspace,
             onShowTerminal: terminalLauncher,
@@ -1712,7 +1725,7 @@ private struct HomeNavigationView: View {
             onOpenProjectPicker: { showProjectPicker = true },
             onThreadCreated: { key in homeDashboardModel.pinThread(key) },
             onShowSettings: { appState.showSettings = true },
-            onShowStore: openKittyStore,
+            onShowStore: AppDistributionCapabilities.includesKittyStore ? openKittyStore : nil,
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
             onShowFiles: openFilesWorkspace,
             onShowTerminal: terminalLauncher,

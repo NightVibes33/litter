@@ -13,6 +13,20 @@ on:
         required: false
         default: true
         type: boolean
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/ios/**'
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/codex/**'
+      - 'shared/third_party/ghostty/**'
+      - 'patches/codex/**'
+      - 'patches/ghostty/**'
+      - 'tools/scripts/checkout-submodules-with-retry.sh'
+      - 'tools/scripts/patch-ios-testflight-fast-project.py'
+      - 'apps/ios/scripts/testflight-upload.sh'
+      - '.github/workflows/ios-testflight.yml'
 
 permissions:
   contents: write
@@ -20,14 +34,14 @@ permissions:
 env:
   LITTER_TESTFLIGHT_FAST: "1"
   LITTER_TESTFLIGHT_SKIP_EMEXDE: "1"
-  LITTER_TESTFLIGHT_ALLOW_KITTYSTORE: "1"
   LITTER_SKIP_ALLEYCAT_UPDATE: "1"
   INCLUDE_LIVEPROCESS: "0"
   SUBMODULE_CHECKOUT_JOBS: "3"
-  SUBMODULE_CHECKOUT_PATHS: "shared/third_party/codex shared/third_party/ghostty ThirdParty/SideStore/AltSign"
+  SUBMODULE_CHECKOUT_PATHS: "shared/third_party/codex shared/third_party/ghostty"
 
 jobs:
   testflight-preflight:
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip mobile-release]') }}
     runs-on: macos-26-intel
     timeout-minutes: 10
     steps:
@@ -269,6 +283,7 @@ jobs:
           key: ${{ steps.rust_generated_cache.outputs.cache-primary-key }}
 
       - name: Restore KittyStore minimuxer bridge cache
+        if: env.LITTER_TESTFLIGHT_FAST != '1'
         id: minimuxer_bridge_cache
         uses: actions/cache/restore@v4
         with:
@@ -283,6 +298,7 @@ jobs:
           key: ios-minimuxer-bridge-v1-${{ runner.os }}-xcode26-ios18-${{ hashFiles('tools/scripts/build-sidestore-minimuxer.sh', 'ThirdParty/SideStore/minimuxer/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.toml', 'ThirdParty/SideStore/minimuxer/src/**', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.lock', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/src/**') }}
 
       - name: Check KittyStore minimuxer bridge cache
+        if: env.LITTER_TESTFLIGHT_FAST != '1'
         id: minimuxer_bridge_prebuilt
         run: |
           set -euo pipefail
@@ -328,7 +344,7 @@ jobs:
           fi
 
       - name: Install KittyStore minimuxer rebuild dependencies
-        if: steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
+        if: env.LITTER_TESTFLIGHT_FAST != '1' && steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
         run: |
           set -euo pipefail
           brew list cmake >/dev/null 2>&1 || brew install cmake
@@ -337,13 +353,13 @@ jobs:
           brew list llvm >/dev/null 2>&1 || brew install llvm
 
       - name: Build KittyStore minimuxer bridge
-        if: steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
+        if: env.LITTER_TESTFLIGHT_FAST != '1' && steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
         run: |
           set -euo pipefail
           time tools/scripts/build-sidestore-minimuxer.sh
 
       - name: Save KittyStore minimuxer bridge cache
-        if: steps.minimuxer_bridge_cache.outputs.cache-hit != 'true' && steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
+        if: env.LITTER_TESTFLIGHT_FAST != '1' && steps.minimuxer_bridge_cache.outputs.cache-hit != 'true' && steps.minimuxer_bridge_prebuilt.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -457,7 +473,7 @@ jobs:
             apps/ios/GeneratedRust/.swift-bindings.hash
             apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
           )
-          if [[ "${LITTER_TESTFLIGHT_ALLOW_KITTYSTORE:-0}" == "1" ]]; then
+          if [[ "${LITTER_TESTFLIGHT_FAST:-0}" != "1" ]]; then
             paths+=(
               apps/ios/Sources/Litter/Generated/Minimuxer
               ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/lib/RustBridge.xcframework
@@ -723,7 +739,6 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           LITTER_TESTFLIGHT_FAST: "1"
-          LITTER_TESTFLIGHT_ALLOW_KITTYSTORE: "1"
           INCLUDE_LIVEPROCESS: "0"
         run: |
           set -euo pipefail

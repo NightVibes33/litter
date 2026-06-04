@@ -6,9 +6,10 @@ on:
       build_mode:
         description: "Build mode"
         required: true
-        default: "fast-device"
+        default: "full-sideload"
         type: choice
         options:
+          - full-sideload
           - fast-device
           - release-device
           - nyxian-private
@@ -60,9 +61,9 @@ concurrency:
 
 jobs:
   build-unsigned-ipa:
-    name: Build unsigned KittyStore/AltStore IPA
+    name: Build unsigned sideload IPA
     runs-on: macos-26-intel
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -79,12 +80,12 @@ jobs:
       LITTER_BUILDKIT_ASSET_SHA256: ${{ secrets.LITTER_BUILDKIT_ASSET_SHA256 }}
       LITTER_BUILDKIT_ASSET_TOKEN: ${{ secrets.LITTER_BUILDKIT_ASSET_TOKEN }}
       GITHUB_TOKEN: ${{ github.token }}
-      # Push builds stay independent from private BuildKit SDK assets. The
-      # manual Nyxian lane still exists for full BuildKit asset packaging.
-      LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'fast-device' }}
-      LITTER_NYXIAN_PRIVATE_BUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
+      # Push builds produce the full sideload app with KittyStore and emexDE.
+      # Only the manual nyxian-private lane embeds the private SDK/toolchain asset zip.
+      LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'full-sideload' }}
+      LITTER_NYXIAN_PRIVATE_BUILD: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
       LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
-      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: "0"
+      LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
       LITTER_SKIP_ALLEYCAT_UPDATE: "1"
 
     steps:
@@ -356,7 +357,7 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_MODE="$LITTER_IOS_BUILD_MODE"
-          if [ "$BUILD_MODE" != "fast-device" ] && [ "$BUILD_MODE" != "nyxian-private" ]; then
+          if [ "$BUILD_MODE" != "fast-device" ] && [ "$BUILD_MODE" != "full-sideload" ] && [ "$BUILD_MODE" != "nyxian-private" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "Release-device mode intentionally rebuilds Rust."
             exit 0
@@ -434,7 +435,7 @@ jobs:
           set -euo pipefail
           BUILD_MODE="$LITTER_IOS_BUILD_MODE"
           echo "Using build mode: $BUILD_MODE"
-          if [ "$BUILD_MODE" = "fast-device" ] || [ "$BUILD_MODE" = "nyxian-private" ]; then
+          if [ "$BUILD_MODE" = "fast-device" ] || [ "$BUILD_MODE" = "full-sideload" ] || [ "$BUILD_MODE" = "nyxian-private" ]; then
             if [ -f apps/ios/GeneratedRust/Headers/codex_mobile_clientFFI.h ] && [ -f apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift ]; then
               time ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --skip-bindings
             else
@@ -744,7 +745,7 @@ jobs:
           python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
 
       - name: Patch fast unsigned device project
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD != '1'
+        if: env.LITTER_IOS_BUILD_MODE == 'fast-device' || env.LITTER_IOS_BUILD_MODE == 'release-device'
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-ios-fast-device-project.py
@@ -833,7 +834,7 @@ jobs:
             MARKETING_VERSION="$MARKETING_VERSION"
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
           )
-          if [ "$LITTER_IOS_BUILD_MODE" = "fast-device" ]; then
+          if [ "$LITTER_IOS_BUILD_MODE" = "fast-device" ] || [ "$LITTER_IOS_BUILD_MODE" = "full-sideload" ]; then
             archive_cmd+=(
               ARCHS=arm64
               ONLY_ACTIVE_ARCH=NO
@@ -1390,32 +1391,57 @@ jobs:
           fi
 
           forbidden=0
-          for item in             "$APP_PATH/LitterBuildKitAssets.zip"             "$APP_PATH/Frameworks/LitterBuildKitNative.framework"; do
+          for item in \
+            "$APP_PATH/LitterBuildKitAssets.zip" \
+            "$APP_PATH/Frameworks/LitterBuildKitNative.framework"
+          do
             if [ -e "$item" ]; then
-              echo "::error::Launch-safe IPA must not embed private BuildKit payload: $item" >&2
+              echo "::error::Sideload IPA must not embed private BuildKit SDK/toolchain payload: $item" >&2
               forbidden=1
             fi
           done
 
-          for framework in CoreCompiler.framework MobileDevelopmentKit.framework emexDE.framework LiveProcess.appex; do
-            if find "$APP_PATH" -path "*/$framework" -print -quit | grep -q .; then
-              echo "::error::Fast unsigned IPA must not embed hidden emexDE runtime payload: $framework" >&2
-              forbidden=1
-            fi
-          done
-          if find "$APP_PATH/Frameworks" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
-            echo "::error::Fast unsigned IPA must not embed emexDE CoreCompiler support dylibs" >&2
+          if find "$APP_PATH" -path '*/BuildKitAssets/SDK/*' -print -quit | grep -q .; then
+            echo "::error::Sideload IPA must not embed expanded BuildKit SDK payload" >&2
             forbidden=1
           fi
-          if find "$APP_PATH" -path '*/BuildKitAssets/SDK/*' -print -quit | grep -q .; then
-            echo "::error::Launch-safe IPA must not embed expanded BuildKit SDK payload" >&2
-            forbidden=1
+
+          if [ "$LITTER_NYXIAN_PRIVATE_BUILD" = "1" ]; then
+            for framework in CoreCompiler.framework MobileDevelopmentKit.framework emexDE.framework; do
+              if [ ! -d "$APP_PATH/Frameworks/$framework" ]; then
+                echo "::error::Full sideload IPA is missing embedded emexDE runtime framework: $framework" >&2
+                forbidden=1
+              fi
+            done
+            if [ "${LITTER_PRESERVE_NYXIAN_LIVEPROCESS:-0}" = "1" ] && ! find "$APP_PATH" -path '*/LiveProcess.appex' -print -quit | grep -q .; then
+              echo "::error::Full sideload IPA is missing LiveProcess.appex for the emexDE runtime" >&2
+              forbidden=1
+            fi
+            if ! find "$APP_PATH/Frameworks" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
+              echo "::error::Full sideload IPA is missing embedded emexDE CoreCompiler support dylibs" >&2
+              forbidden=1
+            fi
+          else
+            for framework in CoreCompiler.framework MobileDevelopmentKit.framework emexDE.framework LiveProcess.appex; do
+              if find "$APP_PATH" -path "*/$framework" -print -quit | grep -q .; then
+                echo "::error::Fast unsigned IPA must not embed hidden emexDE runtime payload: $framework" >&2
+                forbidden=1
+              fi
+            done
+            if find "$APP_PATH/Frameworks" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
+              echo "::error::Fast unsigned IPA must not embed emexDE CoreCompiler support dylibs" >&2
+              forbidden=1
+            fi
           fi
 
           if [ "$forbidden" -ne 0 ]; then
             exit 1
           fi
-          echo "Launch-safe IPA keeps emexDE, CoreCompiler, and private BuildKit SDK assets external."
+          if [ "$LITTER_NYXIAN_PRIVATE_BUILD" = "1" ]; then
+            echo "Full sideload IPA embeds KittyStore and emexDE while keeping private BuildKit SDK assets external."
+          else
+            echo "Fast unsigned IPA embeds KittyStore and keeps emexDE/private BuildKit payloads external."
+          fi
 
       - name: Package KittyStore/AltStore IPA artifact
         run: |

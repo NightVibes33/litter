@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Patch the generated iOS project spec for fast TestFlight builds.
+"""Patch the generated iOS project spec for App Store/TestFlight-safe builds.
 
-The TestFlight experiment still embeds the full KittyStore/SideStore path, but
-the hidden emexDE/BuildKit support targets are skipped so the lane stays fast.
-This script is intentionally text-based because XcodeGen's project.yml is the
-source of truth and PyYAML is not guaranteed on GitHub's runner image.
+Fast TestFlight builds must not link or embed sideloading, provisioning, or
+private on-device compiler tooling. The full sideload IPA keeps those targets;
+this lane removes them from the generated Xcode project and compiles the app
+with LITTER_APP_STORE_SAFE so the matching UI routes are hidden at runtime.
 """
 
 from __future__ import annotations
@@ -17,7 +17,48 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT_YML = ROOT / "apps/ios/project.yml"
 
+SIDELOAD_PACKAGES = (
+    "AltSign",
+    "SemanticVersion",
+    "Starscream",
+    "KeychainAccess",
+    "MarkdownKit",
+)
+
+EMEXDE_PACKAGES = (
+    "EmexDERunestone",
+    "EmexDESwiftTerm",
+    "EmexDETreeSitterObjc",
+    "EmexDETreeSitterC",
+    "EmexDETreeSitterCPP",
+    "EmexDETreeSitterXML",
+    "EmexDETreeSitterSwift",
+    "EmexDEUIOnboarding",
+)
+
+SIDELOAD_TARGETS = (
+    "Roxas",
+    "AltStoreCore",
+    "RustBridge",
+    "Minimuxer",
+    "SideStore",
+)
+
+EMEXDE_TARGETS = (
+    "CoreCompiler",
+    "MobileDevelopmentKit",
+    "emexDE",
+    "LiveProcess",
+)
+
 DEPENDENCY_BLOCKS = (
+    """      - package: AltSign
+        product: AltSign-Dynamic
+        embed: true
+""",
+    """      - target: SideStore
+        embed: true
+""",
     """      - target: CoreCompiler
         embed: true
         link: false
@@ -36,17 +77,15 @@ DEPENDENCY_BLOCKS = (
 )
 
 POST_BUILD_SCRIPT_NAMES = (
+    "Embed AltSign Dynamic Framework",
+    "Embed Upstream Store Sources",
     "Embed emexDE Runtime Resources",
     "Package Private BuildKit Assets",
     "Embed Private BuildKit Frameworks",
 )
 
-FAST_TARGET_NAMES = (
-    "CoreCompiler",
-    "MobileDevelopmentKit",
-    "emexDE",
-    "LiveProcess",
-)
+UNSAFE_TARGETS = SIDELOAD_TARGETS + EMEXDE_TARGETS
+UNSAFE_PACKAGES = SIDELOAD_PACKAGES + EMEXDE_PACKAGES
 
 
 def remove_named_yaml_section(text: str, marker: str) -> str:
@@ -88,24 +127,36 @@ def remove_named_post_build_script(text: str, name: str) -> str:
     return "".join(output)
 
 
+def set_app_store_safe_flags(text: str) -> str:
+    replacement = (
+        '        INFOPLIST_KEY_LitterEmbedsSideStore: "NO"\n'
+        '        INFOPLIST_KEY_LitterEmbedsEmexDE: "NO"\n'
+        '        OTHER_SWIFT_FLAGS: "$(inherited) -DLITTER_APP_STORE_SAFE"\n'
+    )
+    text, count = re.subn(
+        r'        INFOPLIST_KEY_LitterEmbedsSideStore: ".*"\n'
+        r'(?:        INFOPLIST_KEY_LitterEmbedsEmexDE: ".*"\n)?'
+        r'(?:        OTHER_SWIFT_FLAGS: "\$\(inherited\) -DLITTER_APP_STORE_SAFE"\n)?',
+        replacement,
+        text,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit("Fast TestFlight project patch failed: could not set Litter app capability flags")
+    return text
+
+
 def transform(text: str) -> str:
     text = text.replace("        PRODUCT_NAME: Littër\n", "        PRODUCT_NAME: Litter\n")
+    text = set_app_store_safe_flags(text)
 
-    for target in FAST_TARGET_NAMES:
-        text = remove_named_yaml_section(text, f"  {target}:\n")
+    for name in UNSAFE_PACKAGES:
+        text = remove_named_yaml_section(text, f"  {name}:\n")
+    for name in UNSAFE_TARGETS:
+        text = remove_named_yaml_section(text, f"  {name}:\n")
 
     for block in DEPENDENCY_BLOCKS:
         text = text.replace(block, "")
-
-    text = text.replace(
-        "          embed_emexde_corecompiler_artifacts\n"
-        "          embed_framework_if_present CoreCompiler 1\n",
-        '          echo "Skipping emexDE CoreCompiler embedding for fast TestFlight"\n',
-    )
-    text = text.replace(
-        '          copy_upstream_source emexDE "$SRCROOT/../../ThirdParty/EmexDE/Source"\n',
-        "",
-    )
 
     for name in POST_BUILD_SCRIPT_NAMES:
         text = remove_named_post_build_script(text, name)
@@ -115,46 +166,55 @@ def transform(text: str) -> str:
 
 def validate_fast_project(text: str) -> None:
     failures: list[str] = []
-    for target in FAST_TARGET_NAMES:
+
+    for package in UNSAFE_PACKAGES:
+        if f"  {package}:\n" in text:
+            failures.append(f"still has unsafe package definition: {package}")
+    for target in UNSAFE_TARGETS:
         if f"  {target}:\n" in text:
-            failures.append(f"still has target definition: {target}")
+            failures.append(f"still has unsafe target definition: {target}")
 
     for block in DEPENDENCY_BLOCKS:
         if block in text:
-            first = block.strip().splitlines()[0].strip()
-            failures.append(f"still has Litter dependency block: {first}")
+            failures.append(f"still has Litter dependency block: {block.strip().splitlines()[0].strip()}")
 
     for name in POST_BUILD_SCRIPT_NAMES:
         if f"      - name: {name}\n" in text:
             failures.append(f"still has post-build script: {name}")
 
-    if re.search(r"^          embed_emexde_corecompiler_artifacts$", text, re.MULTILINE):
-        failures.append("still calls embed_emexde_corecompiler_artifacts")
-    if re.search(r"^          embed_framework_if_present CoreCompiler 1$", text, re.MULTILINE):
-        failures.append("still requires CoreCompiler.framework embedding")
-    if "copy_upstream_source emexDE" in text:
-        failures.append("still copies emexDE upstream source")
-    if "        PRODUCT_NAME: Littër\n" in text:
-        failures.append("still uses non-ASCII iOS PRODUCT_NAME")
-
-    required_kept = (
-        "        INFOPLIST_KEY_LitterEmbedsSideStore: \"YES\"\n",
-        "  SideStore:\n",
-        "  AltStoreCore:\n",
-        "  Roxas:\n",
-        "  Minimuxer:\n",
-        "  RustBridge:\n",
-        "      - target: SideStore\n        embed: true\n",
-        "        product: AltSign-Dynamic\n",
-        "          embed_framework_if_present AltSign-Dynamic 1\n",
-        "          embed_framework_if_present AltStoreCore 1\n",
-        "          embed_framework_if_present Roxas 1\n",
-        "          embed_framework_if_present Minimuxer 1\n",
-        "          embed_framework_if_present RustBridge 1\n",
+    forbidden_markers = (
+        "product: AltSign-Dynamic",
+        "target: SideStore",
+        "target: CoreCompiler",
+        "target: MobileDevelopmentKit",
+        "target: emexDE",
+        "target: LiveProcess",
+        "embed_emexde_corecompiler_artifacts",
+        "embed_framework_if_present AltSign-Dynamic",
+        "embed_framework_if_present CoreCompiler",
+        "copy_upstream_source KittyStore",
+        "copy_upstream_source emexDE",
+        "../../ThirdParty/SideStore",
+        "../../ThirdParty/EmexDE",
     )
-    for marker in required_kept:
+    for marker in forbidden_markers:
+        if marker in text:
+            failures.append(f"still references App-Store-unsafe tooling: {marker}")
+
+    required_markers = (
+        '        PRODUCT_NAME: Litter\n',
+        '        INFOPLIST_KEY_LitterEmbedsSideStore: "NO"\n',
+        '        INFOPLIST_KEY_LitterEmbedsEmexDE: "NO"\n',
+        '        OTHER_SWIFT_FLAGS: "$(inherited) -DLITTER_APP_STORE_SAFE"\n',
+        "      - target: LitterLiveActivity\n        embed: true\n",
+        "      - target: LitterWatch\n        embed: true\n",
+    )
+    for marker in required_markers:
         if marker not in text:
-            failures.append(f"removed KittyStore dependency unexpectedly: {marker.strip()}")
+            failures.append(f"missing required TestFlight-safe marker: {marker.strip()}")
+
+    if re.search(r"^        PRODUCT_NAME: Littër$", text, re.MULTILINE):
+        failures.append("still uses non-ASCII iOS PRODUCT_NAME")
 
     if failures:
         raise SystemExit("Fast TestFlight project patch failed:\n- " + "\n- ".join(failures))
@@ -170,7 +230,7 @@ def main() -> None:
     validate_fast_project(patched)
 
     if args.check:
-        print("Fast TestFlight project patch is valid.")
+        print("Fast TestFlight project patch is App Store safe.")
         return
 
     if patched == original:
@@ -178,7 +238,7 @@ def main() -> None:
         return
 
     PROJECT_YML.write_text(patched)
-    print("Applied fast TestFlight project patch: KittyStore/SideStore stay embedded, while emexDE, CoreCompiler, MobileDevelopmentKit, LiveProcess, and private BuildKit packaging are not built or embedded; TestFlight uses an ASCII app wrapper while preserving the visible display name.")
+    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
 
 
 if __name__ == "__main__":

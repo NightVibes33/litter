@@ -98,7 +98,25 @@ def remove_named_post_build_script(text: str, name: str) -> str:
     return "".join(output)
 
 
+def set_fast_device_flags(text: str) -> str:
+    replacement = (
+        '        INFOPLIST_KEY_LitterEmbedsSideStore: "YES"\n'
+        '        INFOPLIST_KEY_LitterEmbedsEmexDE: "NO"\n'
+    )
+    text, count = re.subn(
+        r'        INFOPLIST_KEY_LitterEmbedsSideStore: ".*"\n'
+        r'(?:        INFOPLIST_KEY_LitterEmbedsEmexDE: ".*"\n)?',
+        replacement,
+        text,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit("Fast unsigned device project patch failed: could not set Litter app capability flags")
+    return text
+
+
 def transform(text: str) -> str:
+    text = set_fast_device_flags(text)
     for name in EMEXDE_TARGETS + EMEXDE_PACKAGES:
         text = remove_named_yaml_section(text, f"  {name}:\n")
 
@@ -142,6 +160,8 @@ def validate_fast_device_project(text: str) -> None:
         failures.append("still copies emexDE upstream source")
 
     required_kept = (
+        "        INFOPLIST_KEY_LitterEmbedsSideStore: \"YES\"\n",
+        "        INFOPLIST_KEY_LitterEmbedsEmexDE: \"NO\"\n",
         "  SideStore:\n",
         "  AltStoreCore:\n",
         "  Roxas:\n",
@@ -176,7 +196,7 @@ def main() -> None:
         return
 
     PROJECT_YML.write_text(patched)
-    print("Applied fast unsigned device project patch: KittyStore/SideStore remain embedded, while emexDE, CoreCompiler, MobileDevelopmentKit, LiveProcess, and private BuildKit packaging are not built or embedded.")
+    print("Applied fast unsigned device project patch: KittyStore/SideStore remain embedded and visible, while emexDE, CoreCompiler, MobileDevelopmentKit, LiveProcess, and private BuildKit packaging are not built or embedded.")
 
 
 if __name__ == "__main__":
