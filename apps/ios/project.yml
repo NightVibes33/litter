@@ -596,9 +596,6 @@ targets:
           - Resources/BuildKitAssets/**
           - "**/*.h"
       - path: Sources/Litter/Bridge/UniFFICodexClient.generated.swift
-      - path: Resources/fs
-        type: folder
-        buildPhase: resources
       - path: Sources/LitterLiveActivity/CodexTurnLiveActivity.swift
       - path: Sources/LitterWatch/Models/WatchModels.swift
       - path: Sources/LitterWatch/Models/WatchSize.swift
@@ -612,6 +609,8 @@ targets:
       - path: Sources/Litter/Resources/Fonts
       - path: Sources/Litter/Resources/Themes
       - path: Sources/Litter/Resources/BuildKit
+      - path: Resources/fs.tar.gz
+      - path: Resources/fs.version
       - path: Sources/Litter/Resources/TipJarProducts.storekit
       - path: Sources/Litter/Resources/home_cat.png
       - path: Sources/Litter/Resources/home_cat_entrance.png

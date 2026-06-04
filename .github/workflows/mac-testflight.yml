@@ -93,7 +93,8 @@ jobs:
         run: |
           mkdir -p .ci-prep/mac
           tar -czf .ci-prep/mac/mac-release-prep.tgz -C . \
-            apps/ios/Resources/fs \
+            apps/ios/Resources/fs.tar.gz \
+            apps/ios/Resources/fs.version \
             apps/ios/GeneratedRust \
             apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
 

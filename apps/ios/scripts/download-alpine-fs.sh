@@ -8,7 +8,8 @@
 #   ALPINE_FS_VERSION=v0.1.0 ./apps/ios/scripts/download-alpine-fs.sh
 #
 # Outputs:
-#   apps/ios/Resources/fs/               (bundled as Resource)
+#   apps/ios/Resources/fs.tar.gz          (bundled as Resource)
+#   apps/ios/Resources/fs.version         (rootfs identity marker)
 
 set -euo pipefail
 
@@ -41,11 +42,7 @@ fetch "$SUMS"
 echo "==> Verifying checksum for $FAKEFS_TGZ"
 ( cd "$TMP_DIR" && grep " $FAKEFS_TGZ\$" "$SUMS" | shasum -a 256 -c - )
 
-echo "==> Installing fs"
-# Atomic-ish replace: rename the old fs dir out of the way (fast, won't
-# race with Xcode indexer / meson builds that may be reading inside),
-# then `rm -rf` the renamed dir. If even rename fails, fall back to
-# in-place rm with a retry.
+echo "==> Installing fs archive"
 mkdir -p "$RESOURCES_DIR"
 if [ -d "$RESOURCES_DIR/fs" ]; then
     staging="$RESOURCES_DIR/.fs.old-$$"
@@ -58,12 +55,9 @@ if [ -d "$RESOURCES_DIR/fs" ]; then
         done
     fi
 fi
-tar -xzf "$TMP_DIR/$FAKEFS_TGZ" -C "$RESOURCES_DIR"
-
-ARCH="$(cat "$RESOURCES_DIR/fs/data/etc/apk/arch" 2>/dev/null || true)"
-ALPINE_RELEASE="$(cat "$RESOURCES_DIR/fs/data/etc/alpine-release" 2>/dev/null || true)"
-printf 'alpine-fs=%s;arch=%s;alpine=%s\n' "$VERSION" "$ARCH" "$ALPINE_RELEASE" > "$RESOURCES_DIR/fs/.litter-rootfs-id"
+cp "$TMP_DIR/$FAKEFS_TGZ" "$RESOURCES_DIR/fs.tar.gz"
+printf 'alpine-fs=%s\n' "$VERSION" > "$RESOURCES_DIR/fs.version"
 
 echo
-echo "alpine-fs $VERSION installed:"
-du -sh "$RESOURCES_DIR/fs"
+echo "alpine-fs $VERSION archive installed:"
+du -sh "$RESOURCES_DIR/fs.tar.gz"

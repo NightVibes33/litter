@@ -175,7 +175,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            apps/ios/Resources/fs
+            apps/ios/Resources/fs.tar.gz
+            apps/ios/Resources/fs.version
             .build-stamps
             build/DerivedData
           key: ios-generated-assets-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**') }}
@@ -187,7 +188,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: |
-            apps/ios/Resources/fs
+            apps/ios/Resources/fs.tar.gz
+            apps/ios/Resources/fs.version
             .build-stamps/alpine-fs-*
           key: ios-alpine-fs-v1-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/scripts/download-alpine-fs.sh') }}
           restore-keys: |
@@ -455,7 +457,8 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            apps/ios/Resources/fs
+            apps/ios/Resources/fs.tar.gz
+            apps/ios/Resources/fs.version
             .build-stamps/alpine-fs-*
           key: ${{ steps.alpine_fs_cache.outputs.cache-primary-key }}
 

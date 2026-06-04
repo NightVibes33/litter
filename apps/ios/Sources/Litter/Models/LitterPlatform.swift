@@ -92,8 +92,10 @@ enum LitterPlatform {
     fileprivate static func performLocalRuntimeReadiness() async throws {
         migrateWorkDirIfHostPath()
         let fm = FileManager.default
-        guard let bundleFs = Bundle.main.url(forResource: "fs", withExtension: nil) else {
-            NSLog("[ish] bundled fs not found")
+        let bundleFsArchive = Bundle.main.resourceURL?.appendingPathComponent("fs.tar.gz")
+        let bundleFs = bundleFsArchive.flatMap { fm.fileExists(atPath: $0.path) ? $0 : nil } ?? Bundle.main.url(forResource: "fs", withExtension: nil)
+        guard let bundleFs else {
+            NSLog("[ish] bundled fs archive not found")
             throw LocalRuntimeReadinessError.bundledRootfsMissing
         }
         let appSupport = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)

@@ -622,7 +622,7 @@ xcgen:
 	@touch $(STAMP_XCGEN)
 
 # Download the pinned Alpine rootfs tarball and extract into
-# apps/ios/Resources/fs. The stamp is version-keyed so bumping
+# apps/ios/Resources/fs.tar.gz. The stamp is version-keyed so bumping
 # ALPINE_FS_VERSION re-runs the download. The iSH kernel itself is
 # compiled from the `ish` Rust crate via cargo.
 alpine-fs: $(STAMP_ALPINE_FS)
@@ -871,6 +871,7 @@ clean-ios:
 	@echo "==> Cleaning iOS artifacts..."
 	@rm -rf $(IOS_FW_DIR)/codex_mobile_client.xcframework $(IOS_FW_DIR)/GhosttyKit.xcframework $(IOS_GENERATED)
 	@rm -rf $(IOS_DIR)/Resources/fs
+	@rm -f $(IOS_DIR)/Resources/fs.tar.gz $(IOS_DIR)/Resources/fs.version
 	@rm -f $(STAMP_XCGEN) $(STAMP_BINDINGS_S) $(STAMPS)/alpine-fs-* $(STAMPS)/ghostty-ios-*
 
 clean-android:

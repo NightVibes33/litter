@@ -442,7 +442,8 @@ jobs:
           set -euo pipefail
           mkdir -p .ci-prep/ios
           paths=(
-            apps/ios/Resources/fs
+            apps/ios/Resources/fs.tar.gz
+            apps/ios/Resources/fs.version
             apps/ios/GeneratedRust
             apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
             apps/ios/Sources/Litter/Generated/Minimuxer

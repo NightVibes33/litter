@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+use flate2::read::GzDecoder;
 use ish_embed_host::IshInstance;
+use tar::Archive;
 
 use crate::ish_types::IshBootstrapError;
 
@@ -413,14 +415,14 @@ fn mount_apps_dir(documents_dir: &Path) {
 // ── bundled rootfs extraction ────────────────────────────────────────────
 
 fn extract_rootfs_if_needed(source: &Path, dest: &Path) -> Result<(), IshBootstrapError> {
-    if !source.is_dir() {
+    if !source.is_dir() && !source.is_file() {
         return Err(IshBootstrapError::BundledRootfsMissing(
             source.display().to_string(),
         ));
     }
 
     if dest.is_dir() {
-        let source_identity = rootfs_identity(source)?;
+        let source_identity = bundled_rootfs_identity(source)?;
         let dest_identity = rootfs_identity(dest)?;
         if rootfs_identity_matches(source_identity.as_ref(), dest_identity.as_ref()) {
             return Ok(());
@@ -438,8 +440,21 @@ fn extract_rootfs_if_needed(source: &Path, dest: &Path) -> Result<(), IshBootstr
             dest.display()
         );
     }
-    replace_dir_recursive(source, dest)?;
+    replace_rootfs(source, dest)?;
     Ok(())
+}
+
+fn bundled_rootfs_identity(source: &Path) -> io::Result<Option<String>> {
+    if source.is_dir() {
+        return rootfs_identity(source);
+    }
+
+    if let Some(stamp) = read_trimmed_file(source.with_file_name("fs.version"))? {
+        return Ok(Some(format!("stamp:{stamp}")));
+    }
+
+    let metadata = fs::metadata(source)?;
+    Ok(Some(format!("archive-bytes:{}", metadata.len())))
 }
 
 fn rootfs_identity(root: &Path) -> io::Result<Option<String>> {
@@ -506,6 +521,14 @@ fn detect_musl_arch(root: &Path) -> Option<String> {
     None
 }
 
+fn replace_rootfs(src: &Path, dst: &Path) -> io::Result<()> {
+    if src.is_dir() {
+        replace_dir_recursive(src, dst)
+    } else {
+        replace_archive_rootfs(src, dst)
+    }
+}
+
 fn replace_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
     if let Some(parent) = dst.parent() {
         fs::create_dir_all(parent)?;
@@ -522,6 +545,78 @@ fn replace_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
     preserve_root_home(dst, &tmp)?;
     remove_path_if_exists(dst)?;
     fs::rename(&tmp, dst)?;
+    Ok(())
+}
+
+fn replace_archive_rootfs(src: &Path, dst: &Path) -> io::Result<()> {
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let name = dst
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("fs");
+    let tmp = dst.with_file_name(format!(".{name}.tmp-{}", std::process::id()));
+
+    remove_path_if_exists(&tmp)?;
+    fs::create_dir_all(&tmp)?;
+    extract_tar_gz(src, &tmp)?;
+
+    let extracted_root = if tmp.join("fs/data").is_dir() {
+        tmp.join("fs")
+    } else {
+        tmp.clone()
+    };
+
+    preserve_root_home(dst, &extracted_root)?;
+    remove_path_if_exists(dst)?;
+    if extracted_root == tmp {
+        fs::rename(&tmp, dst)?;
+    } else {
+        fs::rename(&extracted_root, dst)?;
+        remove_path_if_exists(&tmp)?;
+    }
+
+    if let Some(stamp) = read_trimmed_file(src.with_file_name("fs.version"))? {
+        fs::write(dst.join(ROOTFS_STAMP_FILE), stamp)?;
+    }
+
+    Ok(())
+}
+
+fn extract_tar_gz(archive_path: &Path, dest: &Path) -> io::Result<()> {
+    let file = fs::File::open(archive_path)?;
+    let decoder = GzDecoder::new(file);
+    let mut archive = Archive::new(decoder);
+    let entries = archive.entries().map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("reading rootfs archive {}: {error}", archive_path.display()),
+        )
+    })?;
+
+    for entry in entries {
+        let mut entry = entry.map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("reading rootfs archive entry: {error}"),
+            )
+        })?;
+        let unpacked = entry.unpack_in(dest).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("unpacking rootfs archive into {}: {error}", dest.display()),
+            )
+        })?;
+        if !unpacked {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "rootfs archive entry attempted to unpack outside the destination",
+            ));
+        }
+    }
+
     Ok(())
 }
 
