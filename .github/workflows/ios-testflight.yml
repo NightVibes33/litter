@@ -173,6 +173,12 @@ jobs:
         id: rust_generated_valid
         run: |
           set -euo pipefail
+          if [[ "${{ steps.rust_generated_cache.outputs.cache-hit }}" != "true" ]]; then
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            echo "No exact TestFlight Rust generated cache hit; rebuilding generated Rust assets instead of trusting a restore-key fallback."
+            exit 0
+          fi
+
           required=(
             apps/ios/GeneratedRust/ios-device/libcodex_mobile_client.a
             apps/ios/GeneratedRust/ios-device/libghostty.a
