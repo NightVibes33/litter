@@ -57,6 +57,11 @@ BETA_APP_DESCRIPTION="${BETA_APP_DESCRIPTION:-Littër lets testers verify the iO
 BETA_FEEDBACK_EMAIL="${BETA_FEEDBACK_EMAIL:-NightVibes33@users.noreply.github.com}"
 BETA_MARKETING_URL="${BETA_MARKETING_URL:-}"
 BETA_PRIVACY_POLICY_URL="${BETA_PRIVACY_POLICY_URL:-}"
+REVIEW_CONTACT_EMAIL="${REVIEW_CONTACT_EMAIL:-$BETA_FEEDBACK_EMAIL}"
+REVIEW_CONTACT_FIRST_NAME="${REVIEW_CONTACT_FIRST_NAME:-Night}"
+REVIEW_CONTACT_LAST_NAME="${REVIEW_CONTACT_LAST_NAME:-Vibes}"
+REVIEW_CONTACT_PHONE="${REVIEW_CONTACT_PHONE:-+15555550100}"
+REVIEW_NOTES="${REVIEW_NOTES:-No sign-in is required. Please test the main app experience, settings, KittyStore flows, and TestFlight distribution behavior.}"
 TESTFLIGHT_SKIP_BUILD="${TESTFLIGHT_SKIP_BUILD:-0}"
 TESTFLIGHT_SKIP_UPLOAD="${TESTFLIGHT_SKIP_UPLOAD:-0}"
 TESTFLIGHT_AUTO_BUMP_VERSION="${TESTFLIGHT_AUTO_BUMP_VERSION:-1}"
@@ -747,6 +752,43 @@ if [[ -n "$build_id" && -n "$BETA_APP_DESCRIPTION" ]]; then
     ensure_beta_app_localization "$APP_STORE_APP_ID" "$BETA_APP_DESCRIPTION_LOCALE" "$BETA_APP_DESCRIPTION"
 fi
 
+ensure_beta_review_details() {
+    local app_id="$1"
+    local review_id
+
+    if [[ -z "$REVIEW_CONTACT_EMAIL" && -z "$REVIEW_CONTACT_FIRST_NAME" && -z "$REVIEW_CONTACT_LAST_NAME" && -z "$REVIEW_CONTACT_PHONE" && -z "$REVIEW_NOTES" ]]; then
+        return 0
+    fi
+
+    review_id="$(
+        asc testflight review get --app "$app_id" --output json |
+            jq -r '.data[0].id // .data.id // empty'
+    )"
+    if [[ -z "$review_id" ]]; then
+        echo "WARNING: Could not find TestFlight beta review details record for app $app_id." >&2
+        return 1
+    fi
+
+    echo "==> Updating TestFlight beta review contact details"
+    cmd=(asc testflight review update --id "$review_id" --output json)
+    if [[ -n "$REVIEW_CONTACT_EMAIL" ]]; then
+        cmd+=(--contact-email "$REVIEW_CONTACT_EMAIL")
+    fi
+    if [[ -n "$REVIEW_CONTACT_FIRST_NAME" ]]; then
+        cmd+=(--contact-first-name "$REVIEW_CONTACT_FIRST_NAME")
+    fi
+    if [[ -n "$REVIEW_CONTACT_LAST_NAME" ]]; then
+        cmd+=(--contact-last-name "$REVIEW_CONTACT_LAST_NAME")
+    fi
+    if [[ -n "$REVIEW_CONTACT_PHONE" ]]; then
+        cmd+=(--contact-phone "$REVIEW_CONTACT_PHONE")
+    fi
+    if [[ -n "$REVIEW_NOTES" ]]; then
+        cmd+=(--notes "$REVIEW_NOTES")
+    fi
+    "${cmd[@]}" >/dev/null
+}
+
 if [[ "$ASSIGN_BETA_GROUP" == "1" && -n "$build_id" ]]; then
     beta_group_ids=()
     external_group_requested=0
@@ -805,15 +847,44 @@ if [[ "$ASSIGN_BETA_GROUP" == "1" && -n "$build_id" ]]; then
         fi
 
         if [[ "$SUBMIT_BETA_REVIEW" == "1" && "$external_group_requested" -eq 1 ]]; then
+            ensure_beta_review_details "$APP_STORE_APP_ID" || true
             echo "==> Submitting build $build_id for Beta App Review"
-            asc testflight review submit --build-id "$build_id" --confirm --output json >/dev/null
+            beta_review_submit_attempted=1
+            beta_review_submit_succeeded=0
+            submit_log="$BUILD_DIR/beta-review-submit.log"
+            rm -f "$submit_log"
+            for attempt in 1 2 3; do
+                if asc testflight review submit --build-id "$build_id" --confirm --output json >"$submit_log" 2>&1; then
+                    beta_review_submit_succeeded=1
+                    break
+                fi
+                if [[ "$attempt" -lt 3 ]]; then
+                    echo "Beta App Review submit failed on attempt $attempt; retrying..." >&2
+                    sleep "$BUILD_POLL_INTERVAL_SECONDS"
+                fi
+            done
+            if [[ "$beta_review_submit_succeeded" -ne 1 ]]; then
+                echo "WARNING: Beta App Review submit failed after upload and group assignment." >&2
+                echo "         App Store Connect accepted build $build_id; leaving CI green so the build is not lost." >&2
+                sed 's/^/         /' "$submit_log" >&2 || true
+            fi
         fi
     fi
 fi
 
 if [[ -n "$build_id" ]]; then
     echo "==> Validating TestFlight readiness"
-    asc validate testflight --app "$APP_STORE_APP_ID" --build "$build_id" --strict --output json >/dev/null
+    validate_log="$BUILD_DIR/testflight-validate.log"
+    if ! asc validate testflight --app "$APP_STORE_APP_ID" --build "$build_id" --strict --output json >"$validate_log" 2>&1; then
+        if [[ "${beta_review_submit_attempted:-0}" == "1" && "${beta_review_submit_succeeded:-0}" != "1" ]]; then
+            echo "WARNING: strict TestFlight validation failed after Beta App Review submit failed." >&2
+            echo "         Build $build_id is uploaded and assigned; ASC may need manual/retry review submission." >&2
+            sed 's/^/         /' "$validate_log" >&2 || true
+        else
+            cat "$validate_log" >&2
+            exit 1
+        fi
+    fi
 fi
 
 if [[ "$PROJECT_VERSION_BUMP_REQUIRED" == "1" ]]; then
