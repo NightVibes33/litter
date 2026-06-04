@@ -817,20 +817,62 @@ jobs:
           print(f"{major}.{minor}.{latest_patch + 1}")
           PY
           )"
-          xcodebuild archive \
-            -project apps/ios/Litter.xcodeproj \
-            -scheme Litter \
-            -configuration Release \
-            -destination "generic/platform=iOS" \
-            -archivePath "$ARCHIVE_PATH" \
-            -derivedDataPath "$DERIVED_DATA_PATH" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
-            MARKETING_VERSION="$MARKETING_VERSION" \
-            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
-            2>&1 | tee build/xcodebuild-archive.log
+          archive_cmd=(
+            xcodebuild archive
+            -project apps/ios/Litter.xcodeproj
+            -scheme Litter
+            -configuration Release
+            -destination "generic/platform=iOS"
+            -archivePath "$ARCHIVE_PATH"
+            -derivedDataPath "$DERIVED_DATA_PATH"
+            -showBuildTimingSummary
+            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGN_IDENTITY=""
+            DEVELOPMENT_TEAM=""
+            MARKETING_VERSION="$MARKETING_VERSION"
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+          )
+          if [ "$LITTER_IOS_BUILD_MODE" = "fast-device" ]; then
+            archive_cmd+=(
+              ARCHS=arm64
+              ONLY_ACTIVE_ARCH=NO
+              SWIFT_COMPILATION_MODE=singlefile
+              SWIFT_WHOLE_MODULE_OPTIMIZATION=NO
+              SWIFT_OPTIMIZATION_LEVEL=-Onone
+              SWIFT_ENABLE_EXPLICIT_MODULES=NO
+              CLANG_ENABLE_EXPLICIT_MODULES=NO
+              COMPILER_INDEX_STORE_ENABLE=NO
+              GCC_GENERATE_DEBUGGING_SYMBOLS=NO
+              DEBUG_INFORMATION_FORMAT=dwarf
+            )
+          fi
+
+          heartbeat() {
+            local pid="$1"
+            local elapsed=0
+            while kill -0 "$pid" 2>/dev/null; do
+              sleep 120
+              elapsed=$((elapsed + 120))
+              echo "::notice::xcodebuild archive still running after ${elapsed}s"
+            done
+          }
+          (
+            set -o pipefail
+            "${archive_cmd[@]}" 2>&1 | tee build/xcodebuild-archive.log
+          ) &
+          archive_pid=$!
+          heartbeat "$archive_pid" &
+          heartbeat_pid=$!
+          set +e
+          wait "$archive_pid"
+          archive_status=$?
+          set -e
+          kill "$heartbeat_pid" 2>/dev/null || true
+          wait "$heartbeat_pid" 2>/dev/null || true
+          if [ "$archive_status" -ne 0 ]; then
+            exit "$archive_status"
+          fi
 
           if grep -F "was built for newer 'iOS' version" build/xcodebuild-archive.log; then
             echo "::error::A linked object was built for a newer iOS deployment target than Litter. Rebuild the vendored static libraries with LITTER_MINIMUXER_MIN_IOS=18.0." >&2
