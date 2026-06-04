@@ -18,6 +18,9 @@ ROOT = Path(__file__).resolve().parents[2]
 PROJECT_YML = ROOT / "apps/ios/project.yml"
 
 DEPENDENCY_BLOCKS = (
+    """      - target: SideStore
+        embed: true
+""",
     """      - target: CoreCompiler
         embed: true
         link: false
@@ -36,6 +39,7 @@ DEPENDENCY_BLOCKS = (
 )
 
 POST_BUILD_SCRIPT_NAMES = (
+    "Embed AltSign Dynamic Framework",
     "Embed emexDE Runtime Resources",
     "Package Private BuildKit Assets",
     "Embed Private BuildKit Frameworks",
@@ -46,6 +50,10 @@ FAST_TARGET_NAMES = (
     "MobileDevelopmentKit",
     "emexDE",
     "LiveProcess",
+    "SideStore",
+    "AltStoreCore",
+    "Roxas",
+    "Minimuxer",
 )
 
 
@@ -90,6 +98,7 @@ def remove_named_post_build_script(text: str, name: str) -> str:
 
 def transform(text: str) -> str:
     text = text.replace("        PRODUCT_NAME: Littër\n", "        PRODUCT_NAME: Litter\n")
+    text = text.replace("        INFOPLIST_KEY_LitterEmbedsSideStore: \"YES\"\n", "        INFOPLIST_KEY_LitterEmbedsSideStore: \"NO\"\n")
 
     for target in FAST_TARGET_NAMES:
         text = remove_named_yaml_section(text, f"  {target}:\n")
@@ -136,6 +145,11 @@ def validate_fast_project(text: str) -> None:
         failures.append("still copies emexDE upstream source")
     if "        PRODUCT_NAME: Littër\n" in text:
         failures.append("still uses non-ASCII iOS PRODUCT_NAME")
+    if "        INFOPLIST_KEY_LitterEmbedsSideStore: \"YES\"\n" in text:
+        failures.append("still advertises embedded SideStore in TestFlight fast mode")
+    for unsafe in ("SideStore", "AltStoreCore", "Roxas", "Minimuxer", "RustBridge"):
+        if f"embed_framework_if_present {unsafe} 1" in text:
+            failures.append(f"still embeds app-store-unsafe framework: {unsafe}")
 
     if failures:
         raise SystemExit("Fast TestFlight project patch failed:\n- " + "\n- ".join(failures))
@@ -159,7 +173,7 @@ def main() -> None:
         return
 
     PROJECT_YML.write_text(patched)
-    print("Applied fast TestFlight project patch: emexDE, CoreCompiler, MobileDevelopmentKit, and LiveProcess are not built or embedded; TestFlight uses an ASCII app wrapper while preserving the visible display name.")
+    print("Applied fast TestFlight project patch: emexDE, SideStore, CoreCompiler, MobileDevelopmentKit, LiveProcess, and install/provisioning support targets are not built or embedded; TestFlight uses an ASCII app wrapper while preserving the visible display name.")
 
 
 if __name__ == "__main__":

@@ -475,7 +475,43 @@ verify_exported_ipa_signature() {
     exit 1
 }
 
+verify_testflight_fast_ipa_is_app_store_safe() {
+    local ipa_path="$1"
+    local work_dir payload_app offenders_log selector_log
+
+    if [[ "$LITTER_TESTFLIGHT_FAST" != "1" ]]; then
+        return 0
+    fi
+
+    echo "==> Checking fast TestFlight IPA for app-store-unsafe embedded tooling"
+    work_dir="$(mktemp -d "${TMPDIR:-/tmp}/litter-ipa-appstore-safe.XXXXXX")"
+    unzip -q "$ipa_path" -d "$work_dir"
+    payload_app="$(find "$work_dir/Payload" -maxdepth 1 -type d -name "*.app" | head -n 1)"
+    if [[ -z "$payload_app" ]]; then
+        echo "Unable to find app bundle in exported IPA while checking TestFlight fast safety." >&2
+        exit 1
+    fi
+
+    offenders_log="$work_dir/app-store-unsafe-frameworks.txt"
+    find "$payload_app" -path '*/Frameworks/*.framework' -maxdepth 4 -print |
+        grep -E '/(SideStore|AltStoreCore|Roxas|Minimuxer|RustBridge)\.framework$' >"$offenders_log" || true
+    if [[ -s "$offenders_log" ]]; then
+        echo "Fast TestFlight IPA still embeds App-Store-unsafe sideload/provisioning frameworks:" >&2
+        cat "$offenders_log" >&2
+        exit 1
+    fi
+
+    selector_log="$work_dir/app-store-unsafe-selectors.txt"
+    grep -R -a -E 'installApplicationWithArchiveObject|installApplicationWithPayloadPath|installApplicationAtPackagePath|installApplicationAtBundlePath|misagent_|com\.apple\.misagent|MobileInstallation|LSApplicationWorkspace|FrontBoardServices|BackBoardServices|SpringBoardServices|PrivateFrameworks' "$payload_app" >"$selector_log" 2>/dev/null || true
+    if [[ -s "$selector_log" ]]; then
+        echo "Fast TestFlight IPA contains strings that commonly trigger ITMS-90338 non-public API validation:" >&2
+        head -n 80 "$selector_log" >&2
+        exit 1
+    fi
+}
+
 verify_exported_ipa_signature "$IPA_PATH"
+verify_testflight_fast_ipa_is_app_store_safe "$IPA_PATH"
 
 if [[ "$TESTFLIGHT_SKIP_UPLOAD" == "1" ]]; then
     echo "==> TestFlight build prepared"
