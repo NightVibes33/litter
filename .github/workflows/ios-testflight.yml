@@ -740,4 +740,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add apps/ios/project.yml docs/releases/testflight-whats-new.md
           git commit -m "ios: start TestFlight ${version} [skip mobile-release]"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          if ! git push origin "HEAD:${GITHUB_REF_NAME}"; then
+            echo "WARNING: TestFlight version bump commit could not be pushed to ${GITHUB_REF_NAME}." >&2
+            echo "         The build upload already completed; push the version bump manually if needed." >&2
+          fi
