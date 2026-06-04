@@ -705,7 +705,7 @@ jobs:
           echo "BETA_GROUP_NAMES=$BETA_GROUP_NAMES" >> "$GITHUB_ENV"
           echo "WAIT_FOR_PROCESSING=$WAIT_FOR_PROCESSING" >> "$GITHUB_ENV"
 
-      - name: Build TestFlight IPA
+      - name: Build and upload TestFlight IPA
         env:
           SCHEME: Litter
           APP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR
@@ -715,24 +715,6 @@ jobs:
           EXPORT_SIGNING_STYLE: manual
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          TESTFLIGHT_SKIP_UPLOAD: "1"
-          LITTER_TESTFLIGHT_FAST: "1"
-          INCLUDE_LIVEPROCESS: "0"
-        run: |
-          set -euo pipefail
-          ./apps/ios/scripts/testflight-upload.sh
-
-      - name: Upload to TestFlight
-        env:
-          SCHEME: Litter
-          APP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR
-          LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
-          APP_STORE_APP_ID: ${{ secrets.IOS_APP_STORE_APP_ID }}
-          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
-          EXPORT_SIGNING_STYLE: manual
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          TESTFLIGHT_SKIP_BUILD: "1"
           LITTER_TESTFLIGHT_FAST: "1"
           INCLUDE_LIVEPROCESS: "0"
         run: |
