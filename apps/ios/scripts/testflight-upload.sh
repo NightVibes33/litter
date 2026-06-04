@@ -495,6 +495,11 @@ verify_testflight_fast_ipa_is_app_store_safe() {
         return 0
     fi
 
+    if [[ "${LITTER_TESTFLIGHT_ALLOW_KITTYSTORE:-0}" == "1" ]]; then
+        echo "==> Skipping fast TestFlight app-store-safe tooling check because KittyStore is intentionally embedded for beta validation"
+        return 0
+    fi
+
     echo "==> Checking fast TestFlight IPA for app-store-unsafe embedded tooling"
     work_dir="$(mktemp -d "${TMPDIR:-/tmp}/litter-ipa-appstore-safe.XXXXXX")"
     unzip -q "$ipa_path" -d "$work_dir"
