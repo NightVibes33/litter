@@ -76,13 +76,21 @@ struct LocalFileWorkspaceView: View {
         renameMoveAlertLayer
             .alert("Delete Item", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
-                Button("Delete", role: .destructive) { taskBag.run { await deleteSelected() } }
+                Button("Delete", role: .destructive) {
+                    guard let target = deleteTarget else { return }
+                    deleteTarget = nil
+                    taskBag.run { await delete(target) }
+                }
             } message: {
                 Text("This removes \(deleteTarget?.name ?? "this item") from the iSH filesystem.")
             }
             .alert("Delete Selected Items", isPresented: $showDeleteSelection) {
                 Button("Cancel", role: .cancel) {}
-                Button("Delete", role: .destructive) { taskBag.run { await deleteSelection() } }
+                Button("Delete", role: .destructive) {
+                    let targets = model.selectedEntries
+                    showDeleteSelection = false
+                    taskBag.run { await deleteSelection(targets) }
+                }
             } message: {
                 Text("This removes \(model.selectedPaths.count) selected item(s) from the iSH filesystem.")
             }
@@ -95,14 +103,24 @@ struct LocalFileWorkspaceView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { renameTarget = nil }
-                Button("Save") { taskBag.run { await renameSelected() } }
+                Button("Save") {
+                    guard let target = renameTarget else { return }
+                    let name = renameText
+                    renameTarget = nil
+                    taskBag.run { await rename(target, to: name) }
+                }
             }
             .alert("Move Item", isPresented: Binding(get: { moveTarget != nil }, set: { if !$0 { moveTarget = nil } })) {
                 TextField("Destination folder", text: $moveDestination)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { moveTarget = nil }
-                Button("Move") { taskBag.run { await moveSelected() } }
+                Button("Move") {
+                    guard let target = moveTarget else { return }
+                    let destination = moveDestination
+                    moveTarget = nil
+                    taskBag.run { await move(target, toDirectory: destination) }
+                }
             } message: {
                 Text("Move \(moveTarget?.name ?? "this item") to another iSH folder. You can use ~ for /root.")
             }
@@ -115,7 +133,11 @@ struct LocalFileWorkspaceView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { draftName = "" }
-                Button("Create") { taskBag.run { await create(kind: .file) } }
+                Button("Create") {
+                    let name = draftName
+                    draftName = ""
+                    taskBag.run { await create(kind: .file, rawName: name) }
+                }
             } message: {
                 Text("Create a text file in the current iSH directory.")
             }
@@ -124,7 +146,11 @@ struct LocalFileWorkspaceView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { draftName = "" }
-                Button("Create") { taskBag.run { await create(kind: .directory) } }
+                Button("Create") {
+                    let name = draftName
+                    draftName = ""
+                    taskBag.run { await create(kind: .directory, rawName: name) }
+                }
             }
     }
 
@@ -829,9 +855,8 @@ struct LocalFileWorkspaceView: View {
         commandOutput = LocalCommandOutput(title: "Script Output", command: "sh \(entry.name)", result: result)
     }
 
-    private func create(kind: LocalFileEntry.Kind) async {
-        let validation = validateName(draftName)
-        draftName = ""
+    private func create(kind: LocalFileEntry.Kind, rawName: String) async {
+        let validation = validateName(rawName)
         guard case .valid(let name) = validation else {
             alertMessage = validation.errorMessage
             return
@@ -843,10 +868,8 @@ struct LocalFileWorkspaceView: View {
         }
     }
 
-    private func renameSelected() async {
-        guard let target = renameTarget else { return }
-        let validation = validateName(renameText)
-        renameTarget = nil
+    private func rename(_ target: LocalFileEntry, to rawName: String) async {
+        let validation = validateName(rawName)
         guard case .valid(let name) = validation else {
             alertMessage = validation.errorMessage
             return
@@ -859,10 +882,8 @@ struct LocalFileWorkspaceView: View {
         }
     }
 
-    private func moveSelected() async {
-        guard let target = moveTarget else { return }
-        let destination = PathDisplay.expand(moveDestination.trimmingCharacters(in: .whitespacesAndNewlines), isLocal: true)
-        moveTarget = nil
+    private func move(_ target: LocalFileEntry, toDirectory rawDestination: String) async {
+        let destination = PathDisplay.expand(rawDestination.trimmingCharacters(in: .whitespacesAndNewlines), isLocal: true)
         guard !destination.isEmpty else {
             alertMessage = "Destination folder cannot be empty."
             return
@@ -874,9 +895,7 @@ struct LocalFileWorkspaceView: View {
         }
     }
 
-    private func deleteSelected() async {
-        guard let target = deleteTarget else { return }
-        deleteTarget = nil
+    private func delete(_ target: LocalFileEntry) async {
         do {
             try await model.delete(target)
         } catch {
@@ -884,9 +903,9 @@ struct LocalFileWorkspaceView: View {
         }
     }
 
-    private func deleteSelection() async {
+    private func deleteSelection(_ targets: [LocalFileEntry]) async {
         do {
-            try await model.deleteSelectedEntries()
+            try await model.deleteSelectedEntries(targets)
         } catch {
             alertMessage = error.localizedDescription
         }
@@ -1306,20 +1325,42 @@ private final class LocalFileWorkspaceModel {
     }
 
     func delete(_ entry: LocalFileEntry) async throws {
-        try await IshFS.delete(path: entry.path)
-        removeStoredPath(entry.path)
+        entries.removeAll { $0.path == entry.path }
         selectedPaths.remove(entry.path)
-        await reload()
-    }
-
-    func deleteSelectedEntries() async throws {
-        let targets = selectedEntries
-        for entry in targets {
+        do {
             try await IshFS.delete(path: entry.path)
             removeStoredPath(entry.path)
+            await reload()
+        } catch {
+            await reload()
+            throw error
+        }
+    }
+
+    func deleteSelectedEntries(_ targets: [LocalFileEntry]) async throws {
+        guard !targets.isEmpty else { return }
+        let targetPaths = Set(targets.map(\.path))
+        entries.removeAll { targetPaths.contains($0.path) }
+        selectedPaths.subtract(targetPaths)
+
+        var failures: [String] = []
+        for entry in targets {
+            do {
+                try await IshFS.delete(path: entry.path)
+                removeStoredPath(entry.path)
+            } catch {
+                failures.append("\(entry.name): \(error.localizedDescription)")
+            }
         }
         clearSelection()
         await reload()
+        if !failures.isEmpty {
+            throw NSError(
+                domain: "LocalFileWorkspace",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: failures.joined(separator: "\n")]
+            )
+        }
     }
 
     func export(entries: [LocalFileEntry]) async throws -> [URL] {

@@ -408,7 +408,23 @@ enum IshFS {
     }
 
     static func delete(path: String) async throws {
-        let result = await run("rm -rf \(shellQuote(path))")
+        let result = await run("""
+        p=\(shellQuote(path))
+        case "$p" in
+          ""|"/"|"/root"|"/usr"|"/etc"|"/bin"|"/sbin"|"/lib"|"/dev"|"/mnt"|"/mnt/apps"|"/mnt/codex"|"\(nativeContainerMountPath)"|"/root/.codex")
+            echo "Refusing to delete protected filesystem path: $p"
+            exit 64
+            ;;
+        esac
+        if [ ! -e "$p" ] && [ ! -L "$p" ]; then
+          exit 0
+        fi
+        rm -rf -- "$p" || exit $?
+        if [ -e "$p" ] || [ -L "$p" ]; then
+          echo "Could not delete item because it still exists: $p"
+          exit 66
+        fi
+        """)
         guard result.exitCode == 0 else { throw error("Could not delete item", result: result) }
     }
 
