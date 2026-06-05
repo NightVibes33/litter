@@ -6,7 +6,7 @@
     "https://github.com/ProjectNyxian/LLVM-On-iOS"
   ],
   "importedFileCount": 336,
-  "purpose": "Source-level import, fakefs staging bridge, local/native ABI wrapper, and LiveContainer/ZSign iOS signing support for Alley Cat on-device Swift/iOS BuildKit integration.",
+  "purpose": "Source-level import, fakefs staging bridge, local/native ABI wrapper, and LiveContainer/ZSign iOS signing support for Alley Cãt on-device Swift/iOS BuildKit integration.",
   "includedCapabilities": [
     "swift-source-staging",
     "litter-buildkit-native-abi",
@@ -24,7 +24,7 @@
   "knownSourceGaps": [
     "Private Apple SDK and CoreCompiler assets must be installed through LitterBuildKitAssets before Swift/IPA commands can execute natively.",
     "Only the iOS arm64 OpenSSL.xcframework slice is vendored to keep the repo device-build focused.",
-    "Standalone TrollStore/libroot payloads remain excluded because Alley Cat targets KittyStore/AltStore/developer sideload BuildKit workflows first."
+    "Standalone TrollStore/libroot payloads remain excluded because Alley Cãt targets KittyStore/AltStore/developer sideload BuildKit workflows first."
   ],
   "liveContainer": {
     "sourceIncluded": true,

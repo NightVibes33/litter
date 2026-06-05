@@ -536,7 +536,7 @@ struct SettingsView: View {
                     Image(systemName: "pawprint.fill")
                         .foregroundColor(LitterTheme.accent)
                         .frame(width: 20)
-                    Text("Tip the Alley Cat")
+                    Text("Tip the Alley Cãt")
                         .litterFont(.subheadline)
                         .foregroundColor(LitterTheme.textPrimary)
                 }
@@ -1483,7 +1483,7 @@ private struct SettingsConnectionAccountSection: View {
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Alley Cat keeps saved accounts separate. If a turn fails because the active account is out of credits or temporarily limited, chat can offer Switch & Retry.")
+                    Text("Alley Cãt keeps saved accounts separate. If a turn fails because the active account is out of credits or temporarily limited, chat can offer Switch & Retry.")
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.textSecondary)
                     Button("Switch to Next Account") {

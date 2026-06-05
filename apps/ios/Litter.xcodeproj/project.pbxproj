@@ -139,7 +139,6 @@
 		31EB5932CBEDDB0E7FFB1158 /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1959956ABBEC98793B97B468 /* MessageBubbleView.swift */; };
 		32092EEAEF54D6A0637C4ABC /* SavedAppDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6058552E839CA44F15DA3186 /* SavedAppDetailView.swift */; };
 		32B5D8CCFAC412E8F2F3E049 /* LitterWatchComplications.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7234EDD5C8F0342DB3A592D9 /* LitterWatchComplications.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		32CA9FCEE8BA7B775188571B /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 2FB04F90D08EE57F92DD7F58 /* AppIcon.icon */; };
 		3323CEC8ECD1A91494C76101 /* StreamingAssistantRenderCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8148E90D1A219FEE664EB9A1 /* StreamingAssistantRenderCache.swift */; };
 		333B502373DE386E9BDCE871 /* PathDisplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119E33CEA4127BD72EADC968 /* PathDisplayTests.swift */; };
 		33F382D1EE69512F4466A59F /* CrossServerTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F39212507F7334160D127E8 /* CrossServerTools.swift */; };
@@ -219,7 +218,6 @@
 		515C69AAC79564AC5E5288E3 /* DiffsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701AD5245AEB19C719A3ED7B /* DiffsScreen.swift */; };
 		51BEDF843D3BE5D93D7F9E62 /* CatalystVoiceStubs.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36C53F042D99EC31804B19E /* CatalystVoiceStubs.swift */; };
 		52479A0932D4896CD0847B46 /* NetworkReachabilityObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 952E431DD6FA6740D6585B4A /* NetworkReachabilityObserver.swift */; };
-		52588C7F80941205018E7804 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 2FB04F90D08EE57F92DD7F58 /* AppIcon.icon */; };
 		52830FCFF8417E724A15555F /* HomeAnchor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5CAE8D1301B5643D9510273 /* HomeAnchor.swift */; };
 		52C9C8C4692470EC7B2CC9E5 /* DynamicTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4874A6712A57F780064DB0E /* DynamicTools.swift */; };
 		5342E9DEE1FB318F01E27F7E /* ChatTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125E05AE5CC346C8D2ED2FED /* ChatTypes.swift */; };
@@ -290,7 +288,6 @@
 		69F93A646ED483E203C91800 /* notion-light.json in Resources */ = {isa = PBXBuildFile; fileRef = 99BFC7A01A194E7508C5693C /* notion-light.json */; };
 		6A0C312B5A565E7D8194F224 /* PairBLEAdvertiser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9985C47F86DE72FA41043EE3 /* PairBLEAdvertiser.swift */; };
 		6B6DEAECC59EF7CB0B9500B9 /* brand_logo.svg in Resources */ = {isa = PBXBuildFile; fileRef = 74E5DF89D0937E6C17F2BB94 /* brand_logo.svg */; };
-		6B931A02489EA216156F0063 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 2FB04F90D08EE57F92DD7F58 /* AppIcon.icon */; };
 		6BBF52F233815A7CE387ADAF /* NukeUI in Frameworks */ = {isa = PBXBuildFile; productRef = B56375FA643BC7109985264C /* NukeUI */; };
 		6BF33005224565522DE1D533 /* ConversationComposerExpandedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24AB3A174A5148143DFE1BFA /* ConversationComposerExpandedView.swift */; };
 		6BF63183ECD96F34922779D9 /* everforest-light.json in Resources */ = {isa = PBXBuildFile; fileRef = 88B886829FDF299DFFCC1A86 /* everforest-light.json */; };
@@ -811,7 +808,6 @@
 		2DF6931F753DFD2AB67F62DC /* LitterLiveActivity.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = LitterLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		2EB9C4946A911272FC0DC850 /* SilentAudioKeeper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SilentAudioKeeper.swift; sourceTree = "<group>"; };
 		2ECDF838BCE5FEBFE5B80DCC /* StreamingRendererCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreamingRendererCoordinator.swift; sourceTree = "<group>"; };
-		2FB04F90D08EE57F92DD7F58 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		2FB206863136DF3B8FA50457 /* HomeDashboardSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeDashboardSupport.swift; sourceTree = "<group>"; };
 		318F2F8563E91AB97950F5DA /* DirectoryPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectoryPickerView.swift; sourceTree = "<group>"; };
 		32488157EAB1D3ADBA2D3CF7 /* TaskDetailScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDetailScreen.swift; sourceTree = "<group>"; };
@@ -1297,7 +1293,6 @@
 		8A5145ADC197C85E48796B1B /* Litter */ = {
 			isa = PBXGroup;
 			children = (
-				2FB04F90D08EE57F92DD7F58 /* AppIcon.icon */,
 				35949923355BB19A7209FD65 /* Assets.xcassets */,
 				101538FB7758F2441ED27F40 /* Extensions.swift */,
 				70F312C9FD1BA15F93DA8918 /* Info-Catalyst.plist */,
@@ -1961,7 +1956,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				32CA9FCEE8BA7B775188571B /* AppIcon.icon in Resources */,
 				979A1AC18642D78FFE1F199E /* Assets.xcassets in Resources */,
 				2360CA3C75BCF1203F27DAC1 /* BerkeleyMono-Bold-Oblique.otf in Resources */,
 				1129DC9B38650FC49541690E /* BerkeleyMono-Bold.otf in Resources */,
@@ -2066,7 +2060,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6B931A02489EA216156F0063 /* AppIcon.icon in Resources */,
 				863E974F904C137CB6669DE0 /* Assets.xcassets in Resources */,
 				15378E713092362B622ADF95 /* BerkeleyMono-Bold-Oblique.otf in Resources */,
 				F2A99B16F6AB41896865CD11 /* BerkeleyMono-Bold.otf in Resources */,
@@ -2181,7 +2174,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				52588C7F80941205018E7804 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

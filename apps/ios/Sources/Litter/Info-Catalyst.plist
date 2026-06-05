@@ -70,15 +70,15 @@
 		<string>_litter-pair._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Alley Cat can import image files for conversations.</string>
+	<string>Alley Cãt can import image files for conversations.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Codex discovers coding agents and SSH servers on your local network.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Alley Cat uses the microphone for voice-to-text input.</string>
+	<string>Alley Cãt uses the microphone for voice-to-text input.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Alley Cat advertises a short-range Bluetooth beacon so nearby iPhones can find this Mac to pair with.</string>
+	<string>Alley Cãt advertises a short-range Bluetooth beacon so nearby iPhones can find this Mac to pair with.</string>
 	<key>NSNearbyInteractionUsageDescription</key>
-	<string>Alley Cat uses Nearby Interaction to confirm your iPhone and Mac are close before pairing.</string>
+	<string>Alley Cãt uses Nearby Interaction to confirm your iPhone and Mac are close before pairing.</string>
 	<key>UIAppFonts</key>
 	<array>
 		<string>BerkeleyMono-Regular.otf</string>

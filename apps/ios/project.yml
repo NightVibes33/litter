@@ -834,6 +834,32 @@ targets:
           copy_upstream_source Feather "$SRCROOT/../../ThirdParty/Feather/Source"
           copy_upstream_source LocalDevVPN "$SRCROOT/../../ThirdParty/SideStore/LocalDevVPN-Source"
           copy_upstream_source emexDE "$SRCROOT/../../ThirdParty/EmexDE/Source"
+      - name: Embed Bundled iSH Filesystem
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
+            exit 0
+          fi
+          RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          SRC_ROOTFS="$SRCROOT/Resources/fs.tar.gz"
+          SRC_VERSION="$SRCROOT/Resources/fs.version"
+          if [ ! -s "$SRC_ROOTFS" ]; then
+            echo "error: missing bundled iSH filesystem at $SRC_ROOTFS" >&2
+            exit 1
+          fi
+          mkdir -p "$RESOURCES_DIR"
+          /usr/bin/ditto "$SRC_ROOTFS" "$RESOURCES_DIR/fs.tar.gz"
+          if [ -s "$SRC_VERSION" ]; then
+            /usr/bin/ditto "$SRC_VERSION" "$RESOURCES_DIR/fs.version"
+          else
+            printf '%s\n' unknown > "$RESOURCES_DIR/fs.version"
+          fi
+          if [ ! -s "$RESOURCES_DIR/fs.tar.gz" ]; then
+            echo "error: bundled iSH filesystem copy failed" >&2
+            exit 1
+          fi
+          echo "Embedded bundled iSH filesystem archive"
       - name: Sign Alpine FS Native Modules
         basedOnDependencyAnalysis: false
         script: |
@@ -1273,7 +1299,6 @@ targets:
       - path: Sources/LitterWatch
         excludes:
           - "Assets.xcassets"
-      - path: Sources/Litter/AppIcon.icon
     resources:
       - path: Sources/Litter/Resources/Fonts
       - path: Sources/LitterWatch/Assets.xcassets

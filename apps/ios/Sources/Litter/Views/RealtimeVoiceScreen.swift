@@ -333,7 +333,7 @@ struct RealtimeVoiceScreen: View {
                 .font(LitterFont.styled(.headline, weight: .semibold))
                 .foregroundColor(primaryTextColor)
 
-            Text("Enter your OpenAI API key for this device. Alley Cat will store it in the local Codex environment as OPENAI_API_KEY.")
+            Text("Enter your OpenAI API key for this device. Alley Cãt will store it in the local Codex environment as OPENAI_API_KEY.")
                 .font(LitterFont.styled(.caption))
                 .foregroundColor(secondaryTextColor)
                 .fixedSize(horizontal: false, vertical: true)

@@ -53,7 +53,7 @@ AUTO_GENERATE_WHAT_TO_TEST="${AUTO_GENERATE_WHAT_TO_TEST:-1}"
 WHAT_TO_TEST_MAX_COMMITS="${WHAT_TO_TEST_MAX_COMMITS:-8}"
 AUTO_ASSIGN_ENCRYPTION_DECLARATION="${AUTO_ASSIGN_ENCRYPTION_DECLARATION:-1}"
 BETA_APP_DESCRIPTION_LOCALE="${BETA_APP_DESCRIPTION_LOCALE:-$WHAT_TO_TEST_LOCALE}"
-BETA_APP_DESCRIPTION="${BETA_APP_DESCRIPTION:-Alley Cat lets testers verify the iOS app experience, settings, and TestFlight distribution before public release.}"
+BETA_APP_DESCRIPTION="${BETA_APP_DESCRIPTION:-Alley Cãt lets testers verify the iOS app experience, settings, and TestFlight distribution before public release.}"
 BETA_FEEDBACK_EMAIL="${BETA_FEEDBACK_EMAIL:-NightVibes33@users.noreply.github.com}"
 BETA_MARKETING_URL="${BETA_MARKETING_URL:-}"
 BETA_PRIVACY_POLICY_URL="${BETA_PRIVACY_POLICY_URL:-}"
@@ -61,7 +61,7 @@ REVIEW_CONTACT_EMAIL="${REVIEW_CONTACT_EMAIL:-$BETA_FEEDBACK_EMAIL}"
 REVIEW_CONTACT_FIRST_NAME="${REVIEW_CONTACT_FIRST_NAME:-Night}"
 REVIEW_CONTACT_LAST_NAME="${REVIEW_CONTACT_LAST_NAME:-Vibes}"
 REVIEW_CONTACT_PHONE="${REVIEW_CONTACT_PHONE:-5558675309}"
-REVIEW_NOTES="${REVIEW_NOTES:-No sign-in is required. Please test the Alley Cat app experience, settings, and TestFlight distribution behavior.}"
+REVIEW_NOTES="${REVIEW_NOTES:-No sign-in is required. Please test the Alley Cãt app experience, settings, and TestFlight distribution behavior.}"
 TESTFLIGHT_SKIP_BUILD="${TESTFLIGHT_SKIP_BUILD:-0}"
 TESTFLIGHT_SKIP_UPLOAD="${TESTFLIGHT_SKIP_UPLOAD:-0}"
 TESTFLIGHT_AUTO_BUMP_VERSION="${TESTFLIGHT_AUTO_BUMP_VERSION:-1}"
@@ -420,6 +420,33 @@ repair_exported_ipa_native_module_signatures() {
 
 repair_exported_ipa_native_module_signatures "$IPA_PATH"
 
+verify_exported_ipa_contains_bundled_ish_fs() {
+    local ipa_path="$1"
+    local work_dir payload_app
+
+    echo "==> Verifying exported IPA contains bundled iSH filesystem"
+    work_dir="$(mktemp -d "${TMPDIR:-/tmp}/litter-ipa-fs-check.XXXXXX")"
+    trap 'rm -rf "$work_dir"' RETURN
+
+    unzip -q "$ipa_path" -d "$work_dir"
+    payload_app="$(find "$work_dir/Payload" -maxdepth 1 -type d -name "*.app" | head -n 1)"
+    if [[ -z "$payload_app" ]]; then
+        echo "Unable to find Payload/*.app inside $ipa_path" >&2
+        exit 1
+    fi
+
+    if [[ ! -s "$payload_app/fs.tar.gz" ]]; then
+        echo "Exported IPA is missing fs.tar.gz in the app bundle." >&2
+        echo "Without it, local iSH shell bootstrap fails with: bundled iSH filesystem is missing." >&2
+        exit 1
+    fi
+
+    if [[ ! -s "$payload_app/fs.version" ]]; then
+        echo "Exported IPA is missing fs.version in the app bundle." >&2
+        exit 1
+    fi
+}
+
 verify_exported_ipa_signature() {
     local ipa_path="$1"
     local work_dir payload_app signature_info strict_log relaxed_log diagnostics_log
@@ -523,6 +550,7 @@ verify_testflight_fast_ipa_is_app_store_safe() {
     fi
 }
 
+verify_exported_ipa_contains_bundled_ish_fs "$IPA_PATH"
 verify_exported_ipa_signature "$IPA_PATH"
 verify_testflight_fast_ipa_is_app_store_safe "$IPA_PATH"
 
