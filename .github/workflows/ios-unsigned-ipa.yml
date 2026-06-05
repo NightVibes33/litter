@@ -879,7 +879,7 @@ jobs:
             echo "::error::A linked object was built for a newer iOS deployment target than Alley Cat. Rebuild the vendored static libraries with LITTER_MINIMUXER_MIN_IOS=18.0." >&2
             exit 1
           fi
-          if awk '/\/Applications\/.*\.app\// && /-lminimuxer-ios/ { found = 1 } END { exit found ? 0 : 1 }' build/xcodebuild-archive.log; then
+          if awk '/InstallationBuildProductsLocation\/Applications\/.*\.app\// && /-lminimuxer-ios/ { found = 1 } END { exit found ? 0 : 1 }' build/xcodebuild-archive.log; then
             echo "::error::Alley Cat main executable links the KittyStore minimuxer static library; keep minimuxer isolated to the embedded KittyStore framework." >&2
             exit 1
           fi
