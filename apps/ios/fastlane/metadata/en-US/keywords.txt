@@ -1,1 +1,1 @@
-codex,ssh,developer,terminal,coding,agent,remote
+alleycat,codex,ssh,developer,terminal,coding,agent

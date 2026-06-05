@@ -1080,7 +1080,7 @@ targets:
           copy_buildkit_support_dylibs_from "$SDK_ROOT"
     settings:
       base:
-        PRODUCT_NAME: Littër
+        PRODUCT_NAME: "Alley Cat"
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR
         INFOPLIST_FILE: Sources/Litter/Info.plist
         SWIFT_OBJC_BRIDGING_HEADER: Sources/Litter/Bridge/codex_bridge_objc.h
@@ -1183,7 +1183,7 @@ targets:
         product: NukeUI
     settings:
       base:
-        PRODUCT_NAME: Litter
+        PRODUCT_NAME: "Alley Cat"
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR
         DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
         INFOPLIST_FILE: Sources/Litter/Info-Catalyst.plist
@@ -1357,6 +1357,8 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: true
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Alley Cat.app/Alley Cat"
         CODE_SIGNING_ALLOWED: false
         CODE_SIGNING_REQUIRED: false
   LitterUITests:

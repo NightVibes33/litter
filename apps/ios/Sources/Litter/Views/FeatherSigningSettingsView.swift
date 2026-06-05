@@ -636,7 +636,7 @@ struct FeatherSigningSettingsView: View {
         let installSnapshot = FeatherSigningMaterialStore.snapshot(checkRevocation: false)
         if let pairingRecord = installSnapshot.pairingFile, installSnapshot.localDevVPNState.isConnected {
             isWorking = true
-            lastOutput = "Installing signed IPA through Kittystore minimuxer...\nBundle ID: \(pending.bundleIdentifier)\nPath: \(url.path)"
+            lastOutput = "Installing signed IPA through KittyStore minimuxer...\nBundle ID: \(pending.bundleIdentifier)\nPath: \(url.path)"
             Task {
                 do {
                     let pairingContents = try String(contentsOf: URL(fileURLWithPath: pairingRecord.appPath), encoding: .utf8)
@@ -662,7 +662,7 @@ struct FeatherSigningSettingsView: View {
                         let logPathLine = fakefsLogPath.map { "\nInstall log:\n\($0)" } ?? ""
                         lastOutput = output + logPathLine
                         if result.exitCode == 0 {
-                            alert = SigningAlert(title: "Install Sent", message: "Kittystore sent the signed IPA to the device through LocalDevVPN.")
+                            alert = SigningAlert(title: "Install Sent", message: "KittyStore sent the signed IPA to the device through LocalDevVPN.")
                         } else {
                             signedIPAShareItem = FeatherSignedIPAShareItem(url: url)
                             alert = SigningAlert(title: "Install Failed", message: "\(result.log)\n\nThe signed IPA share sheet is open as a fallback.")

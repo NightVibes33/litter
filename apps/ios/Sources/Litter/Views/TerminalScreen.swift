@@ -647,7 +647,7 @@ private enum TerminalThemeChoice: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .litterDark: return "Litter Dark"
+        case .litterDark: return "Alley Cat Dark"
         case .catppuccinFrappe: return "Catppuccin Frappé"
         case .catppuccinFrappeLight: return "Catppuccin Frappé Light"
         case .solarizedDark: return "Solarized Dark"

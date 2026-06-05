@@ -393,7 +393,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                     .foregroundStyle(LitterTheme.textPrimary)
                     .litterFont(.subheadline, weight: .semibold)
             }
-            Text("This agent does not support Litter-side thread permission overrides, so approval and sandbox choices are not sent for this session.")
+            Text("This agent does not support Alley Cat-side thread permission overrides, so approval and sandbox choices are not sent for this session.")
                 .foregroundStyle(LitterTheme.textMuted)
                 .litterFont(.caption)
         }

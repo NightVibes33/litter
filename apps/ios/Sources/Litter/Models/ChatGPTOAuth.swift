@@ -70,7 +70,7 @@ enum ChatGPTOAuthError: LocalizedError {
         case .cancelled:
             return "ChatGPT login was cancelled."
         case .callbackTimedOut:
-            return "ChatGPT login timed out before returning to Litter."
+            return "ChatGPT login timed out before returning to Alley Cat."
         case .missingRefreshToken:
             return "No ChatGPT refresh token is available."
         case .missingStoredTokens:
@@ -1249,7 +1249,7 @@ private final class ChatGPTOAuthLoopbackServer: @unchecked Sendable {
 
         sendResponse(
             statusLine: "HTTP/1.1 200 OK",
-            body: "<html><body><h3>Login complete</h3><p>You can return to Litter.</p></body></html>",
+            body: "<html><body><h3>Login complete</h3><p>You can return to Alley Cat.</p></body></html>",
             on: connection
         )
         LLog.info("auth", "ChatGPT auth callback accepted", fields: [

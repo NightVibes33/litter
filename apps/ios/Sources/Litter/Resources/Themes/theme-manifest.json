@@ -249,7 +249,7 @@
   },
   {
     "slug": "kitty-litter-dark",
-    "name": "Kitty Litter",
+    "name": "Alley Cat",
     "type": "dark",
     "accentHex": "#F59E0B",
     "backgroundHex": "#1F2937",
@@ -257,7 +257,7 @@
   },
   {
     "slug": "kitty-litter-light",
-    "name": "Kitty Litter Light",
+    "name": "Alley Cat Light",
     "type": "light",
     "accentHex": "#F59E0B",
     "backgroundHex": "#FAF7F0",

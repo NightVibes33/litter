@@ -7,7 +7,7 @@
 		<string>com.sigkitten.litter.turn-check</string>
 	</array>
 	<key>CFBundleDisplayName</key>
-	<string>Littër</string>
+	<string>Alley Cat</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -79,13 +79,13 @@
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Codex discovers coding agents and SSH servers on your local network.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Litter uses the camera to capture photos for conversations.</string>
+	<string>Alley Cat uses the camera to capture photos for conversations.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Litter uses the microphone for voice-to-text input.</string>
+	<string>Alley Cat uses the microphone for voice-to-text input.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Litter uses Bluetooth to detect when your iPhone is near your paired Mac.</string>
+	<string>Alley Cat uses Bluetooth to detect when your iPhone is near your paired Mac.</string>
 	<key>NSNearbyInteractionUsageDescription</key>
-	<string>Litter uses Nearby Interaction to confirm your iPhone and Mac are close before pairing.</string>
+	<string>Alley Cat uses Nearby Interaction to confirm your iPhone and Mac are close before pairing.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>

@@ -781,9 +781,9 @@ private extension KittyStoreSideStoreSigningBridge {
 
     static var appDisplayName: String {
         let info = Bundle.main.infoDictionary ?? [:]
-        let displayName = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? "Litter"
+        let displayName = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? "Alley Cat"
         let cleaned = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "Litter" : cleaned
+        return cleaned.isEmpty ? "Alley Cat" : cleaned
     }
 
     static var deviceRegistrationName: String {
@@ -803,7 +803,7 @@ private extension KittyStoreSideStoreSigningBridge {
     static func stagedOutputURL(for ipaURL: URL, in directory: URL) throws -> URL {
         let baseName = ipaURL.deletingPathExtension().lastPathComponent
         let safeBase = baseName.isEmpty ? "Signed" : baseName
-        return directory.appendingPathComponent("\(safeBase)-KittyStoreSigned-\(UUID().uuidString.prefix(8)).ipa")
+        return directory.appendingPathComponent("\(safeBase)-AlleyCatStoreSigned-\(UUID().uuidString.prefix(8)).ipa")
     }
 
     static func profileBundleIdentifierAllows(_ bundleIdentifier: String, profileBundleIdentifier: String) -> Bool {

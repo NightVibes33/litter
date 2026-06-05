@@ -84,7 +84,7 @@ Pipeline:
 3. Verify the signature with `codesign` + `spctl` *before* spending minutes
    on notarization (catches missing-cert errors fast).
 4. Wrap the `.app` in a drag-to-install `.dmg` via `hdiutil`, with
-   `Litter.app`, an `Applications` shortcut, and Finder icon layout metadata.
+   `Alley Cat.app`, an `Applications` shortcut, and Finder icon layout metadata.
 5. Sign the `.dmg` itself with the Developer ID Application cert.
 6. Submit the `.dmg` to Apple's notary service via `xcrun notarytool` (uses
    the same ASC API key as TestFlight — no separate Apple ID password needed).
@@ -92,7 +92,7 @@ Pipeline:
 8. Final Gatekeeper assessment via `spctl` to confirm the artifact will
    actually launch offline.
 
-Output: `apps/ios/build/direct-dist-mac/Litter-<version>-mac.dmg`.
+Output: `apps/ios/build/direct-dist-mac/Alley Cat-<version>-mac.dmg`.
 
 ### One-time signing setup
 

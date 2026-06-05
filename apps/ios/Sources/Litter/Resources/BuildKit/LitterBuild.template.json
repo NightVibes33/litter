@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "name": "HelloLitter",
-  "bundleIdentifier": "com.example.hellolitter",
+  "name": "HelloAlleyCat",
+  "bundleIdentifier": "com.example.helloalleycat",
   "deploymentTarget": "18.0",
   "sdk": "iPhoneOS26.4.sdk",
   "product": "app",
@@ -13,5 +13,5 @@
     "Resources"
   ],
   "entitlements": "Entitlements.plist",
-  "output": "build/HelloLitter.ipa"
+  "output": "build/HelloAlleyCat.ipa"
 }

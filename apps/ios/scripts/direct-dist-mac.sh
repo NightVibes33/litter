@@ -12,7 +12,7 @@
 #   6. Staple the notarization ticket to the .dmg so it passes Gatekeeper
 #      offline after the first run.
 #
-# Output: `$BUILD_DIR/Litter-<version>-mac.dmg`, ready to host anywhere.
+# Output: `$BUILD_DIR/Alley Cat-<version>-mac.dmg`, ready to host anywhere.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -28,7 +28,7 @@ CONFIGURATION="${CONFIGURATION:-DeveloperID}"
 PROJECT_DIR="${PROJECT_DIR:-$IOS_DIR}"
 PROJECT_PATH="${PROJECT_PATH:-$PROJECT_DIR/Litter.xcodeproj}"
 APP_BUNDLE_ID="${APP_BUNDLE_ID:-com.sigkitten.litter}"
-APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-Litter}"
+APP_DISPLAY_NAME="${APP_DISPLAY_NAME:-Alley Cat}"
 TEAM_ID="${TEAM_ID:-}"
 # Developer ID provisioning profile name (NOT the Mac App Store one).
 # Required because our entitlements include APS + App Groups (and iCloud
@@ -119,7 +119,7 @@ let titleAttributes: [NSAttributedString.Key: Any] = [
     .foregroundColor: NSColor.white,
     .paragraphStyle: titleStyle
 ]
-"Install Litter".draw(
+"Install Alley Cat".draw(
     in: NSRect(x: 0, y: 42, width: size.width, height: 28),
     withAttributes: titleAttributes
 )
@@ -129,7 +129,7 @@ let subtitleAttributes: [NSAttributedString.Key: Any] = [
     .foregroundColor: NSColor(calibratedRed: 0.78, green: 0.82, blue: 0.78, alpha: 1),
     .paragraphStyle: titleStyle
 ]
-"Drag Litter.app into Applications".draw(
+"Drag Alley Cat.app into Applications".draw(
     in: NSRect(x: 0, y: 72, width: size.width, height: 22),
     withAttributes: subtitleAttributes
 )

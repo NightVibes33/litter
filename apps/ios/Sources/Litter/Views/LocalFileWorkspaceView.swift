@@ -242,7 +242,7 @@ struct LocalFileWorkspaceView: View {
                     Divider()
                     Button("Build Status", systemImage: "chart.bar.doc.horizontal") { taskBag.run { await runBuildStatus() } }
                     Button("Filesystem Doctor", systemImage: "stethoscope") { taskBag.run { await runFilesystemDoctor() } }
-                    Button("Create LitterBuild.json", systemImage: "doc.badge.gearshape") { taskBag.run { await createLitterBuildManifest() } }
+                    Button("Create Build Manifest", systemImage: "doc.badge.gearshape") { taskBag.run { await createLitterBuildManifest() } }
                     Divider()
                     Button("Select", systemImage: "checkmark.circle") { model.isSelecting = true }
                     Button("Copy Folder Path", systemImage: "doc.on.doc") { copyPath(model.currentPath) }
@@ -691,7 +691,7 @@ struct LocalFileWorkspaceView: View {
     private func runSwiftBuild(projectPath: String? = nil) async {
         let path = projectPath ?? model.litterBuildManifestPath
         guard let path else {
-            alertMessage = "No LitterBuild.json found in this folder."
+            alertMessage = "No build manifest found in this folder."
             return
         }
         let result = await IshFS.run("litter-swift-build --timeout 600 \(IshFS.shellQuote(path))", cwd: model.currentPath)
@@ -701,7 +701,7 @@ struct LocalFileWorkspaceView: View {
     private func runIPABuild(projectPath: String? = nil) async {
         let path = projectPath ?? model.litterBuildManifestPath
         guard let path else {
-            alertMessage = "No LitterBuild.json found in this folder."
+            alertMessage = "No build manifest found in this folder."
             return
         }
         let result = await IshFS.run("litter-ipa-build --timeout 900 \(IshFS.shellQuote(path))", cwd: model.currentPath)
@@ -782,11 +782,11 @@ struct LocalFileWorkspaceView: View {
     private func createLitterBuildManifest() async {
         let target = RemotePath.parse(path: model.currentPath).join(name: "LitterBuild.json").asString()
         guard !(await IshFS.exists(path: target)) else {
-            alertMessage = "LitterBuild.json already exists here."
+            alertMessage = "Build manifest already exists here."
             return
         }
         let folderName = (model.currentPath as NSString).lastPathComponent
-        let appName = folderName.isEmpty ? "LitterApp" : folderName
+        let appName = folderName.isEmpty ? "AlleyCatApp" : folderName
         let manifest = """
         {
           "name": "\(appName)",
@@ -799,10 +799,10 @@ struct LocalFileWorkspaceView: View {
             try await IshFS.writeTextFile(path: target, text: manifest + "\n")
             let mainPath = RemotePath.parse(path: model.currentPath).join(name: "main.swift").asString()
             if !(await IshFS.exists(path: mainPath)) {
-                try await IshFS.writeTextFile(path: mainPath, text: "import Foundation\n\nprint(\"Hello from Litter\")\n")
+                try await IshFS.writeTextFile(path: mainPath, text: "import Foundation\n\nprint(\"Hello from Alley Cat\")\n")
             }
             await model.reload()
-            alertMessage = "Created LitterBuild.json."
+            alertMessage = "Created build manifest."
         } catch {
             alertMessage = error.localizedDescription
         }
@@ -1167,7 +1167,7 @@ private final class LocalFileWorkspaceModel {
     var quickLocations: [LocalFileShortcut] {
         var locations = [
             LocalFileShortcut(source: .quick, path: HomeAnchor.path, title: "Home", subtitle: "~", systemImage: "house.fill", kind: .directory),
-            LocalFileShortcut(source: .quick, path: "/root/litter", title: "Litter", subtitle: "/root/litter", systemImage: "shippingbox.fill", kind: .directory),
+            LocalFileShortcut(source: .quick, path: "/root/alley-cat", title: "Alley Cat", subtitle: "/root/alley-cat", systemImage: "shippingbox.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/root/projects", title: "Projects", subtitle: "/root/projects", systemImage: "folder.fill.badge.gearshape", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/root/.litter/builds", title: "Builds", subtitle: "~/.litter/builds", systemImage: "hammer.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/mnt/apps", title: "App Files", subtitle: "/mnt/apps", systemImage: "externaldrive.fill", kind: .directory),

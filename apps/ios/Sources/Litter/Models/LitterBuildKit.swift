@@ -276,7 +276,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
 
     var nyxianRunInstallRequirements: [String] {
         var lines: [String] = []
-        if !embeddedProvisionPresent { lines.append("KittyStore-compatible embedded.mobileprovision on the installed Litter app") }
+        if !embeddedProvisionPresent { lines.append("KittyStore-compatible embedded.mobileprovision on the installed Alley Cat app") }
         if !appleIDConfigured { lines.append("Apple ID login in BuildKit settings (email, password, KittyStore Anisette server; Team ID can be selected after login)") }
         if !nyxianSigningCertificateInstalled { lines.append("validated matching KittyStore-compatible .p12 certificate for Nyxian signing") }
         if !localDevVPNConnected { lines.append("LocalDevVPN connected for KittyStore-style on-device install/refresh") }
@@ -918,7 +918,7 @@ actor LitterBuildKit {
             let payload: [String: Any] = [
                 "sourceURL": Self.kittyStoreSourceURL,
                 "name": Self.jsonString(root?["name"]) ?? "KittyStore",
-                "appName": Self.jsonString(app["name"]) ?? "Litter",
+                "appName": Self.jsonString(app["name"]) ?? "Alley Cat",
                 "bundleIdentifier": Self.jsonString(app["bundleIdentifier"]) ?? "",
                 "count": normalizedVersions.count,
                 "versions": normalizedVersions
@@ -1526,7 +1526,7 @@ actor LitterBuildKit {
             check "/tmp writable" 't=$(mktemp /tmp/litter.XXXXXX) && rm -f "$t"'
             check "/usr/local/bin writable" "[ -w /usr/local/bin ]"
             check "/root/.litter/builds writable" "[ -w /root/.litter/builds ]"
-            check "/root/litter visible" "[ -d /root/litter ] && cd /root/litter"
+            check "/root/alley-cat visible" "[ -d /root/alley-cat ] && cd /root/alley-cat"
             for tool in \(Self.commandNames.joined(separator: " ")) git ssh scp curl tar gzip unzip zip base64 python3 pip3 node npm make jq; do
               if command -v "$tool" >/dev/null 2>&1; then echo "ok  command:$tool $(command -v "$tool")"; else echo "miss command:$tool"; fi
             done
@@ -1548,7 +1548,7 @@ actor LitterBuildKit {
         let report = await IshFS.run(
             """
             set +e
-            echo "Litter fakefs environment"
+            echo "Alley Cat fakefs environment"
             echo "kernel=$(uname -a 2>/dev/null)"
             echo "cwd=$(pwd)"
             echo "PATH=$PATH"
@@ -1581,7 +1581,7 @@ actor LitterBuildKit {
         let bootstrap = await IshFS.run(
             """
             set -eu
-            mkdir -p /root/bin /root/litter /root/projects /root/.cache/litter /root/.litter/buildkit/requests /root/.litter/builds /tmp
+            mkdir -p /root/bin /root/alley-cat /root/litter /root/projects /root/.cache/litter /root/.litter/buildkit/requests /root/.litter/builds /tmp
             chmod 1777 /tmp /var/tmp 2>/dev/null || true
             if command -v apk >/dev/null 2>&1; then
               apk update || true
@@ -1591,7 +1591,7 @@ actor LitterBuildKit {
             git config --global advice.detachedHead false 2>/dev/null || true
             cat > /root/.litter-fakefs-version <<'EOF'
             litter-fakefs-dev-bootstrap=1
-            layout=/root,/root/litter,/root/projects,/root/.litter/builds,/root/.cache/litter,/usr/local/bin
+            layout=/root,/root/alley-cat,/root/projects,/root/.litter/builds,/root/.cache/litter,/usr/local/bin
             EOF
             echo "Bootstrap complete."
             """
@@ -1607,7 +1607,7 @@ actor LitterBuildKit {
         }
         let path = first.hasPrefix("/") ? first : "\(cwd)/\(first)"
         let source = (try? await IshFS.readTextFile(path: path, maxBytes: 512_000)) ?? ""
-        var log = "Litter BuildKit Swift check\n"
+        var log = "Alley Cat BuildKit Swift check\n"
         log += "Input: \(path)\n"
         log += "Backend: Nyxian private asset pack + native driver\n\n"
         log += Self.staticSwiftPreflight(source: source, path: path)
@@ -1638,7 +1638,7 @@ actor LitterBuildKit {
         let projectManifest = "\(projectDir)/LitterBuild.json"
         var artifacts: [NativeDriverArtifact] = []
         var log = """
-        Litter full iOS toolchain self-test
+        Alley Cat full iOS toolchain self-test
         Root: \(root)
         Checks: Swift typecheck, Swift compile, UIKit import, C, C++, Objective-C, Objective-C++, unsigned UIKit IPA packaging.
 
@@ -1710,7 +1710,7 @@ actor LitterBuildKit {
                     let viewController = UIViewController()
                     viewController.view.backgroundColor = .systemBackground
                     let label = UILabel()
-                    label.text = "Hello from Litter"
+                    label.text = "Hello from Alley Cat"
                     label.font = .systemFont(ofSize: 28, weight: .semibold)
                     label.textAlignment = .center
                     label.translatesAutoresizingMaskIntoConstraints = false
@@ -1831,7 +1831,7 @@ actor LitterBuildKit {
             }
             let result = await swiftCheck(args: sourcePath, cwd: cwd, buildDir: buildDir)
             let status = result.exitCode == 0 ? "swift-e-check-ok" : result.status
-            let prelude = "Litter swift -e compatibility: checking the snippet with the iOS Swift driver. iSH cannot execute iOS Mach-O output directly.\nExpression source: \(sourcePath)\n\n"
+            let prelude = "Alley Cat swift -e compatibility: checking the snippet with the iOS Swift driver. iSH cannot execute iOS Mach-O output directly.\nExpression source: \(sourcePath)\n\n"
             return BuildKitCommandResult(exitCode: result.exitCode, status: status, log: prelude + result.log, artifacts: result.artifacts)
         }
         if first == "build" {
@@ -1841,16 +1841,16 @@ actor LitterBuildKit {
             return await nativeBuildCommand(command: "litter-swift-test", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir)
         }
         if first == "run" {
-            let prelude = "Litter swift run compatibility: building an iOS artifact. iSH cannot execute iOS Mach-O binaries.\n"
+            let prelude = "Alley Cat swift run compatibility: building an iOS artifact. iSH cannot execute iOS Mach-O binaries.\n"
             return await nativeBuildCommand(command: "litter-swift-build", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir, prelude: prelude)
         }
         if first == "package" {
-            return BuildKitCommandResult(exitCode: 64, status: "swift-package-unsupported", log: "Litter does not embed full SwiftPM yet. Use swift build/test with LitterBuild.json or litter-swift-build/litter-swift-test.\n")
+            return BuildKitCommandResult(exitCode: 64, status: "swift-package-unsupported", log: "Alley Cat does not embed full SwiftPM yet. Use swift build/test with LitterBuild.json or litter-swift-build/litter-swift-test.\n")
         }
         if first.hasSuffix(".swift") {
             return await swiftCheck(args: args, cwd: cwd, buildDir: buildDir)
         }
-        return BuildKitCommandResult(exitCode: 64, status: "swift-unsupported", log: "Litter's swift compatibility shim supports: --version, --help, swift -e, swift <file.swift>, swift build, swift test, and swift run as build-only.\nUse litter-swift-check, litter-swift-build, or litter-swift-test for the canonical bot API.\n")
+        return BuildKitCommandResult(exitCode: 64, status: "swift-unsupported", log: "Alley Cat's swift compatibility shim supports: --version, --help, swift -e, swift <file.swift>, swift build, swift test, and swift run as build-only.\nUse litter-swift-check, litter-swift-build, or litter-swift-test for the canonical bot API.\n")
     }
 
     private func swiftcCompile(args: String, cwd: String, buildDir: String, compatibilityName: String) async -> BuildKitCommandResult {
@@ -1869,7 +1869,7 @@ actor LitterBuildKit {
         let source = (try? await IshFS.readTextFile(path: sourcePath, maxBytes: 512_000)) ?? ""
         var log = "\(compatibilityName) compatibility shim\n"
         log += "Input: \(sourcePath)\n"
-        log += "Backend: Litter BuildKit native Swift driver\n\n"
+        log += "Backend: Alley Cat BuildKit native Swift driver\n\n"
         log += Self.staticSwiftPreflight(source: source, path: sourcePath)
         let staging = Self.stageSwiftSourceForNativeDriver(fakefsPath: sourcePath, source: source, buildDir: buildDir)
         log += staging.log
@@ -1892,7 +1892,7 @@ actor LitterBuildKit {
         let staging = await Self.stageFakefsFileForNativeDriver(fakefsPath: sourcePath, buildDir: buildDir, preferredName: "Input.\(URL(fileURLWithPath: sourcePath).pathExtension)")
         var log = "\(command) compatibility shim\n"
         log += "Input: \(sourcePath)\n"
-        log += "Backend: Litter BuildKit Nyxian Clang driver\n\n"
+        log += "Backend: Alley Cat BuildKit Nyxian Clang driver\n\n"
         log += staging.log
         return await nativeBuildCommand(command: "litter-clang", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
     }
@@ -1913,7 +1913,7 @@ actor LitterBuildKit {
         let staging = await Self.stageFakefsFileForNativeDriver(fakefsPath: inputPath, buildDir: buildDir, preferredName: URL(fileURLWithPath: inputPath).lastPathComponent)
         var log = "\(command) compatibility shim\n"
         log += "Input: \(inputPath)\n"
-        log += "Backend: Litter BuildKit Nyxian linker path\n\n"
+        log += "Backend: Alley Cat BuildKit Nyxian linker path\n\n"
         log += staging.log
         return await nativeBuildCommand(command: "litter-ld", args: args, cwd: cwd, buildDir: buildDir, prelude: log, staging: staging)
     }
@@ -1938,7 +1938,7 @@ actor LitterBuildKit {
             if let path = await Self.firstFakefsExecutablePath(tool) {
                 return BuildKitCommandResult(exitCode: 0, status: "xcrun-find-ok", log: "\(path)\n")
             }
-            return BuildKitCommandResult(exitCode: 72, status: "xcrun-find-missing", log: "xcrun: could not find tool \(tool) in Litter BuildKit or fakefs.\n")
+            return BuildKitCommandResult(exitCode: 72, status: "xcrun-find-missing", log: "xcrun: could not find tool \(tool) in Alley Cat BuildKit or fakefs.\n")
         }
         if let invocation = Self.xcrunToolInvocation(tokens: tokens) {
             let forwardedArgs = invocation.args.map(IshFS.shellQuote).joined(separator: " ")
@@ -2021,7 +2021,7 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-sdks", log: Self.xcodebuildSDKList())
         }
         if Self.tokensRequestSimulator(tokens) {
-            return BuildKitCommandResult(exitCode: 64, status: "simulator-unsupported", log: "Litter BuildKit is iOS-device only. Use -sdk iphoneos and an arm64 iOS deployment target; simulator destinations are not available on device.\n")
+            return BuildKitCommandResult(exitCode: 64, status: "simulator-unsupported", log: "Alley Cat BuildKit is iOS-device only. Use -sdk iphoneos and an arm64 iOS deployment target; simulator destinations are not available on device.\n")
         }
         if tokens.contains("-list") {
             return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-list", log: Self.xcodebuildListLog(projectArgs: Self.compatibilityProjectArgs(tokens: tokens)))
@@ -2037,7 +2037,7 @@ actor LitterBuildKit {
             return await nativeBuildCommand(command: "litter-swift-test", args: projectArgs, cwd: cwd, buildDir: buildDir)
         }
         if tokens.contains("clean") {
-            return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-clean-ok", log: "Litter xcodebuild compatibility shim: clean is a no-op for staged BuildKit jobs.\n")
+            return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-clean-ok", log: "Alley Cat xcodebuild compatibility shim: clean is a no-op for staged BuildKit jobs.\n")
         }
         return await nativeBuildCommand(command: "litter-swift-build", args: projectArgs, cwd: cwd, buildDir: buildDir)
     }
@@ -2048,17 +2048,17 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 0, status: "xcode-select-path", log: "\(Self.toolchainRoot.path)\n")
         }
         if tokens.contains("--version") || tokens.contains("-version") {
-            return BuildKitCommandResult(exitCode: 0, status: "xcode-select-version", log: "xcode-select compatibility shim for Litter BuildKit\n")
+            return BuildKitCommandResult(exitCode: 0, status: "xcode-select-version", log: "xcode-select compatibility shim for Alley Cat BuildKit\n")
         }
         if tokens.contains("--help") || tokens.contains("-help") {
             return BuildKitCommandResult(exitCode: 0, status: "xcode-select-help", log: "Supported: xcode-select -p, xcode-select --print-path, xcode-select --version\n")
         }
-        return BuildKitCommandResult(exitCode: 64, status: "xcode-select-unsupported", log: "Litter's xcode-select shim only reports the on-device BuildKit developer path.\n")
+        return BuildKitCommandResult(exitCode: 64, status: "xcode-select-unsupported", log: "Alley Cat's xcode-select shim only reports the on-device BuildKit developer path.\n")
     }
 
     private func codeCompatibility(args: String, cwd: String) -> BuildKitCommandResult {
         let target = Self.shellWords(args).first ?? cwd
-        return BuildKitCommandResult(exitCode: 0, status: "code-compat", log: "Litter code compatibility shim\nTarget: \(target)\nThis IPA does not embed VS Code. Use Litter's file browser/editor or bot file tools for edits, then build with litter-swift-check, litter-swift-build, or litter-ipa-build.\n")
+        return BuildKitCommandResult(exitCode: 0, status: "code-compat", log: "Alley Cat code compatibility shim\nTarget: \(target)\nThis IPA does not embed VS Code. Use Alley Cat's file browser/editor or bot file tools for edits, then build with litter-swift-check, litter-swift-build, or litter-ipa-build.\n")
     }
 
     private func nativeBuildCommand(command: String, args: String, cwd: String, buildDir: String, prelude: String = "", staging providedStaging: BuildKitHostStaging? = nil) async -> BuildKitCommandResult {
@@ -2074,7 +2074,7 @@ actor LitterBuildKit {
         }
         let current = await status()
         guard current.isReadyForNativeBuilds else {
-            fullPrelude += "\(command) is routed through Litter BuildKit.\n"
+            fullPrelude += "\(command) is routed through Alley Cat BuildKit.\n"
             fullPrelude += Self.missingAssetSummary(current)
             return BuildKitCommandResult(exitCode: 78, status: "toolchain-missing", log: fullPrelude)
         }
@@ -3457,22 +3457,22 @@ actor LitterBuildKit {
         iOS SDKs:
           iOS \(sdk)  -sdk iphoneos
 
-        Litter BuildKit runs on device only. Simulator SDKs are intentionally unavailable.
+        Alley Cat BuildKit runs on device only. Simulator SDKs are intentionally unavailable.
         """
     }
 
     private static func xcodebuildListLog(projectArgs: String) -> String {
         """
-        Information about project "LitterBuild":
+        Information about project "AlleyCatBuild":
             Targets:
-                LitterBuild
+                AlleyCatBuild
 
             Build Configurations:
                 Debug
                 Release
 
             Schemes:
-                LitterBuild
+                AlleyCatBuild
 
         Manifest: \(projectArgs)
         """
@@ -3480,7 +3480,7 @@ actor LitterBuildKit {
 
     private static func xcodebuildSettingsLog(projectArgs: String) -> String {
         """
-        Build settings for action build and target LitterBuild:
+        Build settings for action build and target AlleyCatBuild:
             ACTION = build
             ARCHS = arm64
             EFFECTIVE_PLATFORM_NAME = -iphoneos
@@ -3496,7 +3496,7 @@ actor LitterBuildKit {
     }
 
     private static func compatibilityVersionLog(tool: String, status: LitterBuildKitStatus) -> String {
-        var output = "\(tool) compatibility shim for Litter BuildKit\n"
+        var output = "\(tool) compatibility shim for Alley Cat BuildKit\n"
         output += "Swift: \(status.assetManifest?.swiftVersion ?? "unknown")\n"
         output += "SDK: \(status.assetManifest?.sdkVersion ?? "missing")\n"
         output += "Swift compatibility: \(status.assetManifest?.swiftCompatibilityVersion ?? "unknown")\n"
@@ -3516,7 +3516,7 @@ actor LitterBuildKit {
 
     private static func swiftCompatibilityUsage() -> String {
         """
-        Litter swift compatibility shim
+        Alley Cat swift compatibility shim
         Supported:
           swift --version
           swift -e 'print("hello")'  # check-only on iOS; direct Mach-O execution is unavailable in iSH
@@ -3535,7 +3535,7 @@ actor LitterBuildKit {
 
     private static func swiftcCompatibilityUsage() -> String {
         """
-        Litter swiftc compatibility shim
+        Alley Cat swiftc compatibility shim
         Supported:
           swiftc --version
           swiftc path/to/File.swift -o output
@@ -3573,7 +3573,7 @@ actor LitterBuildKit {
 
     private static func xcrunCompatibilityUsage() -> String {
         """
-        Litter xcrun compatibility shim
+        Alley Cat xcrun compatibility shim
         Supported:
           xcrun --sdk iphoneos --show-sdk-path
           xcrun --find swiftc
@@ -3586,7 +3586,7 @@ actor LitterBuildKit {
 
     private static func plutilCompatibilityUsage() -> String {
         """
-        Litter plutil compatibility shim
+        Alley Cat plutil compatibility shim
         Supported:
           plutil -lint Info.plist
           plutil -convert xml1 [-o output] Info.plist
@@ -3596,7 +3596,7 @@ actor LitterBuildKit {
 
     private static func xcodebuildCompatibilityUsage() -> String {
         """
-        Litter xcodebuild compatibility shim
+        Alley Cat xcodebuild compatibility shim
         Supported:
           xcodebuild -version
           xcodebuild -showsdks
@@ -3786,7 +3786,7 @@ actor LitterBuildKit {
 
     private static func statusLog(_ status: LitterBuildKitStatus) -> String {
         var output = """
-        Litter BuildKit status
+        Alley Cat BuildKit status
         Source import: \(status.sourceImportAvailable ? "present" : "missing")
         LiveContainer/ZSign source: \(status.liveContainerSourceAvailable ? "included" : "missing")
         LiveContainer OpenSSL framework: \(status.openSSLFrameworkVendored ? "included" : "missing")
@@ -3968,7 +3968,7 @@ actor LitterBuildKit {
           write_args "$@"
         } > "$req"
         if [ "$wait_for_result" -eq 0 ]; then
-          echo "Queued Litter BuildKit request: $id"
+          echo "Queued Alley Cat BuildKit request: $id"
           echo "Status: litter-build-status $id"
           echo "Log: $builds/$id/log.txt"
           exit 0
@@ -4002,11 +4002,11 @@ actor LitterBuildKit {
           echo "updatedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         } > "$builds/$id/status.txt"
         {
-          echo "Timed out waiting for Litter BuildKit request: $id"
+          echo "Timed out waiting for Alley Cat BuildKit request: $id"
           echo "Command: $cmd"
           echo "Request: $req"
           echo "Builds: $builds"
-          echo "This means the native Litter BuildKit request monitor did not write a result before the shim timeout."
+          echo "This means the native Alley Cat BuildKit request monitor did not write a result before the shim timeout."
         } > "$builds/$id/log.txt"
         rm -f "$req" 2>/dev/null || true
         cat "$builds/$id/status.txt"

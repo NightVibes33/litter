@@ -316,7 +316,7 @@ json_value() {
 require_manifest() {
   if [ ! -f "$manifest" ]; then
     echo "Missing connector broker manifest: $manifest" >&2
-    echo "Open Litter with the local runtime running, then try again." >&2
+    echo "Open Alley Cat with the local runtime running, then try again." >&2
     exit 1
   fi
 }

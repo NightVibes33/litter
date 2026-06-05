@@ -813,7 +813,7 @@ jobs:
               elif stable_version:
                   print(f"Stable update feed is on {stable_version}; using {base} as the {major}.{minor}.x base", file=sys.stderr)
           except Exception as error:
-              print(f"Could not inspect stable Litter app-source release ({error}); using {base} as the version base", file=sys.stderr)
+              print(f"Could not inspect stable Alley Cat app-source release ({error}); using {base} as the version base", file=sys.stderr)
 
           print(f"{major}.{minor}.{latest_patch + 1}")
           PY
@@ -876,11 +876,11 @@ jobs:
           fi
 
           if grep -F "was built for newer 'iOS' version" build/xcodebuild-archive.log; then
-            echo "::error::A linked object was built for a newer iOS deployment target than Litter. Rebuild the vendored static libraries with LITTER_MINIMUXER_MIN_IOS=18.0." >&2
+            echo "::error::A linked object was built for a newer iOS deployment target than Alley Cat. Rebuild the vendored static libraries with LITTER_MINIMUXER_MIN_IOS=18.0." >&2
             exit 1
           fi
-          if awk '/\/Applications\/Litter\.app\/Litter/ && /-lminimuxer-ios/ { found = 1 } END { exit found ? 0 : 1 }' build/xcodebuild-archive.log; then
-            echo "::error::Litter main executable links the KittyStore minimuxer static library; keep minimuxer isolated to the embedded KittyStore framework." >&2
+          if awk '/\/Applications\/.*\.app\// && /-lminimuxer-ios/ { found = 1 } END { exit found ? 0 : 1 }' build/xcodebuild-archive.log; then
+            echo "::error::Alley Cat main executable links the KittyStore minimuxer static library; keep minimuxer isolated to the embedded KittyStore framework." >&2
             exit 1
           fi
 
@@ -954,7 +954,7 @@ jobs:
             '@rpath/RustBridge.framework/RustBridge'
           do
             if /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq "$forbidden_dependency"; then
-              echo "::error::Litter directly launch-links $forbidden_dependency; keep minimuxer isolated behind the KittyStore framework." >&2
+              echo "::error::Alley Cat directly launch-links $forbidden_dependency; keep minimuxer isolated behind the KittyStore framework." >&2
               /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2
               exit 1
             fi
@@ -962,21 +962,21 @@ jobs:
           for forbidden_dependency in             '@rpath/CoreCompiler.framework/CoreCompiler'             '@rpath/MobileDevelopmentKit.framework/MobileDevelopmentKit'             '@rpath/emexDE.framework/emexDE'
           do
             if /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq "$forbidden_dependency"; then
-              echo "::error::Litter directly launch-links $forbidden_dependency; load emexDE lazily from settings to avoid sideload launch crashes." >&2
+              echo "::error::Alley Cat directly launch-links $forbidden_dependency; load emexDE lazily from settings to avoid sideload launch crashes." >&2
               /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2
               exit 1
             fi
           done
           if ! /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" | /usr/bin/grep -Fq '@rpath/SideStore.framework/SideStore'; then
-            echo "::error::Litter no longer launch-links SideStore.framework; this regresses the 1.5.52 KittyStore launch path." >&2
+            echo "::error::Alley Cat no longer launch-links SideStore.framework; this regresses the KittyStore launch path." >&2
             /usr/bin/otool -L "$APP_PATH/$EXECUTABLE" >&2
             exit 1
           fi
           if [ ! -f "$APP_PATH/Frameworks/SideStore.framework/SideStore" ]; then
-            echo "::error::Litter IPA is missing embedded SideStore.framework for KittyStore launch." >&2
+            echo "::error::Alley Cat IPA is missing embedded SideStore.framework for KittyStore launch." >&2
             exit 1
           fi
-          echo "Verified KittyStore framework is embedded, launch-linked by Litter, and minimuxer native frameworks are not directly launch-linked by Litter."
+          echo "Verified KittyStore framework is embedded, launch-linked by Alley Cat, and minimuxer native frameworks are not directly launch-linked by Alley Cat."
           require_any_resource() {
             local label="$1"
             shift
@@ -1529,7 +1529,7 @@ jobs:
               raise SystemExit(f"::error::CURRENT_PROJECT_VERSION must be a numeric build, got {build!r}")
           PY
 
-          IPA_NAME="Litter-${VERSION}.ipa"
+          IPA_NAME="AlleyCat-${VERSION}.ipa"
           /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
           IPA_PATH="build/unsigned-ipa/$IPA_NAME"
           IPA_SHA256="$(shasum -a 256 "$IPA_PATH" | awk '{print $1}')"
@@ -1543,7 +1543,7 @@ jobs:
           import os
           from pathlib import Path
           metadata = {
-              "name": "Litter",
+              "name": "Alley Cat",
               "bundleIdentifier": os.environ["BUNDLE_ID"],
               "version": os.environ["VERSION"],
               "build": os.environ["BUILD"],
@@ -1566,7 +1566,7 @@ jobs:
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Litter-unsigned-ipa
+          name: AlleyCat-unsigned-ipa
           path: build/unsigned-ipa
           if-no-files-found: error
 
@@ -1591,7 +1591,7 @@ jobs:
           IPA_PATH="build/unsigned-ipa/$IPA_NAME"
           SHA_PATH="${IPA_PATH}.sha256"
           RELEASE_TAG="litter-v${VERSION}"
-          RELEASE_TITLE="Litter ${VERSION}"
+          RELEASE_TITLE="Alley Cat ${VERSION}"
           RELEASE_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
           IPA_DOWNLOAD_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${IPA_NAME}"
           SOURCE_TAG="app-source"
@@ -1721,7 +1721,7 @@ jobs:
 
           def is_litter_ipa(asset):
               name = asset.get("name", "").lower()
-              return name.endswith(".ipa") and "litter" in name
+              return name.endswith(".ipa") and ("litter" in name or "alleycat" in name)
 
           def ipa_asset_for(release, metadata):
               wanted = str(metadata.get("ipaAssetName") or metadata.get("artifact") or "")
@@ -1739,7 +1739,7 @@ jobs:
               for pattern in (
                   r"^litter-v(\d+\.\d+\.\d+(?:\.\d+)?)$",
                   r"^ios-v(\d+\.\d+\.\d+(?:\.\d+)?)-build\.(\d+)$",
-                  r"^Litter-v?(\d+\.\d+\.\d+(?:\.\d+)?)(?:-build\.(\d+))?.*\.ipa$",
+                  r"^(?:Litter|AlleyCat)-v?(\d+\.\d+\.\d+(?:\.\d+)?)(?:-build\.(\d+))?.*\.ipa$",
               ):
                   match = re.match(pattern, tag) or re.match(pattern, name)
                   if match:
@@ -1813,20 +1813,20 @@ jobs:
 
           def fallback_body(release, metadata):
               body = str(metadata.get("releaseNotes") or release.get("body") or "").strip()
-              if body.startswith("Unsigned Litter IPA for KittyStore/AltStore re-signing.") and "Update history:" not in body:
+              if body.startswith("Unsigned Alley Cat IPA for KittyStore/AltStore re-signing.") and "Update history:" not in body:
                   return ""
               return body
 
           def notes_for(entry, release, metadata, previous_tag, current=False):
               history = clean_history_lines(release.get("tag_name", ""), previous_tag, current=current)
               fallback = fallback_body(release, metadata)
-              lines = ["Unsigned Litter IPA for KittyStore/AltStore re-signing.", "", "Update history:"]
+              lines = ["Unsigned Alley Cat IPA for KittyStore/AltStore re-signing.", "", "Update history:"]
               if history:
                   lines.extend(history)
               elif fallback:
                   lines.append(fallback)
               else:
-                  lines.append(f"- Build refresh for Litter {entry['version']} ({entry['buildVersion']}).")
+                  lines.append(f"- Build refresh for Alley Cat {entry['version']} ({entry['buildVersion']}).")
               lines.extend([
                   "",
                   "Build details:",
@@ -1856,7 +1856,7 @@ jobs:
               return "\n".join(lines) + "\n"
 
           current_metadata = {
-              "name": "Litter",
+              "name": "Alley Cat",
               "bundleIdentifier": os.environ["BUNDLE_ID"],
               "version": os.environ["VERSION"],
               "build": os.environ["BUILD"],
@@ -1934,7 +1934,7 @@ jobs:
 
           update = {
               "schemaVersion": 1,
-              "name": "Litter",
+              "name": "Alley Cat",
               "bundleIdentifier": os.environ["BUNDLE_ID"],
               "version": os.environ["VERSION"],
               "build": os.environ["BUILD"],
@@ -1989,9 +1989,9 @@ jobs:
               version = str(entry.get("version") or "unknown")
               build = str(entry.get("buildVersion") or "0")
               archive_news.append({
-                  "title": f"Litter {version} IPA",
+                  "title": f"Alley Cat {version} IPA",
                   "identifier": f"litter-ipa-{slug(version)}-{slug(build)}",
-                  "caption": f"Direct IPA download for Litter {version} build {build}.",
+                  "caption": f"Direct IPA download for Alley Cat {version} build {build}.",
                   "date": str(entry.get("date") or os.environ["PUBLISHED_AT"]),
                   "tintColor": "06B6D4",
                   "url": download_url,
@@ -2003,20 +2003,20 @@ jobs:
               "name": "KittyStore",
               "identifier": "com.nightvibes33.zyn.source",
               "sourceURL": os.environ["SOURCE_URL"],
-              "subtitle": "Litter unsigned IPA source",
-              "description": "The Litter app entry installs the latest compatible build. Full install history stays in the app versions list; source news only highlights the latest IPA builds.",
+              "subtitle": "Alley Cat unsigned IPA source",
+              "description": "The Alley Cat app entry installs the latest compatible build. Full install history stays in the app versions list; source news only highlights the latest IPA builds.",
               "iconURL": os.environ["SOURCE_ICON_URL"],
               "developerName": "NightVibes33",
               "apps": [
                   {
-                      "name": "Litter",
+                      "name": "Alley Cat",
                       "bundleIdentifier": os.environ["BUNDLE_ID"],
                       "developerName": "NightVibes33",
                       "iconURL": os.environ["APP_ICON_URL"],
                       "screenshotURLs": screenshot_urls,
                       "screenshots": screenshots,
-                      "subtitle": "Mobile Codex workspace for iPhone",
-                      "localizedDescription": "Litter for sideloaded iOS installs.",
+                      "subtitle": "AI workspace for iPhone",
+                      "localizedDescription": "Alley Cat for sideloaded iOS installs.",
                       "category": "developer",
                       "tintColor": "06B6D4",
                       "versions": versions,
@@ -2097,7 +2097,7 @@ jobs:
             retry_release_command "Upload stable source release assets" \
               gh release upload "$SOURCE_TAG" "$UPDATE_PATH" "$SOURCE_PATH" "$SOURCE_ICON_DEST" --repo "$GITHUB_REPOSITORY" --clobber
             retry_release_command "Update stable source release notes" \
-              gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Litter app source" --notes "Stable KittyStore/AltStore source metadata for all published Litter sideload builds." --prerelease
+              gh release edit "$SOURCE_TAG" --repo "$GITHUB_REPOSITORY" --title "Alley Cat app source" --notes "Stable KittyStore/AltStore source metadata for all published Alley Cat sideload builds." --prerelease
           else
             retry_release_command "Create stable source release" \
               gh release create "$SOURCE_TAG" \
@@ -2106,8 +2106,8 @@ jobs:
                 "$SOURCE_ICON_DEST" \
                 --repo "$GITHUB_REPOSITORY" \
                 --target "$GITHUB_SHA" \
-                --title "Litter app source" \
-                --notes "Stable KittyStore/AltStore source metadata for all published Litter sideload builds." \
+                --title "Alley Cat app source" \
+                --notes "Stable KittyStore/AltStore source metadata for all published Alley Cat sideload builds." \
                 --prerelease
           fi
 

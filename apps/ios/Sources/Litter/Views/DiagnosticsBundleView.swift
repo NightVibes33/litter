@@ -87,7 +87,7 @@ struct DiagnosticsBundleView: View {
         guard !bundleText.isEmpty else { return }
         do {
             let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("LitterDiagnostics-\(UUID().uuidString).txt")
+                .appendingPathComponent("AlleyCatDiagnostics-\(UUID().uuidString).txt")
             try LLog.redact(bundleText).write(to: url, atomically: true, encoding: .utf8)
             sharePayload = DiagnosticsSharePayload(url: url)
         } catch {
@@ -100,7 +100,7 @@ private enum DiagnosticsBundleBuilder {
     @MainActor
     static func build() async -> String {
         var lines: [String] = []
-        lines.append("Litter Recovery Bundle")
+        lines.append("Alley Cat Recovery Bundle")
         lines.append("Collected: \(ISO8601DateFormatter().string(from: Date()))")
         lines.append("")
         lines.append("App")

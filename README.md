@@ -1,7 +1,7 @@
-# Litter
+# Alley Cat
 
 <p align="center">
-  <img src="apps/ios/Sources/Litter/Resources/brand_logo.png" alt="Litter logo" width="180" />
+  <img src="apps/ios/Sources/Litter/Resources/brand_logo.png" alt="Alley Cat logo" width="180" />
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 
 ## Current Scope
 
-Litter is a SwiftUI iOS app that talks to Codex through `shared/rust-bridge`. It can run Codex commands inside an embedded iSH Alpine Linux fakefs, connect to Codex app servers on other computers, pair through Slingshot, and route chat through a signed-in ChatGPT account or OpenAI-compatible servers such as Ollama or LM Studio running on a computer.
+Alley Cat is a SwiftUI iOS app that talks to Codex through `shared/rust-bridge`. It can run Codex commands inside an embedded iSH Alpine Linux fakefs, connect to Codex app servers on other computers, pair through Slingshot, and route chat through a signed-in ChatGPT account or OpenAI-compatible servers such as Ollama or LM Studio running on a computer.
 
 iPhone-local model downloading and inference are not part of the app. Private or local models should run on a computer and be added through the AI Providers screen as an OpenAI-compatible `/v1` endpoint.
 
@@ -42,7 +42,7 @@ shared/rust-bridge/        Rust mobile bridge, UniFFI API, iSH/proot runtime, SS
 shared/third_party/codex/  Upstream Codex submodule used by the bridge.
 shared/third_party/ghostty/ Pinned Ghostty renderer submodule used by the terminal work.
 patches/codex/             Local Codex patches applied during sync/build.
-patches/ghostty/           Litter mobile embedding patch for the Ghostty renderer.
+patches/ghostty/           Alley Cat mobile embedding patch for the Ghostty renderer.
 ThirdParty/Nyxian/         Nyxian/CoreCompiler/LLVM-On-iOS source used by BuildKit.
 ThirdParty/SideStore/      SideStore/AltSign/minimuxer/LocalDevVPN integration source and references.
 ThirdParty/Feather/        Feather/Zsign source snapshots and signing-flow references used by KittyStore signing.
@@ -81,9 +81,9 @@ The iOS app target deploys to iOS 18.0. The unsigned IPA workflow runs on `macos
 
 The SwiftUI app owns the native interface: home, conversations, settings, file workspace, terminal panel, account and Keychain flows, PiP, CarPlay, Watch surfaces, and BuildKit controls. The Rust bridge owns Codex app-server communication, session hydration, Slingshot pairing, SSH bridge behavior, remote path handling, saved apps/widgets, permission state, iSH command execution, and the UniFFI surface consumed by Swift.
 
-The local runtime is not the iOS host shell. Commands run inside an embedded persistent iSH Alpine Linux fakefs. The default home is `/root`; Litter creates `/root/litter`, `/root/.litter/builds`, and `/usr/local/bin`; app Documents are bridged through `/mnt/apps`; the native app container is repaired at `/mnt/container`; and Codex home is bridged to `/root/.codex` so installed skills are visible to the app runtime.
+The local runtime is not the iOS host shell. Commands run inside an embedded persistent iSH Alpine Linux fakefs. The default home is `/root`; Alley Cat creates `/root/litter`, `/root/.litter/builds`, and `/usr/local/bin`; app Documents are bridged through `/mnt/apps`; the native app container is repaired at `/mnt/container`; and Codex home is bridged to `/root/.codex` so installed skills are visible to the app runtime.
 
-Before exposing local shell tools, Litter runs a native preflight command. If simple commands such as `true`, `pwd`, or `ls` fail with bootstrap errors, debug the iSH runtime bridge first. PATH, Swift, and BuildKit checks come after the fakefs is bootstrapped.
+Before exposing local shell tools, Alley Cat runs a native preflight command. If simple commands such as `true`, `pwd`, or `ls` fail with bootstrap errors, debug the iSH runtime bridge first. PATH, Swift, and BuildKit checks come after the fakefs is bootstrapped.
 
 ## Main iOS Features
 
@@ -91,7 +91,7 @@ Before exposing local shell tools, Litter runs a native preflight command. If si
 - Conversation timeline with markdown, tool cards, command output display preferences, image generation cards, selectable messages, edit/fork actions, streaming rendering, and dynamic widget rendering.
 - Discovery and connection flows for the local runtime, manual app-server URLs, SSH bootstrapping, LAN or remote servers, and Slingshot connected computers.
 - Settings for appearance, fonts, conversation display, local terminal, experimental features, AI providers, diagnostics bundles, account/API key/base URL, connected servers, updates, and BuildKit developer controls.
-- KittyStore, a KittyLitter-branded SideStore/AltStore-compatible store surface. It loads multiple SideStore/AltStore source URLs, shows source news, browses apps across those sources, opens direct install links, and keeps a Feather-style signing workspace for imported or downloaded IPAs.
+- KittyStore, a SideStore/AltStore-compatible store surface. It loads multiple SideStore/AltStore source URLs, shows source news, browses apps across those sources, opens direct install links, and keeps a Feather-style signing workspace for imported or downloaded IPAs.
 - Picture-in-Picture streaming cards through `AVPictureInPictureController` with a sample-buffer SwiftUI renderer.
 - CarPlay voice scene support and experimental Apple Watch projection/complication targets.
 
@@ -131,9 +131,9 @@ The Rust bridge advertises `features.goals` and exposes UniFFI methods for getti
 
 ## Swift BuildKit
 
-BuildKit is the experimental on-device Swift/iOS build path. Litter vendors Nyxian source, verifies it with `tools/scripts/verify-nyxian-source-import.sh`, and layers a Litter-specific native bridge on top. The public repo has source and reproducible scripts. Full Swift/iOS compilation still needs a private `LitterBuildKitAssets.zip` because Apple SDK files and compiled private frameworks are not committed.
+BuildKit is the experimental on-device Swift/iOS build path. Alley Cat vendors Nyxian source, verifies it with `tools/scripts/verify-nyxian-source-import.sh`, and layers an Alley Cat-specific native bridge on top. The public repo has source and reproducible scripts. Full Swift/iOS compilation still needs a private `LitterBuildKitAssets.zip` because Apple SDK files and compiled private frameworks are not committed.
 
-If `litter-buildkit-install-assets` reports `assets-missing` with a ZIP extraction error, replace `Documents/LitterBuildKitAssets.zip` or `Documents/Inbox/LitterBuildKitAssets.zip` with a known-good private asset pack and rerun `litter-buildkit-install-assets --timeout 300`. Litter records failed automatic installs by ZIP fingerprint so the app does not keep blocking the BuildKit request pump on the same corrupt asset; an explicit install command still retries and returns the real extraction error.
+If `litter-buildkit-install-assets` reports `assets-missing` with a ZIP extraction error, replace `Documents/LitterBuildKitAssets.zip` or `Documents/Inbox/LitterBuildKitAssets.zip` with a known-good private asset pack and rerun `litter-buildkit-install-assets --timeout 300`. Alley Cat records failed automatic installs by ZIP fingerprint so the app does not keep blocking the BuildKit request pump on the same corrupt asset; an explicit install command still retries and returns the real extraction error.
 
 The private asset pack must include:
 
@@ -147,11 +147,11 @@ The private asset pack must include:
 
 Important packaging rule: changing `ThirdParty/Nyxian/LitterBuildKitNative/**` does not change installed app behavior by itself. The app loads `LitterBuildKitNative.framework` from `LitterBuildKitAssets.zip`. After native bridge changes, rebuild and upload the private asset pack, update `LITTER_BUILDKIT_ASSET_URL` and `LITTER_BUILDKIT_ASSET_SHA256`, then build the IPA against that new asset.
 
-Nyxian run/install mode needs more than compiler files. The installed app also needs the Apple ID and signing state used by the original Nyxian flow: an Apple ID login saved in Keychain, a SideStore-compatible Anisette server, the matching `.p12` signing identity, and the embedded provisioning profile from the signed Litter install.
+Nyxian run/install mode needs more than compiler files. The installed app also needs the Apple ID and signing state used by the original Nyxian flow: an Apple ID login saved in Keychain, a SideStore-compatible Anisette server, the matching `.p12` signing identity, and the embedded provisioning profile from the signed Alley Cat install.
 
 KittyStore validates imported signing material before it is treated as usable. A bad `.p12` password or missing private key keeps Nyxian run/install blocked and shows the failure in status instead of silently accepting broken credentials. Imported Apple developer certificates are accepted from the PKCS#12 identity and optional provisioning-profile match; iOS system trust or revocation failures are not treated as import failures for user-supplied signing certificates. The Feather-style signing workspace validates per-app provisioning profiles for parse errors, expiration, missing developer certificates, bundle ID mismatch, and profile/certificate mismatch before certificate signing starts. BuildKit Settings reports this state as diagnostics instead of owning duplicate Apple ID or certificate forms.
 
-Litter is open source, but it is not MIT licensed. The project is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and Google Play distribution. See [LICENSE](LICENSE). Third-party source imports and submodules keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Alley Cat is open source, but it is not MIT licensed. The project is licensed under the GNU General Public License version 3 with an additional permission under GPLv3 section 7 for Apple App Store and Google Play distribution. See [LICENSE](LICENSE). Third-party source imports and submodules keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 The Anisette picker can load SideStore's public server list from `https://servers.sidestore.io/servers.json`, falls back to known SideStore-compatible servers, and allows a custom server URL. Anisette only supplies Apple authentication metadata. It does not install apps by itself.
 
@@ -186,7 +186,7 @@ swift swiftc clang clang++ cc c++ ld ld64 xcodebuild xcrun plutil code
 ar llvm-ar ranlib llvm-ranlib nm llvm-nm objdump llvm-objdump strip strings lipo
 ```
 
-`litter-*` commands are the supported API. The compatibility shims cover the iOS-only cases Litter can run. BuildKit v1 is not desktop Xcode: SwiftPM package resolution, simulator workflows, Interface Builder, previews, App Store upload flows, Apple Developer portal management, and macOS toolchains are outside scope.
+`litter-*` commands are the supported compatibility API. The compatibility shims cover the iOS-only cases Alley Cat can run. BuildKit v1 is not desktop Xcode: SwiftPM package resolution, simulator workflows, Interface Builder, previews, App Store upload flows, Apple Developer portal management, and macOS toolchains are outside scope.
 
 Useful in-app checks:
 
@@ -216,13 +216,13 @@ Use this flow when BuildKit source or private framework behavior changes:
 3. Set `use_existing_private_release=false` when you need to prove the old private release asset is not being reused.
 4. Let the workflow upload a verified `LitterBuildKitAssets.zip` and update the unsigned IPA asset secrets.
 5. Run or let it dispatch `.github/workflows/ios-unsigned-ipa.yml` on the same branch.
-6. Install the new IPA and run `litter-swift-selftest` inside Litter.
+6. Install the new IPA and run `litter-swift-selftest` inside Alley Cat.
 
 Normal public IPAs keep the private compiler payload external for launch safety. The app can still download/install user-owned BuildKit assets from BuildKit settings.
 
 ## Unsigned IPA And AltStore Source
 
-`.github/workflows/ios-unsigned-ipa.yml` builds a SideStore/AltStore-style unsigned IPA on `macos-26` with Xcode 26.3. It produces `build/unsigned-ipa/Litter-${VERSION}.ipa`, a SHA256 file, build metadata, release notes, `litter-update.json`, and `litter-altstore-source.json`.
+`.github/workflows/ios-unsigned-ipa.yml` builds a SideStore/AltStore-style unsigned IPA on `macos-26` with Xcode 26.3. It produces `build/unsigned-ipa/AlleyCat-${VERSION}.ipa`, a SHA256 file, build metadata, release notes, `litter-update.json`, and `litter-altstore-source.json`.
 
 Manual build modes are:
 
@@ -238,13 +238,13 @@ The in-app updater and KittyStore BuildKit commands read their app-source reposi
 
 The AltStore/SideStore source is version-history first. Every successful versioned IPA release should remain installable through the app entry `versions` array with its own download URL, SHA-256 checksum, version date, size, minimum iOS version, and build version. The app entry also carries the same iPhone screenshots shown in this README. Source `news` is intentionally capped to the latest IPA cards so KittyStore does not get flooded by old release history. `tools/scripts/verify-altstore-source.py` runs before publish and fails the workflow if a version entry is only history text, lacks a direct IPA URL, lacks a checksum, duplicates another version/build, lacks screenshots, or the news list grows past the cap. Do not replace the source with only the latest build.
 
-The in-app KittyStore tab hosts the real SideStore five-tab surface: News, Sources, Browse, My Apps, and Settings. News is a store feed, Sources owns SideStore/AltStore source lists, Browse aggregates apps from loaded sources instead of being tied to Litter, My Apps is reserved for installed-device actions through minimuxer, and SideStore Settings owns the Apple ID sign-in, 2FA prompt, Anisette, and account/team flow. Feather-style signing lives beside it in Settings > Signing: IPA customization, certificate/provisioning selection, pairing import, LocalDevVPN launch/status, advanced Modify rows, Entitlements, Tweaks, Properties, and Start Signing.
+The in-app KittyStore tab hosts the real SideStore five-tab surface: News, Sources, Browse, My Apps, and Settings. News is a store feed, Sources owns SideStore/AltStore source lists, Browse aggregates apps from loaded sources instead of being tied to Alley Cat, My Apps is reserved for installed-device actions through minimuxer, and SideStore Settings owns the Apple ID sign-in, 2FA prompt, Anisette, and account/team flow. Feather-style signing lives beside it in Settings > Signing: IPA customization, certificate/provisioning selection, pairing import, LocalDevVPN launch/status, advanced Modify rows, Entitlements, Tweaks, Properties, and Start Signing.
 
 Settings > Signing does not duplicate SideStore's login UI. It reads the saved SideStore Apple ID state and owns the Feather-side inputs: `.p12` certificate import, certificate password validation, provisioning-profile import, pairing-file import, LocalDevVPN launch/status, and Feather signing options. Apple ID signing requires the account already signed in through SideStore plus a pairing file; certificate signing requires a validated `.p12` plus a matching `.mobileprovision` or embedded provisioning profile. Certificate import validates the PKCS#12 password, private key, and optional profile match; it does not require the imported developer certificate to pass iOS system trust. Any on-device install, refresh, remove, or installed-app listing also requires LocalDevVPN to be enabled and the pairing file to be present. Pairing files are saved to both SideStore's `ALTPairingFile.mobiledevicepairing` document path and Feather's `pairingFile.plist` path, then staged into fakefs for bots and BuildKit. BuildKit Settings is intentionally read-only for this state now, so SideStore account transport and Feather signing options are not duplicated.
 
 KittyStore stages those inputs into the native BuildKit driver and uses the vendored Feather/Zsign signing engine when the private BuildKit assets are rebuilt with `LITTER_BUILDKIT_ENABLE_KITTYSTORE_SIGNER=1`. The native signer supports default, force, and ad-hoc signing modes, dylib injection, dylib load-command removal, app-relative file removal, framework/plugin copying, entitlement edits, Feather-style Info.plist properties such as app appearance, minimum iOS version, file sharing, ProMotion, Game Mode, iPad fullscreen, URL-scheme removal, and tweak payload collection from dylibs, folders, zip files, and `.deb` packages that contain `data.tar` or `data.tar.gz`.
 
-The repo now keeps full source snapshots for SideStore (`ThirdParty/SideStore/Source`), Feather (`ThirdParty/Feather/Source`), and LocalDevVPN (`ThirdParty/SideStore/LocalDevVPN-Source`) at the exact upstream commits recorded in `ThirdParty/UPSTREAMS.md`. SideStore and Feather submodules are populated inside those source snapshots too, including SideStore AltSign, minimuxer, em_proxy, apps-v2, Roxas, MarkdownAttributedString, libimobiledevice, libplist, libusbmuxd, libimobiledevice-glue, plus Feather Zsign and IDeviceKitten. The iOS app target also embeds those full source folders as IPA bundle resources, so the shipped app carries the upstream SideStore, Feather, and LocalDevVPN source snapshots instead of only small reference files. Smaller app-reference snapshots remain in `ThirdParty/SideStore/AppReference` and `ThirdParty/Feather/AppReference` for verifier-friendly layout checks. The iOS IPA workflow also builds the vendored SideStore `minimuxer` Rust bridge through `tools/scripts/build-sidestore-minimuxer.sh`, links it into Litter with `KITTYSTORE_MINIMUXER_LINKED`, and treats the real LocalDevVPN app/tunnel as the required transport for SideStore-style on-device install/refresh/remove/list operations. Litter does not claim ownership of SideStore, Feather, or their supporting tools; SideStore, AltStore, Feather, LocalDevVPN, minimuxer, em_proxy, Jitterbug, and Zsign are credited in `THIRD_PARTY_NOTICES.md`.
+The repo now keeps full source snapshots for SideStore (`ThirdParty/SideStore/Source`), Feather (`ThirdParty/Feather/Source`), and LocalDevVPN (`ThirdParty/SideStore/LocalDevVPN-Source`) at the exact upstream commits recorded in `ThirdParty/UPSTREAMS.md`. SideStore and Feather submodules are populated inside those source snapshots too, including SideStore AltSign, minimuxer, em_proxy, apps-v2, Roxas, MarkdownAttributedString, libimobiledevice, libplist, libusbmuxd, libimobiledevice-glue, plus Feather Zsign and IDeviceKitten. The iOS app target also embeds those full source folders as IPA bundle resources, so the shipped app carries the upstream SideStore, Feather, and LocalDevVPN source snapshots instead of only small reference files. Smaller app-reference snapshots remain in `ThirdParty/SideStore/AppReference` and `ThirdParty/Feather/AppReference` for verifier-friendly layout checks. The iOS IPA workflow also builds the vendored SideStore `minimuxer` Rust bridge through `tools/scripts/build-sidestore-minimuxer.sh`, links it into Alley Cat with `KITTYSTORE_MINIMUXER_LINKED`, and treats the real LocalDevVPN app/tunnel as the required transport for SideStore-style on-device install/refresh/remove/list operations. Alley Cat does not claim ownership of SideStore, Feather, or their supporting tools; SideStore, AltStore, Feather, LocalDevVPN, minimuxer, em_proxy, Jitterbug, and Zsign are credited in `THIRD_PARTY_NOTICES.md`.
 
 Bots get a matching fakefs command surface so they do not have to scrape UI state: `litter-kittystore-status`, `litter-kittystore-config`, `litter-kittystore-source`, `litter-kittystore-versions`, `litter-kittystore-validate-profile`, `litter-kittystore-plan`, `litter-kittystore-sign`, `litter-kittystore-install`, `litter-kittystore-refresh`, `litter-kittystore-remove`, and `litter-kittystore-installed`. Source config, source, version, status, profile validation, and plan commands return JSON or write JSON to `/root`; `litter-kittystore-sign` routes through native BuildKit and publishes the signed IPA back into fakefs when the private assets include the Feather/Zsign signer. Install/refresh/remove/installed-app browsing run the linked SideStore minimuxer bridge with a signed IPA or bundle ID, imported pairing file, optional provisioning profile, and LocalDevVPN connected; builds that do not include the bridge return `sidestore-minimuxer-not-linked` instead of pretending install is available.
 
@@ -253,9 +253,9 @@ All IPAs from this workflow are unsigned. They must be signed by SideStore, AltS
 ## Local Runtime Notes
 
 - Local commands run inside iSH Alpine Linux, not the iOS host filesystem.
-- The embedded Codex server, terminal, and command bridge wait for iSH readiness before accepting fakefs commands. If a restored session hands Rust an iOS sandbox path, Litter maps the command cwd back to `/root` before dispatching into iSH.
+- The embedded Codex server, terminal, and command bridge wait for iSH readiness before accepting fakefs commands. If a restored session hands Rust an iOS sandbox path, Alley Cat maps the command cwd back to `/root` before dispatching into iSH.
 - The fakefs can see `/root`, `/tmp`, `/usr/local/bin`, `/root/.codex`, `/root/litter`, app-provided mounts such as `/mnt/apps`, and the native app container bridge at `/mnt/container`.
-- The fakefs cannot directly see arbitrary iOS sandbox paths unless Litter mounts them with `mount -t real`; user-picked folders use the mounted-folders UI, the app container bridge uses `/mnt/container`, and native BuildKit inputs are staged through app storage when native code must read them.
+- The fakefs cannot directly see arbitrary iOS sandbox paths unless Alley Cat mounts them with `mount -t real`; user-picked folders use the mounted-folders UI, the app container bridge uses `/mnt/container`, and native BuildKit inputs are staged through app storage when native code must read them.
 - `litter-dev-bootstrap` repairs expected fakefs utilities where possible. Some tools may still require Alpine packages.
 - Shell failures with exit `-6` mean the iSH runtime was not ready or not bootstrapped. Start debugging at runtime/session initialization before looking at PATH, Swift, or BuildKit.
 - PTY or streaming command errors usually mean the command RPC path and client process id handling need attention, not that the fakefs files disappeared.
@@ -272,14 +272,14 @@ All IPAs from this workflow are unsigned. They must be signed by SideStore, AltS
 | `make proot-android` | Build Android proot executable artifacts. |
 | `make ghostty-ios` | Build pinned Ghostty iOS renderer artifacts. |
 | `make ghostty-android` | Build pinned Ghostty Android renderer artifacts. |
-| `make sync-ghostty` | Sync the pinned Ghostty submodule while preserving the Litter mobile patch. |
+| `make sync-ghostty` | Sync the pinned Ghostty submodule while preserving the Alley Cat mobile patch. |
 | `make watch-register` | Register a newly paired Apple Watch for CLI install flows. |
 | `make rust-check` | Host `cargo check` for shared Rust crates. |
 | `make rust-test` | Host `cargo test` for shared Rust crates. |
 | `make bindings` | Regenerate UniFFI Swift/Kotlin bindings. |
 | `make xcgen` | Regenerate `Litter.xcodeproj` from `apps/ios/project.yml`. |
 | `make alpine-fs` | Prepare the bundled iOS Alpine fakefs. |
-| `make nyxian-vendor` | Refresh the focused upstream Nyxian/LLVM-On-iOS BuildKit source import while preserving Litter's bridge. |
+| `make nyxian-vendor` | Refresh the focused upstream Nyxian/LLVM-On-iOS BuildKit source import while preserving Alley Cat's bridge. |
 | `make nyxian-source-verify` | Verify the committed Nyxian source import. |
 | `make nyxian-buildkit-assets` | Build/package private BuildKit assets on macOS. |
 | `make nyxian-buildkit-assets-verify` | Validate a BuildKit asset ZIP or folder. |
@@ -288,7 +288,7 @@ All IPAs from this workflow are unsigned. They must be signed by SideStore, AltS
 
 ## Contributors
 
-Litter began in Daniel Nakov's original upstream repository, `dnakov/litter`, and this fork continues that work under `NightVibes33/litter`. Full evidence-backed credits are maintained in [CONTRIBUTORS.md](CONTRIBUTORS.md), including upstream PRs accepted into Daniel's original repo, direct upstream commit authors, and fork-only contributors.
+Alley Cat began in Daniel Nakov's original upstream repository, `dnakov/litter`, and this fork continues that work under `NightVibes33/litter`. Full evidence-backed credits are maintained in [CONTRIBUTORS.md](CONTRIBUTORS.md), including upstream PRs accepted into Daniel's original repo, direct upstream commit authors, and fork-only contributors.
 
 | Contributor | Main credited work |
 |---|---|
@@ -307,7 +307,7 @@ Litter began in Daniel Nakov's original upstream repository, `dnakov/litter`, an
 | Coy Geek (`coygeek`) | iOS transcript display controls and UI test coverage. |
 | Niklas Sheth | iOS composer editing fix that avoids forcing selection while editing text. |
 | researchoor | Live Activity timer cleanup and completed-session idle indicator. |
-| Sina Rabiei (`nssina`) | Mac SSH setup documentation for exposing Codex sessions in Litter. |
+| Sina Rabiei (`nssina`) | Mac SSH setup documentation for exposing Codex sessions in Alley Cat. |
 | Paul Pincente (`pincente`) | Android large-screen discovery modal and TV focus navigation improvements. |
 | frixa / frixaco | SSH bootstrap compatibility for Macs using Fish as the default shell. |
 | ryanchen01 | Expanded resolver SSH probe behavior. |
@@ -320,11 +320,11 @@ Litter began in Daniel Nakov's original upstream repository, `dnakov/litter`, an
 
 ## Credits And License
 
-Litter is a fork of [dnakov/litter](https://github.com/dnakov/litter). This fork is maintained by NightVibes33 / ZYN / Zyn, which are the same maintainer identity for this fork, and includes additional iOS sideloading, update-source, local runtime, BuildKit, and UI work.
+Alley Cat is a fork of [dnakov/litter](https://github.com/dnakov/litter). This fork is maintained by NightVibes33 / ZYN / Zyn, which are the same maintainer identity for this fork, and includes additional iOS sideloading, update-source, local runtime, BuildKit, and UI work.
 
 The sideloading and on-device install/refresh work also credits the wider ecosystem it builds around: SideStore, AltStore, LocalDevVPN, minimuxer, em_proxy, Jitterbug, and their maintainers/contributors. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the current attribution list.
 
-Litter is not MIT licensed. The project uses GPLv3 with an additional GPLv3 section 7 permission for Apple App Store and iOS distribution. Vendored Nyxian/emexDE source is AGPL-3.0-or-later, OpenAI Codex source is Apache-2.0, and third-party components keep their own licenses. See [LICENSE](LICENSE), [AUTHORS.md](AUTHORS.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Alley Cat is not MIT licensed. The project uses GPLv3 with an additional GPLv3 section 7 permission for Apple App Store and iOS distribution. Vendored Nyxian/emexDE source is AGPL-3.0-or-later, OpenAI Codex source is Apache-2.0, and third-party components keep their own licenses. See [LICENSE](LICENSE), [AUTHORS.md](AUTHORS.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Contributing
 

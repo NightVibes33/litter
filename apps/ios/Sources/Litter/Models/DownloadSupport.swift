@@ -63,7 +63,7 @@ enum GitHubReleaseAPI {
     static func data(url: URL, token: String? = nil, accept: String = "application/vnd.github+json") async throws -> Data {
         var request = URLRequest(url: url)
         request.setValue(accept, forHTTPHeaderField: "Accept")
-        request.setValue("Litter-iOS-Updater", forHTTPHeaderField: "User-Agent")
+        request.setValue("AlleyCat-iOS-Updater", forHTTPHeaderField: "User-Agent")
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
@@ -75,7 +75,7 @@ enum GitHubReleaseAPI {
     static func request(url: URL, token: String? = nil, accept: String = "application/vnd.github+json") -> URLRequest {
         var request = URLRequest(url: url)
         request.setValue(accept, forHTTPHeaderField: "Accept")
-        request.setValue("Litter-iOS-Updater", forHTTPHeaderField: "User-Agent")
+        request.setValue("AlleyCat-iOS-Updater", forHTTPHeaderField: "User-Agent")
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }

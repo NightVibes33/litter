@@ -147,7 +147,7 @@ struct BuildKitSettingsView: View {
                 Text("Private GitHub Release")
                     .litterFont(.caption, weight: .semibold)
                     .foregroundStyle(LitterTheme.textPrimary)
-                Text("Default: NightVibes33/litter-buildkit-assets @ buildkit-ios26.4-v1. The app downloads LitterBuildKitAssets.zip, verifies SHA256, extracts it, and installs it into Documents/BuildKit.")
+                Text("Default: configured private BuildKit assets release. The app downloads the configured ZIP, verifies SHA256, extracts it, and installs it into Documents/BuildKit.")
                     .litterFont(.caption)
                     .foregroundStyle(LitterTheme.textSecondary)
             }
@@ -261,7 +261,7 @@ struct BuildKitSettingsView: View {
             Text("Bot Commands")
                 .foregroundStyle(LitterTheme.textSecondary)
         } footer: {
-            Text("These commands are visible inside /root through iSH. They queue requests for the native Litter BuildKit bridge; Alpine itself is not pretending to be Xcode.")
+            Text("These commands are visible inside /root through iSH. They queue requests for the native Alley Cat BuildKit bridge; Alpine itself is not pretending to be Xcode.")
         }
     }
 

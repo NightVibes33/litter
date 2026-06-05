@@ -989,7 +989,7 @@ struct MessageBubbleView: View {
     }
 }
 
-// MARK: - Litter Markdown Themes
+// MARK: - Alley Cat Markdown Themes
 
 private func litterContentTheme(bodySize: CGFloat, codeSize: CGFloat) -> MarkdownTheme {
     var theme = MarkdownTheme.default
@@ -1202,7 +1202,7 @@ private struct CodeBlockTerminalContextMenu: ViewModifier {
 /// Shared highlighter instance — theme is switched at runtime via `setTheme(_:)`.
 private let sharedHighlighter = HighlightrCodeSyntaxHighlighter(theme: "atom-one-dark")
 
-/// Maps a Litter theme slug to the closest Highlightr theme name.
+/// Maps an Alley Cat theme slug to the closest Highlightr theme name.
 /// Direct matches are checked first, then known family prefixes, then light/dark fallback.
 private let highlightrDirectMap: [String: String] = [
     "codex-dark": "atom-one-dark",
@@ -1287,13 +1287,13 @@ private func highlightrThemeName(for slug: String, type: ThemeDefinition.ThemeTy
     return type == .dark ? "atom-one-dark" : "atom-one-light"
 }
 
-/// Returns the current Highlightr theme name based on the active Litter theme.
+/// Returns the current Highlightr theme name based on the active Alley Cat theme.
 private func currentHighlightrTheme(for colorScheme: ColorScheme) -> String {
     let resolved = colorScheme == .dark ? ThemeStore.shared.dark : ThemeStore.shared.light
     return highlightrThemeName(for: resolved.slug, type: resolved.type)
 }
 
-/// Syncs the shared highlighter to match the current Litter theme.
+/// Syncs the shared highlighter to match the current Alley Cat theme.
 private func syncHighlighterTheme(for colorScheme: ColorScheme) {
     let desired = currentHighlightrTheme(for: colorScheme)
     if sharedHighlighter.themeName != desired {

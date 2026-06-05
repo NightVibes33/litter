@@ -425,7 +425,7 @@ final class BuildKitAssetDownloadStore: NSObject, ObservableObject, URLSessionDo
     private static func request(url: URL, token: String?, accept: String) -> URLRequest {
         var request = URLRequest(url: url)
         request.setValue(accept, forHTTPHeaderField: "Accept")
-        request.setValue("Litter-BuildKit", forHTTPHeaderField: "User-Agent")
+        request.setValue("AlleyCat-BuildKit", forHTTPHeaderField: "User-Agent")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         if let token, !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

@@ -173,7 +173,7 @@ struct OnboardingView: View {
             heroPanel(
                 systemImage: "iphone.gen3.radiowaves.left.and.right",
                 title: "Your iPhone coding workspace",
-                detail: "Litter brings AI chat, local files, a shared terminal, remote machines, and iOS build tools into one mobile workspace."
+                detail: "Alley Cat brings AI chat, local files, a shared terminal, remote machines, and iOS build tools into one mobile workspace."
             )
             featureGrid(welcomeFeatures)
         }
@@ -197,7 +197,7 @@ struct OnboardingView: View {
             routeCard(
                 icon: ChatRuntimeMode.chatGPTAccount.systemImage,
                 title: "ChatGPT Account",
-                detail: "Use the signed-in route for normal Litter conversations and hosted models.",
+                detail: "Use the signed-in route for normal Alley Cat conversations and hosted models.",
                 actionTitle: "Open AI Providers",
                 action: { finishAndOpen { onOpenSettingsRoute("aiProviders") } }
             )
@@ -286,7 +286,7 @@ struct OnboardingView: View {
             actionPanel(
                 icon: "sparkles",
                 title: "Ready for your first turn",
-                detail: "Open a project folder, pick the runtime you want, and ask Litter to inspect or change real files.",
+                detail: "Open a project folder, pick the runtime you want, and ask Alley Cat to inspect or change real files.",
                 primaryTitle: "Start a Thread",
                 primaryAction: { onFinish() },
                 secondaryTitle: "Open Files",
@@ -518,7 +518,7 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .welcome: return "Build with Litter"
+        case .welcome: return "Build with Alley Cat"
         case .runtime: return "Pick your runtime"
         case .workspace: return "Files and terminal"
         case .buildKit: return "emexDE on iPhone"
@@ -582,11 +582,11 @@ private enum DemoWorkspaceState: Equatable {
     var message: String {
         switch self {
         case .idle:
-            return "Create /root/litter/welcome with a README, hello.swift, and LitterBuild.json. Nothing is created unless you tap the button."
+            return "Create /root/alley-cat/welcome with a README, hello.swift, and a build manifest. Nothing is created unless you tap the button."
         case .creating:
             return "Creating files in the iSH fakefs without overwriting anything already there."
         case .created:
-            return "Demo workspace is ready at /root/litter/welcome."
+            return "Demo workspace is ready at /root/alley-cat/welcome."
         case .failed(let message):
             return message
         }
@@ -680,8 +680,8 @@ private final class LitterOnboardingReadinessStore: ObservableObject {
             update(.workspace, status: .warning, detail: error.localizedDescription)
         }
 
-        let pathCheck = await IshFS.run("[ -d /root ] && [ -d /usr/local/bin ] && [ -d /root/litter ]")
-        update(.paths, status: pathCheck.exitCode == 0 ? .ready : .warning, detail: pathCheck.exitCode == 0 ? "/root, /root/litter, and /usr/local/bin are visible." : "/root/litter or /usr/local/bin is missing. Open emexDE or Terminal if tools are unavailable.")
+        let pathCheck = await IshFS.run("[ -d /root ] && [ -d /usr/local/bin ] && [ -d /root/alley-cat ]")
+        update(.paths, status: pathCheck.exitCode == 0 ? .ready : .warning, detail: pathCheck.exitCode == 0 ? "/root, /root/alley-cat, and /usr/local/bin are visible." : "/root/alley-cat or /usr/local/bin is missing. Open emexDE or Terminal if tools are unavailable.")
 
         let connectedCount = appModel.snapshot?.servers.filter { $0.health == .connected }.count ?? 0
         if connectedCount > 0 {
@@ -708,10 +708,10 @@ private final class LitterOnboardingReadinessStore: ObservableObject {
 }
 
 private enum LitterOnboardingDemoWorkspace {
-    static let path = "/root/litter/welcome"
+    static let path = "/root/alley-cat/welcome"
 
     static func createIfNeeded() async throws -> String {
-        try await IshFS.createDirectoryIfNeeded(path: "/root/litter")
+        try await IshFS.createDirectoryIfNeeded(path: "/root/alley-cat")
         try await IshFS.createDirectoryIfNeeded(path: path)
         try await writeIfMissing("\(path)/README.md", text: readme)
         try await writeIfMissing("\(path)/hello.swift", text: swiftSource)
@@ -725,11 +725,11 @@ private enum LitterOnboardingDemoWorkspace {
     }
 
     private static let readme = """
-    # Welcome to Litter
+    # Welcome to Alley Cat
 
     This folder was created by onboarding. It is safe to delete.
 
-    Try these commands in the Litter terminal:
+    Try these commands in the Alley Cat terminal:
 
     ```sh
     pwd
@@ -747,21 +747,21 @@ private enum LitterOnboardingDemoWorkspace {
     """
 
     private static let swiftSource = """
-    print("Swift is running inside Litter")
+    print("Swift is running inside Alley Cat")
     """
 
     private static let buildManifest = """
     {
       "schemaVersion": 1,
-      "name": "LitterWelcome",
-      "bundleIdentifier": "com.example.litterwelcome",
+      "name": "AlleyCatWelcome",
+      "bundleIdentifier": "com.example.alleycatwelcome",
       "deploymentTarget": "18.0",
       "sdk": "iphoneos",
       "product": "executable",
       "entrypoint": "hello.swift",
       "sources": ["hello.swift"],
       "resources": [],
-      "output": "Builds/LitterWelcome"
+      "output": "Builds/AlleyCatWelcome"
     }
     """
 }

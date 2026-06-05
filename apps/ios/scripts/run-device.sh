@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DERIVED_DATA_ROOT="${HOME}/Library/Developer/Xcode/DerivedData"
-APP_PATH="$(/bin/ls -dt "${DERIVED_DATA_ROOT}"/Litter-*/Build/Products/Debug-iphoneos/Litter.app 2>/dev/null | head -1 || true)"
+APP_PATH="$(/bin/ls -dt "${DERIVED_DATA_ROOT}"/Litter-*/Build/Products/Debug-iphoneos/*.app 2>/dev/null | head -1 || true)"
 BUNDLE_ID="com.sigkitten.litter"
 APP_EXECUTABLE_NAME="$(basename "${APP_PATH}" .app)"
 
@@ -41,7 +41,7 @@ TAILSCALE_BIN="${TAILSCALE_BIN:-}"
 mkdir -p "${RUN_DIR}"
 
 if [[ -z "${APP_PATH}" ]]; then
-  echo "ERROR: Litter.app not found in DerivedData" >&2
+  echo "ERROR: app bundle not found in DerivedData" >&2
   exit 1
 fi
 

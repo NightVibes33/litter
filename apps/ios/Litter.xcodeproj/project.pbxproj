@@ -874,7 +874,7 @@
 		54D8F5EDCE6292E1F9B7B19E /* NotificationScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationScreen.swift; sourceTree = "<group>"; };
 		554F4A83699FF91F38D1E4CE /* VideoWallpaperProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoWallpaperProcessor.swift; sourceTree = "<group>"; };
 		55700E32058BA95A9372AA41 /* ConversationTimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationTimelineView.swift; sourceTree = "<group>"; };
-		55A7968182C0B25044D38C00 /* Litter.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Litter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		55A7968182C0B25044D38C00 /* Alley Cat.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Alley Cat.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		55B149B584488F5C063EE3BC /* SSHAgentPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHAgentPickerSheet.swift; sourceTree = "<group>"; };
 		563C1D21677CDE5F94F909B8 /* PetSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PetSettingsView.swift; sourceTree = "<group>"; };
 		56597C90314B4DF5587C3949 /* ExperimentalFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExperimentalFeatures.swift; sourceTree = "<group>"; };
@@ -1213,7 +1213,7 @@
 		35D407E8418ED7F3C5C8B705 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				55A7968182C0B25044D38C00 /* Litter.app */,
+				55A7968182C0B25044D38C00 /* Alley Cat.app */,
 				2DF6931F753DFD2AB67F62DC /* LitterLiveActivity.appex */,
 				47E701E793853BDF418C763F /* LitterMac.app */,
 				53D6AE46E0E50D55EC178533 /* LitterTests.xctest */,
@@ -1853,7 +1853,7 @@
 				B56375FA643BC7109985264C /* NukeUI */,
 			);
 			productName = Litter;
-			productReference = 55A7968182C0B25044D38C00 /* Litter.app */;
+			productReference = 55A7968182C0B25044D38C00 /* Alley Cat.app */;
 			productType = "com.apple.product-type.application";
 		};
 		C0C98C6012493B73CDD5AD6E /* LitterWatchComplications */ = {
@@ -2742,7 +2742,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.litter.LitterTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Litter.app/Litter";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Alley Cat.app/Alley Cat";
 			};
 			name = Release;
 		};
@@ -2861,7 +2861,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.litter.LitterTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Litter.app/Litter";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Alley Cat.app/Alley Cat";
 			};
 			name = DeveloperID;
 		};
@@ -2953,7 +2953,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				OTHER_LDFLAGS = "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty";
 				PRODUCT_BUNDLE_IDENTIFIER = com.sigkitten.litter;
-				PRODUCT_NAME = Litter;
+				PRODUCT_NAME = "Alley Cat";
 				PROVISIONING_PROFILE_SPECIFIER = "$(APP_PROVISIONING_PROFILE_SPECIFIER)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -3188,7 +3188,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.litter.LitterTests;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Litter.app/Litter";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Alley Cat.app/Alley Cat";
 			};
 			name = Debug;
 		};
@@ -3254,7 +3254,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				OTHER_LDFLAGS = "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty";
 				PRODUCT_BUNDLE_IDENTIFIER = com.sigkitten.litter;
-				PRODUCT_NAME = Litter;
+				PRODUCT_NAME = "Alley Cat";
 				PROVISIONING_PROFILE_SPECIFIER = "$(APP_PROVISIONING_PROFILE_SPECIFIER)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -3337,7 +3337,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				OTHER_LDFLAGS = "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty";
 				PRODUCT_BUNDLE_IDENTIFIER = com.sigkitten.litter;
-				PRODUCT_NAME = Litter;
+				PRODUCT_NAME = "Alley Cat";
 				PROVISIONING_PROFILE_SPECIFIER = "$(APP_PROVISIONING_PROFILE_SPECIFIER)";
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

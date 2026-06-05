@@ -230,16 +230,16 @@ if [[ "$TESTFLIGHT_SKIP_BUILD" != "1" ]]; then
 
     # Sandbox-entitlement gate — catches ITMS-90296 before we waste a build
     # slot on App Store Connect.
-    archived_app="$ARCHIVE_PATH/Products/Applications/Litter.app"
-    if [[ ! -d "$archived_app" ]]; then
-        echo "No archived app found at $archived_app — cannot verify entitlements." >&2
+    archived_app="$(find "$ARCHIVE_PATH/Products/Applications" -maxdepth 1 -type d -name '*.app' -print -quit 2>/dev/null || true)"
+    if [[ -z "$archived_app" || ! -d "$archived_app" ]]; then
+        echo "No archived app found under $ARCHIVE_PATH/Products/Applications — cannot verify entitlements." >&2
         exit 1
     fi
     entitlements_xml="$(codesign -d --entitlements :- "$archived_app" 2>/dev/null || true)"
     if ! grep -q "com\.apple\.security\.app-sandbox" <<<"$entitlements_xml"; then
         echo "ERROR: signed $archived_app is missing com.apple.security.app-sandbox" >&2
         echo "       ASC will reject this with ITMS-90296. Check that APP_PROVISIONING_PROFILE_SPECIFIER" >&2
-        echo "       points at the Mac App Store profile (not the iOS Litter distribution profile)." >&2
+        echo "       points at the Mac App Store profile (not the iOS Alley Cat distribution profile)." >&2
         exit 1
     fi
     if ! grep -A1 "com\.apple\.security\.app-sandbox" <<<"$entitlements_xml" | grep -q "<true/>"; then

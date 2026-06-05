@@ -147,7 +147,7 @@ def set_app_store_safe_flags(text: str) -> str:
 
 
 def transform(text: str) -> str:
-    text = text.replace("        PRODUCT_NAME: Littër\n", "        PRODUCT_NAME: Litter\n")
+    text = text.replace("        PRODUCT_NAME: Littër\n", "        PRODUCT_NAME: \"Alley Cat\"\n")
     text = set_app_store_safe_flags(text)
 
     for name in UNSAFE_PACKAGES:
@@ -202,7 +202,7 @@ def validate_fast_project(text: str) -> None:
             failures.append(f"still references App-Store-unsafe tooling: {marker}")
 
     required_markers = (
-        '        PRODUCT_NAME: Litter\n',
+        '        PRODUCT_NAME: \"Alley Cat\"\n',
         '        INFOPLIST_KEY_LitterEmbedsSideStore: "NO"\n',
         '        INFOPLIST_KEY_LitterEmbedsEmexDE: "NO"\n',
         '        OTHER_SWIFT_FLAGS: "$(inherited) -DLITTER_APP_STORE_SAFE"\n',

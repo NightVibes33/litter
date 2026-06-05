@@ -3,7 +3,7 @@ import Foundation
 
 enum VoiceSessionControl {
     static let realtimeFeatureName = "realtime_conversation"
-    static let defaultPrompt = "You are Codex in a live voice conversation inside Litter. Keep responses short, spoken, and conversational. Avoid markdown and code formatting unless explicitly asked."
+    static let defaultPrompt = "You are Codex in a live voice conversation inside Alley Cat. Keep responses short, spoken, and conversational. Avoid markdown and code formatting unless explicitly asked."
 
     /// Build a voice prompt that includes awareness of available servers.
     static func buildPrompt(remoteServers: [(name: String, hostname: String)]) -> String {

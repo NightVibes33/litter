@@ -418,7 +418,7 @@ enum IshFS {
             """
             set -eu
             mkdir -p /dev /tmp /var/tmp /usr/local/bin
-            mkdir -p /root/litter /root/.litter/buildkit/requests /root/.litter/builds 2>/dev/null || true
+            mkdir -p /root/alley-cat /root/litter /root/.litter/buildkit/requests /root/.litter/builds 2>/dev/null || true
             chmod 1777 /tmp /var/tmp 2>/dev/null || true
             ensure_char_device() {
               path="$1"
@@ -485,12 +485,12 @@ enum IshFS {
 
     private static func sanitizedHostFileName(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallback = trimmed.isEmpty ? "LitterArtifact.ipa" : trimmed
+        let fallback = trimmed.isEmpty ? "AlleyCatArtifact.ipa" : trimmed
         let cleaned = fallback
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: "\\", with: "-")
             .replacingOccurrences(of: ":", with: "-")
-        return cleaned == "." || cleaned == ".." ? "LitterArtifact.ipa" : cleaned
+        return cleaned == "." || cleaned == ".." ? "AlleyCatArtifact.ipa" : cleaned
     }
 
     private static func error(_ fallback: String, result: Result) -> NSError {

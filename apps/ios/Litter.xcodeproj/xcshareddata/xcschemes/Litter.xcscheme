@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A3D84F588EDBC1EA550D6691"
-               BuildableName = "Litter.app"
+               BuildableName = "Alley Cat.app"
                BlueprintName = "Litter"
                ReferencedContainer = "container:Litter.xcodeproj">
             </BuildableReference>
@@ -33,7 +33,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A3D84F588EDBC1EA550D6691"
-            BuildableName = "Litter.app"
+            BuildableName = "Alley Cat.app"
             BlueprintName = "Litter"
             ReferencedContainer = "container:Litter.xcodeproj">
          </BuildableReference>
@@ -81,7 +81,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A3D84F588EDBC1EA550D6691"
-            BuildableName = "Litter.app"
+            BuildableName = "Alley Cat.app"
             BlueprintName = "Litter"
             ReferencedContainer = "container:Litter.xcodeproj">
          </BuildableReference>
@@ -103,7 +103,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A3D84F588EDBC1EA550D6691"
-            BuildableName = "Litter.app"
+            BuildableName = "Alley Cat.app"
             BlueprintName = "Litter"
             ReferencedContainer = "container:Litter.xcodeproj">
          </BuildableReference>
