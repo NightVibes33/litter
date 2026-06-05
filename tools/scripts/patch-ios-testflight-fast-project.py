@@ -5,6 +5,8 @@ Fast TestFlight builds must not link or embed sideloading, provisioning, or
 private on-device compiler tooling. The full sideload IPA keeps those targets;
 this lane removes them from the generated Xcode project and compiles the app
 with LITTER_APP_STORE_SAFE so the matching UI routes are hidden at runtime.
+It also omits the embedded Watch app from TestFlight builds so Apple processing
+does not fail on Watch-specific icon metadata while the iOS app is being tested.
 """
 
 from __future__ import annotations
@@ -72,6 +74,9 @@ DEPENDENCY_BLOCKS = (
         link: false
 """,
     """      - target: LiveProcess
+        embed: true
+""",
+    """      - target: LitterWatch
         embed: true
 """,
 )
@@ -207,7 +212,6 @@ def validate_fast_project(text: str) -> None:
         '        INFOPLIST_KEY_LitterEmbedsEmexDE: "NO"\n',
         '        OTHER_SWIFT_FLAGS: "$(inherited) -DLITTER_APP_STORE_SAFE"\n',
         "      - target: LitterLiveActivity\n        embed: true\n",
-        "      - target: LitterWatch\n        embed: true\n",
     )
     for marker in required_markers:
         if marker not in text:
@@ -238,7 +242,7 @@ def main() -> None:
         return
 
     PROJECT_YML.write_text(patched)
-    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
+    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, embedded Watch app, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
 
 
 if __name__ == "__main__":
