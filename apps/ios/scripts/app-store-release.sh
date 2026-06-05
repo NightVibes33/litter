@@ -80,12 +80,14 @@ fi
 mkdir -p "$FASTLANE_METADATA_DIR/screenshots"
 
 echo "==> Importing repo-managed App Store metadata"
+metadata_import_log="$BUILD_DIR/metadata_import.json"
 if ! asc migrate import \
     --app "$APP_STORE_APP_ID" \
     --version-id "$VERSION_ID" \
     --fastlane-dir "$FASTLANE_METADATA_DIR" \
-    --output json >/dev/null 2>&1; then
-    echo "    (metadata import skipped — version may already be locked)"
+    --output json >"$metadata_import_log" 2>&1; then
+    echo "    Metadata import failed; validation may report missing App Store fields."
+    sed 's/^/    /' "$metadata_import_log" >&2
 fi
 
 echo "==> Attaching build $BUILD_ID to version $VERSION_ID"
@@ -95,11 +97,16 @@ asc versions attach-build \
     --output json >/dev/null
 
 echo "==> Validating App Store submission readiness"
-asc validate \
+validate_log="$BUILD_DIR/app_store_validate.json"
+if ! asc validate \
     --app "$APP_STORE_APP_ID" \
     --version-id "$VERSION_ID" \
     --strict \
-    --output json >/dev/null
+    --output json >"$validate_log" 2>&1; then
+    echo "App Store validation failed:" >&2
+    sed 's/^/    /' "$validate_log" >&2
+    exit 1
+fi
 
 echo "==> Submitting build for App Store review"
 SUBMISSION_ID="$(
