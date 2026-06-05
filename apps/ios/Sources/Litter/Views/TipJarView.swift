@@ -1,6 +1,10 @@
 import SwiftUI
 import StoreKit
 
+enum TipJarFeature {
+    static let isVisible = false
+}
+
 struct TipJarView: View {
     private var store: TipJarStore { TipJarStore.shared }
 
@@ -191,27 +195,29 @@ struct SupporterBadge: View {
     @State private var showTipJar = false
 
     var body: some View {
-        let store = TipJarStore.shared
-        Button { showTipJar = true } label: {
-            if let tier = store.supporterTier {
-                TipCatIcon(name: tier.icon, size: 36)
-            } else {
-                Image(systemName: "pawprint.fill")
-                    .font(.system(size: 14))
-                    .foregroundColor(LitterTheme.textMuted)
-                    .frame(width: 28, height: 28)
+        if TipJarFeature.isVisible {
+            let store = TipJarStore.shared
+            Button { showTipJar = true } label: {
+                if let tier = store.supporterTier {
+                    TipCatIcon(name: tier.icon, size: 36)
+                } else {
+                    Image(systemName: "pawprint.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(LitterTheme.textMuted)
+                        .frame(width: 28, height: 28)
+                }
             }
-        }
-        .task { await store.loadProducts() }
-        .sheet(isPresented: $showTipJar) {
-            NavigationStack {
-                TipJarView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button("Done") { showTipJar = false }
-                                .foregroundColor(LitterTheme.accent)
+            .task { await store.loadProducts() }
+            .sheet(isPresented: $showTipJar) {
+                NavigationStack {
+                    TipJarView()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { showTipJar = false }
+                                    .foregroundColor(LitterTheme.accent)
+                            }
                         }
-                    }
+                }
             }
         }
     }
@@ -226,31 +232,33 @@ struct SupporterKittyBadges: View {
     @State private var showTipJar = false
 
     var body: some View {
-        let store = TipJarStore.shared
-        let purchased = store.tiers.enumerated()
-            .filter { tierIndices.contains($0.offset) && store.isHeaderKittySelected($0.element) }
-            .map(\.element)
-        if !purchased.isEmpty {
-            HStack(spacing: 2) {
-                ForEach(purchased, id: \.id) { tier in
-                    Button { showTipJar = true } label: {
-                        Image(tier.icon)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 28, height: 28)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .sheet(isPresented: $showTipJar) {
-                NavigationStack {
-                    TipJarView()
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button("Done") { showTipJar = false }
-                                    .foregroundColor(LitterTheme.accent)
-                            }
+        if TipJarFeature.isVisible {
+            let store = TipJarStore.shared
+            let purchased = store.tiers.enumerated()
+                .filter { tierIndices.contains($0.offset) && store.isHeaderKittySelected($0.element) }
+                .map(\.element)
+            if !purchased.isEmpty {
+                HStack(spacing: 2) {
+                    ForEach(purchased, id: \.id) { tier in
+                        Button { showTipJar = true } label: {
+                            Image(tier.icon)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 28, height: 28)
                         }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .sheet(isPresented: $showTipJar) {
+                    NavigationStack {
+                        TipJarView()
+                            .toolbar {
+                                ToolbarItem(placement: .topBarTrailing) {
+                                    Button("Done") { showTipJar = false }
+                                        .foregroundColor(LitterTheme.accent)
+                                }
+                            }
+                    }
                 }
             }
         }

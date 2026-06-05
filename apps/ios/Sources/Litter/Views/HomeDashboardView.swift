@@ -200,7 +200,11 @@ struct HomeDashboardView: View {
                     selectedSearchRuntimeKind = nil
                 }
             }
-            .task { await TipJarStore.shared.loadProducts() }
+            .task {
+                if TipJarFeature.isVisible {
+                    await TipJarStore.shared.loadProducts()
+                }
+            }
             .onAppear { autoHydrateIfNeeded() }
             .onChange(of: visibleSessions.map { hydrationId($0.key) }) { _, _ in
                 autoHydrateIfNeeded()

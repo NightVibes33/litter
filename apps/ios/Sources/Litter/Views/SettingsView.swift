@@ -1,6 +1,11 @@
 import SwiftUI
 import UIKit
 
+enum SettingsFeatureVisibility {
+    static let showsTipJar = false
+    static let showsPlugins = false
+}
+
 struct SettingsView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(AppState.self) private var appState
@@ -41,7 +46,9 @@ struct SettingsView: View {
             ZStack {
                 LitterTheme.backgroundGradient.ignoresSafeArea()
                 Form {
-                    supportSection
+                    if SettingsFeatureVisibility.showsTipJar {
+                        supportSection
+                    }
                     gettingStartedSection
                     updatesSection
                     if AppDistributionCapabilities.includesKittyStore {
@@ -86,7 +93,11 @@ struct SettingsView: View {
                 case .connectors:
                     ConnectorSettingsView()
                 case .plugins:
-                    PluginSettingsView()
+                    if SettingsFeatureVisibility.showsPlugins {
+                        PluginSettingsView()
+                    } else {
+                        EmptyView()
+                    }
                 case .aiProviders:
                     AIProviderSettingsView()
                 case .buildKit:
@@ -284,22 +295,24 @@ struct SettingsView: View {
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
-            NavigationLink(value: SettingsRoute.plugins) {
-                HStack(spacing: 10) {
-                    Image(systemName: "puzzlepiece.extension")
-                        .foregroundColor(LitterTheme.accent)
-                        .frame(width: 20)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Plugins")
-                            .litterFont(.subheadline)
-                            .foregroundColor(LitterTheme.textPrimary)
-                        Text("Install and remove Codex plugins and connector packs")
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textSecondary)
+            if SettingsFeatureVisibility.showsPlugins {
+                NavigationLink(value: SettingsRoute.plugins) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "puzzlepiece.extension")
+                            .foregroundColor(LitterTheme.accent)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Plugins")
+                                .litterFont(.subheadline)
+                                .foregroundColor(LitterTheme.textPrimary)
+                            Text("Install and remove Codex plugins and connector packs")
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
                     }
                 }
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Local Tools")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -323,6 +336,7 @@ struct SettingsView: View {
             return
         }
         guard let route = SettingsRoute(rawValue: raw) else { return }
+        if route == .plugins && !SettingsFeatureVisibility.showsPlugins { return }
         navigationPath = [route]
     }
 
