@@ -79,12 +79,34 @@ fi
 
 mkdir -p "$FASTLANE_METADATA_DIR/screenshots"
 
+metadata_import_dir="$BUILD_DIR/app_store_metadata_import"
+rm -rf "$metadata_import_dir"
+cp -R "$FASTLANE_METADATA_DIR" "$metadata_import_dir"
+
+# Apple's first public app version cannot edit the App Store "What's New"
+# field. Keep release_notes.txt in repo for later releases, but omit it from
+# the import copy until at least one iOS version has shipped.
+released_versions_json="$(
+    asc versions list \
+        --app "$APP_STORE_APP_ID" \
+        --platform IOS \
+        --output json
+)"
+if ! echo "$released_versions_json" | jq -e --arg current "$VERSION_ID" '
+    .data[]?
+    | select(.id != $current)
+    | (.attributes.appStoreState // .attributes.appStoreVersionState // .attributes.state // empty)
+    | select(. == "READY_FOR_SALE" or . == "PENDING_DEVELOPER_RELEASE" or . == "PENDING_APPLE_RELEASE")
+' >/dev/null; then
+    rm -f "$metadata_import_dir/metadata/en-US/release_notes.txt"
+fi
+
 echo "==> Importing repo-managed App Store metadata"
 metadata_import_log="$BUILD_DIR/metadata_import.json"
 if ! asc migrate import \
     --app "$APP_STORE_APP_ID" \
     --version-id "$VERSION_ID" \
-    --fastlane-dir "$FASTLANE_METADATA_DIR" \
+    --fastlane-dir "$metadata_import_dir" \
     --output json >"$metadata_import_log" 2>&1; then
     echo "    Metadata import failed; validation may report missing App Store fields."
     sed 's/^/    /' "$metadata_import_log" >&2
