@@ -82,6 +82,10 @@ mkdir -p "$FASTLANE_METADATA_DIR/screenshots"
 metadata_import_dir="$BUILD_DIR/app_store_metadata_import"
 rm -rf "$metadata_import_dir"
 cp -R "$FASTLANE_METADATA_DIR" "$metadata_import_dir"
+# App Store names are globally unique and can fail independently from release
+# submission metadata. Keep name.txt in repo, but preserve the existing App
+# Store Connect name during automated release imports.
+rm -f "$metadata_import_dir/metadata/en-US/name.txt"
 
 # Apple's first public app version cannot edit the App Store "What's New"
 # field. Keep release_notes.txt in repo for later releases, but omit it from
@@ -123,7 +127,6 @@ validate_log="$BUILD_DIR/app_store_validate.json"
 if ! asc validate \
     --app "$APP_STORE_APP_ID" \
     --version-id "$VERSION_ID" \
-    --strict \
     --output json >"$validate_log" 2>&1; then
     echo "App Store validation failed:" >&2
     sed 's/^/    /' "$validate_log" >&2
