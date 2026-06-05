@@ -698,6 +698,7 @@ private struct HomeNavigationView: View {
     @State private var experimentalFeatures = ExperimentalFeatures.shared
     @State private var homeDashboardModel = HomeDashboardModel()
     @State private var savedAppsStore = SavedAppsStore.shared
+    @State private var proStore = ProAccessStore.shared
     @State private var navigationPath: [HomeNavigationRoute] = []
     @State private var directoryPickerSheet: SessionLaunchSupport.DirectoryPickerSheetModel?
     @State private var showProjectPicker = false
@@ -712,6 +713,8 @@ private struct HomeNavigationView: View {
     @State private var pendingWallpaperConfig: WallpaperConfig?
     @State private var pendingWallpaperImage: UIImage?
     @State private var showOnboarding = false
+    @State private var pendingProFeature: ProFeature?
+    @State private var pendingProTerminalNodeId: String?
     @State private var onboardingPresentationMode: LitterOnboardingPresentationMode = .firstRun
     let topInset: CGFloat
     let bottomInset: CGFloat
@@ -766,7 +769,7 @@ private struct HomeNavigationView: View {
         return nil
         #else
         guard experimentalFeatures.isEnabled(.terminal) else { return nil }
-        return { navigationPath.append(.terminal(preferredAlleycatNodeId: nil)) }
+        return { requestTerminalAccess(preferredAlleycatNodeId: nil) }
         #endif
     }
 
@@ -985,17 +988,25 @@ private struct HomeNavigationView: View {
                         LitterTheme.backgroundGradient.ignoresSafeArea()
                     }
                 case .filesWorkspace:
-                    LocalFileWorkspaceView()
+                    if proStore.hasProAccess {
+                        LocalFileWorkspaceView()
+                    } else {
+                        ProPaywallView(feature: .fileBrowser)
+                    }
                 case .appsList:
                     AppsListView()
                 case .savedApp(let appId):
                     SavedAppDetailView(appId: appId)
                 case let .terminal(preferredAlleycatNodeId):
-                    TerminalScreen(
-                        cwd: preferredTerminalWorkingDirectory(),
-                        preferredAlleycatNodeId: preferredAlleycatNodeId
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if proStore.hasProAccess {
+                        TerminalScreen(
+                            cwd: preferredTerminalWorkingDirectory(),
+                            preferredAlleycatNodeId: preferredAlleycatNodeId
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ProPaywallView(feature: .terminal)
+                    }
                 }
             }
         }
@@ -1009,6 +1020,7 @@ private struct HomeNavigationView: View {
             hydratePinnedThreadsIfNeeded()
             seedInitialConversationIfNeeded(activeKey: appModel.snapshot?.activeThread)
             presentFirstRunOnboardingIfNeeded()
+            await proStore.loadProducts()
         }
         .onChange(of: appModel.snapshot?.activeThread) { _, newKey in
             seedInitialConversationIfNeeded(activeKey: newKey)
@@ -1121,6 +1133,22 @@ private struct HomeNavigationView: View {
         } message: {
             Text(actionErrorMessage ?? "Unknown error")
         }
+        .sheet(item: $pendingProFeature) { feature in
+            NavigationStack {
+                ProPaywallView(feature: feature) {
+                    completePendingProUnlock(for: feature)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") {
+                            pendingProFeature = nil
+                            pendingProTerminalNodeId = nil
+                        }
+                        .foregroundStyle(LitterTheme.accent)
+                    }
+                }
+            }
+        }
         .sheet(isPresented: $showOnboarding, onDismiss: {
             onboardingReplayRequested = false
         }) {
@@ -1160,13 +1188,12 @@ private struct HomeNavigationView: View {
 
     private func openOnboardingFiles(path: String) {
         fileWorkspaceInitialDirectory = path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? HomeAnchor.path : path
-        openFilesWorkspace()
+        requestFilesWorkspace()
     }
 
     private func openOnboardingTerminal(path: String) {
         terminalInitialDirectory = path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? HomeAnchor.path : path
-        requestedSettingsRoute = SettingsRoute.terminal.rawValue
-        appState.showSettings = true
+        requestTerminalAccess(preferredAlleycatNodeId: nil)
     }
 
     private func openOnboardingServerPicker() {
@@ -1295,7 +1322,7 @@ private struct HomeNavigationView: View {
             return nil
         }
         return {
-            navigationPath.append(.terminal(preferredAlleycatNodeId: nodeId))
+            requestTerminalAccess(preferredAlleycatNodeId: nodeId)
         }
     }
 
@@ -1562,6 +1589,46 @@ private struct HomeNavigationView: View {
         navigationPath.append(.newThread)
     }
 
+    private func requestFilesWorkspace() {
+        guard proStore.hasProAccess else {
+            pendingProFeature = .fileBrowser
+            return
+        }
+        openFilesWorkspace()
+    }
+
+    private func requestTerminalAccess(preferredAlleycatNodeId nodeId: String?) {
+        guard proStore.hasProAccess else {
+            pendingProTerminalNodeId = nodeId
+            pendingProFeature = .terminal
+            return
+        }
+        openTerminalRoute(preferredAlleycatNodeId: nodeId)
+    }
+
+    private func completePendingProUnlock(for feature: ProFeature) {
+        guard proStore.hasProAccess else { return }
+        let pendingNodeId = pendingProTerminalNodeId
+        pendingProFeature = nil
+        pendingProTerminalNodeId = nil
+        switch feature {
+        case .fileBrowser:
+            openFilesWorkspace()
+        case .terminal:
+            openTerminalRoute(preferredAlleycatNodeId: pendingNodeId)
+        case .all:
+            break
+        }
+    }
+
+    private func openTerminalRoute(preferredAlleycatNodeId nodeId: String?) {
+        appState.showModelSelector = false
+        appState.showSettings = false
+        showProjectPicker = false
+        directoryPickerSheet = nil
+        navigationPath.append(.terminal(preferredAlleycatNodeId: nodeId))
+    }
+
     /// Opens the real local iSH file workspace from the dashboard toolbar.
     /// Keep this route single-instance; duplicate pushes can render as a
     /// blank nested navigation surface on compact devices.
@@ -1682,7 +1749,7 @@ private struct HomeNavigationView: View {
             onShowSettings: { appState.showSettings = true },
             onShowStore: AppDistributionCapabilities.includesKittyStore ? openKittyStore : nil,
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
-            onShowFiles: openFilesWorkspace,
+            onShowFiles: requestFilesWorkspace,
             onShowTerminal: terminalLauncher,
             onPinThread: pinThread,
             onUnpinThread: unpinThread,
@@ -1727,7 +1794,7 @@ private struct HomeNavigationView: View {
             onShowSettings: { appState.showSettings = true },
             onShowStore: AppDistributionCapabilities.includesKittyStore ? openKittyStore : nil,
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
-            onShowFiles: openFilesWorkspace,
+            onShowFiles: requestFilesWorkspace,
             onShowTerminal: terminalLauncher,
             onPinThread: pinThread,
             onUnpinThread: unpinThread,

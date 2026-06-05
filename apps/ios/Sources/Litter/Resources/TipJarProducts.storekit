@@ -1,87 +1,98 @@
 {
-  "identifier" : "E0A1B2C3-D4E5-F6A7-B8C9-D0E1F2A3B4C5",
-  "nonRenewingSubscriptions" : [
-
-  ],
-  "products" : [
+  "identifier": "E0A1B2C3-D4E5-F6A7-B8C9-D0E1F2A3B4C5",
+  "nonRenewingSubscriptions": [],
+  "products": [
     {
-      "displayPrice" : "9.99",
-      "familyShareable" : false,
-      "internalID" : "6761210001",
-      "localizations" : [
+      "displayPrice": "9.99",
+      "familyShareable": true,
+      "internalID": "6761210003",
+      "localizations": [
         {
-          "description" : "A tip to support ongoing development.",
-          "displayName" : "$9.99 Tip",
-          "locale" : "en_US"
+          "description": "One-time unlock for Terminal access, the full file browser, import/export, and advanced local tools.",
+          "displayName": "Alley C\u00e3t Pro",
+          "locale": "en_US"
         }
       ],
-      "productID" : "com.sigkitten.litter.tip.10",
-      "referenceName" : "$9.99 Tip",
-      "type" : "NonConsumable"
+      "productID": "com.sigkitten.litter.pro",
+      "referenceName": "Alley C\u00e3t Pro",
+      "type": "NonConsumable"
     },
     {
-      "displayPrice" : "24.99",
-      "familyShareable" : false,
-      "internalID" : "6761209973",
-      "localizations" : [
+      "displayPrice": "9.99",
+      "familyShareable": false,
+      "internalID": "6761210001",
+      "localizations": [
         {
-          "description" : "A tip to support ongoing development.",
-          "displayName" : "$24.99 Tip",
-          "locale" : "en_US"
+          "description": "A tip to support ongoing development.",
+          "displayName": "$9.99 Tip",
+          "locale": "en_US"
         }
       ],
-      "productID" : "com.sigkitten.litter.tip.25",
-      "referenceName" : "$24.99 Tip",
-      "type" : "NonConsumable"
+      "productID": "com.sigkitten.litter.tip.10",
+      "referenceName": "$9.99 Tip",
+      "type": "NonConsumable"
     },
     {
-      "displayPrice" : "49.99",
-      "familyShareable" : false,
-      "internalID" : "6761209974",
-      "localizations" : [
+      "displayPrice": "24.99",
+      "familyShareable": false,
+      "internalID": "6761209973",
+      "localizations": [
         {
-          "description" : "A tip to support ongoing development.",
-          "displayName" : "$49.99 Tip",
-          "locale" : "en_US"
+          "description": "A tip to support ongoing development.",
+          "displayName": "$24.99 Tip",
+          "locale": "en_US"
         }
       ],
-      "productID" : "com.sigkitten.litter.tip.50",
-      "referenceName" : "$49.99 Tip",
-      "type" : "NonConsumable"
+      "productID": "com.sigkitten.litter.tip.25",
+      "referenceName": "$24.99 Tip",
+      "type": "NonConsumable"
     },
     {
-      "displayPrice" : "99.99",
-      "familyShareable" : false,
-      "internalID" : "6761210002",
-      "localizations" : [
+      "displayPrice": "49.99",
+      "familyShareable": false,
+      "internalID": "6761209974",
+      "localizations": [
         {
-          "description" : "A tip to support ongoing development.",
-          "displayName" : "$99.99 Tip",
-          "locale" : "en_US"
+          "description": "A tip to support ongoing development.",
+          "displayName": "$49.99 Tip",
+          "locale": "en_US"
         }
       ],
-      "productID" : "com.sigkitten.litter.tip.100",
-      "referenceName" : "$99.99 Tip",
-      "type" : "NonConsumable"
+      "productID": "com.sigkitten.litter.tip.50",
+      "referenceName": "$49.99 Tip",
+      "type": "NonConsumable"
+    },
+    {
+      "displayPrice": "99.99",
+      "familyShareable": false,
+      "internalID": "6761210002",
+      "localizations": [
+        {
+          "description": "A tip to support ongoing development.",
+          "displayName": "$99.99 Tip",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "com.sigkitten.litter.tip.100",
+      "referenceName": "$99.99 Tip",
+      "type": "NonConsumable"
     }
   ],
-  "settings" : {
-    "_failTransactionsEnabled" : false,
-    "_locale" : "en_US",
-    "_storefront" : "USA",
-    "_storeKitErrors" : [
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": [
       {
-        "current" : null,
-        "enabled" : false,
-        "name" : "Load Products"
+        "current": null,
+        "enabled": false,
+        "name": "Load Products"
       }
     ]
   },
-  "subscriptionGroups" : [
-
-  ],
-  "version" : {
-    "major" : 4,
-    "minor" : 0
+  "subscriptionGroups": [],
+  "version": {
+    "major": 4,
+    "minor": 0
   }
 }

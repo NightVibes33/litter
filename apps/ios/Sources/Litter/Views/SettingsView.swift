@@ -22,6 +22,7 @@ struct SettingsView: View {
     @State private var activeServerSheet: SettingsServerSheet?
     @State private var serverEditError: String?
     @State private var navigationPath: [SettingsRoute] = []
+    @State private var proStore = ProAccessStore.shared
 
     @StateObject private var taskBag = ViewTaskBag()
     private static var showsEmexDESettingsEntry: Bool { AppDistributionCapabilities.includesEmexDE }
@@ -50,6 +51,7 @@ struct SettingsView: View {
                         supportSection
                     }
                     gettingStartedSection
+                    proSection
                     updatesSection
                     if AppDistributionCapabilities.includesKittyStore {
                         signingSection
@@ -81,7 +83,11 @@ struct SettingsView: View {
             .navigationDestination(for: SettingsRoute.self) { route in
                 switch route {
                 case .terminal:
-                    SettingsTerminalView(initialDirectory: terminalInitialDirectory)
+                    if proStore.hasProAccess {
+                        SettingsTerminalView(initialDirectory: terminalInitialDirectory)
+                    } else {
+                        ProPaywallView(feature: .terminal)
+                    }
                 case .appearance:
                     AppearanceSettingsView()
                 case .conversation:
@@ -106,6 +112,7 @@ struct SettingsView: View {
                 }
             }
             .onAppear { consumeRequestedSettingsRoute() }
+            .task { await proStore.loadProducts() }
             .onChange(of: requestedSettingsRoute) { _, _ in consumeRequestedSettingsRoute() }
             .sheet(item: $activeServerSheet) { sheet in
                 switch sheet {
@@ -522,6 +529,34 @@ struct SettingsView: View {
         } header: {
             Text("Experimental")
                 .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
+    // MARK: - Pro Section
+
+    private var proSection: some View {
+        Section {
+            NavigationLink {
+                ProPaywallView(feature: .all)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: proStore.hasProAccess ? "checkmark.seal.fill" : "pawprint.fill")
+                        .foregroundStyle(LitterTheme.accent)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(proStore.hasProAccess ? "Alley Cãt Pro Unlocked" : "Unlock Alley Cãt Pro")
+                            .litterFont(.subheadline, weight: .semibold)
+                            .foregroundStyle(LitterTheme.textPrimary)
+                        Text(proStore.hasProAccess ? "Terminal and full file browser are available" : "Terminal and full file browser for \(proStore.displayPrice)")
+                            .litterFont(.caption)
+                            .foregroundStyle(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("Pro")
+                .foregroundStyle(LitterTheme.textSecondary)
         }
     }
 
