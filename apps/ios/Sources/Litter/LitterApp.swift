@@ -712,6 +712,7 @@ private struct HomeNavigationView: View {
     @State private var hasSeededInitialConversationRoute = false
     @State private var pendingWallpaperConfig: WallpaperConfig?
     @State private var pendingWallpaperImage: UIImage?
+    @State private var pendingWallpaperVideoURL: URL?
     @State private var showOnboarding = false
     @State private var pendingProFeature: ProFeature?
     @State private var pendingProTerminalNodeId: String?
@@ -917,9 +918,10 @@ private struct HomeNavigationView: View {
                 case let .wallpaperSelection(threadKey):
                     WallpaperSelectionView(
                         threadKey: threadKey,
-                        onSelectWallpaper: { config, image in
+                        onSelectWallpaper: { config, image, videoURL in
                             pendingWallpaperConfig = config
                             pendingWallpaperImage = image
+                            pendingWallpaperVideoURL = videoURL
                             navigationPath.append(.wallpaperAdjust(threadKey))
                         },
                         onClose: {
@@ -934,6 +936,7 @@ private struct HomeNavigationView: View {
                         threadKey: threadKey,
                         initialConfig: pendingWallpaperConfig ?? WallpaperConfig(),
                         customImage: pendingWallpaperImage,
+                        stagedVideoURL: pendingWallpaperVideoURL,
                         onDone: {
                             // Pop back to conversation info
                             popToConversationInfo()
@@ -952,9 +955,10 @@ private struct HomeNavigationView: View {
                     WallpaperSelectionView(
                         threadKey: nil,
                         serverId: serverId,
-                        onSelectWallpaper: { config, image in
+                        onSelectWallpaper: { config, image, videoURL in
                             pendingWallpaperConfig = config
                             pendingWallpaperImage = image
+                            pendingWallpaperVideoURL = videoURL
                             navigationPath.append(.serverWallpaperAdjust(serverId: serverId))
                         },
                         onClose: {
@@ -969,6 +973,7 @@ private struct HomeNavigationView: View {
                         serverId: serverId,
                         initialConfig: pendingWallpaperConfig ?? WallpaperConfig(),
                         customImage: pendingWallpaperImage,
+                        stagedVideoURL: pendingWallpaperVideoURL,
                         onDone: {
                             popToServerInfo()
                         }
@@ -1616,7 +1621,7 @@ private struct HomeNavigationView: View {
             openFilesWorkspace()
         case .terminal:
             openTerminalRoute(preferredAlleycatNodeId: pendingNodeId)
-        case .all:
+        case .appearance, .all:
             break
         }
     }

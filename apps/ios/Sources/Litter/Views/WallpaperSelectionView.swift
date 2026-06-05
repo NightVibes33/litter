@@ -26,7 +26,7 @@ struct WallpaperSelectionView: View {
 
     let threadKey: ThreadKey?
     var serverId: String? = nil
-    var onSelectWallpaper: ((WallpaperConfig, UIImage?) -> Void)?
+    var onSelectWallpaper: ((WallpaperConfig, UIImage?, URL?) -> Void)?
     var onClose: (() -> Void)?
 
     private var resolvedServerId: String? {
@@ -43,7 +43,9 @@ struct WallpaperSelectionView: View {
     @State private var isProcessingVideo = false
     @State private var videoURLText: String = ""
     @State private var videoFileURL: URL?
-    @State private var videoErrorMessage: String?
+    @State private var appearanceErrorMessage: String?
+    @State private var proStore = ProAccessStore.shared
+    @State private var pendingProApply: PendingAppearanceApply?
     @State private var activeTab: WallpaperTab = .background
     @State private var typingEffectConfig: TypingEffectConfig = .default
     @State private var sheetOffset: CGFloat = 0
@@ -115,13 +117,27 @@ struct WallpaperSelectionView: View {
                 .ignoresSafeArea()
         }
         .navigationBarBackButtonHidden(true)
-        .alert("Video Error", isPresented: Binding(
-            get: { videoErrorMessage != nil },
-            set: { if !$0 { videoErrorMessage = nil } }
+        .task { await proStore.loadProducts() }
+        .sheet(item: $pendingProApply) { pending in
+            NavigationStack {
+                ProPaywallView(feature: .appearance) {
+                    applyPendingAppearance(pending.action)
+                }
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { pendingProApply = nil }
+                            .foregroundStyle(LitterTheme.accent)
+                    }
+                }
+            }
+        }
+        .alert("Appearance Error", isPresented: Binding(
+            get: { appearanceErrorMessage != nil },
+            set: { if !$0 { appearanceErrorMessage = nil } }
         )) {
-            Button("OK") { videoErrorMessage = nil }
+            Button("OK") { appearanceErrorMessage = nil }
         } message: {
-            Text(videoErrorMessage ?? "")
+            Text(appearanceErrorMessage ?? "")
         }
         .onAppear {
             if let threadKey {
@@ -348,6 +364,8 @@ struct WallpaperSelectionView: View {
                 // Color picker
                 colorRow
 
+                backgroundApplySection
+
                 Spacer().frame(height: 16)
             }
         }
@@ -388,12 +406,7 @@ struct WallpaperSelectionView: View {
             selectedThemeSlug = nil
             selectedColor = nil
             customImage = nil
-            // Apply immediately
-            if let threadKey {
-                wallpaperManager.setWallpaper(WallpaperConfig(type: .none), scope: .thread(threadKey))
-            } else if let resolvedServerId {
-                wallpaperManager.setWallpaper(WallpaperConfig(type: .none), scope: .server(resolvedServerId))
-            }
+            videoFileURL = nil
         } label: {
             VStack(spacing: 6) {
                 ZStack {
@@ -423,9 +436,10 @@ struct WallpaperSelectionView: View {
             selectedThemeSlug = nil
             selectedColor = nil
             customImage = nil
+            videoFileURL = nil
             let config = WallpaperConfig(type: .preset, presetSlug: preset.slug)
             previewConfig = config
-            onSelectWallpaper?(config, nil)
+            onSelectWallpaper?(config, nil, nil)
         } label: {
             VStack(spacing: 6) {
                 Image(uiImage: wallpaperManager.generateThumbnail(for: preset))
@@ -453,9 +467,10 @@ struct WallpaperSelectionView: View {
             selectedThemeSlug = entry.slug
             selectedColor = nil
             customImage = nil
+            videoFileURL = nil
             let config = WallpaperConfig(type: .theme, themeSlug: entry.slug)
             previewConfig = config
-            onSelectWallpaper?(config, nil)
+            onSelectWallpaper?(config, nil, nil)
         } label: {
             VStack(spacing: 6) {
                 Image(uiImage: wallpaperManager.generateThumbnail(for: entry))
@@ -496,16 +511,52 @@ struct WallpaperSelectionView: View {
                     selectedPresetSlug = nil
                     selectedThemeSlug = nil
                     customImage = nil
+                    videoFileURL = nil
                     let hex = colorToHex(color)
                     let config = WallpaperConfig(type: .solidColor, colorHex: hex)
                     previewConfig = config
-                    onSelectWallpaper?(config, nil)
+                    onSelectWallpaper?(config, nil, nil)
                 }
             ), supportsOpacity: false)
             .labelsHidden()
             .frame(width: 30, height: 30)
         }
         .padding(.horizontal, 16)
+    }
+
+    @ViewBuilder
+    private var backgroundApplySection: some View {
+        if previewConfig != nil {
+            VStack(spacing: 10) {
+                if let threadKey {
+                    Button {
+                        requestAppearanceApply(.background(.thread(threadKey)))
+                    } label: {
+                        Text("Apply for This Thread")
+                            .litterFont(size: 15, weight: .semibold)
+                            .foregroundStyle(LitterTheme.textOnAccent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(LitterTheme.accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+
+                if let resolvedServerId {
+                    Button {
+                        requestAppearanceApply(.background(.server(resolvedServerId)))
+                    } label: {
+                        Text("Apply for This Server")
+                            .litterFont(size: 15, weight: .medium)
+                            .foregroundStyle(LitterTheme.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .modifier(GlassRectModifier(cornerRadius: 12))
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
     }
 
     // MARK: - Typing Effect
@@ -520,13 +571,6 @@ struct WallpaperSelectionView: View {
 
     private func selectEffect(_ kind: StreamingEffectKind?) {
         typingEffectConfig.effects = kind.map { [$0.rawValue] } ?? []
-        persistTypingEffect()
-    }
-
-    private func persistTypingEffect() {
-        if let scope = typingEffectScope {
-            wallpaperManager.setTypingEffect(typingEffectConfig, scope: scope)
-        }
     }
 
     private var typingEffectSection: some View {
@@ -578,7 +622,6 @@ struct WallpaperSelectionView: View {
                             get: { typingEffectConfig.revealDuration },
                             set: {
                                 typingEffectConfig.revealDuration = $0
-                                persistTypingEffect()
                             }
                         ),
                         in: 0.03...1.2,
@@ -598,7 +641,6 @@ struct WallpaperSelectionView: View {
                 ForEach(GranularityKind.allCases) { kind in
                     Button {
                         typingEffectConfig.granularity = kind.rawValue
-                        persistTypingEffect()
                     } label: {
                         Text(kind.shortLabel)
                             .litterFont(size: 12, weight: selectedGranularity == kind ? .semibold : .regular)
@@ -620,7 +662,6 @@ struct WallpaperSelectionView: View {
                 ForEach(["Linear", "Continuous"], id: \.self) { mode in
                     Button {
                         typingEffectConfig.revealMode = mode
-                        persistTypingEffect()
                     } label: {
                         Text(mode)
                             .litterFont(size: 12, weight: typingEffectConfig.revealMode == mode ? .semibold : .regular)
@@ -636,6 +677,88 @@ struct WallpaperSelectionView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(LitterTheme.border.opacity(0.6), lineWidth: 1))
             .padding(.horizontal, 16)
+
+            typingEffectApplySection
+        }
+    }
+
+    @ViewBuilder
+    private var typingEffectApplySection: some View {
+        VStack(spacing: 10) {
+            if let threadKey {
+                Button {
+                    requestAppearanceApply(.typingEffect(.thread(threadKey)))
+                } label: {
+                    Text("Apply for This Thread")
+                        .litterFont(size: 15, weight: .semibold)
+                        .foregroundStyle(LitterTheme.textOnAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(LitterTheme.accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+            }
+
+            if let resolvedServerId {
+                Button {
+                    requestAppearanceApply(.typingEffect(.server(resolvedServerId)))
+                } label: {
+                    Text("Apply for This Server")
+                        .litterFont(size: 15, weight: .medium)
+                        .foregroundStyle(LitterTheme.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .modifier(GlassRectModifier(cornerRadius: 12))
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Apply
+
+    private func requestAppearanceApply(_ action: AppearanceApplyAction) {
+        guard proStore.hasProAccess else {
+            pendingProApply = PendingAppearanceApply(action: action)
+            return
+        }
+        applyPendingAppearance(action)
+    }
+
+    private func applyPendingAppearance(_ action: AppearanceApplyAction) {
+        pendingProApply = nil
+        switch action {
+        case .background(let scope):
+            applyBackground(scope: scope)
+        case .typingEffect(let scope):
+            wallpaperManager.setTypingEffect(typingEffectConfig, scope: scope)
+            onClose?()
+        }
+    }
+
+    private func applyBackground(scope: WallpaperScope) {
+        guard let config = previewConfig else { return }
+
+        do {
+            switch config.type {
+            case .customImage:
+                if let customImage {
+                    wallpaperManager.setCustomImage(customImage, config: config, scope: scope)
+                } else {
+                    wallpaperManager.setWallpaper(config, scope: scope)
+                }
+            case .customVideo, .videoUrl:
+                guard let videoFileURL else {
+                    appearanceErrorMessage = "Video preview is not ready yet."
+                    return
+                }
+                try wallpaperManager.setCustomVideo(from: videoFileURL, config: config, scope: scope)
+            default:
+                wallpaperManager.setWallpaper(config, scope: scope)
+            }
+            onClose?()
+        } catch {
+            appearanceErrorMessage = error.localizedDescription
         }
     }
 
@@ -650,14 +773,10 @@ struct WallpaperSelectionView: View {
             selectedPresetSlug = nil
             selectedThemeSlug = nil
             selectedColor = nil
+            videoFileURL = nil
             let config = WallpaperConfig(type: .customImage)
             previewConfig = config
-            if let threadKey {
-                wallpaperManager.setCustomImage(image, scope: .thread(threadKey))
-            } else if let resolvedServerId {
-                wallpaperManager.setCustomImage(image, scope: .server(resolvedServerId))
-            }
-            onSelectWallpaper?(config, image)
+            onSelectWallpaper?(config, image, nil)
         }
     }
 
@@ -672,15 +791,8 @@ struct WallpaperSelectionView: View {
             return
         }
 
-        let scope: WallpaperScope
-        if let threadKey {
-            scope = .thread(threadKey)
-        } else if let resolvedServerId {
-            scope = .server(resolvedServerId)
-        } else {
-            return
-        }
-        let destURL = wallpaperManager.videoFileURL(for: scope)
+        let destURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).mp4")
 
         do {
             let duration = try await VideoWallpaperProcessor.transcode(source: movie.url, destination: destURL)
@@ -693,12 +805,11 @@ struct WallpaperSelectionView: View {
                 selectedThemeSlug = nil
                 selectedColor = nil
                 customImage = nil
-                wallpaperManager.setWallpaper(config, scope: scope)
-                onSelectWallpaper?(config, nil)
+                onSelectWallpaper?(config, nil, destURL)
             }
         } catch {
             LLog.error("wallpaper", "video transcode failed", error: error)
-            await MainActor.run { videoErrorMessage = error.localizedDescription }
+            await MainActor.run { appearanceErrorMessage = error.localizedDescription }
         }
     }
 
@@ -711,15 +822,8 @@ struct WallpaperSelectionView: View {
         await MainActor.run { isProcessingVideo = true }
         defer { Task { @MainActor in isProcessingVideo = false } }
 
-        let scope: WallpaperScope
-        if let threadKey {
-            scope = .thread(threadKey)
-        } else if let resolvedServerId {
-            scope = .server(resolvedServerId)
-        } else {
-            return
-        }
-        let destURL = wallpaperManager.videoFileURL(for: scope)
+        let destURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).mp4")
 
         do {
             let duration = try await VideoWallpaperProcessor.downloadAndTranscode(remoteURL: remoteURL, destination: destURL)
@@ -733,12 +837,11 @@ struct WallpaperSelectionView: View {
                 selectedColor = nil
                 customImage = nil
                 videoURLText = ""
-                wallpaperManager.setWallpaper(config, scope: scope)
-                onSelectWallpaper?(config, nil)
+                onSelectWallpaper?(config, nil, destURL)
             }
         } catch {
             LLog.error("wallpaper", "video URL download/transcode failed", error: error)
-            await MainActor.run { videoErrorMessage = error.localizedDescription }
+            await MainActor.run { appearanceErrorMessage = error.localizedDescription }
         }
     }
 
@@ -748,6 +851,16 @@ struct WallpaperSelectionView: View {
         uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
         return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
     }
+}
+
+private struct PendingAppearanceApply: Identifiable {
+    let id = UUID()
+    let action: AppearanceApplyAction
+}
+
+private enum AppearanceApplyAction {
+    case background(WallpaperScope)
+    case typingEffect(WallpaperScope)
 }
 
 // MARK: - Tab Enum

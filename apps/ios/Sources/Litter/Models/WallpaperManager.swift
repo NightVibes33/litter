@@ -235,6 +235,13 @@ final class WallpaperManager {
     }
 
     func setCustomImage(_ image: UIImage, scope: WallpaperScope) {
+        var config = WallpaperConfig(type: .customImage)
+        config.blur = 0.0
+        config.brightness = 1.0
+        setCustomImage(image, config: config, scope: scope)
+    }
+
+    func setCustomImage(_ image: UIImage, config: WallpaperConfig, scope: WallpaperScope) {
         guard let data = image.jpegData(compressionQuality: 0.85) else { return }
 
         let fileName: String
@@ -248,10 +255,28 @@ final class WallpaperManager {
         let fileURL = Self.documentsDir.appendingPathComponent(fileName)
         try? data.write(to: fileURL, options: .atomic)
 
-        var config = WallpaperConfig(type: .customImage)
-        config.blur = 0.0
-        config.brightness = 1.0
-        setWallpaper(config, scope: scope)
+        var finalConfig = config
+        finalConfig.type = .customImage
+        setWallpaper(finalConfig, scope: scope)
+    }
+
+    func setCustomVideo(from sourceURL: URL, config: WallpaperConfig, scope: WallpaperScope) throws {
+        let destURL = videoFileURL(for: scope)
+        let sourcePath = sourceURL.standardizedFileURL.path
+        let destPath = destURL.standardizedFileURL.path
+
+        if sourcePath != destPath {
+            if FileManager.default.fileExists(atPath: destURL.path) {
+                try FileManager.default.removeItem(at: destURL)
+            }
+            try FileManager.default.copyItem(at: sourceURL, to: destURL)
+        }
+
+        var finalConfig = config
+        if finalConfig.type != .customVideo && finalConfig.type != .videoUrl {
+            finalConfig.type = .customVideo
+        }
+        setWallpaper(finalConfig, scope: scope)
     }
 
     // MARK: - Typing Effect

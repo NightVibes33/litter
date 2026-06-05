@@ -61,6 +61,7 @@ struct ProPaywallView: View {
         Section {
             proRow("Terminal", detail: "Run local shell commands in the shared iSH workspace", icon: "terminal")
             proRow("Full File Browser", detail: "Browse, preview, import, export, move, rename, and delete files", icon: "folder")
+            proRow("Chat Appearance", detail: "Apply custom chat backgrounds and typing effects", icon: "paintbrush")
             proRow("Advanced Tools", detail: "Use local diagnostics and power-user filesystem actions", icon: "wrench.and.screwdriver")
         } header: {
             Text("Included")

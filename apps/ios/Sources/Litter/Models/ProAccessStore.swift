@@ -6,6 +6,7 @@ enum ProFeature: String, Identifiable, Hashable {
     case all
     case terminal
     case fileBrowser
+    case appearance
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum ProFeature: String, Identifiable, Hashable {
         case .all: return "Alley Cãt Pro"
         case .terminal: return "Terminal Access"
         case .fileBrowser: return "File Browser Access"
+        case .appearance: return "Chat Appearance"
         }
     }
 
@@ -22,6 +24,7 @@ enum ProFeature: String, Identifiable, Hashable {
         case .all: return "pawprint.fill"
         case .terminal: return "terminal.fill"
         case .fileBrowser: return "folder.fill"
+        case .appearance: return "paintbrush.fill"
         }
     }
 
@@ -33,6 +36,8 @@ enum ProFeature: String, Identifiable, Hashable {
             return "Terminal is part of Alley Cãt Pro. Unlock it once and keep access across your devices."
         case .fileBrowser:
             return "The full file browser is part of Alley Cãt Pro. Unlock browsing, import/export, and advanced file tools."
+        case .appearance:
+            return "Chat Appearance is part of Alley Cãt Pro. Preview every style, then unlock once to apply custom backgrounds and typing effects."
         }
     }
 }
