@@ -592,6 +592,7 @@ targets:
     sources:
       - path: Sources/Litter
         excludes:
+          - AppIcon.icon/**
           - Generated/Minimuxer/**
           - Resources/BuildKitAssets/**
           - "**/*.h"
@@ -1152,6 +1153,7 @@ targets:
     sources:
       - path: Sources/Litter
         excludes:
+          - AppIcon.icon/**
           - CarPlay/**
           - Info.plist
           - Litter.entitlements
