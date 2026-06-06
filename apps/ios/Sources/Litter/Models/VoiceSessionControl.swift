@@ -26,7 +26,7 @@ enum VoiceSessionControl {
 
     private static let appGroupSuite = LitterPalette.appGroupSuite
     private static let endRequestKey = "voice_session.end_request_token"
-    static let endRequestDarwinNotification = "com.nightvibes.alleycat.voice_session.end_request"
+    static let endRequestDarwinNotification = "com.sigkitten.litter.voice_session.end_request"
 
     static func requestEnd() {
         let token = UUID().uuidString

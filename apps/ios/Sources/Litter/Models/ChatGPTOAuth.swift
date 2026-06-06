@@ -95,7 +95,7 @@ enum ChatGPTOAuthError: LocalizedError {
 final class ChatGPTOAuthTokenStore {
     static let shared = ChatGPTOAuthTokenStore()
 
-    private let service = "com.nightvibes.alleycat.chatgpt.tokens"
+    private let service = "com.sigkitten.litter.chatgpt.tokens"
     private let legacyAccount = "default"
     private let accountPrefix = "chatgpt:"
     private let activeAccountKey = "litter.chatgpt.activeAccountID"
@@ -1080,7 +1080,7 @@ private final class ChatGPTOAuthLoopbackServer: @unchecked Sendable {
     private let port: UInt16
     private let path: String
     private let timeout: Duration
-    private let queue = DispatchQueue(label: "com.nightvibes.alleycat.chatgpt-oauth")
+    private let queue = DispatchQueue(label: "com.sigkitten.litter.chatgpt-oauth")
     private let stateLock = NSLock()
 
     private var listener: NWListener?

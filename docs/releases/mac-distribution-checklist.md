@@ -51,7 +51,7 @@ platform build list.
 ### One-time signing setup
 
 1. In the Developer Portal, create a **Mac App Store** provisioning profile
-   for `com.nightvibes.alleycat`.
+   for `com.sigkitten.litter`.
 2. Make sure your team has both certs locally:
    - **Apple Distribution** (can be the same cert as iOS)
    - **3rd Party Mac Developer Installer** (Mac-only — required to sign
@@ -99,7 +99,7 @@ Output: `apps/ios/build/direct-dist-mac/Alley Cat-<version>-mac.dmg`.
 1. In the Developer Portal, create a **Developer ID Application** certificate.
    This is a *different* cert from anything used for App Store distribution.
 2. *(Optional)* Create a **Developer ID provisioning profile** for
-   `com.nightvibes.alleycat` if your entitlements include capabilities that
+   `com.sigkitten.litter` if your entitlements include capabilities that
    demand a profile (APNs / iCloud / Push). Without a profile, those
    capabilities silently strip during signing and won't work in the
    notarized build. With a profile, EXPORT_SIGNING_STYLE flips to manual.

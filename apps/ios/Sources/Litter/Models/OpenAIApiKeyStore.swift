@@ -4,7 +4,7 @@ import Security
 final class OpenAIApiKeyStore {
     static let shared = OpenAIApiKeyStore()
 
-    private let service = "com.nightvibes.alleycat.openai-api-key"
+    private let service = "com.sigkitten.litter.openai-api-key"
     private let apiKeyAccount = "default"
     private let baseURLAccount = "openai-base-url"
     private let apiKeyEnvKey = "OPENAI_API_KEY"

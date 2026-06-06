@@ -54,7 +54,7 @@ final class ProAccessStore {
     }
 
     static let shared = ProAccessStore()
-    static let proProductID = "com.nightvibes.alleycat.pro"
+    static let proProductID = "com.sigkitten.litter.pro"
 
     private(set) var product: Product?
     private(set) var hasProAccess = false

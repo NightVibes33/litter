@@ -16,7 +16,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.nightvibes.alleycat.auth</string>
+			<string>com.sigkitten.litter.auth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>litterauth</string>
@@ -113,7 +113,7 @@
 			<key>UTTypeDescription</key>
 			<string>iOS App Archive</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.nightvibes.alleycat.ipa</string>
+			<string>com.sigkitten.litter.ipa</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

@@ -4,7 +4,7 @@ import Security
 final class BuildKitAssetTokenStore {
     static let shared = BuildKitAssetTokenStore()
 
-    private let service = "com.nightvibes.alleycat.buildkit-asset-token"
+    private let service = "com.sigkitten.litter.buildkit-asset-token"
     private let account = "github-release-token"
 
     private init() {}

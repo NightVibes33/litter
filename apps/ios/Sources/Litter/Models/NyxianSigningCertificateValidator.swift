@@ -530,7 +530,7 @@ enum NyxianAppleIDStore {
 final class NyxianAppleIDCredentialStore {
     static let shared = NyxianAppleIDCredentialStore()
 
-    private let service = "com.nightvibes.alleycat.nyxian-apple-id"
+    private let service = "com.sigkitten.litter.nyxian-apple-id"
     private let passwordAccount = "apple-id-password"
 
     private init() {}

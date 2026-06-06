@@ -15,7 +15,7 @@ final class AIProviderStore: ObservableObject {
         "local-gguf-models-v1",
         "local-model-runtime-settings-v1"
     ]
-    private let keychainService = "com.nightvibes.alleycat.ai-provider-secret"
+    private let keychainService = "com.sigkitten.litter.ai-provider-secret"
     private let defaults = UserDefaults.standard
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()

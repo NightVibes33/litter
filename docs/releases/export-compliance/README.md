@@ -45,7 +45,7 @@ In App Store Connect, go to:
 Wait for the declaration/doc review state to move out of pending, then re-run:
 
 ```bash
-asc validate com.nightvibes.alleycat --wait
+asc validate com.sigkitten.litter --wait
 ```
 
 If validation still shows `availability.missing`, set app availability in App Store Connect UI under pricing/availability.

@@ -1730,7 +1730,7 @@ actor LitterBuildKit {
             {
               "schemaVersion": 1,
               "name": "HelloUIKit",
-              "bundleIdentifier": "com.nightvibes.alleycat.selftest.hellouikit",
+              "bundleIdentifier": "com.sigkitten.litter.selftest.hellouikit",
               "deploymentTarget": "18.0",
               "sdk": "iphoneos",
               "product": "app",

@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 
 enum LLog {
-    private static let subsystemRoot = Bundle.main.bundleIdentifier ?? "com.nightvibes.alleycat"
+    private static let subsystemRoot = Bundle.main.bundleIdentifier ?? "com.sigkitten.litter"
     private nonisolated(unsafe) static var bootstrapped = false
     private nonisolated(unsafe) static let ringLock = NSLock()
     private nonisolated(unsafe) static var ringLines: [String] = []

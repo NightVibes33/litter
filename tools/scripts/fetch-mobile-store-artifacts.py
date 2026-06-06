@@ -28,7 +28,7 @@ from typing import Any
 
 UTC = dt.timezone.utc
 
-DEFAULT_IOS_BUNDLE_ID = "com.nightvibes.alleycat"
+DEFAULT_IOS_BUNDLE_ID = "com.sigkitten.litter"
 DEFAULT_OUTPUT_BASE = pathlib.Path("/tmp/mobile-store-artifacts")
 
 

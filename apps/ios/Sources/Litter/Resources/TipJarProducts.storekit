@@ -9,12 +9,12 @@
       "localizations": [
         {
           "description": "One-time unlock for Terminal access, the full file browser, import/export, and advanced local tools.",
-          "displayName": "Alley C\u00e3t Pro",
+          "displayName": "Alley Cat Pro",
           "locale": "en_US"
         }
       ],
-      "productID": "com.nightvibes.alleycat.pro",
-      "referenceName": "Alley C\u00e3t Pro",
+      "productID": "com.sigkitten.litter.pro",
+      "referenceName": "Alley Cat Pro",
       "type": "NonConsumable"
     },
     {
@@ -28,7 +28,7 @@
           "locale": "en_US"
         }
       ],
-      "productID": "com.nightvibes.alleycat.tip.10",
+      "productID": "com.sigkitten.litter.tip.10",
       "referenceName": "$9.99 Tip",
       "type": "NonConsumable"
     },
@@ -43,7 +43,7 @@
           "locale": "en_US"
         }
       ],
-      "productID": "com.nightvibes.alleycat.tip.25",
+      "productID": "com.sigkitten.litter.tip.25",
       "referenceName": "$24.99 Tip",
       "type": "NonConsumable"
     },
@@ -58,7 +58,7 @@
           "locale": "en_US"
         }
       ],
-      "productID": "com.nightvibes.alleycat.tip.50",
+      "productID": "com.sigkitten.litter.tip.50",
       "referenceName": "$49.99 Tip",
       "type": "NonConsumable"
     },
@@ -73,7 +73,7 @@
           "locale": "en_US"
         }
       ],
-      "productID": "com.nightvibes.alleycat.tip.100",
+      "productID": "com.sigkitten.litter.tip.100",
       "referenceName": "$99.99 Tip",
       "type": "NonConsumable"
     }

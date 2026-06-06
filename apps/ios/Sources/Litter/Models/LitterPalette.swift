@@ -11,7 +11,7 @@ enum LitterPalette {
         let dark: String
     }
 
-    static let appGroupSuite = "group.com.nightvibes.alleycat"
+    static let appGroupSuite = "group.com.sigkitten.litter.39A8Q3T3TR"
     private static let shared = UserDefaults(suiteName: appGroupSuite)
 
     private static func pair(_ key: String, lightFallback: String, darkFallback: String) -> Pair {

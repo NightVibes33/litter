@@ -212,7 +212,7 @@ jobs:
       - name: Build, sign, and notarize DMG
         env:
           SCHEME: LitterMac
-          APP_BUNDLE_ID: com.nightvibes.alleycat
+          APP_BUNDLE_ID: com.sigkitten.litter
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
           APP_PROVISIONING_PROFILE_SPECIFIER: ${{ env.APP_PROVISIONING_PROFILE_SPECIFIER }}
           EXPORT_SIGNING_STYLE: ${{ env.EXPORT_SIGNING_STYLE }}

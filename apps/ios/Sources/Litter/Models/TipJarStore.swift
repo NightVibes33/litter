@@ -24,10 +24,10 @@ final class TipJarStore {
     }
 
     private(set) var tiers: [TipTier] = [
-        TipTier(id: "com.nightvibes.alleycat.tip.10", displayName: "$9.99 Tip", fallbackPrice: "$9.99", icon: "tip_cat_10"),
-        TipTier(id: "com.nightvibes.alleycat.tip.25", displayName: "$24.99 Tip", fallbackPrice: "$24.99", icon: "tip_cat_25"),
-        TipTier(id: "com.nightvibes.alleycat.tip.50", displayName: "$49.99 Tip", fallbackPrice: "$49.99", icon: "tip_cat_50"),
-        TipTier(id: "com.nightvibes.alleycat.tip.100", displayName: "$99.99 Tip", fallbackPrice: "$99.99", icon: "tip_cat_100"),
+        TipTier(id: "com.sigkitten.litter.tip.10", displayName: "$9.99 Tip", fallbackPrice: "$9.99", icon: "tip_cat_10"),
+        TipTier(id: "com.sigkitten.litter.tip.25", displayName: "$24.99 Tip", fallbackPrice: "$24.99", icon: "tip_cat_25"),
+        TipTier(id: "com.sigkitten.litter.tip.50", displayName: "$49.99 Tip", fallbackPrice: "$49.99", icon: "tip_cat_50"),
+        TipTier(id: "com.sigkitten.litter.tip.100", displayName: "$99.99 Tip", fallbackPrice: "$99.99", icon: "tip_cat_100"),
     ]
     private(set) var purchaseState: PurchaseState = .idle
     private(set) var isLoading = true
