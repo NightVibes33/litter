@@ -31,13 +31,13 @@ enum ProFeature: String, Identifiable, Hashable {
     var lockedMessage: String {
         switch self {
         case .all:
-            return "Unlock Terminal, the full file browser, import/export, and advanced local tools."
+            return "Unlock Terminal, the full file browser, custom app icons, chat appearance, and advanced local tools."
         case .terminal:
             return "Terminal is part of Alley Cãt Pro. Unlock it once and keep access across your devices."
         case .fileBrowser:
             return "The full file browser is part of Alley Cãt Pro. Unlock browsing, import/export, and advanced file tools."
         case .appearance:
-            return "Chat Appearance is part of Alley Cãt Pro. Preview every style, then unlock once to apply custom backgrounds and typing effects."
+            return "Appearance is part of Alley Cãt Pro. Preview every style, then unlock once to apply custom backgrounds, typing effects, and app icons."
         }
     }
 }

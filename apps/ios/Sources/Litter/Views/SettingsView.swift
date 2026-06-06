@@ -57,6 +57,7 @@ struct SettingsView: View {
                         signingSection
                     }
                     appearanceSection
+                    iconSwitcherSection
                     fontSection
                     conversationSection
                     localToolsSection
@@ -90,6 +91,8 @@ struct SettingsView: View {
                     }
                 case .appearance:
                     AppearanceSettingsView()
+                case .appIcon:
+                    AppIconSettingsView()
                 case .conversation:
                     ConversationSettingsRouteView()
                 case .updates:
@@ -245,21 +248,62 @@ struct SettingsView: View {
 
     private var appearanceSection: some View {
         Section {
-            NavigationLink {
-                AppearanceSettingsView()
-            } label: {
+            NavigationLink(value: SettingsRoute.appearance) {
                 HStack(spacing: 10) {
                     Image(systemName: "paintbrush")
                         .foregroundColor(LitterTheme.accent)
                         .frame(width: 20)
-                    Text("Appearance")
-                        .litterFont(.subheadline)
-                        .foregroundColor(LitterTheme.textPrimary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Appearance")
+                            .litterFont(.subheadline)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text("Themes, chat backgrounds, and typing effects")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
                 }
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Theme")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
+    // MARK: - Icon Switcher Section
+
+    private var iconSwitcherSection: some View {
+        Section {
+            NavigationLink(value: SettingsRoute.appIcon) {
+                HStack(spacing: 10) {
+                    Image("app_icon_current")
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: 30, height: 30)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(LitterTheme.border.opacity(0.45), lineWidth: 1)
+                        }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Icon Switcher")
+                            .litterFont(.subheadline, weight: .semibold)
+                            .foregroundColor(LitterTheme.textPrimary)
+                        Text(proStore.hasProAccess ? "Switch between Alley Cãt icons" : "Pro icon switching")
+                            .litterFont(.caption)
+                            .foregroundColor(LitterTheme.textSecondary)
+                    }
+                    Spacer(minLength: 8)
+                    if !proStore.hasProAccess {
+                        Image(systemName: "lock.fill")
+                            .foregroundColor(LitterTheme.textMuted)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
+        } header: {
+            Text("Icon Switcher")
                 .foregroundColor(LitterTheme.textSecondary)
         }
     }
@@ -540,14 +584,23 @@ struct SettingsView: View {
                 ProPaywallView(feature: .all)
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: proStore.hasProAccess ? "checkmark.seal.fill" : "pawprint.fill")
-                        .foregroundStyle(LitterTheme.accent)
-                        .frame(width: 20)
+                    if proStore.hasProAccess {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundStyle(LitterTheme.accent)
+                            .frame(width: 20)
+                    } else {
+                        Image("app_icon_current")
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: 24, height: 24)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    }
                     VStack(alignment: .leading, spacing: 2) {
                         Text(proStore.hasProAccess ? "Alley Cãt Pro Unlocked" : "Unlock Alley Cãt Pro")
                             .litterFont(.subheadline, weight: .semibold)
                             .foregroundStyle(LitterTheme.textPrimary)
-                        Text(proStore.hasProAccess ? "Terminal and full file browser are available" : "Terminal and full file browser for \(proStore.displayPrice)")
+                        Text(proStore.hasProAccess ? "Terminal and full file browser are available" : "Terminal, files, and app icons for \(proStore.displayPrice)")
                             .litterFont(.caption)
                             .foregroundStyle(LitterTheme.textSecondary)
                     }
@@ -919,6 +972,7 @@ struct SettingsView: View {
 enum SettingsRoute: String, Hashable {
     case terminal
     case appearance
+    case appIcon
     case conversation
     case updates
     case signing
