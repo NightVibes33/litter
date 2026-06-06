@@ -429,7 +429,7 @@ final class AppUpdateStore: ObservableObject {
         case .unknown:
             return "Check the app source for a newer sideload build."
         case .available:
-            return "Alley Cãt \(manifest.displayVersion) is available."
+            return "Alley Cat \(manifest.displayVersion) is available."
         case .upToDate:
             return "This install matches the latest app source release."
         case .remoteOlder:

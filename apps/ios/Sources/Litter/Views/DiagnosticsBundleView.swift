@@ -100,7 +100,7 @@ private enum DiagnosticsBundleBuilder {
     @MainActor
     static func build() async -> String {
         var lines: [String] = []
-        lines.append("Alley Cãt Recovery Bundle")
+        lines.append("Alley Cat Recovery Bundle")
         lines.append("Collected: \(ISO8601DateFormatter().string(from: Date()))")
         lines.append("")
         lines.append("App")

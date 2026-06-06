@@ -781,9 +781,9 @@ private extension KittyStoreSideStoreSigningBridge {
 
     static var appDisplayName: String {
         let info = Bundle.main.infoDictionary ?? [:]
-        let displayName = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? "Alley Cãt"
+        let displayName = (info["CFBundleDisplayName"] as? String) ?? (info["CFBundleName"] as? String) ?? "Alley Cat"
         let cleaned = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "Alley Cãt" : cleaned
+        return cleaned.isEmpty ? "Alley Cat" : cleaned
     }
 
     static var deviceRegistrationName: String {

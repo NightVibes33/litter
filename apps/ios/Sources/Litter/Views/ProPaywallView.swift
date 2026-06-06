@@ -26,7 +26,7 @@ struct ProPaywallView: View {
                     .scaleEffect(1.2)
             }
         }
-        .navigationTitle("Alley Cãt Pro")
+        .navigationTitle("Alley Cat Pro")
         .navigationBarTitleDisplayMode(.inline)
         .task { await store.loadProducts() }
         .onChange(of: store.hasProAccess) { _, unlocked in
@@ -79,7 +79,7 @@ struct ProPaywallView: View {
                         Text("Pro Unlocked")
                             .litterFont(.subheadline, weight: .semibold)
                             .foregroundStyle(LitterTheme.textPrimary)
-                        Text("This Apple ID already owns Alley Cãt Pro.")
+                        Text("This Apple ID already owns Alley Cat Pro.")
                             .litterFont(.caption)
                             .foregroundStyle(LitterTheme.textSecondary)
                     }

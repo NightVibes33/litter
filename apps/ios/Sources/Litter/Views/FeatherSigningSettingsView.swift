@@ -859,7 +859,7 @@ private extension UTType {
     static var litterProvisionProfile: UTType { UTType(filenameExtension: "provisionprofile", conformingTo: .data) ?? .data }
     static var litterPairing: UTType { UTType(filenameExtension: "pairing", conformingTo: .data) ?? .data }
     static var litterMobileDevicePairing: UTType { UTType(filenameExtension: "mobiledevicepairing", conformingTo: .data) ?? UTType("com.apple.mobiledevicepairing") ?? .data }
-    static var litterIPA: UTType { UTType(filenameExtension: "ipa", conformingTo: .data) ?? UTType("com.sigkitten.litter.ipa") ?? .data }
+    static var litterIPA: UTType { UTType(filenameExtension: "ipa", conformingTo: .data) ?? UTType("com.nightvibes.alleycat.ipa") ?? .data }
     static var litterEntitlements: UTType { UTType(filenameExtension: "entitlements", conformingTo: .data) ?? .data }
     static var litterDylib: UTType { UTType(filenameExtension: "dylib", conformingTo: .data) ?? .data }
     static var litterDeb: UTType { UTType(filenameExtension: "deb", conformingTo: .data) ?? .data }

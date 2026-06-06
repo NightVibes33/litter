@@ -173,7 +173,7 @@ struct OnboardingView: View {
             heroPanel(
                 systemImage: "iphone.gen3.radiowaves.left.and.right",
                 title: "Your iPhone coding workspace",
-                detail: "Alley Cãt brings AI chat, local files, a shared terminal, remote machines, and iOS build tools into one mobile workspace."
+                detail: "Alley Cat brings AI chat, local files, a shared terminal, remote machines, and iOS build tools into one mobile workspace."
             )
             featureGrid(welcomeFeatures)
         }
@@ -197,7 +197,7 @@ struct OnboardingView: View {
             routeCard(
                 icon: ChatRuntimeMode.chatGPTAccount.systemImage,
                 title: "ChatGPT Account",
-                detail: "Use the signed-in route for normal Alley Cãt conversations and hosted models.",
+                detail: "Use the signed-in route for normal Alley Cat conversations and hosted models.",
                 actionTitle: "Open AI Providers",
                 action: { finishAndOpen { onOpenSettingsRoute("aiProviders") } }
             )
@@ -286,7 +286,7 @@ struct OnboardingView: View {
             actionPanel(
                 icon: "sparkles",
                 title: "Ready for your first turn",
-                detail: "Open a project folder, pick the runtime you want, and ask Alley Cãt to inspect or change real files.",
+                detail: "Open a project folder, pick the runtime you want, and ask Alley Cat to inspect or change real files.",
                 primaryTitle: "Start a Thread",
                 primaryAction: { onFinish() },
                 secondaryTitle: "Open Files",
@@ -518,7 +518,7 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .welcome: return "Build with Alley Cãt"
+        case .welcome: return "Build with Alley Cat"
         case .runtime: return "Pick your runtime"
         case .workspace: return "Files and terminal"
         case .buildKit: return "emexDE on iPhone"
@@ -725,11 +725,11 @@ private enum LitterOnboardingDemoWorkspace {
     }
 
     private static let readme = """
-    # Welcome to Alley Cãt
+    # Welcome to Alley Cat
 
     This folder was created by onboarding. It is safe to delete.
 
-    Try these commands in the Alley Cãt terminal:
+    Try these commands in the Alley Cat terminal:
 
     ```sh
     pwd
@@ -747,7 +747,7 @@ private enum LitterOnboardingDemoWorkspace {
     """
 
     private static let swiftSource = """
-    print("Swift is running inside Alley Cãt")
+    print("Swift is running inside Alley Cat")
     """
 
     private static let buildManifest = """

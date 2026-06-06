@@ -210,7 +210,7 @@ require_grep "emexDE framework target" "emexDE:" "apps/ios/project.yml"
 require_grep "Litter embeds emexDE without launch-time linking" "link: false" "apps/ios/project.yml"
 require_grep "CI rejects direct Litter emexDE framework links" "load emexDE lazily from settings" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "emexDE LiveProcess target" "LiveProcess:" "apps/ios/project.yml"
-require_grep "emexDE LiveProcess extension bundle id is Litter-prefixed" "PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR.liveprocess" "apps/ios/project.yml"
+require_grep "emexDE LiveProcess extension bundle id is Litter-prefixed" "PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.liveprocess" "apps/ios/project.yml"
 require_grep "emexDE LiveProcess extension plist gets processed bundle id" 'INFOPLIST_KEY_CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"' "apps/ios/project.yml"
 require_grep "emexDE LiveProcess extension plist gets processed executable" 'INFOPLIST_KEY_CFBundleExecutable: "$(EXECUTABLE_NAME)"' "apps/ios/project.yml"
 require_grep "emexDE LiveProcess extension plist keeps XPC package type" "INFOPLIST_KEY_CFBundlePackageType: XPC!" "apps/ios/project.yml"
@@ -230,7 +230,7 @@ require_grep "emexDE CI patches LiveProcess plist bundle id" '<string>$(PRODUCT_
 require_grep "emexDE CI patches LiveProcess plist executable" '<string>$(EXECUTABLE_NAME)</string>' "tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py"
 require_grep "emexDE CI patches LiveProcess plist package type" "<string>XPC!</string>" "tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py"
 require_grep "emexDE unsigned IPA workflow validates LiveProcess bundle id" "IPA LiveProcess.appex has invalid CFBundleIdentifier" ".github/workflows/ios-unsigned-ipa.yml"
-require_grep "emexDE private LiveProcess workflow bundle id is Litter-prefixed" 'PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.39A8Q3T3TR.liveprocess"' ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "emexDE private LiveProcess workflow bundle id is Litter-prefixed" 'PRODUCT_BUNDLE_IDENTIFIER="com.nightvibes.alleycat.liveprocess"' ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "emexDE CoreCompiler artifact preparation" "prepare-emexde-corecompiler-artifacts.sh" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "emexDE LLVM artifact preparation" "LLVM.xcframework.tar.xz" "tools/scripts/prepare-emexde-corecompiler-artifacts.sh"
 require_grep "iOS unsigned IPA uses Intel macOS 26 runner" "runs-on: macos-26-intel" ".github/workflows/ios-unsigned-ipa.yml"
@@ -289,7 +289,7 @@ if ! awk '
 fi
 require_grep "KittyStore framework targets own native link flags" "-lminimuxer-ios" "apps/ios/project.yml"
 require_grep "RustBridge owns native minimuxer dependency" "-lrust_bridge -lminimuxer-ios" "apps/ios/project.yml"
-require_grep "CI rejects Alley Cãt static minimuxer link" "Alley Cãt main executable links the KittyStore minimuxer static library" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "CI rejects Alley Cat static minimuxer link" "Alley Cat main executable links the KittyStore minimuxer static library" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "dynamic framework packaging guard" "Verify embedded dynamic frameworks" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "launch-linked iOS minOS guard" "verify_ios_minos" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "archive rejects newer iOS object warnings" "was built for newer 'iOS' version" ".github/workflows/ios-unsigned-ipa.yml"
@@ -325,10 +325,10 @@ if awk '
   in_side_store && /link: false/ { found = 1 }
   END { exit found ? 0 : 1 }
 ' "$ROOT_DIR/apps/ios/project.yml"; then
-  fail "Alley Cãt SideStore dependency must stay launch-linked for the KittyStore route"
+  fail "Alley Cat SideStore dependency must stay launch-linked for the KittyStore route"
 fi
-require_grep "CI requires direct Alley Cãt SideStore framework link" "@rpath/SideStore.framework/SideStore" ".github/workflows/ios-unsigned-ipa.yml"
-require_grep "CI rejects direct Alley Cãt minimuxer framework links" "keep minimuxer isolated behind the KittyStore framework" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "CI requires direct Alley Cat SideStore framework link" "@rpath/SideStore.framework/SideStore" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "CI rejects direct Alley Cat minimuxer framework links" "keep minimuxer isolated behind the KittyStore framework" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "Private BuildKit native refresh" "refresh_native_driver_if_needed" "apps/ios/scripts/prepare-buildkit-assets.sh"
 require_grep "Private BuildKit native rebuild script" "build-litter-buildkit-native.sh" "apps/ios/scripts/prepare-buildkit-assets.sh"
 require_grep "Private BuildKit refreshed fingerprint" "nativeDriverSourceFingerprint" "apps/ios/scripts/prepare-buildkit-assets.sh"

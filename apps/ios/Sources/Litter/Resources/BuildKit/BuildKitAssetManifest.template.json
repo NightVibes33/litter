@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "bundleIdentifier": "com.sigkitten.litter.buildkit.private",
+  "bundleIdentifier": "com.nightvibes.alleycat.buildkit.private",
   "createdAt": "2026-05-10T00:00:00Z",
   "sdkVersion": "26.4",
   "swiftVersion": "6.x",

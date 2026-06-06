@@ -4,7 +4,7 @@ import os
 
 @objc(CarPlaySceneDelegate)
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
-    private static let log = Logger(subsystem: "com.sigkitten.litter", category: "CarPlay")
+    private static let log = Logger(subsystem: "com.nightvibes.alleycat", category: "CarPlay")
 
     private var interfaceController: CPInterfaceController?
     private var voiceManager: CarPlayVoiceManager?
@@ -24,7 +24,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
         // Set a minimal root template first so the watchdog is satisfied
         // (CarPlay kills the scene if no root template is set quickly).
-        let placeholder = CPGridTemplate(title: "Alley Cãt", gridButtons: [Self.placeholderButton()])
+        let placeholder = CPGridTemplate(title: "Alley Cat", gridButtons: [Self.placeholderButton()])
         placeholder.tabImage = UIImage(systemName: "waveform")
         placeholder.tabTitle = "Voice"
         interfaceController.setRootTemplate(placeholder, animated: false) { success, error in

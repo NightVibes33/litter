@@ -1,6 +1,6 @@
 name: Litter
 options:
-  bundleIdPrefix: com.litter
+  bundleIdPrefix: com.nightvibes
   deploymentTarget:
     iOS: "18.0"
     watchOS: "11.0"
@@ -104,7 +104,7 @@ targets:
     deploymentTarget: "18.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.Roxas
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.Roxas
         INFOPLIST_FILE: ../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas/Info.plist
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
@@ -122,7 +122,7 @@ targets:
     deploymentTarget: "18.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.AltStoreCore
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.AltStoreCore
         INFOPLIST_FILE: ../../ThirdParty/SideStore/Source/AltStoreCore/Info.plist
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
@@ -148,7 +148,7 @@ targets:
     deploymentTarget: "18.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.RustBridge
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.RustBridge
         GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
@@ -171,7 +171,7 @@ targets:
     deploymentTarget: "18.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.Minimuxer
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.Minimuxer
         GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
@@ -189,7 +189,7 @@ targets:
     deploymentTarget: "18.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.KittyStore
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.KittyStore
         PRODUCT_MODULE_NAME: SideStore
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
@@ -283,7 +283,7 @@ targets:
     deploymentTarget: "18.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.emexde.CoreCompiler
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.emexde.CoreCompiler
         PRODUCT_MODULE_NAME: CoreCompiler
         GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
@@ -324,7 +324,7 @@ targets:
     deploymentTarget: "18.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.emexde.MobileDevelopmentKit
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.emexde.MobileDevelopmentKit
         PRODUCT_MODULE_NAME: MobileDevelopmentKit
         GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
@@ -347,7 +347,7 @@ targets:
     deploymentTarget: "18.0"
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.emexde
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.emexde
         PRODUCT_MODULE_NAME: emexDE
         GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
@@ -442,7 +442,7 @@ targets:
       path: ../../ThirdParty/EmexDE/Source/LiveProcess/LiveProcess.entitlements
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR.liveprocess
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.liveprocess
         PRODUCT_NAME: LiveProcess
         INFOPLIST_FILE: ../../ThirdParty/EmexDE/Source/LiveProcess/Info.plist
         INFOPLIST_KEY_CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"
@@ -580,11 +580,11 @@ targets:
       properties:
         aps-environment: production
         # iCloud KVS sync (Feature C). Re-add when the iCloud container
-        # `iCloud.com.sigkitten.litter.39A8Q3T3TR` exists in the Apple Developer Portal
+        # `iCloud.com.nightvibes.alleycat` exists in the Apple Developer Portal
         # AND is enabled on the iOS app's provisioning profile. Without
         # both, archive fails: "Provisioning profile doesn't include the
         # iCloud capability."
-        # com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)iCloud.com.sigkitten.litter.39A8Q3T3TR
+        # com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)iCloud.com.nightvibes.alleycat
     attributes:
       SystemCapabilities:
         com.apple.BackgroundModes:
@@ -1064,7 +1064,7 @@ targets:
             <key>CFBundleExecutable</key>
             <string>$executable</string>
             <key>CFBundleIdentifier</key>
-            <string>com.sigkitten.litter.$executable</string>
+            <string>com.nightvibes.alleycat.$executable</string>
             <key>CFBundleInfoDictionaryVersion</key>
             <string>6.0</string>
             <key>CFBundleName</key>
@@ -1108,7 +1108,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: "Alley Cat"
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat
         INFOPLIST_FILE: Sources/Litter/Info.plist
         SWIFT_OBJC_BRIDGING_HEADER: Sources/Litter/Bridge/codex_bridge_objc.h
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -1140,11 +1140,11 @@ targets:
       properties:
         aps-environment: production
         # iCloud KVS sync (Feature C). Re-add when the iCloud container
-        # `iCloud.com.sigkitten.litter.39A8Q3T3TR` exists in the Apple Developer Portal
+        # `iCloud.com.nightvibes.alleycat` exists in the Apple Developer Portal
         # AND the Mac App Store profile is regenerated to include the iCloud
         # capability. Direct-dist (DeveloperID entitlements) keeps the key
         # because Developer ID apps validate iCloud at runtime, not via profile.
-        # com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)iCloud.com.sigkitten.litter.39A8Q3T3TR
+        # com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)iCloud.com.nightvibes.alleycat
         com.apple.security.app-sandbox: true
         com.apple.security.device.bluetooth: true
         com.apple.security.files.user-selected.read-write: true
@@ -1212,7 +1212,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: "Alley Cat"
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat
         DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
         INFOPLIST_FILE: Sources/Litter/Info-Catalyst.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIconMac
@@ -1268,7 +1268,7 @@ targets:
       - path: Sources/LitterLiveActivity/Assets.xcassets
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR.liveactivity
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.liveactivity
         INFOPLIST_FILE: Sources/LitterLiveActivity/Info.plist
         OTHER_LDFLAGS: ""
         SWIFT_OBJC_BRIDGING_HEADER: ""
@@ -1309,7 +1309,7 @@ targets:
         embed: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR.watchkitapp
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.watchkitapp
         INFOPLIST_FILE: Sources/LitterWatch/Info.plist
         TARGETED_DEVICE_FAMILY: "4"
         WATCHOS_DEPLOYMENT_TARGET: "11.0"
@@ -1349,7 +1349,7 @@ targets:
       - path: Sources/LitterWatchComplications/Assets.xcassets
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR.watchkitapp.complications
+        PRODUCT_BUNDLE_IDENTIFIER: com.nightvibes.alleycat.watchkitapp.complications
         INFOPLIST_FILE: Sources/LitterWatchComplications/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "4"

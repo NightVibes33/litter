@@ -60,7 +60,7 @@ struct ConnectorSettingsView: View {
                     Text("Hosted Relay")
                         .foregroundColor(LitterTheme.textSecondary)
                 } footer: {
-                    Text("Use Vercel only for providers that need HTTPS callbacks, client secrets, or server-side token exchange. Tokens still hand off to Alley Cãt for Keychain storage.")
+                    Text("Use Vercel only for providers that need HTTPS callbacks, client secrets, or server-side token exchange. Tokens still hand off to Alley Cat for Keychain storage.")
                         .foregroundColor(LitterTheme.textMuted)
                 }
 

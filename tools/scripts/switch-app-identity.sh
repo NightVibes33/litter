@@ -19,7 +19,7 @@ usage() {
 Usage: ./tools/scripts/switch-app-identity.sh --to <sigkitten|your-identifier> [options]
 
 Switches local iOS app identifiers between:
-  - com.sigkitten.litter(.remote)
+  - com.nightvibes.alleycat(.remote)
   - com.<your-identifier>.litter(.remote)
 
 Options:

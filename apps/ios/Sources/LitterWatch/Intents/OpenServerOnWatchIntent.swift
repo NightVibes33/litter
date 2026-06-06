@@ -51,7 +51,7 @@ struct WatchServerEntityQuery: EntityQuery {
 struct OpenServerOnWatchIntent: AppIntent {
     static let title: LocalizedStringResource = "Open Server"
     static let description = IntentDescription(
-        "Open the Alley Cãt watch app focused on a specific Codex server."
+        "Open the Alley Cat watch app focused on a specific Codex server."
     )
     static let openAppWhenRun: Bool = true
 
@@ -72,7 +72,7 @@ struct OpenServerOnWatchIntent: AppIntent {
 struct StartVoiceOnWatchIntent: AppIntent {
     static let title: LocalizedStringResource = "Start Voice"
     static let description = IntentDescription(
-        "Open Alley Cãt and switch to the realtime voice screen."
+        "Open Alley Cat and switch to the realtime voice screen."
     )
     static let openAppWhenRun: Bool = true
 

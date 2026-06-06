@@ -9,7 +9,7 @@ set -euo pipefail
 #   ./tools/scripts/testflight-feedback.sh          # all feedback
 #
 # Options (env vars):
-#   BUNDLE_ID          — app bundle ID (default: com.sigkitten.litter)
+#   BUNDLE_ID          — app bundle ID (default: com.nightvibes.alleycat)
 #   ASC_BIN            — path to `asc` CLI binary
 #   DOWNLOAD_SCREENSHOTS — set to 1 to download screenshots locally (default: 0)
 #   OUTPUT_DIR         — where to save screenshots (default: /tmp/testflight-feedback)
@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 VERSION="${1:-}"
-BUNDLE_ID="${BUNDLE_ID:-com.sigkitten.litter}"
+BUNDLE_ID="${BUNDLE_ID:-com.nightvibes.alleycat}"
 DOWNLOAD_SCREENSHOTS="${DOWNLOAD_SCREENSHOTS:-0}"
 OUTPUT_DIR="${OUTPUT_DIR:-/tmp/testflight-feedback}"
 OUTPUT_FORMAT="${OUTPUT_FORMAT:-summary}"

@@ -189,7 +189,7 @@ cat > "$OUT_DIR/Info.plist" <<EOF_PLIST
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleExecutable</key><string>$BINARY_NAME</string>
-  <key>CFBundleIdentifier</key><string>com.sigkitten.litter.buildkit.native</string>
+  <key>CFBundleIdentifier</key><string>com.nightvibes.alleycat.buildkit.native</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>$BINARY_NAME</string>
   <key>CFBundlePackageType</key><string>FMWK</string>

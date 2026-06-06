@@ -71,11 +71,11 @@ jobs:
           export ASC_PRIVATE_KEY_PATH="$ASC_KEY_PATH"
 
           app_json="$(asc apps list \
-            --bundle-id com.sigkitten.litter.39A8Q3T3TR \
+            --bundle-id com.nightvibes.alleycat \
             --output json)"
           app_id="$(echo "$app_json" | jq -r '.data[0].id // empty')"
           if [[ -z "$app_id" ]]; then
-            echo "Missing App Store Connect app record for bundle id com.sigkitten.litter.39A8Q3T3TR." >&2
+            echo "Missing App Store Connect app record for bundle id com.nightvibes.alleycat." >&2
             echo "Create it in App Store Connect before running TestFlight upload." >&2
             exit 1
           fi
@@ -617,11 +617,11 @@ jobs:
           CERTIFICATE_TYPE: DISTRIBUTION
           REVOKE_EXISTING_LITTER_CI_DISTRIBUTION_CERTIFICATE_ON_LIMIT: "1"
           REVOKE_EXISTING_DISTRIBUTION_CERTIFICATES_ON_LIMIT: "1"
-          APP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR
-          LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
-          LIVEPROCESS_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveprocess
-          WATCH_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.watchkitapp
-          WATCH_COMP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.watchkitapp.complications
+          APP_BUNDLE_ID: com.nightvibes.alleycat
+          LIVE_ACTIVITY_BUNDLE_ID: com.nightvibes.alleycat.liveactivity
+          LIVEPROCESS_BUNDLE_ID: com.nightvibes.alleycat.liveprocess
+          WATCH_BUNDLE_ID: com.nightvibes.alleycat.watchkitapp
+          WATCH_COMP_BUNDLE_ID: com.nightvibes.alleycat.watchkitapp.complications
           INCLUDE_LIVEPROCESS: "0"
         run: |
           set -euo pipefail
@@ -709,7 +709,7 @@ jobs:
           set -euo pipefail
 
           SCHEME="Litter"
-          APP_BUNDLE_ID="com.sigkitten.litter.39A8Q3T3TR"
+          APP_BUNDLE_ID="com.nightvibes.alleycat"
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             BETA_GROUP_NAMES="${{ inputs.beta_group_names }}"
@@ -731,8 +731,8 @@ jobs:
       - name: Build and upload TestFlight IPA
         env:
           SCHEME: Litter
-          APP_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR
-          LIVE_ACTIVITY_BUNDLE_ID: com.sigkitten.litter.39A8Q3T3TR.liveactivity
+          APP_BUNDLE_ID: com.nightvibes.alleycat
+          LIVE_ACTIVITY_BUNDLE_ID: com.nightvibes.alleycat.liveactivity
           APP_STORE_APP_ID: ${{ secrets.IOS_APP_STORE_APP_ID }}
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
           EXPORT_SIGNING_STYLE: manual

@@ -54,7 +54,7 @@ struct AppearanceSettingsView: View {
             Text("Mode")
                 .foregroundColor(LitterTheme.textSecondary)
         } footer: {
-            Text("Match the device setting, or keep Alley Cãt fixed in light or dark mode.")
+            Text("Match the device setting, or keep Alley Cat fixed in light or dark mode.")
                 .foregroundColor(LitterTheme.textMuted)
         }
     }

@@ -6,7 +6,7 @@ final class BuildKitTests: XCTestCase {
         let json = """
         {
           "schemaVersion": 1,
-          "bundleIdentifier": "com.sigkitten.litter.buildkit.private",
+          "bundleIdentifier": "com.nightvibes.alleycat.buildkit.private",
           "sdkVersion": "26.4",
           "swiftVersion": "6.x",
           "minimumIOS": "18.0",
@@ -127,7 +127,7 @@ final class BuildKitTests: XCTestCase {
 private func buildKitManifest(sdkVersion: String, createdAt: String) -> BuildKitAssetManifest {
     BuildKitAssetManifest(
         schemaVersion: 1,
-        bundleIdentifier: "com.sigkitten.litter.buildkit.private",
+        bundleIdentifier: "com.nightvibes.alleycat.buildkit.private",
         createdAt: createdAt,
         sdkVersion: sdkVersion,
         swiftVersion: "6.x",

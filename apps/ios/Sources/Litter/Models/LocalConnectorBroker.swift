@@ -12,7 +12,7 @@ final class LocalConnectorBroker: @unchecked Sendable {
     static let port: UInt16 = 1456
     static let manifestPath = "/root/.litter/connectors/broker.json"
 
-    private let queue = DispatchQueue(label: "com.sigkitten.litter.connector-broker")
+    private let queue = DispatchQueue(label: "com.nightvibes.alleycat.connector-broker")
     private let stateLock = NSLock()
     private let bearerToken = LocalConnectorBroker.makeBearerToken()
     private var listener: NWListener?
@@ -316,7 +316,7 @@ json_value() {
 require_manifest() {
   if [ ! -f "$manifest" ]; then
     echo "Missing connector broker manifest: $manifest" >&2
-    echo "Open Alley Cãt with the local runtime running, then try again." >&2
+    echo "Open Alley Cat with the local runtime running, then try again." >&2
     exit 1
   fi
 }

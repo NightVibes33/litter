@@ -12,7 +12,7 @@ final class FeatherSignedIPAInstallServer {
     }
 
     private static let bindHost = "127.0.0.1"
-    private let queue = DispatchQueue(label: "com.sigkitten.litter.feather-install-server")
+    private let queue = DispatchQueue(label: "com.nightvibes.alleycat.feather-install-server")
     private let stateLock = NSLock()
     private var listener: NWListener?
     private var serveState: ServeState?

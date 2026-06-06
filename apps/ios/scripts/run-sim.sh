@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 DERIVED_DATA_ROOT="${HOME}/Library/Developer/Xcode/DerivedData"
 APP_PATH="$(/bin/ls -dt "${DERIVED_DATA_ROOT}"/Litter-*/Build/Products/Debug-iphonesimulator/*.app 2>/dev/null | head -1 || true)"
-BUNDLE_ID="com.sigkitten.litter"
+BUNDLE_ID="com.nightvibes.alleycat"
 
 PROFILE_ENABLED="${IOS_SIM_PROFILE:-0}"
 PROFILE_TEMPLATE="${IOS_SIM_PROFILE_TEMPLATE:-Time Profiler}"

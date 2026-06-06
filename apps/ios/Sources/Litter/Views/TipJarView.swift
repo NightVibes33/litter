@@ -51,7 +51,7 @@ struct TipJarView: View {
                     .scaleEffect(1.2)
             }
         }
-        .navigationTitle("Tip the Alley Cãt")
+        .navigationTitle("Tip the Alley Cat")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await store.loadProducts()
@@ -71,7 +71,7 @@ struct TipJarView: View {
                         .font(.system(size: 28))
                         .foregroundColor(LitterTheme.accent)
                 }
-                Text("If you enjoy Alley Cãt, consider leaving a tip. Tips help support ongoing development and are entirely optional.")
+                Text("If you enjoy Alley Cat, consider leaving a tip. Tips help support ongoing development and are entirely optional.")
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.textSecondary)
                     .multilineTextAlignment(.center)

@@ -237,7 +237,7 @@ jobs:
           set -euo pipefail
 
           SCHEME="LitterMac"
-          APP_BUNDLE_ID="com.sigkitten.litter"
+          APP_BUNDLE_ID="com.nightvibes.alleycat"
 
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             BETA_GROUP_NAMES="${{ inputs.beta_group_names }}"

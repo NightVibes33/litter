@@ -469,7 +469,7 @@ private enum KittyStoreEmbeddedRuntime {
 
         let pipeline = ImagePipeline { configuration in
             do {
-                let dataCache = try DataCache(name: "com.sigkitten.litter.kittystore.Nuke")
+                let dataCache = try DataCache(name: "com.nightvibes.alleycat.kittystore.Nuke")
                 dataCache.sizeLimit = 512 * 1024 * 1024
                 configuration.dataCache = dataCache
             } catch {

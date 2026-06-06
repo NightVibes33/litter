@@ -21,7 +21,7 @@ enum LitterFeature: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .realtimeVoice: return "Show the realtime voice launcher on the home screen."
-        case .appleWatch: return "Push server, task, and approval state to a paired Apple Watch. Requires the Alley Cãt watch app to be installed."
+        case .appleWatch: return "Push server, task, and approval state to a paired Apple Watch. Requires the Alley Cat watch app to be installed."
         case .thinkingMinigame: return "Tap the Thinking shimmer while the assistant generates to play a tiny generated minigame."
         case .terminal: return "Show the local and remote terminal launcher on the home screen."
         }

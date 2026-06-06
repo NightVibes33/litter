@@ -353,7 +353,7 @@ for path in sorted(root.rglob("*")):
         hashes[rel] = h.hexdigest()
 manifest = {
     "schemaVersion": 1,
-    "bundleIdentifier": "com.sigkitten.litter.buildkit.private",
+    "bundleIdentifier": "com.nightvibes.alleycat.buildkit.private",
     "createdAt": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
     "sdkVersion": sdk_version,
     "swiftVersion": swift_version,

@@ -261,7 +261,7 @@ struct BuildKitSettingsView: View {
             Text("Bot Commands")
                 .foregroundStyle(LitterTheme.textSecondary)
         } footer: {
-            Text("These commands are visible inside /root through iSH. They queue requests for the native Alley Cãt BuildKit bridge; Alpine itself is not pretending to be Xcode.")
+            Text("These commands are visible inside /root through iSH. They queue requests for the native Alley Cat BuildKit bridge; Alpine itself is not pretending to be Xcode.")
         }
     }
 
