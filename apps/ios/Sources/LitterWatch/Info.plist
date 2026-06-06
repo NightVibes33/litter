@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Alley Cat</string>
+	<string>Alley Cãt</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIconName</key>
@@ -32,6 +32,6 @@
 	<key>NSSiriUsageDescription</key>
 	<string>Dispatch tasks to Codex by voice.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Alley Cat uses the microphone to dictate prompts to Codex.</string>
+	<string>Alley Cãt uses the microphone to dictate prompts to Codex.</string>
 </dict>
 </plist>

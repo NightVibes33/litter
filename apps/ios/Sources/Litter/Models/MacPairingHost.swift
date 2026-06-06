@@ -303,7 +303,7 @@ final class MacPairingHost: NSObject {
         let distanceSuffix = distanceM.map { String(format: " (~%.1fm)", $0) } ?? ""
         let alert = UIAlertController(
             title: "Pair with \(deviceLabel)?",
-            message: "\(deviceLabel)\(distanceSuffix) wants to pair with this Mac as its Alley Cat home base.",
+            message: "\(deviceLabel)\(distanceSuffix) wants to pair with this Mac as its Alley Cãt home base.",
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: "Accept", style: .default) { [weak self] _ in

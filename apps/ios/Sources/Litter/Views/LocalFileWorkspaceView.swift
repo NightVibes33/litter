@@ -825,7 +825,7 @@ struct LocalFileWorkspaceView: View {
             try await IshFS.writeTextFile(path: target, text: manifest + "\n")
             let mainPath = RemotePath.parse(path: model.currentPath).join(name: "main.swift").asString()
             if !(await IshFS.exists(path: mainPath)) {
-                try await IshFS.writeTextFile(path: mainPath, text: "import Foundation\n\nprint(\"Hello from Alley Cat\")\n")
+                try await IshFS.writeTextFile(path: mainPath, text: "import Foundation\n\nprint(\"Hello from Alley Cãt\")\n")
             }
             await model.reload()
             alertMessage = "Created build manifest."
@@ -1186,7 +1186,7 @@ private final class LocalFileWorkspaceModel {
     var quickLocations: [LocalFileShortcut] {
         var locations = [
             LocalFileShortcut(source: .quick, path: HomeAnchor.path, title: "Home", subtitle: "~", systemImage: "house.fill", kind: .directory),
-            LocalFileShortcut(source: .quick, path: "/root/alley-cat", title: "Alley Cat", subtitle: "/root/alley-cat", systemImage: "shippingbox.fill", kind: .directory),
+            LocalFileShortcut(source: .quick, path: "/root/alley-cat", title: "Alley Cãt", subtitle: "/root/alley-cat", systemImage: "shippingbox.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/root/projects", title: "Projects", subtitle: "/root/projects", systemImage: "folder.fill.badge.gearshape", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/root/.litter/builds", title: "Builds", subtitle: "~/.litter/builds", systemImage: "hammer.fill", kind: .directory),
             LocalFileShortcut(source: .quick, path: "/mnt/apps", title: "App Files", subtitle: "/mnt/apps", systemImage: "externaldrive.fill", kind: .directory),

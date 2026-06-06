@@ -12,7 +12,7 @@ enum ProFeature: String, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .all: return "Alley Cat Pro"
+        case .all: return "Alley Cãt Pro"
         case .terminal: return "Terminal Access"
         case .fileBrowser: return "File Browser Access"
         case .appearance: return "Chat Appearance"
@@ -33,11 +33,11 @@ enum ProFeature: String, Identifiable, Hashable {
         case .all:
             return "Unlock Terminal, the full file browser, import/export, and advanced local tools."
         case .terminal:
-            return "Terminal is part of Alley Cat Pro. Unlock it once and keep access across your devices."
+            return "Terminal is part of Alley Cãt Pro. Unlock it once and keep access across your devices."
         case .fileBrowser:
-            return "The full file browser is part of Alley Cat Pro. Unlock browsing, import/export, and advanced file tools."
+            return "The full file browser is part of Alley Cãt Pro. Unlock browsing, import/export, and advanced file tools."
         case .appearance:
-            return "Chat Appearance is part of Alley Cat Pro. Preview every style, then unlock once to apply custom backgrounds and typing effects."
+            return "Chat Appearance is part of Alley Cãt Pro. Preview every style, then unlock once to apply custom backgrounds and typing effects."
         }
     }
 }
@@ -68,7 +68,7 @@ final class ProAccessStore {
     }
 
     var productDisplayName: String {
-        product?.displayName ?? "Alley Cat Pro"
+        product?.displayName ?? "Alley Cãt Pro"
     }
 
     private init() {
@@ -107,7 +107,7 @@ final class ProAccessStore {
 
     func purchasePro() async {
         guard let product else {
-            purchaseState = .failed("Alley Cat Pro is not available right now. Check the in-app purchase setup in App Store Connect.")
+            purchaseState = .failed("Alley Cãt Pro is not available right now. Check the in-app purchase setup in App Store Connect.")
             return
         }
         purchaseState = .purchasing

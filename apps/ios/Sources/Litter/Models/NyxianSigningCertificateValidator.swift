@@ -371,7 +371,7 @@ enum NyxianAppleIDValidationError: LocalizedError {
         case .missingPassword:
             return "Enter the Apple ID password or app-specific password used by your signer."
         case .invalidTeamID:
-            return "Apple Developer Team IDs are 10 uppercase letters or numbers. Leave it blank if you want Alley Cat to discover/select the team after Apple ID authentication."
+            return "Apple Developer Team IDs are 10 uppercase letters or numbers. Leave it blank if you want Alley Cãt to discover/select the team after Apple ID authentication."
         case .invalidAnisetteURL:
             return "Enter a valid KittyStore Anisette server URL."
         }
@@ -635,13 +635,13 @@ enum NyxianSigningCertificateValidationError: LocalizedError {
         case .noCertificate(let status):
             return "The .p12 identity did not contain a certificate (\(Self.describe(status)))."
         case .embeddedProvisioningProfileMissing:
-            return "The installed Alley Cat app has no embedded.mobileprovision to match against. Install Alley Cat through KittyStore, AltStore, or another signer first."
+            return "The installed Alley Cãt app has no embedded.mobileprovision to match against. Install Alley Cãt through KittyStore, AltStore, or another signer first."
         case .embeddedProvisioningProfileUnreadable(let reason):
             return "The embedded provisioning profile could not be read: \(reason)"
         case .provisioningProfileHasNoDeveloperCertificates:
             return "The embedded provisioning profile does not list developer certificates."
         case .certificateDoesNotMatchProvisioningProfile(let name):
-            return "\(name) does not match the certificate that signed this installed Alley Cat app."
+            return "\(name) does not match the certificate that signed this installed Alley Cãt app."
         case .expired(let date):
             return "The signing certificate expired on \(ISO8601DateFormatter().string(from: date))."
         case .trustCreationFailed(let status):

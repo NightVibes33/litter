@@ -289,7 +289,7 @@ if ! awk '
 fi
 require_grep "KittyStore framework targets own native link flags" "-lminimuxer-ios" "apps/ios/project.yml"
 require_grep "RustBridge owns native minimuxer dependency" "-lrust_bridge -lminimuxer-ios" "apps/ios/project.yml"
-require_grep "CI rejects Alley Cat static minimuxer link" "Alley Cat main executable links the KittyStore minimuxer static library" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "CI rejects Alley Cãt static minimuxer link" "Alley Cãt main executable links the KittyStore minimuxer static library" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "dynamic framework packaging guard" "Verify embedded dynamic frameworks" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "launch-linked iOS minOS guard" "verify_ios_minos" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "archive rejects newer iOS object warnings" "was built for newer 'iOS' version" ".github/workflows/ios-unsigned-ipa.yml"
@@ -325,10 +325,10 @@ if awk '
   in_side_store && /link: false/ { found = 1 }
   END { exit found ? 0 : 1 }
 ' "$ROOT_DIR/apps/ios/project.yml"; then
-  fail "Alley Cat SideStore dependency must stay launch-linked for the KittyStore route"
+  fail "Alley Cãt SideStore dependency must stay launch-linked for the KittyStore route"
 fi
-require_grep "CI requires direct Alley Cat SideStore framework link" "@rpath/SideStore.framework/SideStore" ".github/workflows/ios-unsigned-ipa.yml"
-require_grep "CI rejects direct Alley Cat minimuxer framework links" "keep minimuxer isolated behind the KittyStore framework" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "CI requires direct Alley Cãt SideStore framework link" "@rpath/SideStore.framework/SideStore" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "CI rejects direct Alley Cãt minimuxer framework links" "keep minimuxer isolated behind the KittyStore framework" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "Private BuildKit native refresh" "refresh_native_driver_if_needed" "apps/ios/scripts/prepare-buildkit-assets.sh"
 require_grep "Private BuildKit native rebuild script" "build-litter-buildkit-native.sh" "apps/ios/scripts/prepare-buildkit-assets.sh"
 require_grep "Private BuildKit refreshed fingerprint" "nativeDriverSourceFingerprint" "apps/ios/scripts/prepare-buildkit-assets.sh"

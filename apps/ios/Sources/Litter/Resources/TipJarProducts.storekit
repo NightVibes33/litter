@@ -9,12 +9,12 @@
       "localizations": [
         {
           "description": "One-time unlock for Terminal access, the full file browser, import/export, and advanced local tools.",
-          "displayName": "Alley Cat Pro",
+          "displayName": "Alley C\u00e3t Pro",
           "locale": "en_US"
         }
       ],
       "productID": "com.sigkitten.litter.pro",
-      "referenceName": "Alley Cat Pro",
+      "referenceName": "Alley C\u00e3t Pro",
       "type": "NonConsumable"
     },
     {
