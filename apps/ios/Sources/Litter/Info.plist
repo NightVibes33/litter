@@ -71,6 +71,17 @@
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
+			<key>AppIconDevinePurple</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AppIconDevinePurple</string>
+				</array>
+				<key>CFBundleIconName</key>
+				<string>AppIconDevinePurple</string>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
 		</dict>
 	</dict>
 	<key>CFBundleIcons~ipad</key>
@@ -127,6 +138,17 @@
 				</array>
 				<key>CFBundleIconName</key>
 				<string>AppIconOceanConnect</string>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>AppIconDevinePurple</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AppIconDevinePurple</string>
+				</array>
+				<key>CFBundleIconName</key>
+				<string>AppIconDevinePurple</string>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>

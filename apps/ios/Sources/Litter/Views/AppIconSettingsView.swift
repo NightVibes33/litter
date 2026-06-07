@@ -156,6 +156,7 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
     case shinobi
     case electricPulse
     case oceanConnect
+    case devinePurple
 
     var id: String { rawValue }
 
@@ -166,6 +167,7 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .shinobi: return "Shinobi Cats"
         case .electricPulse: return "Electric Pulse"
         case .oceanConnect: return "Ocean Connect"
+        case .devinePurple: return "Devine Purple"
         }
     }
 
@@ -176,6 +178,7 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .shinobi: return "Hidden village cats"
         case .electricPulse: return "Charged alternate icon"
         case .oceanConnect: return "Blue current icon"
+        case .devinePurple: return "Purple energy icon"
         }
     }
 
@@ -186,6 +189,7 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .shinobi: return "app_icon_shinobi"
         case .electricPulse: return "app_icon_electric_pulse"
         case .oceanConnect: return "app_icon_ocean_connect"
+        case .devinePurple: return "app_icon_devine_purple"
         }
     }
 
@@ -196,20 +200,21 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .shinobi: return "AppIconShinobi"
         case .electricPulse: return "AppIconElectricPulse"
         case .oceanConnect: return "AppIconOceanConnect"
+        case .devinePurple: return "AppIconDevinePurple"
         }
     }
 
     var requiresPro: Bool {
         switch self {
         case .current: return false
-        case .original, .shinobi, .electricPulse, .oceanConnect: return true
+        case .original, .shinobi, .electricPulse, .oceanConnect, .devinePurple: return true
         }
     }
 
     var showsProBadge: Bool {
         switch self {
         case .current, .original: return false
-        case .shinobi, .electricPulse, .oceanConnect: return true
+        case .shinobi, .electricPulse, .oceanConnect, .devinePurple: return true
         }
     }
 
