@@ -38,6 +38,17 @@
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
+			<key>AppIconShinobi</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AppIconShinobi</string>
+				</array>
+				<key>CFBundleIconName</key>
+				<string>AppIconShinobi</string>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
 		</dict>
 	</dict>
 	<key>CFBundleIcons~ipad</key>
@@ -61,6 +72,17 @@
 				</array>
 				<key>CFBundleIconName</key>
 				<string>AppIconOriginal</string>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>AppIconShinobi</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AppIconShinobi</string>
+				</array>
+				<key>CFBundleIconName</key>
+				<string>AppIconShinobi</string>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>

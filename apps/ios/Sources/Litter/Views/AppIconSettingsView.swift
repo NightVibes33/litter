@@ -25,7 +25,7 @@ struct AppIconSettingsView: View {
                                         Text(option.title)
                                             .litterFont(.subheadline, weight: .semibold)
                                             .foregroundStyle(LitterTheme.textPrimary)
-                                        if option.requiresPro && !proStore.hasProAccess {
+                                        if option.showsProBadge && option.requiresPro && !proStore.hasProAccess {
                                             Text("Pro")
                                                 .litterFont(.caption2, weight: .bold)
                                                 .foregroundStyle(LitterTheme.textOnAccent)
@@ -34,9 +34,11 @@ struct AppIconSettingsView: View {
                                                 .background(LitterTheme.accent, in: Capsule())
                                         }
                                     }
-                                    Text(option.subtitle)
-                                        .litterFont(.caption)
-                                        .foregroundStyle(LitterTheme.textSecondary)
+                                    if !option.subtitle.isEmpty {
+                                        Text(option.subtitle)
+                                            .litterFont(.caption)
+                                            .foregroundStyle(LitterTheme.textSecondary)
+                                    }
                                 }
                                 Spacer(minLength: 8)
                                 if currentIconName == option.alternateIconName {
@@ -151,20 +153,23 @@ struct AppIconSettingsView: View {
 private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
     case current
     case original
+    case shinobi
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .current: return "Alley Cãt"
-        case .original: return "Original"
+        case .original: return "Original Icon"
+        case .shinobi: return "Shinobi Cats"
         }
     }
 
     var subtitle: String {
         switch self {
         case .current: return "Current cats-in-box icon"
-        case .original: return "Classic pre-rebrand icon"
+        case .original: return ""
+        case .shinobi: return "Hidden village cats"
         }
     }
 
@@ -172,6 +177,7 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         switch self {
         case .current: return "app_icon_current"
         case .original: return "app_icon_original"
+        case .shinobi: return "app_icon_shinobi"
         }
     }
 
@@ -179,13 +185,21 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         switch self {
         case .current: return nil
         case .original: return "AppIconOriginal"
+        case .shinobi: return "AppIconShinobi"
         }
     }
 
     var requiresPro: Bool {
         switch self {
         case .current: return false
-        case .original: return true
+        case .original, .shinobi: return true
+        }
+    }
+
+    var showsProBadge: Bool {
+        switch self {
+        case .current, .original: return false
+        case .shinobi: return true
         }
     }
 
