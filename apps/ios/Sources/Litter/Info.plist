@@ -60,6 +60,17 @@
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
+			<key>AppIconOceanConnect</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AppIconOceanConnect</string>
+				</array>
+				<key>CFBundleIconName</key>
+				<string>AppIconOceanConnect</string>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
 		</dict>
 	</dict>
 	<key>CFBundleIcons~ipad</key>
@@ -105,6 +116,17 @@
 				</array>
 				<key>CFBundleIconName</key>
 				<string>AppIconElectricPulse</string>
+				<key>UIPrerenderedIcon</key>
+				<false/>
+			</dict>
+			<key>AppIconOceanConnect</key>
+			<dict>
+				<key>CFBundleIconFiles</key>
+				<array>
+					<string>AppIconOceanConnect</string>
+				</array>
+				<key>CFBundleIconName</key>
+				<string>AppIconOceanConnect</string>
 				<key>UIPrerenderedIcon</key>
 				<false/>
 			</dict>
