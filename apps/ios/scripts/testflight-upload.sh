@@ -386,7 +386,7 @@ repair_exported_ipa_native_module_signatures() {
     find "$payload_app" -type f \( -name "*.so" -o -name "*.dylib" \) -print >"$native_list"
     echo "Found $(wc -l <"$native_list" | tr -d ' ') exported IPA native module candidate(s)"
 
-    sign_identity="${APP_CODE_SIGN_IDENTITY:-Apple Distribution}"
+    sign_identity="${CODESIGN_REPAIR_IDENTITY:-${APP_CODE_SIGN_IDENTITY:-Apple Distribution}}"
     signed_count=0
     hidden_count=0
     while IFS= read -r native_module; do

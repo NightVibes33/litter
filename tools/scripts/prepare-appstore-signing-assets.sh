@@ -61,7 +61,12 @@ revoke_litter_ci_distribution_certificates() {
 
     matching_count="${#matching_ids[@]}"
     if [[ "$matching_count" -eq 0 && "$REVOKE_EXISTING_DISTRIBUTION_CERTIFICATES_ON_LIMIT" == "1" ]]; then
-        echo "No Litter App Store CI $CERTIFICATE_TYPE certificates were found. Revoking all existing $CERTIFICATE_TYPE certificates because REVOKE_EXISTING_DISTRIBUTION_CERTIFICATES_ON_LIMIT=1."
+        if [[ "${ALLOW_REVOKE_ALL_DISTRIBUTION_CERTIFICATES_ON_LIMIT:-0}" != "1" ]]; then
+            echo "No Litter App Store CI $CERTIFICATE_TYPE certificates were found." >&2
+            echo "Refusing to revoke all existing $CERTIFICATE_TYPE certificates without ALLOW_REVOKE_ALL_DISTRIBUTION_CERTIFICATES_ON_LIMIT=1." >&2
+            return 1
+        fi
+        echo "No Litter App Store CI $CERTIFICATE_TYPE certificates were found. Revoking all existing $CERTIFICATE_TYPE certificates because both REVOKE_EXISTING_DISTRIBUTION_CERTIFICATES_ON_LIMIT=1 and ALLOW_REVOKE_ALL_DISTRIBUTION_CERTIFICATES_ON_LIMIT=1."
         while IFS= read -r existing_id; do
             [[ -n "$existing_id" ]] || continue
             matching_ids+=("$existing_id")
@@ -109,7 +114,19 @@ security default-keychain -d user -s "$KEYCHAIN_PATH"
 security import "$csr_key" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign -T /usr/bin/security
 security import "$cert_path" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign -T /usr/bin/security
 security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+identity_output="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
+printf '%s\n' "$identity_output"
+repair_identity="$(
+    printf '%s\n' "$identity_output" |
+        awk '/Apple Distribution|iPhone Distribution/ { print $2; exit }'
+)"
+repair_identity="${repair_identity#\"}"
+repair_identity="${repair_identity%\"}"
+if [[ -z "$repair_identity" ]]; then
+    echo "Unable to resolve generated distribution signing identity hash." >&2
+    exit 1
+fi
+echo "CODESIGN_REPAIR_IDENTITY=$repair_identity" >>"$GITHUB_ENV"
 
 bundle_ids_json="$SIGNING_DIR/bundle-ids.json"
 asc bundle-ids list --paginate --output json >"$bundle_ids_json"
