@@ -154,6 +154,7 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
     case current
     case original
     case shinobi
+    case electricPulse
 
     var id: String { rawValue }
 
@@ -162,6 +163,7 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .current: return "Alley Cãt"
         case .original: return "Original Icon"
         case .shinobi: return "Shinobi Cats"
+        case .electricPulse: return "Electric Pulse"
         }
     }
 
@@ -170,6 +172,7 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .current: return "Current cats-in-box icon"
         case .original: return ""
         case .shinobi: return "Hidden village cats"
+        case .electricPulse: return "Charged alternate icon"
         }
     }
 
@@ -178,6 +181,7 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .current: return "app_icon_current"
         case .original: return "app_icon_original"
         case .shinobi: return "app_icon_shinobi"
+        case .electricPulse: return "app_icon_electric_pulse"
         }
     }
 
@@ -186,20 +190,21 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .current: return nil
         case .original: return "AppIconOriginal"
         case .shinobi: return "AppIconShinobi"
+        case .electricPulse: return "AppIconElectricPulse"
         }
     }
 
     var requiresPro: Bool {
         switch self {
         case .current: return false
-        case .original, .shinobi: return true
+        case .original, .shinobi, .electricPulse: return true
         }
     }
 
     var showsProBadge: Bool {
         switch self {
         case .current, .original: return false
-        case .shinobi: return true
+        case .shinobi, .electricPulse: return true
         }
     }
 
