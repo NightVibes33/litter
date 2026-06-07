@@ -1,0 +1,13 @@
+{
+  "images": [
+    {
+      "filename": "app_icon_cyber_district.png",
+      "idiom": "universal",
+      "scale": "1x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

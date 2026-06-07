@@ -157,6 +157,13 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
     case electricPulse
     case oceanConnect
     case devinePurple
+    case greenTerminal
+    case cosmicForum
+    case crystalFrost
+    case cyberDistrict
+    case midnightAMOLED
+    case rgbArena
+    case neuralCore
 
     var id: String { rawValue }
 
@@ -168,6 +175,13 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .electricPulse: return "Electric Pulse"
         case .oceanConnect: return "Ocean Connect"
         case .devinePurple: return "Devine Purple"
+        case .greenTerminal: return "Green Terminal"
+        case .cosmicForum: return "Cosmic Forum"
+        case .crystalFrost: return "Crystal Frost"
+        case .cyberDistrict: return "Cyber District"
+        case .midnightAMOLED: return "Midnight AMOLED"
+        case .rgbArena: return "RGB Arena"
+        case .neuralCore: return "Neural Core"
         }
     }
 
@@ -179,6 +193,13 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .electricPulse: return "Charged alternate icon"
         case .oceanConnect: return "Blue current icon"
         case .devinePurple: return "Purple energy icon"
+        case .greenTerminal: return ""
+        case .cosmicForum: return ""
+        case .crystalFrost: return ""
+        case .cyberDistrict: return ""
+        case .midnightAMOLED: return ""
+        case .rgbArena: return ""
+        case .neuralCore: return ""
         }
     }
 
@@ -190,6 +211,13 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .electricPulse: return "app_icon_electric_pulse"
         case .oceanConnect: return "app_icon_ocean_connect"
         case .devinePurple: return "app_icon_devine_purple"
+        case .greenTerminal: return "app_icon_green_terminal"
+        case .cosmicForum: return "app_icon_cosmic_forum"
+        case .crystalFrost: return "app_icon_crystal_frost"
+        case .cyberDistrict: return "app_icon_cyber_district"
+        case .midnightAMOLED: return "app_icon_midnight_amoled"
+        case .rgbArena: return "app_icon_rgb_arena"
+        case .neuralCore: return "app_icon_neural_core"
         }
     }
 
@@ -201,20 +229,27 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
         case .electricPulse: return "AppIconElectricPulse"
         case .oceanConnect: return "AppIconOceanConnect"
         case .devinePurple: return "AppIconDevinePurple"
+        case .greenTerminal: return "AppIconGreenTerminal"
+        case .cosmicForum: return "AppIconCosmicForum"
+        case .crystalFrost: return "AppIconCrystalFrost"
+        case .cyberDistrict: return "AppIconCyberDistrict"
+        case .midnightAMOLED: return "AppIconMidnightAMOLED"
+        case .rgbArena: return "AppIconRGBArena"
+        case .neuralCore: return "AppIconNeuralCore"
         }
     }
 
     var requiresPro: Bool {
         switch self {
         case .current: return false
-        case .original, .shinobi, .electricPulse, .oceanConnect, .devinePurple: return true
+        case .original, .shinobi, .electricPulse, .oceanConnect, .devinePurple, .greenTerminal, .cosmicForum, .crystalFrost, .cyberDistrict, .midnightAMOLED, .rgbArena, .neuralCore: return true
         }
     }
 
     var showsProBadge: Bool {
         switch self {
         case .current, .original: return false
-        case .shinobi, .electricPulse, .oceanConnect, .devinePurple: return true
+        case .shinobi, .electricPulse, .oceanConnect, .devinePurple, .greenTerminal, .cosmicForum, .crystalFrost, .cyberDistrict, .midnightAMOLED, .rgbArena, .neuralCore: return true
         }
     }
 

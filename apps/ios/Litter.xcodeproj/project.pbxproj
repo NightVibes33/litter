@@ -2770,7 +2770,7 @@
 				APP_CODE_SIGN_STYLE = Automatic;
 				APP_PROVISIONING_PROFILE_SPECIFIER = "";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconOriginal AppIconShinobi AppIconElectricPulse AppIconOceanConnect AppIconDevinePurple";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconOriginal AppIconShinobi AppIconElectricPulse AppIconOceanConnect AppIconDevinePurple AppIconGreenTerminal AppIconCosmicForum AppIconCrystalFrost AppIconCyberDistrict AppIconMidnightAMOLED AppIconRGBArena AppIconNeuralCore";
 				CODE_SIGN_ENTITLEMENTS = Sources/Litter/Litter.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = "$(APP_CODE_SIGN_STYLE)";
@@ -2819,7 +2819,7 @@
 				APP_CODE_SIGN_STYLE = Automatic;
 				APP_PROVISIONING_PROFILE_SPECIFIER = "";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconOriginal AppIconShinobi AppIconElectricPulse AppIconOceanConnect AppIconDevinePurple";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconOriginal AppIconShinobi AppIconElectricPulse AppIconOceanConnect AppIconDevinePurple AppIconGreenTerminal AppIconCosmicForum AppIconCrystalFrost AppIconCyberDistrict AppIconMidnightAMOLED AppIconRGBArena AppIconNeuralCore";
 				CODE_SIGN_ENTITLEMENTS = Sources/Litter/Litter.entitlements;
 				CODE_SIGN_IDENTITY = "$(APP_CODE_SIGN_IDENTITY)";
 				CODE_SIGN_STYLE = "$(APP_CODE_SIGN_STYLE)";
@@ -3392,7 +3392,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconOriginal AppIconShinobi AppIconElectricPulse AppIconOceanConnect AppIconDevinePurple";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconOriginal AppIconShinobi AppIconElectricPulse AppIconOceanConnect AppIconDevinePurple AppIconGreenTerminal AppIconCosmicForum AppIconCrystalFrost AppIconCyberDistrict AppIconMidnightAMOLED AppIconRGBArena AppIconNeuralCore";
 				CODE_SIGN_ENTITLEMENTS = Sources/Litter/Litter.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = Sources/Litter/Info.plist;
