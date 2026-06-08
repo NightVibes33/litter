@@ -67,7 +67,7 @@ final class ProAccessStore {
         if AppDistributionCapabilities.unlocksProForSideload {
             return "Included"
         }
-        product?.displayPrice ?? "$9.99"
+        return product?.displayPrice ?? "$9.99"
     }
 
     var productDisplayName: String {
