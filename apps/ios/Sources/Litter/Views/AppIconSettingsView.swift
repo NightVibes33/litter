@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import MachO
 
 struct AppIconSettingsView: View {
     @State private var proStore = ProAccessStore.shared
@@ -60,6 +61,19 @@ struct AppIconSettingsView: View {
                 } footer: {
                     Text("iOS applies icon changes after its system confirmation prompt. If the Home Screen does not refresh right away, reopen Alley Cãt.")
                         .foregroundStyle(LitterTheme.textMuted)
+                }
+
+                if AlleyCatAppIcon.isRunningInLiveContainer {
+                    Section {
+                        Label {
+                            Text("Icon switching is not available while Alley Cãt is running inside LiveContainer.")
+                                .litterFont(.caption)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                        }
+                        .foregroundStyle(LitterTheme.textSecondary)
+                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    }
                 }
 
                 if let statusMessage {
@@ -130,6 +144,10 @@ struct AppIconSettingsView: View {
     }
 
     private func apply(_ option: AlleyCatAppIcon) {
+        guard !AlleyCatAppIcon.isRunningInLiveContainer else {
+            errorMessage = AlleyCatAppIcon.liveContainerUnsupportedMessage
+            return
+        }
         guard AlleyCatAppIcon.supportsAlternateIcons else {
             errorMessage = "Alternate app icons are not available on this device or platform."
             return
@@ -140,7 +158,7 @@ struct AppIconSettingsView: View {
             Task { @MainActor in
                 isApplying = false
                 if let error {
-                    errorMessage = error.localizedDescription
+                    errorMessage = AlleyCatAppIcon.message(for: error)
                 } else {
                     currentIconName = option.alternateIconName
                     statusMessage = "Selected \(option.title)."
@@ -255,10 +273,47 @@ private enum AlleyCatAppIcon: String, CaseIterable, Identifiable {
 
     static var supportsAlternateIcons: Bool {
         #if os(iOS) && !targetEnvironment(macCatalyst)
-        UIApplication.shared.supportsAlternateIcons
+        !isRunningInLiveContainer && UIApplication.shared.supportsAlternateIcons
         #else
         false
         #endif
+    }
+
+    static var isRunningInLiveContainer: Bool {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        let pathHints = [
+            Bundle.main.bundlePath,
+            Bundle.main.executablePath ?? "",
+            NSHomeDirectory()
+        ]
+        if pathHints.contains(where: { $0.localizedCaseInsensitiveContains("LiveContainer") }) {
+            return true
+        }
+
+        for index in 0..<_dyld_image_count() {
+            guard let imageName = _dyld_get_image_name(index) else { continue }
+            let name = String(cString: imageName)
+            if name.localizedCaseInsensitiveContains("LiveContainer") ||
+                name.localizedCaseInsensitiveContains("TweakLoader.dylib") {
+                return true
+            }
+        }
+        return false
+        #else
+        false
+        #endif
+    }
+
+    static var liveContainerUnsupportedMessage: String {
+        "LiveContainer does not allow guest apps to change the installed Home Screen icon. Install Alley Cãt directly with SideStore, AltStore, or TestFlight to use icon switching."
+    }
+
+    static func message(for error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSOSStatusErrorDomain && nsError.code == -54 {
+            return liveContainerUnsupportedMessage
+        }
+        return error.localizedDescription
     }
 
     @MainActor
