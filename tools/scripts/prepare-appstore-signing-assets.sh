@@ -9,6 +9,7 @@ set -euo pipefail
 CERTIFICATE_TYPE="${CERTIFICATE_TYPE:-DISTRIBUTION}"
 REVOKE_EXISTING_LITTER_CI_DISTRIBUTION_CERTIFICATE_ON_LIMIT="${REVOKE_EXISTING_LITTER_CI_DISTRIBUTION_CERTIFICATE_ON_LIMIT:-0}"
 REVOKE_EXISTING_DISTRIBUTION_CERTIFICATES_ON_LIMIT="${REVOKE_EXISTING_DISTRIBUTION_CERTIFICATES_ON_LIMIT:-0}"
+REVOKE_NEWEST_DISTRIBUTION_CERTIFICATE_ON_LIMIT="${REVOKE_NEWEST_DISTRIBUTION_CERTIFICATE_ON_LIMIT:-0}"
 APP_BUNDLE_ID="${APP_BUNDLE_ID:-com.sigkitten.litter.39A8Q3T3TR}"
 LIVE_ACTIVITY_BUNDLE_ID="${LIVE_ACTIVITY_BUNDLE_ID:-${APP_BUNDLE_ID}.liveactivity}"
 LIVEPROCESS_BUNDLE_ID="${LIVEPROCESS_BUNDLE_ID:-${APP_BUNDLE_ID}.liveprocess}"
@@ -60,6 +61,17 @@ revoke_litter_ci_distribution_certificates() {
     )
 
     matching_count="${#matching_ids[@]}"
+    if [[ "$matching_count" -eq 0 && "$REVOKE_NEWEST_DISTRIBUTION_CERTIFICATE_ON_LIMIT" == "1" ]]; then
+        echo "No Litter App Store CI $CERTIFICATE_TYPE certificates were found. Revoking the newest existing $CERTIFICATE_TYPE certificate as the previous generated CI certificate."
+        while IFS= read -r existing_id; do
+            [[ -n "$existing_id" ]] || continue
+            matching_ids+=("$existing_id")
+        done < <(
+            jq -r '[.data[]? | { id: .id, expires: (.attributes.expirationDate // .attributes.expiration_date // "") }] | sort_by(.expires) | reverse | .[0].id // empty' "$existing_json"
+        )
+        matching_count="${#matching_ids[@]}"
+    fi
+
     if [[ "$matching_count" -eq 0 && "$REVOKE_EXISTING_DISTRIBUTION_CERTIFICATES_ON_LIMIT" == "1" ]]; then
         if [[ "${ALLOW_REVOKE_ALL_DISTRIBUTION_CERTIFICATES_ON_LIMIT:-0}" != "1" ]]; then
             echo "No Litter App Store CI $CERTIFICATE_TYPE certificates were found." >&2
