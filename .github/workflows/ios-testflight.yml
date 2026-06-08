@@ -733,6 +733,14 @@ jobs:
           echo "BETA_GROUP_NAMES=$BETA_GROUP_NAMES" >> "$GITHUB_ENV"
           echo "WAIT_FOR_PROCESSING=$WAIT_FOR_PROCESSING" >> "$GITHUB_ENV"
 
+      - name: Reset SwiftPM binary artifact cache
+        run: |
+          set -euo pipefail
+          artifact_root="$HOME/Library/Caches/org.swift.swiftpm/artifacts"
+          if [ -d "$artifact_root" ]; then
+            find "$artifact_root" -maxdepth 1 -name 'https___github_com_stasel_WebRTC*' -exec rm -rf {} +
+          fi
+
       - name: Build and upload TestFlight IPA
         env:
           SCHEME: Litter

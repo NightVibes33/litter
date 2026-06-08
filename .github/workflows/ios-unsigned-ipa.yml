@@ -757,6 +757,14 @@ jobs:
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           time make xcgen
 
+      - name: Reset SwiftPM binary artifact cache
+        run: |
+          set -euo pipefail
+          artifact_root="$HOME/Library/Caches/org.swift.swiftpm/artifacts"
+          if [ -d "$artifact_root" ]; then
+            find "$artifact_root" -maxdepth 1 -name 'https___github_com_stasel_WebRTC*' -exec rm -rf {} +
+          fi
+
       - name: Build unsigned archive
         env:
           GH_TOKEN: ${{ github.token }}
