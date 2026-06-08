@@ -57,13 +57,16 @@ final class ProAccessStore {
     static let proProductID = "com.sigkitten.litter.pro"
 
     private(set) var product: Product?
-    private(set) var hasProAccess = false
-    private(set) var purchaseState: PurchaseState = .idle
-    private(set) var isLoading = true
+    private(set) var hasProAccess = AppDistributionCapabilities.unlocksProForSideload
+    private(set) var purchaseState: PurchaseState = AppDistributionCapabilities.unlocksProForSideload ? .purchased : .idle
+    private(set) var isLoading = !AppDistributionCapabilities.unlocksProForSideload
 
     private nonisolated(unsafe) var updatesTask: Task<Void, Never>?
 
     var displayPrice: String {
+        if AppDistributionCapabilities.unlocksProForSideload {
+            return "Included"
+        }
         product?.displayPrice ?? "$9.99"
     }
 
@@ -72,6 +75,7 @@ final class ProAccessStore {
     }
 
     private init() {
+        guard !AppDistributionCapabilities.unlocksProForSideload else { return }
         updatesTask = Task { [weak self] in
             for await result in Transaction.updates {
                 if case .verified(let transaction) = result {
@@ -88,6 +92,12 @@ final class ProAccessStore {
     }
 
     func loadProducts() async {
+        guard !AppDistributionCapabilities.unlocksProForSideload else {
+            hasProAccess = true
+            purchaseState = .purchased
+            isLoading = false
+            return
+        }
         guard isLoading || product == nil else {
             await refreshEntitlements()
             return
@@ -106,6 +116,12 @@ final class ProAccessStore {
     }
 
     func purchasePro() async {
+        guard !AppDistributionCapabilities.unlocksProForSideload else {
+            hasProAccess = true
+            purchaseState = .purchased
+            isLoading = false
+            return
+        }
         guard let product else {
             purchaseState = .failed("Alley Cãt Pro is not available right now. Check the in-app purchase setup in App Store Connect.")
             return
@@ -135,6 +151,12 @@ final class ProAccessStore {
     }
 
     func restorePurchases() async {
+        guard !AppDistributionCapabilities.unlocksProForSideload else {
+            hasProAccess = true
+            purchaseState = .purchased
+            isLoading = false
+            return
+        }
         purchaseState = .purchasing
         do {
             try await StoreKit.AppStore.sync()
@@ -146,6 +168,12 @@ final class ProAccessStore {
     }
 
     func refreshEntitlements() async {
+        guard !AppDistributionCapabilities.unlocksProForSideload else {
+            hasProAccess = true
+            purchaseState = .purchased
+            isLoading = false
+            return
+        }
         var unlocked = false
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }

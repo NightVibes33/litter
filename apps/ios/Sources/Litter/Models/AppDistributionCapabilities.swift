@@ -9,6 +9,14 @@ enum AppDistributionCapabilities {
         #endif
     }
 
+    static var unlocksProForSideload: Bool {
+        #if ALLEY_CAT_SIDELOAD_UNLOCKED
+        true
+        #else
+        false
+        #endif
+    }
+
     static var includesKittyStore: Bool {
         #if LITTER_APP_STORE_SAFE
         false

@@ -833,6 +833,7 @@ jobs:
             DEVELOPMENT_TEAM=""
             MARKETING_VERSION="$MARKETING_VERSION"
             CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}"
+            'OTHER_SWIFT_FLAGS=$(inherited) -DALLEY_CAT_SIDELOAD_UNLOCKED'
           )
           if [ "$LITTER_IOS_BUILD_MODE" = "fast-device" ] || [ "$LITTER_IOS_BUILD_MODE" = "full-sideload" ]; then
             archive_cmd+=(
