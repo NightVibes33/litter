@@ -1340,28 +1340,39 @@ private extension MyAppsViewController
         }
     }
     
-    private func getPreviousBackupURL(_ installedApp: InstalledApp) -> URL
+    private func previousBackupURL(for installedApp: InstalledApp) -> URL?
     {
-        let backupURL = FileManager.default.backupDirectoryURL(for: installedApp)!
-        let backupBakURL = ImportExport.getPreviousBackupURL(backupURL)
-        return backupBakURL
+        guard let backupURL = FileManager.default.backupDirectoryURL(for: installedApp) else { return nil }
+        return ImportExport.getPreviousBackupURL(backupURL)
     }
     
     func restorePreviousBackup(for installedApp: InstalledApp){
-        let backupURL = FileManager.default.backupDirectoryURL(for: installedApp)!
-        let backupBakURL = ImportExport.getPreviousBackupURL(backupURL)
+        guard let backupURL = FileManager.default.backupDirectoryURL(for: installedApp),
+              let backupBakURL = previousBackupURL(for: installedApp) else
+        {
+            ToastView(error: OperationError.missingAppGroup, opensLog: true).show(in: self)
+            return
+        }
         
         // backupBakURL is expected to exist at this point, this needs to be ensured by caller logic
         // or invoke this action only when backupBakURL exists
         
-        // delete the current backup
-        if(FileManager.default.fileExists(atPath: backupURL.path)){
-            try! FileManager.default.removeItem(at: backupURL)
+        do
+        {
+            if FileManager.default.fileExists(atPath: backupURL.path)
+            {
+                try FileManager.default.removeItem(at: backupURL)
+            }
+
+            // restore the previously saved backup as current backup
+            // (don't delete the N-1 backup yet so copy instead of move)
+            try FileManager.default.copyItem(at: backupBakURL, to: backupURL)
         }
-        
-        // restore the previously saved backup as current backup
-        // (don't delete the N-1 backup yet so copy instead of move)
-        try! FileManager.default.copyItem(at: backupBakURL, to: backupURL)
+        catch
+        {
+            ToastView(error: error, opensLog: true).show(in: self)
+            return
+        }
         
         //perform restore of data from the backup
         restore(installedApp)
@@ -1923,7 +1934,9 @@ extension MyAppsViewController
             }
             
             // have an option to restore the n-1 backup
-            if FileManager.default.fileExists(atPath: getPreviousBackupURL(installedApp).path){
+            if let previousBackupURL = previousBackupURL(for: installedApp),
+               FileManager.default.fileExists(atPath: previousBackupURL.path)
+            {
                 actions.append(restorePreviousBackupAction)
             }
             
