@@ -23,6 +23,9 @@ final class FeatherSignedIPAInstallServer {
     }
 
     func start(payloadURL: URL, bundleIdentifier: String, appName: String, appVersion: String, iconURL: URL?) throws -> URL {
+        #if LITTER_APP_STORE_SAFE
+        throw NSError(domain: "FeatherInstallServer", code: 403, userInfo: [NSLocalizedDescriptionKey: "Direct IPA installation is not available in this build."])
+        #else
         stop()
 
         guard FileManager.default.fileExists(atPath: payloadURL.path) else {
@@ -91,6 +94,7 @@ final class FeatherSignedIPAInstallServer {
         listener.start(queue: queue)
         scheduleStop()
         return installURL
+        #endif
     }
 
     func stop() {

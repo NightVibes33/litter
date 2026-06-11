@@ -55,6 +55,8 @@ EMEXDE_TARGETS = (
 )
 
 DEPENDENCY_BLOCKS = (
+    """      - path: Sources/Litter/Resources/TipJarProducts.storekit
+""",
     """      - package: AltSign
         product: AltSign-Dynamic
         embed: true

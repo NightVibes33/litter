@@ -1,6 +1,8 @@
 import Foundation
 import Observation
+#if !LITTER_APP_STORE_SAFE
 import StoreKit
+#endif
 
 enum ProFeature: String, Identifiable, Hashable {
     case all
@@ -42,6 +44,54 @@ enum ProFeature: String, Identifiable, Hashable {
     }
 }
 
+#if LITTER_APP_STORE_SAFE
+@MainActor
+@Observable
+final class ProAccessStore {
+    enum PurchaseState: Equatable {
+        case idle
+        case loading
+        case purchasing
+        case purchased
+        case failed(String)
+    }
+
+    static let shared = ProAccessStore()
+
+    private(set) var hasProAccess = true
+    private(set) var purchaseState: PurchaseState = .purchased
+    private(set) var isLoading = false
+
+    var displayPrice: String { "Included" }
+    var productDisplayName: String { "Alley Cãt Pro" }
+
+    private init() {}
+
+    func loadProducts() async {
+        hasProAccess = true
+        purchaseState = .purchased
+        isLoading = false
+    }
+
+    func purchasePro() async {
+        hasProAccess = true
+        purchaseState = .purchased
+        isLoading = false
+    }
+
+    func restorePurchases() async {
+        hasProAccess = true
+        purchaseState = .purchased
+        isLoading = false
+    }
+
+    func refreshEntitlements() async {
+        hasProAccess = true
+        purchaseState = .purchased
+        isLoading = false
+    }
+}
+#else
 @MainActor
 @Observable
 final class ProAccessStore {
@@ -185,3 +235,5 @@ final class ProAccessStore {
         hasProAccess = unlocked
     }
 }
+
+#endif
