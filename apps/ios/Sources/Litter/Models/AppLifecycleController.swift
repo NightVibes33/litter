@@ -48,6 +48,7 @@ final class AppLifecycleController {
     private static let longResumeThreshold: TimeInterval = 15
 
     func setDevicePushToken(_ token: Data) {
+        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
         devicePushToken = token
     }
 
@@ -110,6 +111,7 @@ final class AppLifecycleController {
         hasActiveVoiceSession: Bool,
         liveActivities: TurnLiveActivityController
     ) {
+        if AppDistributionCapabilities.isAppStoreSafe { return }
         let signpostID = OSSignpostID(log: appLifecycleSignpostLog)
         os_signpost(.begin, log: appLifecycleSignpostLog, name: "AppDidEnterBackground", signpostID: signpostID)
         defer { os_signpost(.end, log: appLifecycleSignpostLog, name: "AppDidEnterBackground", signpostID: signpostID) }
@@ -157,6 +159,7 @@ final class AppLifecycleController {
         hasActiveVoiceSession: Bool,
         liveActivities: TurnLiveActivityController
     ) {
+        if AppDistributionCapabilities.isAppStoreSafe { return }
         let signpostID = OSSignpostID(log: appLifecycleSignpostLog)
         os_signpost(.begin, log: appLifecycleSignpostLog, name: "AppDidBecomeActive", signpostID: signpostID)
         defer { os_signpost(.end, log: appLifecycleSignpostLog, name: "AppDidBecomeActive", signpostID: signpostID) }
@@ -210,6 +213,7 @@ final class AppLifecycleController {
         appModel: AppModel,
         liveActivities: TurnLiveActivityController
     ) async {
+        if AppDistributionCapabilities.isAppStoreSafe { return }
         let signpostID = OSSignpostID(log: appLifecycleSignpostLog)
         os_signpost(.begin, log: appLifecycleSignpostLog, name: "HandleBackgroundPush", signpostID: signpostID)
         defer { os_signpost(.end, log: appLifecycleSignpostLog, name: "HandleBackgroundPush", signpostID: signpostID) }
@@ -311,6 +315,7 @@ final class AppLifecycleController {
     }
 
     func requestNotificationPermissionIfNeeded() {
+        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
         guard !notificationPermissionRequested else { return }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-test-conversation-display") {
@@ -636,6 +641,7 @@ final class AppLifecycleController {
     }
 
     private func registerPushProxy() {
+        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
         guard let tokenData = devicePushToken else { return }
         guard pushProxyRegistrationId == nil else { return }
         let token = tokenData.map { String(format: "%02x", $0) }.joined()
@@ -656,6 +662,7 @@ final class AppLifecycleController {
     }
 
     private func deregisterPushProxy() {
+        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
         guard let regId = pushProxyRegistrationId else { return }
         pushProxyRegistrationId = nil
         LLog.info("push", "deregistering push proxy", fields: ["registrationId": regId])

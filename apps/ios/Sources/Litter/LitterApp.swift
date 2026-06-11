@@ -76,7 +76,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         DispatchQueue.global(qos: .userInitiated).async {
             AppModel.prewarmRustBridges()
         }
-        application.registerForRemoteNotifications()
+        if !AppDistributionCapabilities.isAppStoreSafe {
+            application.registerForRemoteNotifications()
+        }
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().setNotificationCategories([
             UNNotificationCategory(
@@ -203,6 +205,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
         LLog.info("push", "device token received", fields: ["bytes": deviceToken.count, "hex": hex])
         if let appRuntime {
@@ -213,6 +216,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
         LLog.error("push", "registration failed", error: error)
     }
 
@@ -237,6 +241,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        if AppDistributionCapabilities.isAppStoreSafe {
+            completionHandler(.noData)
+            return
+        }
         LLog.info(
             "push",
             "background push received",

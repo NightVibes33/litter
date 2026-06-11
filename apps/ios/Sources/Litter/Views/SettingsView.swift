@@ -207,7 +207,7 @@ struct SettingsView: View {
                         Text("Updates")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("Check app versions, sideload IPAs, and runtime assets")
+                        Text(AppDistributionCapabilities.isAppStoreSafe ? "Check app versions and runtime assets" : "Check app versions, sideload IPAs, and runtime assets")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }
@@ -239,8 +239,10 @@ struct SettingsView: View {
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
-            Text("KittyStore")
-                .foregroundColor(LitterTheme.textSecondary)
+            if !AppDistributionCapabilities.isAppStoreSafe {
+                Text("KittyStore")
+                    .foregroundColor(LitterTheme.textSecondary)
+            }
         }
     }
 
