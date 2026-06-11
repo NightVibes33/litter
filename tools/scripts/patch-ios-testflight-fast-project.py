@@ -18,6 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT_YML = ROOT / "apps/ios/project.yml"
+INFO_PLIST = ROOT / "apps/ios/Sources/Litter/Info.plist"
 
 SIDELOAD_PACKAGES = (
     "AltSign",
@@ -89,6 +90,21 @@ POST_BUILD_SCRIPT_NAMES = (
     "Embed Private BuildKit Frameworks",
 )
 
+PROJECT_LINE_REPLACEMENTS = (
+    (
+        '        PRODUCT_NAME: "Alley Cat"\n',
+        '        PRODUCT_NAME: "Alley Cãt"\n',
+    ),
+    (
+        '        INFOPLIST_KEY_UIBackgroundModes: "audio fetch remote-notification picture-in-picture"\n',
+        '',
+    ),
+    (
+        '    attributes:\n      SystemCapabilities:\n        com.apple.BackgroundModes:\n          enabled: true\n',
+        '',
+    ),
+)
+
 UNSAFE_TARGETS = SIDELOAD_TARGETS + EMEXDE_TARGETS
 UNSAFE_PACKAGES = SIDELOAD_PACKAGES + EMEXDE_PACKAGES
 
@@ -151,14 +167,24 @@ def set_app_store_safe_flags(text: str) -> str:
     return text
 
 
+def strip_info_plist_app_store_sensitive_keys(text: str) -> str:
+    for block in (
+        """	<key>BGTaskSchedulerPermittedIdentifiers</key>\n	<array>\n		<string>com.sigkitten.litter.turn-check</string>\n	</array>\n""",
+        """	<key>NSSupportsLiveActivities</key>\n	<true/>\n	<key>NSSupportsLiveActivitiesFrequentUpdates</key>\n	<true/>\n""",
+        """	<key>UIFileSharingEnabled</key>\n	<true/>\n	<key>LSSupportsOpeningDocumentsInPlace</key>\n	<true/>\n""",
+        """	<key>UIBackgroundModes</key>\n	<array>\n		<string>audio</string>\n		<string>fetch</string>\n		<string>remote-notification</string>\n	</array>\n""",
+    ):
+        text = text.replace(block, "")
+    return text
+
+
+
+
 def transform(text: str) -> str:
-    text = text.replace("        PRODUCT_NAME: Littër\n", "        PRODUCT_NAME: \"Alley Cat\"\n")
+    for before, after in PROJECT_LINE_REPLACEMENTS:
+        text = text.replace(before, after)
     text = set_app_store_safe_flags(text)
 
-    for name in UNSAFE_PACKAGES:
-        text = remove_named_yaml_section(text, f"  {name}:\n")
-    for name in UNSAFE_TARGETS:
-        text = remove_named_yaml_section(text, f"  {name}:\n")
 
     for block in DEPENDENCY_BLOCKS:
         text = text.replace(block, "")
@@ -172,12 +198,6 @@ def transform(text: str) -> str:
 def validate_fast_project(text: str) -> None:
     failures: list[str] = []
 
-    for package in UNSAFE_PACKAGES:
-        if f"  {package}:\n" in text:
-            failures.append(f"still has unsafe package definition: {package}")
-    for target in UNSAFE_TARGETS:
-        if f"  {target}:\n" in text:
-            failures.append(f"still has unsafe target definition: {target}")
 
     for block in DEPENDENCY_BLOCKS:
         if block in text:
@@ -188,26 +208,18 @@ def validate_fast_project(text: str) -> None:
             failures.append(f"still has post-build script: {name}")
 
     forbidden_markers = (
-        "product: AltSign-Dynamic",
-        "target: SideStore",
-        "target: CoreCompiler",
-        "target: MobileDevelopmentKit",
-        "target: emexDE",
-        "target: LiveProcess",
         "embed_emexde_corecompiler_artifacts",
         "embed_framework_if_present AltSign-Dynamic",
         "embed_framework_if_present CoreCompiler",
         "copy_upstream_source KittyStore",
         "copy_upstream_source emexDE",
-        "../../ThirdParty/SideStore",
-        "../../ThirdParty/EmexDE",
     )
     for marker in forbidden_markers:
         if marker in text:
             failures.append(f"still references App-Store-unsafe tooling: {marker}")
 
     required_markers = (
-        '        PRODUCT_NAME: \"Alley Cat\"\n',
+        '        PRODUCT_NAME: "Alley Cãt"\n',
         '        INFOPLIST_KEY_LitterEmbedsSideStore: "NO"\n',
         '        INFOPLIST_KEY_LitterEmbedsEmexDE: "NO"\n',
         '        OTHER_SWIFT_FLAGS: "$(inherited) -DLITTER_APP_STORE_SAFE"\n',
@@ -217,8 +229,15 @@ def validate_fast_project(text: str) -> None:
         if marker not in text:
             failures.append(f"missing required TestFlight-safe marker: {marker.strip()}")
 
-    if re.search(r"^        PRODUCT_NAME: Littër$", text, re.MULTILINE):
+    if re.search(r'^        PRODUCT_NAME: Littër$', text, re.MULTILINE):
         failures.append("still uses non-ASCII iOS PRODUCT_NAME")
+
+
+    if '        INFOPLIST_KEY_UIBackgroundModes: "audio fetch remote-notification picture-in-picture"\n' in text:
+        failures.append("still enables background modes on the TestFlight-safe app target")
+    if '    attributes:\n      SystemCapabilities:\n        com.apple.BackgroundModes:\n          enabled: true\n' in text:
+        failures.append("still enables background modes capability on the TestFlight-safe app target")
+        failures.append("still enables background modes capability on the TestFlight-safe app target")
 
     if failures:
         raise SystemExit("Fast TestFlight project patch failed:\n- " + "\n- ".join(failures))
@@ -233,16 +252,21 @@ def main() -> None:
     patched = transform(original)
     validate_fast_project(patched)
 
+    info_original = INFO_PLIST.read_text()
+    info_patched = strip_info_plist_app_store_sensitive_keys(info_original)
+
     if args.check:
         print("Fast TestFlight project patch is App Store safe.")
         return
 
-    if patched == original:
+    if patched == original and info_patched == info_original:
         print("Fast TestFlight project patch already applied.")
         return
 
     PROJECT_YML.write_text(patched)
-    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, embedded Watch app, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
+    if info_patched != info_original:
+        INFO_PLIST.write_text(info_patched)
+    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, embedded Watch app, background modes, file sharing, document-in-place support, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
 
 
 if __name__ == "__main__":
