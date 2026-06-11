@@ -179,12 +179,15 @@ def strip_info_plist_app_store_sensitive_keys(text: str) -> str:
 
 
 
-
 def transform(text: str) -> str:
     for before, after in PROJECT_LINE_REPLACEMENTS:
         text = text.replace(before, after)
     text = set_app_store_safe_flags(text)
 
+    for name in UNSAFE_PACKAGES:
+        text = remove_named_yaml_section(text, f"  {name}:\n")
+    for name in UNSAFE_TARGETS:
+        text = remove_named_yaml_section(text, f"  {name}:\n")
 
     for block in DEPENDENCY_BLOCKS:
         text = text.replace(block, "")
@@ -198,6 +201,12 @@ def transform(text: str) -> str:
 def validate_fast_project(text: str) -> None:
     failures: list[str] = []
 
+    for package in UNSAFE_PACKAGES:
+        if f"  {package}:\n" in text:
+            failures.append(f"still has unsafe package definition: {package}")
+    for target in UNSAFE_TARGETS:
+        if f"  {target}:\n" in text:
+            failures.append(f"still has unsafe target definition: {target}")
 
     for block in DEPENDENCY_BLOCKS:
         if block in text:
@@ -208,11 +217,19 @@ def validate_fast_project(text: str) -> None:
             failures.append(f"still has post-build script: {name}")
 
     forbidden_markers = (
+        "product: AltSign-Dynamic",
+        "target: SideStore",
+        "target: CoreCompiler",
+        "target: MobileDevelopmentKit",
+        "target: emexDE",
+        "target: LiveProcess",
         "embed_emexde_corecompiler_artifacts",
         "embed_framework_if_present AltSign-Dynamic",
         "embed_framework_if_present CoreCompiler",
         "copy_upstream_source KittyStore",
         "copy_upstream_source emexDE",
+        "../../ThirdParty/SideStore",
+        "../../ThirdParty/EmexDE",
     )
     for marker in forbidden_markers:
         if marker in text:

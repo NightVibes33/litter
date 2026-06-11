@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.sigkitten.litter.turn-check</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Alley Cãt</string>
 	<key>CFBundleExecutable</key>
@@ -376,6 +380,14 @@
 	<string>Alley Cãt uses Bluetooth to detect when your iPhone is near your paired Mac.</string>
 	<key>NSNearbyInteractionUsageDescription</key>
 	<string>Alley Cãt uses Nearby Interaction to confirm your iPhone and Mac are close before pairing.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>UIAppFonts</key>
 	<array>
 		<string>BerkeleyMono-Regular.otf</string>
@@ -407,6 +419,12 @@
 			</array>
 		</dict>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

@@ -585,6 +585,10 @@ targets:
         # both, archive fails: "Provisioning profile doesn't include the
         # iCloud capability."
         # com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)iCloud.com.sigkitten.litter.39A8Q3T3TR
+    attributes:
+      SystemCapabilities:
+        com.apple.BackgroundModes:
+          enabled: true
     sources:
       - path: Sources/Litter
         excludes:
@@ -640,9 +644,197 @@ targets:
         product: Nuke
       - package: Nuke
         product: NukeUI
+      - package: AltSign
+        product: AltSign-Dynamic
+        embed: true
+      - target: SideStore
+        embed: true
+      - target: CoreCompiler
+        embed: true
+        link: false
+      - target: MobileDevelopmentKit
+        embed: true
+        link: false
+      - target: emexDE
+        embed: true
+        link: false
+      - target: LiveProcess
+        embed: true
       - target: LitterLiveActivity
         embed: true
+      - target: LitterWatch
+        embed: true
     postBuildScripts:
+      - name: Embed AltSign Dynamic Framework
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
+            exit 0
+          fi
+          mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+          sign_if_requested() {
+            item="$1"
+            if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+              /usr/bin/codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$item"
+            fi
+          }
+          embed_framework_if_present() {
+            name="$1"
+            required="$2"
+            source=""
+            checked=""
+            for candidate in \
+              "$BUILT_PRODUCTS_DIR/PackageFrameworks/$name.framework" \
+              "$CONFIGURATION_BUILD_DIR/PackageFrameworks/$name.framework" \
+              "$PROJECT_TEMP_DIR/../UninstalledProducts/$PLATFORM_NAME/$name.framework" \
+              "$CONFIGURATION_TEMP_DIR/../../UninstalledProducts/$PLATFORM_NAME/$name.framework" \
+              "$TARGET_TEMP_DIR/../../../UninstalledProducts/$PLATFORM_NAME/$name.framework" \
+              "$TARGET_BUILD_DIR/PackageFrameworks/$name.framework" \
+              "$BUILT_PRODUCTS_DIR/$name.framework" \
+              "$CONFIGURATION_BUILD_DIR/$name.framework" \
+              "$TARGET_BUILD_DIR/$name.framework"
+            do
+              if [ ! -d "$candidate" ]; then
+                continue
+              fi
+              checked="${checked} ${candidate}"
+              if [ -f "$candidate/Info.plist" ] && [ -f "$candidate/$name" ]; then
+                source="$candidate"
+                break
+              fi
+              echo "warning: skipping incomplete $name.framework candidate at $candidate" >&2
+            done
+            if [ -z "$source" ]; then
+              if [ "$required" = "1" ]; then
+                echo "error: required framework $name.framework was not built as a complete framework bundle" >&2
+                printf 'Checked candidates:%s\n' "$checked" >&2
+                exit 1
+              fi
+              return 0
+            fi
+            destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$name.framework"
+            rm -rf "$destination"
+            /usr/bin/ditto "$source" "$destination"
+            if [ ! -f "$destination/Info.plist" ] || [ ! -f "$destination/$name" ]; then
+              echo "error: copied $name.framework is incomplete at $destination" >&2
+              exit 1
+            fi
+            sign_if_requested "$destination"
+            echo "Embedded $name.framework from $source"
+          }
+          embed_framework_with_prefix() {
+            prefix="$1"
+            required="$2"
+            source=""
+            checked=""
+            for base in \
+              "$BUILT_PRODUCTS_DIR" \
+              "$BUILT_PRODUCTS_DIR/PackageFrameworks" \
+              "$CONFIGURATION_BUILD_DIR" \
+              "$CONFIGURATION_BUILD_DIR/PackageFrameworks" \
+              "$PROJECT_TEMP_DIR/../UninstalledProducts/$PLATFORM_NAME" \
+              "$CONFIGURATION_TEMP_DIR/../../UninstalledProducts/$PLATFORM_NAME" \
+              "$TARGET_TEMP_DIR/../../../UninstalledProducts/$PLATFORM_NAME" \
+              "$TARGET_BUILD_DIR/PackageFrameworks" \
+              "$TARGET_BUILD_DIR"
+            do
+              if [ ! -d "$base" ]; then
+                continue
+              fi
+              for candidate in "$base"/$prefix*.framework; do
+                if [ ! -d "$candidate" ]; then
+                  continue
+                fi
+                checked="${checked} ${candidate}"
+                name="$(/usr/bin/basename "$candidate" .framework)"
+                if [ -f "$candidate/Info.plist" ] && [ -f "$candidate/$name" ]; then
+                  source="$candidate"
+                  break 2
+                fi
+                echo "warning: skipping incomplete $name.framework candidate at $candidate" >&2
+              done
+            done
+            if [ -z "$source" ]; then
+              if [ "$required" = "1" ]; then
+                echo "error: required package framework with prefix $prefix was not built as a complete framework bundle" >&2
+                printf 'Checked candidates:%s\n' "$checked" >&2
+                exit 1
+              fi
+              return 0
+            fi
+            name="$(/usr/bin/basename "$source" .framework)"
+            destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$name.framework"
+            rm -rf "$destination"
+            /usr/bin/ditto "$source" "$destination"
+            if [ ! -f "$destination/Info.plist" ] || [ ! -f "$destination/$name" ]; then
+              echo "error: copied $name.framework is incomplete at $destination" >&2
+              exit 1
+            fi
+            sign_if_requested "$destination"
+            echo "Embedded $name.framework from $source"
+          }
+          embed_emexde_corecompiler_artifacts() {
+            support_source="$SRCROOT/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
+            if ! find "$support_source" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
+              echo "error: missing emexDE CoreCompilerSupportLibs at $support_source" >&2
+              exit 1
+            fi
+            mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+            find "$support_source" -maxdepth 1 -type f -name '*.dylib' -print | while IFS= read -r dylib; do
+              destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$(/usr/bin/basename "$dylib")"
+              rm -f "$destination"
+              /usr/bin/ditto "$dylib" "$destination"
+              sign_if_requested "$destination"
+            done
+            echo "Embedded emexDE CoreCompiler support dylibs"
+          }
+          embed_emexde_corecompiler_artifacts
+          embed_framework_if_present CoreCompiler 1
+          embed_framework_if_present AltSign-Dynamic 1
+          embed_framework_if_present AltStoreCore 1
+          embed_framework_if_present Roxas 1
+          embed_framework_if_present Minimuxer 1
+          embed_framework_if_present RustBridge 1
+          embed_framework_if_present OpenSSL 0
+          embed_framework_with_prefix SemanticVersion_ 1
+          embed_framework_with_prefix KeychainAccess_ 1
+      - name: Embed Upstream Store Sources
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          if [ "${LITTER_EMBED_UPSTREAM_SOURCE_TREES:-0}" != "1" ]; then
+            echo "Skipping expanded upstream source embedding for sideload-safe IPA packaging"
+            exit 0
+          fi
+          RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          DEST_ROOT="$RESOURCES_DIR/UpstreamApps"
+          copy_upstream_source() {
+            label="$1"
+            source="$2"
+            destination="$DEST_ROOT/$label"
+            if [ ! -d "$source" ]; then
+              echo "error: missing upstream source folder: $source" >&2
+              exit 1
+            fi
+            rm -rf "$destination"
+            mkdir -p "$DEST_ROOT"
+            /usr/bin/ditto "$source" "$destination"
+            find "$destination" \( \
+              -path '*/target' -o \
+              -path '*/.build' -o \
+              -path '*/DerivedData' \
+            \) -type d -prune -exec rm -rf {} +
+            if [ ! -d "$destination" ]; then
+              echo "error: failed to embed upstream source folder: $label" >&2
+              exit 1
+            fi
+            echo "Embedded upstream $label source at $destination"
+          }
+          copy_upstream_source KittyStore "$SRCROOT/../../ThirdParty/SideStore/Source"
+          copy_upstream_source Feather "$SRCROOT/../../ThirdParty/Feather/Source"
+          copy_upstream_source LocalDevVPN "$SRCROOT/../../ThirdParty/SideStore/LocalDevVPN-Source"
+          copy_upstream_source emexDE "$SRCROOT/../../ThirdParty/EmexDE/Source"
       - name: Embed Bundled iSH Filesystem
         basedOnDependencyAnalysis: false
         script: |
@@ -693,17 +885,237 @@ targets:
               echo "Hid Alpine fs non-Mach-O module from Apple code signing scan: $item"
             fi
           done
+      - name: Embed emexDE Runtime Resources
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          EMEXDE_ROOT="$SRCROOT/../../ThirdParty/EmexDE/Source"
+          if [ ! -d "$EMEXDE_ROOT/Shared" ]; then
+            echo "error: missing emexDE Shared runtime resources" >&2
+            exit 1
+          fi
+          rm -rf "$RESOURCES_DIR/Shared"
+          /usr/bin/ditto "$EMEXDE_ROOT/Shared" "$RESOURCES_DIR/Shared"
+          if [ -f "$EMEXDE_ROOT/Nyxian/LindChain/JBSupport/tshelper" ]; then
+            /usr/bin/ditto "$EMEXDE_ROOT/Nyxian/LindChain/JBSupport/tshelper" "$RESOURCES_DIR/tshelper"
+            /bin/chmod 755 "$RESOURCES_DIR/tshelper" || true
+          fi
+          EMEXDE_FRAMEWORK="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/emexDE.framework"
+          if [ -d "$EMEXDE_FRAMEWORK/Frameworks" ]; then
+            for private_framework in               FrontBoard.framework               FrontBoardServices.framework               RunningBoardServices.framework               BackBoardServices.framework
+            do
+              if [ -e "$EMEXDE_FRAMEWORK/Frameworks/$private_framework" ]; then
+                rm -rf "$EMEXDE_FRAMEWORK/Frameworks/$private_framework"
+                echo "Removed nested emexDE private framework stub: $private_framework"
+              fi
+            done
+            rmdir "$EMEXDE_FRAMEWORK/Frameworks" 2>/dev/null || true
+          fi
+          echo "Embedded emexDE Shared runtime resources"
+      - name: Package Private BuildKit Assets
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
+          if [ ! -f "$ASSET_ROOT/manifest.json" ]; then
+            exit 0
+          fi
+          RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          DEST="$RESOURCES_DIR/LitterBuildKitAssets.zip"
+          TMP_DIR="$(mktemp -d)"
+          trap 'rm -rf "$TMP_DIR"' EXIT
+          rm -rf "$RESOURCES_DIR/BuildKitAssets" "$DEST"
+          mkdir -p "$RESOURCES_DIR"
+          cp -R -L "$ASSET_ROOT" "$TMP_DIR/BuildKitAssets"
+          (cd "$TMP_DIR" && ditto -c -k --norsrc --keepParent BuildKitAssets "$DEST")
+      - name: Embed Private BuildKit Frameworks
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          if [ "${PLATFORM_NAME:-}" != "iphoneos" ]; then
+            exit 0
+          fi
+          MANIFEST="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/manifest.json"
+          ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/Toolchains/Nyxian"
+          if [ ! -f "$MANIFEST" ] || [ ! -d "$ASSET_ROOT" ]; then
+            exit 0
+          fi
+          mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+          is_buildkit_support_dylib_name() {
+            case "$1" in
+              lib_Compiler*.dylib|libLLVM*.dylib|libllvm*.dylib) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          is_macho_stub_dylib() {
+            /usr/bin/file "$1" 2>/dev/null | /usr/bin/grep -Eiq 'Mach-O.*stub|stub.*Mach-O'
+          }
+          buildkit_framework_install_name() {
+            binary="$1"
+            parent="$(basename "$(dirname "$binary")")"
+            base="$(basename "$binary")"
+            case "$parent/$base" in
+              CoreCompiler.framework/CoreCompiler|LitterBuildKitNative.framework/LitterBuildKitNative)
+                printf '%s\n' "@rpath/$parent/$base"
+                ;;
+            esac
+          }
+          is_buildkit_corecompiler_reference() {
+            case "$1" in
+              *CoreCompiler.framework/CoreCompiler) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+          set_buildkit_install_name() {
+            binary="$1"
+            base="$(basename "$binary")"
+            framework_id="$(buildkit_framework_install_name "$binary")"
+            if [ -n "$framework_id" ]; then
+              /usr/bin/install_name_tool -id "$framework_id" "$binary"
+            elif is_buildkit_support_dylib_name "$base"; then
+              /usr/bin/install_name_tool -id "@rpath/$base" "$binary"
+            fi
+          }
+          rewrite_buildkit_dylib_references() {
+            binary="$1"
+            if [ ! -f "$binary" ]; then
+              return 0
+            fi
+            set_buildkit_install_name "$binary"
+            /usr/bin/otool -L "$binary" | /usr/bin/awk 'NR > 1 { print $1 }' | while IFS= read -r dependency; do
+              base="$(basename "$dependency")"
+              if is_buildkit_corecompiler_reference "$dependency" && [ "$dependency" != "@rpath/CoreCompiler.framework/CoreCompiler" ]; then
+                /usr/bin/install_name_tool -change "$dependency" "@rpath/CoreCompiler.framework/CoreCompiler" "$binary" 2>/dev/null || true
+              elif is_buildkit_support_dylib_name "$base" && [ "$dependency" != "@rpath/$base" ]; then
+                /usr/bin/install_name_tool -change "$dependency" "@rpath/$base" "$binary" 2>/dev/null || true
+              fi
+            done
+          }
+          buildkit_binary_needs_rpath() {
+            binary="$1"
+            /usr/bin/otool -L "$binary" | /usr/bin/grep -Eq 'CoreCompiler\.framework/CoreCompiler|lib_Compiler|libLLVM|libllvm'
+          }
+          has_usable_frameworks_rpath() {
+            binary="$1"
+            rpath="$2"
+            /usr/bin/otool -l "$binary" | /usr/bin/grep -F -q "$rpath" || \
+              /usr/bin/otool -l "$binary" | /usr/bin/grep -F -q '@executable_path/Frameworks'
+          }
+          ensure_rpath() {
+            binary="$1"
+            rpath="$2"
+            if has_usable_frameworks_rpath "$binary" "$rpath"; then
+              return 0
+            fi
+            /usr/bin/install_name_tool -add_rpath "$rpath" "$binary"
+            if ! has_usable_frameworks_rpath "$binary" "$rpath"; then
+              echo "error: failed to add a usable Frameworks rpath to $binary" >&2
+              exit 1
+            fi
+          }
+          repair_buildkit_rpath() {
+            binary="$1"
+            rpath="$2"
+            if [ ! -f "$binary" ]; then
+              return 0
+            fi
+            if is_macho_stub_dylib "$binary"; then
+              return 0
+            fi
+            rewrite_buildkit_dylib_references "$binary"
+            if buildkit_binary_needs_rpath "$binary"; then
+              ensure_rpath "$binary" "$rpath"
+            fi
+          }
+          sign_if_requested() {
+            item="$1"
+            if ! command -v codesign >/dev/null 2>&1; then
+              return 0
+            fi
+            if [ "${CODE_SIGNING_ALLOWED:-NO}" = "YES" ] && [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]; then
+              codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$item"
+            else
+              codesign --force --sign - --timestamp=none "$item"
+            fi
+          }
+          for framework in CoreCompiler.framework LitterBuildKitNative.framework; do
+            if [ -d "$ASSET_ROOT/$framework" ]; then
+              destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
+              executable="${framework%.framework}"
+              rm -rf "$destination"
+              cp -R "$ASSET_ROOT/$framework" "$destination"
+              rm -rf "$destination/CoreCompilerSupportLibs"
+              if [ ! -f "$destination/$executable" ]; then
+                echo "error: $framework is missing executable $executable" >&2
+                if [ -f "$destination/$executable.tbd" ]; then
+                  echo "error: found $executable.tbd instead; rebuild BuildKit assets from the real framework product, not EagerLinkingTBDs" >&2
+                fi
+                exit 1
+              fi
+              if [ ! -f "$destination/Info.plist" ]; then
+                cat > "$destination/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleExecutable</key>
+            <string>$executable</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.sigkitten.litter.$executable</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>$executable</string>
+            <key>CFBundlePackageType</key>
+            <string>FMWK</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0</string>
+            <key>CFBundleVersion</key>
+            <string>1</string>
+            <key>MinimumOSVersion</key>
+            <string>18.0</string>
+          </dict>
+          </plist>
+          PLIST
+              fi
+              repair_buildkit_rpath "$destination/$executable" "@loader_path/.."
+              sign_if_requested "$destination"
+            fi
+          done
+          copy_buildkit_support_dylibs_from() {
+            root="$1"
+            if [ ! -d "$root" ]; then
+              return 0
+            fi
+            find "$root" -type f \( -name 'lib_Compiler*.dylib' -o -name 'libLLVM*.dylib' -o -name 'libllvm*.dylib' \) -print | while IFS= read -r library; do
+              if is_macho_stub_dylib "$library"; then
+                continue
+              fi
+              destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$(basename "$library")"
+              rm -f "$destination"
+              cp "$library" "$destination"
+              repair_buildkit_rpath "$destination" "@loader_path"
+              sign_if_requested "$destination"
+            done
+          }
+          SUPPORT_ROOT="$ASSET_ROOT/CoreCompilerSupportLibs"
+          SDK_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/SDK"
+          copy_buildkit_support_dylibs_from "$SUPPORT_ROOT"
+          copy_buildkit_support_dylibs_from "$SDK_ROOT"
     settings:
       base:
-        PRODUCT_NAME: "Alley Cãt"
+        PRODUCT_NAME: "Alley Cat"
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR
         INFOPLIST_FILE: Sources/Litter/Info.plist
         SWIFT_OBJC_BRIDGING_HEADER: Sources/Litter/Bridge/codex_bridge_objc.h
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIconOriginal AppIconShinobi AppIconElectricPulse AppIconOceanConnect AppIconDevinePurple AppIconGreenTerminal AppIconCosmicForum AppIconCrystalFrost AppIconCyberDistrict AppIconMidnightAMOLED AppIconRGBArena AppIconNeuralCore"
-        INFOPLIST_KEY_LitterEmbedsSideStore: "NO"
-        INFOPLIST_KEY_LitterEmbedsEmexDE: "NO"
-        OTHER_SWIFT_FLAGS: "$(inherited) -DLITTER_APP_STORE_SAFE"
+        INFOPLIST_KEY_UIBackgroundModes: "audio fetch remote-notification picture-in-picture"
+        INFOPLIST_KEY_LitterEmbedsSideStore: "YES"
+        INFOPLIST_KEY_LitterEmbedsEmexDE: "YES"
       configs:
         Debug:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
@@ -800,7 +1212,7 @@ targets:
         product: NukeUI
     settings:
       base:
-        PRODUCT_NAME: "Alley Cãt"
+        PRODUCT_NAME: "Alley Cat"
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.39A8Q3T3TR
         DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
         INFOPLIST_FILE: Sources/Litter/Info-Catalyst.plist
