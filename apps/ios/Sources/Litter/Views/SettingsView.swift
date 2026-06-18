@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import WebKit
 
 enum SettingsFeatureVisibility {
     static let showsTipJar = false
@@ -1477,8 +1478,7 @@ private struct SettingsConnectionAccountSection: View {
     @State private var selectedChatGPTAccountID = ""
     @State private var storedPerplexityAccounts: [PerplexityAccountSummary] = []
     @State private var selectedPerplexityAccountID = ""
-    @State private var perplexityAccountLabel = ""
-    @State private var perplexityCookiesJSON = ""
+    @State private var isShowingPerplexityLogin = false
 
     @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
@@ -1538,16 +1538,12 @@ private struct SettingsConnectionAccountSection: View {
 
                     if !AppDistributionCapabilities.isAppStoreSafe {
                         Button {
-                            taskBag.run {
-                                isAuthWorking = true
-                                defer { isAuthWorking = false }
-                                await savePerplexityAccount()
-                            }
+                            isShowingPerplexityLogin = true
                         } label: {
                             Label(hasStoredPerplexityAccount ? "Add Perplexity" : "Perplexity", systemImage: "sparkle.magnifyingglass")
                                 .litterFont(.subheadline)
                         }
-                        .disabled(isAuthWorking || perplexityCookiesJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .disabled(isAuthWorking)
                     }
                 }
                 .foregroundColor(LitterTheme.accent)
@@ -1555,19 +1551,10 @@ private struct SettingsConnectionAccountSection: View {
             }
 
             if server.isLocal, !AppDistributionCapabilities.isAppStoreSafe {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Paste your own Perplexity cookies JSON to use Perplexity as the selected chat provider.")
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textSecondary)
-                    TextField("Account label", text: $perplexityAccountLabel)
-                        .litterFont(.footnote)
-                        .textInputAutocapitalization(.words)
-                    SecureField("Paste Perplexity cookies JSON", text: $perplexityCookiesJSON)
-                        .litterFont(.footnote)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                Text("Sign in with your own Perplexity account. Alley Cãt captures the browser session locally after sign-in finishes.")
+                    .litterFont(.caption)
+                    .foregroundColor(LitterTheme.textSecondary)
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
 
             if server.isLocal, !storedPerplexityAccounts.isEmpty, !AppDistributionCapabilities.isAppStoreSafe {
@@ -1773,6 +1760,15 @@ private struct SettingsConnectionAccountSection: View {
             refreshStoredCredentialFlags()
             await refreshAuthStatusIfNeeded()
         }
+        .sheet(isPresented: $isShowingPerplexityLogin) {
+            PerplexityLoginSheet { cookiesJSON in
+                taskBag.run {
+                    isAuthWorking = true
+                    defer { isAuthWorking = false }
+                    await saveCapturedPerplexitySession(cookiesJSON: cookiesJSON)
+                }
+            }
+        }
         .onDisappear { taskBag.cancelAll() }
     }
 
@@ -1911,16 +1907,14 @@ private struct SettingsConnectionAccountSection: View {
     }
 
 
-    private func savePerplexityAccount() async {
+    private func saveCapturedPerplexitySession(cookiesJSON: String) async {
         guard server.isLocal else {
             authError = "Perplexity login is only available for the local runtime."
             return
         }
         do {
             authError = nil
-            try PerplexityAccountStore.shared.save(label: perplexityAccountLabel, cookiesJSON: perplexityCookiesJSON)
-            perplexityAccountLabel = ""
-            perplexityCookiesJSON = ""
+            try PerplexityAccountStore.shared.saveCapturedSession(cookiesJSON: cookiesJSON)
             refreshStoredCredentialFlags()
             await PerplexityFakefsInstaller.shared.install()
         } catch {
@@ -2140,3 +2134,105 @@ private func isSettingsSlingshotURL(_ rawURL: String) -> Bool {
     }
 }
 #endif
+
+private struct PerplexityLoginSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var statusMessage = "Sign in to Perplexity, then tap Done."
+    let onSessionCaptured: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            PerplexityLoginWebView(statusMessage: $statusMessage)
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle("Perplexity")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Done") {
+                            captureSession()
+                        }
+                    }
+                }
+                .safeAreaInset(edge: .bottom) {
+                    Text(statusMessage)
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(LitterTheme.surface.opacity(0.95))
+                }
+        }
+    }
+
+    private func captureSession() {
+        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+            let perplexityCookies = cookies.filter { cookie in
+                let domain = cookie.domain.lowercased()
+                return domain == "perplexity.ai" || domain.hasSuffix(".perplexity.ai")
+            }
+            var cookiePayload: [String: String] = [:]
+            for cookie in perplexityCookies {
+                cookiePayload[cookie.name] = cookie.value
+            }
+            guard !cookiePayload.isEmpty,
+                  let data = try? JSONSerialization.data(withJSONObject: cookiePayload, options: [.sortedKeys]),
+                  let cookiesJSON = String(data: data, encoding: .utf8) else {
+                DispatchQueue.main.async {
+                    statusMessage = "Could not find a Perplexity session yet. Finish sign-in, then tap Done."
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                onSessionCaptured(cookiesJSON)
+                dismiss()
+            }
+        }
+    }
+}
+
+private struct PerplexityLoginWebView: UIViewRepresentable {
+    @Binding var statusMessage: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(statusMessage: $statusMessage)
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .default()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.allowsBackForwardNavigationGestures = true
+        if let url = URL(string: "https://www.perplexity.ai/") {
+            webView.load(URLRequest(url: url))
+        }
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {}
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        @Binding private var statusMessage: String
+
+        init(statusMessage: Binding<String>) {
+            _statusMessage = statusMessage
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            let host = webView.url?.host ?? "Perplexity"
+            statusMessage = host.contains("perplexity.ai") ? "After sign-in finishes, tap Done." : "Complete the sign-in page, then return to Perplexity."
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            statusMessage = error.localizedDescription
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            statusMessage = error.localizedDescription
+        }
+    }
+}

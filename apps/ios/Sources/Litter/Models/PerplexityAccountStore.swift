@@ -47,18 +47,38 @@ final class PerplexityAccountStore {
     }
 
     func save(label rawLabel: String, cookiesJSON rawCookiesJSON: String) throws {
-        let cookiesJSON = rawCookiesJSON.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cookiesJSON.isEmpty else { throw PerplexityAccountStoreError.emptyCookies }
-        guard let data = cookiesJSON.data(using: .utf8),
-              (try? JSONSerialization.jsonObject(with: data)) is [String: Any] else {
-            throw PerplexityAccountStoreError.invalidCookiesJSON
-        }
+        let cookiesJSON = try normalizedCookiesJSON(rawCookiesJSON)
         var accounts = try loadAccounts()
         let now = Date()
         let label = rawLabel.trimmingCharacters(in: .whitespacesAndNewlines)
         let account = PerplexityAccount(
             id: UUID().uuidString,
             label: label.isEmpty ? "Perplexity Account \(accounts.count + 1)" : label,
+            cookiesJSON: cookiesJSON,
+            createdAt: now,
+            updatedAt: now
+        )
+        accounts.append(account)
+        try persist(accounts)
+        activeAccountID = account.id
+    }
+
+    func saveCapturedSession(label rawLabel: String = "Perplexity", cookiesJSON rawCookiesJSON: String) throws {
+        let cookiesJSON = try normalizedCookiesJSON(rawCookiesJSON)
+        var accounts = try loadAccounts()
+        let now = Date()
+        let label = rawLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedLabel = label.isEmpty ? "Perplexity" : label
+        if let existingIndex = accounts.firstIndex(where: { $0.label == resolvedLabel }) {
+            accounts[existingIndex].cookiesJSON = cookiesJSON
+            accounts[existingIndex].updatedAt = now
+            try persist(accounts)
+            activeAccountID = accounts[existingIndex].id
+            return
+        }
+        let account = PerplexityAccount(
+            id: UUID().uuidString,
+            label: resolvedLabel,
             cookiesJSON: cookiesJSON,
             createdAt: now,
             updatedAt: now
@@ -92,6 +112,17 @@ final class PerplexityAccountStore {
         }
         activeAccountID = accounts.first?.id
         return accounts.first
+    }
+
+    private func normalizedCookiesJSON(_ rawCookiesJSON: String) throws -> String {
+        let cookiesJSON = rawCookiesJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cookiesJSON.isEmpty else { throw PerplexityAccountStoreError.emptyCookies }
+        guard let data = cookiesJSON.data(using: .utf8),
+              let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              !payload.isEmpty else {
+            throw PerplexityAccountStoreError.invalidCookiesJSON
+        }
+        return cookiesJSON
     }
 
     private func loadAccounts() throws -> [PerplexityAccount] {
@@ -163,8 +194,8 @@ enum PerplexityAccountStoreError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .emptyCookies: return "Paste a Perplexity cookies JSON object."
-        case .invalidCookiesJSON: return "Perplexity cookies must be a valid JSON object."
+        case .emptyCookies: return "Sign in to Perplexity first."
+        case .invalidCookiesJSON: return "Could not capture a valid Perplexity session. Make sure sign-in finished, then tap Done."
         case .missingAccount: return "That Perplexity account is not saved."
         case .keychain(let status): return "Keychain error (\(status))."
         }
