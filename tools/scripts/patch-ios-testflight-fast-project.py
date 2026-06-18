@@ -58,6 +58,9 @@ DEPENDENCY_BLOCKS = (
     """      - path: Sources/Litter/Resources/TipJarProducts.storekit
 """,
     """      - path: Sources/Litter/Resources/PerplexityAI
+        type: folder
+""",
+    """      - path: Sources/Litter/Resources/PerplexityAI
 """,
     """      - package: AltSign
         product: AltSign-Dynamic
