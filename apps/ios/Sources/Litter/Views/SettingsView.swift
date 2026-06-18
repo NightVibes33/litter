@@ -1915,8 +1915,10 @@ private struct SettingsConnectionAccountSection: View {
         do {
             authError = nil
             try PerplexityAccountStore.shared.saveCapturedSession(cookiesJSON: cookiesJSON)
+            let account = try PerplexityAccountStore.shared.activeAccount()
+            try await PerplexityFakefsInstaller.shared.configureMCP(account: account)
+            try await appModel.restartLocalServer()
             refreshStoredCredentialFlags()
-            await PerplexityFakefsInstaller.shared.install()
         } catch {
             authError = error.localizedDescription
             refreshStoredCredentialFlags()

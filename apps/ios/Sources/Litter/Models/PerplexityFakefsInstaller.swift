@@ -46,6 +46,48 @@ final class PerplexityFakefsInstaller: ObservableObject {
         return output.isEmpty ? "Perplexity returned an empty response." : output
     }
 
+
+    func configureMCP(account: PerplexityAccount?) async throws {
+        guard !AppDistributionCapabilities.isAppStoreSafe else {
+            throw NSError(domain: "PerplexityFakefsInstaller", code: 5, userInfo: [NSLocalizedDescriptionKey: "Perplexity MCP is not included in TestFlight builds."])
+        }
+        await install()
+        let setupResult = await IshFS.run("/usr/local/bin/perplexity-setup --mcp")
+        guard setupResult.exitCode == 0 else {
+            let output = setupResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw NSError(domain: "PerplexityFakefsInstaller", code: Int(setupResult.exitCode), userInfo: [NSLocalizedDescriptionKey: output.isEmpty ? "Could not install Perplexity MCP dependencies." : output])
+        }
+        let cookiesPath = "/root/.config/alley-cat/perplexity-cookies.json"
+        try await IshFS.createDirectoryIfNeeded(path: "/root/.config/alley-cat")
+        if let account {
+            try await IshFS.writeTextFile(path: cookiesPath, text: account.cookiesJSON + "\n")
+        }
+        let configBlock = Self.mcpConfigBlock(cookiesPath: cookiesPath)
+        let script = """
+        set -eu
+        mkdir -p /root/.codex
+        config=/root/.codex/config.toml
+        tmp="$config.tmp.$$"
+        if [ -f "$config" ]; then
+          awk '\n            /^# BEGIN ALLEY_CAT_PERPLEXITY_MCP$/ {skip=1; next}\n            /^# END ALLEY_CAT_PERPLEXITY_MCP$/ {skip=0; next}\n            skip != 1 {print}\n          ' "$config" > "$tmp"
+        else
+          : > "$tmp"
+        fi
+        cat >> "$tmp" <<'ALLEY_CAT_PERPLEXITY_MCP'
+        \(configBlock)
+        ALLEY_CAT_PERPLEXITY_MCP
+        mv "$tmp" "$config"
+        chmod 600 "$config" 2>/dev/null || true
+        echo "Configured Perplexity MCP in $config"
+        """
+        let result = await IshFS.run(script)
+        guard result.exitCode == 0 else {
+            let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            throw NSError(domain: "PerplexityFakefsInstaller", code: Int(result.exitCode), userInfo: [NSLocalizedDescriptionKey: output.isEmpty ? "Could not configure Perplexity MCP." : output])
+        }
+        lastStatus = "Perplexity MCP configured"
+    }
+
     func install() async {
         guard !AppDistributionCapabilities.isAppStoreSafe else {
             lastStatus = "Perplexity fakefs support is sideload-only."
@@ -66,6 +108,17 @@ final class PerplexityFakefsInstaller: ObservableObject {
         } catch {
             lastStatus = error.localizedDescription
         }
+    }
+
+
+    private static func mcpConfigBlock(cookiesPath: String) -> String {
+        """
+        # BEGIN ALLEY_CAT_PERPLEXITY_MCP
+        [mcp_servers.perplexity]
+        command = "/usr/local/bin/perplexity-mcp"
+        env = { PERPLEXITY_COOKIES_FILE = "\(cookiesPath)" }
+        # END ALLEY_CAT_PERPLEXITY_MCP
+        """
     }
 
     private func copyDirectory(_ source: URL, toFakefsRoot root: String) async throws {
