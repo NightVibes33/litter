@@ -250,19 +250,22 @@ struct HomeComposerView: View {
         Task {
             defer { isSubmitting = false }
             do {
-                guard try await appModel.ensureLocalAuthForThreadStart(serverId: project.serverId) else {
-                    return
+                if !appModel.isPerplexityChatRuntimeSelected {
+                    guard try await appModel.ensureLocalAuthForThreadStart(serverId: project.serverId) else {
+                        return
+                    }
                 }
                 inputText = ""
                 attachments.removeAll()
                 composerSelectionRange = NSRange(location: 0, length: 0)
                 isComposerFocused = false
 
+                let usesPerplexityRuntime = appModel.isPerplexityChatRuntimeSelected
                 let pendingModel = appState.preferredModel.trimmingCharacters(in: .whitespacesAndNewlines)
-                let modelOverride = pendingModel.isEmpty ? nil : pendingModel
+                let modelOverride = usesPerplexityRuntime || pendingModel.isEmpty ? nil : pendingModel
                 let agentRuntimeOverride = modelOverride == nil ? nil : appState.preferredAgentRuntimeKind
                 let pendingEffort = appState.preferredReasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
-                let effortOverride = ReasoningEffort(wireValue: pendingEffort.isEmpty ? nil : pendingEffort)
+                let effortOverride = usesPerplexityRuntime ? nil : ReasoningEffort(wireValue: pendingEffort.isEmpty ? nil : pendingEffort)
                 let launchConfig = AppThreadLaunchConfig(
                     agentRuntimeKind: agentRuntimeOverride,
                     model: modelOverride,
@@ -275,7 +278,7 @@ struct HomeComposerView: View {
                     serverId: project.serverId,
                     params: launchConfig.threadStartRequest(
                         cwd: project.cwd,
-                        dynamicTools: appModel.localGenerativeUiToolSpecs(for: project.serverId)
+                        dynamicTools: usesPerplexityRuntime ? nil : appModel.localGenerativeUiToolSpecs(for: project.serverId)
                     )
                 )
                 RecentDirectoryStore.shared.record(path: project.cwd, for: project.serverId)

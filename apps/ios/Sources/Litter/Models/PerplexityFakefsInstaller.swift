@@ -14,13 +14,13 @@ final class PerplexityFakefsInstaller: ObservableObject {
 
     func healthReport() async -> AIProviderHealthReport {
         guard !AppDistributionCapabilities.isAppStoreSafe else {
-            return AIProviderHealthReport(status: .failed("Perplexity fakefs support is not included in TestFlight builds."), models: [])
+            return AIProviderHealthReport(status: .failed("Perplexity chat runtime is not included in TestFlight builds."), models: [])
         }
         let packageCheck = await IshFS.run("test -f /root/alley-cat/perplexity-ai/upstream/perplexity/client.py && test -x /usr/local/bin/perplexity-chat")
         if packageCheck.exitCode == 0 {
             return AIProviderHealthReport(status: .healthy, models: ["auto", "pro", "reasoning", "deep research"])
         }
-        return AIProviderHealthReport(status: .warning("Tap Install FakeFS Helper to copy the Perplexity bundle into iSH."), models: [])
+        return AIProviderHealthReport(status: .warning("Tap Install Perplexity Runtime to copy the Perplexity bundle into iSH."), models: [])
     }
 
     func ask(_ prompt: String, account: PerplexityAccount?) async throws -> String {
@@ -90,7 +90,7 @@ final class PerplexityFakefsInstaller: ObservableObject {
 
     func install() async {
         guard !AppDistributionCapabilities.isAppStoreSafe else {
-            lastStatus = "Perplexity fakefs support is sideload-only."
+            lastStatus = "Perplexity chat runtime is sideload-only."
             return
         }
         guard !isInstalling else { return }

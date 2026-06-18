@@ -1952,9 +1952,13 @@ final class AppModel {
         }
     }
 
+    var isPerplexityChatRuntimeSelected: Bool {
+        AIProviderStore.shared.globalModelSettings.routingMode == .perplexity
+            && !AppDistributionCapabilities.isAppStoreSafe
+    }
+
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
-        if AIProviderStore.shared.globalModelSettings.routingMode == .perplexity,
-           !AppDistributionCapabilities.isAppStoreSafe {
+        if isPerplexityChatRuntimeSelected {
             try await startPerplexityTurn(key: key, payload: payload)
             return
         }

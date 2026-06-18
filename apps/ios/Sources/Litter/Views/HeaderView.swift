@@ -913,7 +913,7 @@ struct InlineModelSelectorView: View {
                         .litterFont(.caption2, weight: .bold)
                         .lineLimit(1)
                 }
-                Text("FakeFS search")
+                Text("Account chat")
                     .litterFont(size: 10, weight: .medium)
                     .lineLimit(2)
                     .foregroundStyle(selected ? LitterTheme.textOnAccent.opacity(0.82) : LitterTheme.textSecondary)

@@ -43,7 +43,7 @@ struct AIProviderSettingsView: View {
                     Text(mode.displayName).tag(mode)
                 }
             }
-            Text("Use ChatGPT, OpenAI, an OpenAI-compatible server, or Perplexity in sideload builds.")
+            Text("Choose which account handles chat. ChatGPT uses the local Codex route; Perplexity sends turns only to the logged-in Perplexity route in sideload builds.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
         } header: {
@@ -94,10 +94,10 @@ struct AIProviderSettingsView: View {
                     .foregroundColor(LitterTheme.accent)
                     .frame(width: 24)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Perplexity FakeFS")
+                    Text("Perplexity Chat Runtime")
                         .litterFont(.subheadline)
                         .foregroundColor(LitterTheme.textPrimary)
-                    Text("Installs the vendored helallao/perplexity-ai client, MCP entrypoint, and command shims into /root/alley-cat/perplexity-ai.")
+                    Text("Installs the Perplexity client, chat runtime, MCP entrypoint, and command shims into /root/alley-cat/perplexity-ai.")
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.textSecondary)
                 }
@@ -107,7 +107,7 @@ struct AIProviderSettingsView: View {
             } label: {
                 HStack {
                     if perplexityInstaller.isInstalling { ProgressView().scaleEffect(0.8) }
-                    Text(perplexityInstaller.isInstalling ? "Installing" : "Install FakeFS Helper")
+                    Text(perplexityInstaller.isInstalling ? "Installing" : "Install Perplexity Runtime")
                 }
             }
             .disabled(perplexityInstaller.isInstalling)
@@ -154,7 +154,7 @@ struct AIProviderSettingsView: View {
         switch provider.kind {
         case .openAI: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
         case .openAICompatible: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
-        case .perplexity: return "Sideload FakeFS · \(provider.baseURL)"
+        case .perplexity: return "Sideload chat runtime · \(provider.baseURL)"
         }
     }
 
@@ -309,7 +309,7 @@ private struct AIProviderDetailView: View {
                     Button {
                         Task { await PerplexityFakefsInstaller.shared.install() }
                     } label: {
-                        Text("Install FakeFS Helper")
+                        Text("Install Perplexity Runtime")
                     }
                     Text("/root/alley-cat/perplexity-ai")
                         .litterFont(.caption)
