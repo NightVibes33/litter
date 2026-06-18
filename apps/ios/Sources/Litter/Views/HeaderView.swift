@@ -527,6 +527,7 @@ struct InlineModelSelectorView: View {
     var showsBackground = true
     @Environment(AppModel.self) private var appModel
     @Environment(AppState.self) private var appState
+    @StateObject private var providerStore = AIProviderStore.shared
     @AppStorage("fastMode") private var fastMode = false
     @State private var modelSearchQuery = ""
     @State private var modelSearchIndex = ModelSearchIndex()
@@ -852,6 +853,9 @@ struct InlineModelSelectorView: View {
                 ForEach(ChatRuntimeMode.allCases) { mode in
                     runtimeButton(mode)
                 }
+                if !AppDistributionCapabilities.isAppStoreSafe {
+                    perplexityRuntimeButton
+                }
             }
             .padding(.horizontal, 16)
         }
@@ -893,6 +897,40 @@ struct InlineModelSelectorView: View {
         .disabled(!available)
     }
 
+    private var perplexityRuntimeButton: some View {
+        let selected = providerStore.globalModelSettings.routingMode == .perplexity
+        return Button {
+            providerStore.updateGlobalModelSettings { settings in
+                settings.routingMode = .perplexity
+                settings.preferredProviderId = providerStore.providers.first(where: { $0.kind == .perplexity })?.id
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 5) {
+                    Image(systemName: "sparkle.magnifyingglass")
+                        .litterFont(size: 11, weight: .semibold)
+                    Text("Perplexity")
+                        .litterFont(.caption2, weight: .bold)
+                        .lineLimit(1)
+                }
+                Text("FakeFS search")
+                    .litterFont(size: 10, weight: .medium)
+                    .lineLimit(2)
+                    .foregroundStyle(selected ? LitterTheme.textOnAccent.opacity(0.82) : LitterTheme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 9)
+            .background(selected ? LitterTheme.accent : LitterTheme.surfaceLight, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .foregroundStyle(selected ? LitterTheme.textOnAccent : LitterTheme.textPrimary)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(selected ? LitterTheme.accentStrong.opacity(0.7) : LitterTheme.separator.opacity(0.8), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private var emptyRuntimeMessage: String {
         switch selectedRuntimeMode {
         case .chatGPTAccount:
@@ -923,6 +961,12 @@ struct InlineModelSelectorView: View {
     }
 
     private func selectRuntime(_ mode: ChatRuntimeMode) {
+        providerStore.updateGlobalModelSettings { settings in
+            if settings.routingMode == .perplexity {
+                settings.routingMode = .automatic
+                settings.preferredProviderId = nil
+            }
+        }
         appState.preferredChatRuntimeMode = mode
         guard let model = serverModels.first else { return }
         selectModel(model)
