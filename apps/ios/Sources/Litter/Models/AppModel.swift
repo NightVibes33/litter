@@ -1994,7 +1994,8 @@ final class AppModel {
 
         do {
             let account = try PerplexityAccountStore.shared.activeAccount()
-            let answer = try await PerplexityFakefsInstaller.shared.ask(prompt, account: account)
+            let selection = PerplexityModelSelection(modelId: payload.model)
+            let answer = try await PerplexityFakefsInstaller.shared.ask(prompt, account: account, selection: selection)
             let assistantItem = HydratedConversationItem(
                 id: "perplexity-assistant-\(turnId)",
                 content: .assistant(

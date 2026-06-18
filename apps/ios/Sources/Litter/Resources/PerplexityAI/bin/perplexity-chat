@@ -21,13 +21,16 @@ def load_cookies():
 
 def main():
     if len(sys.argv) < 2:
-        print('Usage: perplexity-chat "question" [mode]', file=sys.stderr)
+        print('Usage: perplexity-chat "question" [mode] [model]', file=sys.stderr)
         print('Modes: auto, pro, reasoning, deep research', file=sys.stderr)
         return 2
     query = sys.argv[1]
     mode = sys.argv[2] if len(sys.argv) > 2 else os.environ.get('PERPLEXITY_MODE', 'auto')
+    model = sys.argv[3] if len(sys.argv) > 3 else os.environ.get('PERPLEXITY_MODEL')
+    if model == '' or model == 'default':
+        model = None
     client = Client(load_cookies())
-    response = client.search(query, mode=mode)
+    response = client.search(query, mode=mode, model=model)
     if isinstance(response, dict):
         print(response.get('answer') or json.dumps(response, indent=2))
     else:

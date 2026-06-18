@@ -262,7 +262,7 @@ struct HomeComposerView: View {
 
                 let usesPerplexityRuntime = appModel.isPerplexityChatRuntimeSelected
                 let pendingModel = appState.preferredModel.trimmingCharacters(in: .whitespacesAndNewlines)
-                let modelOverride = usesPerplexityRuntime || pendingModel.isEmpty ? nil : pendingModel
+                let modelOverride = pendingModel.isEmpty ? (usesPerplexityRuntime ? PerplexityModelSelection.defaultId : nil) : pendingModel
                 let agentRuntimeOverride = modelOverride == nil ? nil : appState.preferredAgentRuntimeKind
                 let pendingEffort = appState.preferredReasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
                 let effortOverride = usesPerplexityRuntime ? nil : ReasoningEffort(wireValue: pendingEffort.isEmpty ? nil : pendingEffort)

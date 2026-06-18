@@ -510,6 +510,53 @@ private func isVisibleModelOption(_ model: ModelInfo) -> Bool {
     return modes.contains(modeName(for: model))
 }
 
+
+private enum PerplexityModelCatalog {
+    static let models: [ModelInfo] = [
+        make(id: "perplexity:auto", model: "auto", name: "Auto", description: "General Perplexity answer mode", isDefault: true),
+        make(id: "perplexity:pro", model: "pro", name: "Pro Search", description: "Perplexity Pro mode with web sources"),
+        make(id: "perplexity:pro:sonar", model: "sonar", name: "Sonar", description: "Pro mode using Sonar"),
+        make(id: "perplexity:pro:gpt-5.2", model: "gpt-5.2", name: "GPT-5.2", description: "Pro mode using GPT-5.2"),
+        make(id: "perplexity:pro:claude-4.5-sonnet", model: "claude-4.5-sonnet", name: "Claude 4.5 Sonnet", description: "Pro mode using Claude 4.5 Sonnet"),
+        make(id: "perplexity:pro:grok-4-1", model: "grok-4-1", name: "Grok 4.1", description: "Pro mode using Grok 4.1"),
+        make(id: "perplexity:reasoning", model: "reasoning", name: "Reasoning", description: "Perplexity reasoning mode"),
+        make(id: "perplexity:reasoning:gpt-5.2-thinking", model: "gpt-5.2-thinking", name: "GPT-5.2 Thinking", description: "Reasoning mode using GPT-5.2 Thinking"),
+        make(id: "perplexity:reasoning:claude-4.5-sonnet-thinking", model: "claude-4.5-sonnet-thinking", name: "Claude 4.5 Sonnet Thinking", description: "Reasoning mode using Claude 4.5 Sonnet Thinking"),
+        make(id: "perplexity:reasoning:gemini-3.0-pro", model: "gemini-3.0-pro", name: "Gemini 3.0 Pro", description: "Reasoning mode using Gemini 3.0 Pro"),
+        make(id: "perplexity:reasoning:kimi-k2-thinking", model: "kimi-k2-thinking", name: "Kimi K2 Thinking", description: "Reasoning mode using Kimi K2 Thinking"),
+        make(id: "perplexity:reasoning:grok-4.1-reasoning", model: "grok-4.1-reasoning", name: "Grok 4.1 Reasoning", description: "Reasoning mode using Grok 4.1 Reasoning"),
+        make(id: "perplexity:deep-research", model: "deep research", name: "Deep Research", description: "In-depth Perplexity research mode")
+    ]
+
+    private static func make(
+        id: String,
+        model: String,
+        name: String,
+        description: String,
+        isDefault: Bool = false
+    ) -> ModelInfo {
+        ModelInfo(
+            id: id,
+            model: model,
+            upgrade: nil,
+            upgradeModel: nil,
+            upgradeCopy: nil,
+            modelLink: nil,
+            migrationMarkdown: nil,
+            availabilityNuxMessage: nil,
+            displayName: name,
+            description: description,
+            hidden: false,
+            supportedReasoningEfforts: [],
+            defaultReasoningEffort: .medium,
+            inputModalities: [.text],
+            supportsPersonality: false,
+            isDefault: isDefault,
+            agentRuntimeKind: "perplexity"
+        )
+    }
+}
+
 struct InlineModelSelectorView: View {
     let models: [ModelInfo]
     @Binding var selectedModel: String
@@ -624,7 +671,7 @@ struct InlineModelSelectorView: View {
     }
 
     private var modelsForSelectedRuntime: [ModelInfo] {
-        serverModels
+        providerStore.globalModelSettings.routingMode == .perplexity ? PerplexityModelCatalog.models : serverModels
     }
 
     var body: some View {
@@ -839,6 +886,11 @@ struct InlineModelSelectorView: View {
         .onChange(of: selectedAgentRuntimeKind) { _, _ in
             synchronizeRuntimeFilter()
         }
+        .onChange(of: providerStore.globalModelSettings.routingMode) { _, _ in
+            selectedRuntimeFilter = nil
+            synchronizeRuntimeFilter()
+            resetModelSearchIndex()
+        }
     }
 
     private var runtimeSelector: some View {
@@ -904,6 +956,9 @@ struct InlineModelSelectorView: View {
                 settings.routingMode = .perplexity
                 settings.preferredProviderId = providerStore.providers.first(where: { $0.kind == .perplexity })?.id
             }
+            if !selectedModel.hasPrefix("perplexity:") {
+                selectModel(PerplexityModelCatalog.models.first!)
+            }
         } label: {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
@@ -932,6 +987,9 @@ struct InlineModelSelectorView: View {
     }
 
     private var emptyRuntimeMessage: String {
+        if providerStore.globalModelSettings.routingMode == .perplexity {
+            return "No Perplexity models available"
+        }
         switch selectedRuntimeMode {
         case .chatGPTAccount:
             return "No ChatGPT models on this route"
@@ -980,7 +1038,12 @@ struct InlineModelSelectorView: View {
         } else {
             reasoningEffort = defaultReasoningEffortSelection(for: model)
         }
-        if currentServer?.isLocal == true {
+        if model.id.hasPrefix("perplexity:") {
+            providerStore.updateGlobalModelSettings { settings in
+                settings.routingMode = .perplexity
+                settings.preferredProviderId = providerStore.providers.first(where: { $0.kind == .perplexity })?.id
+            }
+        } else if currentServer?.isLocal == true {
             appState.preferredChatRuntimeMode = .chatGPTAccount
         } else {
             appState.preferredChatRuntimeMode = .computerBridge

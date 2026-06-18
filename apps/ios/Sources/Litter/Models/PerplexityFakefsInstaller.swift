@@ -1,5 +1,47 @@
 import Foundation
 
+struct PerplexityModelSelection: Equatable, Sendable {
+    let mode: String
+    let model: String?
+
+    static let defaultId = "perplexity:auto"
+    static let `default` = PerplexityModelSelection(mode: "auto", model: nil)
+    static let availableModelNames = [
+        "auto",
+        "pro",
+        "sonar",
+        "gpt-5.2",
+        "claude-4.5-sonnet",
+        "grok-4-1",
+        "reasoning",
+        "gpt-5.2-thinking",
+        "claude-4.5-sonnet-thinking",
+        "gemini-3.0-pro",
+        "kimi-k2-thinking",
+        "grok-4.1-reasoning",
+        "deep research"
+    ]
+
+    init(mode: String, model: String?) {
+        self.mode = mode
+        self.model = model
+    }
+
+    init(modelId: String?) {
+        let raw = modelId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard raw.hasPrefix("perplexity:") else {
+            self = .default
+            return
+        }
+        let payload = String(raw.dropFirst("perplexity:".count))
+        let pieces = payload.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        let mode = pieces.first.map(String.init)?.replacingOccurrences(of: "-", with: " ") ?? "auto"
+        let model = pieces.count > 1 ? String(pieces[1]) : ""
+        self.mode = mode.isEmpty ? "auto" : mode
+        self.model = model.isEmpty || model == "default" ? nil : model
+    }
+}
+
 @MainActor
 final class PerplexityFakefsInstaller: ObservableObject {
     static let shared = PerplexityFakefsInstaller()
@@ -18,12 +60,12 @@ final class PerplexityFakefsInstaller: ObservableObject {
         }
         let packageCheck = await IshFS.run("test -f /root/alley-cat/perplexity-ai/upstream/perplexity/client.py && test -x /usr/local/bin/perplexity-chat")
         if packageCheck.exitCode == 0 {
-            return AIProviderHealthReport(status: .healthy, models: ["auto", "pro", "reasoning", "deep research"])
+            return AIProviderHealthReport(status: .healthy, models: PerplexityModelSelection.availableModelNames)
         }
         return AIProviderHealthReport(status: .warning("Tap Install Perplexity Runtime to copy the Perplexity bundle into iSH."), models: [])
     }
 
-    func ask(_ prompt: String, account: PerplexityAccount?) async throws -> String {
+    func ask(_ prompt: String, account: PerplexityAccount?, selection: PerplexityModelSelection = .default) async throws -> String {
         guard !AppDistributionCapabilities.isAppStoreSafe else {
             throw NSError(domain: "PerplexityFakefsInstaller", code: 3, userInfo: [NSLocalizedDescriptionKey: "Perplexity is not included in TestFlight builds."])
         }
@@ -37,7 +79,7 @@ final class PerplexityFakefsInstaller: ObservableObject {
             try await IshFS.createDirectoryIfNeeded(path: "/root/.config/alley-cat")
             try await IshFS.writeTextFile(path: cookiesPath, text: account.cookiesJSON + "\n")
         }
-        let command = "PERPLEXITY_COOKIES_FILE=\(IshFS.shellQuote(cookiesPath)) /usr/local/bin/perplexity-chat \(IshFS.shellQuote(trimmed))"
+        let command = "PERPLEXITY_COOKIES_FILE=\(IshFS.shellQuote(cookiesPath)) /usr/local/bin/perplexity-chat \(IshFS.shellQuote(trimmed)) \(IshFS.shellQuote(selection.mode)) \(IshFS.shellQuote(selection.model ?? "default"))"
         let result = await IshFS.run(command)
         let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
         guard result.exitCode == 0 else {
