@@ -595,6 +595,7 @@ targets:
           - AppIcon.icon/**
           - Generated/Minimuxer/**
           - Resources/BuildKitAssets/**
+          - Resources/PerplexityAI/**
           - "**/*.h"
       - path: Sources/Litter/Bridge/UniFFICodexClient.generated.swift
       - path: Sources/LitterLiveActivity/CodexTurnLiveActivity.swift
@@ -1176,6 +1177,7 @@ targets:
           - Models/WatchCompanionBridge.swift
           - Models/WatchProjection.swift
           - Resources/BuildKitAssets/**
+          - Resources/PerplexityAI/**
           - Generated/Minimuxer/**
           - Views/HomeVoiceOrbButton.swift
           - Views/InlineVoiceButton.swift
