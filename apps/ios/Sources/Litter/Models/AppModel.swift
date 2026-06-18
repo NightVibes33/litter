@@ -1959,6 +1959,9 @@ final class AppModel {
 
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
         if isPerplexityChatRuntimeSelected {
+            if try await startPerplexityBackedCodexTurnIfAvailable(key: key, payload: payload) {
+                return
+            }
             try await startPerplexityTurn(key: key, payload: payload)
             return
         }
@@ -1975,6 +1978,51 @@ final class AppModel {
             lastError = error.localizedDescription
             throw error
         }
+    }
+
+    private func startPerplexityBackedCodexTurnIfAvailable(key: ThreadKey, payload: AppComposerPayload) async throws -> Bool {
+        guard snapshot?.serverSnapshot(for: key.serverId)?.isLocal == true else {
+            return false
+        }
+        try await ensureLocalRuntimeIfNeeded(serverId: key.serverId)
+        await restoreStoredLocalAuthIfNeeded(serverId: key.serverId, reason: "perplexityBackedCodexTurn")
+        guard snapshot?.serverSnapshot(for: key.serverId)?.account != nil else {
+            return false
+        }
+
+        if let account = try? PerplexityAccountStore.shared.activeAccount() {
+            try? await PerplexityFakefsInstaller.shared.configureMCP(account: account)
+        }
+
+        var routedPayload = payload
+        let selection = PerplexityModelSelection(modelId: payload.model)
+        routedPayload.model = nil
+        routedPayload.effort = nil
+        routedPayload.text = Self.perplexityBackedCodexPrompt(
+            userText: payload.text,
+            selection: selection
+        )
+
+        do {
+            try await store.startTurn(
+                key: key,
+                params: routedPayload.turnStartRequest(threadId: key.threadId)
+            )
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
+    private static func perplexityBackedCodexPrompt(userText: String, selection: PerplexityModelSelection) -> String {
+        let modelLabel = selection.model.map { " model \($0)" } ?? ""
+        return """
+        Perplexity is selected as the chat route for this turn. Use the configured Perplexity MCP tools for web/research context when it helps, preferring mode \(selection.mode)\(modelLabel). Keep Codex in charge of local execution: use shell commands, file edits, repository inspection, and subagents through the normal local Codex tools only when they are needed for the user's request.
+
+        User request:
+        \(userText)
+        """
     }
 
     private func startPerplexityTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
