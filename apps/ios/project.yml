@@ -610,6 +610,7 @@ targets:
       - path: Sources/Litter/Resources/Fonts
       - path: Sources/Litter/Resources/Themes
       - path: Sources/Litter/Resources/BuildKit
+      - path: Sources/Litter/Resources/PerplexityAI
       - path: Resources/fs.tar.gz
       - path: Resources/fs.version
       - path: Sources/Litter/Resources/TipJarProducts.storekit

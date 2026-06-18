@@ -3,6 +3,7 @@ import Foundation
 enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
     case openAI
     case openAICompatible
+    case perplexity
 
     var id: String { rawValue }
 
@@ -10,6 +11,7 @@ enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .openAI: return "OpenAI"
         case .openAICompatible: return "OpenAI-Compatible Server"
+        case .perplexity: return "Perplexity"
         }
     }
 }
@@ -30,6 +32,13 @@ struct AIProviderCapabilities: Codable, Equatable {
     static let openAICompatible = AIProviderCapabilities(
         supportsModelsEndpoint: true,
         supportsChatCompletions: true,
+        supportsStreaming: true,
+        requiresNetwork: true
+    )
+
+    static let perplexity = AIProviderCapabilities(
+        supportsModelsEndpoint: false,
+        supportsChatCompletions: false,
         supportsStreaming: true,
         requiresNetwork: true
     )
@@ -75,6 +84,21 @@ struct AIProviderProfile: Codable, Identifiable, Equatable {
             defaultModel: defaultModel,
             isEnabled: true,
             capabilities: .openAI,
+            createdAt: now,
+            updatedAt: now
+        )
+    }
+
+    static func perplexity(defaultModel: String = "auto") -> AIProviderProfile {
+        let now = Date()
+        return AIProviderProfile(
+            id: UUID(),
+            kind: .perplexity,
+            displayName: "Perplexity",
+            baseURL: "fakefs:///root/alley-cat/perplexity-ai",
+            defaultModel: defaultModel,
+            isEnabled: true,
+            capabilities: .perplexity,
             createdAt: now,
             updatedAt: now
         )
@@ -128,6 +152,7 @@ enum AIModelRoutingMode: String, CaseIterable, Identifiable {
     case automatic
     case openAI
     case openAICompatible
+    case perplexity
 
     var id: String { rawValue }
 
@@ -136,6 +161,7 @@ enum AIModelRoutingMode: String, CaseIterable, Identifiable {
         case .automatic: return "Automatic"
         case .openAI: return "OpenAI"
         case .openAICompatible: return "Ollama / OpenAI-Compatible"
+        case .perplexity: return "Perplexity"
         }
     }
 }
@@ -148,6 +174,8 @@ extension AIModelRoutingMode: Codable {
             self = .openAI
         case Self.openAICompatible.rawValue:
             self = .openAICompatible
+        case Self.perplexity.rawValue:
+            self = .perplexity
         default:
             self = .automatic
         }

@@ -2,12 +2,16 @@ import SwiftUI
 
 struct AIProviderSettingsView: View {
     @StateObject private var providerStore = AIProviderStore.shared
+    @StateObject private var perplexityInstaller = PerplexityFakefsInstaller.shared
     @State private var showAddProvider = false
 
     var body: some View {
         List {
             modelSettingsSection
             providersSection
+            if !AppDistributionCapabilities.isAppStoreSafe {
+                perplexitySection
+            }
             notesSection
         }
         .navigationTitle("AI Providers")
@@ -35,11 +39,11 @@ struct AIProviderSettingsView: View {
     private var modelSettingsSection: some View {
         Section {
             Picker("Default Route", selection: globalRoutingBinding) {
-                ForEach(AIModelRoutingMode.allCases) { mode in
+                ForEach(availableRoutingModes) { mode in
                     Text(mode.displayName).tag(mode)
                 }
             }
-            Text("Use ChatGPT, OpenAI, or an OpenAI-compatible server such as Ollama, LM Studio, Tailscale, or another machine on your LAN.")
+            Text("Use ChatGPT, OpenAI, an OpenAI-compatible server, or Perplexity in sideload builds.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
         } header: {
@@ -83,6 +87,41 @@ struct AIProviderSettingsView: View {
         }
     }
 
+    private var perplexitySection: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .foregroundColor(LitterTheme.accent)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Perplexity FakeFS")
+                        .litterFont(.subheadline)
+                        .foregroundColor(LitterTheme.textPrimary)
+                    Text("Installs the vendored helallao/perplexity-ai client, MCP entrypoint, and command shims into /root/alley-cat/perplexity-ai.")
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textSecondary)
+                }
+            }
+            Button {
+                Task { await perplexityInstaller.install() }
+            } label: {
+                HStack {
+                    if perplexityInstaller.isInstalling { ProgressView().scaleEffect(0.8) }
+                    Text(perplexityInstaller.isInstalling ? "Installing" : "Install FakeFS Helper")
+                }
+            }
+            .disabled(perplexityInstaller.isInstalling)
+            Text(perplexityInstaller.lastStatus)
+                .litterFont(.caption)
+                .foregroundColor(LitterTheme.textMuted)
+        } header: {
+            Text("Sideload Perplexity")
+                .foregroundColor(LitterTheme.textSecondary)
+        } footer: {
+            Text("Commands after install: perplexity-setup, perplexity-chat, and perplexity-mcp. Add your own Perplexity cookies with PERPLEXITY_COOKIES or ~/.config/alley-cat/perplexity-cookies.json for account-backed modes.")
+        }
+    }
+
     private var notesSection: some View {
         Section {
             Text("For private/local models, run them on a computer and add the server's OpenAI-compatible /v1 endpoint here. The iPhone app stays focused on the terminal, file browser, remote bridges, and Swift BuildKit.")
@@ -95,11 +134,18 @@ struct AIProviderSettingsView: View {
         }
     }
 
+    private var availableRoutingModes: [AIModelRoutingMode] {
+        AIModelRoutingMode.allCases.filter { mode in
+            mode != .perplexity || !AppDistributionCapabilities.isAppStoreSafe
+        }
+    }
+
     private var globalRoutingBinding: Binding<AIModelRoutingMode> {
         Binding(
             get: { providerStore.globalModelSettings.routingMode },
             set: { value in
-                providerStore.updateGlobalModelSettings { $0.routingMode = value }
+                let next = (value == .perplexity && AppDistributionCapabilities.isAppStoreSafe) ? .automatic : value
+                providerStore.updateGlobalModelSettings { $0.routingMode = next }
             }
         )
     }
@@ -108,6 +154,7 @@ struct AIProviderSettingsView: View {
         switch provider.kind {
         case .openAI: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
         case .openAICompatible: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
+        case .perplexity: return "Sideload FakeFS · \(provider.baseURL)"
         }
     }
 
@@ -115,6 +162,7 @@ struct AIProviderSettingsView: View {
         switch kind {
         case .openAI: return "cloud"
         case .openAICompatible: return "desktopcomputer"
+        case .perplexity: return "sparkle.magnifyingglass"
         }
     }
 }
@@ -252,6 +300,18 @@ private struct AIProviderDetailView: View {
                     .foregroundColor(reportColor)
                 ForEach(report.models, id: \.self) { model in
                     Text(model)
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textSecondary)
+                }
+            }
+            if provider.kind == .perplexity {
+                Section {
+                    Button {
+                        Task { await PerplexityFakefsInstaller.shared.install() }
+                    } label: {
+                        Text("Install FakeFS Helper")
+                    }
+                    Text("/root/alley-cat/perplexity-ai")
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.textSecondary)
                 }

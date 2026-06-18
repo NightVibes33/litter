@@ -1,0 +1,3 @@
+#!/bin/sh
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../upstream" && pwd)"
+PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m perplexity.mcp "$@"

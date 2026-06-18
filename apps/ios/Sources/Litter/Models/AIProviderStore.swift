@@ -66,6 +66,10 @@ final class AIProviderStore: ObservableObject {
     }
 
     func testProvider(_ provider: AIProviderProfile, apiKey: String?) async -> AIProviderHealthReport {
+        if provider.kind == .perplexity {
+            return await PerplexityFakefsInstaller.shared.healthReport()
+        }
+
         guard let base = provider.normalizedBaseURL else {
             return AIProviderHealthReport(status: .failed("Invalid base URL"), models: [])
         }
@@ -86,6 +90,7 @@ final class AIProviderStore: ObservableObject {
         providers = decodeProviders()
         globalModelSettings = decode(GlobalModelSettings.self, key: globalModelSettingsKey) ?? .defaults
         ensureDefaultOpenAIProvider()
+        ensureDefaultPerplexityProviderIfNeeded()
         sanitizeGlobalSettings()
         purgeLegacyOnDeviceAIState()
         try? persistProviders()
@@ -95,6 +100,17 @@ final class AIProviderStore: ObservableObject {
     private func ensureDefaultOpenAIProvider() {
         guard !providers.contains(where: { $0.kind == .openAI }) else { return }
         providers.insert(.openAI(), at: 0)
+        try? persistProviders()
+    }
+
+    private func ensureDefaultPerplexityProviderIfNeeded() {
+        guard !AppDistributionCapabilities.isAppStoreSafe else {
+            providers.removeAll { $0.kind == .perplexity }
+            return
+        }
+        guard !providers.contains(where: { $0.kind == .perplexity }) else { return }
+        let insertIndex = min(providers.count, 1)
+        providers.insert(.perplexity(), at: insertIndex)
         try? persistProviders()
     }
 

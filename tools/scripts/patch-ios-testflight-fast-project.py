@@ -57,6 +57,8 @@ EMEXDE_TARGETS = (
 DEPENDENCY_BLOCKS = (
     """      - path: Sources/Litter/Resources/TipJarProducts.storekit
 """,
+    """      - path: Sources/Litter/Resources/PerplexityAI
+""",
     """      - package: AltSign
         product: AltSign-Dynamic
         embed: true
@@ -232,6 +234,7 @@ def validate_fast_project(text: str) -> None:
         "copy_upstream_source emexDE",
         "../../ThirdParty/SideStore",
         "../../ThirdParty/EmexDE",
+        "Sources/Litter/Resources/PerplexityAI",
     )
     for marker in forbidden_markers:
         if marker in text:
