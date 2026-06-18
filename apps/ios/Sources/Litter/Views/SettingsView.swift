@@ -1475,6 +1475,10 @@ private struct SettingsConnectionAccountSection: View {
     @State private var hasStoredBaseURL = OpenAIApiKeyStore.shared.hasStoredBaseURL
     @State private var storedChatGPTAccounts: [StoredChatGPTAccountSummary] = []
     @State private var selectedChatGPTAccountID = ""
+    @State private var storedPerplexityAccounts: [PerplexityAccountSummary] = []
+    @State private var selectedPerplexityAccountID = ""
+    @State private var perplexityAccountLabel = ""
+    @State private var perplexityCookiesJSON = ""
 
     @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
@@ -1519,24 +1523,96 @@ private struct SettingsConnectionAccountSection: View {
             }
 
             if server.isLocal {
-                Button {
+                HStack(spacing: 10) {
+                    Button {
+                        taskBag.run {
+                            isAuthWorking = true
+                            defer { isAuthWorking = false }
+                            await loginWithChatGPT()
+                        }
+                    } label: {
+                        Label(hasStoredChatGPTTokens ? "Add ChatGPT" : "ChatGPT", systemImage: "person.crop.circle.badge.checkmark")
+                            .litterFont(.subheadline)
+                    }
+                    .disabled(isAuthWorking)
+
+                    if !AppDistributionCapabilities.isAppStoreSafe {
+                        Button {
+                            taskBag.run {
+                                isAuthWorking = true
+                                defer { isAuthWorking = false }
+                                await savePerplexityAccount()
+                            }
+                        } label: {
+                            Label(hasStoredPerplexityAccount ? "Add Perplexity" : "Perplexity", systemImage: "sparkle.magnifyingglass")
+                                .litterFont(.subheadline)
+                        }
+                        .disabled(isAuthWorking || perplexityCookiesJSON.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+                .foregroundColor(LitterTheme.accent)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+
+            if server.isLocal, !AppDistributionCapabilities.isAppStoreSafe {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Paste your own Perplexity cookies JSON to use Perplexity as the selected chat provider.")
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textSecondary)
+                    TextField("Account label", text: $perplexityAccountLabel)
+                        .litterFont(.footnote)
+                        .textInputAutocapitalization(.words)
+                    SecureField("Paste Perplexity cookies JSON", text: $perplexityCookiesJSON)
+                        .litterFont(.footnote)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
+
+            if server.isLocal, !storedPerplexityAccounts.isEmpty, !AppDistributionCapabilities.isAppStoreSafe {
+                Picker(selection: $selectedPerplexityAccountID) {
+                    ForEach(storedPerplexityAccounts) { account in
+                        Text(account.displayName).tag(account.id)
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "sparkle.magnifyingglass")
+                            .foregroundColor(LitterTheme.accent)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Active Perplexity Account")
+                                .litterFont(.subheadline)
+                                .foregroundColor(LitterTheme.textPrimary)
+                            Text("Used when the Perplexity runtime button is selected")
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(LitterTheme.accent)
+                .disabled(isAuthWorking)
+                .onChange(of: selectedPerplexityAccountID) { _, newValue in
+                    guard !newValue.isEmpty, newValue != activeStoredPerplexityAccountID else { return }
                     taskBag.run {
                         isAuthWorking = true
                         defer { isAuthWorking = false }
-                        await loginWithChatGPT()
+                        await switchToPerplexityAccount(newValue)
                     }
-                } label: {
-                    HStack {
-                        if isAuthWorking {
-                            ProgressView().tint(LitterTheme.textPrimary).scaleEffect(0.8)
-                        }
-                        Image(systemName: "person.crop.circle.badge.checkmark")
-                        Text(hasStoredChatGPTTokens ? "Add ChatGPT Account" : "Login with ChatGPT")
-                            .litterFont(.subheadline)
-                    }
-                    .foregroundColor(LitterTheme.accent)
                 }
-                .disabled(isAuthWorking)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+                Button("Remove Selected Perplexity Account") {
+                    taskBag.run {
+                        isAuthWorking = true
+                        defer { isAuthWorking = false }
+                        await removeSelectedPerplexityAccount()
+                    }
+                }
+                .litterFont(.caption)
+                .foregroundColor(LitterTheme.danger)
+                .disabled(isAuthWorking || selectedPerplexityAccountID.isEmpty)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
 
@@ -1726,6 +1802,21 @@ private struct SettingsConnectionAccountSection: View {
         return storedChatGPTAccounts.first
     }
 
+    private var hasStoredPerplexityAccount: Bool {
+        !storedPerplexityAccounts.isEmpty
+    }
+
+    private var activeStoredPerplexityAccountID: String? {
+        storedPerplexityAccounts.first(where: \.isActive)?.id
+    }
+
+    private var activeStoredPerplexityAccount: PerplexityAccountSummary? {
+        if let activeStoredPerplexityAccountID {
+            return storedPerplexityAccounts.first(where: { $0.id == activeStoredPerplexityAccountID })
+        }
+        return storedPerplexityAccounts.first
+    }
+
     private var hasStoredLocalCredentials: Bool {
         hasStoredApiKey || hasStoredChatGPTTokens
     }
@@ -1740,6 +1831,8 @@ private struct SettingsConnectionAccountSection: View {
             return LitterTheme.accent.opacity(0.7)
         case nil where server.isLocal && hasStoredApiKey:
             return Color(hex: "#00AAFF").opacity(0.7)
+        case nil where server.isLocal && hasStoredPerplexityAccount && !AppDistributionCapabilities.isAppStoreSafe:
+            return LitterTheme.accent.opacity(0.7)
         case nil:
             return LitterTheme.textMuted
         }
@@ -1755,6 +1848,8 @@ private struct SettingsConnectionAccountSection: View {
             return activeStoredChatGPTAccount?.displayName ?? "ChatGPT"
         case nil where server.isLocal && hasStoredApiKey:
             return "API Key"
+        case nil where server.isLocal && hasStoredPerplexityAccount && !AppDistributionCapabilities.isAppStoreSafe:
+            return activeStoredPerplexityAccount?.displayName ?? "Perplexity"
         case nil:
             return "Not logged in"
         }
@@ -1770,6 +1865,8 @@ private struct SettingsConnectionAccountSection: View {
             return "Stored locally; restoring session"
         case nil where server.isLocal && hasStoredApiKey:
             return "Saved locally; refreshing local account"
+        case nil where server.isLocal && hasStoredPerplexityAccount && !AppDistributionCapabilities.isAppStoreSafe:
+            return "Saved locally; select Perplexity in Runtime"
         case nil:
             return nil
         }
@@ -1803,6 +1900,56 @@ private struct SettingsConnectionAccountSection: View {
         } catch {
             storedChatGPTAccounts = []
             selectedChatGPTAccountID = ""
+        }
+        do {
+            storedPerplexityAccounts = try PerplexityAccountStore.shared.summaries()
+            selectedPerplexityAccountID = activeStoredPerplexityAccountID ?? ""
+        } catch {
+            storedPerplexityAccounts = []
+            selectedPerplexityAccountID = ""
+        }
+    }
+
+
+    private func savePerplexityAccount() async {
+        guard server.isLocal else {
+            authError = "Perplexity login is only available for the local runtime."
+            return
+        }
+        do {
+            authError = nil
+            try PerplexityAccountStore.shared.save(label: perplexityAccountLabel, cookiesJSON: perplexityCookiesJSON)
+            perplexityAccountLabel = ""
+            perplexityCookiesJSON = ""
+            refreshStoredCredentialFlags()
+            await PerplexityFakefsInstaller.shared.install()
+        } catch {
+            authError = error.localizedDescription
+            refreshStoredCredentialFlags()
+        }
+    }
+
+    private func switchToPerplexityAccount(_ accountID: String) async {
+        do {
+            authError = nil
+            try PerplexityAccountStore.shared.setActiveAccountID(accountID)
+            refreshStoredCredentialFlags()
+        } catch {
+            authError = error.localizedDescription
+            refreshStoredCredentialFlags()
+        }
+    }
+
+    private func removeSelectedPerplexityAccount() async {
+        let accountID = selectedPerplexityAccountID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !accountID.isEmpty else { return }
+        do {
+            authError = nil
+            try PerplexityAccountStore.shared.remove(accountID: accountID)
+            refreshStoredCredentialFlags()
+        } catch {
+            authError = error.localizedDescription
+            refreshStoredCredentialFlags()
         }
     }
 

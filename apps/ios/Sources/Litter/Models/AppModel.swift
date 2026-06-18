@@ -1953,6 +1953,12 @@ final class AppModel {
     }
 
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
+        if AIProviderStore.shared.globalModelSettings.routingMode == .perplexity,
+           !AppDistributionCapabilities.isAppStoreSafe {
+            try await startPerplexityTurn(key: key, payload: payload)
+            return
+        }
+
         try await ensureLocalRuntimeIfNeeded(serverId: key.serverId)
         await restoreStoredLocalAuthIfNeeded(serverId: key.serverId, reason: "startTurn")
 
@@ -1964,6 +1970,63 @@ final class AppModel {
         } catch {
             lastError = error.localizedDescription
             throw error
+        }
+    }
+
+    private func startPerplexityTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
+        let prompt = payload.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+        let turnId = UUID().uuidString
+        let now = Date()
+        let userItem = HydratedConversationItem(
+            id: "perplexity-user-\(turnId)",
+            content: .user(HydratedUserMessageData(text: prompt, imageDataUris: [])),
+            sourceTurnId: turnId,
+            sourceTurnIndex: nil,
+            timestamp: now.timeIntervalSince1970,
+            isFromUserTurnBoundary: true
+        )
+        _ = applyThreadItemUpsert(key: key, item: userItem)
+
+        do {
+            let account = try PerplexityAccountStore.shared.activeAccount()
+            let answer = try await PerplexityFakefsInstaller.shared.ask(prompt, account: account)
+            let assistantItem = HydratedConversationItem(
+                id: "perplexity-assistant-\(turnId)",
+                content: .assistant(
+                    HydratedAssistantMessageData(
+                        text: answer,
+                        agentNickname: "Perplexity",
+                        agentRole: "Search",
+                        phase: nil
+                    )
+                ),
+                sourceTurnId: turnId,
+                sourceTurnIndex: nil,
+                timestamp: Date().timeIntervalSince1970,
+                isFromUserTurnBoundary: false
+            )
+            _ = applyThreadItemUpsert(key: key, item: assistantItem)
+            lastError = nil
+        } catch {
+            let errorItem = HydratedConversationItem(
+                id: "perplexity-error-\(turnId)",
+                content: .assistant(
+                    HydratedAssistantMessageData(
+                        text: "Perplexity failed: \(error.localizedDescription)",
+                        agentNickname: "Perplexity",
+                        agentRole: "Search",
+                        phase: nil
+                    )
+                ),
+                sourceTurnId: turnId,
+                sourceTurnIndex: nil,
+                timestamp: Date().timeIntervalSince1970,
+                isFromUserTurnBoundary: false
+            )
+            _ = applyThreadItemUpsert(key: key, item: errorItem)
+            lastError = error.localizedDescription
+            return
         }
     }
 

@@ -23,6 +23,29 @@ final class PerplexityFakefsInstaller: ObservableObject {
         return AIProviderHealthReport(status: .warning("Tap Install FakeFS Helper to copy the Perplexity bundle into iSH."), models: [])
     }
 
+    func ask(_ prompt: String, account: PerplexityAccount?) async throws -> String {
+        guard !AppDistributionCapabilities.isAppStoreSafe else {
+            throw NSError(domain: "PerplexityFakefsInstaller", code: 3, userInfo: [NSLocalizedDescriptionKey: "Perplexity is not included in TestFlight builds."])
+        }
+        await install()
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw NSError(domain: "PerplexityFakefsInstaller", code: 4, userInfo: [NSLocalizedDescriptionKey: "Perplexity prompt was empty."])
+        }
+        let cookiesPath = "/root/.config/alley-cat/perplexity-cookies.json"
+        if let account {
+            try await IshFS.createDirectoryIfNeeded(path: "/root/.config/alley-cat")
+            try await IshFS.writeTextFile(path: cookiesPath, text: account.cookiesJSON + "\n")
+        }
+        let command = "PERPLEXITY_COOKIES_FILE=\(IshFS.shellQuote(cookiesPath)) /usr/local/bin/perplexity-chat \(IshFS.shellQuote(trimmed))"
+        let result = await IshFS.run(command)
+        let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard result.exitCode == 0 else {
+            throw NSError(domain: "PerplexityFakefsInstaller", code: Int(result.exitCode), userInfo: [NSLocalizedDescriptionKey: output.isEmpty ? "Perplexity command failed." : output])
+        }
+        return output.isEmpty ? "Perplexity returned an empty response." : output
+    }
+
     func install() async {
         guard !AppDistributionCapabilities.isAppStoreSafe else {
             lastStatus = "Perplexity fakefs support is sideload-only."
