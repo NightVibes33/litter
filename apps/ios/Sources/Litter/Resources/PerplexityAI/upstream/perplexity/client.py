@@ -21,6 +21,7 @@ from .config import (
     ENDPOINT_SSE_ASK,
     ENDPOINT_UPLOAD_URL,
 )
+from .emailnator import Emailnator
 
 
 class Client:
@@ -51,6 +52,57 @@ class Client:
 
         # Initialize session by making a GET request
         self.session.get(ENDPOINT_AUTH_SESSION)
+
+    def create_account(self, cookies):
+        """
+        Creates a new account using Emailnator cookies.
+        """
+        while True:
+            try:
+                # Initialize Emailnator client
+                emailnator_cli = Emailnator(cookies)
+
+                # Send a POST request to initiate account creation
+                resp = self.session.post(
+                    ENDPOINT_AUTH_SIGNIN,
+                    data={
+                        "email": emailnator_cli.email,
+                        "csrfToken": self.session.cookies.get_dict()["next-auth.csrf-token"].split(
+                            "%"
+                        )[0],
+                        "callbackUrl": "https://www.perplexity.ai/",
+                        "json": "true",
+                    },
+                )
+
+                # Check if the response is successful
+                if resp.ok:
+                    # Wait for the sign-in email to arrive
+                    new_msgs = emailnator_cli.reload(
+                        wait_for=lambda x: x["subject"] == "Sign in to Perplexity",
+                        timeout=20,
+                    )
+
+                    if new_msgs:
+                        break
+                else:
+                    print("Perplexity account creating error:", resp)
+
+            except Exception:
+                pass
+
+        # Extract the sign-in link from the email
+        msg = emailnator_cli.get(func=lambda x: x["subject"] == "Sign in to Perplexity")
+        new_account_link = self.signin_regex.search(emailnator_cli.open(msg["messageID"])).group(1)
+
+        # Complete the account creation process
+        self.session.get(new_account_link)
+
+        # Update query and file upload limits
+        self.copilot = 5
+        self.file_upload = 10
+
+        return True
 
     def search(
         self,

@@ -196,7 +196,7 @@ def validate_query_limits(
     if mode in ["pro", "reasoning", "deep research"] and copilot_remaining <= 0:
         raise ValidationError(
             f"No remaining enhanced queries for mode '{mode}'. "
-            f"Use mode='auto' or provide your own Perplexity cookies."
+            f"Create a new account or use mode='auto'."
         )
 
     # Check file uploads

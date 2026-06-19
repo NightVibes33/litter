@@ -19,6 +19,10 @@ ENDPOINT_SSE_ASK = f"{API_BASE_URL}/rest/sse/perplexity_ask"
 ENDPOINT_UPLOAD_URL = f"{API_BASE_URL}/rest/uploads/create_upload_url"
 ENDPOINT_SOCKET_IO = f"{API_BASE_URL}/socket.io/"
 
+# Emailnator Configuration
+EMAILNATOR_BASE_URL = "https://www.emailnator.com"
+EMAILNATOR_GENERATE_ENDPOINT = f"{EMAILNATOR_BASE_URL}/generate-email"
+EMAILNATOR_MESSAGE_LIST_ENDPOINT = f"{EMAILNATOR_BASE_URL}/message-list"
 
 # Account Limits
 DEFAULT_COPILOT_QUERIES = 5
@@ -84,6 +88,31 @@ DEFAULT_HEADERS = {
     "sec-fetch-user": "?1",
     "upgrade-insecure-requests": "1",
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",  # noqa: E501
+}
+
+# Emailnator Headers Template
+EMAILNATOR_HEADERS = {
+    "accept": "application/json, text/plain, */*",
+    "accept-language": "en-US,en;q=0.9",
+    "content-type": "application/json",
+    "dnt": "1",
+    "origin": EMAILNATOR_BASE_URL,
+    "priority": "u=1, i",
+    "referer": f"{EMAILNATOR_BASE_URL}/",
+    "sec-ch-ua": '"Not;A=Brand";v="24", "Chromium";v="128"',
+    "sec-ch-ua-arch": '"x86"',
+    "sec-ch-ua-bitness": '"64"',
+    "sec-ch-ua-full-version": '"128.0.6613.120"',
+    "sec-ch-ua-full-version-list": '"Not;A=Brand";v="24.0.0.0", "Chromium";v="128.0.6613.120"',  # noqa: E501
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-model": '""',
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-ch-ua-platform-version": '"19.0.0"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",  # noqa: E501
+    "x-requested-with": "XMLHttpRequest",
 }
 
 # Retry Configuration

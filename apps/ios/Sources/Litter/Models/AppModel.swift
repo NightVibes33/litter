@@ -2043,15 +2043,15 @@ final class AppModel {
         do {
             let account = try PerplexityAccountStore.shared.activeAccount()
             let selection = PerplexityModelSelection(modelId: payload.model)
-            let answer = try await PerplexityFakefsInstaller.shared.ask(prompt, account: account, selection: selection)
-            let assistantItem = HydratedConversationItem(
+            
+            var initialItem = HydratedConversationItem(
                 id: "perplexity-assistant-\(turnId)",
                 content: .assistant(
                     HydratedAssistantMessageData(
-                        text: answer,
+                        text: "...",
                         agentNickname: "Perplexity",
                         agentRole: "Search",
-                        phase: nil
+                        phase: "Searching..."
                     )
                 ),
                 sourceTurnId: turnId,
@@ -2059,7 +2059,32 @@ final class AppModel {
                 timestamp: Date().timeIntervalSince1970,
                 isFromUserTurnBoundary: false
             )
-            _ = applyThreadItemUpsert(key: key, item: assistantItem)
+            _ = applyThreadItemUpsert(key: key, item: initialItem)
+            
+            let answer = try await PerplexityFakefsInstaller.shared.ask(prompt, account: account, selection: selection) { chunk in
+                var updatedItem = initialItem
+                updatedItem.content = .assistant(
+                    HydratedAssistantMessageData(
+                        text: chunk,
+                        agentNickname: "Perplexity",
+                        agentRole: "Search",
+                        phase: nil
+                    )
+                )
+                initialItem = updatedItem
+                _ = self.applyThreadItemUpsert(key: key, item: updatedItem)
+            }
+            
+            var finalItem = initialItem
+            finalItem.content = .assistant(
+                HydratedAssistantMessageData(
+                    text: answer,
+                    agentNickname: "Perplexity",
+                    agentRole: "Search",
+                    phase: nil
+                )
+            )
+            _ = applyThreadItemUpsert(key: key, item: finalItem)
             lastError = nil
         } catch {
             let errorItem = HydratedConversationItem(

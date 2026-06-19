@@ -60,6 +60,17 @@ class FileUploadError(PerplexityError):
     pass
 
 
+class EmailnatorError(PerplexityError):
+    """Raised when Emailnator service fails."""
+
+    pass
+
+
+class AccountCreationError(PerplexityError):
+    """Raised when account creation fails."""
+
+    pass
+
 
 class ParsingError(PerplexityError):
     """Raised when response parsing fails."""

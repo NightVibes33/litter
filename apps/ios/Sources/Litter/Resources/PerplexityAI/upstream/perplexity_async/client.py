@@ -14,6 +14,7 @@ from perplexity.config import (
     ENDPOINT_SSE_ASK,
     ENDPOINT_UPLOAD_URL,
 )
+from .emailnator import Emailnator
 
 
 class AsyncMixin:
@@ -55,6 +56,52 @@ class Client(AsyncMixin):
         )
         self.timestamp = format(random.getrandbits(32), "08x")
         await self.session.get(ENDPOINT_AUTH_SESSION)
+
+    async def create_account(self, cookies):
+        """
+        Function to create a new account
+        """
+        while True:
+            try:
+                emailnator_cli = await Emailnator(cookies)
+
+                resp = await self.session.post(
+                    ENDPOINT_AUTH_SIGNIN,
+                    data={
+                        "email": emailnator_cli.email,
+                        "csrfToken": self.session.cookies.get_dict()["next-auth.csrf-token"].split(
+                            "%"
+                        )[0],
+                        "callbackUrl": "https://www.perplexity.ai/",
+                        "json": "true",
+                    },
+                )
+
+                if resp.ok:
+                    new_msgs = await emailnator_cli.reload(
+                        wait_for=lambda x: x["subject"] == "Sign in to Perplexity",
+                        timeout=20,
+                    )
+
+                    if new_msgs:
+                        break
+                else:
+                    print("Perplexity account creating error:", resp)
+
+            except Exception:
+                pass
+
+        msg = emailnator_cli.get(func=lambda x: x["subject"] == "Sign in to Perplexity")
+        new_account_link = self.signin_regex.search(
+            await emailnator_cli.open(msg["messageID"])
+        ).group(1)
+
+        await self.session.get(new_account_link)
+
+        self.copilot = 5
+        self.file_upload = 10
+
+        return True
 
     async def search(
         self,
