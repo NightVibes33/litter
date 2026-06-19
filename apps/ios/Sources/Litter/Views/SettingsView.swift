@@ -1602,6 +1602,7 @@ private struct SettingsConnectionAccountSection: View {
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.danger)
                 .disabled(isAuthWorking || selectedPerplexityAccountID.isEmpty)
+                .buttonStyle(.borderless)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
 
@@ -1700,6 +1701,7 @@ private struct SettingsConnectionAccountSection: View {
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.accent)
                     .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty || isAuthWorking)
+                    .buttonStyle(.borderless)
                 }
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
@@ -1733,6 +1735,7 @@ private struct SettingsConnectionAccountSection: View {
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.accent)
                         .disabled(openAIBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isAuthWorking)
+                        .buttonStyle(.borderless)
                     }
                     if hasStoredBaseURL {
                         Button("Clear Base URL") {
@@ -1745,6 +1748,7 @@ private struct SettingsConnectionAccountSection: View {
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.danger)
                         .disabled(isAuthWorking)
+                        .buttonStyle(.borderless)
                     }
                 }
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
