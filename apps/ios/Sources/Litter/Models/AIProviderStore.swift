@@ -100,15 +100,16 @@ final class AIProviderStore: ObservableObject {
 
     private func ensurePerplexityProxyProvider() {
         guard !AppDistributionCapabilities.isAppStoreSafe else { return }
-        let id = "local-perplexity-proxy"
-        if !providers.contains(where: { $0.id == id }) {
+        if !providers.contains(where: { $0.displayName == "Perplexity Tools Proxy" }) {
             let proxy = AIProviderProfile(
-                id: id,
+                id: UUID(),
                 kind: .openAICompatible,
-                name: "Perplexity Tools Proxy",
+                displayName: "Perplexity Tools Proxy",
                 baseURL: "http://127.0.0.1:8001/v1",
                 defaultModel: "reasoning",
                 isEnabled: true,
+                capabilities: .openAICompatible,
+                createdAt: Date(),
                 updatedAt: Date()
             )
             providers.append(proxy)
