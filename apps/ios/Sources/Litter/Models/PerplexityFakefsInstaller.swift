@@ -7,19 +7,15 @@ struct PerplexityModelSelection: Equatable, Sendable {
     static let defaultId = "perplexity:auto"
     static let `default` = PerplexityModelSelection(mode: "auto", model: nil)
     static let availableModelNames = [
-        "auto",
-        "pro",
-        "sonar",
-        "gpt-5.2",
-        "claude-4.5-sonnet",
-        "grok-4-1",
-        "reasoning",
-        "gpt-5.2-thinking",
-        "claude-4.5-sonnet-thinking",
-        "gemini-3.0-pro",
-        "kimi-k2-thinking",
-        "grok-4.1-reasoning",
-        "deep research"
+        "Best",
+        "Sonar 2",
+        "GPT-5.4",
+        "GPT-5.5 (Max sub)",
+        "Gemini 3.1 Pro",
+        "Claude Sonnet 4.6",
+        "Claude Opus 4.8",
+        "Kimi K2.6 New (Max sub)",
+        "Nemotron 3 Ultra (New)"
     ]
 
     init(mode: String, model: String?) {

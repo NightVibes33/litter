@@ -137,30 +137,7 @@ class Client:
             "reasoning",
             "deep research",
         ], "Invalid search mode."
-        assert (
-            model
-            in {
-                "auto": [None],
-                "pro": [
-                    None,
-                    "sonar",
-                    "gpt-5.2",
-                    "claude-4.5-sonnet",
-                    "grok-4.1",
-                ],
-                "reasoning": [
-                    None,
-                    "gpt-5.2-thinking",
-                    "claude-4.5-sonnet-thinking",
-                    "gemini-3.0-pro",
-                    "kimi-k2-thinking",
-                    "grok-4.1-reasoning",
-                ],
-                "deep research": [None],
-            }[mode]
-            if self.own
-            else True
-        ), "Invalid model for the selected mode."
+        # We bypass strict model checking because new models are added dynamically.
         assert all(
             [source in ("web", "scholar", "social") for source in sources]
         ), "Invalid sources."
@@ -234,25 +211,27 @@ class Client:
                 "language": language,
                 "last_backend_uuid": (follow_up["backend_uuid"] if follow_up else None),
                 "mode": "concise" if mode == "auto" else "copilot",
-                "model_preference": {
-                    "auto": {None: "turbo"},
-                    "pro": {
-                        None: "pplx_pro",
-                        "sonar": "experimental",
-                        "gpt-5.2": "gpt52",
-                        "claude-4.5-sonnet": "claude45sonnet",
-                        "grok-4.1": "grok41nonreasoning",
-                    },
-                    "reasoning": {
-                        None: "pplx_reasoning",
-                        "gpt-5.2-thinking": "gpt52_thinking",
-                        "claude-4.5-sonnet-thinking": "claude45sonnetthinking",
-                        "gemini-3.0-pro": "gemini30pro",
-                        "kimi-k2-thinking": "kimik2thinking",
-                        "grok-4.1-reasoning": "grok41reasoning",
-                    },
-                    "deep research": {None: "pplx_alpha"},
-                }[mode][model],
+                "model_preference": (lambda m, md: (
+                    "turbo" if not m and md == "auto" else
+                    "pplx_alpha" if not m and md == "deep research" else
+                    "pplx_reasoning" if not m and md == "reasoning" else
+                    "pplx_pro" if not m else
+                    "experimental" if "sonar 2" in m.lower() else
+                    "gpt54" if "gpt-5.4" in m.lower() else
+                    "gpt55max" if "gpt-5.5" in m.lower() else
+                    "gemini31pro" if "gemini 3.1" in m.lower() else
+                    "claude46sonnet" if "sonnet 4.6" in m.lower() else
+                    "claude48opus" if "opus 4.8" in m.lower() else
+                    "kimik26max" if "kimi k2.6" in m.lower() else
+                    "nemotron3ultra" if "nemotron 3" in m.lower() else
+                    "turbo" if "best" in m.lower() else
+                    {
+                        "sonar": "experimental", "gpt-5.2": "gpt52", "claude-4.5-sonnet": "claude45sonnet",
+                        "grok-4.1": "grok41nonreasoning", "gpt-5.2-thinking": "gpt52_thinking",
+                        "claude-4.5-sonnet-thinking": "claude45sonnetthinking", "gemini-3.0-pro": "gemini30pro",
+                        "kimi-k2-thinking": "kimik2thinking", "grok-4.1-reasoning": "grok41reasoning"
+                    }.get(m, m.replace(" ", "").replace(".", "").replace("-", "").lower())
+                ))(model, mode),
                 "source": "default",
                 "sources": sources,
                 "version": "2.18",
