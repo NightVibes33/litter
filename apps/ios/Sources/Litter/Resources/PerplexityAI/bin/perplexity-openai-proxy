@@ -31,7 +31,9 @@ class OpenAIProxyHandler(BaseHTTPRequestHandler):
                 "data": [
                     {"id": "reasoning", "object": "model", "created": 1700000000, "owned_by": "perplexity"},
                     {"id": "pro", "object": "model", "created": 1700000000, "owned_by": "perplexity"},
-                    {"id": "auto", "object": "model", "created": 1700000000, "owned_by": "perplexity"}
+                    {"id": "auto", "object": "model", "created": 1700000000, "owned_by": "perplexity"},
+                    {"id": "sonar", "object": "model", "created": 1700000000, "owned_by": "perplexity"},
+                    {"id": "gpt-5.2", "object": "model", "created": 1700000000, "owned_by": "perplexity"}
                 ]
             }).encode("utf-8"))
         else:
