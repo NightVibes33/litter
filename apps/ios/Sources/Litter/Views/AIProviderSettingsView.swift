@@ -115,11 +115,13 @@ struct AIProviderSettingsView: View {
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 
-            Toggle("Run Local Tools Proxy (Port 8001)", isOn: $perplexityInstaller.isProxyRunning)
-                .onChange(of: perplexityInstaller.isProxyRunning, perform: handleProxyToggle)
-                .onAppear {
-                    Task { await perplexityInstaller.checkProxyStatus() }
-                }
+            Toggle("Run Local Tools Proxy (Port 8001)", isOn: Binding(
+                get: { perplexityInstaller.isProxyRunning },
+                set: { newValue in Task { await handleProxyToggle(isOn: newValue) } }
+            ))
+            .onAppear {
+                Task { await perplexityInstaller.checkProxyStatus() }
+            }
         } header: {
             Text("Sideload Perplexity")
                 .foregroundColor(LitterTheme.textSecondary)

@@ -2051,7 +2051,7 @@ final class AppModel {
                         text: "...",
                         agentNickname: "Perplexity",
                         agentRole: "Search",
-                        phase: "Searching..."
+                        phase: .commentary
                     )
                 ),
                 sourceTurnId: turnId,
@@ -2076,7 +2076,7 @@ final class AppModel {
             }
             
             var finalItem = initialItem
-            finalItem.content = .assistant(
+            finalItem.content = HydratedConversationItemContent.assistant(
                 HydratedAssistantMessageData(
                     text: answer,
                     agentNickname: "Perplexity",
