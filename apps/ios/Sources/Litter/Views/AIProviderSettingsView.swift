@@ -1,5 +1,6 @@
 import SwiftUI
 
+// Build trigger: compiler fixes verified
 struct AIProviderSettingsView: View {
     @StateObject private var providerStore = AIProviderStore.shared
     @StateObject private var perplexityInstaller = PerplexityFakefsInstaller.shared
