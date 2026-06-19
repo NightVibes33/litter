@@ -97,6 +97,9 @@ final class AIProviderStore: ObservableObject {
         // "Perplexity Tools Proxy" entry is no longer needed and was the source
         // of the invalid gpt-5.2-thinking model string in the 400 error.
         purgeLegacyPerplexityProxyProvider()
+        // Sanitize any persisted .perplexity providers that still carry an OpenAI
+        // model ID (e.g. "perplexity:reasoning:gpt-5.2-thinking") from old builds.
+        sanitizePerplexityModelStrings()
         sanitizeGlobalSettings()
         purgeLegacyOnDeviceAIState()
         try? persistProviders()
@@ -111,6 +114,34 @@ final class AIProviderStore: ObservableObject {
         providers.removeAll { $0.displayName == "Perplexity Tools Proxy" }
         if providers.count != before {
             LLog.info("ai-provider-store", "purged legacy Perplexity Tools Proxy entries")
+        }
+    }
+
+    /// Reset any .perplexity provider whose defaultModel looks like an OpenAI
+    /// model ID back to "reasoning" — the correct local alley-cat model name.
+    /// This fixes the HTTP 400 caused by "perplexity:reasoning:gpt-5.2-thinking"
+    /// being sent to the Codex endpoint on ChatGPT-account users.
+    private func sanitizePerplexityModelStrings() {
+        // OpenAI model IDs contain "gpt", "o1", "o3", "o4", "codex", or the
+        // provider-prefixed "perplexity:" namespace.  None of these are valid
+        // for the local alley-cat runtime.
+        let badPrefixes = ["gpt-", "o1-", "o3-", "o4-", "codex", "perplexity:"]
+        var changed = false
+        for index in providers.indices where providers[index].kind == .perplexity {
+            let model = providers[index].defaultModel
+            let isOpenAIModel = badPrefixes.contains { model.hasPrefix($0) }
+            if isOpenAIModel || model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                LLog.info(
+                    "ai-provider-store",
+                    "reset bad Perplexity model '\(model)' → 'reasoning'"
+                )
+                providers[index].defaultModel = "reasoning"
+                providers[index].updatedAt = Date()
+                changed = true
+            }
+        }
+        if changed {
+            try? persistProviders()
         }
     }
 
