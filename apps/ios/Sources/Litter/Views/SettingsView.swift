@@ -1546,6 +1546,15 @@ private struct SettingsConnectionAccountSection: View {
                         }
                         .disabled(isAuthWorking)
                         .buttonStyle(.borderless)
+                        .sheet(isPresented: $isShowingPerplexityLogin) {
+                            PerplexityLoginSheet { cookiesJSON in
+                                taskBag.run {
+                                    isAuthWorking = true
+                                    defer { isAuthWorking = false }
+                                    await saveCapturedPerplexitySession(cookiesJSON: cookiesJSON)
+                                }
+                            }
+                        }
                     }
                 }
                 .foregroundColor(LitterTheme.accent)
@@ -1767,15 +1776,6 @@ private struct SettingsConnectionAccountSection: View {
         .task(id: server.serverId) {
             refreshStoredCredentialFlags()
             await refreshAuthStatusIfNeeded()
-        }
-        .sheet(isPresented: $isShowingPerplexityLogin) {
-            PerplexityLoginSheet { cookiesJSON in
-                taskBag.run {
-                    isAuthWorking = true
-                    defer { isAuthWorking = false }
-                    await saveCapturedPerplexitySession(cookiesJSON: cookiesJSON)
-                }
-            }
         }
         .onDisappear { taskBag.cancelAll() }
     }
