@@ -1535,6 +1535,7 @@ private struct SettingsConnectionAccountSection: View {
                             .litterFont(.subheadline)
                     }
                     .disabled(isAuthWorking)
+                    .buttonStyle(.borderless)
 
                     if !AppDistributionCapabilities.isAppStoreSafe {
                         Button {
@@ -1544,6 +1545,7 @@ private struct SettingsConnectionAccountSection: View {
                                 .litterFont(.subheadline)
                         }
                         .disabled(isAuthWorking)
+                        .buttonStyle(.borderless)
                     }
                 }
                 .foregroundColor(LitterTheme.accent)
@@ -1650,6 +1652,7 @@ private struct SettingsConnectionAccountSection: View {
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.accent)
                     .disabled(isAuthWorking || storedChatGPTAccounts.count < 2)
+                    .buttonStyle(.borderless)
                     Button("Remove Selected ChatGPT Account") {
                         taskBag.run {
                             isAuthWorking = true
@@ -1660,6 +1663,7 @@ private struct SettingsConnectionAccountSection: View {
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.danger)
                     .disabled(isAuthWorking || selectedChatGPTAccountID.isEmpty)
+                    .buttonStyle(.borderless)
                 }
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
