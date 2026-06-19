@@ -131,7 +131,12 @@ struct AIProviderSettingsView: View {
     private func handleProxyToggle(isOn: Bool) {
         Task {
             if isOn {
-                let account = try? PerplexityAccountStore.shared.activeAccount()
+                var account: PerplexityAccount? = nil
+                do {
+                    account = try PerplexityAccountStore.shared.activeAccount()
+                } catch {
+                    print("Failed to get active account: \(error)")
+                }
                 await perplexityInstaller.startOpenAIProxy(account: account)
             } else {
                 await perplexityInstaller.stopOpenAIProxy()
