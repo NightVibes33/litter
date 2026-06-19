@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+import json
+import os
+import re
+import sys
+import uuid
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../upstream')))
+from perplexity import Client
+
+cookies_file = os.environ.get("PERPLEXITY_COOKIES_FILE", "/root/.config/alley-cat/perplexity-cookies.json")
+try:
+    with open(cookies_file, "r") as f:
+        cookies = json.load(f)
+except Exception:
+    cookies = {}
+
+client = Client(cookies)
+
+class OpenAIProxyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/v1/models":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "object": "list",
+                "data": [
+                    {"id": "reasoning", "object": "model", "created": 1700000000, "owned_by": "perplexity"},
+                    {"id": "pro", "object": "model", "created": 1700000000, "owned_by": "perplexity"},
+                    {"id": "auto", "object": "model", "created": 1700000000, "owned_by": "perplexity"}
+                ]
+            }).encode("utf-8"))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        if self.path == "/v1/chat/completions":
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length).decode("utf-8")
+            data = json.loads(body)
+
+            messages = data.get("messages", [])
+            tools = data.get("tools", [])
+            model = data.get("model", "reasoning")
+
+            prompt_lines = []
+            
+            if tools:
+                prompt_lines.append("You are an AI assistant. You have access to the following tools:")
+                prompt_lines.append(json.dumps(tools, indent=2))
+                prompt_lines.append("To call a tool, respond with EXACTLY this XML format:")
+                prompt_lines.append("<tool_call>{\"name\": \"tool_name\", \"arguments\": {\"arg\": \"val\"}}</tool_call>")
+                prompt_lines.append("DO NOT wrap the tool call in markdown code blocks. Just output the raw XML.")
+
+            prompt_lines.append("Conversation History:")
+            for m in messages:
+                role = m.get("role", "")
+                content = m.get("content", "")
+                
+                if role == "assistant" and "tool_calls" in m:
+                    for tc in m["tool_calls"]:
+                        content += f"\nCalled tool: {tc['function']['name']} with args {tc['function']['arguments']}"
+                        
+                if role == "tool":
+                    prompt_lines.append(f"Tool Result: {content}")
+                else:
+                    prompt_lines.append(f"{role.capitalize()}: {content}")
+                    
+            prompt_lines.append("Assistant:")
+            
+            full_prompt = "\n".join(prompt_lines)
+
+            try:
+                response = client.search(full_prompt, mode=model)
+                answer = response.get("answer", "")
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode("utf-8"))
+                return
+
+            tool_calls = []
+            tool_call_match = re.search(r"<tool_call>(.*?)</tool_call>", answer, re.DOTALL)
+            if tool_call_match:
+                try:
+                    tool_json = json.loads(tool_call_match.group(1).strip())
+                    tool_calls.append({
+                        "id": "call_" + str(uuid.uuid4())[:8],
+                        "type": "function",
+                        "function": {
+                            "name": tool_json.get("name", ""),
+                            "arguments": json.dumps(tool_json.get("arguments", {}))
+                        }
+                    })
+                    answer = answer.replace(tool_call_match.group(0), "").strip()
+                except Exception as e:
+                    pass
+
+            message = {
+                "role": "assistant",
+                "content": answer
+            }
+            if tool_calls:
+                message["tool_calls"] = tool_calls
+
+            result = {
+                "id": "chatcmpl-" + str(uuid.uuid4()),
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "message": message,
+                    "finish_reason": "tool_calls" if tool_calls else "stop"
+                }]
+            }
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(result).encode("utf-8"))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PROXY_PORT", 8001))
+    server = HTTPServer(("127.0.0.1", port), OpenAIProxyHandler)
+    print(f"Starting proxy on port {port}")
+    server.serve_forever()

@@ -48,6 +48,7 @@ final class PerplexityFakefsInstaller: ObservableObject {
 
     @Published private(set) var isInstalling = false
     @Published private(set) var lastStatus = "Not installed"
+    @Published private(set) var isProxyRunning = false
 
     private let installRoot = "/root/alley-cat/perplexity-ai"
     private let binRoot = "/usr/local/bin"
@@ -257,13 +258,15 @@ final class PerplexityFakefsInstaller: ObservableObject {
         try await IshFS.createDirectoryIfNeeded(path: binRoot)
         let chat = "\(installRoot)/bin/perplexity-chat"
         let mcp = "\(installRoot)/bin/perplexity-mcp"
+        let proxy = "\(installRoot)/bin/perplexity-openai-proxy"
         let setup = "\(installRoot)/bin/perplexity-setup"
         try await IshFS.writeTextFile(path: setup, text: Self.setupScript)
-        _ = await IshFS.run("chmod +x \(IshFS.shellQuote(chat)) \(IshFS.shellQuote(mcp)) \(IshFS.shellQuote(setup))")
+        _ = await IshFS.run("chmod +x \(IshFS.shellQuote(chat)) \(IshFS.shellQuote(mcp)) \(IshFS.shellQuote(proxy)) \(IshFS.shellQuote(setup))")
         try await IshFS.writeTextFile(path: "\(binRoot)/perplexity-chat", text: shim(target: chat))
         try await IshFS.writeTextFile(path: "\(binRoot)/perplexity-mcp", text: shim(target: mcp))
+        try await IshFS.writeTextFile(path: "\(binRoot)/perplexity-openai-proxy", text: shim(target: proxy))
         try await IshFS.writeTextFile(path: "\(binRoot)/perplexity-setup", text: shim(target: setup))
-        _ = await IshFS.run("chmod +x /usr/local/bin/perplexity-chat /usr/local/bin/perplexity-mcp /usr/local/bin/perplexity-setup")
+        _ = await IshFS.run("chmod +x /usr/local/bin/perplexity-chat /usr/local/bin/perplexity-mcp /usr/local/bin/perplexity-openai-proxy /usr/local/bin/perplexity-setup")
     }
 
     private func shim(target: String) -> String {
@@ -288,4 +291,29 @@ final class PerplexityFakefsInstaller: ObservableObject {
     fi
     echo "Perplexity fakefs dependencies are ready."
     """
+
+    func startOpenAIProxy(account: PerplexityAccount?) async {
+        let cookiesPath = "/root/.config/alley-cat/perplexity-cookies.json"
+        if let account {
+            try? await IshFS.createDirectoryIfNeeded(path: "/root/.config/alley-cat")
+            try? await IshFS.writeTextFile(path: cookiesPath, text: account.cookiesJSON + "\n")
+        }
+        let script = """
+        export PERPLEXITY_COOKIES_FILE=\(IshFS.shellQuote(cookiesPath))
+        export PROXY_PORT=8001
+        nohup /usr/local/bin/perplexity-openai-proxy >/tmp/perplexity-proxy.log 2>&1 &
+        """
+        _ = await IshFS.run(script)
+        isProxyRunning = true
+    }
+
+    func stopOpenAIProxy() async {
+        _ = await IshFS.run("pkill -f perplexity-openai-proxy")
+        isProxyRunning = false
+    }
+
+    func checkProxyStatus() async {
+        let res = await IshFS.run("pgrep -f perplexity-openai-proxy")
+        isProxyRunning = (res.exitCode == 0)
+    }
 }

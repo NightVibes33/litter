@@ -91,10 +91,29 @@ final class AIProviderStore: ObservableObject {
         globalModelSettings = decode(GlobalModelSettings.self, key: globalModelSettingsKey) ?? .defaults
         ensureDefaultOpenAIProvider()
         ensureDefaultPerplexityProviderIfNeeded()
+        ensurePerplexityProxyProvider()
         sanitizeGlobalSettings()
         purgeLegacyOnDeviceAIState()
         try? persistProviders()
         try? persistGlobalModelSettings()
+    }
+
+    private func ensurePerplexityProxyProvider() {
+        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
+        let id = "local-perplexity-proxy"
+        if !providers.contains(where: { $0.id == id }) {
+            let proxy = AIProviderProfile(
+                id: id,
+                kind: .openAICompatible,
+                name: "Perplexity Tools Proxy",
+                baseURL: "http://127.0.0.1:8001/v1",
+                defaultModel: "reasoning",
+                isEnabled: true,
+                updatedAt: Date()
+            )
+            providers.append(proxy)
+            try? persistProviders()
+        }
     }
 
     private func ensureDefaultOpenAIProvider() {
