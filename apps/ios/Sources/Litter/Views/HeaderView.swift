@@ -901,15 +901,17 @@ struct InlineModelSelectorView: View {
                 .textCase(.uppercase)
                 .padding(.horizontal, 16)
 
-            HStack(spacing: 8) {
-                ForEach(ChatRuntimeMode.allCases) { mode in
-                    runtimeButton(mode)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ChatRuntimeMode.allCases) { mode in
+                        runtimeButton(mode)
+                    }
+                    if !AppDistributionCapabilities.isAppStoreSafe {
+                        perplexityRuntimeButton
+                    }
                 }
-                if !AppDistributionCapabilities.isAppStoreSafe {
-                    perplexityRuntimeButton
-                }
+                .padding(.horizontal, 16)
             }
-            .padding(.horizontal, 16)
         }
         .padding(.top, 10)
         .padding(.bottom, 6)
@@ -934,7 +936,7 @@ struct InlineModelSelectorView: View {
                     .lineLimit(2)
                     .foregroundStyle(selected ? LitterTheme.textOnAccent.opacity(0.82) : LitterTheme.textSecondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
             .background(selected ? LitterTheme.accent : LitterTheme.surfaceLight, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -945,6 +947,7 @@ struct InlineModelSelectorView: View {
             )
             .opacity(available ? 1 : 0.48)
         }
+        .frame(width: 112)
         .buttonStyle(.plain)
         .disabled(!available)
     }
@@ -973,7 +976,7 @@ struct InlineModelSelectorView: View {
                     .lineLimit(2)
                     .foregroundStyle(selected ? LitterTheme.textOnAccent.opacity(0.82) : LitterTheme.textSecondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 9)
             .background(selected ? LitterTheme.accent : LitterTheme.surfaceLight, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -983,6 +986,7 @@ struct InlineModelSelectorView: View {
                     .stroke(selected ? LitterTheme.accentStrong.opacity(0.7) : LitterTheme.separator.opacity(0.8), lineWidth: 1)
             )
         }
+        .frame(width: 112)
         .buttonStyle(.plain)
     }
 
