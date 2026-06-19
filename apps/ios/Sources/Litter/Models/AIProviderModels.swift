@@ -16,6 +16,9 @@ enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
     }
 
     /// Suggested model IDs shown in the model selector for each provider kind.
+    /// For providers that expose a /v1/models endpoint, return [] here and let
+    /// AIProviderStore fetch the live list at runtime — that way the UI always
+    /// reflects exactly what the running proxy serves, with no hardcoded stale list.
     var suggestedModels: [String] {
         switch self {
         case .openAI:
@@ -31,26 +34,12 @@ enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
             // Populated dynamically from the /v1/models endpoint at runtime.
             return []
         case .perplexity:
-            // Full Perplexity web API model roster (June 2026).
-            // Routed through the local alley-cat proxy at 127.0.0.1:8001.
-            // Perplexity has its own inference brain — NO ChatGPT/OpenAI dependency.
-            // Do NOT use OpenAI model IDs (e.g. gpt-5.2-thinking) with this provider.
-            return [
-                // Sonar — fast, grounded, online search
-                "sonar",
-                "sonar-pro",
-                "sonar-turbo",
-
-                // Sonar Reasoning — thinking/chain-of-thought models
-                "sonar-reasoning",
-                "sonar-reasoning-pro",
-
-                // Deep Research — long-horizon multi-step research
-                "sonar-deep-research",
-
-                // Open-source reasoning (DeepSeek R1, offline, no live search)
-                "r1-1776",
-            ]
+            // Populated dynamically from the alley-cat proxy /v1/models endpoint
+            // at runtime (127.0.0.1:8001). Perplexity runs its own custom brain —
+            // NOT ChatGPT/OpenAI. The proxy serves whatever models the local
+            // runtime supports, so hardcoding here would always be stale.
+            // supportsModelsEndpoint = true ensures AIProviderStore fetches live.
+            return []
         }
     }
 }
@@ -76,7 +65,9 @@ struct AIProviderCapabilities: Codable, Equatable {
     )
 
     // Perplexity runs via the local alley cat runtime on 127.0.0.1:8001.
-    // No external network required — the runtime is on-device / local LAN.
+    // supportsModelsEndpoint = true so AIProviderStore fetches the live
+    // model list from the proxy rather than relying on a hardcoded array.
+    // requiresNetwork = false — the runtime is on-device / local LAN.
     static let perplexity = AIProviderCapabilities(
         supportsModelsEndpoint: true,
         supportsChatCompletions: true,
@@ -133,7 +124,7 @@ struct AIProviderProfile: Codable, Identifiable, Equatable {
     // Perplexity's custom brain runs locally through the alley cat runtime.
     // The proxy at 127.0.0.1:8001 exposes an OpenAI-compatible endpoint so
     // the rest of the chat stack needs zero changes to talk to it.
-    // Default model is sonar-pro — fast, grounded, supports tool calling.
+    // Models are fetched live from /v1/models — never hardcoded.
     // NEVER route Perplexity through api.openai.com — it has its own inference stack.
     static func perplexity(defaultModel: String = "sonar-pro") -> AIProviderProfile {
         let now = Date()
