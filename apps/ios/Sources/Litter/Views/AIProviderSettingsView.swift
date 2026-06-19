@@ -115,19 +115,7 @@ struct AIProviderSettingsView: View {
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 
-            Toggle("Run Local Tools Proxy (Port 8001)", isOn: Binding(
-                get: { perplexityInstaller.isProxyRunning },
-                set: { isOn in
-                    Task {
-                        if isOn {
-                            let account = try? PerplexityAccountStore.shared.activeAccount()
-                            await perplexityInstaller.startOpenAIProxy(account: account)
-                        } else {
-                            await perplexityInstaller.stopOpenAIProxy()
-                        }
-                    }
-                }
-            ))
+            Toggle("Run Local Tools Proxy (Port 8001)", isOn: proxyBinding)
             .onAppear {
                 Task { await perplexityInstaller.checkProxyStatus() }
             }
@@ -136,7 +124,22 @@ struct AIProviderSettingsView: View {
                 .foregroundColor(LitterTheme.textSecondary)
         } footer: {
             Text("Commands after install: perplexity-setup, perplexity-chat, and perplexity-mcp. Add your own Perplexity cookies with PERPLEXITY_COOKIES or ~/.config/alley-cat/perplexity-cookies.json for account-backed modes.")
-        }
+    }
+
+    private var proxyBinding: Binding<Bool> {
+        Binding<Bool>(
+            get: { perplexityInstaller.isProxyRunning },
+            set: { isOn in
+                Task {
+                    if isOn {
+                        let account = try? PerplexityAccountStore.shared.activeAccount()
+                        await perplexityInstaller.startOpenAIProxy(account: account)
+                    } else {
+                        await perplexityInstaller.stopOpenAIProxy()
+                    }
+                }
+            }
+        )
     }
 
     private var notesSection: some View {
