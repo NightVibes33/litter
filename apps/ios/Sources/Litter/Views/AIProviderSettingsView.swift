@@ -115,10 +115,11 @@ struct AIProviderSettingsView: View {
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 
-            Toggle("Run Local Tools Proxy (Port 8001)", isOn: proxyBinding)
-            .onAppear {
-                Task { await perplexityInstaller.checkProxyStatus() }
-            }
+            Toggle("Run Local Tools Proxy (Port 8001)", isOn: $perplexityInstaller.isProxyRunning)
+                .onChange(of: perplexityInstaller.isProxyRunning, perform: handleProxyToggle)
+                .onAppear {
+                    Task { await perplexityInstaller.checkProxyStatus() }
+                }
         } header: {
             Text("Sideload Perplexity")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -127,20 +128,15 @@ struct AIProviderSettingsView: View {
         }
     }
 
-    private var proxyBinding: Binding<Bool> {
-        Binding<Bool>(
-            get: { perplexityInstaller.isProxyRunning },
-            set: { isOn in
-                Task {
-                    if isOn {
-                        let account = try? PerplexityAccountStore.shared.activeAccount()
-                        await perplexityInstaller.startOpenAIProxy(account: account)
-                    } else {
-                        await perplexityInstaller.stopOpenAIProxy()
-                    }
-                }
+    private func handleProxyToggle(isOn: Bool) {
+        Task {
+            if isOn {
+                let account = try? PerplexityAccountStore.shared.activeAccount()
+                await perplexityInstaller.startOpenAIProxy(account: account)
+            } else {
+                await perplexityInstaller.stopOpenAIProxy()
             }
-        )
+        }
     }
 
     private var notesSection: some View {
