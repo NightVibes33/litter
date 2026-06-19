@@ -6,16 +6,17 @@ struct PerplexityModelSelection: Equatable, Sendable {
 
     static let defaultId = "perplexity:auto"
     static let `default` = PerplexityModelSelection(mode: "auto", model: nil)
+
+    // Display names shown in the UI picker.
+    // Format: "<mode>" or "<mode>:<model>" using the perplexity: prefix scheme.
+    // These map directly to what perplexity-chat receives as positional args:
+    //   perplexity-chat <prompt> <mode> <model|default>
+    // Only use modes/models that Perplexity's web backend actually accepts.
     static let availableModelNames = [
-        "Best",
-        "Sonar 2",
-        "GPT-5.4",
-        "GPT-5.5 (Max sub)",
-        "Gemini 3.1 Pro",
-        "Claude Sonnet 4.6",
-        "Claude Opus 4.8",
-        "Kimi K2.6 New (Max sub)",
-        "Nemotron 3 Ultra (New)"
+        "auto",           // perplexity:auto         — Perplexity picks best model
+        "pro",            // perplexity:pro           — Pro search, deeper sources
+        "reasoning",      // perplexity:reasoning     — Sonar Reasoning (chain-of-thought)
+        "deep research",  // perplexity:deep-research — Exhaustive deep research mode
     ]
 
     init(mode: String, model: String?) {
