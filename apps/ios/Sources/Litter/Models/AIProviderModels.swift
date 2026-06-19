@@ -36,11 +36,13 @@ struct AIProviderCapabilities: Codable, Equatable {
         requiresNetwork: true
     )
 
+    // Perplexity runs via the local alley cat runtime on 127.0.0.1:8001.
+    // No external network required — the runtime is on-device / local LAN.
     static let perplexity = AIProviderCapabilities(
-        supportsModelsEndpoint: false,
-        supportsChatCompletions: false,
+        supportsModelsEndpoint: true,
+        supportsChatCompletions: true,
         supportsStreaming: true,
-        requiresNetwork: true
+        requiresNetwork: false
     )
 }
 
@@ -89,13 +91,16 @@ struct AIProviderProfile: Codable, Identifiable, Equatable {
         )
     }
 
-    static func perplexity(defaultModel: String = "auto") -> AIProviderProfile {
+    // Perplexity's custom brain runs locally through the alley cat runtime.
+    // The proxy at 127.0.0.1:8001 exposes an OpenAI-compatible endpoint so
+    // the rest of the chat stack needs zero changes to talk to it.
+    static func perplexity(defaultModel: String = "reasoning") -> AIProviderProfile {
         let now = Date()
         return AIProviderProfile(
             id: UUID(),
             kind: .perplexity,
-            displayName: "Perplexity",
-            baseURL: "fakefs:///root/alley-cat/perplexity-ai",
+            displayName: "Perplexity (Local)",
+            baseURL: "http://127.0.0.1:8001",
             defaultModel: defaultModel,
             isEnabled: true,
             capabilities: .perplexity,
@@ -161,7 +166,7 @@ enum AIModelRoutingMode: String, CaseIterable, Identifiable {
         case .automatic: return "Automatic"
         case .openAI: return "OpenAI"
         case .openAICompatible: return "Ollama / OpenAI-Compatible"
-        case .perplexity: return "Perplexity"
+        case .perplexity: return "Perplexity (Local)"
         }
     }
 }

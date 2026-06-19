@@ -66,8 +66,9 @@ final class AIProviderStore: ObservableObject {
     }
 
     func testProvider(_ provider: AIProviderProfile, apiKey: String?) async -> AIProviderHealthReport {
+        // Perplexity runs locally — test by hitting the local runtime health endpoint.
         if provider.kind == .perplexity {
-            return await PerplexityFakefsInstaller.shared.healthReport()
+            return await PerplexityLocalProvider.shared.healthReport()
         }
 
         guard let base = provider.normalizedBaseURL else {
@@ -91,29 +92,25 @@ final class AIProviderStore: ObservableObject {
         globalModelSettings = decode(GlobalModelSettings.self, key: globalModelSettingsKey) ?? .defaults
         ensureDefaultOpenAIProvider()
         ensureDefaultPerplexityProviderIfNeeded()
-        ensurePerplexityProxyProvider()
+        // NOTE: ensurePerplexityProxyProvider() removed — the .perplexity kind
+        // now points directly to 127.0.0.1:8001 so the duplicate openAICompatible
+        // "Perplexity Tools Proxy" entry is no longer needed and was the source
+        // of the invalid gpt-5.2-thinking model string in the 400 error.
+        purgeLegacyPerplexityProxyProvider()
         sanitizeGlobalSettings()
         purgeLegacyOnDeviceAIState()
         try? persistProviders()
         try? persistGlobalModelSettings()
     }
 
-    private func ensurePerplexityProxyProvider() {
-        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
-        if !providers.contains(where: { $0.displayName == "Perplexity Tools Proxy" }) {
-            let proxy = AIProviderProfile(
-                id: UUID(),
-                kind: AIProviderKind.openAICompatible,
-                displayName: "Perplexity Tools Proxy",
-                baseURL: "http://127.0.0.1:8001/v1",
-                defaultModel: "reasoning",
-                isEnabled: true,
-                capabilities: AIProviderCapabilities.openAICompatible,
-                createdAt: Foundation.Date(),
-                updatedAt: Foundation.Date()
-            )
-            providers.append(proxy)
-            try? persistProviders()
+    /// Remove any stale "Perplexity Tools Proxy" openAICompatible entries that
+    /// were injected by earlier app versions. The .perplexity kind now handles
+    /// this directly.
+    private func purgeLegacyPerplexityProxyProvider() {
+        let before = providers.count
+        providers.removeAll { $0.displayName == "Perplexity Tools Proxy" }
+        if providers.count != before {
+            LLog.info("ai-provider-store", "purged legacy Perplexity Tools Proxy entries")
         }
     }
 
