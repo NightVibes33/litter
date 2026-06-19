@@ -14,6 +14,35 @@ enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
         case .perplexity: return "Perplexity"
         }
     }
+
+    /// Suggested model IDs shown in the model selector for each provider kind.
+    var suggestedModels: [String] {
+        switch self {
+        case .openAI:
+            return [
+                "gpt-4.1",
+                "gpt-4.1-mini",
+                "gpt-4o",
+                "gpt-4o-mini",
+                "o3",
+                "o4-mini",
+            ]
+        case .openAICompatible:
+            // Populated dynamically from the /v1/models endpoint at runtime.
+            return []
+        case .perplexity:
+            // Current Perplexity sonar model lineup (June 2026).
+            // These run through the local alley-cat proxy at 127.0.0.1:8001.
+            return [
+                "sonar",
+                "sonar-pro",
+                "sonar-reasoning",
+                "sonar-reasoning-pro",
+                "sonar-deep-research",
+                "r1-1776",
+            ]
+        }
+    }
 }
 
 struct AIProviderCapabilities: Codable, Equatable {
@@ -94,7 +123,8 @@ struct AIProviderProfile: Codable, Identifiable, Equatable {
     // Perplexity's custom brain runs locally through the alley cat runtime.
     // The proxy at 127.0.0.1:8001 exposes an OpenAI-compatible endpoint so
     // the rest of the chat stack needs zero changes to talk to it.
-    static func perplexity(defaultModel: String = "reasoning") -> AIProviderProfile {
+    // Default model is sonar-pro — fast, grounded, supports tool calling.
+    static func perplexity(defaultModel: String = "sonar-pro") -> AIProviderProfile {
         let now = Date()
         return AIProviderProfile(
             id: UUID(),
