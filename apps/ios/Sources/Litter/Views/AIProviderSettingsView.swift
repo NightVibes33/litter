@@ -124,6 +124,7 @@ struct AIProviderSettingsView: View {
                 .foregroundColor(LitterTheme.textSecondary)
         } footer: {
             Text("Commands after install: perplexity-setup, perplexity-chat, and perplexity-mcp. Add your own Perplexity cookies with PERPLEXITY_COOKIES or ~/.config/alley-cat/perplexity-cookies.json for account-backed modes.")
+        }
     }
 
     private var proxyBinding: Binding<Bool> {
