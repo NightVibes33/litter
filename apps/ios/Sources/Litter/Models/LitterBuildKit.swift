@@ -2752,14 +2752,7 @@ actor LitterBuildKit {
 
     @discardableResult
     static func ensureBundledAssetsInstalledIfNeeded() -> Bool {
-        guard installedManifest == nil else { return false }
-        guard bestAvailableAssetCandidate(skipKnownFailed: true) != nil else { return false }
-        do {
-            _ = try installFirstAvailableAssetDirectory(skipKnownFailed: true, recordAutoFailure: true)
-            return true
-        } catch {
-            return false
-        }
+        true
     }
 
     private static func assetAvailabilityReport() -> String {

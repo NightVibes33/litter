@@ -1688,8 +1688,6 @@ private struct HomeNavigationView: View {
     }
 
     private func openEmexDE() {
-        _ = LitterBuildKit.ensureBundledAssetsInstalledIfNeeded()
-
         guard AppDistributionCapabilities.includesEmexDE else { return }
         appState.showModelSelector = false
         appState.showSettings = false

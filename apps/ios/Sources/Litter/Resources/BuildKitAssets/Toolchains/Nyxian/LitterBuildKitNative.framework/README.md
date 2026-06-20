@@ -1,0 +1,47 @@
+# LitterBuildKitNative
+
+`LitterBuildKitNative.framework` is the private native-driver ABI that the
+Litter app loads with `dlopen` when an on-device BuildKit asset pack is
+installed.
+
+The public source now includes a buildable wrapper implementation:
+
+- `LitterBuildKitNative.h` exposes `litter_buildkit_run_json` and
+  `litter_buildkit_free_string`.
+- `LitterBuildKitNative.mm` validates the JSON request, writes
+  `<buildDir>/request.json`, locates a Nyxian runner, executes it, captures
+  stdout/stderr, and returns JSON status/log output to Swift.
+- `tools/scripts/build-litter-buildkit-native.sh` builds the framework on
+  macOS/Xcode for private sideload asset packs.
+
+The wrapper intentionally does not embed Apple SDK files or Swift compiler
+payloads. The private asset pack must supply `CoreCompiler.framework`,
+`CoreCompilerSupportLibs`, `Toolchains/Nyxian/SwiftResourceDir`, and a
+user-owned `iPhoneOS26.4.sdk`. In-process mode passes `SwiftResourceDir` as
+Swift `-resource-dir` so stdlib modules and target runtime library paths resolve
+on device. The wrapper can run in
+`runner` mode with an executable at `Toolchains/Nyxian/bin/litter-buildkit-runner`
+or in `inprocess` mode by compiling `LitterBuildKitInProcess.mm` into the
+framework with `LITTER_BUILDKIT_NATIVE_MODE=inprocess`.
+
+Expected runner invocation:
+
+```sh
+litter-buildkit-runner <command> \
+  --request <buildDir>/request.json \
+  --cwd <fakefs-cwd> \
+  --args <original-args> \
+  --build-dir <buildDir> \
+  --buildkit-root <Documents/BuildKit> \
+  --toolchain-root <Documents/BuildKit/Toolchains/Nyxian> \
+  --sdk-root <Documents/BuildKit/SDK/iPhoneOS26.4.sdk>
+```
+
+The runner should exit with the compiler/build status code and write human
+readable diagnostics to stdout/stderr. Litter stores that output under
+`/root/builds/<job-id>/log.txt`.
+
+In-process mode receives host-staged files from the Swift bridge via `hostWorkDir`,
+`hostProjectPath`, and `hostInputPath`. Fakefs paths like `/root` are not visible
+to normal iOS file APIs, so Litter stages source files into `Documents/BuildKit/Jobs`
+before invoking the native driver.
