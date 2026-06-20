@@ -34,10 +34,10 @@ enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
             // Populated dynamically from the /v1/models endpoint at runtime.
             return []
         case .perplexity:
-            // Populated dynamically from the alley-cat proxy /v1/models endpoint
-            // at runtime (127.0.0.1:8001). Perplexity runs its own custom brain —
-            // NOT ChatGPT/OpenAI. The proxy serves whatever models the local
-            // runtime supports, so hardcoding here would always be stale.
+            // Populated dynamically from the integrated Alley Cat endpoint
+            // at runtime (127.0.0.1:8001). Perplexity uses its own model stack,
+            // not ChatGPT/OpenAI. The endpoint serves whatever models the
+            // integrated runtime supports, so hardcoding here would always be stale.
             // supportsModelsEndpoint = true ensures AIProviderStore fetches live.
             return []
         }
@@ -64,10 +64,10 @@ struct AIProviderCapabilities: Codable, Equatable {
         requiresNetwork: true
     )
 
-    // Perplexity runs via the local alley cat runtime on 127.0.0.1:8001.
+    // Perplexity uses Alley Cat's integrated runtime endpoint on 127.0.0.1:8001.
     // supportsModelsEndpoint = true so AIProviderStore fetches the live
     // model list from the proxy rather than relying on a hardcoded array.
-    // requiresNetwork = false — the runtime is on-device / local LAN.
+    // requiresNetwork = false — the integrated runtime endpoint is local to the app environment.
     static let perplexity = AIProviderCapabilities(
         supportsModelsEndpoint: true,
         supportsChatCompletions: true,
@@ -121,17 +121,16 @@ struct AIProviderProfile: Codable, Identifiable, Equatable {
         )
     }
 
-    // Perplexity's custom brain runs locally through the alley cat runtime.
-    // The proxy at 127.0.0.1:8001 exposes an OpenAI-compatible endpoint so
-    // the rest of the chat stack needs zero changes to talk to it.
-    // Models are fetched live from /v1/models — never hardcoded.
-    // NEVER route Perplexity through api.openai.com — it has its own inference stack.
+    // Perplexity uses Alley Cat's integrated runtime endpoint at 127.0.0.1:8001.
+    // That endpoint exposes an OpenAI-compatible interface so the rest of the
+    // chat stack needs zero changes to talk to it. Models are fetched live from
+    // /v1/models and should never be hardcoded or routed through api.openai.com.
     static func perplexity(defaultModel: String = "sonar-pro") -> AIProviderProfile {
         let now = Date()
         return AIProviderProfile(
             id: UUID(),
             kind: .perplexity,
-            displayName: "Perplexity (Local)",
+            displayName: "Perplexity",
             baseURL: "http://127.0.0.1:8001",
             defaultModel: defaultModel,
             isEnabled: true,
@@ -198,7 +197,7 @@ enum AIModelRoutingMode: String, CaseIterable, Identifiable {
         case .automatic: return "Automatic"
         case .openAI: return "OpenAI"
         case .openAICompatible: return "Ollama / OpenAI-Compatible"
-        case .perplexity: return "Perplexity (Local)"
+        case .perplexity: return "Perplexity"
         }
     }
 }
