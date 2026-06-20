@@ -109,7 +109,7 @@ struct AIProviderSettingsView: View {
             } label: {
                 HStack {
                     if perplexityInstaller.isInstalling { ProgressView().scaleEffect(0.8) }
-                    Text("Initializing bundled Perplexity runtime")
+                    Text("Initializing integrated Perplexity runtime")
                 }
             }
             .disabled(perplexityInstaller.isInstalling)
