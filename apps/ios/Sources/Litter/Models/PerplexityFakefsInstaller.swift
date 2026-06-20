@@ -60,7 +60,7 @@ final class PerplexityFakefsInstaller: ObservableObject {
         if packageCheck.exitCode == 0 {
             return AIProviderHealthReport(status: .healthy, models: PerplexityModelSelection.availableModelNames)
         }
-        return AIProviderHealthReport(status: .warning("Bundled Perplexity runtime is available but not initialized yet."), models: [])
+        return AIProviderHealthReport(status: .warning("Integrated Perplexity runtime is available but not initialized yet."), models: [])
     }
 
     func ask(_ prompt: String, account: PerplexityAccount?, selection: PerplexityModelSelection = .default, onUpdate: ((String) -> Void)? = nil) async throws -> String {
@@ -213,7 +213,7 @@ final class PerplexityFakefsInstaller: ObservableObject {
             try await IshFS.createDirectoryIfNeeded(path: installRoot)
             try await copyDirectory(source, toFakefsRoot: installRoot)
             try await installCommandShims()
-            lastStatus = "Bundled Perplexity runtime ready"
+            lastStatus = "Integrated Perplexity runtime ready"
         } catch {
             lastStatus = error.localizedDescription
         }
@@ -225,7 +225,7 @@ final class PerplexityFakefsInstaller: ObservableObject {
         let probe = await IshFS.run("[ -x "\(chat)" ]")
         if probe.exitCode == 0 {
             if lastStatus.isEmpty {
-                lastStatus = "Bundled Perplexity runtime ready"
+                lastStatus = "Integrated Perplexity runtime ready"
             }
             return
         }
