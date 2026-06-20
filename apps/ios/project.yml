@@ -916,22 +916,52 @@ targets:
             rmdir "$EMEXDE_FRAMEWORK/Frameworks" 2>/dev/null || true
           fi
           echo "Embedded emexDE Shared runtime resources"
-      - name: Package Private BuildKit Assets
+      - name: Package Bundled BuildKit Assets
         basedOnDependencyAnalysis: false
         script: |
           set -eu
-          ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
-          if [ ! -f "$ASSET_ROOT/manifest.json" ]; then
-            exit 0
-          fi
           RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
           DEST="$RESOURCES_DIR/LitterBuildKitAssets.zip"
-          TMP_DIR="$(mktemp -d)"
-          trap 'rm -rf "$TMP_DIR"' EXIT
-          rm -rf "$RESOURCES_DIR/BuildKitAssets" "$DEST"
-          mkdir -p "$RESOURCES_DIR"
-          cp -R -L "$ASSET_ROOT" "$TMP_DIR/BuildKitAssets"
-          (cd "$TMP_DIR" && ditto -c -k --norsrc --keepParent BuildKitAssets "$DEST")
+          ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
+          TOKEN="${GITHUB_TOKEN:-${LITTER_GITHUB_TOKEN:-}}"
+          RELEASE_URL="https://api.github.com/repos/NightVibes33/litter-buildkit-assets/releases/tags/buildkit-ios26.4-v1"
+          TMP_DIR="$SRCROOT/.buildkit-assets-tmp"
+          rm -rf "$TMP_DIR"
+          mkdir -p "$TMP_DIR" "$RESOURCES_DIR"
+          cleanup() {
+            rm -rf "$TMP_DIR"
+          }
+          trap cleanup EXIT
+
+          if [ -f "$ASSET_ROOT/manifest.json" ]; then
+            rm -rf "$RESOURCES_DIR/BuildKitAssets" "$DEST"
+            cp -R -L "$ASSET_ROOT" "$TMP_DIR/BuildKitAssets"
+            (cd "$TMP_DIR" && ditto -c -k --norsrc --keepParent BuildKitAssets "$DEST")
+            echo "Embedded BuildKit assets from vendored repo contents"
+            exit 0
+          fi
+
+          if [ -z "$TOKEN" ]; then
+            echo "warning: no GitHub token provided for private BuildKit asset release; skipping bundled BuildKit asset embedding" >&2
+            exit 0
+          fi
+
+          curl -fsSL -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" "$RELEASE_URL" -o "$TMP_DIR/release.json"
+          python3 - <<'PY2' "$TMP_DIR/release.json" "$TMP_DIR/asset_url.txt"
+import json, sys
+release_path, out_path = sys.argv[1], sys.argv[2]
+with open(release_path) as f:
+    data = json.load(f)
+assets = [a for a in data.get('assets', []) if a.get('name', '').endswith('.zip') and a.get('name', '').startswith('LitterBuildKitAssets-')]
+if not assets:
+    raise SystemExit('no BuildKit asset zip found in release')
+assets.sort(key=lambda a: a.get('size', 0), reverse=True)
+with open(out_path, 'w') as f:
+    f.write(assets[0]['url'])
+PY2
+          ASSET_API_URL="$(cat "$TMP_DIR/asset_url.txt")"
+          curl -fL -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" "$ASSET_API_URL" -o "$DEST"
+          echo "Embedded BuildKit assets from private release buildkit-ios26.4-v1"
       - name: Embed Private BuildKit Frameworks
         basedOnDependencyAnalysis: false
         script: |
