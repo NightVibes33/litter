@@ -1,63 +1,17 @@
-name: Build PerplexityAI Runtime Assets
+name: Retired PerplexityAI Asset Workflow
 
 on:
   workflow_dispatch:
-    inputs:
-      upload_workflow_artifact:
-        description: "Upload a short-retention Actions artifact for debugging"
-        required: true
-        default: true
-        type: boolean
 
 permissions:
   contents: read
 
 jobs:
-  build-perplexity-assets:
-    name: Build PerplexityAI runtime asset pack
-    runs-on: macos-15
-    timeout-minutes: 30
-    env:
-      HOMEBREW_NO_AUTO_UPDATE: "1"
-
+  retired:
+    name: Workflow retired
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Package PerplexityAI runtime assets
+      - name: Explain retirement
         run: |
-          set -euo pipefail
-          tools/scripts/package-perplexityai-assets.sh
-
-      - name: Verify asset pack
-        run: |
-          set -euo pipefail
-          tools/scripts/verify-perplexityai-assets.sh artifacts/perplexityai/LitterPerplexityAIAssets.zip
-          shasum -a 256 artifacts/perplexityai/LitterPerplexityAIAssets.zip | tee artifacts/perplexityai/LitterPerplexityAIAssets.zip.sha256
-          du -sh artifacts/perplexityai/LitterPerplexityAIAssets artifacts/perplexityai/LitterPerplexityAIAssets.zip
-
-      - name: Upload workflow artifact
-        if: inputs.upload_workflow_artifact == true
-        uses: actions/upload-artifact@v4
-        with:
-          name: LitterPerplexityAIAssets
-          path: |
-            artifacts/perplexityai/LitterPerplexityAIAssets.zip
-            artifacts/perplexityai/LitterPerplexityAIAssets.zip.sha256
-          retention-days: 1
-
-      - name: Print asset info
-        if: always()
-        run: |
-          echo "PerplexityAI asset pack built successfully."
-          echo "This workflow no longer uploads to a private release repo or rewrites repo secrets."
+          echo "The old standalone PerplexityAI asset-pack workflow has been retired."
+          echo "Alley Cat no longer uses a private Perplexity asset release path from this workflow."
