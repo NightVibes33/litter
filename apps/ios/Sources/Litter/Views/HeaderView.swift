@@ -657,7 +657,10 @@ struct InlineModelSelectorView: View {
         models
     }
 
-    private var selectedRuntimeMode: ChatRuntimeMode {
+    private var selectedRuntimeMode: ChatRuntimeMode? {
+        guard providerStore.globalModelSettings.routingMode != .perplexity else {
+            return nil
+        }
         if threadKey == nil {
             let preferred = appState.preferredChatRuntimeMode
             if let currentServer {
