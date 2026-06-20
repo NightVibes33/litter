@@ -910,6 +910,8 @@ targets:
             rmdir "$EMEXDE_FRAMEWORK/Frameworks" 2>/dev/null || true
           fi
           echo "Embedded emexDE Shared runtime resources"
+    settings:
+      base:
         INFOPLIST_KEY_UIBackgroundModes: "audio fetch remote-notification picture-in-picture"
         INFOPLIST_KEY_LitterEmbedsSideStore: "YES"
         INFOPLIST_KEY_LitterEmbedsEmexDE: "YES"
