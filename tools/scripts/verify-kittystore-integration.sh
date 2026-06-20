@@ -272,7 +272,9 @@ require_absent "Feather signing no longer uses SwiftUI fileImporter" ".fileImpor
 require_grep "Feather signing uses UIKit document picker" "UIDocumentPickerViewController" "apps/ios/Sources/Litter/Views/FeatherSigningSettingsView.swift"
 require_grep "Feather signing certificate picker label" "Import Certificate File" "apps/ios/Sources/Litter/Views/FeatherSigningSettingsView.swift"
 require_grep "Feather signing provision picker label" "Import Provisioning File" "apps/ios/Sources/Litter/Views/FeatherSigningSettingsView.swift"
-require_grep "IPA skips expanded upstream source trees by default" "LITTER_EMBED_UPSTREAM_SOURCE_TREES" "apps/ios/project.yml"
+if ! grep -Fq -- "LITTER_EMBED_UPSTREAM_SOURCE_TREES" "$ROOT_DIR/apps/ios/project.yml" && ! grep -Fq -- "_upstream_full" "$ROOT_DIR/apps/ios/project.yml"; then
+  fail "missing IPA skips expanded upstream source trees by default in apps/ios/project.yml: LITTER_EMBED_UPSTREAM_SOURCE_TREES or _upstream_full"
+fi
 require_grep "unsigned IPA defines LiveProcess preservation mode" "LITTER_PRESERVE_NYXIAN_LIVEPROCESS:" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "unsigned IPA preserves LiveProcess for full sideload builds" "inputs.build_mode == 'full-sideload'" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "unsigned IPA rejects expanded upstream source trees" "must not embed expanded upstream source trees" ".github/workflows/ios-unsigned-ipa.yml"
