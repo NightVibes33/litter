@@ -1,0 +1,348 @@
+/*
+ SPDX-License-Identifier: AGPL-3.0-or-later
+
+ Copyright (C) 2025 - 2026 emexlab
+
+ This file is part of Nyxian.
+
+ Nyxian is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ Nyxian is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Affero General Public License for more details.
+
+ You should have received a copy of the GNU Affero General Public License
+ along with Nyxian. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#import <LindChain/WindowServer/Session/NXWindowSessionApplication.h>
+#import <LindChain/ProcEnvironment/Surface/proc/proc.h>
+#import <LindChain/WindowServer/NXWindowServer.h>
+#import <LindChain/ProcEnvironment/Process/PEExtension.h>
+#import <LindChain/Utils/Swizzle.h>
+
+#if !JAILBREAK_ENV
+#import <LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.h>
+#endif /* !JAILBREAK_ENV */
+
+#import <LindChain/ProcEnvironment/Utils/klog.h>
+#import <objc/runtime.h>
+#import <os/lock.h>
+
+@implementation RBSTarget(hook)
+
++ (instancetype)hook_targetWithPid:(pid_t)pid environmentIdentifier:(NSString *)environmentIdentifier
+{
+    if([environmentIdentifier containsString:@"LiveProcess"])
+    {
+        environmentIdentifier = [NSString stringWithFormat:@"LiveProcess:%d", pid];
+    }
+    return [self hook_targetWithPid:pid environmentIdentifier:environmentIdentifier];
+}
+
+@end
+
+__attribute__((constructor))
+void UIKitFixesInit(void)
+{
+    /* FIXME: iOS 27.x keyboard is entirely broken on guest apps */
+    /* fix physical keyboard focus on iOS 17+ */
+    if(@available(iOS 17.0, *))
+    {
+        method_exchangeImplementations(class_getClassMethod(RBSTarget.class, @selector(targetWithPid:environmentIdentifier:)), class_getClassMethod(RBSTarget.class, @selector(hook_targetWithPid:environmentIdentifier:)));
+    }
+}
+
+@implementation NXWindowSessionApplication
+
+- (instancetype)initWithProcess:(PEProcess*)process;
+{
+    self = [super init];
+    _process = process;
+    return self;
+}
+
++ (void)bringSessionToFrontWithBundleIdentifier:(NSString*)bundleIdentifier
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if(UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPad) return;
+        NXWindowServer *windowServer = [NXWindowServer shared];
+        assert(windowServer != nil);
+        
+        for(NSNumber *key in windowServer.windows)
+        {
+            NXWindow *window = windowServer.windows[key];
+            
+            if(window != nil &&
+               [window.session isKindOfClass:[NXWindowSessionApplication class]] &&
+               [((NXWindowSessionApplication*)(window.session)).process.bundleIdentifier isEqualToString:bundleIdentifier])
+            {
+                [window.view.superview bringSubviewToFront:window.view];
+                [window focusWindow];
+                break;
+            }
+        }
+    });
+}
+
+- (BOOL)openWindow
+{
+    if(![super openWindow])
+    {
+        return NO;
+    }
+    
+    @try {
+        self.presenter = [self.process.scene.uiPresentationManager createPresenterWithIdentifier:self.process.scene.identifier];
+        [self.presenter modifyPresentationContext:^(UIMutableScenePresentationContext *context) {
+            context.appearanceStyle = 2;
+        }];
+    } @catch (NSException *exception) {
+#if !JAILBREAK_ENV
+        klog_log("LDEWindowSessionApplication", "presenter creation failed: %s", [exception.reason UTF8String]);
+#endif /* !JAILBREAK_ENV */
+        return NO;
+    }
+    
+    /* ready to show the presenter :3 */
+    [self.view addSubview:self.presenter.presentationView];
+    [self.windowScene _registerSettingsDiffActionArray:@[self] forKey:self.process.scene.identifier];
+    
+    return YES;
+}
+
+- (BOOL)closeWindow
+{
+    [super closeWindow];
+    
+    /* bye bye presenter */
+    [_presenter invalidate];
+    [self.windowScene _unregisterSettingsDiffActionArrayForKey:self.process.scene.identifier];
+    [_process terminate];
+    
+    return YES;
+}
+
+- (UIImage*)snapshotWindow
+{
+    if(_process == nil) return nil;
+    return _process.snapshot;
+}
+
+- (BOOL)activateWindow
+{
+    assert([NSThread isMainThread]);
+    
+    /* set presenter to foreground */
+    [self.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
+        settings.foreground = YES;
+    }];
+    
+    /* re-activate presenter */
+    [self.presenter activate];
+    
+    return YES;
+}
+
+- (BOOL)deactivateWindow
+{
+    assert([NSThread isMainThread]);
+    
+    /* set presenter to background */
+    [self.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
+        settings.foreground = NO;
+    }];
+ 
+    /* TODO: implement the jailbreak way of getting a snapshot of a iOS app */
+#if !JAILBREAK_ENV
+    [self.process sendSignal:SIGUSR1];
+#endif /* !JAILBREAK_ENV */
+    
+    /* deactivate the presenter */
+    [self.presenter deactivate];
+    
+    return YES;
+}
+
+- (void)windowRectChanged
+{
+    assert([NSThread isMainThread]);
+    
+    [super windowRectChanged];
+    
+    CGRect rect = self.view.frame;
+    
+    if(self.process.isSuspended)
+    {
+        return;
+    }
+    
+    /* update window dimensions */
+    [self.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
+
+        settings.deviceOrientation = UIDevice.currentDevice.orientation;
+        settings.interfaceOrientation = self.view.window.windowScene.interfaceOrientation;
+        settings.frame = UIInterfaceOrientationIsLandscape(settings.interfaceOrientation) ? CGRectMake(rect.origin.y, rect.origin.x, rect.size.height, rect.size.width) : rect;
+        
+        UIEdgeInsets insets = (self.isFullscreen) ? NXWindowServer.shared.safeAreaInsets : UIEdgeInsetsZero;
+        
+        /* looks unnatural without */
+        insets.top = 10;
+        
+        switch(settings.interfaceOrientation)
+        {
+            case UIInterfaceOrientationPortrait:
+                settings.safeAreaInsetsPortrait = insets;
+                break;
+            case UIInterfaceOrientationPortraitUpsideDown:
+                settings.safeAreaInsetsPortraitUpsideDown = insets;
+                break;
+            case UIInterfaceOrientationLandscapeLeft:
+                settings.safeAreaInsetsLandscapeLeft = insets;
+                break;
+            case UIInterfaceOrientationLandscapeRight:
+                settings.safeAreaInsetsLandscapeRight = insets;
+            case UIInterfaceOrientationUnknown:
+                break;
+        }
+    }];
+}
+
+- (void)_performActionsForUIScene:(UIScene *)scene
+              withUpdatedFBSScene:(id)fbsScene
+                     settingsDiff:(FBSSceneSettingsDiff *)diff
+                     fromSettings:(id)settings
+                transitionContext:(id)context
+              lifecycleActionType:(uint32_t)actionType
+{
+    assert([NSThread isMainThread]);
+    
+    if(!self.process.process.running || self.process.isSuspended || !diff)
+    {
+        return;
+    }
+    
+    UIMutableApplicationSceneSettings *baseSettings = [diff settingsByApplyingToMutableCopyOfSettings:settings];
+    UIApplicationSceneTransitionContext *newContext = [context copy];
+    newContext.actions = nil;
+    
+    UIMutableApplicationSceneSettings *newSettings = [self.presenter.scene.settings mutableCopy];
+    newSettings.userInterfaceStyle = baseSettings.userInterfaceStyle;
+    
+    [self.presenter.scene updateSettings:newSettings withTransitionContext:newContext completion:nil];
+    
+    [self windowRectChanged];
+}
+
+- (BOOL)shouldUpdateFocusInContext:(nonnull UIFocusUpdateContext *)context
+{
+    return YES;
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection
+{
+    assert([NSThread isMainThread]);
+    
+    [super traitCollectionDidChange:previousTraitCollection];
+    
+    if(!self.process.process.running || self.process.isSuspended)
+    {
+        return;
+    }
+    
+    if(self.traitCollection.userInterfaceStyle != previousTraitCollection.userInterfaceStyle)
+    {
+        [self.presenter.scene updateSettingsWithBlock:^(UIMutableApplicationSceneSettings *settings) {
+            settings.userInterfaceStyle = self.traitCollection.userInterfaceStyle;
+        }];
+    }
+}
+
+- (NSString*)windowName
+{
+    return self.process.displayName;
+}
+
+- (void)prepareForInject
+{
+    /* making sure LDEProcess wont close this */
+    self.process.wid = (id_t)-1;
+    self.process.session = nil;
+}
+
+- (BOOL)injectProcess:(PEProcess*)process
+{
+    assert([NSThread isMainThread]);
+    
+    /* keep reference to old presenter for animation */
+    UIView *oldPresentationView = self.presenter.presentationView;
+    _UIScenePresenter *oldPresenter = self.presenter;
+    
+    /* unregister old window */
+    [self.windowScene _unregisterSettingsDiffActionArrayForKey:self.process.scene.identifier];
+    
+    self.process = process;
+    
+    @try {
+        self.presenter = [self.process.scene.uiPresentationManager createPresenterWithIdentifier:process.scene.identifier];
+        [self.presenter modifyPresentationContext:^(UIMutableScenePresentationContext *context) {
+            context.appearanceStyle = 2;
+        }];
+    } @catch (NSException *exception) {
+#if !JAILBREAK_ENV
+        klog_log("NXWindowSessionApplication", "presenter creation failed: %s", [exception.reason UTF8String]);
+#endif /* !JAILBREAK_ENV */
+        return NO;
+    }
+    
+    /* setup new presenter view with initial alpha */
+    UIView *newPresentationView = self.presenter.presentationView;
+    newPresentationView.alpha = 0.0;
+    
+    /* add new view below old view */
+    if(oldPresentationView)
+    {
+        [self.view insertSubview:newPresentationView belowSubview:oldPresentationView];
+    }
+    else
+    {
+        [self.view addSubview:newPresentationView];
+    }
+    
+    /* register new window */
+    [self.windowScene _registerSettingsDiffActionArray:@[self] forKey:process.scene.identifier];
+    
+    [self windowRectChanged];
+    
+    /* animate transition */
+    [UIView animateWithDuration:0.3 delay:0.0 options:UIViewAnimationOptionCurveEaseInOut animations:^{
+        newPresentationView.alpha = 1.0;
+        if(oldPresentationView)
+        {
+            oldPresentationView.alpha = 0.0;
+        }
+    } completion:^(BOOL finished) {
+        /* cleanup old presenter */
+        [oldPresentationView removeFromSuperview];
+        [oldPresenter invalidate];
+    }];
+    
+    return YES;
+}
+
+- (NSString*)getWindowName
+{
+    NSString *windowName = [super getWindowName];
+    return windowName ?: self.process.displayName;
+}
+
+- (void)dealloc
+{
+    NSLog(@"deallocated %@", self);
+}
+
+@end
