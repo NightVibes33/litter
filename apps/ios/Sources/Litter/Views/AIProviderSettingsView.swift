@@ -16,6 +16,7 @@ struct AIProviderSettingsView: View {
             notesSection
         }
         .navigationTitle("AI Providers")
+        .task { await perplexityInstaller.ensureInstalled() }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -104,11 +105,11 @@ struct AIProviderSettingsView: View {
                 }
             }
             Button {
-                Task { await perplexityInstaller.install() }
+                Task { await perplexityInstaller.ensureInstalled() }
             } label: {
                 HStack {
                     if perplexityInstaller.isInstalling { ProgressView().scaleEffect(0.8) }
-                    Text(perplexityInstaller.isInstalling ? "Installing" : "Install Perplexity Runtime")
+                    Text("Initializing bundled Perplexity runtime")
                 }
             }
             .disabled(perplexityInstaller.isInstalling)
@@ -331,11 +332,7 @@ private struct AIProviderDetailView: View {
             }
             if provider.kind == .perplexity {
                 Section {
-                    Button {
-                        Task { await PerplexityFakefsInstaller.shared.install() }
-                    } label: {
-                        Text("Install Perplexity Runtime")
-                    }
+                    EmptyView()
                     Text("/root/alley-cat/perplexity-ai")
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.textSecondary)
