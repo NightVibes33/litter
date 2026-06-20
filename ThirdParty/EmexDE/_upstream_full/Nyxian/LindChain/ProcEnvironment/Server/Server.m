@@ -1,0 +1,108 @@
+/*
+ SPDX-License-Identifier: AGPL-3.0-or-later
+
+ Copyright (C) 2025 - 2026 emexlab
+
+ This file is part of Nyxian.
+
+ Nyxian is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ Nyxian is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Affero General Public License for more details.
+
+ You should have received a copy of the GNU Affero General Public License
+ along with Nyxian. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#import <LindChain/ProcEnvironment/Server/Server.h>
+#import <LindChain/ProcEnvironment/Server/ServerSession.h>
+#import <LindChain/ProcEnvironment/Surface/surface.h>
+#import <LindChain/ProcEnvironment/Surface/proc/proc.h>
+#import <os/lock.h>
+
+@implementation Server {
+    os_unfair_lock _lock;
+    NSMutableSet<xpc_endpoint_t> *_canConnectTable;
+}
+
+- (instancetype)init
+{
+    self = [super init];
+    _canConnectTable = [[NSMutableSet alloc] init];
+    _lock = OS_UNFAIR_LOCK_INIT;
+    return self;
+}
+
+- (BOOL)listener:(NSXPCListener *)listener shouldAcceptNewConnection:(NSXPCConnection *)newConnection
+{
+    if(![self endpointUnregisterAndValidate:[listener.endpoint _endpoint]])
+    {
+        return NO;
+    }
+    
+    /*
+     * setting connection to the host up.
+     *
+     * note: this is a very early API still from the
+     *       Nyxian 0.7.x days, we are heading deprecation
+     *       of this API. so please do not add new features
+     *       to this API, we are not microsoft and we will
+     *       not support 20 APIs at the same time which
+     *       do the exact same thing.
+     */
+    newConnection.exportedInterface = [NSXPCInterface interfaceWithProtocol:@protocol(ServerProtocol)];
+    ServerSession *serverSession = [[ServerSession alloc] initWithProcessidentifier:newConnection.processIdentifier];
+    newConnection.exportedObject = serverSession;
+    [newConnection resume];
+    
+    return YES;
+}
+
+- (BOOL)endpointUnregisterAndValidate:(xpc_endpoint_t)endpoint
+{
+    os_unfair_lock_lock(&_lock);
+    
+    for(xpc_endpoint_t allowedEndpoint in _canConnectTable)
+    {
+        if(xpc_equal(allowedEndpoint, endpoint))
+        {
+            [_canConnectTable removeObject:allowedEndpoint];
+            os_unfair_lock_unlock(&_lock);
+            return true;
+        }
+    }
+
+    os_unfair_lock_unlock(&_lock);
+    return false;
+}
+
+- (NSXPCListener*)getTicketListener
+{
+    NSXPCListener *listener = [NSXPCListener anonymousListener];
+    listener.delegate = self;
+    [listener resume];
+    
+    os_unfair_lock_lock(&_lock);
+    [_canConnectTable addObject:[listener.endpoint _endpoint]];
+    os_unfair_lock_unlock(&_lock);
+    
+    return listener;
+}
+
++ (NSXPCListenerEndpoint*)getTicket
+{
+    static Server *serverSingleton = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        serverSingleton = [[Server alloc] init];
+    });
+    NSXPCListener *listener = [serverSingleton getTicketListener];
+    return listener.endpoint;
+}
+
+@end
