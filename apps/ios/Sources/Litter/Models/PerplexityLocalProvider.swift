@@ -41,7 +41,7 @@ final class PerplexityLocalProvider: ObservableObject {
             return AIProviderHealthReport(status: .healthy, models: models)
         } catch {
             return AIProviderHealthReport(
-                status: .failed("Local Perplexity runtime not running on :8001 — start alley cat first"),
+                status: .failed("Integrated Perplexity runtime not running on :8001 — start Alley Cat first"),
                 models: []
             )
         }
