@@ -1002,6 +1002,8 @@ struct InlineModelSelectorView: View {
             return "No ChatGPT models on this route"
         case .computerBridge:
             return "No bridge models on this route"
+        case .none:
+            return "No runtime selected"
         }
     }
 
