@@ -66,7 +66,7 @@ struct SettingsView: View {
                     experimentalSection
                     aiProvidersSection
                     diagnosticsSection
-                    if Self.showsEmexDESettingsEntry {
+                    if developerToolsEnabled && Self.showsEmexDESettingsEntry {
                         buildKitSection
                     }
                     accountSection
