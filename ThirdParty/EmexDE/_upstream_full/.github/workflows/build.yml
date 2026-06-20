@@ -1,0 +1,125 @@
+name: Build iOS App
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and Package
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Extract version
+        run: |
+          VERSION=$(awk -F'=' '/^[[:space:]]*VERSION[[:space:]]*=/ {gsub(/[[:space:]]/,"",$2); print $2; exit}' Config.xcconfig)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Install Dependencies
+        run: |
+          set -e
+
+          # Packages we desperately need
+          brew install ldid dpkg libarchive
+
+      - name: Cache Theos
+        id: cache-theos
+        uses: actions/cache@v4
+        with:
+          path: ~/theos
+          key: theos-${{ runner.os }}-v1
+
+      - name: Install Theos
+        if: steps.cache-theos.outputs.cache-hit != 'true'
+        run: |
+          set -e
+
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+
+      - name: Setup
+        run: |
+          set -e
+
+          # Setting TheOS stuff up
+          echo "THEOS=~/theos" >> $GITHUB_ENV
+          echo "PATH=$HOME/theos/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Build Jailed
+        timeout-minutes: 1200
+        run: |
+          set -e
+
+          # Build the project (jailed)
+          CHECK_DEPS=0 make jailed
+
+      - name: Build Rootless
+        run: |
+          set -e
+
+          # Build the project (rootless)
+          CHECK_DEPS=0 make rootless
+
+      - name: Build Roothide
+        run: |
+          set -e
+
+          # Build the project (roothide)
+          CHECK_DEPS=0 make roothide
+
+      - name: Build Rootful
+        run: |
+          set -e
+
+          # Build the project (roothide)
+          CHECK_DEPS=0 make rootful
+
+      - name: Build TrollStore
+        run: |
+          set -e
+
+          # Build the project (roothide)
+          CHECK_DEPS=0 make trollstore
+
+      - name: Upload Jailed
+        uses: actions/upload-artifact@v4
+        with:
+          name: emexDE.ipa
+          path: emexDE.ipa
+
+      - name: Upload Rootless
+        uses: actions/upload-artifact@v4
+        with:
+          name: emexDE_${{ env.VERSION }}_iphoneos-arm64.deb
+          path: emexDE_${{ env.VERSION }}_iphoneos-arm64.deb
+
+      - name: Upload Roothide
+        uses: actions/upload-artifact@v4
+        with:
+          name: emexDE_${{ env.VERSION }}_iphoneos-arm64e.deb
+          path: emexDE_${{ env.VERSION }}_iphoneos-arm64e.deb
+
+      - name: Upload Rootful
+        uses: actions/upload-artifact@v4
+        with:
+          name: emexDE_${{ env.VERSION }}_iphoneos-arm.deb
+          path: emexDE_${{ env.VERSION }}_iphoneos-arm.deb
+
+      - name: Upload TrollStore
+        uses: actions/upload-artifact@v4
+        with:
+          name: emexDE.tipa
+          path: emexDE.tipa
