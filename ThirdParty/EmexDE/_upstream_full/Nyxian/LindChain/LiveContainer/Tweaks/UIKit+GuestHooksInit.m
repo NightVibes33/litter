@@ -1,0 +1,154 @@
+/*
+ SPDX-License-Identifier: AGPL-3.0-or-later
+
+ Copyright (C) 2023 - 2026 LiveContainer
+ Copyright (C) 2026 emexlab
+
+ This file is part of LiveContainer.
+
+ LiveContainer is free software: you can redistribute it and/or modify
+ it under the terms of the GNU Affero General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ LiveContainer is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ GNU Affero General Public License for more details.
+
+ You should have received a copy of the GNU Affero General Public License
+ along with Nyxian. If not, see <https://www.gnu.org/licenses/>.
+*/
+
+#import <UIKit/UIKit.h>
+#import "../LCUtils.h"
+#import "UIKitPrivate.h"
+#import "utils.h"
+#import <LocalAuthentication/LocalAuthentication.h>
+#import <LindChain/Utils/Swizzle.h>
+#import <objc/message.h>
+
+// Handler for AppDelegate
+@implementation UIApplication(LiveContainerHook)
+
+- (void)hook__connectUISceneFromFBSScene:(id)scene transitionContext:(UIApplicationSceneTransitionContext*)context
+{
+#if !TARGET_OS_MACCATALYST
+    context.payload = nil;
+    context.actions = nil;
+#endif
+    [self hook__connectUISceneFromFBSScene:scene transitionContext:context];
+}
+
++ (BOOL)_wantsApplicationBehaviorAsExtension
+{
+    // Fix LiveProcess: Make _UIApplicationWantsExtensionBehavior return NO so delegate code runs in the run loop
+    return YES;
+}
+
+- (CGRect)hook_statusBarFrame
+{
+    UIStatusBarManager* manager = [(UIWindowScene*)(UIApplication.sharedApplication.connectedScenes.anyObject) statusBarManager];
+    if(manager)
+    {
+        return manager.statusBarFrame;
+    }
+    else
+    {
+        return [self hook_statusBarFrame];
+    }
+}
+
+- (void)hook_setDelegate:(id<UIApplicationDelegate>)delegate
+{
+    if(![delegate respondsToSelector:@selector(application:configurationForConnectingSceneSession:options:)])
+    {
+        // Fix old apps black screen when UIApplicationSupportsMultipleScenes is YES
+        swizzle_objc_method(@selector(makeKeyAndVisible), [UIApplication class], @selector(hook_makeKeyAndVisible), nil);
+        swizzle_objc_method(@selector(makeKeyWindow), [UIApplication class], @selector(hook_makeKeyWindow), nil);
+        swizzle_objc_method(@selector(setHidden:), [UIApplication class], @selector(hook_setHidden:), nil);
+    }
+    [self hook_setDelegate:delegate];
+}
+
+@end
+
+@interface UIViewController ()
+
+- (UIInterfaceOrientationMask)__supportedInterfaceOrientations;
+
+@end
+
+@implementation UIViewController (LiveContainerHook)
+
+- (UIInterfaceOrientationMask)hook___supportedInterfaceOrientations
+{
+    return UIInterfaceOrientationMaskAll;
+}
+
+- (BOOL)hook_shouldAutorotateToInterfaceOrientation:(NSInteger)orientation
+{
+    return YES;
+}
+
+@end
+
+@implementation UIWindow (LiveContainerHook)
+
+- (void)hook_setAutorotates:(BOOL)autorotates forceUpdateInterfaceOrientation:(BOOL)force
+{
+    [self hook_setAutorotates:YES forceUpdateInterfaceOrientation:YES];
+}
+
+- (void)hook_makeKeyAndVisible
+{
+    [self updateWindowScene];
+    [self hook_makeKeyAndVisible];
+}
+
+- (void)hook_makeKeyWindow
+{
+    [self updateWindowScene];
+    [self hook_makeKeyWindow];
+}
+
+- (void)hook_resignKeyWindow
+{
+    [self updateWindowScene];
+    [self hook_resignKeyWindow];
+}
+
+- (void)hook_setHidden:(BOOL)hidden
+{
+    [self updateWindowScene];
+    [self hook_setHidden:hidden];
+}
+
+- (void)updateWindowScene
+{
+    for(UIWindowScene *windowScene in [PrivClass(UIApplication) sharedApplication].connectedScenes)
+    {
+        if(!self.windowScene && self.screen == windowScene.screen)
+        {
+            self.windowScene = windowScene;
+            break;
+        }
+    }
+}
+
+@end
+
+void UIKitGuestHooksInit(void)
+{
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundeclared-selector"
+        swizzle_objc_method(@selector(_connectUISceneFromFBSScene:transitionContext:), [UIApplication class], @selector(hook__connectUISceneFromFBSScene:transitionContext:), nil);
+#pragma clang diagnostic pop
+        swizzle_objc_method(@selector(__supportedInterfaceOrientations), [UIViewController class], @selector(hook___supportedInterfaceOrientations), nil);
+        swizzle_objc_method(@selector(shouldAutorotateToInterfaceOrientation:), [UIViewController class], @selector(hook_shouldAutorotateToInterfaceOrientation:), nil);
+        swizzle_objc_method(@selector(setAutorotates:forceUpdateInterfaceOrientation:), [UIWindow class], @selector(hook_setAutorotates:forceUpdateInterfaceOrientation:), nil);
+        swizzle_objc_method(@selector(setDelegate:), [UIApplication class], @selector(hook_setDelegate:), nil);
+    });
+}
