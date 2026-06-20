@@ -66,7 +66,7 @@ final class AIProviderStore: ObservableObject {
     }
 
     func testProvider(_ provider: AIProviderProfile, apiKey: String?) async -> AIProviderHealthReport {
-        // Perplexity runs locally — test by hitting the local runtime health endpoint.
+        // Perplexity uses the integrated runtime endpoint — test by hitting its local health endpoint.
         if provider.kind == .perplexity {
             return await PerplexityLocalProvider.shared.healthReport()
         }
