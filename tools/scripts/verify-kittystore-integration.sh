@@ -83,11 +83,17 @@ require_path "KittyStore Nuke compatibility glue" "apps/ios/Sources/KittyStoreEm
 require_path "KittyStore minimuxer bridge" "apps/ios/Sources/Litter/Models/KittyStoreMinimuxerBridge.swift"
 require_path "KittyStore embedded factory" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift"
 require_path "KittyStore host view" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
-require_path "emexDE source submodule" "ThirdParty/EmexDE/Source/README.md"
+if [ ! -e "$ROOT_DIR/ThirdParty/EmexDE/Source/README.md" ] && [ ! -e "$ROOT_DIR/ThirdParty/EmexDE/_upstream_full/README.md" ]; then
+  fail "missing emexDE source mirror README in ThirdParty/EmexDE/Source or ThirdParty/EmexDE/_upstream_full"
+fi
 require_path "emexDE route view" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
 require_path "emexDE runtime bridge" "apps/ios/Sources/Litter/Models/EmexDEEmbeddedBridge.swift"
-require_path "emexDE LLVM-On-iOS submodule" "ThirdParty/EmexDE/Source/LLVM-On-iOS/Scripts"
-require_path "emexDE TrollStore submodule" "ThirdParty/EmexDE/Source/TrollStore/Makefile"
+if [ ! -e "$ROOT_DIR/ThirdParty/EmexDE/Source/LLVM-On-iOS/Scripts" ] && [ ! -e "$ROOT_DIR/ThirdParty/EmexDE/_upstream_full/LLVM-On-iOS/Scripts" ]; then
+  fail "missing emexDE LLVM-On-iOS mirror in ThirdParty/EmexDE/Source or ThirdParty/EmexDE/_upstream_full"
+fi
+if [ ! -e "$ROOT_DIR/ThirdParty/EmexDE/Source/TrollStore/Makefile" ] && [ ! -e "$ROOT_DIR/ThirdParty/EmexDE/_upstream_full/TrollStore/Makefile" ]; then
+  fail "missing emexDE TrollStore mirror in ThirdParty/EmexDE/Source or ThirdParty/EmexDE/_upstream_full"
+fi
 require_path "emexDE embedded factory" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
 require_path "emexDE LiveProcess plist" "ThirdParty/EmexDE/Source/LiveProcess/Info.plist"
 if [ -e "$ROOT_DIR/apps/ios/Sources/Litter/Views/KittyStoreView.swift" ]; then
