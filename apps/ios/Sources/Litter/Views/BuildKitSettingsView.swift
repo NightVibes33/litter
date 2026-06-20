@@ -144,10 +144,10 @@ struct BuildKitSettingsView: View {
     private var privateAssetDownloadSection: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Private GitHub Release")
+                Text("Bundled BuildKit Assets")
                     .litterFont(.caption, weight: .semibold)
                     .foregroundStyle(LitterTheme.textPrimary)
-                Text("Default: configured private BuildKit assets release. The app downloads the configured ZIP, verifies SHA256, extracts it, and installs it into Documents/BuildKit.")
+                Text("Default: Alley Cat should ship bundled BuildKit assets on main. Download/import remains available only as a repair path for sideload recovery.")
                     .litterFont(.caption)
                     .foregroundStyle(LitterTheme.textSecondary)
             }
@@ -174,7 +174,7 @@ struct BuildKitSettingsView: View {
                 .autocorrectionDisabled()
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
 
-            SecureField(downloader.hasStoredToken ? "Token saved in Keychain" : "GitHub token for private repo", text: $tokenInput)
+            SecureField(downloader.hasStoredToken ? "Token saved in Keychain" : "GitHub token (optional repair path)", text: $tokenInput)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -331,7 +331,7 @@ struct BuildKitSettingsView: View {
                     .foregroundStyle(LitterTheme.warning)
                     .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
-            Text("Direct source imports live under ThirdParty/Nyxian in the repository with AGPL-3.0 attribution. Apple SDK files must come from a private user-owned BuildKitAssets bundle and are not committed to the public repo.")
+            Text("Direct source imports live under ThirdParty/Nyxian in the repository with AGPL-3.0 attribution. BuildKit assets should be bundled in main builds; user setup should only be required for Apple signing materials and install/refresh prerequisites.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))

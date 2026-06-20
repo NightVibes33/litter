@@ -304,7 +304,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
 
     var readinessTitle: String {
         if isReadyForNativeBuilds { return "On-device Swift builder ready" }
-        if privateAssetsInstalled { return "Private BuildKit assets installed" }
+        if privateAssetsInstalled { return "Bundled BuildKit assets ready" }
         if sourceImportAvailable { return "Nyxian source imported" }
         return "BuildKit source missing"
     }
@@ -320,10 +320,10 @@ struct LitterBuildKitStatus: Equatable, Sendable {
             return "Fakefs Swift and unsigned IPA commands can route to the native BuildKit driver. Running built apps through original Nyxian still needs Apple ID login, a KittyStore Anisette server, and the matching KittyStore/AltStore .p12 certificate imported. Team ID is optional at login and can be selected after authentication. Full on-device install/refresh also needs LocalDevVPN connected."
         }
         if privateAssetsInstalled {
-            return "The private asset pack is installed, but the native driver/framework is not loadable yet. Rebuild the sideload IPA with the private BuildKit framework embedded."
+            return "Bundled BuildKit assets are present, but the native driver/framework is not loadable yet. Rebuild the sideload IPA with the embedded BuildKit framework included."
         }
         if sourceImportAvailable {
-            var detail = "The focused Nyxian source import is present. Install a private LitterBuildKitAssets bundle containing CoreCompiler, Swift support libraries, and iPhoneOS SDK assets to enable real local builds."
+            var detail = "The focused Nyxian source import is present. Bundled BuildKit assets are expected to provide CoreCompiler, Swift support libraries, and iPhoneOS SDK assets for real local builds."
             if liveContainerSourceAvailable {
                 detail += " LiveContainer/ZSign source is included for signing/install research paths."
             }
@@ -332,7 +332,7 @@ struct LitterBuildKitStatus: Equatable, Sendable {
             }
             return detail
         }
-        return "ThirdParty/Nyxian is missing from this build."
+        return "Nyxian source is missing from this build."
     }
 }
 
@@ -501,7 +501,7 @@ actor LitterBuildKit {
 
     func installBundledAssetsIfAvailable() async {
         guard !Self.installedAssetsAreUsable else {
-            LLog.info("buildkit", "private BuildKit assets already installed")
+            LLog.info("buildkit", "bundled BuildKit assets already installed")
             return
         }
 
@@ -510,7 +510,7 @@ actor LitterBuildKit {
             let manifest = try Self.installFirstAvailableAssetDirectory(skipKnownFailed: true, recordAutoFailure: true)
             LLog.info(
                 "buildkit",
-                "installed private BuildKit assets",
+                "installed bundled BuildKit assets",
                 fields: [
                     "bundle": manifest.bundleIdentifier,
                     "sdk": manifest.sdkVersion,
@@ -521,7 +521,7 @@ actor LitterBuildKit {
         } catch {
             LLog.warn(
                 "buildkit",
-                "private BuildKit assets were not installed",
+                "bundled BuildKit assets were not installed",
                 fields: [
                     "error": error.localizedDescription,
                     "search": Self.assetAvailabilityReport()
