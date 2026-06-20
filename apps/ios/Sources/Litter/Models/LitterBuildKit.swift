@@ -2750,6 +2750,18 @@ actor LitterBuildKit {
         return "\(candidate.candidate.label)|\(candidate.url.path)|\(candidate.manifest.bundleIdentifier)|\(candidate.manifest.sdkVersion)|\(size)|\(modified)"
     }
 
+    @discardableResult
+    static func ensureBundledAssetsInstalledIfNeeded() -> Bool {
+        guard installedManifest == nil else { return false }
+        guard bestAvailableAssetCandidate(skipKnownFailed: true) != nil else { return false }
+        do {
+            _ = try installFirstAvailableAssetDirectory(skipKnownFailed: true, recordAutoFailure: true)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private static func assetAvailabilityReport() -> String {
         assetCandidates().map { candidate in
             guard let url = candidate.url else {

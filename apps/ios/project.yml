@@ -962,6 +962,16 @@ PY2
           ASSET_API_URL="$(cat "$TMP_DIR/asset_url.txt")"
           curl -fL -H "Authorization: Bearer $TOKEN" -H "Accept: application/octet-stream" "$ASSET_API_URL" -o "$DEST"
           echo "Embedded BuildKit assets from private release buildkit-ios26.4-v1"
+      - name: Validate Bundled BuildKit Assets
+        basedOnDependencyAnalysis: false
+        script: |
+          set -eu
+          ASSET_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets"
+          if [ -f "$ASSET_ROOT/manifest.json" ]; then
+            "$SRCROOT/Scripts/validate_buildkit_assets.sh" "$ASSET_ROOT"
+          else
+            echo "Skipping BuildKit asset validation because no local manifest is vendored"
+          fi
       - name: Embed Private BuildKit Frameworks
         basedOnDependencyAnalysis: false
         script: |
