@@ -1111,6 +1111,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "4"
         WATCHOS_DEPLOYMENT_TARGET: "11.0"
         GENERATE_INFOPLIST_FILE: NO
+# LITTER_EMBED_UPSTREAM_SOURCE_TREES: expanded upstream source trees are vendored under ThirdParty/EmexDE/_upstream_full for CI/reference; app targets build from ThirdParty/EmexDE/Source by default.
         SDKROOT: watchos
         SUPPORTS_MACCATALYST: NO
         OTHER_LDFLAGS: ""
