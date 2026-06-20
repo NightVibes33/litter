@@ -222,7 +222,7 @@ final class PerplexityFakefsInstaller: ObservableObject {
     func ensureInstalled() async {
         guard !AppDistributionCapabilities.isAppStoreSafe else { return }
         let chat = "\(installRoot)/bin/perplexity-chat"
-        let probe = await IshFS.run("[ -x "\(chat)" ]")
+        let probe = await IshFS.run("[ -x \(chat) ]")
         if probe.exitCode == 0 {
             if lastStatus.isEmpty {
                 lastStatus = "Integrated Perplexity runtime ready"
