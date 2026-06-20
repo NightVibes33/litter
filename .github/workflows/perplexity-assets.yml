@@ -3,35 +3,10 @@ name: Build PerplexityAI Runtime Assets
 on:
   workflow_dispatch:
     inputs:
-      upload_private_release:
-        description: "Upload LitterPerplexityAIAssets.zip to the private asset release"
+      upload_workflow_artifact:
+        description: "Upload a short-retention Actions artifact for debugging"
         required: true
         default: true
-        type: boolean
-      upload_workflow_artifact:
-        description: "Also upload a short-retention Actions artifact for debugging"
-        required: true
-        default: false
-        type: boolean
-      asset_owner:
-        description: "Private GitHub owner for the asset release"
-        required: true
-        default: "NightVibes33"
-        type: string
-      asset_repo:
-        description: "Private GitHub repo for the asset release"
-        required: true
-        default: "litter-perplexityai-assets"
-        type: string
-      asset_tag:
-        description: "Release tag to create/update"
-        required: true
-        default: "perplexityai-v1"
-        type: string
-      rebuild_unsigned_ipa:
-        description: "After uploading assets, update IPA asset secrets and dispatch unsigned IPA rebuild"
-        required: true
-        default: false
         type: boolean
 
 permissions:
@@ -44,13 +19,6 @@ jobs:
     timeout-minutes: 30
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
-      LITTER_PERPLEXITY_ASSET_OWNER: ${{ inputs.asset_owner }}
-      LITTER_PERPLEXITY_ASSET_REPO: ${{ inputs.asset_repo }}
-      LITTER_PERPLEXITY_ASSET_TAG: ${{ inputs.asset_tag }}
-      LITTER_PERPLEXITY_ASSET_RELEASE_NAME: Litter PerplexityAI Assets ${{ inputs.asset_tag }}
-      LITTER_PERPLEXITY_ASSET_NAME: LitterPerplexityAIAssets-${{ github.run_id }}-${{ github.run_attempt }}.zip
-      LITTER_PERPLEXITY_ASSET_PREFIX: LitterPerplexityAIAssets
-      LITTER_PERPLEXITY_ASSET_TOKEN: ${{ secrets.LITTER_PERPLEXITY_ASSET_TOKEN }}
 
     steps:
       - name: Checkout
@@ -78,7 +46,7 @@ jobs:
           shasum -a 256 artifacts/perplexityai/LitterPerplexityAIAssets.zip | tee artifacts/perplexityai/LitterPerplexityAIAssets.zip.sha256
           du -sh artifacts/perplexityai/LitterPerplexityAIAssets artifacts/perplexityai/LitterPerplexityAIAssets.zip
 
-      - name: Upload short-retention workflow artifact
+      - name: Upload workflow artifact
         if: inputs.upload_workflow_artifact == true
         uses: actions/upload-artifact@v4
         with:
@@ -88,43 +56,8 @@ jobs:
             artifacts/perplexityai/LitterPerplexityAIAssets.zip.sha256
           retention-days: 1
 
-      - name: Upload private release assets
-        if: inputs.upload_private_release == true
-        run: |
-          set -euo pipefail
-          if [ -z "${LITTER_PERPLEXITY_ASSET_TOKEN:-}" ]; then
-            echo "error: upload_private_release=true requires the LITTER_PERPLEXITY_ASSET_TOKEN secret." >&2
-            exit 1
-          fi
-          tools/scripts/upload-perplexityai-assets-release.sh | tee artifacts/perplexityai/private-release-upload.txt
-
-      - name: Link private assets to unsigned IPA workflow
-        if: inputs.upload_private_release == true && inputs.rebuild_unsigned_ipa == true
-        env:
-          GH_TOKEN: ${{ secrets.LITTER_PERPLEXITY_ASSET_TOKEN }}
-        run: |
-          set -euo pipefail
-          ASSET_URL="$(awk -F= '/LITTER_PERPLEXITY_ASSET_URL=/{print $2}' artifacts/perplexityai/private-release-upload.txt | tail -n 1)"
-          ASSET_SHA256="$(awk -F= '/LITTER_PERPLEXITY_ASSET_SHA256=/{print $2}' artifacts/perplexityai/private-release-upload.txt | tail -n 1)"
-          if [ -z "$ASSET_URL" ] || [ -z "$ASSET_SHA256" ]; then
-            echo "error: upload step did not print asset URL/SHA values" >&2
-            exit 1
-          fi
-          gh secret set LITTER_PERPLEXITY_ASSET_URL --repo "$GITHUB_REPOSITORY" --body "$ASSET_URL"
-          gh secret set LITTER_PERPLEXITY_ASSET_SHA256 --repo "$GITHUB_REPOSITORY" --body "$ASSET_SHA256"
-          DISPATCH_REF="${GITHUB_REF_NAME:-main}"
-          gh workflow run ios-unsigned-ipa.yml --repo "$GITHUB_REPOSITORY" --ref "$DISPATCH_REF"
-          echo "Linked PerplexityAI assets and dispatched unsigned IPA rebuild on $DISPATCH_REF."
-
       - name: Print asset info
         if: always()
         run: |
           echo "PerplexityAI asset pack built successfully."
-          if [ -f artifacts/perplexityai/private-release-upload.txt ]; then
-            echo "Private release upload output:"
-            cat artifacts/perplexityai/private-release-upload.txt
-          fi
-          echo "Required secrets for iOS build workflows:"
-          echo "  - LITTER_PERPLEXITY_ASSET_URL"
-          echo "  - LITTER_PERPLEXITY_ASSET_SHA256"
-          echo "  - LITTER_PERPLEXITY_ASSET_TOKEN"
+          echo "This workflow no longer uploads to a private release repo or rewrites repo secrets."
