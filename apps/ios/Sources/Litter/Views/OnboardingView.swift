@@ -530,7 +530,7 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
     var subtitle: String {
         switch self {
         case .welcome: return "A practical tour of the workspace you will use every day."
-        case .runtime: return "Use hosted AI or connect a computer for local/private models."
+        case .runtime: return "Use hosted AI or connect a computer for external models."
         case .workspace: return "The bot, file browser, and terminal share the same iSH fakefs."
         case .buildKit: return "Open the embedded iOS development app instead of the old BuildKit screen."
         case .personalize: return "Tune the interface without losing the developer workflow."
