@@ -806,6 +806,10 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           set -eu
+          if [ "${CI:-}" = "true" ] || [ "${LITTER_OMIT_UPSTREAM_SOURCES:-0}" = "1" ]; then
+            echo "Skipping UpstreamApps embedding on CI"
+            exit 0
+          fi
           RESOURCES_DIR="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
           DEST_ROOT="$RESOURCES_DIR/UpstreamApps"
           copy_upstream_source() {
