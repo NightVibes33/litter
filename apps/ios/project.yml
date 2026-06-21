@@ -595,6 +595,8 @@ targets:
           - AppIcon.icon/**
           - Generated/Minimuxer/**
           - Resources/PerplexityAI/**
+          - Resources/BuildKitAssets/**
+          - Resources/LitterBuildKitAssets.zip
           - "**/*.h"
       - path: Sources/Litter/Bridge/UniFFICodexClient.generated.swift
       - path: Sources/LitterLiveActivity/CodexTurnLiveActivity.swift
