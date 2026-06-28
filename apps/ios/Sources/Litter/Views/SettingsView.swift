@@ -52,7 +52,9 @@ struct SettingsView: View {
                     }
                     gettingStartedSection
                     proSection
-                    updatesSection
+                    if !AppDistributionCapabilities.isAppStoreSafe {
+                        updatesSection
+                    }
                     if AppDistributionCapabilities.includesKittyStore {
                         signingSection
                     }
@@ -1993,3 +1995,4 @@ private func isSettingsSlingshotURL(_ rawURL: String) -> Bool {
     }
 }
 #endif
+
