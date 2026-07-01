@@ -169,14 +169,48 @@ def set_app_store_safe_flags(text: str) -> str:
     return text
 
 
+def remove_plist_key_block(text: str, key: str) -> str:
+    pattern = re.compile(
+        rf"\t<key>{re.escape(key)}</key>\n"
+        rf"\t(?P<value><(?:array|dict)>.*?\n\t</(?:array|dict)>|<(?:true|false)/>|<string>.*?</string>)\n",
+        re.DOTALL,
+    )
+    return pattern.sub("", text)
+
+
 def strip_info_plist_app_store_sensitive_keys(text: str) -> str:
     for block in (
-        """	<key>BGTaskSchedulerPermittedIdentifiers</key>\n	<array>\n		<string>com.sigkitten.litter.turn-check</string>\n	</array>\n""",
-        """	<key>NSSupportsLiveActivities</key>\n	<true/>\n	<key>NSSupportsLiveActivitiesFrequentUpdates</key>\n	<true/>\n""",
-        """	<key>UIFileSharingEnabled</key>\n	<true/>\n	<key>LSSupportsOpeningDocumentsInPlace</key>\n	<true/>\n""",
-        """	<key>UIBackgroundModes</key>\n	<array>\n		<string>audio</string>\n		<string>fetch</string>\n		<string>remote-notification</string>\n	</array>\n""",
+        """	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.sigkitten.litter.turn-check</string>
+	</array>
+""",
+        """	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
+""",
+        """	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+""",
+        """	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
+""",
     ):
         text = text.replace(block, "")
+
+    for key in (
+        "LSApplicationQueriesSchemes",
+        "UTImportedTypeDeclarations",
+    ):
+        text = remove_plist_key_block(text, key)
+
     return text
 
 
@@ -256,7 +290,6 @@ def validate_fast_project(text: str) -> None:
         failures.append("still enables background modes on the TestFlight-safe app target")
     if '    attributes:\n      SystemCapabilities:\n        com.apple.BackgroundModes:\n          enabled: true\n' in text:
         failures.append("still enables background modes capability on the TestFlight-safe app target")
-        failures.append("still enables background modes capability on the TestFlight-safe app target")
 
     if failures:
         raise SystemExit("Fast TestFlight project patch failed:\n- " + "\n- ".join(failures))
@@ -274,6 +307,22 @@ def main() -> None:
     info_original = INFO_PLIST.read_text()
     info_patched = strip_info_plist_app_store_sensitive_keys(info_original)
 
+    info_failures = []
+    for marker in (
+        "com.sigkitten.litter.ipa",
+        "com.rsa.pkcs-12",
+        "com.apple.mobileprovision",
+        "com.apple.mobiledevicepairing",
+        "sidestore",
+        "altstore",
+        "kittystore",
+        "localdevvpn",
+    ):
+        if marker in info_patched:
+            info_failures.append(f"still has TestFlight-sensitive Info.plist marker: {marker}")
+    if info_failures:
+        raise SystemExit("Fast TestFlight Info.plist patch failed:\n- " + "\n- ".join(info_failures))
+
     if args.check:
         print("Fast TestFlight project patch is App Store safe.")
         return
@@ -285,7 +334,7 @@ def main() -> None:
     PROJECT_YML.write_text(patched)
     if info_patched != info_original:
         INFO_PLIST.write_text(info_patched)
-    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, embedded Watch app, background modes, file sharing, document-in-place support, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
+    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, embedded Watch app, background modes, file sharing, document-in-place support, IPA/signing document types, sideload URL schemes, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
 
 
 if __name__ == "__main__":
