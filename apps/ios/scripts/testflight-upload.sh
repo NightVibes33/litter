@@ -69,6 +69,7 @@ PROJECT_VERSION_BUMP_REQUIRED="${PROJECT_VERSION_BUMP_REQUIRED:-0}"
 PROJECT_VERSION_BUMP_TARGET="${PROJECT_VERSION_BUMP_TARGET:-}"
 INCLUDE_LIVEPROCESS="${INCLUDE_LIVEPROCESS:-1}"
 LITTER_TESTFLIGHT_FAST="${LITTER_TESTFLIGHT_FAST:-0}"
+REPAIR_EXPORTED_IPA_NATIVE_MODULES="${REPAIR_EXPORTED_IPA_NATIVE_MODULES:-0}"
 
 if [[ "$INCLUDE_LIVEPROCESS" != "0" && "$INCLUDE_LIVEPROCESS" != "1" ]]; then
     echo "INCLUDE_LIVEPROCESS must be 0 or 1." >&2
@@ -370,6 +371,11 @@ fi
 repair_exported_ipa_native_module_signatures() {
     local ipa_path="$1"
     local work_dir payload_app entitlements_plist signed_count hidden_count changed_count repaired_ipa sign_identity native_list
+
+    if [[ "$REPAIR_EXPORTED_IPA_NATIVE_MODULES" != "1" ]]; then
+        echo "==> Skipping exported IPA native module repair (set REPAIR_EXPORTED_IPA_NATIVE_MODULES=1 to enable)" >&2
+        return 0
+    fi
 
     echo "==> Repairing exported IPA native module packaging"
     work_dir="$(mktemp -d "${TMPDIR:-/tmp}/litter-ipa-repair.XXXXXX")"
