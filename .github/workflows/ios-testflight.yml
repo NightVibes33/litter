@@ -753,7 +753,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           LITTER_TESTFLIGHT_FAST: "1"
           INCLUDE_LIVEPROCESS: "0"
-          ALLOW_XCODE_EXPORTED_SEAL_WARNING: "1"
+          ALLOW_XCODE_EXPORTED_SEAL_WARNING: "0"
         run: |
           set -euo pipefail
           ./apps/ios/scripts/testflight-upload.sh

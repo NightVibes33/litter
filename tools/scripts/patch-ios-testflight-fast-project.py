@@ -94,10 +94,6 @@ POST_BUILD_SCRIPT_NAMES = (
 
 PROJECT_LINE_REPLACEMENTS = (
     (
-        '        PRODUCT_NAME: "Alley Cat"\n',
-        '        PRODUCT_NAME: "Alley Cãt"\n',
-    ),
-    (
         '        INFOPLIST_KEY_UIBackgroundModes: "audio fetch remote-notification picture-in-picture"\n',
         '',
     ),
@@ -272,7 +268,7 @@ def validate_fast_project(text: str) -> None:
             failures.append(f"still references App-Store-unsafe tooling: {marker}")
 
     required_markers = (
-        '        PRODUCT_NAME: "Alley Cãt"\n',
+        '        PRODUCT_NAME: "Alley Cat"\n',
         '        INFOPLIST_KEY_LitterEmbedsSideStore: "NO"\n',
         '        INFOPLIST_KEY_LitterEmbedsEmexDE: "NO"\n',
         '        OTHER_SWIFT_FLAGS: "$(inherited) -DLITTER_APP_STORE_SAFE"\n',
