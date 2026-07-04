@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>support — litter</title>
-  <meta name="description" content="Get help with Litter.">
+  <title>Alley Cãt Support</title>
+  <meta name="description" content="Official Alley Cãt support page with contact details, troubleshooting steps, privacy answers, and account deletion guidance.">
   <meta name="theme-color" content="#0C0B0A">
   <link rel="stylesheet" href="/style.css">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -14,11 +14,11 @@
   <nav>
     <div class="container">
       <a href="/" class="nav-brand">
-        <img src="/app-icon.png" alt="litter icon">
-        <span>litter</span>
+        <img src="/app-icon.png" alt="Alley Cãt icon">
+        <span>Alley Cãt</span>
       </a>
       <div class="nav-links">
-        <a href="https://github.com/dnakov/litter">github</a>
+        <a href="https://github.com/NightVibes33/litter">github</a>
         <a href="/privacy">privacy</a>
         <a href="/terms">terms</a>
         <a href="/support">support</a>
@@ -28,21 +28,139 @@
 
   <div class="container">
     <section class="support">
-      <h1>support</h1>
-      <p>need help with litter? here's how to reach us.</p>
+      <p class="support-kicker">official support</p>
+      <h1>Alley Cãt Support</h1>
+      <p class="support-intro">Help for installs, connectivity, TestFlight, local runtimes, voice sessions, and account or privacy questions. If something is broken, this is the support page App Store users should land on.</p>
 
-      <div class="support-cards">
-        <div class="support-card">
-          <h3>email</h3>
-          <p>For general questions, bug reports, or feedback, email us at <a href="mailto:support@sigkitten.com">support@sigkitten.com</a>.</p>
+      <div class="support-hero-card">
+        <div>
+          <h2>Contact support</h2>
+          <p>Email <a href="mailto:NightVibes33@proton.me">NightVibes33@proton.me</a> for bug reports, App Store support, TestFlight issues, accessibility problems, or privacy questions.</p>
         </div>
-        <div class="support-card">
-          <h3>common issues</h3>
-          <p><strong>Can't find my server?</strong> Make sure your device is on the same network as your Codex server, or configure an SSH connection for remote access.</p>
+        <div class="support-actions">
+          <a class="btn btn-primary" href="mailto:NightVibes33@proton.me?subject=Alley%20C%C3%A3t%20Support">email support</a>
+          <a class="btn btn-secondary" href="https://github.com/NightVibes33/litter/issues">view issues</a>
         </div>
-        <div class="support-card">
-          <h3>account deletion</h3>
-          <p>Litter does not create accounts or store personal data on our servers. To remove all local data, uninstall the app.</p>
+      </div>
+
+      <div class="support-grid">
+        <div class="support-panel">
+          <h3>Before you email</h3>
+          <ul>
+            <li>Include your device model, iOS version, and Alley Cãt version.</li>
+            <li>Say whether you are using TestFlight or an App Store build.</li>
+            <li>Describe the exact runtime you connected to: local, SSH, LAN discovery, or remote host.</li>
+            <li>Include the last visible error message, spinner state, or screen where the issue stops.</li>
+            <li>If the issue is reproducible, list the exact steps in order.</li>
+          </ul>
+        </div>
+
+        <div class="support-panel">
+          <h3>What support covers</h3>
+          <ul>
+            <li>App installation, launch, crashes, and upgrade problems.</li>
+            <li>Server discovery and connection failures.</li>
+            <li>SSH setup, authentication, and remote session problems.</li>
+            <li>Voice session issues, permissions, and audio routing problems.</li>
+            <li>Project browsing, file access, and session continuity issues.</li>
+            <li>TestFlight enrollment, beta feedback, and App Store review follow-up.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="support-section">
+        <h2>Quick troubleshooting</h2>
+        <div class="support-cards">
+          <div class="support-card">
+            <h3>App will not connect to a server</h3>
+            <p>Confirm the device and server are on the same network if you are using local discovery. If you are connecting remotely, verify the SSH host, port, username, and reachable network path. If the server was recently restarted, force a fresh connection instead of reusing a stale session.</p>
+          </div>
+          <div class="support-card">
+            <h3>Server does not appear in discovery</h3>
+            <p>Local discovery depends on the server advertising correctly on the same LAN. Check Wi-Fi, VPN state, subnet differences, and whether discovery traffic is being filtered by the router or the host firewall.</p>
+          </div>
+          <div class="support-card">
+            <h3>Remote runtime or model list looks wrong</h3>
+            <p>Disconnect and reconnect the runtime, then reopen the model picker. If one runtime is unhealthy, Alley Cãt may preserve cached state while retrying. Report which runtime you used and whether the problem is isolated to one backend.</p>
+          </div>
+          <div class="support-card">
+            <h3>Voice input is unavailable</h3>
+            <p>Check microphone permission in iOS Settings, confirm the active runtime supports the voice path you expect, and retry on a stable connection. If the session closes immediately, note whether the failure happens before recording, during streaming, or when audio should start playing back.</p>
+          </div>
+          <div class="support-card">
+            <h3>Project or file browser is stuck</h3>
+            <p>Refresh the current project view and retry after reconnecting the runtime. If the issue happens only on a remote runtime, include the directory you were opening and whether the runtime rejected a picker or file-list command.</p>
+          </div>
+          <div class="support-card">
+            <h3>TestFlight build will not install or launch</h3>
+            <p>Verify you are on the latest available build in TestFlight, fully remove the previous app if the device kept an invalid beta state, then reinstall. If the build launches and exits, report the build number and whether the crash happens before or after the first screen appears.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="support-section">
+        <h2>Privacy, account, and data deletion</h2>
+        <div class="support-grid">
+          <div class="support-panel">
+            <h3>No account required</h3>
+            <p>Alley Cãt does not require a hosted Alley Cãt account to use the app. It is designed to connect to runtimes and systems you control rather than route your work through a mandatory central service.</p>
+          </div>
+          <div class="support-panel">
+            <h3>Delete local data</h3>
+            <p>To remove app data stored on the device, delete the app from iPhone or iPad. This removes locally stored preferences and app documents from the device sandbox.</p>
+          </div>
+          <div class="support-panel">
+            <h3>Delete credentials</h3>
+            <p>If you configured SSH credentials, tokens, or saved connections, remove them inside the app first when possible, then delete the app if you want the remaining local state cleared.</p>
+          </div>
+          <div class="support-panel">
+            <h3>Privacy questions</h3>
+            <p>For privacy-specific questions or deletion requests tied to any support email you sent, contact <a href="mailto:NightVibes33@proton.me">NightVibes33@proton.me</a> and reference the email address you used so the thread can be located.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="support-section">
+        <h2>Compatibility and expected behavior</h2>
+        <div class="support-table">
+          <div class="support-row">
+            <div class="support-key">Supported platforms</div>
+            <div class="support-value">Alley Cãt is intended for iPhone and iPad builds distributed through TestFlight and the App Store.</div>
+          </div>
+          <div class="support-row">
+            <div class="support-key">Network behavior</div>
+            <div class="support-value">Connection quality depends on your local network, SSH path, remote host availability, and the runtime you connect to.</div>
+          </div>
+          <div class="support-row">
+            <div class="support-key">Local-first behavior</div>
+            <div class="support-value">Sessions, preferences, and connection flows are designed around device-local use and direct connections to systems you control.</div>
+          </div>
+          <div class="support-row">
+            <div class="support-key">Third-party dependencies</div>
+            <div class="support-value">Some capabilities rely on remote runtimes, SSH, local network discovery, voice infrastructure, or external host availability. A runtime outage can look like an app bug, so include the runtime details in your report.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="support-section">
+        <h2>Frequently asked questions</h2>
+        <div class="support-faq">
+          <div class="support-faq-item">
+            <h3>How fast will I get a reply?</h3>
+            <p>Support is handled by email and response time can vary. Critical install, launch, or account-access issues should include the exact subject line, version number, and reproduction steps so triage is faster.</p>
+          </div>
+          <div class="support-faq-item">
+            <h3>Where should I send bug reports?</h3>
+            <p>Email <a href="mailto:NightVibes33@proton.me">NightVibes33@proton.me</a>. If the issue is public and reproducible, you can also reference or open an issue on <a href="https://github.com/NightVibes33/litter/issues">GitHub</a>.</p>
+          </div>
+          <div class="support-faq-item">
+            <h3>What if a TestFlight build is rejected or expires?</h3>
+            <p>Install the newest available build in TestFlight. If a build expires or is pulled, wait for the replacement build and include the expired build number in any support email so the report maps to the right release cycle.</p>
+          </div>
+          <div class="support-faq-item">
+            <h3>Can you troubleshoot my runtime or server setup?</h3>
+            <p>Support can help isolate whether the issue is likely in the app, the connection path, or the target runtime. Include host type, connection method, and the exact step where the runtime stops responding.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -53,11 +171,11 @@
       <div class="footer-left">
         <div class="footer-brand">
           <img src="/app-icon.png" alt="">
-          <span>&copy; 2026 litter</span>
+          <span>&copy; 2026 Alley Cãt</span>
         </div>
       </div>
       <div class="footer-links">
-        <a href="https://github.com/dnakov/litter">github</a>
+        <a href="https://github.com/NightVibes33/litter">github</a>
         <a href="/privacy">privacy</a>
         <a href="/terms">terms</a>
         <a href="/support">support</a>
