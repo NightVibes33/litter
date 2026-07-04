@@ -4,6 +4,7 @@ import UIKit
 enum SettingsFeatureVisibility {
     static let showsTipJar = false
     static let showsPlugins = false
+    static let showsConnectors = false
 }
 
 struct SettingsView: View {
@@ -103,7 +104,11 @@ struct SettingsView: View {
                 case .signing:
                     FeatherSigningSettingsView()
                 case .connectors:
-                    ConnectorSettingsView()
+                    if SettingsFeatureVisibility.showsConnectors {
+                        ConnectorSettingsView()
+                    } else {
+                        EmptyView()
+                    }
                 case .plugins:
                     if SettingsFeatureVisibility.showsPlugins {
                         PluginSettingsView()
@@ -337,22 +342,24 @@ struct SettingsView: View {
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
 
-            NavigationLink(value: SettingsRoute.connectors) {
-                HStack(spacing: 10) {
-                    Image(systemName: "link.badge.plus")
-                        .foregroundColor(LitterTheme.accent)
-                        .frame(width: 20)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Connectors")
-                            .litterFont(.subheadline)
-                            .foregroundColor(LitterTheme.textPrimary)
-                        Text("Manage local broker and hosted relay access for bots")
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textSecondary)
+            if SettingsFeatureVisibility.showsConnectors {
+                NavigationLink(value: SettingsRoute.connectors) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "link.badge.plus")
+                            .foregroundColor(LitterTheme.accent)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Connectors")
+                                .litterFont(.subheadline)
+                                .foregroundColor(LitterTheme.textPrimary)
+                            Text("Manage local broker and hosted relay access for bots")
+                                .litterFont(.caption)
+                                .foregroundColor(LitterTheme.textSecondary)
+                        }
                     }
                 }
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
 
             if SettingsFeatureVisibility.showsPlugins {
                 NavigationLink(value: SettingsRoute.plugins) {
@@ -396,6 +403,7 @@ struct SettingsView: View {
         }
         guard let route = SettingsRoute(rawValue: raw) else { return }
         guard route.isAvailableInCurrentBuild else { return }
+        if route == .connectors && !SettingsFeatureVisibility.showsConnectors { return }
         if route == .plugins && !SettingsFeatureVisibility.showsPlugins { return }
         navigationPath = [route]
     }
@@ -996,6 +1004,8 @@ enum SettingsRoute: String, Hashable {
             return !AppDistributionCapabilities.isAppStoreSafe
         case .signing:
             return AppDistributionCapabilities.includesKittyStore
+        case .connectors:
+            return SettingsFeatureVisibility.showsConnectors
         case .buildKit:
             return AppDistributionCapabilities.includesEmexDE
         default:
