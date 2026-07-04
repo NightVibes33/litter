@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alley Cãt Support</title>
+  <meta name="description" content="Official support page for Alley Cãt with contact details, troubleshooting steps, privacy guidance, and TestFlight help.">
+  <meta name="theme-color" content="#0f0d0b">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <p class="eyebrow">Official Support</p>
+      <h1>Alley Cãt</h1>
+      <p class="lead">Support for installs, connectivity, TestFlight builds, voice sessions, runtime issues, privacy questions, and account or local-data removal.</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="mailto:NightVibes33@proton.me?subject=Alley%20C%C3%A3t%20Support">Email Support</a>
+        <a class="btn btn-secondary" href="https://github.com/NightVibes33/litter/issues">GitHub Issues</a>
+      </div>
+      <div class="hero-note">
+        <strong>Support email:</strong> <a href="mailto:NightVibes33@proton.me">NightVibes33@proton.me</a>
+      </div>
+    </section>
+
+    <section class="section grid-two">
+      <article class="card">
+        <h2>Before you contact support</h2>
+        <ul>
+          <li>Include your device model and iOS version.</li>
+          <li>Include the Alley Cãt app version and build number.</li>
+          <li>Say whether you are using TestFlight or an App Store build.</li>
+          <li>Describe how you connected: local runtime, LAN discovery, SSH, or remote host.</li>
+          <li>Include the exact error message or the screen where the app stops progressing.</li>
+          <li>List reproduction steps if the issue happens consistently.</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>What support covers</h2>
+        <ul>
+          <li>Install, launch, update, and crash problems.</li>
+          <li>Runtime discovery and connection failures.</li>
+          <li>SSH configuration and remote session setup issues.</li>
+          <li>Voice input or realtime session problems.</li>
+          <li>Project browsing, model picker, and session continuity issues.</li>
+          <li>TestFlight enrollment, beta feedback, and App Store review support.</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2>Quick troubleshooting</h2>
+      <div class="grid-two">
+        <article class="card">
+          <h3>Server not discovered</h3>
+          <p>Make sure the device and target server are on the same network if you are using local discovery. Check Wi-Fi, VPN state, subnet differences, and firewall rules that may block discovery traffic.</p>
+        </article>
+        <article class="card">
+          <h3>Remote connection fails</h3>
+          <p>Verify the SSH host, port, username, and network path. If the host was recently restarted, reconnect instead of relying on a stale session state.</p>
+        </article>
+        <article class="card">
+          <h3>Model picker looks wrong</h3>
+          <p>Disconnect and reconnect the runtime, then reopen the model picker. If the issue only affects one backend, include the runtime type and whether the list is empty, stale, or partially loaded.</p>
+        </article>
+        <article class="card">
+          <h3>Voice session closes</h3>
+          <p>Check microphone permission in iOS Settings and retry on a stable network. Note whether the failure happens before recording begins, during streaming, or after the session connects.</p>
+        </article>
+        <article class="card">
+          <h3>Project browser is stuck</h3>
+          <p>Reconnect the runtime and retry the directory or project picker. If it only happens remotely, include the folder path and whether the runtime rejected a file-list or picker command.</p>
+        </article>
+        <article class="card">
+          <h3>TestFlight build will not install</h3>
+          <p>Verify that you are on the newest available TestFlight build. If an older beta state is stuck on the device, remove the app, reinstall the latest build, and include the affected build number in your report.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section grid-two">
+      <article class="card">
+        <h2>Privacy and data deletion</h2>
+        <p>Alley Cãt is designed around direct connections to runtimes and systems you control. For local data removal, delete the app from your device. If you saved connections, credentials, or tokens inside the app, remove them there first when possible.</p>
+        <p>For privacy questions, contact <a href="mailto:NightVibes33@proton.me">NightVibes33@proton.me</a>.</p>
+      </article>
+
+      <article class="card">
+        <h2>Expected behavior</h2>
+        <p>Connection quality depends on the runtime you use, the local or remote network path, SSH availability, and host responsiveness. A runtime outage can look like an app bug, so include runtime details when reporting issues.</p>
+        <p>Supported builds are iPhone and iPad versions distributed through TestFlight and the App Store.</p>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2>Frequently asked questions</h2>
+      <div class="faq">
+        <article class="card">
+          <h3>How do I contact support?</h3>
+          <p>Email <a href="mailto:NightVibes33@proton.me">NightVibes33@proton.me</a>.</p>
+        </article>
+        <article class="card">
+          <h3>Where do I send bug reports?</h3>
+          <p>Email support for private reports, or use <a href="https://github.com/NightVibes33/litter/issues">GitHub Issues</a> for reproducible public issues.</p>
+        </article>
+        <article class="card">
+          <h3>What if a TestFlight build expires?</h3>
+          <p>Install the newest available TestFlight build and include the expired build number in your support email so the report maps to the right release cycle.</p>
+        </article>
+        <article class="card">
+          <h3>Do I need an Alley Cãt account?</h3>
+          <p>No hosted Alley Cãt account is required for basic app use.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
