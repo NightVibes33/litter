@@ -84,6 +84,10 @@ struct SettingsView: View {
                 }
             }
             .navigationDestination(for: SettingsRoute.self) { route in
+                guard route.isAvailableInCurrentBuild else {
+                    EmptyView()
+                    return
+                }
                 switch route {
                 case .terminal:
                     if proStore.hasProAccess {
@@ -391,6 +395,7 @@ struct SettingsView: View {
             return
         }
         guard let route = SettingsRoute(rawValue: raw) else { return }
+        guard route.isAvailableInCurrentBuild else { return }
         if route == .plugins && !SettingsFeatureVisibility.showsPlugins { return }
         navigationPath = [route]
     }
@@ -984,6 +989,19 @@ enum SettingsRoute: String, Hashable {
     case plugins
     case aiProviders
     case buildKit
+
+    var isAvailableInCurrentBuild: Bool {
+        switch self {
+        case .updates:
+            return !AppDistributionCapabilities.isAppStoreSafe
+        case .signing:
+            return AppDistributionCapabilities.includesKittyStore
+        case .buildKit:
+            return AppDistributionCapabilities.includesEmexDE
+        default:
+            return true
+        }
+    }
 }
 
 private struct ConversationSettingsRouteView: View {

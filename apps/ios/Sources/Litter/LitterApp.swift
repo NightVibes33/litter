@@ -1220,6 +1220,9 @@ private struct HomeNavigationView: View {
             openEmexDE()
             return
         }
+        if let settingsRoute = SettingsRoute(rawValue: route) {
+            guard settingsRoute.isAvailableInCurrentBuild else { return }
+        }
         requestedSettingsRoute = route
         appState.showSettings = true
     }
