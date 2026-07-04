@@ -6,6 +6,7 @@ use crate::next_request_id;
 use crate::types;
 use base64::Engine;
 use codex_app_server_protocol as upstream;
+use std::collections::HashSet;
 use std::sync::Arc;
 use url::Url;
 
@@ -177,6 +178,27 @@ fn normalize_model_info_for_runtime(
         model_info.is_default = mode == "smart";
     }
     true
+}
+
+fn runtime_exposes_model_choices(runtime_kind: &str) -> bool {
+    !matches!(runtime_kind, "shell")
+}
+
+fn append_cached_models_for_failed_runtimes(
+    models: &mut Vec<types::ModelInfo>,
+    seen_model_ids: &mut HashSet<(types::AgentRuntimeKind, String)>,
+    cached_models: &[types::ModelInfo],
+    failed_runtime_kinds: &HashSet<types::AgentRuntimeKind>,
+) {
+    for model in cached_models {
+        if !failed_runtime_kinds.contains(&model.agent_runtime_kind) {
+            continue;
+        }
+        let dedupe_key = (model.agent_runtime_kind.clone(), model.id.clone());
+        if seen_model_ids.insert(dedupe_key) {
+            models.push(model.clone());
+        }
+    }
 }
 
 fn apply_thread_goal_to_store(
@@ -1020,9 +1042,20 @@ impl AppClient {
                 .map_err(|error| ClientError::Rpc(error.to_string()))?
                 .runtime_kinds();
             let params: upstream::ModelListParams = params.into();
+            let cached_models = c
+                .app_store
+                .snapshot()
+                .servers
+                .get(&server_id)
+                .and_then(|server| server.available_models.clone())
+                .unwrap_or_default();
             let mut models = Vec::new();
-            let mut seen_model_ids = std::collections::HashSet::new();
+            let mut seen_model_ids = HashSet::new();
+            let mut failed_runtime_kinds = HashSet::new();
             for runtime_kind in runtime_kinds {
+                if !runtime_exposes_model_choices(&runtime_kind) {
+                    continue;
+                }
                 let mut request_params = params.clone();
                 loop {
                     let page: upstream::ModelListResponse = match rpc_runtime(
@@ -1043,7 +1076,16 @@ impl AppClient {
                             append_missing_amp_mode_models(&mut models);
                             break;
                         }
-                        Err(error) => return Err(error),
+                        Err(error) => {
+                            failed_runtime_kinds.insert(runtime_kind.clone());
+                            tracing::warn!(
+                                "model/list failed for runtime {} on server {}: {}; skipping runtime",
+                                runtime_kind,
+                                server_id,
+                                error
+                            );
+                            break;
+                        }
                     };
                     for model in page.data {
                         let mut model_info = types::ModelInfo::from(model);
@@ -1065,6 +1107,12 @@ impl AppClient {
                     append_missing_amp_mode_models(&mut models);
                 }
             }
+            append_cached_models_for_failed_runtimes(
+                &mut models,
+                &mut seen_model_ids,
+                &cached_models,
+                &failed_runtime_kinds,
+            );
             c.app_store.update_server_models(&server_id, Some(models));
             Ok(())
         })
