@@ -84,11 +84,8 @@ struct SettingsView: View {
                 }
             }
             .navigationDestination(for: SettingsRoute.self) { route in
-                guard route.isAvailableInCurrentBuild else {
-                    EmptyView()
-                    return
-                }
-                switch route {
+                if route.isAvailableInCurrentBuild {
+                    switch route {
                 case .terminal:
                     if proStore.hasProAccess {
                         SettingsTerminalView(initialDirectory: terminalInitialDirectory)
@@ -118,6 +115,9 @@ struct SettingsView: View {
                 case .buildKit:
                     Color.clear
                         .onAppear { openMainAppRoute("emexDE") }
+                }
+                } else {
+                    EmptyView()
                 }
             }
             .onAppear { consumeRequestedSettingsRoute() }
