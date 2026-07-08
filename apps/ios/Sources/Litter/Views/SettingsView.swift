@@ -1999,12 +1999,35 @@ private struct SettingsConnectionAccountSection: View {
 }
 
 private struct SettingsDisconnectedAccountSection: View {
+    @Environment(AppModel.self) private var appModel
+    @State private var isRestartingLocalServer = false
+
     var body: some View {
         Section {
             Text("Local Codex isn't running. ChatGPT login and API key entry require the local bridge.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            Button {
+                Task {
+                    isRestartingLocalServer = true
+                    defer { isRestartingLocalServer = false }
+                    try? await appModel.restartLocalServer()
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    if isRestartingLocalServer {
+                        ProgressView()
+                            .tint(LitterTheme.accent)
+                    }
+                    Text(isRestartingLocalServer ? "Restarting Local Server" : "Restart Local Server")
+                        .litterFont(.caption)
+                }
+            }
+            .foregroundColor(LitterTheme.accent)
+            .disabled(isRestartingLocalServer)
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Account")
                 .foregroundColor(LitterTheme.textSecondary)

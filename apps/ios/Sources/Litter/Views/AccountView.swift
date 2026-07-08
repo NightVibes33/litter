@@ -307,6 +307,7 @@ private struct AccountConnectionView: View {
 }
 
 private struct AccountDisconnectedView: View {
+    @Environment(AppModel.self) private var appModel
     let dismiss: DismissAction
 
     var body: some View {
@@ -322,6 +323,15 @@ private struct AccountDisconnectedView: View {
                         .foregroundColor(LitterTheme.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
+                    Button {
+                        Task { await restartLocalServer() }
+                    } label: {
+                        Label("Restart Local Server", systemImage: "arrow.clockwise")
+                            .litterFont(.caption)
+                    }
+                    .foregroundColor(LitterTheme.accent)
+                    .buttonStyle(.borderedProminent)
+                    .tint(LitterTheme.accent)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -333,6 +343,14 @@ private struct AccountDisconnectedView: View {
                         .foregroundColor(LitterTheme.accent)
                 }
             }
+        }
+    }
+
+    private func restartLocalServer() async {
+        do {
+            try await appModel.restartLocalServer()
+        } catch {
+            // Keep the disconnected state; user can retry.
         }
     }
 }
