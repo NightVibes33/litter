@@ -3,6 +3,8 @@ import SwiftUI
 struct AccountView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.dismiss) private var dismiss
+    @State private var isProbingLocalBridge = false
+    @State private var lastLocalBridgeProbeRevision: UInt64 = 0
 
     private var server: AppServerSnapshot? {
         // Account management (ChatGPT login / API key) is local-only, always.
@@ -12,11 +14,38 @@ struct AccountView: View {
     }
 
     var body: some View {
-        if let server {
-            AccountConnectionView(server: server, dismiss: dismiss)
-        } else {
-            AccountDisconnectedView(dismiss: dismiss)
+        Group {
+            if let server {
+                AccountConnectionView(server: server, dismiss: dismiss)
+            } else if isProbingLocalBridge {
+                AccountCheckingLocalBridgeView(dismiss: dismiss)
+            } else {
+                AccountDisconnectedView(dismiss: dismiss)
+            }
         }
+        .task(id: appModel.snapshotRevision) {
+            await probeLocalBridgeIfNeeded()
+        }
+    }
+
+    @MainActor
+    private func probeLocalBridgeIfNeeded() async {
+        guard server == nil else {
+            lastLocalBridgeProbeRevision = appModel.snapshotRevision
+            return
+        }
+        guard lastLocalBridgeProbeRevision != appModel.snapshotRevision else { return }
+        lastLocalBridgeProbeRevision = appModel.snapshotRevision
+
+        isProbingLocalBridge = true
+        defer { isProbingLocalBridge = false }
+
+        await appModel.refreshSnapshot()
+        if server != nil { return }
+
+        guard LitterPlatform.supportsLocalRuntime else { return }
+        try? await LitterPlatform.ensureLocalRuntimeReady()
+        await appModel.refreshSnapshot()
     }
 }
 
@@ -318,6 +347,39 @@ private struct AccountDisconnectedView: View {
                         .litterFont(.subheadline)
                         .foregroundColor(LitterTheme.textPrimary)
                     Text("ChatGPT login and API key entry require the local Codex bridge.")
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .navigationTitle("Account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(LitterTheme.accent)
+                }
+            }
+        }
+    }
+}
+
+private struct AccountCheckingLocalBridgeView: View {
+    let dismiss: DismissAction
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                LitterTheme.backgroundGradient.ignoresSafeArea()
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .tint(LitterTheme.accent)
+                    Text("Checking local bridge")
+                        .litterFont(.subheadline)
+                        .foregroundColor(LitterTheme.textPrimary)
+                    Text("Waiting for the local Codex runtime to report in.")
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.textSecondary)
                         .multilineTextAlignment(.center)
