@@ -24,8 +24,6 @@ struct SettingsView: View {
     @State private var serverEditError: String?
     @State private var navigationPath: [SettingsRoute] = []
     @State private var proStore = ProAccessStore.shared
-    @State private var isProbingLocalBridge = false
-    @State private var lastLocalBridgeProbeRevision: UInt64 = 0
 
     @StateObject private var taskBag = ViewTaskBag()
     private static var showsEmexDESettingsEntry: Bool { AppDistributionCapabilities.includesEmexDE }
@@ -410,26 +408,6 @@ struct SettingsView: View {
         navigationPath = [route]
     }
 
-    @MainActor
-    private func probeLocalBridgeIfNeeded() async {
-        guard localServer == nil else {
-            lastLocalBridgeProbeRevision = appModel.snapshotRevision
-            return
-        }
-        guard lastLocalBridgeProbeRevision != appModel.snapshotRevision else { return }
-        lastLocalBridgeProbeRevision = appModel.snapshotRevision
-
-        isProbingLocalBridge = true
-        defer { isProbingLocalBridge = false }
-
-        await appModel.refreshSnapshot()
-        if localServer != nil { return }
-
-        guard LitterPlatform.supportsLocalRuntime else { return }
-        try? await LitterPlatform.ensureLocalRuntimeReady()
-        await appModel.refreshSnapshot()
-    }
-
     // MARK: - Conversation Section
 
     private var conversationSection: some View {
@@ -769,14 +747,9 @@ struct SettingsView: View {
         Group {
             if let localServer {
                 SettingsConnectionAccountSection(server: localServer)
-            } else if isProbingLocalBridge {
-                SettingsCheckingLocalBridgeSection()
             } else {
                 SettingsDisconnectedAccountSection()
             }
-        }
-        .task(id: appModel.snapshotRevision) {
-            await probeLocalBridgeIfNeeded()
         }
     }
 
@@ -2032,29 +2005,6 @@ private struct SettingsDisconnectedAccountSection: View {
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
-        } header: {
-            Text("Account")
-                .foregroundColor(LitterTheme.textSecondary)
-        }
-    }
-}
-
-private struct SettingsCheckingLocalBridgeSection: View {
-    var body: some View {
-        Section {
-            HStack(spacing: 10) {
-                ProgressView()
-                    .tint(LitterTheme.accent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Checking local bridge")
-                        .litterFont(.subheadline)
-                        .foregroundColor(LitterTheme.textPrimary)
-                    Text("Waiting for the local Codex runtime to report in.")
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textSecondary)
-                }
-            }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Account")
                 .foregroundColor(LitterTheme.textSecondary)
