@@ -1921,9 +1921,20 @@ final class AppModel {
         recentConversationMetadataLoads[serverId] = Date()
     }
 
+    func refreshConversationMetadata(serverId: String) async {
+        await loadAvailableModels(serverId: serverId, forceRefresh: true)
+        await loadRateLimits(serverId: serverId, forceRefresh: true)
+        await refreshSnapshot()
+        recentConversationMetadataLoads[serverId] = Date()
+    }
+
     func loadAvailableModelsIfNeeded(serverId: String) async {
+        await loadAvailableModels(serverId: serverId, forceRefresh: false)
+    }
+
+    private func loadAvailableModels(serverId: String, forceRefresh: Bool) async {
         guard let server = snapshot?.serverSnapshot(for: serverId), server.isConnected else { return }
-        guard server.availableModels == nil else { return }
+        guard forceRefresh || server.availableModels == nil else { return }
         guard !loadingModelServerIds.contains(serverId) else { return }
         loadingModelServerIds.insert(serverId)
         defer { loadingModelServerIds.remove(serverId) }
@@ -1939,8 +1950,12 @@ final class AppModel {
     }
 
     func loadRateLimitsIfNeeded(serverId: String) async {
+        await loadRateLimits(serverId: serverId, forceRefresh: false)
+    }
+
+    private func loadRateLimits(serverId: String, forceRefresh: Bool) async {
         guard let server = snapshot?.serverSnapshot(for: serverId), server.isConnected else { return }
-        guard server.rateLimits == nil else { return }
+        guard forceRefresh || server.rateLimits == nil else { return }
         guard server.account != nil else { return }
         guard !loadingRateLimitServerIds.contains(serverId) else { return }
         loadingRateLimitServerIds.insert(serverId)

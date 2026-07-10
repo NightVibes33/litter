@@ -532,6 +532,7 @@ struct InlineModelSelectorView: View {
     @State private var modelSearchIndex = ModelSearchIndex()
     @State private var selectedRuntimeFilter: AgentRuntimeKind?
     @State private var initializedRuntimeFilter = false
+    @State private var isRefreshingMetadata = false
     var onDismiss: () -> Void
 
     private var activeModelSearchIndex: ModelSearchIndex {
@@ -637,6 +638,7 @@ struct InlineModelSelectorView: View {
         VStack(spacing: 0) {
             runtimeSelector
             modelSearchField
+            refreshMetadataButton
             runtimeFilterRow
 
             ScrollView {
@@ -966,6 +968,42 @@ struct InlineModelSelectorView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+
+    private var refreshMetadataButton: some View {
+        Button {
+            Task {
+                guard let resolvedServerId = threadKey?.serverId ?? serverId else { return }
+                isRefreshingMetadata = true
+                defer { isRefreshingMetadata = false }
+                await appModel.refreshConversationMetadata(serverId: resolvedServerId)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if isRefreshingMetadata {
+                    ProgressView()
+                        .tint(LitterTheme.accent)
+                        .scaleEffect(0.75)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Text(isRefreshingMetadata ? "Refreshing models" : "Refresh models & usage")
+                    .lineLimit(1)
+            }
+            .litterFont(.caption2, weight: .medium)
+            .foregroundColor(LitterTheme.textPrimary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(LitterTheme.surfaceLight)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
+        .disabled(isRefreshingMetadata || currentServer?.isConnected != true)
+        .opacity(currentServer?.isConnected == true ? 1 : 0.5)
     }
 
     @ViewBuilder

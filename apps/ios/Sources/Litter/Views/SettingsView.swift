@@ -1500,6 +1500,7 @@ private struct SettingsConnectionAccountSection: View {
     @State private var apiKey = ""
     @State private var openAIBaseURL = ""
     @State private var isAuthWorking = false
+    @State private var isRefreshingMetadata = false
     @State private var authError: String?
     @State private var hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
     @State private var hasStoredBaseURL = OpenAIApiKeyStore.shared.hasStoredBaseURL
@@ -1533,6 +1534,31 @@ private struct SettingsConnectionAccountSection: View {
                 }
             }
             .listRowBackground(LitterTheme.surface.opacity(0.6))
+
+            if server.isLocal {
+                Button {
+                    taskBag.run {
+                        isRefreshingMetadata = true
+                        defer { isRefreshingMetadata = false }
+                        await appModel.refreshConversationMetadata(serverId: server.serverId)
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        if isRefreshingMetadata {
+                            ProgressView()
+                                .tint(LitterTheme.accent)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .foregroundColor(LitterTheme.accent)
+                        }
+                        Text(isRefreshingMetadata ? "Refreshing models & usage" : "Refresh models & usage")
+                            .litterFont(.caption)
+                    }
+                }
+                .foregroundColor(LitterTheme.accent)
+                .disabled(isRefreshingMetadata || server.isConnected != true)
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
+            }
 
             if server.isLocal, hasStoredApiKey {
                 Text("Local OpenAI API key is saved.")
