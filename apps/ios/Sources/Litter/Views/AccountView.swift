@@ -27,7 +27,6 @@ private struct AccountConnectionView: View {
 
     @State private var apiKey = ""
     @State private var isWorking = false
-    @State private var isRefreshingMetadata = false
     @State private var authError: String?
     @State private var hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
 
@@ -38,30 +37,6 @@ private struct AccountConnectionView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         currentAccountSection
-                        if server.isLocal {
-                            Button {
-                                Task {
-                                    isRefreshingMetadata = true
-                                    defer { isRefreshingMetadata = false }
-                                    await appModel.refreshConversationMetadata(serverId: server.serverId)
-                                }
-                            } label: {
-                                HStack(spacing: 10) {
-                                    if isRefreshingMetadata {
-                                        ProgressView()
-                                            .tint(LitterTheme.accent)
-                                    } else {
-                                        Image(systemName: "arrow.clockwise")
-                                            .foregroundColor(LitterTheme.accent)
-                                    }
-                                    Text(isRefreshingMetadata ? "Refreshing models & usage" : "Refresh models & usage")
-                                        .litterFont(.caption)
-                                }
-                            }
-                            .foregroundColor(LitterTheme.accent)
-                            .disabled(isRefreshingMetadata || server.isConnected != true)
-                            .padding(.horizontal, 20)
-                        }
                         Divider().background(LitterTheme.surfaceLight)
                         loginSection
                         if let err = authError {

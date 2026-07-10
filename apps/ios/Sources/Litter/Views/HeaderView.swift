@@ -988,7 +988,7 @@ struct InlineModelSelectorView: View {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11, weight: .semibold))
                 }
-                Text(isRefreshingMetadata ? "Refreshing models" : "Refresh models & usage")
+                Text(isRefreshingMetadata ? "Refreshing models" : "Refresh models")
                     .lineLimit(1)
             }
             .litterFont(.caption2, weight: .medium)
