@@ -73,6 +73,9 @@ final class StreamingPiPController: NSObject {
     @ObservationIgnored private var pipController: AVPictureInPictureController?
     @ObservationIgnored private var possibleObservation: NSKeyValueObservation?
     @ObservationIgnored private var renderTimer: Timer?
+    @ObservationIgnored private var startRetryTimer: Timer?
+    @ObservationIgnored private var startAttemptedAt: Date?
+    @ObservationIgnored private var didRebuildForCurrentStart = false
     @ObservationIgnored private var pixelBufferPool: CVPixelBufferPool?
     /// Set by `start()` when we want PiP to begin as soon as the controller's
     /// `isPictureInPicturePossible` flips true. Without this gate the first
@@ -135,11 +138,15 @@ final class StreamingPiPController: NSObject {
         pushFrame()
         startRenderTimer()
         pendingStart = true
+        startAttemptedAt = Date()
+        didRebuildForCurrentStart = false
+        startReadinessRetryTimer()
         startIfPossible()
     }
 
     func stop() {
         pendingStart = false
+        stopStartReadinessRetryTimer()
         // didStop delegate handles per-session cleanup (timer + audio).
         // Host view + controller + pool persist for the next session.
         pipController?.stopPictureInPicture()
@@ -153,8 +160,61 @@ final class StreamingPiPController: NSObject {
         guard pendingStart, let controller = pipController else { return }
         guard controller.isPictureInPicturePossible else { return }
         pendingStart = false
+        stopStartReadinessRetryTimer()
         controller.startPictureInPicture()
         LLog.info("pip", "startPictureInPicture invoked")
+    }
+
+    /// `isPictureInPicturePossible` can fail to flip after lifecycle changes
+    /// even after the first frame is enqueued. Keep the layer warm briefly and
+    /// force a clean controller rebuild if iOS leaves us stuck.
+    private func startReadinessRetryTimer() {
+        stopStartReadinessRetryTimer()
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.retryStartReadiness() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        startRetryTimer = timer
+    }
+
+    private func stopStartReadinessRetryTimer() {
+        startRetryTimer?.invalidate()
+        startRetryTimer = nil
+        startAttemptedAt = nil
+        didRebuildForCurrentStart = false
+    }
+
+    private func retryStartReadiness() {
+        guard pendingStart else {
+            stopStartReadinessRetryTimer()
+            return
+        }
+        guard let started = startAttemptedAt else {
+            startAttemptedAt = Date()
+            return
+        }
+
+        // Retry with fresh frames first; iOS often needs a couple of run-loop
+        // turns after audio activation and sample-buffer enqueue.
+        pushFrame()
+        startIfPossible()
+        guard pendingStart else { return }
+
+        let elapsed = Date().timeIntervalSince(started)
+        if elapsed >= 1.5, !didRebuildForCurrentStart {
+            didRebuildForCurrentStart = true
+            rebuildControllerForStartRetry()
+            pushFrame()
+            startIfPossible()
+            return
+        }
+
+        guard elapsed >= 3.0 else { return }
+        pendingStart = false
+        stopStartReadinessRetryTimer()
+        lastErrorMessage = "Picture in Picture was not ready. Try again."
+        LLog.warn("pip", "start timed out waiting for PiP readiness")
+        endSession()
     }
 
     /// Per-session cleanup invoked from `pictureInPictureControllerDidStop`.
@@ -167,6 +227,7 @@ final class StreamingPiPController: NSObject {
         observationGeneration &+= 1
         renderTimer?.invalidate()
         renderTimer = nil
+        stopStartReadinessRetryTimer()
         audioKeeper.deactivate()
         isActive = false
         pinnedThreadKey = nil
@@ -210,6 +271,18 @@ final class StreamingPiPController: NSObject {
             Task { @MainActor [weak self] in self?.startIfPossible() }
         }
         return true
+    }
+
+    private func rebuildControllerForStartRetry() {
+        possibleObservation?.invalidate()
+        possibleObservation = nil
+        pipController?.delegate = nil
+        pipController = nil
+        hostView?.removeFromSuperview()
+        hostView = nil
+        pixelBufferPool = nil
+        guard ensureSetup() else { return }
+        LLog.info("pip", "rebuilt controller while waiting for PiP readiness")
     }
 
     private func keyWindow() -> UIWindow? {
