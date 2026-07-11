@@ -104,6 +104,7 @@ final class AppModel {
     private(set) var snapshotRevision: UInt64 = 0
     private(set) var lastError: String?
     private(set) var composerPrefillRequest: ComposerPrefillRequest?
+    private(set) var isRecoveringLocalServer = false
 
     @ObservationIgnored private var subscription: AppStoreSubscription?
     @ObservationIgnored private var updateTask: Task<Void, Never>?
@@ -121,6 +122,7 @@ final class AppModel {
     @ObservationIgnored private var pendingCommandRowMutationTask: Task<Void, Never>?
     @ObservationIgnored private var cachedThreadSnapshots: [ThreadKey: AppThreadSnapshot] = [:]
     @ObservationIgnored private var loadingTurnPageThreadKeys: Set<ThreadKey> = []
+    @ObservationIgnored private var localServerRecoveryTask: Task<Void, Never>?
 
     init(
         store: AppStore? = nil,
@@ -165,6 +167,7 @@ final class AppModel {
         pendingSnapshotRefreshTask?.cancel()
         pendingThreadStateTask?.cancel()
         pendingCommandRowMutationTask?.cancel()
+        localServerRecoveryTask?.cancel()
     }
 
     func start() {
@@ -206,6 +209,8 @@ final class AppModel {
         pendingCommandRowMutationTask?.cancel()
         pendingCommandRowMutationTask = nil
         pendingCommandRowMutations.removeAll()
+        localServerRecoveryTask?.cancel()
+        localServerRecoveryTask = nil
         subscription = nil
     }
 
@@ -641,6 +646,49 @@ final class AppModel {
         )
         await restoreStoredLocalAuthState(serverId: serverId)
         await refreshSnapshot()
+    }
+
+    func ensureLocalServerConnectedIfNeeded(reason: String) {
+        guard LitterPlatform.supportsLocalRuntime else { return }
+        guard snapshot?.servers.contains(where: \.isLocal) != true else { return }
+        guard localServerRecoveryTask == nil else { return }
+
+        localServerRecoveryTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.localServerRecoveryTask = nil }
+            await self.recoverMissingLocalServer(reason: reason)
+        }
+    }
+
+    private func recoverMissingLocalServer(reason: String) async {
+        isRecoveringLocalServer = true
+        defer { isRecoveringLocalServer = false }
+
+        for delay in [0.4, 1.2, 2.4] {
+            guard !Task.isCancelled else { return }
+            await refreshSnapshot()
+            if snapshot?.servers.contains(where: \.isLocal) == true { return }
+            try? await Task.sleep(for: .seconds(delay))
+        }
+
+        guard !Task.isCancelled else { return }
+        guard snapshot?.servers.contains(where: \.isLocal) != true else { return }
+        do {
+            LLog.warn(
+                "local-codex",
+                "local server missing after startup; reconnecting",
+                fields: ["reason": reason]
+            )
+            try await restartLocalServer()
+        } catch {
+            lastError = error.localizedDescription
+            LLog.error(
+                "local-codex",
+                "local server automatic reconnect failed",
+                error: error,
+                fields: ["reason": reason]
+            )
+        }
     }
 
     func restoreStoredLocalAuthState(serverId: String) async {

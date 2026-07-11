@@ -2004,7 +2004,7 @@ private struct SettingsDisconnectedAccountSection: View {
 
     var body: some View {
         Section {
-            Text("Local Codex isn't running. ChatGPT login and API key entry require the local bridge.")
+            Text(appModel.isRecoveringLocalServer ? "Starting Local Codex for ChatGPT login and API key entry." : "Local Codex isn't running. ChatGPT login and API key entry require the local bridge.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.6))
@@ -2017,20 +2017,23 @@ private struct SettingsDisconnectedAccountSection: View {
                 }
             } label: {
                 HStack(spacing: 10) {
-                    if isRestartingLocalServer {
+                    if isRestartingLocalServer || appModel.isRecoveringLocalServer {
                         ProgressView()
                             .tint(LitterTheme.accent)
                     }
-                    Text(isRestartingLocalServer ? "Restarting Local Server" : "Restart Local Server")
+                    Text((isRestartingLocalServer || appModel.isRecoveringLocalServer) ? "Starting Local Server" : "Restart Local Server")
                         .litterFont(.caption)
                 }
             }
             .foregroundColor(LitterTheme.accent)
-            .disabled(isRestartingLocalServer)
+            .disabled(isRestartingLocalServer || appModel.isRecoveringLocalServer)
             .listRowBackground(LitterTheme.surface.opacity(0.6))
         } header: {
             Text("Account")
                 .foregroundColor(LitterTheme.textSecondary)
+        }
+        .task {
+            appModel.ensureLocalServerConnectedIfNeeded(reason: "settingsAccount")
         }
     }
 }

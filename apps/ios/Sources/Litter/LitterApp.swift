@@ -384,6 +384,7 @@ struct LitterApp: App {
                     appRuntime.bind(appModel: appModel, voiceRuntime: voiceRuntime)
                     appDelegate.appRuntime = appRuntime
                     appRuntime.appDidBecomeActive()
+                    appModel.ensureLocalServerConnectedIfNeeded(reason: "launch")
                     #if targetEnvironment(macCatalyst)
                     LocalCodexBootstrap.shared.startIfNeeded(appModel: appModel)
                     #endif

@@ -315,10 +315,10 @@ private struct AccountDisconnectedView: View {
             ZStack {
                 LitterTheme.backgroundGradient.ignoresSafeArea()
                 VStack(spacing: 16) {
-                    Text("Local Codex isn't running")
+                    Text(appModel.isRecoveringLocalServer ? "Starting Local Codex" : "Local Codex isn't running")
                         .litterFont(.subheadline)
                         .foregroundColor(LitterTheme.textPrimary)
-                    Text("ChatGPT login and API key entry require the local Codex bridge.")
+                    Text(appModel.isRecoveringLocalServer ? "Preparing the local bridge for ChatGPT login and API key entry." : "ChatGPT login and API key entry require the local Codex bridge.")
                         .litterFont(.caption)
                         .foregroundColor(LitterTheme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -326,17 +326,21 @@ private struct AccountDisconnectedView: View {
                     Button {
                         Task { await restartLocalServer() }
                     } label: {
-                        Label("Restart Local Server", systemImage: "arrow.clockwise")
+                        Label(appModel.isRecoveringLocalServer ? "Starting Local Server" : "Restart Local Server", systemImage: "arrow.clockwise")
                             .litterFont(.caption)
                     }
                     .foregroundColor(LitterTheme.accent)
                     .buttonStyle(.borderedProminent)
                     .tint(LitterTheme.accent)
+                    .disabled(appModel.isRecoveringLocalServer)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationTitle("Account")
             .navigationBarTitleDisplayMode(.inline)
+            .task {
+                appModel.ensureLocalServerConnectedIfNeeded(reason: "account")
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
