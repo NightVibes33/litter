@@ -1724,7 +1724,7 @@ index a42e6b6d8..d4222d971 100644
 
          #[cfg(unix)]
 diff --git a/codex-rs/core/src/realtime_conversation.rs b/codex-rs/core/src/realtime_conversation.rs
-index 3915c8190..5cdda295b 100644
+index 3915c8190..b295a84e9 100644
 --- a/codex-rs/core/src/realtime_conversation.rs
 +++ b/codex-rs/core/src/realtime_conversation.rs
 @@ -21,12 +21,14 @@ use codex_api::RealtimeSessionMode;
@@ -1742,7 +1742,16 @@ index 3915c8190..5cdda295b 100644
  use codex_model_provider_info::ModelProviderInfo;
  use codex_protocol::auth::AuthMode;
  use codex_protocol::error::CodexErr;
-@@ -253,6 +255,7 @@ struct ConversationState {
+@@ -126,6 +128,8 @@ enum RealtimeOutbound {
+     CompletedHandoff { handoff_id: String, text: String },
+     ConversationItem { text: String },
+     HandoffCompleteAck { handoff_id: String },
++    ClientResolvedHandoff { text: String },
++    ClientFinalizeHandoff,
+ }
+
+ #[derive(Debug, PartialEq, Eq)]
+@@ -253,6 +257,7 @@ struct ConversationState {
 
  struct RealtimeStart {
      api_provider: ApiProvider,
@@ -1750,7 +1759,7 @@ index 3915c8190..5cdda295b 100644
      extra_headers: Option<HeaderMap>,
      client_managed_handoffs: bool,
      flush_transcript_tail_on_session_end: bool,
-@@ -312,6 +315,7 @@ impl RealtimeConversationManager {
+@@ -312,6 +317,7 @@ impl RealtimeConversationManager {
      async fn start_inner(&self, start: RealtimeStart) -> CodexResult<RealtimeStartOutput> {
          let RealtimeStart {
              api_provider,
@@ -1758,7 +1767,7 @@ index 3915c8190..5cdda295b 100644
              extra_headers,
              client_managed_handoffs,
              flush_transcript_tail_on_session_end,
-@@ -363,6 +367,7 @@ impl RealtimeConversationManager {
+@@ -363,6 +369,7 @@ impl RealtimeConversationManager {
                      session_config.clone(),
                      extra_headers.unwrap_or_default(),
                      realtime_call_api_provider,
@@ -1766,7 +1775,7 @@ index 3915c8190..5cdda295b 100644
                  )
                  .await?;
              let task = spawn_webrtc_sideband_input_task(RealtimeWebrtcSidebandInputTask {
-@@ -615,6 +620,42 @@ impl RealtimeConversationManager {
+@@ -615,6 +622,42 @@ impl RealtimeConversationManager {
          Ok(())
      }
 
@@ -1809,7 +1818,7 @@ index 3915c8190..5cdda295b 100644
      pub(crate) async fn handoff_complete(&self) -> CodexResult<()> {
          let handoff = {
              let guard = self.state.lock().await;
-@@ -733,6 +774,7 @@ pub(crate) async fn handle_start(
+@@ -733,6 +776,7 @@ pub(crate) async fn handle_start(
 
  struct PreparedRealtimeConversationStart {
      api_provider: ApiProvider,
@@ -1817,7 +1826,7 @@ index 3915c8190..5cdda295b 100644
      extra_headers: Option<HeaderMap>,
      client_managed_handoffs: bool,
      flush_transcript_tail_on_session_end: bool,
-@@ -780,6 +822,9 @@ async fn prepare_realtime_start(
+@@ -780,6 +824,9 @@ async fn prepare_realtime_start(
          } else {
              None
          };
@@ -1827,7 +1836,7 @@ index 3915c8190..5cdda295b 100644
      let version = params.version.unwrap_or(match &transport {
          ConversationStartTransport::Websocket => config.realtime.version,
          ConversationStartTransport::Webrtc { .. } => RealtimeWsVersion::V1,
-@@ -797,27 +842,48 @@ async fn prepare_realtime_start(
+@@ -797,27 +844,48 @@ async fn prepare_realtime_start(
          build_realtime_session_config(sess, &params, version, configured_voice).await?;
      let requested_realtime_session_id = session_config.session_id.clone();
      let originator = sess.originator().await;
@@ -1889,7 +1898,7 @@ index 3915c8190..5cdda295b 100644
          extra_headers,
          client_managed_handoffs: params.client_managed_handoffs,
          flush_transcript_tail_on_session_end: params.flush_transcript_tail_on_session_end,
-@@ -922,6 +988,7 @@ pub(crate) async fn build_realtime_session_config(
+@@ -922,6 +990,7 @@ pub(crate) async fn build_realtime_session_config(
          session_mode,
          output_modality: params.output_modality,
          voice,
@@ -1897,7 +1906,7 @@ index 3915c8190..5cdda295b 100644
      })
  }
 
-@@ -985,6 +1052,7 @@ async fn handle_start_inner(
+@@ -985,6 +1054,7 @@ async fn handle_start_inner(
  ) -> CodexResult<()> {
      let PreparedRealtimeConversationStart {
          api_provider,
@@ -1905,7 +1914,7 @@ index 3915c8190..5cdda295b 100644
          extra_headers,
          client_managed_handoffs,
          flush_transcript_tail_on_session_end,
-@@ -1004,6 +1072,7 @@ async fn handle_start_inner(
+@@ -1004,6 +1074,7 @@ async fn handle_start_inner(
      };
      let start = RealtimeStart {
          api_provider,
@@ -1913,7 +1922,7 @@ index 3915c8190..5cdda295b 100644
          extra_headers,
          client_managed_handoffs,
          flush_transcript_tail_on_session_end,
-@@ -1485,7 +1554,9 @@ async fn handle_handoff_output(
+@@ -1485,7 +1556,9 @@ async fn handle_handoff_output(
                      .send_conversation_item_create(text, ConversationTextRole::Developer)
                      .await
              }
@@ -1924,7 +1933,7 @@ index 3915c8190..5cdda295b 100644
          },
          RealtimeEventParser::RealtimeV2 => match handoff_output {
              RealtimeOutbound::StandaloneHandoff { text } => {
-@@ -1542,6 +1613,21 @@ async fn handle_handoff_output(
+@@ -1542,6 +1615,21 @@ async fn handle_handoff_output(
                      .send_conversation_function_call_output(handoff_id, String::new())
                      .await
              }
@@ -1946,6 +1955,16 @@ index 3915c8190..5cdda295b 100644
          },
      };
      if let Err(err) = result {
+@@ -1719,7 +1807,8 @@ async fn handle_realtime_server_event(
+             info!(realtime_session_id = %realtime_session_id, "realtime session updated");
+             false
+         }
+-        RealtimeEvent::InputTranscriptDelta(_)
++        RealtimeEvent::ToolCallRequested(_)
++        | RealtimeEvent::InputTranscriptDelta(_)
+         | RealtimeEvent::InputTranscriptDone(_)
+         | RealtimeEvent::OutputTranscriptDelta(_)
+         | RealtimeEvent::OutputTranscriptDone(_)
 diff --git a/codex-rs/core/src/session/handlers.rs b/codex-rs/core/src/session/handlers.rs
 index cc2175552..a33e1c850 100644
 --- a/codex-rs/core/src/session/handlers.rs
@@ -1966,10 +1985,19 @@ index cc2175552..a33e1c850 100644
                      realtime_conversation_list_voices(&sess, sub.id.clone()).await;
                      false
 diff --git a/codex-rs/core/src/session/turn.rs b/codex-rs/core/src/session/turn.rs
-index bafb368b3..37eae6d6d 100644
+index bafb368b3..9db7c5ffe 100644
 --- a/codex-rs/core/src/session/turn.rs
 +++ b/codex-rs/core/src/session/turn.rs
-@@ -96,6 +96,7 @@ use codex_protocol::models::ResponseItem;
+@@ -83,6 +83,8 @@ use codex_git_utils::get_git_repo_root_with_fs;
+ use codex_protocol::config_types::AutoCompactTokenLimitScope;
+ use codex_protocol::config_types::ModeKind;
+ use codex_protocol::config_types::ServiceTier;
++use codex_protocol::dynamic_tools::DynamicToolNamespaceTool;
++use codex_protocol::dynamic_tools::DynamicToolSpec;
+ use codex_protocol::error::CodexErr;
+ use codex_protocol::error::Result as CodexResult;
+ use codex_protocol::items::PlanItem;
+@@ -96,6 +98,7 @@ use codex_protocol::models::ResponseItem;
  use codex_protocol::protocol::AgentMessageContentDeltaEvent;
  use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
  use codex_protocol::protocol::CodexErrorInfo;
@@ -1977,7 +2005,25 @@ index bafb368b3..37eae6d6d 100644
  use codex_protocol::protocol::ErrorEvent;
  use codex_protocol::protocol::EventMsg;
  use codex_protocol::protocol::PlanDeltaEvent;
-@@ -1594,6 +1595,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<(String, Option<
+@@ -824,7 +827,17 @@ async fn run_pre_sampling_compact(
+
+ /// Returns true only when both turns declare compaction compatibility hashes and they differ.
+ /// A missing hash does not provide enough information to trigger compaction.
++fn dynamic_tool_matches_name(spec: &DynamicToolSpec, name: &str) -> bool {
++    match spec {
++        DynamicToolSpec::Function(function) => function.name == name,
++        DynamicToolSpec::Namespace(namespace) => namespace.tools.iter().any(|tool| match tool {
++            DynamicToolNamespaceTool::Function(function) => function.name == name,
++        }),
++    }
++}
++
+ fn comp_hash_changed(previous: Option<&str>, current: Option<&str>) -> bool {
++
+     previous
+         .zip(current)
+         .is_some_and(|(previous, current)| previous != current)
+@@ -1594,6 +1607,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<(String, Option<
          | EventMsg::HookStarted(_)
          | EventMsg::HookCompleted(_)
          | EventMsg::AgentMessageContentDelta(_)
@@ -1985,7 +2031,7 @@ index bafb368b3..37eae6d6d 100644
          | EventMsg::PlanDelta(_)
          | EventMsg::ReasoningContentDelta(_)
          | EventMsg::ReasoningRawContentDelta(_)
-@@ -1991,6 +1993,7 @@ async fn try_run_sampling_request(
+@@ -1991,6 +2005,7 @@ async fn try_run_sampling_request(
          String,
          Box<dyn ToolArgumentDiffConsumer>,
      )> = None;
@@ -1993,7 +2039,7 @@ index bafb368b3..37eae6d6d 100644
      let mut should_emit_turn_diff = false;
      let mut should_emit_token_count = false;
      let reasoning_effort = turn_context.effective_reasoning_effort_for_tracing();
-@@ -2156,8 +2159,19 @@ async fn try_run_sampling_request(
+@@ -2156,8 +2171,19 @@ async fn try_run_sampling_request(
                      active_tool_argument_diff_consumer = tool_runtime
                          .create_diff_consumer(&tool_name)
                          .map(|consumer| (call_id.clone(), consumer));
@@ -2006,7 +2052,7 @@ index bafb368b3..37eae6d6d 100644
 +                    if turn_context
 +                        .dynamic_tools
 +                        .iter()
-+                        .any(|spec| spec.name == *name)
++                        .any(|spec| dynamic_tool_matches_name(spec, name))
 +                    {
 +                        let item_id = id.clone().unwrap_or_default();
 +                        active_dynamic_tool_call = Some((call_id.clone(), item_id));
@@ -2014,7 +2060,7 @@ index bafb368b3..37eae6d6d 100644
                  }
                  if let Some(turn_item) = handle_non_tool_response_item(
                      sess.as_ref(),
-@@ -2341,17 +2355,37 @@ async fn try_run_sampling_request(
+@@ -2341,17 +2367,37 @@ async fn try_run_sampling_request(
                  call_id,
                  delta,
              } => {
@@ -2049,7 +2095,7 @@ index bafb368b3..37eae6d6d 100644
 +                        None => Some(active_call_id.clone()),
 +                    };
 +                    let event = DynamicToolCallArgumentsDeltaEvent {
-+                        thread_id: sess.conversation_id.to_string(),
++                        thread_id: sess.thread_id.to_string(),
 +                        turn_id: turn_context.sub_id.clone(),
 +                        item_id: item_id.clone(),
 +                        call_id: matched_call_id,
