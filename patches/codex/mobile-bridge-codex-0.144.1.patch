@@ -724,7 +724,7 @@ diff --git a/codex-rs/app-server/src/bespoke_event_handling.rs b/codex-rs/app-se
 index 829aa3f12..782bd27c5 100644
 --- a/codex-rs/app-server/src/bespoke_event_handling.rs
 +++ b/codex-rs/app-server/src/bespoke_event_handling.rs
-@@ -490,6 +490,40 @@ pub(crate) async fn apply_bespoke_event_handling(
+@@ -490,6 +490,39 @@ pub(crate) async fn apply_bespoke_event_handling(
                      .await;
              }
              RealtimeEvent::ConversationItemDone { .. } | RealtimeEvent::NoopRequested(_) => {}
@@ -742,9 +742,8 @@ index 829aa3f12..782bd27c5 100644
 +                    .to_string();
 +                let arguments = item
 +                    .get("arguments")
-+                    .and_then(serde_json::Value::as_str)
-+                    .unwrap_or_default()
-+                    .to_string();
++                    .cloned()
++                    .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
 +                if !call_id.is_empty() && !tool.is_empty() {
 +                    let params = DynamicToolCallParams {
 +                        thread_id: conversation_id.to_string(),
@@ -765,7 +764,7 @@ index 829aa3f12..782bd27c5 100644
              RealtimeEvent::HandoffRequested(handoff) => {
                  let notification = ThreadRealtimeItemAddedNotification {
                      thread_id: conversation_id.to_string(),
-@@ -499,6 +533,7 @@ pub(crate) async fn apply_bespoke_event_handling(
+@@ -499,6 +532,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                          "item_id": handoff.item_id,
                          "input_transcript": handoff.input_transcript,
                          "active_transcript": handoff.active_transcript,
@@ -840,7 +839,7 @@ diff --git a/codex-rs/app-server/src/request_processors/turn_processor.rs b/code
 index 3ff64cd34..17d63a02d 100644
 --- a/codex-rs/app-server/src/request_processors/turn_processor.rs
 +++ b/codex-rs/app-server/src/request_processors/turn_processor.rs
-@@ -262,6 +262,26 @@ impl TurnRequestProcessor {
+@@ -262,6 +262,38 @@ impl TurnRequestProcessor {
              .map(|response| response.map(Into::into))
      }
 
@@ -849,9 +848,16 @@ index 3ff64cd34..17d63a02d 100644
 +        request_id: &ConnectionRequestId,
 +        params: ThreadRealtimeResolveHandoffParams,
 +    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-+        self.thread_realtime_resolve_handoff_inner(request_id, params)
++        self.session_manager
++            .send_request(
++                request_id,
++                params.thread_id,
++                codex_protocol::protocol::Op::RealtimeConversationResolveHandoff {
++                    tool_call_output: params.tool_call_output,
++                },
++            )
 +            .await
-+            .map(|response| response.map(Into::into))
++            .map(|()| Some(ThreadRealtimeResolveHandoffResponse {}.into()))
 +    }
 +
 +    pub(crate) async fn thread_realtime_finalize_handoff(
@@ -859,15 +865,20 @@ index 3ff64cd34..17d63a02d 100644
 +        request_id: &ConnectionRequestId,
 +        params: ThreadRealtimeFinalizeHandoffParams,
 +    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-+        self.thread_realtime_finalize_handoff_inner(request_id, params)
++        self.session_manager
++            .send_request(
++                request_id,
++                params.thread_id,
++                codex_protocol::protocol::Op::RealtimeConversationFinalizeHandoff,
++            )
 +            .await
-+            .map(|response| response.map(Into::into))
++            .map(|()| Some(ThreadRealtimeFinalizeHandoffResponse {}.into()))
 +    }
 +
      pub(crate) async fn thread_realtime_list_voices(
          &self,
      ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-@@ -1023,6 +1043,7 @@ impl TurnRequestProcessor {
+@@ -1023,6 +1055,7 @@ impl TurnRequestProcessor {
                  }),
                  version: params.version,
                  voice: params.voice,
