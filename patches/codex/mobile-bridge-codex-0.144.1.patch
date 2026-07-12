@@ -2745,6 +2745,30 @@ index 57a36c331..c16918b3b 100644
  #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
  pub struct PlanDeltaEvent {
      pub thread_id: String,
+diff --git a/codex-rs/rollout-trace/src/protocol_event.rs b/codex-rs/rollout-trace/src/protocol_event.rs
+index 42e0db04d..04b3368c3 100644
+--- a/codex-rs/rollout-trace/src/protocol_event.rs
++++ b/codex-rs/rollout-trace/src/protocol_event.rs
+@@ -404,7 +404,8 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
+         | EventMsg::ReasoningContentDelta(_)
+         | EventMsg::ReasoningRawContentDelta(_)
+         | EventMsg::CollabResumeBegin(_)
+-        | EventMsg::CollabResumeEnd(_) => None,
++        | EventMsg::CollabResumeEnd(_)
++        | EventMsg::DynamicToolCallArgumentsDelta(_) => None,
+     }
+ }
+
+@@ -486,7 +487,8 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
+         | EventMsg::CollabCloseEnd(_)
+         | EventMsg::CollabResumeBegin(_)
+         | EventMsg::CollabResumeEnd(_)
+-        | EventMsg::SubAgentActivity(_) => None,
++        | EventMsg::SubAgentActivity(_)
++        | EventMsg::DynamicToolCallArgumentsDelta(_) => None,
+     }
+ }
+
 diff --git a/codex-rs/rollout/src/policy.rs b/codex-rs/rollout/src/policy.rs
 index 75ddec35a..ebcd77244 100644
 --- a/codex-rs/rollout/src/policy.rs
