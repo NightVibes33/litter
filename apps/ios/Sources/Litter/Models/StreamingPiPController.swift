@@ -76,6 +76,7 @@ final class StreamingPiPController: NSObject {
     @ObservationIgnored private var startRetryTimer: Timer?
     @ObservationIgnored private var startAttemptedAt: Date?
     @ObservationIgnored private var didRebuildForCurrentStart = false
+    @ObservationIgnored private var startupFramePushCount = 0
     @ObservationIgnored private var pixelBufferPool: CVPixelBufferPool?
     /// Set by `start()` when we want PiP to begin as soon as the controller's
     /// `isPictureInPicturePossible` flips true. Without this gate the first
@@ -118,6 +119,7 @@ final class StreamingPiPController: NSObject {
 
     func start() {
         guard !isActive else { return }
+        lastErrorMessage = nil
         guard isSupported else {
             lastErrorMessage = "PiP not supported on this device."
             LLog.warn("pip", "start: device does not support PiP")
@@ -133,13 +135,15 @@ final class StreamingPiPController: NSObject {
         // and `isPictureInPicturePossible` never flips true on reopen.
         hostView?.displayLayer.flushAndRemoveImage()
         audioKeeper.activate()
-        // Push at least one frame so the layer has content before start.
-        // PiP refuses to start against an empty display layer.
-        pushFrame()
-        startRenderTimer()
-        pendingStart = true
         startAttemptedAt = Date()
         didRebuildForCurrentStart = false
+        startupFramePushCount = 0
+        // Push at least one frame so the layer has content before start.
+        // PiP refuses to start against an empty display layer.
+        pushFrame(force: true)
+        startupFramePushCount += 1
+        startRenderTimer()
+        pendingStart = true
         startReadinessRetryTimer()
         startIfPossible()
     }
@@ -182,6 +186,7 @@ final class StreamingPiPController: NSObject {
         startRetryTimer = nil
         startAttemptedAt = nil
         didRebuildForCurrentStart = false
+        startupFramePushCount = 0
     }
 
     private func retryStartReadiness() {
@@ -196,7 +201,8 @@ final class StreamingPiPController: NSObject {
 
         // Retry with fresh frames first; iOS often needs a couple of run-loop
         // turns after audio activation and sample-buffer enqueue.
-        pushFrame()
+        pushFrame(force: true)
+        startupFramePushCount += 1
         startIfPossible()
         guard pendingStart else { return }
 
@@ -204,16 +210,28 @@ final class StreamingPiPController: NSObject {
         if elapsed >= 1.5, !didRebuildForCurrentStart {
             didRebuildForCurrentStart = true
             rebuildControllerForStartRetry()
-            pushFrame()
+            pushFrame(force: true)
+            startupFramePushCount += 1
             startIfPossible()
             return
         }
 
         guard elapsed >= 3.0 else { return }
+        let layerStatus = hostView?.displayLayer.status.rawValue ?? -1
+        let ready = hostView?.displayLayer.isReadyForMoreMediaData ?? false
+        let frames = startupFramePushCount
         pendingStart = false
         stopStartReadinessRetryTimer()
-        lastErrorMessage = "Picture in Picture was not ready. Try again."
-        LLog.warn("pip", "start timed out waiting for PiP readiness")
+        lastErrorMessage = "PiP could not start. Layer status: \(layerStatus), ready: \(ready), frames: \(frames)."
+        LLog.warn(
+            "pip",
+            "start timed out waiting for PiP readiness",
+            fields: [
+                "layerStatus": "\(layerStatus)",
+                "ready": "\(ready)",
+                "frames": "\(frames)"
+            ]
+        )
         endSession()
     }
 
@@ -246,8 +264,13 @@ final class StreamingPiPController: NSObject {
             LLog.warn("pip", "ensureSetup: key window unavailable")
             return false
         }
-        let host = PiPHostView(frame: CGRect(x: -1, y: -1, width: 1, height: 1))
-        window.addSubview(host)
+        let hostHeight = PiPContentView.minHeight
+        let host = PiPHostView(frame: CGRect(x: 0, y: 0, width: renderWidth, height: hostHeight))
+        host.alpha = 0.01
+        host.isUserInteractionEnabled = false
+        host.accessibilityElementsHidden = true
+        host.layer.zPosition = -10_000
+        window.insertSubview(host, at: 0)
         hostView = host
         ensurePixelBufferPool()
 
@@ -332,7 +355,7 @@ final class StreamingPiPController: NSObject {
         }
     }
 
-    private func pushFrame() {
+    private func pushFrame(force: Bool = false) {
         guard let host = hostView else { return }
         // Recover from a failed layer state — happens after some PiP
         // transitions / app lifecycle events. Without this, enqueue is a
@@ -349,7 +372,7 @@ final class StreamingPiPController: NSObject {
         }
         // Skip when the layer's queue is full; rendering + buffer alloc
         // are the expensive part, so bail before paying that cost.
-        guard host.displayLayer.isReadyForMoreMediaData else { return }
+        guard force || host.displayLayer.isReadyForMoreMediaData else { return }
         // Reassign content each tick so ImageRenderer doesn't reuse a cached
         // render — particularly important on a fresh session where the
         // observed state changed but the renderer instance is the same.

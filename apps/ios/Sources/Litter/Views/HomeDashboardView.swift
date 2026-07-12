@@ -93,6 +93,7 @@ struct HomeDashboardView: View {
     @State private var hydratingKeys: Set<String> = []
     @State private var isLoadingThreadListing = false
     @State private var suppressComposerCollapse = false
+    @State private var pipErrorMessage: String?
 
     private var launchableServers: [HomeDashboardServer] {
         connectedServers.filter(\.canLaunchSessions)
@@ -256,6 +257,14 @@ struct HomeDashboardView: View {
                 }
             } message: {
                 Text("This will permanently delete \"\(deleteTargetThread?.sessionTitle ?? "this session")\".")
+            }
+            .alert("PiP failed", isPresented: Binding(
+                get: { pipErrorMessage != nil },
+                set: { if !$0 { pipErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { pipErrorMessage = nil }
+            } message: {
+                Text(pipErrorMessage ?? "Picture in Picture could not start.")
             }
             .alert("Rename server", isPresented: Binding(
                 get: { renameServerTarget != nil },
@@ -611,7 +620,7 @@ struct HomeDashboardView: View {
                             Task { await onForkThread?(session) }
                         },
                         onShowPiP: { session in
-                            StreamingPiPController.shared.start(for: session.key)
+                            showPiP(for: session)
                         }
                     )
                 )
@@ -621,6 +630,18 @@ struct HomeDashboardView: View {
                 // out safe resting space for the rows.
                 .ignoresSafeArea()
             }
+        }
+    }
+
+
+    private func showPiP(for session: HomeDashboardRecentSession) {
+        pipErrorMessage = nil
+        let controller = StreamingPiPController.shared
+        controller.start(for: session.key)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_600_000_000)
+            guard !controller.isActive, controller.pinnedThreadKey == session.key else { return }
+            pipErrorMessage = controller.lastErrorMessage ?? "Picture in Picture did not become active."
         }
     }
 

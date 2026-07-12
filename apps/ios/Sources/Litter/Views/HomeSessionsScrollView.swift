@@ -1849,13 +1849,29 @@ struct HomeSessionRowContent: View {
     let onShowPiP: () -> Void
 
     var body: some View {
-        SessionCanvasLine(
-            session: session,
-            isOpening: isOpening,
-            isHydrating: isHydrating,
-            isCancelling: isCancelling,
-            zoomLevel: zoomLevel
-        )
+        ZStack(alignment: .topTrailing) {
+            SessionCanvasLine(
+                session: session,
+                isOpening: isOpening,
+                isHydrating: isHydrating,
+                isCancelling: isCancelling,
+                zoomLevel: zoomLevel
+            )
+            if zoomLevel >= 4, AVPictureInPictureController.isPictureInPictureSupported() {
+                Button { onShowPiP() } label: {
+                    Image(systemName: "pip")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 42, height: 42)
+                        .background(.black.opacity(0.48), in: Circle())
+                        .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 12)
+                .padding(.trailing, 12)
+                .accessibilityLabel("Show in Picture in Picture")
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { onTap() }
         .contextMenu(menuItems: {
