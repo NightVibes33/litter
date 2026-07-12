@@ -1,0 +1,435 @@
+use crate::{HeaderName, HeaderValue, Request, Response};
+use rama_http_headers::HeaderEncode;
+use std::fmt;
+use std::{
+    future::{Future, ready},
+    marker::PhantomData,
+};
+
+/// Trait for preparing a maker ([`MakeHeaderValue`]) that will be used
+/// to actually create the [`HeaderValue`] when desired.
+///
+/// The reason why this is split in two parts for responses is because
+/// the context is consumed by the inner service producting the response
+/// to which the header (maybe) will be attached to. In order to not
+/// clone the entire `Context` and its `State` it is therefore better
+/// to let the implementer decide what state is to be cloned and which not.
+///
+/// E.g. for a static Header value one might not need any state or context at all,
+/// which would make it pretty wastefull if we would for such cases clone
+/// these stateful datastructures anyhow.
+///
+/// Most users will however not have to worry about this Trait or why it is there,
+/// as the trait is implemented already for functions, closures and HeaderValues.
+pub trait MakeHeaderValueFactory<ReqBody, ResBody>: Send + Sync + 'static {
+    /// Maker that _can_ be produced by this Factory.
+    type Maker: MakeHeaderValue<ResBody>;
+
+    /// Try to create a header value from the request or response.
+    fn make_header_value_maker(
+        &self,
+        request: Request<ReqBody>,
+    ) -> impl Future<Output = (Request<ReqBody>, Self::Maker)> + Send + '_;
+}
+
+/// Trait for producing header values, created by a `MakeHeaderValueFactory`.
+///
+/// Used by [`SetRequestHeader`] and [`SetResponseHeader`].
+///
+/// This trait is implemented for closures with the correct type signature. Typically users will
+/// not have to implement this trait for their own types.
+///
+/// It is also implemented directly for [`HeaderValue`]. When a fixed header value should be added
+/// to all responses, it can be supplied directly to the middleware.
+pub trait MakeHeaderValue<B>: Send + Sync + 'static {
+    /// Try to create a header value from the request or response.
+    fn make_header_value(
+        self,
+        response: Response<B>,
+    ) -> impl Future<Output = (Response<B>, Option<HeaderValue>)> + Send;
+}
+
+impl<B, M> MakeHeaderValue<B> for Option<M>
+where
+    M: MakeHeaderValue<B> + Clone,
+    B: Send + 'static,
+{
+    async fn make_header_value(self, response: Response<B>) -> (Response<B>, Option<HeaderValue>) {
+        match self {
+            Some(m) => m.make_header_value(response).await,
+            None => (response, None),
+        }
+    }
+}
+
+impl<B> MakeHeaderValue<B> for HeaderValue
+where
+    B: Send + 'static,
+{
+    fn make_header_value(
+        self,
+        response: Response<B>,
+    ) -> impl Future<Output = (Response<B>, Option<Self>)> + Send {
+        ready((response, Some(self)))
+    }
+}
+
+impl<B, H> MakeHeaderValue<B> for TypedHeaderAsMaker<H>
+where
+    B: Send + 'static,
+    H: HeaderEncode + Send + Sync + 'static,
+{
+    fn make_header_value(
+        self,
+        response: Response<B>,
+    ) -> impl Future<Output = (Response<B>, Option<HeaderValue>)> + Send {
+        let maybe_value = self.0.encode_to_value();
+        ready((response, maybe_value))
+    }
+}
+
+impl<ReqBody, ResBody> MakeHeaderValueFactory<ReqBody, ResBody> for HeaderValue
+where
+    ReqBody: Send + 'static,
+    ResBody: Send + 'static,
+{
+    type Maker = Self;
+
+    fn make_header_value_maker(
+        &self,
+        req: Request<ReqBody>,
+    ) -> impl Future<Output = (Request<ReqBody>, Self::Maker)> + Send + '_ {
+        ready((req, self.clone()))
+    }
+}
+
+impl<ReqBody, ResBody> MakeHeaderValueFactory<ReqBody, ResBody> for Option<HeaderValue>
+where
+    ReqBody: Send + 'static,
+    ResBody: Send + 'static,
+{
+    type Maker = Self;
+
+    fn make_header_value_maker(
+        &self,
+        req: Request<ReqBody>,
+    ) -> impl Future<Output = (Request<ReqBody>, Self::Maker)> + Send + '_ {
+        ready((req, self.clone()))
+    }
+}
+
+#[derive(Default)]
+/// Marker type to allow types which are [`MakeHeaderValue`] and
+/// also have a [`Default`] way to construct to let them be constructed
+/// on the fly. Useful alternative for cloning or using a function.
+pub struct MakeHeaderValueDefault<M>(PhantomData<fn(M)>);
+
+impl<M> MakeHeaderValueDefault<M> {
+    #[inline(always)]
+    pub(super) fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<M> fmt::Debug for MakeHeaderValueDefault<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("MakeHeaderValueDefault")
+            .field(&std::any::type_name::<M>())
+            .finish()
+    }
+}
+
+impl<M> Clone for MakeHeaderValueDefault<M> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        Self::new()
+    }
+}
+
+impl<M, ReqBody, ResBody> MakeHeaderValueFactory<ReqBody, ResBody> for MakeHeaderValueDefault<M>
+where
+    M: MakeHeaderValue<ResBody> + Default,
+    ReqBody: Send + 'static,
+    ResBody: Send + 'static,
+{
+    type Maker = M;
+
+    fn make_header_value_maker(
+        &self,
+        req: Request<ReqBody>,
+    ) -> impl Future<Output = (Request<ReqBody>, Self::Maker)> + Send + '_ {
+        ready((req, M::default()))
+    }
+}
+
+/// Wrapper used internally as part of making typed headers
+/// encode header values on the spot, when needed.
+#[derive(Debug, Clone, Default)]
+pub struct TypedHeaderAsMaker<H>(pub(super) H);
+
+/// Functional version of [`MakeHeaderValue`].
+pub trait MakeHeaderValueFactoryFn<ReqBody, ResBody, A>: Send + Sync + 'static {
+    type Maker: MakeHeaderValue<ResBody>;
+
+    /// Try to create a header value from the request or response.
+    fn call(
+        &self,
+        request: Request<ReqBody>,
+    ) -> impl Future<Output = (Request<ReqBody>, Self::Maker)> + Send + '_;
+}
+
+impl<F, Fut, ReqBody, ResBody, M> MakeHeaderValueFactoryFn<ReqBody, ResBody, ()> for F
+where
+    ReqBody: Send + 'static,
+    ResBody: Send + 'static,
+    M: MakeHeaderValue<ResBody>,
+    F: Fn() -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = M> + Send + 'static,
+    M: MakeHeaderValue<ResBody>,
+{
+    type Maker = M;
+
+    async fn call(&self, request: Request<ReqBody>) -> (Request<ReqBody>, M) {
+        let maker = self().await;
+        (request, maker)
+    }
+}
+
+impl<F, Fut, ReqBody, ResBody, M> MakeHeaderValueFactoryFn<ReqBody, ResBody, ((), Request<ReqBody>)>
+    for F
+where
+    ReqBody: Send + 'static,
+    ResBody: Send + 'static,
+    M: MakeHeaderValue<ResBody>,
+    F: Fn(Request<ReqBody>) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = (Request<ReqBody>, M)> + Send + 'static,
+    M: MakeHeaderValue<ResBody>,
+{
+    type Maker = M;
+
+    async fn call(&self, request: Request<ReqBody>) -> (Request<ReqBody>, M) {
+        let (request, maker) = self(request).await;
+        (request, maker)
+    }
+}
+
+/// The public wrapper type for [`MakeHeaderValueFactoryFn`].
+pub struct BoxMakeHeaderValueFactoryFn<F, A> {
+    f: F,
+    _marker: PhantomData<fn(A) -> ()>,
+}
+
+impl<F, A> BoxMakeHeaderValueFactoryFn<F, A> {
+    /// Create a new [`BoxMakeHeaderValueFactoryFn`].
+    pub const fn new(f: F) -> Self {
+        Self {
+            f,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F, A> Clone for BoxMakeHeaderValueFactoryFn<F, A>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            f: self.f.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F, A> std::fmt::Debug for BoxMakeHeaderValueFactoryFn<F, A>
+where
+    F: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BoxMakeHeaderValueFn")
+            .field("f", &self.f)
+            .finish()
+    }
+}
+
+impl<ReqBody, ResBody, A, F> MakeHeaderValueFactory<ReqBody, ResBody>
+    for BoxMakeHeaderValueFactoryFn<F, A>
+where
+    A: Send + 'static,
+    F: MakeHeaderValueFactoryFn<ReqBody, ResBody, A>,
+{
+    type Maker = F::Maker;
+
+    fn make_header_value_maker(
+        &self,
+        request: Request<ReqBody>,
+    ) -> impl Future<Output = (Request<ReqBody>, Self::Maker)> + Send + '_ {
+        self.f.call(request)
+    }
+}
+
+/// Functional version of [`MakeHeaderValue`],
+/// to make it easier to create a (response) header maker
+/// directly from a response.
+pub trait MakeHeaderValueFn<B, A>: Send + Sync + 'static {
+    /// Try to create a header value from the request or response.
+    fn call(
+        self,
+        response: Response<B>,
+    ) -> impl Future<Output = (Response<B>, Option<HeaderValue>)> + Send;
+}
+
+impl<F, Fut, B> MakeHeaderValueFn<B, ()> for F
+where
+    B: Send + 'static,
+    F: FnOnce() -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Option<HeaderValue>> + Send + 'static,
+{
+    async fn call(self, response: Response<B>) -> (Response<B>, Option<HeaderValue>) {
+        let maybe_value = self().await;
+        (response, maybe_value)
+    }
+}
+
+impl<F, Fut, B> MakeHeaderValueFn<B, Response<B>> for F
+where
+    B: Send + 'static,
+    F: FnOnce(Response<B>) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = (Response<B>, Option<HeaderValue>)> + Send + 'static,
+{
+    async fn call(self, response: Response<B>) -> (Response<B>, Option<HeaderValue>) {
+        let (response, maybe_value) = self(response).await;
+        (response, maybe_value)
+    }
+}
+
+/// The public wrapper type for [`MakeHeaderValueFn`].
+pub struct BoxMakeHeaderValueFn<F, A> {
+    f: F,
+    _marker: PhantomData<fn(A) -> ()>,
+}
+
+impl<F, A> BoxMakeHeaderValueFn<F, A> {
+    /// Create a new [`BoxMakeHeaderValueFn`].
+    pub const fn new(f: F) -> Self {
+        Self {
+            f,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F, A> Clone for BoxMakeHeaderValueFn<F, A>
+where
+    F: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            f: self.f.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<F, A> std::fmt::Debug for BoxMakeHeaderValueFn<F, A>
+where
+    F: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BoxMakeHeaderValueFn")
+            .field("f", &self.f)
+            .finish()
+    }
+}
+
+impl<B, A, F> MakeHeaderValue<B> for BoxMakeHeaderValueFn<F, A>
+where
+    A: Send + 'static,
+    F: MakeHeaderValueFn<B, A>,
+{
+    fn make_header_value(
+        self,
+        response: Response<B>,
+    ) -> impl Future<Output = (Response<B>, Option<HeaderValue>)> + Send {
+        self.f.call(response)
+    }
+}
+
+impl<F, Fut, ReqBody, ResBody> MakeHeaderValueFactoryFn<ReqBody, ResBody, ((), (), ())> for F
+where
+    ReqBody: Send + 'static,
+    ResBody: Send + 'static,
+    F: Fn() -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = Option<HeaderValue>> + Send + 'static,
+{
+    type Maker = BoxMakeHeaderValueFn<F, ()>;
+
+    async fn call(&self, request: Request<ReqBody>) -> (Request<ReqBody>, Self::Maker) {
+        let maker = self.clone();
+        (request, BoxMakeHeaderValueFn::new(maker))
+    }
+}
+
+impl<F, Fut, ReqBody, ResBody>
+    MakeHeaderValueFactoryFn<ReqBody, ResBody, ((), (), Response<ResBody>)> for F
+where
+    ReqBody: Send + 'static,
+    ResBody: Send + 'static,
+    F: Fn(Response<ResBody>) -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = (Response<ResBody>, Option<HeaderValue>)> + Send + 'static,
+{
+    type Maker = BoxMakeHeaderValueFn<F, Response<ResBody>>;
+
+    async fn call(&self, request: Request<ReqBody>) -> (Request<ReqBody>, Self::Maker) {
+        let maker = self.clone();
+        (request, BoxMakeHeaderValueFn::new(maker))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum InsertHeaderMode {
+    Override,
+    Append,
+    IfNotPresent,
+}
+
+impl InsertHeaderMode {
+    pub(super) async fn apply<B, M>(
+        self,
+        header_name: &HeaderName,
+        response: Response<B>,
+        make: M,
+    ) -> Response<B>
+    where
+        B: Send + 'static,
+        M: MakeHeaderValue<B>,
+    {
+        match self {
+            Self::Override => {
+                let (mut response, maybe_value) = make.make_header_value(response).await;
+                if let Some(value) = maybe_value {
+                    response.headers_mut().insert(header_name.clone(), value);
+                }
+                response
+            }
+            Self::IfNotPresent => {
+                if !response.headers().contains_key(header_name) {
+                    let (mut response, maybe_value) = make.make_header_value(response).await;
+                    if let Some(value) = maybe_value {
+                        response.headers_mut().insert(header_name.clone(), value);
+                    }
+                    response
+                } else {
+                    response
+                }
+            }
+            Self::Append => {
+                let (mut response, maybe_value) = make.make_header_value(response).await;
+                if let Some(value) = maybe_value {
+                    response.headers_mut().append(header_name.clone(), value);
+                }
+                response
+            }
+        }
+    }
+}
