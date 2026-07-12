@@ -90,6 +90,7 @@ iroh-base = { path = "vendor/iroh-base-0.98.0" }
 starlark = { path = "vendor/starlark-0.14.2" }
 pagable = { path = "vendor/pagable-0.4.1" }
 rama-http = { path = "vendor/rama-http-0.3.0-alpha.4" }
+ml-kem = { path = "vendor/ml-kem-0.2.1" }
 tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "132f5b39c862e3a970f731d709608b3e6276d5f6" }
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "9200079d3b54a1ff51072e24d81fd354f085156f" }
 crossterm = { git = "https://github.com/nornagon/crossterm", branch = "nornagon/color-query" }
