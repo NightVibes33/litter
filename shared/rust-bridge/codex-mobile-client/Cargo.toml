@@ -23,7 +23,6 @@ codex-exec-server = { workspace = true }
 codex-login = { workspace = true }
 codex-shell-command = { workspace = true }
 codex-config = { workspace = true }
-codex-cloud-requirements = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-feedback = { workspace = true }
@@ -79,4 +78,4 @@ jni = "0.21"
 ndk-context = "0.1"
 openssl-sys = { version = "0.9", features = ["vendored"] }
 portable-pty = "0.9"
-rusqlite = { version = "0.32.1", features = ["bundled"] }
+rusqlite = { version = "0.39.0", features = ["bundled"] }

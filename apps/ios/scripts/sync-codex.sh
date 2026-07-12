@@ -6,22 +6,10 @@ IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$IOS_DIR/../.." && pwd)"
 SUBMODULE_DIR="$REPO_DIR/shared/third_party/codex"
 PATCH_FILES=(
-    "$REPO_DIR/patches/codex/ios-exec-hook.patch"
-    "$REPO_DIR/patches/codex/mobile-apply-patch-ish-fakefs.patch"
-    "$REPO_DIR/patches/codex/mobile-code-mode-stub.patch"
-    "$REPO_DIR/patches/codex/thread-read-permissions.patch"
-    "$REPO_DIR/patches/codex/mobile-shell-snapshot-timeout.patch"
-    "$REPO_DIR/patches/codex/remote-app-server-websocket-cap.patch"
-    "$REPO_DIR/patches/codex/absolute-path-cross-platform.patch"
-    "$REPO_DIR/patches/codex/android-installation-id-lock.patch"
-    "$REPO_DIR/patches/codex/dynamic-tool-call-arguments-delta.patch"
-    "$REPO_DIR/patches/codex/approval-timestamps-serde-default.patch"
-    "$REPO_DIR/patches/codex/realtime-webrtc-env-apikey.patch"
-    # Realtime multi-server orchestrator (split from old client-controlled-handoff.patch).
-    # Apply order: server-hint adds the realtime_v2_session_tools helper consumed by dynamic-tools.
-    "$REPO_DIR/patches/codex/realtime-handoff-server-hint.patch"
-    "$REPO_DIR/patches/codex/realtime-dynamic-tools.patch"
-    "$REPO_DIR/patches/codex/realtime-client-controlled-handoff.patch"
+    # Refreshed aggregate patch for upstream codex rust-v0.144.1.
+    # Older per-feature patches are kept for history but no longer apply cleanly
+    # after the 0.132 -> 0.144 bridge bump.
+    "$REPO_DIR/patches/codex/mobile-bridge-codex-0.144.1.patch"
 )
 
 patch_already_upstreamed() {

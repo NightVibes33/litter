@@ -24,7 +24,6 @@ codex-shell-command = { path = "../third_party/codex/codex-rs/shell-command" }
 codex-apply-patch = { path = "../third_party/codex/codex-rs/apply-patch" }
 codex-arg0 = { path = "../third_party/codex/codex-rs/arg0" }
 codex-feedback = { path = "../third_party/codex/codex-rs/feedback" }
-codex-cloud-requirements = { path = "../third_party/codex/codex-rs/cloud-requirements" }
 codex-config = { path = "../third_party/codex/codex-rs/config" }
 codex-utils-absolute-path = { path = "../third_party/codex/codex-rs/utils/absolute-path" }
 codex-git-utils = { path = "../third_party/codex/codex-rs/git-utils" }
@@ -87,6 +86,9 @@ debug = 0
 codegen-units = 16
 
 [patch.crates-io]
+iroh-base = { path = "vendor/iroh-base-0.98.0" }
+starlark = { path = "vendor/starlark-0.14.2" }
+pagable = { path = "vendor/pagable-0.4.1" }
 tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "132f5b39c862e3a970f731d709608b3e6276d5f6" }
 tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "9200079d3b54a1ff51072e24d81fd354f085156f" }
 crossterm = { git = "https://github.com/nornagon/crossterm", branch = "nornagon/color-query" }

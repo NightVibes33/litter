@@ -1,0 +1,19 @@
+# @generated
+# To regenerate, run:
+# ```
+# STARLARK_RUST_REGENERATE_GOLDEN_TESTS=1 cargo test -p starlark --lib
+# ```
+
+def trivial():
+    return 10
+
+def test():
+    return trivial()
+
+# Bytecode:
+
+Max stack size: 0
+Instructions:
+       # instrs.star.bzl:5:5-21
+   0: ReturnConst 10
+  16: End
