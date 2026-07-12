@@ -2745,6 +2745,19 @@ index 57a36c331..c16918b3b 100644
  #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
  pub struct PlanDeltaEvent {
      pub thread_id: String,
+diff --git a/codex-rs/rollout/src/policy.rs b/codex-rs/rollout/src/policy.rs
+index 75ddec35a..ebcd77244 100644
+--- a/codex-rs/rollout/src/policy.rs
++++ b/codex-rs/rollout/src/policy.rs
+@@ -171,6 +171,7 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode)
+         | EventMsg::CollabAgentInteractionBegin(_)
+         | EventMsg::CollabWaitingBegin(_)
+         | EventMsg::CollabCloseBegin(_)
+-        | EventMsg::CollabResumeBegin(_) => false,
++        | EventMsg::CollabResumeBegin(_)
++        | EventMsg::DynamicToolCallArgumentsDelta(_) => false,
+     }
+ }
 diff --git a/codex-rs/tui/src/chatwidget/protocol.rs b/codex-rs/tui/src/chatwidget/protocol.rs
 index f60f9c41d..2f9680e95 100644
 --- a/codex-rs/tui/src/chatwidget/protocol.rs
