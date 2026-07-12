@@ -1,0 +1,32 @@
+# GitHub Pages legacy builds run from the repository root. This monorepo contains
+# app source, submodules, vendored crates, and JSON fixtures that are not a
+# Jekyll site. Keep Pages limited to docs/support content so Jekyll does not try
+# to render third-party files as Liquid templates.
+exclude:
+  - .codex
+  - .github
+  - .local
+  - apps
+  - patches
+  - services
+  - shared
+  - ThirdParty
+  - tools
+  - Gemfile
+  - Gemfile.lock
+  - Makefile
+  - Package.swift
+  - dist-workspace.toml
+  - sample.txt
+  - realtime_resume_session.md
+  - AGENTS.md
+  - CLAUDE.md
+  - AUTHORS.md
+  - BUILD_STATUS.md
+  - CONTRIBUTING.md
+  - CONTRIBUTORS.md
+  - DEBUG_LOG.md
+  - LICENSE
+  - README.md
+  - TASKS.md
+  - THIRD_PARTY_NOTICES.md
