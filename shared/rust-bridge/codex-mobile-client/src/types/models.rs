@@ -1150,7 +1150,7 @@ impl From<upstream::Account> for Account {
             upstream::Account::ApiKey {} => Self::ApiKey,
             upstream::Account::AmazonBedrock { .. } => Self::ApiKey,
             upstream::Account::Chatgpt { email, plan_type } => Self::Chatgpt {
-                email,
+                email: email.unwrap_or_default(),
                 plan_type: plan_type.into(),
             },
         }

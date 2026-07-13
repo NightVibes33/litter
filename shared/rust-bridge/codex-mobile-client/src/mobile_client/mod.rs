@@ -3100,7 +3100,7 @@ impl MobileClient {
                 thread,
                 AppModeKind::Plan,
                 params.model.clone(),
-                params.effort,
+                params.effort.clone(),
             );
         }
         if let Some(thread) = thread_snapshot.as_ref()

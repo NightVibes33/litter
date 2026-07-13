@@ -595,6 +595,7 @@ impl ServerSession {
         use codex_app_server::in_process::InProcessStartArgs;
         use codex_app_server_protocol::{ClientInfo, InitializeCapabilities, InitializeParams};
         use codex_arg0::Arg0DispatchPaths;
+        use codex_config::CloudConfigBundleLoader;
         use codex_config::LoaderOverrides;
         use codex_core::config::ConfigBuilder;
         use codex_feedback::CodexFeedback;
@@ -689,6 +690,7 @@ impl ServerSession {
             cli_overrides,
             loader_overrides: LoaderOverrides::default(),
             strict_config: false,
+            cloud_config_bundle: CloudConfigBundleLoader::default(),
             feedback,
             log_db: None,
             state_db: Some(state_db),
@@ -1970,7 +1972,7 @@ mod tests {
             client_version: "0".to_string(),
             experimental_api: true,
             mcp_server_openai_form_elicitation: true,
-        opt_out_notification_methods: Vec::new(),
+            opt_out_notification_methods: Vec::new(),
             channel_capacity: 16,
         }
     }

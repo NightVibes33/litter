@@ -432,6 +432,7 @@ impl TryFrom<AppResumeThreadRequest> for upstream::ThreadResumeParams {
             thread_id: value.thread_id,
             history: None,
             path: None,
+            initial_turns_page: None,
             model: value.model,
             model_provider: None,
             service_tier: None,

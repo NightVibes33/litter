@@ -18,7 +18,7 @@ use codex_app_server_protocol::{
     CollabAgentStatus, CollabAgentTool, CollabAgentToolCallStatus, CommandAction,
     CommandExecutionStatus, DynamicToolCallOutputContentItem, DynamicToolCallStatus,
     FileUpdateChange, McpToolCallResult, McpToolCallStatus, PatchApplyStatus, PatchChangeKind,
-    ThreadItem, Turn, UserInput, WebSearchItem, ImageGenerationItem,
+    ThreadItem, Turn, UserInput,
 };
 use codex_shell_command::parse_command::extract_shell_command;
 use serde::Serialize;
@@ -523,7 +523,7 @@ fn convert_thread_item(
             }),
             false,
         ),
-        ThreadItem::HookPrompt { .. } => return None,
+        ThreadItem::Sleep { .. } | ThreadItem::SubAgentActivity { .. } | ThreadItem::HookPrompt { .. } => return None,
     };
 
     Some(HydratedConversationItem {

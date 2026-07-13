@@ -590,7 +590,7 @@ impl EventProcessor {
                     params.command.clone(),
                     None,
                     None,
-                    params.cwd.as_ref().map(|p| p.display().to_string()),
+                    params.cwd.as_ref().map(|p| p.render_for_ui()),
                     params.reason.clone(),
                     request_id,
                     raw,
