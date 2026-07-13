@@ -26,6 +26,7 @@ codex-arg0 = { path = "../third_party/codex/codex-rs/arg0" }
 codex-feedback = { path = "../third_party/codex/codex-rs/feedback" }
 codex-config = { path = "../third_party/codex/codex-rs/config" }
 codex-utils-absolute-path = { path = "../third_party/codex/codex-rs/utils/absolute-path" }
+codex-utils-path-uri = { path = "../third_party/codex/codex-rs/utils/path-uri" }
 codex-git-utils = { path = "../third_party/codex/codex-rs/git-utils" }
 alleycat-bridge-core = { git = "https://github.com/dnakov/alleycat.git", branch = "main" }
 alleycat-pi-bridge = { git = "https://github.com/dnakov/alleycat.git", branch = "main" }
@@ -42,6 +43,7 @@ lru = "0.12"
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 base64 = "0.22"
+bytes = "1.10.1"
 sha2 = "0.10"
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 rand_core = { version = "0.6", features = ["getrandom"] }

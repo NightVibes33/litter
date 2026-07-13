@@ -3,18 +3,19 @@ use std::io;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
-use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use codex_exec_server::CopyOptions;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::FileMetadata;
+use codex_exec_server::FileSystemReadStream;
 use codex_exec_server::FileSystemResult;
 use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::ReadDirectoryEntry;
 use codex_exec_server::RemoveOptions;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::PathUri;
 
 use crate::mobile_exec_command::mobile_system_command;
 use crate::shell_quoting::posix_quote;
@@ -150,6 +151,7 @@ fn run_apply_patch_in_process(argv: &[String], cwd: &Path) -> (i32, Vec<u8>) {
             return (1, msg.into_bytes());
         }
     };
+    let cwd_uri = PathUri::from_abs_path(&cwd_abs);
     let mut stdout_buf = Vec::new();
     let mut stderr_buf = Vec::new();
     let fs = IshFakefsFileSystem;
@@ -166,7 +168,7 @@ fn run_apply_patch_in_process(argv: &[String], cwd: &Path) -> (i32, Vec<u8>) {
     };
     let result = runtime.block_on(codex_apply_patch::apply_patch(
         patch,
-        &cwd_abs,
+        &cwd_uri,
         &mut stdout_buf,
         &mut stderr_buf,
         &fs,
@@ -197,13 +199,24 @@ pub(crate) fn fakefs_file_system() -> Arc<dyn ExecutorFileSystem> {
 
 pub(crate) struct IshFakefsFileSystem;
 
-#[async_trait]
 impl ExecutorFileSystem for IshFakefsFileSystem {
-    async fn read_file(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<Vec<u8>> {
+    fn canonicalize<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, PathUri> {
+        Box::pin(async move {
+            accept_fakefs_sandbox_context(sandbox)?;
+            Ok(path.clone())
+        })
+    }
+
+    fn read_file<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, Vec<u8>> {
+        Box::pin(async move {
         accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let command = format!("base64 < {}", posix_quote(&path));
@@ -215,14 +228,29 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         BASE64_STANDARD
             .decode(encoded.as_bytes())
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+        })
     }
 
-    async fn write_file(
-        &self,
-        path: &AbsolutePathBuf,
+    fn read_file_stream<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, FileSystemReadStream> {
+        Box::pin(async move {
+            let bytes = self.read_file(path, sandbox).await?;
+            Ok(FileSystemReadStream::new(futures::stream::once(async move {
+                Ok(bytes::Bytes::from(bytes))
+            })))
+        })
+    }
+
+    fn write_file<'a>(
+        &'a self,
+        path: &'a PathUri,
         contents: Vec<u8>,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()> {
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, ()> {
+        Box::pin(async move {
         accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let encoded = BASE64_STANDARD.encode(contents);
@@ -232,14 +260,16 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
             encoded
         );
         run_ish_fs_command("write_file", &command).map(|_| ())
+        })
     }
 
-    async fn create_directory(
-        &self,
-        path: &AbsolutePathBuf,
+    fn create_directory<'a>(
+        &'a self,
+        path: &'a PathUri,
         options: CreateDirectoryOptions,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()> {
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, ()> {
+        Box::pin(async move {
         accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let command = if options.recursive {
@@ -248,13 +278,15 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
             format!("mkdir {}", posix_quote(&path))
         };
         run_ish_fs_command("create_directory", &command).map(|_| ())
+        })
     }
 
-    async fn get_metadata(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<FileMetadata> {
+    fn get_metadata<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, FileMetadata> {
+        Box::pin(async move {
         accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let command = format!(
@@ -263,8 +295,10 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
              if [ -f \"$p\" ]; then echo is_file=1; else echo is_file=0; fi; \
              if [ -L \"$p\" ]; then echo is_symlink=1; else echo is_symlink=0; fi; \
              modified=$(stat -c %Y \"$p\" 2>/dev/null || echo 0); \
+             size=$(stat -c %s \"$p\" 2>/dev/null || echo 0); \
              case \"$modified\" in ''|*[!0-9]*) modified=0;; esac; \
-             echo created_at_ms=0; echo modified_at_ms=$((modified * 1000))",
+             case \"$size\" in ''|*[!0-9]*) size=0;; esac; \
+             echo created_at_ms=0; echo modified_at_ms=$((modified * 1000)); echo size=$size",
             posix_quote(&path)
         );
         let output = run_ish_fs_command("get_metadata", &command)?;
@@ -281,14 +315,20 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
                 .get("modified_at_ms")
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(0),
+            size: fields
+                .get("size")
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0),
+        })
         })
     }
 
-    async fn read_directory(
-        &self,
-        path: &AbsolutePathBuf,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<Vec<ReadDirectoryEntry>> {
+    fn read_directory<'a>(
+        &'a self,
+        path: &'a PathUri,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, Vec<ReadDirectoryEntry>> {
+        Box::pin(async move {
         accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let command = format!(
@@ -318,14 +358,16 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
             });
         }
         Ok(entries)
+        })
     }
 
-    async fn remove(
-        &self,
-        path: &AbsolutePathBuf,
+    fn remove<'a>(
+        &'a self,
+        path: &'a PathUri,
         options: RemoveOptions,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()> {
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, ()> {
+        Box::pin(async move {
         accept_fakefs_sandbox_context(sandbox)?;
         let path = path_string(path);
         let missing_branch = if options.force { "exit 0" } else { "exit 2" };
@@ -343,15 +385,17 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
             )
         };
         run_ish_fs_command("remove", &command).map(|_| ())
+        })
     }
 
-    async fn copy(
-        &self,
-        source_path: &AbsolutePathBuf,
-        destination_path: &AbsolutePathBuf,
+    fn copy<'a>(
+        &'a self,
+        source_path: &'a PathUri,
+        destination_path: &'a PathUri,
         options: CopyOptions,
-        sandbox: Option<&FileSystemSandboxContext>,
-    ) -> FileSystemResult<()> {
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, ()> {
+        Box::pin(async move {
         accept_fakefs_sandbox_context(sandbox)?;
         let source_path = path_string(source_path);
         let destination_path = path_string(destination_path);
@@ -369,6 +413,7 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
             )
         };
         run_ish_fs_command("copy", &command).map(|_| ())
+        })
     }
 }
 
@@ -378,8 +423,8 @@ fn accept_fakefs_sandbox_context(
     Ok(())
 }
 
-fn path_string(path: &AbsolutePathBuf) -> String {
-    path.as_path().to_string_lossy().into_owned()
+fn path_string(path: &PathUri) -> String {
+    path.to_path_buf().to_string_lossy().into_owned()
 }
 
 fn run_ish_fs_command(operation: &str, command: &str) -> FileSystemResult<Vec<u8>> {

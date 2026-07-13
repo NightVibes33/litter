@@ -24,6 +24,7 @@ codex-login = { workspace = true }
 codex-shell-command = { workspace = true }
 codex-config = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
+codex-utils-path-uri = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-feedback = { workspace = true }
 codex-arg0 = { workspace = true }
@@ -42,6 +43,7 @@ lru = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
 base64 = { workspace = true }
+bytes = { workspace = true }
 russh = { workspace = true }
 russh-keys = { workspace = true }
 futures = { workspace = true }
