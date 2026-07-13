@@ -15,7 +15,7 @@ diff --git a/codex-rs/code-mode/src/lib.rs b/codex-rs/code-mode/src/lib.rs
 index 3da8c77325..258dccc0ec 100644
 --- a/codex-rs/code-mode/src/lib.rs
 +++ b/codex-rs/code-mode/src/lib.rs
-@@ -1,6 +1,14 @@
+@@ -1,6 +1,17 @@
  mod description;
  mod response;
 +#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
@@ -24,12 +24,37 @@ index 3da8c77325..258dccc0ec 100644
 +#[path = "runtime_stub.rs"]
 +mod runtime;
 +#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
-+mod service;
+ mod service;
 +#[cfg(any(target_os = "ios", target_os = "android", target_os = "linux"))]
 +#[path = "service_stub.rs"]
- mod service;
++mod service;
++#[cfg(any(target_os = "ios", target_os = "android", target_os = "linux"))]
++#[path = "v8_init_stub.rs"]
++mod v8_init;
  
  pub use description::CODE_MODE_PRAGMA_PREFIX;
+diff --git a/codex-rs/code-mode/src/v8_init_stub.rs b/codex-rs/code-mode/src/v8_init_stub.rs
+new file mode 100644
+index 0000000000..7d24ab1111
+--- /dev/null
++++ b/codex-rs/code-mode/src/v8_init_stub.rs
+@@ -0,0 +1,16 @@
++/// Controls whether V8 may generate executable code at runtime.
++#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
++pub enum V8JitMode {
++    #[default]
++    Enabled,
++    Disabled,
++}
++
++/// Mobile builds do not link V8; code-mode execution is stubbed out.
++pub fn initialize_v8(_jit_mode: V8JitMode) -> Result<(), String> {
++    Ok(())
++}
++
++pub(crate) fn ensure_v8_initialized() -> Result<(), String> {
++    Ok(())
++}
 diff --git a/codex-rs/code-mode/src/runtime_stub.rs b/codex-rs/code-mode/src/runtime_stub.rs
 new file mode 100644
 index 0000000000..11285658a1
@@ -138,12 +163,9 @@ index 0000000000..f943591fb3
 +use std::sync::Arc;
 +use std::sync::atomic::{AtomicU64, Ordering};
 +
-+use async_trait::async_trait;
 +use serde_json::Value as JsonValue;
 +use tokio::sync::Mutex;
-+use tokio_util::sync::CancellationToken;
 +
-+use crate::runtime::CodeModeNestedToolCall;
 +use crate::runtime::ExecuteRequest;
 +use crate::runtime::RuntimeResponse;
 +use crate::runtime::WaitOutcome;
@@ -151,16 +173,7 @@ index 0000000000..f943591fb3
 +
 +const MOBILE_UNSUPPORTED_MESSAGE: &str = "exec is unavailable on mobile targets in this build";
 +
-+#[async_trait]
-+pub trait CodeModeTurnHost: Send + Sync {
-+    async fn invoke_tool(
-+        &self,
-+        invocation: CodeModeNestedToolCall,
-+        cancellation_token: CancellationToken,
-+    ) -> Result<JsonValue, String>;
-+
-+    async fn notify(&self, call_id: String, cell_id: String, text: String) -> Result<(), String>;
-+}
++pub trait CodeModeTurnHost: Send + Sync {}
 +
 +pub struct CodeModeService {
 +    stored_values: Arc<Mutex<HashMap<String, JsonValue>>>,
