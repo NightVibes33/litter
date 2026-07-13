@@ -940,7 +940,7 @@ new file mode 100644
 index 000000000..1110c9c63
 --- /dev/null
 +++ b/codex-rs/code-mode/src/service_stub.rs
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,126 @@
 +use std::sync::Arc;
 +
 +use codex_code_mode_protocol::CellId;
@@ -998,7 +998,10 @@ index 000000000..1110c9c63
 +        &'a self,
 +        _delegate: Arc<dyn CodeModeSessionDelegate>,
 +    ) -> CodeModeSessionProviderFuture<'a> {
-+        Box::pin(async { Ok(Arc::new(InProcessCodeModeSession::new())) })
++        Box::pin(async {
++            let session: Arc<dyn CodeModeSession> = Arc::new(InProcessCodeModeSession::new());
++            Ok(session)
++        })
 +    }
 +}
 +
