@@ -63,20 +63,27 @@ impl TryFrom<AppDynamicToolSpec> for codex_protocol::dynamic_tools::DynamicToolS
     type Error = RpcClientError;
 
     fn try_from(value: AppDynamicToolSpec) -> Result<Self, Self::Error> {
-        Ok(Self {
+        Ok(Self::Function(codex_protocol::dynamic_tools::DynamicToolFunctionSpec {
             name: value.name,
             description: value.description,
             input_schema: serde_json::from_str(&value.input_schema_json).map_err(|e| {
                 RpcClientError::Serialization(format!("invalid input_schema JSON: {e}"))
             })?,
-            namespace: None,
             defer_loading: value.defer_loading,
-        })
+        }))
     }
 }
 
 impl From<codex_protocol::dynamic_tools::DynamicToolSpec> for AppDynamicToolSpec {
     fn from(value: codex_protocol::dynamic_tools::DynamicToolSpec) -> Self {
+        let codex_protocol::dynamic_tools::DynamicToolSpec::Function(value) = value else {
+            return Self {
+                name: "namespace".to_string(),
+                description: "Dynamic tool namespace".to_string(),
+                input_schema_json: "{}".to_string(),
+                defer_loading: true,
+            };
+        };
         Self {
             name: value.name,
             description: value.description,
@@ -511,6 +518,9 @@ impl From<upstream::AuthMode> for AuthMode {
             upstream::AuthMode::Chatgpt => Self::Chatgpt,
             upstream::AuthMode::ChatgptAuthTokens => Self::ChatgptAuthTokens,
             upstream::AuthMode::AgentIdentity => Self::AgentIdentity,
+            upstream::AuthMode::Headers => Self::ApiKey,
+            upstream::AuthMode::PersonalAccessToken => Self::ApiKey,
+            upstream::AuthMode::BedrockApiKey => Self::ApiKey,
         }
     }
 }
@@ -856,7 +866,6 @@ impl From<upstream::AskForApproval> for AppAskForApproval {
     fn from(value: upstream::AskForApproval) -> Self {
         match value {
             upstream::AskForApproval::UnlessTrusted => Self::UnlessTrusted,
-            upstream::AskForApproval::OnFailure => Self::OnFailure,
             upstream::AskForApproval::OnRequest => Self::OnRequest,
             upstream::AskForApproval::Granular {
                 sandbox_approval,
@@ -1139,7 +1148,7 @@ impl From<upstream::Account> for Account {
     fn from(value: upstream::Account) -> Self {
         match value {
             upstream::Account::ApiKey {} => Self::ApiKey,
-            upstream::Account::AmazonBedrock {} => Self::ApiKey,
+            upstream::Account::AmazonBedrock { .. } => Self::ApiKey,
             upstream::Account::Chatgpt { email, plan_type } => Self::Chatgpt {
                 email,
                 plan_type: plan_type.into(),
@@ -1534,7 +1543,7 @@ impl From<upstream::AppSummary> for PluginAuthAppSummary {
             name: value.name,
             description: value.description,
             install_url: value.install_url,
-            needs_auth: value.needs_auth,
+            needs_auth: false,
         }
     }
 }

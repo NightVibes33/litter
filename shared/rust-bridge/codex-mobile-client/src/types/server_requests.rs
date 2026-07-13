@@ -35,7 +35,7 @@ fn normalize_cwd(value: Option<String>) -> Option<String> {
 pub(crate) fn ask_for_approval_into_upstream(value: AppAskForApproval) -> upstream::AskForApproval {
     match value {
         AppAskForApproval::UnlessTrusted => upstream::AskForApproval::UnlessTrusted,
-        AppAskForApproval::OnFailure => upstream::AskForApproval::OnFailure,
+        AppAskForApproval::OnFailure => upstream::AskForApproval::OnRequest,
         AppAskForApproval::OnRequest => upstream::AskForApproval::OnRequest,
         AppAskForApproval::Granular {
             sandbox_approval,
@@ -358,6 +358,7 @@ impl TryFrom<AppStartThreadRequest> for upstream::ThreadStartParams {
         Ok(Self {
             model: value.model,
             model_provider: None,
+            allow_provider_model_fallback: false,
             service_tier: None,
             cwd: normalize_cwd(value.cwd),
             runtime_workspace_roots: None,
@@ -370,7 +371,9 @@ impl TryFrom<AppStartThreadRequest> for upstream::ThreadStartParams {
             base_instructions: None,
             developer_instructions: value.developer_instructions,
             personality: None,
+            multi_agent_mode: None,
             ephemeral: value.ephemeral,
+            history_mode: None,
             session_start_source: None,
             thread_source: None,
             dynamic_tools: value
@@ -385,21 +388,22 @@ impl TryFrom<AppStartThreadRequest> for upstream::ThreadStartParams {
                                         "parse dynamic tool input_schema_json: {e}"
                                     ))
                                 })?;
-                            Ok(upstream::DynamicToolSpec {
-                                name: spec.name,
-                                description: spec.description,
-                                input_schema,
-                                namespace: None,
-                                defer_loading: spec.defer_loading,
-                            })
+                            Ok(upstream::DynamicToolSpec::Function(
+                                codex_protocol::dynamic_tools::DynamicToolFunctionSpec {
+                                    name: spec.name,
+                                    description: spec.description,
+                                    input_schema,
+                                    defer_loading: spec.defer_loading,
+                                },
+                            ))
                         })
                         .collect::<Result<Vec<_>, RpcClientError>>()
                 })
                 .transpose()?,
             environments: None,
+            selected_capability_roots: None,
             mock_experimental_field: None,
             experimental_raw_events: false,
-            persist_extended_history: value.persist_extended_history,
         })
     }
 }
@@ -442,7 +446,6 @@ impl TryFrom<AppResumeThreadRequest> for upstream::ThreadResumeParams {
             developer_instructions: value.developer_instructions,
             personality: None,
             exclude_turns: value.exclude_turns,
-            persist_extended_history: value.persist_extended_history,
         })
     }
 }
@@ -469,6 +472,7 @@ impl TryFrom<AppForkThreadRequest> for upstream::ThreadForkParams {
     fn try_from(value: AppForkThreadRequest) -> Result<Self, Self::Error> {
         Ok(Self {
             thread_id: value.thread_id,
+            last_turn_id: None,
             path: None,
             model: value.model,
             model_provider: None,
@@ -485,7 +489,6 @@ impl TryFrom<AppForkThreadRequest> for upstream::ThreadForkParams {
             ephemeral: false,
             thread_source: None,
             exclude_turns: value.exclude_turns,
-            persist_extended_history: value.persist_extended_history,
         })
     }
 }
@@ -709,6 +712,8 @@ impl From<AppListThreadsRequest> for upstream::ThreadListParams {
             cwd: normalize_cwd(value.cwd).map(upstream::ThreadListCwdFilter::One),
             search_term: value.search_term,
             use_state_db_only: value.use_state_db_only,
+            parent_thread_id: None,
+            ancestor_thread_id: None,
         }
     }
 }
@@ -866,12 +871,14 @@ impl TryFrom<AppStartTurnRequest> for upstream::TurnStartParams {
     fn try_from(value: AppStartTurnRequest) -> Result<Self, Self::Error> {
         Ok(Self {
             thread_id: value.thread_id,
+            client_user_message_id: None,
             input: value
                 .input
                 .into_iter()
                 .map(user_input_into_upstream)
                 .collect::<Result<Vec<_>, _>>()?,
             responsesapi_client_metadata: None,
+            additional_context: None,
             cwd: None,
             runtime_workspace_roots: None,
             approval_policy: value.approval_policy.map(ask_for_approval_into_upstream),
@@ -902,6 +909,7 @@ impl TryFrom<AppStartTurnRequest> for upstream::TurnStartParams {
                 })
                 .transpose()?,
             collaboration_mode: None,
+            multi_agent_mode: None,
         })
     }
 }
@@ -940,7 +948,14 @@ impl TryFrom<AppStartRealtimeSessionRequest> for upstream::ThreadRealtimeStartPa
                 .into(),
             transport: value.transport.map(Into::into),
             voice: value.voice.map(Into::into),
-            client_controlled_handoff: value.client_controlled_handoff,
+            client_managed_handoffs: Some(value.client_controlled_handoff),
+            flush_transcript_tail_on_session_end: None,
+            codex_responses_as_items: None,
+            codex_response_item_prefix: None,
+            codex_response_handoff_prefix: None,
+            model: None,
+            include_startup_context: None,
+            version: None,
             dynamic_tools: value
                 .dynamic_tools
                 .map(|tools| {
@@ -988,6 +1003,7 @@ impl From<AppAppendRealtimeTextRequest> for upstream::ThreadRealtimeAppendTextPa
         Self {
             thread_id: value.thread_id,
             text: value.text,
+            role: codex_protocol::protocol::ConversationTextRole::User,
         }
     }
 }
@@ -1084,6 +1100,8 @@ impl From<AppLoginAccountRequest> for upstream::LoginAccountParams {
             AppLoginAccountRequest::ApiKey { api_key } => Self::ApiKey { api_key },
             AppLoginAccountRequest::Chatgpt => Self::Chatgpt {
                 codex_streamlined_login: false,
+                use_hosted_login_success_page: false,
+                app_brand: None,
             },
             AppLoginAccountRequest::ChatgptAuthTokens {
                 access_token,

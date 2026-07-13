@@ -229,6 +229,7 @@ impl MobileClient {
             Some(response.model.clone()),
             response
                 .reasoning_effort
+                .clone()
                 .map(Into::into)
                 .map(crate::reasoning_effort_string),
             Some(response.approval_policy.clone().into()),
@@ -293,6 +294,7 @@ impl MobileClient {
             Some(response.model.clone()),
             response
                 .reasoning_effort
+                .clone()
                 .map(Into::into)
                 .map(crate::reasoning_effort_string),
             Some(response.approval_policy.clone().into()),
@@ -318,6 +320,7 @@ impl MobileClient {
             Some(response.model.clone()),
             response
                 .reasoning_effort
+                .clone()
                 .map(Into::into)
                 .map(crate::reasoning_effort_string),
             Some(response.approval_policy.clone().into()),

@@ -18,7 +18,7 @@ use codex_app_server_protocol::{
     CollabAgentStatus, CollabAgentTool, CollabAgentToolCallStatus, CommandAction,
     CommandExecutionStatus, DynamicToolCallOutputContentItem, DynamicToolCallStatus,
     FileUpdateChange, McpToolCallResult, McpToolCallStatus, PatchApplyStatus, PatchChangeKind,
-    ThreadItem, Turn, UserInput,
+    ThreadItem, Turn, UserInput, WebSearchItem, ImageGenerationItem,
 };
 use codex_shell_command::parse_command::extract_shell_command;
 use serde::Serialize;
@@ -297,7 +297,7 @@ fn convert_thread_item(
             (
                 HydratedConversationItemContent::CommandExecution(HydratedCommandExecutionData {
                     command: truncate_command_display_text(&display_command(command)),
-                    cwd: truncate_command_action_field(&cwd.display().to_string()),
+                    cwd: truncate_command_action_field(&cwd.render_for_ui()),
                     status: convert_command_status(status),
                     output: aggregated_output
                         .as_deref()
@@ -466,13 +466,13 @@ fn convert_thread_item(
                 false,
             )
         }
-        ThreadItem::WebSearch { query, action, .. } => {
-            let action_json = action
+        ThreadItem::WebSearch(item) => {
+            let action_json = item.action
                 .as_ref()
                 .and_then(|a| serde_json::to_value(a).ok().and_then(|v| pretty_json(&v)));
             (
                 HydratedConversationItemContent::WebSearch(HydratedWebSearchData {
-                    query: query.clone(),
+                    query: item.query.clone(),
                     action_json,
                     is_in_progress: false,
                 }),
@@ -481,30 +481,24 @@ fn convert_thread_item(
         }
         ThreadItem::ImageView { path, .. } => (
             HydratedConversationItemContent::ImageView(HydratedImageViewData {
-                path: path.to_string_lossy().into_owned(),
+                path: path.render_for_ui(),
             }),
             false,
         ),
-        ThreadItem::ImageGeneration {
-            status,
-            revised_prompt,
-            result,
-            saved_path,
-            ..
-        } => {
-            let image_png = decode_image_generation_result(result);
-            let saved_path_string = saved_path
+        ThreadItem::ImageGeneration(item) => {
+            let image_png = decode_image_generation_result(&item.result);
+            let saved_path_string = item.saved_path
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned());
             let normalized_status = convert_image_generation_status(
-                status,
+                &item.status,
                 image_png.is_some(),
                 saved_path_string.as_deref(),
             );
             (
                 HydratedConversationItemContent::ImageGeneration(HydratedImageGenerationData {
                     status: normalized_status,
-                    revised_prompt: revised_prompt.clone(),
+                    revised_prompt: item.revised_prompt.clone(),
                     image_png,
                     saved_path: saved_path_string,
                 }),
@@ -2279,11 +2273,11 @@ diff --git a/parser.rs b/parser.rs\n\
                     reasoning_effort: None,
                     agents_states: agent_states,
                 },
-                ThreadItem::WebSearch {
+                ThreadItem::WebSearch(WebSearchItem {
                     id: "web-1".into(),
                     query: "swiftui subagent cards".into(),
                     action: None,
-                },
+                }),
                 ThreadItem::ImageView {
                     id: "img-1".into(),
                     path: test_abs_path("/tmp/screenshot.png"),
@@ -2479,31 +2473,31 @@ diff --git a/parser.rs b/parser.rs\n\
         let turns = vec![make_turn(
             "t-imagegen",
             vec![
-                ThreadItem::ImageGeneration {
+                ThreadItem::ImageGeneration(ImageGenerationItem {
                     id: "ig-1".into(),
                     status: "completed".into(),
                     revised_prompt: Some("a grumpy pirate kitty".into()),
                     result: png_base64.into(),
                     saved_path: Some(test_abs_path("/tmp/ig-1.png")),
-                },
+                }),
                 // A still-streaming item should stay InProgress with no bytes.
-                ThreadItem::ImageGeneration {
+                ThreadItem::ImageGeneration(ImageGenerationItem {
                     id: "ig-2".into(),
                     status: String::new(),
                     revised_prompt: None,
                     result: String::new(),
                     saved_path: None,
-                },
+                }),
                 // Codex Desktop has been observed to emit status="generating"
                 // even on the final end event. Presence of bytes or a saved
                 // path should mark the item as Completed regardless.
-                ThreadItem::ImageGeneration {
+                ThreadItem::ImageGeneration(ImageGenerationItem {
                     id: "ig-3".into(),
                     status: "generating".into(),
                     revised_prompt: None,
                     result: png_base64.into(),
                     saved_path: Some(test_abs_path("/tmp/ig-3.png")),
-                },
+                }),
             ],
         )];
 

@@ -430,15 +430,6 @@ impl EventProcessor {
                     delta: n.delta.clone(),
                 });
             }
-            ServerNotification::DynamicToolCallArgumentsDelta(n) => {
-                let key = Self::make_key(server_id, &n.thread_id);
-                self.emit(UiEvent::DynamicToolCallArgumentsDelta {
-                    key,
-                    item_id: n.item_id.clone(),
-                    call_id: n.call_id.clone(),
-                    delta: n.delta.clone(),
-                });
-            }
             ServerNotification::FileChangeOutputDelta(n) => {
                 let key = Self::make_key(server_id, &n.thread_id);
                 self.emit(UiEvent::CommandOutputDelta {
@@ -916,6 +907,13 @@ fn mcp_elicitation_questions(
             }
             questions
         }
+        codex_app_server_protocol::McpServerElicitationRequest::OpenAiForm { meta, message, .. } => {
+            vec![mcp_approval_action_question(
+                message,
+                meta.as_ref(),
+                &params.server_name,
+            )]
+        }
         codex_app_server_protocol::McpServerElicitationRequest::Url { message, url, .. } => {
             let prompt = if message.trim().is_empty() {
                 url.clone()
@@ -1292,12 +1290,12 @@ mod tests {
             | proto::ThreadItem::McpToolCall { id, .. }
             | proto::ThreadItem::DynamicToolCall { id, .. }
             | proto::ThreadItem::CollabAgentToolCall { id, .. }
-            | proto::ThreadItem::WebSearch { id, .. }
             | proto::ThreadItem::ImageView { id, .. }
-            | proto::ThreadItem::ImageGeneration { id, .. }
             | proto::ThreadItem::EnteredReviewMode { id, .. }
             | proto::ThreadItem::ExitedReviewMode { id, .. }
             | proto::ThreadItem::ContextCompaction { id, .. } => id,
+            proto::ThreadItem::WebSearch(item) => &item.id,
+            proto::ThreadItem::ImageGeneration(item) => &item.id,
         }
     }
 

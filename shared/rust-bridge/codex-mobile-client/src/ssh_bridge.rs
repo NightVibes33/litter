@@ -563,6 +563,7 @@ async fn connect_bridge_stream(
         client_name: "Litter".to_string(),
         client_version: "1.0".to_string(),
         experimental_api: true,
+        mcp_server_openai_form_elicitation: true,
         opt_out_notification_methods: Vec::new(),
         channel_capacity: 256,
     };
@@ -592,6 +593,7 @@ async fn connect_codex_via_ssh(
         client_name: "Litter".to_string(),
         client_version: "1.0".to_string(),
         experimental_api: true,
+        mcp_server_openai_form_elicitation: true,
         opt_out_notification_methods: Vec::new(),
         channel_capacity: 256,
     };

@@ -423,6 +423,14 @@ fn mcp_elicitation_response_json(
                 meta: None,
             }
         }
+        upstream::McpServerElicitationRequest::OpenAiForm { .. } => {
+            let (action, meta) = mcp_approval_action_response(answers);
+            upstream::McpServerElicitationRequestResponse {
+                action,
+                content: None,
+                meta,
+            }
+        }
         upstream::McpServerElicitationRequest::Url { .. } => {
             let answer = pending_user_input_first_answer(answers, MCP_URL_ACTION_FIELD_ID);
             let action = match answer {
@@ -2418,6 +2426,8 @@ impl MobileClient {
                 cwd: None,
                 search_term: None,
                 use_state_db_only: false,
+                parent_thread_id: None,
+                ancestor_thread_id: None,
             })
             .await
             .map_err(map_rpc_client_error)?;
@@ -2467,6 +2477,8 @@ impl MobileClient {
 
         let params = upstream::LoginAccountParams::Chatgpt {
             codex_streamlined_login: false,
+            use_hosted_login_success_page: false,
+            app_brand: None,
         };
         let response = self
             .request_typed_for_server::<upstream::LoginAccountResponse>(
@@ -3149,8 +3161,10 @@ impl MobileClient {
                         request_id: upstream::RequestId::Integer(crate::next_request_id()),
                         params: upstream::TurnSteerParams {
                             thread_id: params.thread_id.clone(),
+                            client_user_message_id: None,
                             input: direct_params.input.clone(),
                             responsesapi_client_metadata: None,
+                            additional_context: None,
                             expected_turn_id: active_turn_id,
                         },
                     },
@@ -3252,8 +3266,10 @@ impl MobileClient {
                 request_id: upstream::RequestId::Integer(crate::next_request_id()),
                 params: upstream::TurnSteerParams {
                     thread_id: key.thread_id.clone(),
+                    client_user_message_id: None,
                     input: draft.inputs,
                     responsesapi_client_metadata: None,
+                    additional_context: None,
                     expected_turn_id: active_turn_id,
                 },
             },
@@ -3743,11 +3759,13 @@ impl MobileClient {
             .and_then(|t| collaboration_mode_from_thread(t, AppModeKind::Default, None, None));
         self.start_turn(&key.server_id, upstream::TurnStartParams {
             thread_id: key.thread_id.clone(),
+            client_user_message_id: None,
             input: vec![upstream::UserInput::Text {
                 text: "Implement the plan.".to_string(),
                 text_elements: Vec::new(),
             }],
             responsesapi_client_metadata: None,
+            additional_context: None,
             cwd: None,
             runtime_workspace_roots: None,
             approval_policy: None,
@@ -3762,6 +3780,7 @@ impl MobileClient {
             personality: None,
             output_schema: None,
             collaboration_mode,
+            multi_agent_mode: None,
         })
         .await
     }

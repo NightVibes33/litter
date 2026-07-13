@@ -249,18 +249,20 @@ pub(crate) async fn run_minigame(
     let app_tool = show_widget_tool_spec();
     let input_schema: serde_json::Value = serde_json::from_str(&app_tool.input_schema_json)
         .map_err(|e| format!("parse show_widget input schema: {e}"))?;
-    let dynamic_tools = vec![upstream::DynamicToolSpec {
-        name: app_tool.name,
-        description: app_tool.description,
-        input_schema,
-        namespace: None,
-        defer_loading: app_tool.defer_loading,
-    }];
+    let dynamic_tools = vec![upstream::DynamicToolSpec::Function(
+        codex_protocol::dynamic_tools::DynamicToolFunctionSpec {
+            name: app_tool.name,
+            description: app_tool.description,
+            input_schema,
+            defer_loading: app_tool.defer_loading,
+        },
+    )];
 
     // 1. Start ephemeral thread
     let start_params = upstream::ThreadStartParams {
         model: Some(MINIGAME_MODEL.to_string()),
         model_provider: None,
+        allow_provider_model_fallback: false,
         // ThreadStartParams.service_tier is Option<Option<ServiceTier>> (double-option wire format)
         service_tier: Some(Some(service_tier_into_upstream_string(ServiceTier::Fast))),
         cwd: None,
@@ -274,14 +276,16 @@ pub(crate) async fn run_minigame(
         base_instructions: None,
         developer_instructions: Some(developer_instructions),
         personality: None,
+        multi_agent_mode: None,
         ephemeral: Some(true),
+        history_mode: None,
         session_start_source: None,
         thread_source: None,
         environments: None,
         dynamic_tools: Some(dynamic_tools),
+        selected_capability_roots: None,
         mock_experimental_field: None,
         experimental_raw_events: false,
-        persist_extended_history: false,
     };
 
     let thread_response: upstream::ThreadStartResponse = client
@@ -317,11 +321,13 @@ pub(crate) async fn run_minigame(
     // 3. Run one turn
     let turn_params = upstream::TurnStartParams {
         thread_id: ephemeral_thread_id.clone(),
+        client_user_message_id: None,
         input: vec![upstream::UserInput::Text {
             text: "Generate the minigame now.".to_string(),
             text_elements: Vec::new(),
         }],
         responsesapi_client_metadata: None,
+        additional_context: None,
         cwd: None,
         runtime_workspace_roots: None,
         approval_policy: None,
@@ -337,6 +343,7 @@ pub(crate) async fn run_minigame(
         personality: None,
         output_schema: None,
         collaboration_mode: None,
+        multi_agent_mode: None,
     };
 
     if let Err(e) = client
