@@ -721,7 +721,7 @@ index 367a4a64c..1daa5e4de 100644
 
  #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 diff --git a/codex-rs/app-server/src/bespoke_event_handling.rs b/codex-rs/app-server/src/bespoke_event_handling.rs
-index 829aa3f12..782bd27c5 100644
+index 829aa3f12..c04a98e39 100644
 --- a/codex-rs/app-server/src/bespoke_event_handling.rs
 +++ b/codex-rs/app-server/src/bespoke_event_handling.rs
 @@ -490,6 +490,39 @@ pub(crate) async fn apply_bespoke_event_handling(
@@ -836,10 +836,10 @@ index fc6a3281b..5570ebe14 100644
 
      /// Builds the API view for `thread/read` from persisted metadata plus optional live state.
 diff --git a/codex-rs/app-server/src/request_processors/turn_processor.rs b/codex-rs/app-server/src/request_processors/turn_processor.rs
-index 3ff64cd34..17d63a02d 100644
+index 3ff64cd34..341abe938 100644
 --- a/codex-rs/app-server/src/request_processors/turn_processor.rs
 +++ b/codex-rs/app-server/src/request_processors/turn_processor.rs
-@@ -262,6 +262,38 @@ impl TurnRequestProcessor {
+@@ -262,6 +262,52 @@ impl TurnRequestProcessor {
              .map(|response| response.map(Into::into))
      }
 
@@ -848,16 +848,23 @@ index 3ff64cd34..17d63a02d 100644
 +        request_id: &ConnectionRequestId,
 +        params: ThreadRealtimeResolveHandoffParams,
 +    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-+        self.session_manager
-+            .send_request(
-+                request_id,
-+                params.thread_id,
-+                codex_protocol::protocol::Op::RealtimeConversationResolveHandoff {
-+                    tool_call_output: params.tool_call_output,
-+                },
-+            )
-+            .await
-+            .map(|()| Some(ThreadRealtimeResolveHandoffResponse {}.into()))
++        let thread_id = params.thread_id.clone();
++        let Some((_, thread)) = self
++            .prepare_realtime_conversation_thread(request_id, &thread_id)
++            .await?
++        else {
++            return Ok(None);
++        };
++        self.submit_core_op(
++            request_id,
++            thread.as_ref(),
++            codex_protocol::protocol::Op::RealtimeConversationResolveHandoff {
++                tool_call_output: params.tool_call_output,
++            },
++        )
++        .await
++        .map_err(|err| internal_error(format!("failed to resolve realtime handoff: {err}")))?;
++        Ok(Some(ThreadRealtimeResolveHandoffResponse {}.into()))
 +    }
 +
 +    pub(crate) async fn thread_realtime_finalize_handoff(
@@ -865,20 +872,27 @@ index 3ff64cd34..17d63a02d 100644
 +        request_id: &ConnectionRequestId,
 +        params: ThreadRealtimeFinalizeHandoffParams,
 +    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-+        self.session_manager
-+            .send_request(
-+                request_id,
-+                params.thread_id,
-+                codex_protocol::protocol::Op::RealtimeConversationFinalizeHandoff,
-+            )
-+            .await
-+            .map(|()| Some(ThreadRealtimeFinalizeHandoffResponse {}.into()))
++        let thread_id = params.thread_id.clone();
++        let Some((_, thread)) = self
++            .prepare_realtime_conversation_thread(request_id, &thread_id)
++            .await?
++        else {
++            return Ok(None);
++        };
++        self.submit_core_op(
++            request_id,
++            thread.as_ref(),
++            codex_protocol::protocol::Op::RealtimeConversationFinalizeHandoff,
++        )
++        .await
++        .map_err(|err| internal_error(format!("failed to finalize realtime handoff: {err}")))?;
++        Ok(Some(ThreadRealtimeFinalizeHandoffResponse {}.into()))
 +    }
 +
      pub(crate) async fn thread_realtime_list_voices(
          &self,
      ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-@@ -1023,6 +1055,7 @@ impl TurnRequestProcessor {
+@@ -1023,6 +1069,7 @@ impl TurnRequestProcessor {
                  }),
                  version: params.version,
                  voice: params.voice,
