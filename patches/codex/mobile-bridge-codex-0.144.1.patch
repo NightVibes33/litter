@@ -2126,7 +2126,7 @@ index 38010754e..ebb68f263 100644
      transcript: &Arc<Mutex<HeadTailBuffer>>,
      call_id: &str,
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
-index fe3ec4575..46172117d 100644
+index fe3ec4575..c704e1d6b 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
 +++ b/codex-rs/core/src/unified_exec/process_manager.rs
 @@ -47,6 +47,8 @@ use crate::unified_exec::UnifiedExecProcessManager;
@@ -2144,22 +2144,13 @@ index fe3ec4575..46172117d 100644
          let cwd = request.cwd.clone();
 +        #[cfg(target_os = "ios")]
 +        {
-+            return self.exec_command_ios(&request, cwd.into(), context).await;
++            return self.exec_command_ios(&request, cwd, context).await;
 +        }
 +
 +        #[allow(unreachable_code)]
          let process = self
              .open_session_with_sandbox(&request, cwd.clone(), context)
              .await;
-@@ -441,7 +449,7 @@ impl UnifiedExecProcessManager {
-         );
-         let emitter = ToolEmitter::unified_exec(
-             &request.command,
--            cwd.clone(),
-+            cwd.clone().into(),
-             ExecCommandSource::UnifiedExecStartup,
-             Some(request.process_id.to_string()),
-         );
 @@ -633,6 +641,129 @@ impl UnifiedExecProcessManager {
          Ok(response)
      }
@@ -2168,7 +2159,7 @@ index fe3ec4575..46172117d 100644
 +    async fn exec_command_ios(
 +        &self,
 +        request: &ExecCommandRequest,
-+        cwd: codex_utils_absolute_path::AbsolutePathBuf,
++        cwd: PathUri,
 +        context: &UnifiedExecContext,
 +    ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
 +        use crate::exec::IOS_EXEC_HOOK;
@@ -2184,7 +2175,7 @@ index fe3ec4575..46172117d 100644
 +        );
 +        let emitter = ToolEmitter::unified_exec(
 +            &request.command,
-+            cwd.clone().into(),
++            cwd.clone(),
 +            ExecCommandSource::UnifiedExecStartup,
 +            Some(request.process_id.to_string()),
 +        );
@@ -2192,7 +2183,7 @@ index fe3ec4575..46172117d 100644
 +
 +        let env = create_env(
 +            &context.turn.config.permissions.shell_environment_policy,
-+            Some(context.session.services.network_proxy_audit_metadata.conversation_id),
++            /*thread_id*/ None,
 +        );
 +        let start = Instant::now();
 +        let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
@@ -2202,7 +2193,7 @@ index fe3ec4575..46172117d 100644
 +        });
 +        let mut join = tokio::task::spawn_blocking({
 +            let mut command = request.command.clone();
-+            let cwd = cwd.clone();
++            let cwd = cwd.to_path_buf();
 +            let output_handler = Arc::clone(&output_handler);
 +            move || {
 +                if let Some(preflight) = MOBILE_EXEC_PREFLIGHT.get() {
