@@ -36,7 +36,7 @@ index 4eec8a234..cc32167a9 100644
  pub use crate::remote::RemoteAppServerConnectArgs;
  pub use crate::remote::RemoteAppServerEndpoint;
 diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-client/src/remote.rs
-index 5575fe4ad..28f65ca62 100644
+index 5575fe4ad..e3fec8d29 100644
 --- a/codex-rs/app-server-client/src/remote.rs
 +++ b/codex-rs/app-server-client/src/remote.rs
 @@ -12,6 +12,7 @@ higher-level session logic.
@@ -272,18 +272,16 @@ index 5575fe4ad..28f65ca62 100644
                              break;
                          };
                          match command {
-@@ -234,9 +387,8 @@ impl RemoteAppServerClient {
+@@ -234,8 +387,7 @@ impl RemoteAppServerClient {
                                      continue;
                                  }
                                  pending_requests.insert(request_id.clone(), response_tx);
 -                                if let Err(err) = write_jsonrpc_message(
 -                                    &mut stream,
--                                    JSONRPCMessage::Request(*request),
 +                                if let Err(err) = stream.send_message(
-+                                    JSONRPCMessage::Request(jsonrpc_request_from_client_request(*request)),
+                                     JSONRPCMessage::Request(*request),
                                      &endpoint,
                                  )
-                                 .await
 @@ -259,8 +411,7 @@ impl RemoteAppServerClient {
                                  }
                              }
