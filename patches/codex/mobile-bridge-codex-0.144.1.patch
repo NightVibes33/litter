@@ -1535,13 +1535,15 @@ index 2bd4ae3bc..2bb11d2d1 100644
              sdp: response.sdp,
              call_id: response.call_id,
 diff --git a/codex-rs/core/src/exec.rs b/codex-rs/core/src/exec.rs
-index 015b20715..e93fa422c 100644
+index 015b20715..1d647e8f7 100644
 --- a/codex-rs/core/src/exec.rs
 +++ b/codex-rs/core/src/exec.rs
-@@ -55,6 +55,90 @@ use codex_utils_path_uri::PathUri;
+@@ -55,6 +55,92 @@ use codex_utils_path_uri::PathUri;
  use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
  use codex_utils_pty::process_group::kill_child_process_group;
-
+ 
++#[cfg(target_os = "ios")]
++use std::path::Path;
 +#[cfg(target_os = "ios")]
 +use std::sync::Arc;
 +#[cfg(any(target_os = "ios", target_os = "android"))]
@@ -1627,9 +1629,9 @@ index 015b20715..e93fa422c 100644
 +}
 +
  pub const DEFAULT_EXEC_COMMAND_TIMEOUT_MS: u64 = 10_000;
-
+ 
  // Hardcode these since it does not seem worth including the libc crate just
-@@ -897,6 +981,7 @@ fn aggregate_output(
+@@ -897,6 +983,7 @@ fn aggregate_output(
  /// Note this command does not apply any sandboxing logic. The caller is
  /// responsible for constructing [ExecParams::command] to include any sandboxing
  /// wrapper args, as appropriate.
@@ -1637,7 +1639,7 @@ index 015b20715..e93fa422c 100644
  async fn exec(
      params: ExecParams,
      network_sandbox_policy: NetworkSandboxPolicy,
-@@ -928,6 +1013,55 @@ async fn exec(
+@@ -928,6 +1015,55 @@ async fn exec(
                  network_proxy_environment_error(network_environment_id.as_deref(), err)
              })?;
      }
@@ -1690,7 +1692,7 @@ index 015b20715..e93fa422c 100644
 +            command[0] = resolved;
 +        }
 +    }
-
+ 
      let (program, args) = command.split_first().ok_or_else(|| {
          CodexErr::Io(io::Error::new(
 diff --git a/codex-rs/core/src/installation_id.rs b/codex-rs/core/src/installation_id.rs
@@ -2124,7 +2126,7 @@ index 38010754e..ebb68f263 100644
      transcript: &Arc<Mutex<HeadTailBuffer>>,
      call_id: &str,
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
-index fe3ec4575..a0883dd24 100644
+index fe3ec4575..46172117d 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
 +++ b/codex-rs/core/src/unified_exec/process_manager.rs
 @@ -47,6 +47,8 @@ use crate::unified_exec::UnifiedExecProcessManager;
@@ -2142,17 +2144,26 @@ index fe3ec4575..a0883dd24 100644
          let cwd = request.cwd.clone();
 +        #[cfg(target_os = "ios")]
 +        {
-+            return self.exec_command_ios(&request, cwd, context).await;
++            return self.exec_command_ios(&request, cwd.into(), context).await;
 +        }
 +
 +        #[allow(unreachable_code)]
          let process = self
              .open_session_with_sandbox(&request, cwd.clone(), context)
              .await;
-@@ -633,6 +641,128 @@ impl UnifiedExecProcessManager {
+@@ -441,7 +449,7 @@ impl UnifiedExecProcessManager {
+         );
+         let emitter = ToolEmitter::unified_exec(
+             &request.command,
+-            cwd.clone(),
++            cwd.clone().into(),
+             ExecCommandSource::UnifiedExecStartup,
+             Some(request.process_id.to_string()),
+         );
+@@ -633,6 +641,129 @@ impl UnifiedExecProcessManager {
          Ok(response)
      }
-
+ 
 +    #[cfg(target_os = "ios")]
 +    async fn exec_command_ios(
 +        &self,
@@ -2173,15 +2184,15 @@ index fe3ec4575..a0883dd24 100644
 +        );
 +        let emitter = ToolEmitter::unified_exec(
 +            &request.command,
-+            cwd.clone(),
++            cwd.clone().into(),
 +            ExecCommandSource::UnifiedExecStartup,
 +            Some(request.process_id.to_string()),
 +        );
 +        emitter.emit(event_ctx, ToolEventStage::Begin).await;
 +
 +        let env = create_env(
-+            &context.turn.shell_environment_policy,
-+            Some(context.session.conversation_id),
++            &context.turn.config.permissions.shell_environment_policy,
++            Some(context.session.services.network_proxy_audit_metadata.conversation_id),
 +        );
 +        let start = Instant::now();
 +        let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
@@ -2250,7 +2261,7 @@ index fe3ec4575..a0883dd24 100644
 +            Arc::clone(&context.turn),
 +            context.call_id.clone(),
 +            request.command.clone(),
-+            cwd,
++            cwd.into(),
 +            Some(request.process_id.to_string()),
 +            transcript,
 +            text.clone(),
@@ -2266,7 +2277,8 @@ index fe3ec4575..a0883dd24 100644
 +            event_call_id: context.call_id.clone(),
 +            chunk_id: generate_chunk_id(),
 +            wall_time,
-+            raw_output,
++            raw_output: raw_output.to_vec(),
++            truncation_policy: context.turn.model_info.truncation_policy.into(),
 +            max_output_tokens: request.max_output_tokens,
 +            process_id: None,
 +            exit_code: Some(exit_code),
