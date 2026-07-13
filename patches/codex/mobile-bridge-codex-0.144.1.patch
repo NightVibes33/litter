@@ -912,10 +912,10 @@ index 011fee6eb..6b333e4a3 100644
 
  [dev-dependencies]
 diff --git a/codex-rs/code-mode/src/lib.rs b/codex-rs/code-mode/src/lib.rs
-index 6d332bf0c..dfe2c7111 100644
+index 6d332bf0c..50a8cd81b 100644
 --- a/codex-rs/code-mode/src/lib.rs
 +++ b/codex-rs/code-mode/src/lib.rs
-@@ -1,10 +1,25 @@
+@@ -1,8 +1,21 @@
 +#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
  mod cell_actor;
  mod remote_session;
@@ -925,41 +925,21 @@ index 6d332bf0c..dfe2c7111 100644
 +#[path = "runtime_stub.rs"]
 +mod runtime;
 +#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
- mod service;
++mod service;
 +#[cfg(any(target_os = "ios", target_os = "android", target_os = "linux"))]
 +#[path = "service_stub.rs"]
-+mod service;
+ mod service;
  mod session_runtime;
 +#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
- mod v8_init;
++mod v8_init;
 +#[cfg(any(target_os = "ios", target_os = "android", target_os = "linux"))]
 +#[path = "v8_init_stub.rs"]
-+mod v8_init;
-diff --git a/codex-rs/code-mode/src/v8_init_stub.rs b/codex-rs/code-mode/src/v8_init_stub.rs
-new file mode 100644
-index 000000000..7d24ab111
---- /dev/null
-+++ b/codex-rs/code-mode/src/v8_init_stub.rs
-@@ -0,0 +1,16 @@
-+/// Controls whether V8 may generate executable code at runtime.
-+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-+pub enum V8JitMode {
-+    #[default]
-+    Enabled,
-+    Disabled,
-+}
-+
-+/// Mobile builds do not link V8; code-mode execution is stubbed out.
-+pub fn initialize_v8(_jit_mode: V8JitMode) -> Result<(), String> {
-+    Ok(())
-+}
-+
-+pub(crate) fn ensure_v8_initialized() -> Result<(), String> {
-+    Ok(())
-+}
+ mod v8_init;
+ 
+ pub(crate) type TaskFailureHandler = std::sync::Arc<dyn Fn(String) + Send + Sync>;
 diff --git a/codex-rs/code-mode/src/runtime_stub.rs b/codex-rs/code-mode/src/runtime_stub.rs
 new file mode 100644
-index 000000000..f268fe813
+index 000000000..11285658a
 --- /dev/null
 +++ b/codex-rs/code-mode/src/runtime_stub.rs
 @@ -0,0 +1,92 @@
@@ -969,8 +949,8 @@ index 000000000..f268fe813
 +use serde::Serialize;
 +use serde_json::Value as JsonValue;
 +
-+use codex_code_mode_protocol::CodeModeToolKind;
-+use codex_code_mode_protocol::FunctionCallOutputContentItem;
++use crate::description::CodeModeToolKind;
++use crate::response::FunctionCallOutputContentItem;
 +
 +pub const DEFAULT_EXEC_YIELD_TIME_MS: u64 = 10_000;
 +pub const DEFAULT_WAIT_YIELD_TIME_MS: u64 = 10_000;
@@ -980,7 +960,7 @@ index 000000000..f268fe813
 +pub struct ExecuteRequest {
 +    pub cell_id: String,
 +    pub tool_call_id: String,
-+    pub enabled_tools: Vec<codex_code_mode_protocol::ToolDefinition>,
++    pub enabled_tools: Vec<crate::description::ToolDefinition>,
 +    pub source: String,
 +    pub stored_values: HashMap<String, JsonValue>,
 +    pub yield_time_ms: Option<u64>,
@@ -1057,10 +1037,10 @@ index 000000000..f268fe813
 +}
 diff --git a/codex-rs/code-mode/src/service_stub.rs b/codex-rs/code-mode/src/service_stub.rs
 new file mode 100644
-index 000000000..f943591fb
+index 000000000..e92483533
 --- /dev/null
 +++ b/codex-rs/code-mode/src/service_stub.rs
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,81 @@
 +use std::collections::HashMap;
 +use std::sync::Arc;
 +use std::sync::atomic::{AtomicU64, Ordering};
@@ -1142,6 +1122,28 @@ index 000000000..f943591fb
 +}
 +
 +pub struct CodeModeTurnWorker;
+diff --git a/codex-rs/code-mode/src/v8_init_stub.rs b/codex-rs/code-mode/src/v8_init_stub.rs
+new file mode 100644
+index 000000000..16dec581f
+--- /dev/null
++++ b/codex-rs/code-mode/src/v8_init_stub.rs
+@@ -0,0 +1,16 @@
++/// Controls whether V8 may generate executable code at runtime.
++#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
++pub enum V8JitMode {
++    #[default]
++    Enabled,
++    Disabled,
++}
++
++/// Mobile builds do not link V8; code-mode execution is stubbed out.
++pub fn initialize_v8(_jit_mode: V8JitMode) -> Result<(), String> {
++    Ok(())
++}
++
++pub(crate) fn ensure_v8_initialized() -> Result<(), String> {
++    Ok(())
++}
 diff --git a/codex-rs/codex-api/src/endpoint/realtime_call.rs b/codex-rs/codex-api/src/endpoint/realtime_call.rs
 index af7060913..f9b53f89a 100644
 --- a/codex-rs/codex-api/src/endpoint/realtime_call.rs

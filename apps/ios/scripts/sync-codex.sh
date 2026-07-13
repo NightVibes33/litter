@@ -70,10 +70,13 @@ for PATCH_FILE in "${PATCH_FILES[@]}"; do
         # style hunks. Some hand-crafted patches omit the `diff --git` line
         # for their first file; without the `--- a/` fallback those files
         # get dropped from the content-check and cause false negatives.
+        patch_target_list="$(mktemp)"
+        { grep '^diff --git' "$PATCH_FILE" | sed 's|.*b/||'; \
+          grep '^--- a/' "$PATCH_FILE" | sed 's|^--- a/||'; } | sort -u > "$patch_target_list"
         while IFS= read -r pf; do
             [ -f "$SUBMODULE_DIR/$pf" ] && patch_targets+=("$SUBMODULE_DIR/$pf")
-        done < <({ grep '^diff --git' "$PATCH_FILE" | sed 's|.*b/||'; \
-                    grep '^--- a/' "$PATCH_FILE" | sed 's|^--- a/||'; } | sort -u)
+        done < "$patch_target_list"
+        rm -f "$patch_target_list"
         added_lines=$(grep -m 5 '^+[^+]' "$PATCH_FILE" | sed 's/^+//')
         all_present=true
         if [ "${#patch_targets[@]}" -eq 0 ]; then
