@@ -2061,8 +2061,7 @@ dependencies = [
  "arrayvec",
  "displaydoc",
  "getrandom 0.3.4",
- "pqcrypto-mlkem",
- "pqcrypto-traits",
+ "ml-kem 0.2.1",
  "rand_core 0.6.4",
  "sha2 0.10.9",
  "thiserror-no-std",
@@ -3326,6 +3325,7 @@ dependencies = [
  "alleycat-pi-bridge",
  "async-trait",
  "base64 0.22.1",
+ "bytes",
  "chrono",
  "codex-app-server",
  "codex-app-server-client",
@@ -3343,6 +3343,7 @@ dependencies = [
  "codex-shell-command",
  "codex-slingshot",
  "codex-utils-absolute-path",
+ "codex-utils-path-uri",
  "flate2",
  "futures",
  "hex",
@@ -9050,6 +9051,19 @@ dependencies = [
 
 [[package]]
 name = "ml-kem"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97befee0c869cb56f3118f49d0f9bb68c9e3f380dec23c1100aedc4ec3ba239a"
+dependencies = [
+ "hybrid-array 0.2.3",
+ "kem",
+ "rand_core 0.6.4",
+ "sha3 0.10.9",
+ "zeroize",
+]
+
+[[package]]
+name = "ml-kem"
 version = "0.3.0-rc.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8198b5db27ac9773534c371751a59dc18aec8b80aa141e69abfdd1dec2e3f78c"
@@ -10758,37 +10772,6 @@ dependencies = [
  "quote",
  "syn 2.0.118",
 ]
-
-[[package]]
-name = "pqcrypto-internals"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4a326caf27cbf2ac291ca7fd56300497ba9e76a8cc6a7d95b7a18b57f22b61d"
-dependencies = [
- "cc",
- "dunce",
- "getrandom 0.3.4",
- "libc",
-]
-
-[[package]]
-name = "pqcrypto-mlkem"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb14d207f3749e8a59a026c22ceaa72d70fff931cfbf4c8d9b08f3fc56dc6e60"
-dependencies = [
- "cc",
- "glob",
- "libc",
- "pqcrypto-internals",
- "pqcrypto-traits",
-]
-
-[[package]]
-name = "pqcrypto-traits"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94e851c7654eed9e68d7d27164c454961a616cf8c203d500607ef22c737b51bb"
 
 [[package]]
 name = "proc-macro2"

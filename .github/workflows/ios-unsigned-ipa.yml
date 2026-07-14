@@ -163,6 +163,7 @@ jobs:
           key: ios-rust-generated-v3-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/build-rust.sh', 'apps/ios/scripts/build-ghostty.sh', 'apps/ios/scripts/sync-ghostty.sh', 'apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/Cargo.toml', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/codex-slingshot/Cargo.toml', 'shared/rust-bridge/codex-slingshot/src/**', 'patches/codex/**', 'patches/ghostty/**', 'shared/third_party/ghostty/**') }}
           restore-keys: |
             ios-rust-generated-v3-${{ runner.os }}-
+            ios-testflight-rust-generated-mobile-release-v1-${{ runner.os }}-
 
       - name: Restore Swift UniFFI binding cache
         id: swift_bindings_cache
@@ -364,9 +365,7 @@ jobs:
           fi
 
           if [ "${{ steps.rust_generated_cache.outputs.cache-hit }}" != "true" ]; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "No exact Rust generated cache hit; rebuilding the Rust device library instead of trusting a restore-key fallback."
-            exit 0
+            echo "No exact Rust generated cache hit; validating any restored fallback before rebuilding."
           fi
 
           missing=0

@@ -640,6 +640,9 @@ impl ServerSession {
         let mut cli_overrides = vec![
             ("features.goals".to_string(), true.into()),
             ("features.realtime_conversation".to_string(), true.into()),
+            // iOS cannot spawn Codex's separate code-mode host executable from
+            // the app bundle in TestFlight. Keep mobile on the in-process path.
+            ("features.code_mode_host".to_string(), false.into()),
             (
                 "experimental_realtime_ws_model".to_string(),
                 "gpt-realtime-2".to_string().into(),
