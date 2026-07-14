@@ -1,6 +1,6 @@
 [submodule "shared/third_party/codex"]
 	path = shared/third_party/codex
-	url = https://github.com/openai/codex
+	url = https://github.com/NightVibes33/codex.git
 	shallow = true
 [submodule "shared/third_party/ghostty"]
 	path = shared/third_party/ghostty
