@@ -2061,7 +2061,7 @@ dependencies = [
  "arrayvec",
  "displaydoc",
  "getrandom 0.3.4",
- "ml-kem 0.2.3",
+ "ml-kem 0.2.1",
  "rand_core 0.6.4",
  "sha2 0.10.9",
  "thiserror-no-std",
@@ -9051,9 +9051,9 @@ dependencies = [
 
 [[package]]
 name = "ml-kem"
-version = "0.2.3"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8de49b3df74c35498c0232031bb7e85f9389f913e2796169c8ab47a53993a18f"
+checksum = "97befee0c869cb56f3118f49d0f9bb68c9e3f380dec23c1100aedc4ec3ba239a"
 dependencies = [
  "hybrid-array 0.2.3",
  "kem",

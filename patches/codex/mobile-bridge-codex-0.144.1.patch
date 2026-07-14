@@ -1,8 +1,16 @@
 diff --git a/codex-rs/Cargo.toml b/codex-rs/Cargo.toml
-index 596ec1a89..7c636e08b 100644
+index 596ec1a89..32cb97d8e 100644
 --- a/codex-rs/Cargo.toml
 +++ b/codex-rs/Cargo.toml
-@@ -409,9 +409,10 @@ sqlx = { version = "0.9.0", default-features = false, features = [
+@@ -294,7 +294,6 @@ clatter = { version = "2.2.0", default-features = false, features = [
+     "getrandom",
+     "use-25519",
+     "use-aes-gcm",
+-    "use-rust-crypto-ml-kem",
+     "use-sha",
+ ] }
+ color-eyre = "0.6.3"
+@@ -409,9 +408,10 @@ sqlx = { version = "0.9.0", default-features = false, features = [
      "macros",
      "migrate",
      "runtime-tokio",
