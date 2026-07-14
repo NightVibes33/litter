@@ -1,16 +1,7 @@
 diff --git a/codex-rs/Cargo.toml b/codex-rs/Cargo.toml
-index 596ec1a89..4ef4159fd 100644
+index 596ec1a89..7c636e08b 100644
 --- a/codex-rs/Cargo.toml
 +++ b/codex-rs/Cargo.toml
-@@ -294,7 +294,7 @@ clatter = { version = "2.2.0", default-features = false, features = [
-     "getrandom",
-     "use-25519",
-     "use-aes-gcm",
--    "use-rust-crypto-ml-kem",
-+    "use-pqclean-ml-kem",
-     "use-sha",
- ] }
- color-eyre = "0.6.3"
 @@ -409,9 +409,10 @@ sqlx = { version = "0.9.0", default-features = false, features = [
      "macros",
      "migrate",
@@ -29,18 +20,18 @@ index 4eec8a234..cc32167a9 100644
 +++ b/codex-rs/app-server-client/src/lib.rs
 @@ -68,6 +68,7 @@ use toml::Value as TomlValue;
  use tracing::warn;
-
+ 
  pub use crate::path::AppServerPath;
 +pub use crate::remote::JsonRpcWire;
  pub use crate::remote::RemoteAppServerClient;
  pub use crate::remote::RemoteAppServerConnectArgs;
  pub use crate::remote::RemoteAppServerEndpoint;
 diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-client/src/remote.rs
-index 5575fe4ad..e3fec8d29 100644
+index 5575fe4ad..28f65ca62 100644
 --- a/codex-rs/app-server-client/src/remote.rs
 +++ b/codex-rs/app-server-client/src/remote.rs
 @@ -12,6 +12,7 @@ higher-level session logic.
-
+ 
  use std::collections::HashMap;
  use std::collections::VecDeque;
 +use std::future::Future;
@@ -58,7 +49,7 @@ index 5575fe4ad..e3fec8d29 100644
 @@ -162,24 +162,121 @@ pub struct RemoteAppServerRequestHandle {
      command_tx: mpsc::Sender<RemoteClientCommand>,
  }
-
+ 
 +/// Litter extension: trait abstraction over the wire that the remote app-server worker drives.
 +///
 +/// Upstream's `connect()` only knows how to talk WebSocket frames (over TCP or UDS). Litter needs
@@ -187,7 +178,7 @@ index 5575fe4ad..e3fec8d29 100644
 @@ -192,16 +289,72 @@ impl RemoteAppServerClient {
          self.codex_home.as_deref()
      }
-
+ 
 -    async fn connect_with_stream<S>(
 -        channel_capacity: usize,
 -        endpoint: String,
@@ -272,16 +263,18 @@ index 5575fe4ad..e3fec8d29 100644
                              break;
                          };
                          match command {
-@@ -234,8 +387,7 @@ impl RemoteAppServerClient {
+@@ -234,9 +387,8 @@ impl RemoteAppServerClient {
                                      continue;
                                  }
                                  pending_requests.insert(request_id.clone(), response_tx);
 -                                if let Err(err) = write_jsonrpc_message(
 -                                    &mut stream,
+-                                    JSONRPCMessage::Request(*request),
 +                                if let Err(err) = stream.send_message(
-                                     JSONRPCMessage::Request(*request),
++                                    JSONRPCMessage::Request(jsonrpc_request_from_client_request(*request)),
                                      &endpoint,
                                  )
+                                 .await
 @@ -259,8 +411,7 @@ impl RemoteAppServerClient {
                                  }
                              }
@@ -442,7 +435,7 @@ index 5575fe4ad..e3fec8d29 100644
 @@ -791,21 +898,20 @@ fn remote_websocket_config() -> WebSocketConfig {
          .max_message_size(Some(REMOTE_APP_SERVER_MAX_WEBSOCKET_MESSAGE_SIZE))
  }
-
+ 
 -async fn initialize_remote_connection<S>(
 -    stream: &mut WebSocketStream<S>,
 +async fn initialize_remote_connection<W>(
@@ -466,7 +459,7 @@ index 5575fe4ad..e3fec8d29 100644
              ClientRequest::Initialize {
                  request_id: initialize_request_id.clone(),
 @@ -818,13 +924,8 @@ where
-
+ 
      timeout(initialize_timeout, async {
          loop {
 -            match stream.next().await {
@@ -526,7 +519,7 @@ index 5575fe4ad..e3fec8d29 100644
 @@ -923,8 +1002,7 @@ where
          )
      })??;
-
+ 
 -    write_jsonrpc_message(
 -        stream,
 +    wire.send_message(
@@ -536,7 +529,7 @@ index 5575fe4ad..e3fec8d29 100644
 @@ -978,34 +1056,11 @@ fn jsonrpc_notification_from_client_notification(
      }
  }
-
+ 
 -async fn write_jsonrpc_message<S>(
 -    stream: &mut WebSocketStream<S>,
 -    message: JSONRPCMessage,
@@ -649,15 +642,10 @@ index 932e44e26..01787597a 100644
      pub started_at_ms: i64,
      pub cwd: AbsolutePathBuf,
 diff --git a/codex-rs/app-server-protocol/src/protocol/v2/realtime.rs b/codex-rs/app-server-protocol/src/protocol/v2/realtime.rs
-index b78f390be..493457c2e 100644
+index b78f390be..b4a705884 100644
 --- a/codex-rs/app-server-protocol/src/protocol/v2/realtime.rs
 +++ b/codex-rs/app-server-protocol/src/protocol/v2/realtime.rs
-@@ -1,3 +1,4 @@
-+use codex_protocol::dynamic_tools::DynamicToolSpec;
- use codex_protocol::protocol::ConversationTextRole;
- use codex_protocol::protocol::RealtimeAudioFrame as CoreRealtimeAudioFrame;
- use codex_protocol::protocol::RealtimeConversationVersion;
-@@ -111,6 +112,9 @@ pub struct ThreadRealtimeStartParams {
+@@ -111,6 +111,9 @@ pub struct ThreadRealtimeStartParams {
      pub version: Option<RealtimeConversationVersion>,
      #[ts(optional = nullable)]
      pub voice: Option<RealtimeVoice>,
@@ -665,12 +653,12 @@ index b78f390be..493457c2e 100644
 +    #[ts(optional = nullable)]
 +    pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
  }
-
+ 
  /// EXPERIMENTAL - transport used by thread realtime.
-@@ -193,6 +197,35 @@ pub struct ThreadRealtimeStopParams {
+@@ -193,6 +196,35 @@ pub struct ThreadRealtimeStopParams {
  #[ts(export_to = "v2/")]
  pub struct ThreadRealtimeStopResponse {}
-
+ 
 +/// EXPERIMENTAL - resolve a client-managed handoff with tool output.
 +#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, JsonSchema, TS)]
 +#[serde(rename_all = "camelCase")]
@@ -716,13 +704,13 @@ index 367a4a64c..1daa5e4de 100644
 +    #[serde(default)]
 +    pub sandbox: Option<SandboxPolicy>,
  }
-
+ 
  #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 diff --git a/codex-rs/app-server/src/bespoke_event_handling.rs b/codex-rs/app-server/src/bespoke_event_handling.rs
-index 829aa3f12..c04a98e39 100644
+index 829aa3f12..782bd27c5 100644
 --- a/codex-rs/app-server/src/bespoke_event_handling.rs
 +++ b/codex-rs/app-server/src/bespoke_event_handling.rs
-@@ -490,6 +490,39 @@ pub(crate) async fn apply_bespoke_event_handling(
+@@ -490,6 +490,40 @@ pub(crate) async fn apply_bespoke_event_handling(
                      .await;
              }
              RealtimeEvent::ConversationItemDone { .. } | RealtimeEvent::NoopRequested(_) => {}
@@ -740,8 +728,9 @@ index 829aa3f12..c04a98e39 100644
 +                    .to_string();
 +                let arguments = item
 +                    .get("arguments")
-+                    .cloned()
-+                    .unwrap_or_else(|| serde_json::Value::Object(Default::default()));
++                    .and_then(serde_json::Value::as_str)
++                    .unwrap_or_default()
++                    .to_string();
 +                if !call_id.is_empty() && !tool.is_empty() {
 +                    let params = DynamicToolCallParams {
 +                        thread_id: conversation_id.to_string(),
@@ -762,7 +751,7 @@ index 829aa3f12..c04a98e39 100644
              RealtimeEvent::HandoffRequested(handoff) => {
                  let notification = ThreadRealtimeItemAddedNotification {
                      thread_id: conversation_id.to_string(),
-@@ -499,6 +532,7 @@ pub(crate) async fn apply_bespoke_event_handling(
+@@ -499,6 +533,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                          "item_id": handoff.item_id,
                          "input_transcript": handoff.input_transcript,
                          "active_transcript": handoff.active_transcript,
@@ -831,38 +820,24 @@ index fc6a3281b..5570ebe14 100644
 +                .map(|config| config.sandbox_policy().into()),
 +        })
      }
-
+ 
      /// Builds the API view for `thread/read` from persisted metadata plus optional live state.
 diff --git a/codex-rs/app-server/src/request_processors/turn_processor.rs b/codex-rs/app-server/src/request_processors/turn_processor.rs
-index 3ff64cd34..341abe938 100644
+index 3ff64cd34..17d63a02d 100644
 --- a/codex-rs/app-server/src/request_processors/turn_processor.rs
 +++ b/codex-rs/app-server/src/request_processors/turn_processor.rs
-@@ -262,6 +262,52 @@ impl TurnRequestProcessor {
+@@ -262,6 +262,26 @@ impl TurnRequestProcessor {
              .map(|response| response.map(Into::into))
      }
-
+ 
 +    pub(crate) async fn thread_realtime_resolve_handoff(
 +        &self,
 +        request_id: &ConnectionRequestId,
 +        params: ThreadRealtimeResolveHandoffParams,
 +    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-+        let thread_id = params.thread_id.clone();
-+        let Some((_, thread)) = self
-+            .prepare_realtime_conversation_thread(request_id, &thread_id)
-+            .await?
-+        else {
-+            return Ok(None);
-+        };
-+        self.submit_core_op(
-+            request_id,
-+            thread.as_ref(),
-+            codex_protocol::protocol::Op::RealtimeConversationResolveHandoff {
-+                tool_call_output: params.tool_call_output,
-+            },
-+        )
-+        .await
-+        .map_err(|err| internal_error(format!("failed to resolve realtime handoff: {err}")))?;
-+        Ok(Some(ThreadRealtimeResolveHandoffResponse {}.into()))
++        self.thread_realtime_resolve_handoff_inner(request_id, params)
++            .await
++            .map(|response| response.map(Into::into))
 +    }
 +
 +    pub(crate) async fn thread_realtime_finalize_handoff(
@@ -870,27 +845,15 @@ index 3ff64cd34..341abe938 100644
 +        request_id: &ConnectionRequestId,
 +        params: ThreadRealtimeFinalizeHandoffParams,
 +    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-+        let thread_id = params.thread_id.clone();
-+        let Some((_, thread)) = self
-+            .prepare_realtime_conversation_thread(request_id, &thread_id)
-+            .await?
-+        else {
-+            return Ok(None);
-+        };
-+        self.submit_core_op(
-+            request_id,
-+            thread.as_ref(),
-+            codex_protocol::protocol::Op::RealtimeConversationFinalizeHandoff,
-+        )
-+        .await
-+        .map_err(|err| internal_error(format!("failed to finalize realtime handoff: {err}")))?;
-+        Ok(Some(ThreadRealtimeFinalizeHandoffResponse {}.into()))
++        self.thread_realtime_finalize_handoff_inner(request_id, params)
++            .await
++            .map(|response| response.map(Into::into))
 +    }
 +
      pub(crate) async fn thread_realtime_list_voices(
          &self,
      ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-@@ -1023,6 +1069,7 @@ impl TurnRequestProcessor {
+@@ -1023,6 +1043,7 @@ impl TurnRequestProcessor {
                  }),
                  version: params.version,
                  voice: params.voice,
@@ -898,197 +861,6 @@ index 3ff64cd34..341abe938 100644
              }),
          )
          .await
-diff --git a/codex-rs/code-mode/Cargo.toml b/codex-rs/code-mode/Cargo.toml
-index 011fee6eb..6b333e4a3 100644
---- a/codex-rs/code-mode/Cargo.toml
-+++ b/codex-rs/code-mode/Cargo.toml
-@@ -24,6 +24,8 @@ serde_json = { workspace = true }
- tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "sync", "time"] }
- tokio-util = { workspace = true, features = ["rt"] }
- tracing = { workspace = true }
-+
-+[target.'cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))'.dependencies]
- v8 = { workspace = true }
-
- [dev-dependencies]
-diff --git a/codex-rs/code-mode/src/lib.rs b/codex-rs/code-mode/src/lib.rs
-index 6d332bf0c..346ff003d 100644
---- a/codex-rs/code-mode/src/lib.rs
-+++ b/codex-rs/code-mode/src/lib.rs
-@@ -1,8 +1,19 @@
-+#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
- mod cell_actor;
- mod remote_session;
-+#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
- mod runtime;
-+#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
- mod service;
-+#[cfg(any(target_os = "ios", target_os = "android", target_os = "linux"))]
-+#[path = "service_stub.rs"]
-+mod service;
-+#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
- mod session_runtime;
-+#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "linux")))]
-+mod v8_init;
-+#[cfg(any(target_os = "ios", target_os = "android", target_os = "linux"))]
-+#[path = "v8_init_stub.rs"]
- mod v8_init;
- 
- pub(crate) type TaskFailureHandler = std::sync::Arc<dyn Fn(String) + Send + Sync>;
-diff --git a/codex-rs/code-mode/src/service_stub.rs b/codex-rs/code-mode/src/service_stub.rs
-new file mode 100644
-index 000000000..1110c9c63
---- /dev/null
-+++ b/codex-rs/code-mode/src/service_stub.rs
-@@ -0,0 +1,126 @@
-+use std::sync::Arc;
-+
-+use codex_code_mode_protocol::CellId;
-+use codex_code_mode_protocol::CodeModeNestedToolCall;
-+use codex_code_mode_protocol::CodeModeSession;
-+use codex_code_mode_protocol::CodeModeSessionDelegate;
-+use codex_code_mode_protocol::CodeModeSessionProvider;
-+use codex_code_mode_protocol::CodeModeSessionProviderFuture;
-+use codex_code_mode_protocol::CodeModeSessionResultFuture;
-+use codex_code_mode_protocol::ExecuteRequest;
-+use codex_code_mode_protocol::FunctionCallOutputContentItem;
-+use codex_code_mode_protocol::NotificationFuture;
-+use codex_code_mode_protocol::RuntimeResponse;
-+use codex_code_mode_protocol::StartedCell;
-+use codex_code_mode_protocol::ToolInvocationFuture;
-+use codex_code_mode_protocol::WaitOutcome;
-+use codex_code_mode_protocol::WaitRequest;
-+use tokio::sync::oneshot;
-+use tokio_util::sync::CancellationToken;
-+
-+const MOBILE_UNSUPPORTED_MESSAGE: &str = "exec is unavailable on mobile targets in this build";
-+
-+pub struct NoopCodeModeSessionDelegate;
-+
-+impl CodeModeSessionDelegate for NoopCodeModeSessionDelegate {
-+    fn invoke_tool<'a>(
-+        &'a self,
-+        _invocation: CodeModeNestedToolCall,
-+        cancellation_token: CancellationToken,
-+    ) -> ToolInvocationFuture<'a> {
-+        Box::pin(async move {
-+            cancellation_token.cancelled().await;
-+            Err("code mode nested tools are unavailable".to_string())
-+        })
-+    }
-+
-+    fn notify<'a>(
-+        &'a self,
-+        _call_id: String,
-+        _cell_id: CellId,
-+        _text: String,
-+        _cancellation_token: CancellationToken,
-+    ) -> NotificationFuture<'a> {
-+        Box::pin(async { Ok(()) })
-+    }
-+
-+    fn cell_closed(&self, _cell_id: &CellId) {}
-+}
-+
-+#[derive(Default)]
-+pub struct InProcessCodeModeSessionProvider;
-+
-+impl CodeModeSessionProvider for InProcessCodeModeSessionProvider {
-+    fn create_session<'a>(
-+        &'a self,
-+        _delegate: Arc<dyn CodeModeSessionDelegate>,
-+    ) -> CodeModeSessionProviderFuture<'a> {
-+        Box::pin(async {
-+            let session: Arc<dyn CodeModeSession> = Arc::new(InProcessCodeModeSession::new());
-+            Ok(session)
-+        })
-+    }
-+}
-+
-+pub struct InProcessCodeModeSession;
-+
-+impl InProcessCodeModeSession {
-+    pub fn new() -> Self {
-+        Self
-+    }
-+
-+    pub fn with_delegate(_delegate: Arc<dyn CodeModeSessionDelegate>) -> Self {
-+        Self
-+    }
-+
-+    pub fn with_delegate_and_task_failure_handler(
-+        _delegate: Arc<dyn CodeModeSessionDelegate>,
-+        _task_failure_handler: Arc<dyn Fn(String) + Send + Sync>,
-+    ) -> Self {
-+        Self
-+    }
-+
-+    fn unsupported_response(cell_id: CellId) -> RuntimeResponse {
-+        RuntimeResponse::Result {
-+            cell_id,
-+            content_items: Vec::<FunctionCallOutputContentItem>::new(),
-+            error_text: Some(MOBILE_UNSUPPORTED_MESSAGE.to_string()),
-+        }
-+    }
-+}
-+
-+impl Default for InProcessCodeModeSession {
-+    fn default() -> Self {
-+        Self::new()
-+    }
-+}
-+
-+impl CodeModeSession for InProcessCodeModeSession {
-+    fn execute<'a>(
-+        &'a self,
-+        request: ExecuteRequest,
-+    ) -> CodeModeSessionResultFuture<'a, StartedCell> {
-+        Box::pin(async move {
-+            let cell_id = CellId::new(request.tool_call_id);
-+            let (tx, rx) = oneshot::channel();
-+            let _ = tx.send(Self::unsupported_response(cell_id.clone()));
-+            Ok(StartedCell::new(cell_id, rx))
-+        })
-+    }
-+
-+    fn wait<'a>(&'a self, request: WaitRequest) -> CodeModeSessionResultFuture<'a, WaitOutcome> {
-+        Box::pin(async move {
-+            Ok(WaitOutcome::MissingCell(Self::unsupported_response(
-+                request.cell_id,
-+            )))
-+        })
-+    }
-+
-+    fn terminate<'a>(&'a self, cell_id: CellId) -> CodeModeSessionResultFuture<'a, WaitOutcome> {
-+        Box::pin(async move { Ok(WaitOutcome::MissingCell(Self::unsupported_response(cell_id))) })
-+    }
-+
-+    fn shutdown<'a>(&'a self) -> CodeModeSessionResultFuture<'a, ()> {
-+        Box::pin(async { Ok(()) })
-+    }
-+}
-diff --git a/codex-rs/code-mode/src/v8_init_stub.rs b/codex-rs/code-mode/src/v8_init_stub.rs
-new file mode 100644
-index 000000000..16dec581f
---- /dev/null
-+++ b/codex-rs/code-mode/src/v8_init_stub.rs
-@@ -0,0 +1,16 @@
-+/// Controls whether V8 may generate executable code at runtime.
-+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-+pub enum V8JitMode {
-+    #[default]
-+    Enabled,
-+    Disabled,
-+}
-+
-+/// Mobile builds do not link V8; code-mode execution is stubbed out.
-+pub fn initialize_v8(_jit_mode: V8JitMode) -> Result<(), String> {
-+    Ok(())
-+}
-+
-+pub(crate) fn ensure_v8_initialized() -> Result<(), String> {
-+    Ok(())
-+}
 diff --git a/codex-rs/codex-api/src/endpoint/realtime_call.rs b/codex-rs/codex-api/src/endpoint/realtime_call.rs
 index af7060913..f9b53f89a 100644
 --- a/codex-rs/codex-api/src/endpoint/realtime_call.rs
@@ -1100,7 +872,7 @@ index af7060913..f9b53f89a 100644
 +            dynamic_tools: None,
          }
      }
-
+ 
 @@ -374,6 +375,7 @@ mod tests {
          RealtimeSessionConfig {
              event_parser: RealtimeEventParser::RealtimeV2,
@@ -1210,7 +982,7 @@ index 131cf27a9..a96f2ab7e 100644
 +        ),
      }
  }
-
+ 
 @@ -81,6 +86,7 @@ pub fn session_update_session_json(config: RealtimeSessionConfig) -> JsonResult<
          config.session_mode,
          config.output_modality,
@@ -1230,7 +1002,7 @@ index ee5d5031a..1455ecea9 100644
 +use codex_protocol::dynamic_tools::DynamicToolNamespaceTool;
 +use codex_protocol::dynamic_tools::DynamicToolSpec;
  use serde_json::json;
-
+ 
  const REALTIME_V2_OUTPUT_MODALITY_AUDIO: &str = "audio";
 @@ -77,6 +79,7 @@ pub(super) fn session_update_session(
      session_mode: RealtimeSessionMode,
@@ -1279,7 +1051,7 @@ index ee5d5031a..1455ecea9 100644
 @@ -168,6 +144,67 @@ pub(super) fn session_update_session(
      }
  }
-
+ 
 +pub(super) fn realtime_v2_session_tools(
 +    dynamic_tools: Option<Vec<DynamicToolSpec>>,
 +) -> Vec<SessionFunctionTool> {
@@ -1351,7 +1123,7 @@ index 48f89b0d3..8e5b6fdb1 100644
 @@ -21,7 +21,7 @@ pub enum RealtimeSessionMode {
      Transcription,
  }
-
+ 
 -#[derive(Debug, Clone, PartialEq, Eq)]
 +#[derive(Debug, Clone, PartialEq)]
  pub struct RealtimeSessionConfig {
@@ -1363,7 +1135,7 @@ index 48f89b0d3..8e5b6fdb1 100644
      pub voice: RealtimeVoice,
 +    pub dynamic_tools: Option<Vec<codex_protocol::dynamic_tools::DynamicToolSpec>>,
  }
-
+ 
  #[derive(Debug, Clone, Serialize)]
 diff --git a/codex-rs/codex-api/src/endpoint/realtime_websocket/protocol_v1.rs b/codex-rs/codex-api/src/endpoint/realtime_websocket/protocol_v1.rs
 index a46485224..905571639 100644
@@ -1384,7 +1156,7 @@ index ee0bba994..346ac3be5 100644
 @@ -133,6 +133,13 @@ fn parse_conversation_item_done_event(parsed: &Value) -> Option<RealtimeEvent> {
          return Some(noop);
      }
-
+ 
 +    if item.get("type").and_then(Value::as_str) == Some("function_call")
 +        && item.get("status").and_then(Value::as_str) == Some("completed")
 +        && item.get("name").and_then(Value::as_str) != Some(BACKGROUND_AGENT_TOOL_NAME)
@@ -1398,7 +1170,7 @@ index ee0bba994..346ac3be5 100644
 @@ -157,11 +164,24 @@ fn parse_handoff_requested_event(item: &JsonMap<String, Value>) -> Option<Realti
          .to_string();
      let arguments = item.get("arguments").and_then(Value::as_str).unwrap_or("");
-
+ 
 +    let server = serde_json::from_str::<Value>(arguments)
 +        .ok()
 +        .as_ref()
@@ -1419,7 +1191,7 @@ index ee0bba994..346ac3be5 100644
 +        server,
      }))
  }
-
+ 
 diff --git a/codex-rs/codex-api/tests/realtime_websocket_e2e.rs b/codex-rs/codex-api/tests/realtime_websocket_e2e.rs
 index 3aaf3f5f5..49759bb19 100644
 --- a/codex-rs/codex-api/tests/realtime_websocket_e2e.rs
@@ -1535,15 +1307,13 @@ index 2bd4ae3bc..2bb11d2d1 100644
              sdp: response.sdp,
              call_id: response.call_id,
 diff --git a/codex-rs/core/src/exec.rs b/codex-rs/core/src/exec.rs
-index 015b20715..1d647e8f7 100644
+index 015b20715..e93fa422c 100644
 --- a/codex-rs/core/src/exec.rs
 +++ b/codex-rs/core/src/exec.rs
-@@ -55,6 +55,92 @@ use codex_utils_path_uri::PathUri;
+@@ -55,6 +55,90 @@ use codex_utils_path_uri::PathUri;
  use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
  use codex_utils_pty::process_group::kill_child_process_group;
  
-+#[cfg(target_os = "ios")]
-+use std::path::Path;
 +#[cfg(target_os = "ios")]
 +use std::sync::Arc;
 +#[cfg(any(target_os = "ios", target_os = "android"))]
@@ -1631,7 +1401,7 @@ index 015b20715..1d647e8f7 100644
  pub const DEFAULT_EXEC_COMMAND_TIMEOUT_MS: u64 = 10_000;
  
  // Hardcode these since it does not seem worth including the libc crate just
-@@ -897,6 +983,7 @@ fn aggregate_output(
+@@ -897,6 +981,7 @@ fn aggregate_output(
  /// Note this command does not apply any sandboxing logic. The caller is
  /// responsible for constructing [ExecParams::command] to include any sandboxing
  /// wrapper args, as appropriate.
@@ -1639,7 +1409,7 @@ index 015b20715..1d647e8f7 100644
  async fn exec(
      params: ExecParams,
      network_sandbox_policy: NetworkSandboxPolicy,
-@@ -928,6 +1015,55 @@ async fn exec(
+@@ -928,6 +1013,55 @@ async fn exec(
                  network_proxy_environment_error(network_environment_id.as_deref(), err)
              })?;
      }
@@ -1701,17 +1471,17 @@ index a42e6b6d8..d4222d971 100644
 +++ b/codex-rs/core/src/installation_id.rs
 @@ -29,6 +29,10 @@ pub async fn resolve_installation_id(codex_home: &AbsolutePathBuf) -> Result<Str
          }
-
+ 
          let mut file = options.open(&path)?;
 +        // Rust std's File::lock is not implemented for target_os = "android"
 +        // and returns Unsupported("lock() not supported"). The mobile app is a
 +        // single-process consumer of app-private storage, so skip the lock there.
 +        #[cfg(not(target_os = "android"))]
          file.lock()?;
-
+ 
          #[cfg(unix)]
 diff --git a/codex-rs/core/src/realtime_conversation.rs b/codex-rs/core/src/realtime_conversation.rs
-index 3915c8190..b295a84e9 100644
+index 3915c8190..5cdda295b 100644
 --- a/codex-rs/core/src/realtime_conversation.rs
 +++ b/codex-rs/core/src/realtime_conversation.rs
 @@ -21,12 +21,14 @@ use codex_api::RealtimeSessionMode;
@@ -1729,24 +1499,15 @@ index 3915c8190..b295a84e9 100644
  use codex_model_provider_info::ModelProviderInfo;
  use codex_protocol::auth::AuthMode;
  use codex_protocol::error::CodexErr;
-@@ -126,6 +128,8 @@ enum RealtimeOutbound {
-     CompletedHandoff { handoff_id: String, text: String },
-     ConversationItem { text: String },
-     HandoffCompleteAck { handoff_id: String },
-+    ClientResolvedHandoff { text: String },
-+    ClientFinalizeHandoff,
- }
-
- #[derive(Debug, PartialEq, Eq)]
-@@ -253,6 +257,7 @@ struct ConversationState {
-
+@@ -253,6 +255,7 @@ struct ConversationState {
+ 
  struct RealtimeStart {
      api_provider: ApiProvider,
 +    webrtc_api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
      extra_headers: Option<HeaderMap>,
      client_managed_handoffs: bool,
      flush_transcript_tail_on_session_end: bool,
-@@ -312,6 +317,7 @@ impl RealtimeConversationManager {
+@@ -312,6 +315,7 @@ impl RealtimeConversationManager {
      async fn start_inner(&self, start: RealtimeStart) -> CodexResult<RealtimeStartOutput> {
          let RealtimeStart {
              api_provider,
@@ -1754,7 +1515,7 @@ index 3915c8190..b295a84e9 100644
              extra_headers,
              client_managed_handoffs,
              flush_transcript_tail_on_session_end,
-@@ -363,6 +369,7 @@ impl RealtimeConversationManager {
+@@ -363,6 +367,7 @@ impl RealtimeConversationManager {
                      session_config.clone(),
                      extra_headers.unwrap_or_default(),
                      realtime_call_api_provider,
@@ -1762,10 +1523,10 @@ index 3915c8190..b295a84e9 100644
                  )
                  .await?;
              let task = spawn_webrtc_sideband_input_task(RealtimeWebrtcSidebandInputTask {
-@@ -615,6 +622,42 @@ impl RealtimeConversationManager {
+@@ -615,6 +620,42 @@ impl RealtimeConversationManager {
          Ok(())
      }
-
+ 
 +    pub(crate) async fn resolve_handoff(&self, tool_call_output: String) -> CodexResult<()> {
 +        let sender = {
 +            let guard = self.state.lock().await;
@@ -1805,15 +1566,15 @@ index 3915c8190..b295a84e9 100644
      pub(crate) async fn handoff_complete(&self) -> CodexResult<()> {
          let handoff = {
              let guard = self.state.lock().await;
-@@ -733,6 +776,7 @@ pub(crate) async fn handle_start(
-
+@@ -733,6 +774,7 @@ pub(crate) async fn handle_start(
+ 
  struct PreparedRealtimeConversationStart {
      api_provider: ApiProvider,
 +    webrtc_api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
      extra_headers: Option<HeaderMap>,
      client_managed_handoffs: bool,
      flush_transcript_tail_on_session_end: bool,
-@@ -780,6 +824,9 @@ async fn prepare_realtime_start(
+@@ -780,6 +822,9 @@ async fn prepare_realtime_start(
          } else {
              None
          };
@@ -1823,7 +1584,7 @@ index 3915c8190..b295a84e9 100644
      let version = params.version.unwrap_or(match &transport {
          ConversationStartTransport::Websocket => config.realtime.version,
          ConversationStartTransport::Webrtc { .. } => RealtimeWsVersion::V1,
-@@ -797,27 +844,48 @@ async fn prepare_realtime_start(
+@@ -797,27 +842,48 @@ async fn prepare_realtime_start(
          build_realtime_session_config(sess, &params, version, configured_voice).await?;
      let requested_realtime_session_id = session_config.session_id.clone();
      let originator = sess.originator().await;
@@ -1885,15 +1646,15 @@ index 3915c8190..b295a84e9 100644
          extra_headers,
          client_managed_handoffs: params.client_managed_handoffs,
          flush_transcript_tail_on_session_end: params.flush_transcript_tail_on_session_end,
-@@ -922,6 +990,7 @@ pub(crate) async fn build_realtime_session_config(
+@@ -922,6 +988,7 @@ pub(crate) async fn build_realtime_session_config(
          session_mode,
          output_modality: params.output_modality,
          voice,
 +        dynamic_tools: params.dynamic_tools.clone(),
      })
  }
-
-@@ -985,6 +1054,7 @@ async fn handle_start_inner(
+ 
+@@ -985,6 +1052,7 @@ async fn handle_start_inner(
  ) -> CodexResult<()> {
      let PreparedRealtimeConversationStart {
          api_provider,
@@ -1901,7 +1662,7 @@ index 3915c8190..b295a84e9 100644
          extra_headers,
          client_managed_handoffs,
          flush_transcript_tail_on_session_end,
-@@ -1004,6 +1074,7 @@ async fn handle_start_inner(
+@@ -1004,6 +1072,7 @@ async fn handle_start_inner(
      };
      let start = RealtimeStart {
          api_provider,
@@ -1909,7 +1670,7 @@ index 3915c8190..b295a84e9 100644
          extra_headers,
          client_managed_handoffs,
          flush_transcript_tail_on_session_end,
-@@ -1485,7 +1556,9 @@ async fn handle_handoff_output(
+@@ -1485,7 +1554,9 @@ async fn handle_handoff_output(
                      .send_conversation_item_create(text, ConversationTextRole::Developer)
                      .await
              }
@@ -1920,7 +1681,7 @@ index 3915c8190..b295a84e9 100644
          },
          RealtimeEventParser::RealtimeV2 => match handoff_output {
              RealtimeOutbound::StandaloneHandoff { text } => {
-@@ -1542,6 +1615,21 @@ async fn handle_handoff_output(
+@@ -1542,6 +1613,21 @@ async fn handle_handoff_output(
                      .send_conversation_function_call_output(handoff_id, String::new())
                      .await
              }
@@ -1942,16 +1703,6 @@ index 3915c8190..b295a84e9 100644
          },
      };
      if let Err(err) = result {
-@@ -1719,7 +1807,8 @@ async fn handle_realtime_server_event(
-             info!(realtime_session_id = %realtime_session_id, "realtime session updated");
-             false
-         }
--        RealtimeEvent::InputTranscriptDelta(_)
-+        RealtimeEvent::ToolCallRequested(_)
-+        | RealtimeEvent::InputTranscriptDelta(_)
-         | RealtimeEvent::InputTranscriptDone(_)
-         | RealtimeEvent::OutputTranscriptDelta(_)
-         | RealtimeEvent::OutputTranscriptDone(_)
 diff --git a/codex-rs/core/src/session/handlers.rs b/codex-rs/core/src/session/handlers.rs
 index cc2175552..a33e1c850 100644
 --- a/codex-rs/core/src/session/handlers.rs
@@ -1972,19 +1723,10 @@ index cc2175552..a33e1c850 100644
                      realtime_conversation_list_voices(&sess, sub.id.clone()).await;
                      false
 diff --git a/codex-rs/core/src/session/turn.rs b/codex-rs/core/src/session/turn.rs
-index bafb368b3..9db7c5ffe 100644
+index bafb368b3..37eae6d6d 100644
 --- a/codex-rs/core/src/session/turn.rs
 +++ b/codex-rs/core/src/session/turn.rs
-@@ -83,6 +83,8 @@ use codex_git_utils::get_git_repo_root_with_fs;
- use codex_protocol::config_types::AutoCompactTokenLimitScope;
- use codex_protocol::config_types::ModeKind;
- use codex_protocol::config_types::ServiceTier;
-+use codex_protocol::dynamic_tools::DynamicToolNamespaceTool;
-+use codex_protocol::dynamic_tools::DynamicToolSpec;
- use codex_protocol::error::CodexErr;
- use codex_protocol::error::Result as CodexResult;
- use codex_protocol::items::PlanItem;
-@@ -96,6 +98,7 @@ use codex_protocol::models::ResponseItem;
+@@ -96,6 +96,7 @@ use codex_protocol::models::ResponseItem;
  use codex_protocol::protocol::AgentMessageContentDeltaEvent;
  use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
  use codex_protocol::protocol::CodexErrorInfo;
@@ -1992,25 +1734,7 @@ index bafb368b3..9db7c5ffe 100644
  use codex_protocol::protocol::ErrorEvent;
  use codex_protocol::protocol::EventMsg;
  use codex_protocol::protocol::PlanDeltaEvent;
-@@ -824,7 +827,17 @@ async fn run_pre_sampling_compact(
-
- /// Returns true only when both turns declare compaction compatibility hashes and they differ.
- /// A missing hash does not provide enough information to trigger compaction.
-+fn dynamic_tool_matches_name(spec: &DynamicToolSpec, name: &str) -> bool {
-+    match spec {
-+        DynamicToolSpec::Function(function) => function.name == name,
-+        DynamicToolSpec::Namespace(namespace) => namespace.tools.iter().any(|tool| match tool {
-+            DynamicToolNamespaceTool::Function(function) => function.name == name,
-+        }),
-+    }
-+}
-+
- fn comp_hash_changed(previous: Option<&str>, current: Option<&str>) -> bool {
-+
-     previous
-         .zip(current)
-         .is_some_and(|(previous, current)| previous != current)
-@@ -1594,6 +1607,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<(String, Option<
+@@ -1594,6 +1595,7 @@ pub(super) fn realtime_text_for_event(msg: &EventMsg) -> Option<(String, Option<
          | EventMsg::HookStarted(_)
          | EventMsg::HookCompleted(_)
          | EventMsg::AgentMessageContentDelta(_)
@@ -2018,7 +1742,7 @@ index bafb368b3..9db7c5ffe 100644
          | EventMsg::PlanDelta(_)
          | EventMsg::ReasoningContentDelta(_)
          | EventMsg::ReasoningRawContentDelta(_)
-@@ -1991,6 +2005,7 @@ async fn try_run_sampling_request(
+@@ -1991,6 +1993,7 @@ async fn try_run_sampling_request(
          String,
          Box<dyn ToolArgumentDiffConsumer>,
      )> = None;
@@ -2026,7 +1750,7 @@ index bafb368b3..9db7c5ffe 100644
      let mut should_emit_turn_diff = false;
      let mut should_emit_token_count = false;
      let reasoning_effort = turn_context.effective_reasoning_effort_for_tracing();
-@@ -2156,8 +2171,19 @@ async fn try_run_sampling_request(
+@@ -2156,8 +2159,19 @@ async fn try_run_sampling_request(
                      active_tool_argument_diff_consumer = tool_runtime
                          .create_diff_consumer(&tool_name)
                          .map(|consumer| (call_id.clone(), consumer));
@@ -2039,7 +1763,7 @@ index bafb368b3..9db7c5ffe 100644
 +                    if turn_context
 +                        .dynamic_tools
 +                        .iter()
-+                        .any(|spec| dynamic_tool_matches_name(spec, name))
++                        .any(|spec| spec.name == *name)
 +                    {
 +                        let item_id = id.clone().unwrap_or_default();
 +                        active_dynamic_tool_call = Some((call_id.clone(), item_id));
@@ -2047,7 +1771,7 @@ index bafb368b3..9db7c5ffe 100644
                  }
                  if let Some(turn_item) = handle_non_tool_response_item(
                      sess.as_ref(),
-@@ -2341,17 +2367,37 @@ async fn try_run_sampling_request(
+@@ -2341,17 +2355,37 @@ async fn try_run_sampling_request(
                  call_id,
                  delta,
              } => {
@@ -2082,7 +1806,7 @@ index bafb368b3..9db7c5ffe 100644
 +                        None => Some(active_call_id.clone()),
 +                    };
 +                    let event = DynamicToolCallArgumentsDeltaEvent {
-+                        thread_id: sess.thread_id.to_string(),
++                        thread_id: sess.conversation_id.to_string(),
 +                        turn_id: turn_context.sub_id.clone(),
 +                        item_id: item_id.clone(),
 +                        call_id: matched_call_id,
@@ -2103,7 +1827,7 @@ index 6a9509300..90decab95 100644
 @@ -40,6 +40,11 @@ pub(crate) struct ShellSnapshotFile {
      path: AbsolutePathBuf,
  }
-
+ 
 +// On mobile (iOS/Android) the shell environment is minimal and snapshot
 +// attempts frequently timeout, adding 10s to every thread/start.
 +#[cfg(any(target_os = "ios", target_os = "android"))]
@@ -2119,14 +1843,14 @@ index 38010754e..ebb68f263 100644
 @@ -156,7 +156,7 @@ pub(crate) fn spawn_exit_watcher(
      });
  }
-
+ 
 -async fn process_chunk(
 +pub(crate) async fn process_chunk(
      pending: &mut Vec<u8>,
      transcript: &Arc<Mutex<HeadTailBuffer>>,
      call_id: &str,
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
-index fe3ec4575..c704e1d6b 100644
+index fe3ec4575..a0883dd24 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
 +++ b/codex-rs/core/src/unified_exec/process_manager.rs
 @@ -47,6 +47,8 @@ use crate::unified_exec::UnifiedExecProcessManager;
@@ -2151,7 +1875,7 @@ index fe3ec4575..c704e1d6b 100644
          let process = self
              .open_session_with_sandbox(&request, cwd.clone(), context)
              .await;
-@@ -633,6 +641,129 @@ impl UnifiedExecProcessManager {
+@@ -633,6 +641,128 @@ impl UnifiedExecProcessManager {
          Ok(response)
      }
  
@@ -2159,7 +1883,7 @@ index fe3ec4575..c704e1d6b 100644
 +    async fn exec_command_ios(
 +        &self,
 +        request: &ExecCommandRequest,
-+        cwd: PathUri,
++        cwd: codex_utils_absolute_path::AbsolutePathBuf,
 +        context: &UnifiedExecContext,
 +    ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
 +        use crate::exec::IOS_EXEC_HOOK;
@@ -2182,8 +1906,8 @@ index fe3ec4575..c704e1d6b 100644
 +        emitter.emit(event_ctx, ToolEventStage::Begin).await;
 +
 +        let env = create_env(
-+            &context.turn.config.permissions.shell_environment_policy,
-+            /*thread_id*/ None,
++            &context.turn.shell_environment_policy,
++            Some(context.session.conversation_id),
 +        );
 +        let start = Instant::now();
 +        let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
@@ -2193,7 +1917,7 @@ index fe3ec4575..c704e1d6b 100644
 +        });
 +        let mut join = tokio::task::spawn_blocking({
 +            let mut command = request.command.clone();
-+            let cwd = cwd.to_path_buf();
++            let cwd = cwd.clone();
 +            let output_handler = Arc::clone(&output_handler);
 +            move || {
 +                if let Some(preflight) = MOBILE_EXEC_PREFLIGHT.get() {
@@ -2252,7 +1976,7 @@ index fe3ec4575..c704e1d6b 100644
 +            Arc::clone(&context.turn),
 +            context.call_id.clone(),
 +            request.command.clone(),
-+            cwd.into(),
++            cwd,
 +            Some(request.process_id.to_string()),
 +            transcript,
 +            text.clone(),
@@ -2268,8 +1992,7 @@ index fe3ec4575..c704e1d6b 100644
 +            event_call_id: context.call_id.clone(),
 +            chunk_id: generate_chunk_id(),
 +            wall_time,
-+            raw_output: raw_output.to_vec(),
-+            truncation_policy: context.turn.model_info.truncation_policy.into(),
++            raw_output,
 +            max_output_tokens: request.max_output_tokens,
 +            process_id: None,
 +            exit_code: Some(exit_code),
@@ -2292,7 +2015,7 @@ index 10de2b96c..2642d2111 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 diff --git a/codex-rs/core/tests/suite/realtime_conversation.rs b/codex-rs/core/tests/suite/realtime_conversation.rs
 index f4262e8e4..d8a2344d2 100644
 --- a/codex-rs/core/tests/suite/realtime_conversation.rs
@@ -2304,7 +2027,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -444,6 +445,7 @@ async fn conversation_start_defaults_to_v2_and_gpt_realtime_1_5() -> Result<()>
              transport: None,
              version: None,
@@ -2312,7 +2035,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -542,6 +544,7 @@ async fn conversation_webrtc_start_posts_generated_session() -> Result<()> {
              }),
              version: Some(RealtimeConversationVersion::V1),
@@ -2320,7 +2043,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -730,6 +733,7 @@ async fn conversation_webrtc_start_uses_avas_query() -> Result<()> {
              }),
              version: None,
@@ -2328,7 +2051,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -829,6 +833,7 @@ async fn conversation_webrtc_default_v1_ignores_configured_v2_voice() -> Result<
              }),
              version: None,
@@ -2336,7 +2059,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -890,6 +895,7 @@ async fn conversation_webrtc_default_v1_rejects_explicit_v2_voice() -> Result<()
              }),
              version: None,
@@ -2344,7 +2067,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -961,6 +967,7 @@ async fn conversation_webrtc_start_uses_configured_call_base_url_for_avas() -> R
              }),
              version: None,
@@ -2352,7 +2075,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -1056,6 +1063,7 @@ async fn conversation_webrtc_close_while_sideband_connecting_drops_pending_join(
              }),
              version: None,
@@ -2360,7 +2083,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -1148,6 +1156,7 @@ async fn conversation_webrtc_sideband_connect_failure_closes_with_error() -> Res
              }),
              version: None,
@@ -2368,7 +2091,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -1240,6 +1249,7 @@ async fn conversation_start_uses_openai_env_key_fallback_with_chatgpt_auth() ->
              transport: None,
              version: None,
@@ -2376,7 +2099,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -1332,6 +1342,7 @@ async fn assert_transport_close_tail_flush(
              transport: None,
              version: None,
@@ -2384,7 +2107,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -1449,6 +1460,7 @@ async fn conversation_start_preflight_failure_emits_realtime_error_only() -> Res
              transport: None,
              version: None,
@@ -2392,7 +2115,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -1501,6 +1513,7 @@ async fn conversation_start_connect_failure_emits_realtime_error_only() -> Resul
              transport: None,
              version: None,
@@ -2400,7 +2123,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -1601,6 +1614,7 @@ async fn conversation_second_start_replaces_runtime() -> Result<()> {
              transport: None,
              version: None,
@@ -2424,7 +2147,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -1804,6 +1820,7 @@ async fn conversation_uses_default_realtime_backend_prompt() -> Result<()> {
              transport: None,
              version: None,
@@ -2432,7 +2155,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -1882,6 +1899,7 @@ async fn conversation_uses_empty_instructions_for_null_or_empty_prompt() -> Resu
                  transport: None,
                  version: None,
@@ -2440,7 +2163,7 @@ index f4262e8e4..d8a2344d2 100644
 +                dynamic_tools: None,
              }))
              .await?;
-
+ 
 @@ -1953,6 +1971,7 @@ async fn conversation_uses_explicit_start_voice() -> Result<()> {
              transport: None,
              version: None,
@@ -2448,7 +2171,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2016,6 +2035,7 @@ async fn conversation_uses_configured_realtime_voice() -> Result<()> {
              transport: None,
              version: None,
@@ -2456,7 +2179,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2067,6 +2087,7 @@ async fn conversation_rejects_voice_for_wrong_realtime_version() -> Result<()> {
              transport: None,
              version: None,
@@ -2464,7 +2187,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2119,6 +2140,7 @@ async fn conversation_uses_experimental_realtime_ws_backend_prompt_override() ->
              transport: None,
              version: None,
@@ -2472,7 +2195,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2197,6 +2219,7 @@ async fn conversation_uses_experimental_realtime_ws_startup_context_override() -
              transport: None,
              version: None,
@@ -2480,7 +2203,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2269,6 +2292,7 @@ async fn conversation_disables_realtime_startup_context_with_empty_override() ->
              transport: None,
              version: None,
@@ -2488,7 +2211,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2334,6 +2358,7 @@ async fn conversation_start_injects_startup_context_from_thread_history() -> Res
              transport: None,
              version: None,
@@ -2496,7 +2219,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2454,6 +2479,7 @@ async fn conversation_startup_context_current_thread_selects_many_turns_by_budge
              transport: None,
              version: None,
@@ -2504,7 +2227,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2567,6 +2593,7 @@ async fn conversation_startup_context_falls_back_to_workspace_map() -> Result<()
              transport: None,
              version: None,
@@ -2512,7 +2235,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2632,6 +2659,7 @@ async fn conversation_startup_context_is_truncated_and_sent_once_per_start() ->
              transport: None,
              version: None,
@@ -2520,7 +2243,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2718,6 +2746,7 @@ async fn conversation_user_text_turn_is_not_sent_to_realtime() -> Result<()> {
              transport: None,
              version: None,
@@ -2528,7 +2251,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2820,6 +2849,7 @@ async fn realtime_v2_noop_tool_call_returns_empty_function_output_without_respon
              transport: None,
              version: None,
@@ -2536,7 +2259,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -2924,6 +2954,7 @@ async fn conversation_mirrors_assistant_message_text_to_realtime_handoff() -> Re
              transport: None,
              version: None,
@@ -2544,7 +2267,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -3064,6 +3095,7 @@ async fn conversation_handoff_persists_across_item_done_until_turn_complete() ->
              transport: None,
              version: None,
@@ -2552,7 +2275,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -3221,6 +3253,7 @@ async fn inbound_handoff_request_starts_turn() -> Result<()> {
              transport: None,
              version: None,
@@ -2560,7 +2283,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -3336,6 +3369,7 @@ async fn inbound_handoff_request_uses_active_transcript() -> Result<()> {
              transport: None,
              version: None,
@@ -2568,7 +2291,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -3444,6 +3478,7 @@ async fn inbound_handoff_request_sends_transcript_delta_after_each_handoff() ->
              transport: None,
              version: None,
@@ -2576,7 +2299,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -3571,6 +3606,7 @@ async fn conversation_close_routes_only_remaining_transcript_tail_once() -> Resu
              transport: None,
              version: None,
@@ -2584,7 +2307,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -3659,6 +3695,7 @@ async fn inbound_conversation_item_does_not_start_turn_and_still_forwards_audio(
              transport: None,
              version: None,
@@ -2592,7 +2315,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -3787,6 +3824,7 @@ async fn delegated_turn_user_role_echo_does_not_redelegate_and_still_forwards_au
              transport: None,
              version: None,
@@ -2600,7 +2323,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -3945,6 +3983,7 @@ async fn inbound_handoff_request_does_not_block_realtime_event_forwarding() -> R
              transport: None,
              version: None,
@@ -2608,7 +2331,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 @@ -4092,6 +4131,7 @@ async fn inbound_handoff_request_steers_active_turn() -> Result<()> {
              transport: None,
              version: None,
@@ -2624,7 +2347,7 @@ index f4262e8e4..d8a2344d2 100644
 +            dynamic_tools: None,
          }))
          .await?;
-
+ 
 diff --git a/codex-rs/exec-server/src/environment.rs b/codex-rs/exec-server/src/environment.rs
 index 66f738110..27b373f4b 100644
 --- a/codex-rs/exec-server/src/environment.rs
@@ -2670,19 +2393,6 @@ index 66f738110..27b373f4b 100644
              http_client: Arc::new(ReqwestHttpClient),
              local_runtime_paths: None,
          }
-diff --git a/codex-rs/exec-server/src/noise_channel.rs b/codex-rs/exec-server/src/noise_channel.rs
-index 062e54a68..c2e9b514f 100644
---- a/codex-rs/exec-server/src/noise_channel.rs
-+++ b/codex-rs/exec-server/src/noise_channel.rs
-@@ -19,7 +19,7 @@ use clatter::constants::MAX_MESSAGE_LEN;
- use clatter::crypto::cipher::AesGcm;
- use clatter::crypto::dh::X25519;
- use clatter::crypto::hash::Sha256;
--use clatter::crypto::kem::rust_crypto_ml_kem::MlKem768;
-+use clatter::crypto::kem::pqclean_ml_kem::MlKem768;
- use clatter::handshakepattern::noise_hybrid_ik;
- use clatter::traits::Cipher;
- use clatter::traits::Dh;
 diff --git a/codex-rs/mcp-server/src/codex_tool_runner.rs b/codex-rs/mcp-server/src/codex_tool_runner.rs
 index cbc113ff7..5e09c1c9b 100644
 --- a/codex-rs/mcp-server/src/codex_tool_runner.rs
@@ -2705,7 +2415,7 @@ index 57a36c331..c16918b3b 100644
      pub voice: Option<RealtimeVoice>,
 +    pub dynamic_tools: Option<Vec<DynamicToolSpec>>,
  }
-
+ 
  #[derive(Debug, Clone, PartialEq)]
 @@ -368,6 +369,8 @@ pub struct RealtimeHandoffRequested {
      pub item_id: String,
@@ -2714,7 +2424,7 @@ index 57a36c331..c16918b3b 100644
 +    #[serde(default, skip_serializing_if = "Option::is_none")]
 +    pub server: Option<String>,
  }
-
+ 
  #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 @@ -417,6 +420,7 @@ pub enum RealtimeEvent {
      },
@@ -2723,11 +2433,11 @@ index 57a36c331..c16918b3b 100644
 +    ToolCallRequested(Value),
      Error(String),
  }
-
+ 
 @@ -548,6 +552,15 @@ pub enum Op {
      /// Close the running realtime conversation stream.
      RealtimeConversationClose,
-
+ 
 +    /// Resolve a handoff request with tool output from the client.
 +    RealtimeConversationResolveHandoff { tool_call_output: String },
 +
@@ -2739,7 +2449,7 @@ index 57a36c331..c16918b3b 100644
 +
      /// Request the list of voices supported by realtime conversation streams.
      RealtimeConversationListVoices,
-
+ 
 @@ -869,6 +882,11 @@ impl Op {
              Self::RealtimeConversationText(_) => "realtime_conversation_text",
              Self::RealtimeConversationSpeech(_) => "realtime_conversation_speech",
@@ -2753,18 +2463,18 @@ index 57a36c331..c16918b3b 100644
              Self::UserInput { .. } => "user_input",
              Self::ThreadSettings { .. } => "thread_settings",
 @@ -1398,6 +1416,8 @@ pub enum EventMsg {
-
+ 
      DynamicToolCallResponse(DynamicToolCallResponseEvent),
-
+ 
 +    DynamicToolCallArgumentsDelta(DynamicToolCallArgumentsDeltaEvent),
 +
      ElicitationRequest(ElicitationRequestEvent),
-
+ 
      ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent),
 @@ -1830,6 +1850,17 @@ pub struct AgentMessageContentDeltaEvent {
      pub delta: String,
  }
-
+ 
 +#[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 +pub struct DynamicToolCallArgumentsDeltaEvent {
 +    pub thread_id: String,
@@ -2779,43 +2489,6 @@ index 57a36c331..c16918b3b 100644
  #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
  pub struct PlanDeltaEvent {
      pub thread_id: String,
-diff --git a/codex-rs/rollout-trace/src/protocol_event.rs b/codex-rs/rollout-trace/src/protocol_event.rs
-index 42e0db04d..04b3368c3 100644
---- a/codex-rs/rollout-trace/src/protocol_event.rs
-+++ b/codex-rs/rollout-trace/src/protocol_event.rs
-@@ -404,7 +404,8 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
-         | EventMsg::ReasoningContentDelta(_)
-         | EventMsg::ReasoningRawContentDelta(_)
-         | EventMsg::CollabResumeBegin(_)
--        | EventMsg::CollabResumeEnd(_) => None,
-+        | EventMsg::CollabResumeEnd(_)
-+        | EventMsg::DynamicToolCallArgumentsDelta(_) => None,
-     }
- }
-
-@@ -486,7 +487,8 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
-         | EventMsg::CollabCloseEnd(_)
-         | EventMsg::CollabResumeBegin(_)
-         | EventMsg::CollabResumeEnd(_)
--        | EventMsg::SubAgentActivity(_) => None,
-+        | EventMsg::SubAgentActivity(_)
-+        | EventMsg::DynamicToolCallArgumentsDelta(_) => None,
-     }
- }
-
-diff --git a/codex-rs/rollout/src/policy.rs b/codex-rs/rollout/src/policy.rs
-index 75ddec35a..ebcd77244 100644
---- a/codex-rs/rollout/src/policy.rs
-+++ b/codex-rs/rollout/src/policy.rs
-@@ -171,6 +171,7 @@ pub fn should_persist_event_msg(ev: &EventMsg, history_mode: ThreadHistoryMode)
-         | EventMsg::CollabAgentInteractionBegin(_)
-         | EventMsg::CollabWaitingBegin(_)
-         | EventMsg::CollabCloseBegin(_)
--        | EventMsg::CollabResumeBegin(_) => false,
-+        | EventMsg::CollabResumeBegin(_)
-+        | EventMsg::DynamicToolCallArgumentsDelta(_) => false,
-     }
- }
 diff --git a/codex-rs/tui/src/chatwidget/protocol.rs b/codex-rs/tui/src/chatwidget/protocol.rs
 index f60f9c41d..2f9680e95 100644
 --- a/codex-rs/tui/src/chatwidget/protocol.rs
@@ -2827,7 +2500,7 @@ index f60f9c41d..2f9680e95 100644
 +            ServerNotification::DynamicToolCallArgumentsDelta(_) => {}
          }
      }
-
+ 
 diff --git a/codex-rs/utils/absolute-path/src/lib.rs b/codex-rs/utils/absolute-path/src/lib.rs
 index 6c37e0866..4ff7e273f 100644
 --- a/codex-rs/utils/absolute-path/src/lib.rs
@@ -2835,7 +2508,7 @@ index 6c37e0866..4ff7e273f 100644
 @@ -350,6 +350,32 @@ impl Drop for AbsolutePathBufGuard {
      }
  }
-
+ 
 +/// True when `path` looks absolute on _some_ platform even if `Path::is_absolute`
 +/// returns `false` on the current one. This lets a POSIX mobile client consume
 +/// Windows paths from a cross-platform RPC server (and vice versa) without
