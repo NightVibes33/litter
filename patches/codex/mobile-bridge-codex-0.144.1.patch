@@ -2516,6 +2516,26 @@ index 57a36c331..c16918b3b 100644
  #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
  pub struct PlanDeltaEvent {
      pub thread_id: String,
+diff --git a/codex-rs/rollout-trace/src/protocol_event.rs b/codex-rs/rollout-trace/src/protocol_event.rs
+index 42e0db04d..1cebd1bb5 100644
+--- a/codex-rs/rollout-trace/src/protocol_event.rs
++++ b/codex-rs/rollout-trace/src/protocol_event.rs
+@@ -381,6 +381,7 @@ pub(crate) fn tool_runtime_trace_event(event: &EventMsg) -> Option<ToolRuntimeTr
+         | EventMsg::RequestUserInput(_)
+         | EventMsg::DynamicToolCallRequest(_)
+         | EventMsg::DynamicToolCallResponse(_)
++        | EventMsg::DynamicToolCallArgumentsDelta(_)
+         | EventMsg::ElicitationRequest(_)
+         | EventMsg::ApplyPatchApprovalRequest(_)
+         | EventMsg::GuardianAssessment(_)
+@@ -454,6 +455,7 @@ pub(crate) fn wrapped_protocol_event_type(event: &EventMsg) -> Option<&'static s
+         | EventMsg::RequestUserInput(_)
+         | EventMsg::DynamicToolCallRequest(_)
+         | EventMsg::DynamicToolCallResponse(_)
++        | EventMsg::DynamicToolCallArgumentsDelta(_)
+         | EventMsg::ElicitationRequest(_)
+         | EventMsg::ApplyPatchApprovalRequest(_)
+         | EventMsg::GuardianAssessment(_)
 diff --git a/codex-rs/rollout/src/policy.rs b/codex-rs/rollout/src/policy.rs
 index 75ddec35a..cc6b5ba6a 100644
 --- a/codex-rs/rollout/src/policy.rs
