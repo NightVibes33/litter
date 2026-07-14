@@ -2061,7 +2061,8 @@ dependencies = [
  "arrayvec",
  "displaydoc",
  "getrandom 0.3.4",
- "ml-kem 0.2.1",
+ "pqcrypto-mlkem",
+ "pqcrypto-traits",
  "rand_core 0.6.4",
  "sha2 0.10.9",
  "thiserror-no-std",
@@ -10585,6 +10586,33 @@ checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
 dependencies = [
  "portable-atomic",
 ]
+
+[[package]]
+name = "pqcrypto-internals"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e10cdd9eee50fe65bbd4f40211f1a492f1ee52e97a51100950b6f1fa319ab7cd"
+dependencies = [
+ "getrandom 0.2.17",
+ "libc",
+]
+
+[[package]]
+name = "pqcrypto-mlkem"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb14d207f3749e8a59a026c22ceaa72d70fff931cfbf4c8d9b08f3fc56dc6e60"
+dependencies = [
+ "libc",
+ "pqcrypto-internals",
+ "pqcrypto-traits",
+]
+
+[[package]]
+name = "pqcrypto-traits"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94e851c7654eed9e68d7d27164c454961a616cf8c203d500607ef22c737b51bb"
 
 [[package]]
 name = "portable-pty"
