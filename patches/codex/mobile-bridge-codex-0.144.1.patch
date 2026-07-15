@@ -2,9 +2,7 @@ diff --git a/codex-rs/Cargo.toml b/codex-rs/Cargo.toml
 index 596ec1a89d..4ef4159fd1 100644
 --- a/codex-rs/Cargo.toml
 +++ b/codex-rs/Cargo.toml
-@@ -292,8 +292,8 @@ clap_complete = "4"
- clatter = { version = "2.2.0", default-features = false, features = [
-     "alloc",
+@@ -294,7 +294,7 @@ clatter = { version = "2.2.0", default-features = false, features = [
      "getrandom",
      "use-25519",
      "use-aes-gcm",
@@ -12,6 +10,7 @@ index 596ec1a89d..4ef4159fd1 100644
 +    "use-pqclean-ml-kem",
      "use-sha",
  ] }
+ color-eyre = "0.6.3"
 @@ -409,9 +409,10 @@ sqlx = { version = "0.9.0", default-features = false, features = [
      "macros",
      "migrate",
@@ -24,20 +23,6 @@ index 596ec1a89d..4ef4159fd1 100644
      "uuid",
  ] }
  starlark = { version = "0.14.2", default-features = false }
-diff --git a/codex-rs/exec-server/src/noise_channel.rs b/codex-rs/exec-server/src/noise_channel.rs
-index 062e54a684..c2e9b514fe 100644
---- a/codex-rs/exec-server/src/noise_channel.rs
-+++ b/codex-rs/exec-server/src/noise_channel.rs
-@@ -19,7 +19,7 @@ use clatter::constants::MAX_MESSAGE_LEN;
- use clatter::crypto::cipher::AesGcm;
- use clatter::crypto::dh::X25519;
- use clatter::crypto::hash::Sha256;
--use clatter::crypto::kem::rust_crypto_ml_kem::MlKem768;
-+use clatter::crypto::kem::pqclean_ml_kem::MlKem768;
- use clatter::handshakepattern::noise_hybrid_ik;
- use clatter::traits::Cipher;
- use clatter::traits::Dh;
-
 diff --git a/codex-rs/app-server-client/src/lib.rs b/codex-rs/app-server-client/src/lib.rs
 index 4eec8a2348..cc32167a9c 100644
 --- a/codex-rs/app-server-client/src/lib.rs
@@ -51,7 +36,7 @@ index 4eec8a2348..cc32167a9c 100644
  pub use crate::remote::RemoteAppServerConnectArgs;
  pub use crate::remote::RemoteAppServerEndpoint;
 diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-client/src/remote.rs
-index 5575fe4ad4..28f65ca62a 100644
+index 5575fe4ad4..e3fec8d290 100644
 --- a/codex-rs/app-server-client/src/remote.rs
 +++ b/codex-rs/app-server-client/src/remote.rs
 @@ -12,6 +12,7 @@ higher-level session logic.
@@ -287,18 +272,16 @@ index 5575fe4ad4..28f65ca62a 100644
                              break;
                          };
                          match command {
-@@ -234,9 +387,8 @@ impl RemoteAppServerClient {
+@@ -234,8 +387,7 @@ impl RemoteAppServerClient {
                                      continue;
                                  }
                                  pending_requests.insert(request_id.clone(), response_tx);
 -                                if let Err(err) = write_jsonrpc_message(
 -                                    &mut stream,
--                                    JSONRPCMessage::Request(*request),
 +                                if let Err(err) = stream.send_message(
-+                                    JSONRPCMessage::Request(*request),
+                                     JSONRPCMessage::Request(*request),
                                      &endpoint,
                                  )
-                                 .await
 @@ -259,8 +411,7 @@ impl RemoteAppServerClient {
                                  }
                              }
@@ -851,7 +834,7 @@ index fc6a3281b4..5570ebe144 100644
 
      /// Builds the API view for `thread/read` from persisted metadata plus optional live state.
 diff --git a/codex-rs/app-server/src/request_processors/turn_processor.rs b/codex-rs/app-server/src/request_processors/turn_processor.rs
-index 3ff64cd34e..306281435b 100644
+index 3ff64cd34e..04963e9626 100644
 --- a/codex-rs/app-server/src/request_processors/turn_processor.rs
 +++ b/codex-rs/app-server/src/request_processors/turn_processor.rs
 @@ -262,6 +262,58 @@ impl TurnRequestProcessor {
@@ -913,7 +896,7 @@ index 3ff64cd34e..306281435b 100644
      pub(crate) async fn thread_realtime_list_voices(
          &self,
      ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-@@ -1023,6 +1071,7 @@ impl TurnRequestProcessor {
+@@ -1023,6 +1075,7 @@ impl TurnRequestProcessor {
                  }),
                  version: params.version,
                  voice: params.voice,
@@ -1367,10 +1350,18 @@ index 2bd4ae3bcf..2bb11d2d18 100644
              sdp: response.sdp,
              call_id: response.call_id,
 diff --git a/codex-rs/core/src/exec.rs b/codex-rs/core/src/exec.rs
-index 015b20715a..e93fa422ce 100644
+index 015b20715a..08f2df9786 100644
 --- a/codex-rs/core/src/exec.rs
 +++ b/codex-rs/core/src/exec.rs
-@@ -55,6 +55,90 @@ use codex_utils_path_uri::PathUri;
+@@ -3,7 +3,6 @@ use std::os::unix::process::ExitStatusExt;
+
+ use std::collections::HashMap;
+ use std::io;
+-#[cfg(target_os = "windows")]
+ use std::path::Path;
+ use std::path::PathBuf;
+ use std::process::ExitStatus;
+@@ -55,6 +54,90 @@ use codex_utils_path_uri::PathUri;
  use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
  use codex_utils_pty::process_group::kill_child_process_group;
 
@@ -1461,7 +1452,7 @@ index 015b20715a..e93fa422ce 100644
  pub const DEFAULT_EXEC_COMMAND_TIMEOUT_MS: u64 = 10_000;
 
  // Hardcode these since it does not seem worth including the libc crate just
-@@ -897,6 +981,7 @@ fn aggregate_output(
+@@ -897,6 +980,7 @@ fn aggregate_output(
  /// Note this command does not apply any sandboxing logic. The caller is
  /// responsible for constructing [ExecParams::command] to include any sandboxing
  /// wrapper args, as appropriate.
@@ -1469,7 +1460,7 @@ index 015b20715a..e93fa422ce 100644
  async fn exec(
      params: ExecParams,
      network_sandbox_policy: NetworkSandboxPolicy,
-@@ -928,6 +1013,55 @@ async fn exec(
+@@ -928,6 +1012,55 @@ async fn exec(
                  network_proxy_environment_error(network_environment_id.as_deref(), err)
              })?;
      }
@@ -1934,7 +1925,7 @@ index 38010754e9..ebb68f263b 100644
      transcript: &Arc<Mutex<HeadTailBuffer>>,
      call_id: &str,
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
-index fe3ec45759..a0883dd241 100644
+index fe3ec45759..2e712f35ca 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
 +++ b/codex-rs/core/src/unified_exec/process_manager.rs
 @@ -47,6 +47,8 @@ use crate::unified_exec::UnifiedExecProcessManager;
@@ -1959,7 +1950,7 @@ index fe3ec45759..a0883dd241 100644
          let process = self
              .open_session_with_sandbox(&request, cwd.clone(), context)
              .await;
-@@ -633,6 +641,128 @@ impl UnifiedExecProcessManager {
+@@ -633,6 +641,133 @@ impl UnifiedExecProcessManager {
          Ok(response)
      }
 
@@ -1967,13 +1958,17 @@ index fe3ec45759..a0883dd241 100644
 +    async fn exec_command_ios(
 +        &self,
 +        request: &ExecCommandRequest,
-+        cwd: codex_utils_absolute_path::AbsolutePathBuf,
++        cwd: PathUri,
 +        context: &UnifiedExecContext,
 +    ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
 +        use crate::exec::IOS_EXEC_HOOK;
 +        use crate::exec::IOS_STREAMING_EXEC_HOOK;
 +        use crate::exec::IosExecOutputHandler;
 +        use crate::exec::MOBILE_EXEC_PREFLIGHT;
++
++        let cwd_path = cwd.to_abs_path().map_err(|err| {
++            UnifiedExecError::process_failed(format!("invalid iOS cwd `{cwd}`: {err}"))
++        })?;
 +
 +        let event_ctx = ToolEventCtx::new(
 +            context.session.as_ref(),
@@ -1990,8 +1985,8 @@ index fe3ec45759..a0883dd241 100644
 +        emitter.emit(event_ctx, ToolEventStage::Begin).await;
 +
 +        let env = create_env(
-+            &context.turn.shell_environment_policy,
-+            Some(context.session.conversation_id),
++            &context.turn.config.permissions.shell_environment_policy,
++            Some(context.session.services.network_proxy_audit_metadata.conversation_id),
 +        );
 +        let start = Instant::now();
 +        let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
@@ -2001,18 +1996,18 @@ index fe3ec45759..a0883dd241 100644
 +        });
 +        let mut join = tokio::task::spawn_blocking({
 +            let mut command = request.command.clone();
-+            let cwd = cwd.clone();
++            let cwd_path = cwd_path.clone();
 +            let output_handler = Arc::clone(&output_handler);
 +            move || {
 +                if let Some(preflight) = MOBILE_EXEC_PREFLIGHT.get() {
 +                    preflight(&mut command);
 +                }
 +                if let Some(streaming_hook) = IOS_STREAMING_EXEC_HOOK.get() {
-+                    streaming_hook(&command, &cwd, &env, None, output_handler)
++                    streaming_hook(&command, &cwd_path, &env, None, output_handler)
 +                } else {
 +                    IOS_EXEC_HOOK
 +                        .get()
-+                        .map(|f| f(&command, &cwd, &env, None))
++                        .map(|f| f(&command, &cwd_path, &env, None))
 +                        .unwrap_or((-1, b"no iOS exec hook registered\n".to_vec()))
 +                }
 +            }
@@ -2077,6 +2072,7 @@ index fe3ec45759..a0883dd241 100644
 +            chunk_id: generate_chunk_id(),
 +            wall_time,
 +            raw_output,
++            truncation_policy: context.turn.model_info.truncation_policy.into(),
 +            max_output_tokens: request.max_output_tokens,
 +            process_id: None,
 +            exit_code: Some(exit_code),
@@ -2477,6 +2473,19 @@ index 66f7381103..27b373f4b9 100644
              http_client: Arc::new(ReqwestHttpClient),
              local_runtime_paths: None,
          }
+diff --git a/codex-rs/exec-server/src/noise_channel.rs b/codex-rs/exec-server/src/noise_channel.rs
+index 062e54a684..c2e9b514fe 100644
+--- a/codex-rs/exec-server/src/noise_channel.rs
++++ b/codex-rs/exec-server/src/noise_channel.rs
+@@ -19,7 +19,7 @@ use clatter::constants::MAX_MESSAGE_LEN;
+ use clatter::crypto::cipher::AesGcm;
+ use clatter::crypto::dh::X25519;
+ use clatter::crypto::hash::Sha256;
+-use clatter::crypto::kem::rust_crypto_ml_kem::MlKem768;
++use clatter::crypto::kem::pqclean_ml_kem::MlKem768;
+ use clatter::handshakepattern::noise_hybrid_ik;
+ use clatter::traits::Cipher;
+ use clatter::traits::Dh;
 diff --git a/codex-rs/mcp-server/src/codex_tool_runner.rs b/codex-rs/mcp-server/src/codex_tool_runner.rs
 index cbc113ff79..5e09c1c9b1 100644
 --- a/codex-rs/mcp-server/src/codex_tool_runner.rs
