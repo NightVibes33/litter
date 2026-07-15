@@ -280,7 +280,7 @@ index 5575fe4ad4..28f65ca62a 100644
 -                                    &mut stream,
 -                                    JSONRPCMessage::Request(*request),
 +                                if let Err(err) = stream.send_message(
-+                                    JSONRPCMessage::Request(jsonrpc_request_from_client_request(*request)),
++                                    JSONRPCMessage::Request(*request),
                                      &endpoint,
                                  )
                                  .await
