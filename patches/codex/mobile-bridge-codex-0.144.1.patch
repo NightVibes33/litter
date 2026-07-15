@@ -1925,7 +1925,7 @@ index 38010754e9..ebb68f263b 100644
      transcript: &Arc<Mutex<HeadTailBuffer>>,
      call_id: &str,
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
-index fe3ec45759..2e712f35ca 100644
+index fe3ec45759..c6c45c590d 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
 +++ b/codex-rs/core/src/unified_exec/process_manager.rs
 @@ -47,6 +47,8 @@ use crate::unified_exec::UnifiedExecProcessManager;
@@ -1986,7 +1986,7 @@ index fe3ec45759..2e712f35ca 100644
 +
 +        let env = create_env(
 +            &context.turn.config.permissions.shell_environment_policy,
-+            Some(context.session.services.network_proxy_audit_metadata.conversation_id),
++            Some(context.session.thread_id()),
 +        );
 +        let start = Instant::now();
 +        let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
