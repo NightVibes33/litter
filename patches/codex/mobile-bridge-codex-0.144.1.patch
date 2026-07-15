@@ -839,7 +839,7 @@ diff --git a/codex-rs/app-server/src/request_processors/turn_processor.rs b/code
 index 3ff64cd34e..306281435b 100644
 --- a/codex-rs/app-server/src/request_processors/turn_processor.rs
 +++ b/codex-rs/app-server/src/request_processors/turn_processor.rs
-@@ -262,6 +262,54 @@ impl TurnRequestProcessor {
+@@ -262,6 +262,58 @@ impl TurnRequestProcessor {
              .map(|response| response.map(Into::into))
      }
 
@@ -867,7 +867,9 @@ index 3ff64cd34e..306281435b 100644
 +                "failed to resolve realtime conversation handoff: {err}"
 +            ))
 +        })?;
-+        Ok(Some(ThreadRealtimeResolveHandoffResponse::default()))
++        Ok(Some(ClientResponsePayload::ThreadRealtimeResolveHandoff(
++            ThreadRealtimeResolveHandoffResponse::default(),
++        )))
 +    }
 +
 +    pub(crate) async fn thread_realtime_finalize_handoff(
@@ -888,7 +890,9 @@ index 3ff64cd34e..306281435b 100644
 +                    "failed to finalize realtime conversation handoff: {err}"
 +                ))
 +            })?;
-+        Ok(Some(ThreadRealtimeFinalizeHandoffResponse::default()))
++        Ok(Some(ClientResponsePayload::ThreadRealtimeFinalizeHandoff(
++            ThreadRealtimeFinalizeHandoffResponse::default(),
++        )))
 +    }
 +
      pub(crate) async fn thread_realtime_list_voices(
