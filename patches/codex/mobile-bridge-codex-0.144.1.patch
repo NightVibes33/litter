@@ -2,15 +2,6 @@ diff --git a/codex-rs/Cargo.toml b/codex-rs/Cargo.toml
 index 596ec1a89d..4ef4159fd1 100644
 --- a/codex-rs/Cargo.toml
 +++ b/codex-rs/Cargo.toml
-@@ -294,7 +294,7 @@ clatter = { version = "2.2.0", default-features = false, features = [
-     "getrandom",
-     "use-25519",
-     "use-aes-gcm",
--    "use-rust-crypto-ml-kem",
-+    "use-pqclean-ml-kem",
-     "use-sha",
- ] }
- color-eyre = "0.6.3"
 @@ -409,9 +409,10 @@ sqlx = { version = "0.9.0", default-features = false, features = [
      "macros",
      "migrate",
@@ -2462,19 +2453,6 @@ index 66f7381103..27b373f4b9 100644
              http_client: Arc::new(ReqwestHttpClient),
              local_runtime_paths: None,
          }
-diff --git a/codex-rs/exec-server/src/noise_channel.rs b/codex-rs/exec-server/src/noise_channel.rs
-index 062e54a684..c2e9b514fe 100644
---- a/codex-rs/exec-server/src/noise_channel.rs
-+++ b/codex-rs/exec-server/src/noise_channel.rs
-@@ -19,7 +19,7 @@ use clatter::constants::MAX_MESSAGE_LEN;
- use clatter::crypto::cipher::AesGcm;
- use clatter::crypto::dh::X25519;
- use clatter::crypto::hash::Sha256;
--use clatter::crypto::kem::rust_crypto_ml_kem::MlKem768;
-+use clatter::crypto::kem::pqclean_ml_kem::MlKem768;
- use clatter::handshakepattern::noise_hybrid_ik;
- use clatter::traits::Cipher;
- use clatter::traits::Dh;
 diff --git a/codex-rs/mcp-server/src/codex_tool_runner.rs b/codex-rs/mcp-server/src/codex_tool_runner.rs
 index cbc113ff79..5e09c1c9b1 100644
 --- a/codex-rs/mcp-server/src/codex_tool_runner.rs
