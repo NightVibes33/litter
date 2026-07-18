@@ -919,38 +919,21 @@ extension HomeSessionsScrollUIView: UIScrollViewDelegate {
 private struct HomeCatFooterView: View {
     let playEntrance: Bool
 
-    @State private var showingLoop: Bool
-
-    private let entranceURL = Bundle.main.url(forResource: "home_cat_entrance", withExtension: "png")
-    private let loopURL = Bundle.main.url(forResource: "home_cat", withExtension: "png")
-
-    init(playEntrance: Bool) {
-        self.playEntrance = playEntrance
-        self._showingLoop = State(initialValue: !playEntrance)
-    }
-
     var body: some View {
-        GeometryReader { proxy in
-            if let imageURL = showingLoop ? loopURL : (entranceURL ?? loopURL) {
-                let width = min(max(0, proxy.size.width - 48), 340)
-                VStack {
-                    CatTransmissionPressView {
-                        AlphaAnimatedImageView(
-                            fileURL: imageURL,
-                            repeatCount: showingLoop ? 0 : 1,
-                            onFinished: showingLoop ? nil : {
-                                showingLoop = true
-                            }
-                        )
-                    }
-                        .frame(width: width, height: width * 9.0 / 16.0)
-                        .accessibilityHidden(true)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.top, 12)
-                .padding(.bottom, 20)
-            }
+        VStack(spacing: 10) {
+            AlleyCatMark(size: 76)
+            Text("END OF THE ALLEY")
+                .litterFont(size: 10, weight: .bold)
+                .tracking(1.6)
+                .foregroundStyle(LitterTheme.textMuted)
+            Rectangle()
+                .fill(LitterTheme.border.opacity(0.55))
+                .frame(width: 120, height: AlleyVisual.hairline)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(.top, 18)
+        .padding(.bottom, 20)
+        .accessibilityHidden(true)
     }
 }
 
@@ -1871,6 +1854,27 @@ struct HomeSessionRowContent: View {
                 .padding(.trailing, 12)
                 .accessibilityLabel("Show in Picture in Picture")
             }
+        }
+        .background(LitterTheme.surface.opacity(session.hasTurnActive ? 0.92 : 0.72))
+        .clipShape(UnevenRoundedRectangle(
+            topLeadingRadius: 4,
+            bottomLeadingRadius: 10,
+            bottomTrailingRadius: 4,
+            topTrailingRadius: 10,
+            style: .continuous
+        ))
+        .overlay {
+            UnevenRoundedRectangle(
+                topLeadingRadius: 4,
+                bottomLeadingRadius: 10,
+                bottomTrailingRadius: 4,
+                topTrailingRadius: 10,
+                style: .continuous
+            )
+            .stroke(
+                session.hasTurnActive ? LitterTheme.accent.opacity(0.5) : LitterTheme.border.opacity(0.42),
+                lineWidth: AlleyVisual.hairline
+            )
         }
         .contentShape(Rectangle())
         .onTapGesture { onTap() }

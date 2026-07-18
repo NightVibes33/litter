@@ -59,7 +59,7 @@ struct BuildKitSettingsView: View {
                         .foregroundStyle(LitterTheme.textSecondary)
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             Button {
                 taskBag.run {
@@ -71,7 +71,7 @@ struct BuildKitSettingsView: View {
                 Label("Install Fakefs Commands", systemImage: "terminal")
                     .foregroundStyle(LitterTheme.accent)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             Button {
                 taskBag.run {
@@ -82,7 +82,7 @@ struct BuildKitSettingsView: View {
                 Label("Install Bundled Assets", systemImage: "shippingbox")
                     .foregroundStyle(LitterTheme.accent)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             Button {
                 showingAssetImporter = true
@@ -90,7 +90,7 @@ struct BuildKitSettingsView: View {
                 Label("Import Asset Folder or ZIP", systemImage: "folder.badge.plus")
                     .foregroundStyle(LitterTheme.accent)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             Button {
                 taskBag.run {
@@ -100,7 +100,7 @@ struct BuildKitSettingsView: View {
                 Label("Run Fakefs Doctor", systemImage: "stethoscope")
                     .foregroundStyle(LitterTheme.accent)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             Button {
                 taskBag.run {
@@ -110,7 +110,7 @@ struct BuildKitSettingsView: View {
                 Label("Run Nyxian Status", systemImage: "hammer")
                     .foregroundStyle(LitterTheme.accent)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             Button {
                 taskBag.run { await repairBuildKit() }
@@ -118,7 +118,7 @@ struct BuildKitSettingsView: View {
                 Label("Repair BuildKit", systemImage: "wrench.and.screwdriver")
                     .foregroundStyle(LitterTheme.accent)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             Button {
                 taskBag.run { await runBuildKitCommand("litter-build-status", title: "Build Status") }
@@ -126,7 +126,7 @@ struct BuildKitSettingsView: View {
                 Label("Run Build Status", systemImage: "list.clipboard")
                     .foregroundStyle(LitterTheme.accent)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             Button {
                 taskBag.run { await runSwiftSelfTest() }
@@ -134,7 +134,7 @@ struct BuildKitSettingsView: View {
                 Label("Run Swift Self-Test", systemImage: "swift")
                     .foregroundStyle(LitterTheme.accent)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
         } header: {
             Text("On-device Swift BuildKit")
                 .foregroundStyle(LitterTheme.textSecondary)
@@ -151,33 +151,33 @@ struct BuildKitSettingsView: View {
                     .litterFont(.caption)
                     .foregroundStyle(LitterTheme.textSecondary)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             TextField("Owner", text: $downloader.config.owner)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
             TextField("Repo", text: $downloader.config.repo)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
             TextField("Release tag", text: $downloader.config.tag)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
             TextField("Asset name", text: $downloader.config.assetName)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
             TextField("SHA256 or sidecar", text: $downloader.config.sha256)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             SecureField(downloader.hasStoredToken ? "Token saved in Keychain" : "GitHub token for private repo", text: $tokenInput)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             HStack(spacing: 12) {
                 Button("Save Token") {
@@ -192,7 +192,7 @@ struct BuildKitSettingsView: View {
                 }
                 .disabled(!downloader.hasStoredToken)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -209,7 +209,7 @@ struct BuildKitSettingsView: View {
                     .litterMonoFont(size: 11, weight: .regular)
                     .foregroundStyle(LitterTheme.textSecondary)
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             HStack(spacing: 12) {
                 Button {
@@ -226,14 +226,14 @@ struct BuildKitSettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             if let output = downloader.lastOutput, !output.isEmpty {
                 Text(output)
                     .litterMonoFont(size: 11, weight: .regular)
                     .foregroundStyle(LitterTheme.textSecondary)
                     .textSelection(.enabled)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
             }
         } header: {
             Text("Private BuildKit Assets")
@@ -255,7 +255,7 @@ struct BuildKitSettingsView: View {
                         .litterFont(.caption)
                         .foregroundStyle(LitterTheme.textSecondary)
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
             }
         } header: {
             Text("Bot Commands")
@@ -295,7 +295,7 @@ struct BuildKitSettingsView: View {
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
 
             statusRow("Embedded profile", status?.embeddedProvisionPresent == true ? "Present" : "Missing")
             statusRow("KittyStore AltSign", KittyStoreSideStoreSigningBridge.isLinked ? "Linked" : "Missing")
@@ -329,12 +329,12 @@ struct BuildKitSettingsView: View {
                 Text("Missing: " + missing.joined(separator: ", "))
                     .litterFont(.caption)
                     .foregroundStyle(LitterTheme.warning)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
             }
             Text("Direct source imports live under ThirdParty/Nyxian in the repository with AGPL-3.0 attribution. Apple SDK files must come from a private user-owned BuildKitAssets bundle and are not committed to the public repo.")
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.textSecondary)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
         } header: {
             Text("Source Import")
                 .foregroundStyle(LitterTheme.textSecondary)
@@ -348,12 +348,12 @@ struct BuildKitSettingsView: View {
                     .litterMonoFont(size: 11, weight: .regular)
                     .foregroundStyle(LitterTheme.textSecondary)
                     .textSelection(.enabled)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
             } else {
                 Text("Run Fakefs Doctor or Nyxian Status to validate /dev/random, /dev/urandom, toolchain assets, and BuildKit command paths.")
                     .litterFont(.caption)
                     .foregroundStyle(LitterTheme.textSecondary)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
             }
         } header: {
             Text("Diagnostics")
@@ -382,7 +382,7 @@ struct BuildKitSettingsView: View {
                 .litterFont(.caption, weight: .semibold)
                 .foregroundStyle(LitterTheme.textSecondary)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
     }
 
     private func pathRow(_ label: String, _ value: String) -> some View {
@@ -394,7 +394,7 @@ struct BuildKitSettingsView: View {
                 .foregroundStyle(LitterTheme.textSecondary)
                 .textSelection(.enabled)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
     }
 
     private func commandPurpose(_ command: String) -> String {

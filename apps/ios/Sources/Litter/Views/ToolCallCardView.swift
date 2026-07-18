@@ -668,7 +668,7 @@ private enum ToolCallImageError: LocalizedError {
 #if DEBUG
 #Preview("Tool Call Card") {
     ZStack {
-        LitterTheme.backgroundGradient.ignoresSafeArea()
+        AlleyBackdrop().ignoresSafeArea()
         ToolCallCardView(model: LitterPreviewData.sampleToolCallModel)
             .padding(20)
     }

@@ -75,7 +75,7 @@ struct AIProviderSettingsView: View {
                         }
                     }
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
             }
         } header: {
             Text("Providers")
@@ -88,7 +88,7 @@ struct AIProviderSettingsView: View {
             Text("For private/local models, run them on a computer and add the server's OpenAI-compatible /v1 endpoint here. The iPhone app stays focused on the terminal, file browser, remote bridges, and Swift BuildKit.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
         } header: {
             Text("Runtime Guidance")
                 .foregroundColor(LitterTheme.textSecondary)

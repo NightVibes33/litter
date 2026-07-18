@@ -65,7 +65,7 @@ struct SSHAgentPickerSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 Form {
                     hostSection
                     agentSection
@@ -76,7 +76,7 @@ struct SSHAgentPickerSheet: View {
                                 .litterFont(.caption)
                                 .foregroundColor(LitterTheme.danger)
                         }
-                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                        .listRowBackground(LitterTheme.surface.opacity(0.88))
                     }
                 }
                 .scrollContentBackground(.hidden)
@@ -111,7 +111,7 @@ struct SSHAgentPickerSheet: View {
                 }
             }
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
     }
 
     private var agentSection: some View {
@@ -172,7 +172,7 @@ struct SSHAgentPickerSheet: View {
             }
             .foregroundColor(LitterTheme.textSecondary)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
     }
 
     private var connectSection: some View {
@@ -199,7 +199,7 @@ struct SSHAgentPickerSheet: View {
             .foregroundColor(LitterTheme.textSecondary)
             .disabled(isConnecting)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
     }
 
     private var availableBridgeKinds: [AgentRuntimeKind] {

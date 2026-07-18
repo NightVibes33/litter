@@ -42,7 +42,7 @@ struct ConversationComposerExpandedView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

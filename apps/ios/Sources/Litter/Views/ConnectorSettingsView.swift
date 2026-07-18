@@ -21,7 +21,7 @@ struct ConnectorSettingsView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             Form {
                 Section {
                     statusRow(
@@ -45,7 +45,7 @@ struct ConnectorSettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                        .listRowBackground(LitterTheme.surface.opacity(0.88))
 
                     statusRow(
                         title: "Vercel Relay",
@@ -68,11 +68,11 @@ struct ConnectorSettingsView: View {
                     if displayedConnectors.isEmpty {
                         Text("Refresh the local broker or hosted relay to load connector support.")
                             .foregroundColor(LitterTheme.textSecondary)
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                     } else {
                         ForEach(displayedConnectors) { connector in
                             ConnectorSettingsRow(connector: connector)
-                                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                                .listRowBackground(LitterTheme.surface.opacity(0.88))
                         }
                     }
                 } header: {
@@ -138,7 +138,7 @@ struct ConnectorSettingsView: View {
                     .controlSize(.small)
             }
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
     }
 
     private func settingsDetailRow(title: String, value: String) -> some View {
@@ -151,7 +151,7 @@ struct ConnectorSettingsView: View {
                 .multilineTextAlignment(.trailing)
         }
         .litterFont(.caption)
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
     }
 
     private func refreshLocalBroker() async {

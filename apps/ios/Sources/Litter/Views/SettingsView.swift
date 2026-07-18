@@ -46,7 +46,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 Form {
                     if SettingsFeatureVisibility.showsTipJar {
                         supportSection
@@ -79,6 +79,16 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: 8) {
+                        AlleyCatMark(size: 24)
+                        Text("SETTINGS")
+                            .litterFont(size: 12, weight: .bold)
+                            .tracking(1.5)
+                            .foregroundStyle(LitterTheme.textPrimary)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                         .foregroundColor(LitterTheme.accent)
@@ -198,7 +208,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Getting Started")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -224,7 +235,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Updates")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -248,7 +260,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             if !AppDistributionCapabilities.isAppStoreSafe {
                 Text("KittyStore")
@@ -276,7 +289,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Theme")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -314,7 +328,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Icon Switcher")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -340,7 +355,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
 
             if SettingsFeatureVisibility.showsConnectors {
                 NavigationLink(value: SettingsRoute.connectors) {
@@ -358,7 +374,8 @@ struct SettingsView: View {
                         }
                     }
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
 
             if SettingsFeatureVisibility.showsPlugins {
@@ -377,7 +394,8 @@ struct SettingsView: View {
                         }
                     }
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
         } header: {
             Text("Local Tools")
@@ -428,7 +446,8 @@ struct SettingsView: View {
                 }
             }
             .tint(LitterTheme.accent)
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
 
             transcriptDisplayPicker(
                 title: "Internal Thinking",
@@ -483,7 +502,8 @@ struct SettingsView: View {
         }
         .pickerStyle(.menu)
         .tint(LitterTheme.accent)
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
     }
 
     // MARK: - Font Section
@@ -512,7 +532,8 @@ struct SettingsView: View {
                         }
                     }
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
         } header: {
             Text("Font")
@@ -543,7 +564,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Pet")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -566,7 +588,8 @@ struct SettingsView: View {
                         .foregroundColor(LitterTheme.textPrimary)
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
 
             if Self.showsEmexDESettingsEntry {
                 Toggle(isOn: $developerToolsEnabled) {
@@ -585,7 +608,8 @@ struct SettingsView: View {
                     }
                 }
                 .tint(LitterTheme.accent)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
         } header: {
             Text("Experimental")
@@ -623,7 +647,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Pro")
                 .foregroundStyle(LitterTheme.textSecondary)
@@ -646,7 +671,8 @@ struct SettingsView: View {
                         .foregroundColor(LitterTheme.textPrimary)
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Support")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -675,7 +701,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("AI")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -703,7 +730,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Recovery")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -734,7 +762,8 @@ struct SettingsView: View {
                 }
             }
             .buttonStyle(.plain)
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Developer")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -761,7 +790,8 @@ struct SettingsView: View {
                 Text("No servers connected")
                     .litterFont(.footnote)
                     .foregroundColor(LitterTheme.textMuted)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             } else {
                 ForEach(connectedServers, id: \.id) { conn in
                     HStack {
@@ -791,7 +821,8 @@ struct SettingsView: View {
                         .foregroundColor(LitterTheme.danger)
                         .buttonStyle(.borderless)
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
                 }
             }
 
@@ -808,7 +839,8 @@ struct SettingsView: View {
                     Spacer()
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Servers")
                 .foregroundColor(LitterTheme.textSecondary)
@@ -1022,32 +1054,36 @@ private struct ConversationSettingsRouteView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             Form {
                 Toggle("Collapse Turns", isOn: $collapseTurns)
                     .tint(LitterTheme.accent)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
                 Picker("Internal Thinking", selection: $reasoningDisplayMode) {
                     ForEach(ConversationDetailDisplayMode.allCases) { mode in
                         Text(mode.displayName).tag(mode.rawValue)
                     }
                 }
                 .pickerStyle(.menu)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
                 Picker("Commands", selection: $commandDisplayMode) {
                     ForEach(ConversationDetailDisplayMode.allCases) { mode in
                         Text(mode.displayName).tag(mode.rawValue)
                     }
                 }
                 .pickerStyle(.menu)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
                 Picker("Tools", selection: $toolDisplayMode) {
                     ForEach(ConversationDetailDisplayMode.allCases) { mode in
                         Text(mode.displayName).tag(mode.rawValue)
                     }
                 }
                 .pickerStyle(.menu)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
             .scrollContentBackground(.hidden)
         }
@@ -1216,7 +1252,7 @@ private struct SettingsServerConnectionEditor: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 Form {
                     nameSection
                     connectionSection
@@ -1252,7 +1288,8 @@ private struct SettingsServerConnectionEditor: View {
             Text("Name")
                 .foregroundColor(LitterTheme.textSecondary)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
     }
 
     private var connectionSection: some View {
@@ -1312,7 +1349,8 @@ private struct SettingsServerConnectionEditor: View {
                     .foregroundColor(LitterTheme.textMuted)
             }
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
     }
 
     private var hostField: some View {
@@ -1339,7 +1377,8 @@ private struct SettingsServerConnectionEditor: View {
                 .litterFont(.subheadline)
             }
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
     }
 
     private func submit(reconnect: Bool) {
@@ -1532,20 +1571,23 @@ private struct SettingsConnectionAccountSection: View {
                     .foregroundColor(LitterTheme.danger)
                 }
             }
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
 
             if server.isLocal, hasStoredApiKey {
                 Text("Local OpenAI API key is saved.")
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.accent)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
 
             if server.isLocal, hasStoredBaseURL {
                 Text("OpenAI-compatible base URL is saved.")
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.accent)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
 
             if server.isLocal {
@@ -1567,7 +1609,8 @@ private struct SettingsConnectionAccountSection: View {
                     .foregroundColor(LitterTheme.accent)
                 }
                 .disabled(isAuthWorking)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
 
             if server.isLocal, hasStoredChatGPTTokens {
@@ -1601,7 +1644,8 @@ private struct SettingsConnectionAccountSection: View {
                         await switchToChatGPTAccount(newValue)
                     }
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Alley Cãt keeps saved accounts separate. If a turn fails because the active account is out of credits or temporarily limited, chat can offer Switch & Retry.")
@@ -1628,7 +1672,8 @@ private struct SettingsConnectionAccountSection: View {
                     .foregroundColor(LitterTheme.danger)
                     .disabled(isAuthWorking || selectedChatGPTAccountID.isEmpty)
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
 
             if server.isLocal, allowsLocalEnvApiKey {
@@ -1664,7 +1709,8 @@ private struct SettingsConnectionAccountSection: View {
                     .foregroundColor(LitterTheme.accent)
                     .disabled(apiKey.trimmingCharacters(in: .whitespaces).isEmpty || isAuthWorking)
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
 
                 VStack(alignment: .leading, spacing: 8) {
                     if hasStoredBaseURL {
@@ -1710,14 +1756,16 @@ private struct SettingsConnectionAccountSection: View {
                         .disabled(isAuthWorking)
                     }
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
 
             if let authError {
                 Text(authError)
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.danger)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
             }
         } header: {
             Text("Account")
@@ -2007,7 +2055,8 @@ private struct SettingsDisconnectedAccountSection: View {
             Text(appModel.isRecoveringLocalServer ? "Starting Local Codex for ChatGPT login and API key entry." : "Local Codex isn't running. ChatGPT login and API key entry require the local bridge.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
 
             Button {
                 Task {
@@ -2027,7 +2076,8 @@ private struct SettingsDisconnectedAccountSection: View {
             }
             .foregroundColor(LitterTheme.accent)
             .disabled(isRestartingLocalServer || appModel.isRecoveringLocalServer)
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowSeparatorTint(LitterTheme.border.opacity(0.5))
         } header: {
             Text("Account")
                 .foregroundColor(LitterTheme.textSecondary)

@@ -17,7 +17,7 @@ struct DiagnosticsBundleView: View {
                         .foregroundStyle(LitterTheme.accent)
                 }
                 .disabled(isCollecting)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
 
                 if !bundleText.isEmpty {
                     Button {
@@ -26,7 +26,7 @@ struct DiagnosticsBundleView: View {
                         Label("Copy Bundle", systemImage: "doc.on.doc")
                             .foregroundStyle(LitterTheme.accent)
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
 
                     Button {
                         shareBundle()
@@ -34,7 +34,7 @@ struct DiagnosticsBundleView: View {
                         Label("Share Bundle", systemImage: "square.and.arrow.up")
                             .foregroundStyle(LitterTheme.accent)
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
                 }
             } header: {
                 Text("Recovery")
@@ -47,13 +47,13 @@ struct DiagnosticsBundleView: View {
                 if bundleText.isEmpty {
                     Text("No recovery bundle collected yet.")
                         .foregroundStyle(LitterTheme.textSecondary)
-                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                        .listRowBackground(LitterTheme.surface.opacity(0.88))
                 } else {
                     Text(bundleText)
                         .font(.system(.footnote, design: .monospaced))
                         .foregroundStyle(LitterTheme.textPrimary)
                         .textSelection(.enabled)
-                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                        .listRowBackground(LitterTheme.surface.opacity(0.88))
                 }
             } header: {
                 Text("Bundle Preview")
@@ -63,7 +63,7 @@ struct DiagnosticsBundleView: View {
         .navigationTitle("Diagnostics")
         .navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden)
-        .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+        .background(AlleyBackdrop().ignoresSafeArea())
         .sheet(item: $sharePayload) { payload in
             DiagnosticsActivitySheet(url: payload.url)
         }

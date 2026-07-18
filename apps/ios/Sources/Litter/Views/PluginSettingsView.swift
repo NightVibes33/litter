@@ -30,29 +30,29 @@ struct PluginSettingsView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             Form {
                 Section {
                     TextField("Search plugins", text: $query)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
-                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                        .listRowBackground(LitterTheme.surface.opacity(0.88))
                     if let targetServer {
                         Label(targetServer.isLocal ? "Local Codex runtime" : targetServer.displayName, systemImage: targetServer.isLocal ? "iphone" : "server.rack")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                     } else {
                         Label("Connect a Codex server to manage plugins", systemImage: "exclamationmark.triangle")
                             .litterFont(.caption)
                             .foregroundColor(.orange)
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                     }
                     if let authNotice {
                         Label(authNotice, systemImage: "key")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                     }
                 } header: {
                     Text("Catalog")
@@ -66,11 +66,11 @@ struct PluginSettingsView: View {
                             Text("Loading plugins")
                                 .foregroundColor(LitterTheme.textSecondary)
                         }
-                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                        .listRowBackground(LitterTheme.surface.opacity(0.88))
                     } else if visiblePlugins.isEmpty {
                         Text(query.isEmpty ? "No plugins found" : "No matching plugins")
                             .foregroundColor(LitterTheme.textSecondary)
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                     } else {
                         ForEach(visiblePlugins, id: \.mentionPath) { plugin in
                             PluginSettingsRow(
@@ -79,7 +79,7 @@ struct PluginSettingsView: View {
                                 onInstall: { Task { await install(plugin) } },
                                 onUninstall: { Task { await uninstall(plugin) } }
                             )
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                         }
                     }
                 } header: {

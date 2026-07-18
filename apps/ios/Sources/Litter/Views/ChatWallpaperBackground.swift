@@ -17,7 +17,7 @@ struct ChatWallpaperBackground: View {
                 .opacity(config.brightness)
                 .ignoresSafeArea()
         } else {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
         }
     }
 

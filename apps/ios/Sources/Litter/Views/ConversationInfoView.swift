@@ -82,7 +82,7 @@ struct ConversationInfoView: View {
                 .padding(.bottom, 40)
             }
         }
-        .background(LitterTheme.backgroundGradient)
+        .background(AlleyBackdrop())
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {

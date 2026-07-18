@@ -80,7 +80,7 @@ struct QuickReplySheet: View {
                 Spacer()
             }
             .padding(16)
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationTitle("Reply")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

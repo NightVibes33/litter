@@ -17,7 +17,7 @@ struct MountedFoldersView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 list
             }
             .navigationTitle("Mounted folders")

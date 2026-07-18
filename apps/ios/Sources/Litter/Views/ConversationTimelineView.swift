@@ -2315,7 +2315,7 @@ private struct ConversationDiffDetailSheet: View {
                     .padding(.bottom, 16)
                 }
             }
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -2383,7 +2383,7 @@ private struct ConversationDiffDetailSheet: View {
             .contentShape(Rectangle())
             .padding(.vertical, 6)
             .padding(.horizontal, 12)
-            .background(LitterTheme.backgroundGradient)
+            .background(AlleyBackdrop())
         }
         .buttonStyle(.plain)
     }

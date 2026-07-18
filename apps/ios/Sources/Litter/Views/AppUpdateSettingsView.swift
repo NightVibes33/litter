@@ -26,7 +26,7 @@ struct AppUpdateSettingsView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         }
-        .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+        .background(AlleyBackdrop().ignoresSafeArea())
         .navigationTitle("Updates")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

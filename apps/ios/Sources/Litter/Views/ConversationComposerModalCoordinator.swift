@@ -372,7 +372,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                 .padding(16)
                 .padding(.bottom, 28)
             }
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationTitle("Permissions")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -579,14 +579,14 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                                 .labelsHidden()
                                 .tint(LitterTheme.accent)
                             }
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                         }
                     }
                     .scrollContentBackground(.hidden)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationTitle("Experimental")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -642,14 +642,14 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                                 }
                             }
                             .tint(LitterTheme.accent)
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                         }
                     }
                     .scrollContentBackground(.hidden)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationTitle("Skills")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

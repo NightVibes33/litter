@@ -33,7 +33,7 @@ struct CodeBlockView: View {
 #if DEBUG
 #Preview("Code Block") {
     ZStack {
-        LitterTheme.backgroundGradient.ignoresSafeArea()
+        AlleyBackdrop().ignoresSafeArea()
         CodeBlockView(
             language: "swift",
             code: """

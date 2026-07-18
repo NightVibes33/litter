@@ -18,7 +18,12 @@ struct PiPContentView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.black
+            Color(hex: "#1F2937")
+            LinearGradient(
+                colors: [Color(hex: "#F59E0B").opacity(0.10), .clear],
+                startPoint: .topTrailing,
+                endPoint: .center
+            )
             if let session = activeSession() {
                 SessionCanvasLine(
                     session: session,
@@ -30,7 +35,7 @@ struct PiPContentView: View {
                 .padding(.top, 12)
                 .frame(width: Self.canvasWidth, alignment: .topLeading)
             } else {
-                Text("no active thread")
+                Text("ALLEY C\u{00C3}T / NO ACTIVE THREAD")
                     .font(.system(size: 13, weight: .regular, design: .monospaced))
                     .foregroundColor(.white.opacity(0.45))
                     .frame(
@@ -43,7 +48,7 @@ struct PiPContentView: View {
         .environment(\.colorScheme, .dark)
         .frame(width: Self.canvasWidth)
         .frame(minHeight: Self.minHeight, maxHeight: Self.maxHeight, alignment: .topLeading)
-        .background(Color.black)
+        .background(Color(hex: "#1F2937"))
         .clipped()
     }
 

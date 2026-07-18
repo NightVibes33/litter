@@ -393,18 +393,9 @@ struct HomeDashboardView: View {
         .accessibilityLabel("Zoom")
     }
 
-    /// The sidebar chrome on a Mac (Catalyst or iOS-on-Mac) sits inside
-    /// SwiftUI's `NavigationSplitView` sidebar column, which renders
-    /// Liquid Glass automatically. Painting the gradient on top would
-    /// clobber that material, so we punch to `.clear` for that case
-    /// only. Everywhere else the dashboard owns its own gradient backdrop.
-    @ViewBuilder
+    /// Shared Alley backdrop for phone, iPad sidebar, and Catalyst.
     private var dashboardBackground: some View {
-        if LitterPlatform.rendersAsMacApp && chrome == .sidebar {
-            Color.clear
-        } else {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
-        }
+        AlleyBackdrop().ignoresSafeArea()
     }
 
     private var canvas: some View {
@@ -414,7 +405,7 @@ struct HomeDashboardView: View {
             // branch returns nothing and can't intercept scroll gestures.
             if isSearchExpanded {
                 ZStack(alignment: .top) {
-                    LitterTheme.backgroundGradient.ignoresSafeArea()
+                    AlleyBackdrop().ignoresSafeArea()
                     ThreadSearchResultsView(
                         sessions: searchSessions,
                         pinnedThreadKeys: Set(pinnedThreadKeys),
@@ -679,22 +670,18 @@ struct HomeDashboardView: View {
 }
 
 private struct EmptyHomeFatCatView: View {
-    @State private var showingLoop = false
-
-    private let entranceURL = Bundle.main.url(forResource: "home_cat_entrance", withExtension: "png")
-    private let loopURL = Bundle.main.url(forResource: "home_cat", withExtension: "png")
-
     var body: some View {
-        CatTransmissionPressView {
-            if let imageURL = showingLoop ? loopURL : (entranceURL ?? loopURL) {
-                AlphaAnimatedImageView(
-                    fileURL: imageURL,
-                    repeatCount: showingLoop ? 0 : 1,
-                    onFinished: showingLoop ? nil : { showingLoop = true }
-                )
-                .accessibilityHidden(true)
-            }
+        VStack(spacing: 12) {
+            AlleyCatMark(size: 92)
+            Text("YOUR ALLEY IS CLEAR")
+                .litterFont(size: 11, weight: .bold)
+                .tracking(1.8)
+                .foregroundStyle(LitterTheme.textPrimary)
+            Text("Start a thread or open search")
+                .litterFont(.caption)
+                .foregroundStyle(LitterTheme.textMuted)
         }
+        .accessibilityElement(children: .combine)
     }
 }
 

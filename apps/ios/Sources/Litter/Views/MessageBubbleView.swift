@@ -836,6 +836,18 @@ struct MessageBubbleView: View {
                 )
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .alleyPanel(cornerRadius: 10)
+        .overlay(alignment: .topLeading) {
+            Text(isStreamingMessage ? "LIVE" : "AGENT")
+                .litterMonoFont(size: 8, weight: .bold)
+                .tracking(1.1)
+                .foregroundStyle(LitterTheme.accent)
+                .padding(.horizontal, 6)
+                .background(LitterTheme.surface)
+                .offset(x: 10, y: -5)
+        }
         .contextMenu {
             if canCopyMessageText {
                 Button("Copy Message") {

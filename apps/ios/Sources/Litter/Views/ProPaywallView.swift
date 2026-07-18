@@ -8,7 +8,7 @@ struct ProPaywallView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             Form {
                 heroSection
                 includedSection
@@ -69,7 +69,7 @@ struct ProPaywallView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
             .listRowInsets(EdgeInsets(top: 14, leading: 18, bottom: 14, trailing: 18))
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
         }
     }
 
@@ -101,7 +101,7 @@ struct ProPaywallView: View {
                             .foregroundStyle(LitterTheme.textSecondary)
                     }
                 }
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
             } else {
                 Button {
                     Task { await store.purchasePro() }
@@ -126,7 +126,7 @@ struct ProPaywallView: View {
                     }
                 }
                 .disabled(store.purchaseState == .purchasing || store.purchaseState == .loading)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
 
                 Button {
                     Task { await store.restorePurchases() }
@@ -137,7 +137,7 @@ struct ProPaywallView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .disabled(store.purchaseState == .purchasing)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
             }
         } footer: {
             Text("Purchases are handled by Apple. TestFlight purchases use Apple's sandbox and do not charge real money.")
@@ -176,7 +176,7 @@ struct ProPaywallView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.6))
+        .listRowBackground(LitterTheme.surface.opacity(0.88))
     }
 
     private func errorSection(_ message: String) -> some View {
@@ -184,7 +184,7 @@ struct ProPaywallView: View {
             Text(message)
                 .litterFont(.caption)
                 .foregroundStyle(LitterTheme.danger)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
         }
     }
 }

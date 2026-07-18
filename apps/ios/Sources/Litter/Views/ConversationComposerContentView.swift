@@ -830,34 +830,18 @@ private struct GoalCardChromeModifier: ViewModifier {
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content
-                .glassEffect(
-                    .regular.tint(statusTint.opacity(0.14)).interactive(),
-                    in: .rect(cornerRadius: cornerRadius)
+        content
+            .background(
+                LinearGradient(
+                    colors: [
+                        LitterTheme.surface.opacity(0.96),
+                        statusTint.opacity(0.09)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(statusTint.opacity(0.20), lineWidth: 0.5)
-                )
-        } else {
-            content
-                .background(
-                    LinearGradient(
-                        colors: [
-                            LitterTheme.codeBackground.opacity(0.92),
-                            statusTint.opacity(0.08)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(statusTint.opacity(0.28), lineWidth: 1)
-                )
-        }
+            )
+            .alleyPanel(tint: statusTint, cornerRadius: min(cornerRadius, 10))
     }
 }
 

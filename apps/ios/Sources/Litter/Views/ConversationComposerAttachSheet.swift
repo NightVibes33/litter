@@ -41,7 +41,7 @@ struct ConversationComposerAttachSheet: View {
         .padding(.top, 12)
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+        .background(AlleyBackdrop().ignoresSafeArea())
     }
 
     @ViewBuilder
@@ -100,7 +100,7 @@ struct ConversationRemoteFilePickerView: View {
                 resultsContent
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

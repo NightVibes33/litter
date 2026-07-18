@@ -33,7 +33,7 @@ private struct AccountConnectionView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         currentAccountSection
@@ -96,7 +96,7 @@ private struct AccountConnectionView: View {
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
-            .background(.ultraThinMaterial)
+            .background(LitterTheme.surface.opacity(0.96))
             .cornerRadius(10)
             .padding(.horizontal, 16)
 
@@ -313,7 +313,7 @@ private struct AccountDisconnectedView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 VStack(spacing: 16) {
                     Text(appModel.isRecoveringLocalServer ? "Starting Local Codex" : "Local Codex isn't running")
                         .litterFont(.subheadline)

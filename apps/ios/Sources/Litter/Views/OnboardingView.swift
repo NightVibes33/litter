@@ -32,7 +32,7 @@ struct OnboardingView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 VStack(spacing: 0) {
                     header
                     TabView(selection: $page) {
@@ -140,7 +140,10 @@ struct OnboardingView: View {
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 18)
-        .background(.ultraThinMaterial)
+        .background(LitterTheme.surface.opacity(0.96))
+        .overlay(alignment: .top) {
+            Rectangle().fill(LitterTheme.accent.opacity(0.55)).frame(height: 1)
+        }
     }
 
     @ViewBuilder
@@ -280,8 +283,7 @@ struct OnboardingView: View {
                 }
             }
             .padding(14)
-            .background(LitterTheme.surface.opacity(0.68), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(LitterTheme.border.opacity(0.6), lineWidth: 1))
+            .alleyPanel(cornerRadius: 12)
 
             actionPanel(
                 icon: "sparkles",
@@ -337,8 +339,7 @@ struct OnboardingView: View {
             }
         }
         .padding(14)
-        .background(LitterTheme.surface.opacity(0.68), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(LitterTheme.border.opacity(0.6), lineWidth: 1))
+        .alleyPanel(cornerRadius: 12)
     }
 
     private func heroPanel(systemImage: String, title: String, detail: String) -> some View {
@@ -356,8 +357,7 @@ struct OnboardingView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(LitterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(LitterTheme.border.opacity(0.6), lineWidth: 1))
+        .alleyPanel(tint: LitterTheme.accent, cornerRadius: 12)
     }
 
     private func featureGrid(_ features: [OnboardingFeature]) -> some View {
@@ -377,8 +377,7 @@ struct OnboardingView: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
                 .padding(12)
-                .background(LitterTheme.surface.opacity(0.64), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(LitterTheme.border.opacity(0.55), lineWidth: 1))
+                .alleyPanel(cornerRadius: 12)
             }
         }
     }
@@ -425,15 +424,13 @@ struct OnboardingView: View {
             }
         }
         .padding(14)
-        .background(LitterTheme.surface.opacity(0.68), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(LitterTheme.border.opacity(0.6), lineWidth: 1))
+        .alleyPanel(cornerRadius: 12)
     }
 
     private func checkCard(_ check: LitterOnboardingCheck) -> some View {
         checkRow(check)
             .padding(14)
-            .background(LitterTheme.surface.opacity(0.68), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(LitterTheme.border.opacity(0.6), lineWidth: 1))
+            .alleyPanel(cornerRadius: 12)
     }
 
     private func checkRow(_ check: LitterOnboardingCheck) -> some View {

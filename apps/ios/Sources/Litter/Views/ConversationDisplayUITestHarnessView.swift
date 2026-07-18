@@ -45,7 +45,7 @@ struct ConversationDisplayUITestHarnessView: View {
                 }
                 .padding(16)
             }
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationTitle("Display Harness")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

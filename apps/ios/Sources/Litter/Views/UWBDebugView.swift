@@ -17,7 +17,7 @@ struct UWBDebugView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     capabilitiesCard

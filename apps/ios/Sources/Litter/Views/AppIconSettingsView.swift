@@ -12,7 +12,7 @@ struct AppIconSettingsView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             Form {
                 Section {
                     ForEach(AlleyCatAppIcon.allCases) { option in
@@ -53,7 +53,7 @@ struct AppIconSettingsView: View {
                         }
                         .buttonStyle(.plain)
                         .disabled(isApplying)
-                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                        .listRowBackground(LitterTheme.surface.opacity(0.88))
                     }
                 } header: {
                     Text("App Icon")
@@ -72,7 +72,7 @@ struct AppIconSettingsView: View {
                             Image(systemName: "exclamationmark.triangle.fill")
                         }
                         .foregroundStyle(LitterTheme.textSecondary)
-                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                        .listRowBackground(LitterTheme.surface.opacity(0.88))
                     }
                 }
 
@@ -81,7 +81,7 @@ struct AppIconSettingsView: View {
                         Text(statusMessage)
                             .litterFont(.caption)
                             .foregroundStyle(LitterTheme.accent)
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                     }
                 }
             }

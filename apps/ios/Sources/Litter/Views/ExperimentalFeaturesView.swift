@@ -6,7 +6,7 @@ struct ExperimentalFeaturesView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             Form {
                 Section {
                     ForEach(LitterFeature.allCases) { feature in
@@ -21,7 +21,7 @@ struct ExperimentalFeaturesView: View {
                             }
                         }
                         .tint(LitterTheme.accentStrong)
-                        .listRowBackground(LitterTheme.surface.opacity(0.6))
+                        .listRowBackground(LitterTheme.surface.opacity(0.88))
                     }
                 } header: {
                     Text("Features")
@@ -51,7 +51,7 @@ struct ExperimentalFeaturesView: View {
                         }
                     }
                     .tint(LitterTheme.accent)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
 
                     #if DEBUG
                     NavigationLink {
@@ -71,7 +71,7 @@ struct ExperimentalFeaturesView: View {
                             }
                         }
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
                     #endif
 
                     #if !targetEnvironment(macCatalyst) && DEBUG
@@ -92,7 +92,7 @@ struct ExperimentalFeaturesView: View {
                             }
                         }
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
                     #endif
                 } header: {
                     Text("Debug")

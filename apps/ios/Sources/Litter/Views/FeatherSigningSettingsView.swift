@@ -283,7 +283,7 @@ struct FeatherSigningSettingsView: View {
     private var bottomSigningBar: some View {
         VStack(spacing: 0) {
             Rectangle()
-                .fill(.ultraThinMaterial)
+                .fill(LitterTheme.surface.opacity(0.96))
                 .mask(
                     LinearGradient(
                         colors: [.clear, .black],
@@ -313,7 +313,7 @@ struct FeatherSigningSettingsView: View {
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 14)
-            .background(.ultraThinMaterial)
+            .background(LitterTheme.surface.opacity(0.96))
         }
         .ignoresSafeArea(edges: .bottom)
     }

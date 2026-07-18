@@ -111,6 +111,83 @@ enum LitterTheme {
     }
 }
 
+enum AlleyVisual {
+    static let panelRadius: CGFloat = 10
+    static let controlRadius: CGFloat = 7
+    static let hairline: CGFloat = 0.75
+    static let gridSpacing: CGFloat = 28
+}
+
+struct AlleyBackdrop: View {
+    var body: some View {
+        ZStack {
+            LitterTheme.backgroundGradient
+            Canvas { context, size in
+                var grid = Path()
+                var x: CGFloat = 0
+                while x <= size.width {
+                    grid.move(to: CGPoint(x: x, y: 0))
+                    grid.addLine(to: CGPoint(x: x, y: size.height))
+                    x += AlleyVisual.gridSpacing
+                }
+                var y: CGFloat = 0
+                while y <= size.height {
+                    grid.move(to: CGPoint(x: 0, y: y))
+                    grid.addLine(to: CGPoint(x: size.width, y: y))
+                    y += AlleyVisual.gridSpacing
+                }
+                context.stroke(grid, with: .color(LitterTheme.border.opacity(0.13)), lineWidth: 0.5)
+            }
+            LinearGradient(
+                colors: [LitterTheme.accent.opacity(0.07), .clear, LitterTheme.surface.opacity(0.12)],
+                startPoint: .topTrailing,
+                endPoint: .bottomLeading
+            )
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+struct AlleyPanelModifier: ViewModifier {
+    var tint: Color?
+    var cornerRadius: CGFloat = AlleyVisual.panelRadius
+
+    func body(content: Content) -> some View {
+        let edge = tint ?? LitterTheme.border
+        content
+            .background(LitterTheme.surface.opacity(0.94))
+            .clipShape(UnevenRoundedRectangle(
+                topLeadingRadius: cornerRadius * 0.45,
+                bottomLeadingRadius: cornerRadius,
+                bottomTrailingRadius: cornerRadius * 0.45,
+                topTrailingRadius: cornerRadius,
+                style: .continuous
+            ))
+            .overlay {
+                UnevenRoundedRectangle(
+                    topLeadingRadius: cornerRadius * 0.45,
+                    bottomLeadingRadius: cornerRadius,
+                    bottomTrailingRadius: cornerRadius * 0.45,
+                    topTrailingRadius: cornerRadius,
+                    style: .continuous
+                )
+                .stroke(edge.opacity(0.62), lineWidth: AlleyVisual.hairline)
+            }
+            .overlay(alignment: .topLeading) {
+                Rectangle()
+                    .fill((tint ?? LitterTheme.accent).opacity(0.8))
+                    .frame(width: 28, height: 2)
+                    .padding(.leading, cornerRadius * 0.7)
+            }
+    }
+}
+
+extension View {
+    func alleyPanel(tint: Color? = nil, cornerRadius: CGFloat = AlleyVisual.panelRadius) -> some View {
+        modifier(AlleyPanelModifier(tint: tint, cornerRadius: cornerRadius))
+    }
+}
+
 enum FontFamilyOption: String, CaseIterable, Identifiable {
     case mono = "mono"
     case system = "system"
@@ -395,21 +472,7 @@ struct GlassRectModifier: ViewModifier {
     var tint: Color?
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            if let tint {
-                content.glassEffect(.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
-            } else {
-                content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-            }
-        } else {
-            content
-                .background(LitterTheme.surfaceLight.opacity(0.9))
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .stroke((tint ?? LitterTheme.border).opacity(0.4), lineWidth: 1)
-                )
-        }
+        content.alleyPanel(tint: tint, cornerRadius: min(cornerRadius, 12))
     }
 }
 
@@ -417,13 +480,7 @@ struct GlassRoundedRectModifier: ViewModifier {
     var cornerRadius: CGFloat = 16
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-        } else {
-            content
-                .background(LitterTheme.surfaceLight)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        }
+        content.alleyPanel(cornerRadius: min(cornerRadius, 12))
     }
 }
 
@@ -431,29 +488,26 @@ struct GlassCapsuleModifier: ViewModifier {
     var interactive: Bool = false
 
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            if interactive {
-                content.glassEffect(.regular.interactive(), in: .capsule)
-            } else {
-                content.glassEffect(.regular, in: .capsule)
+        content
+            .background(LitterTheme.surface.opacity(interactive ? 0.98 : 0.92))
+            .clipShape(Capsule())
+            .overlay {
+                Capsule().stroke(
+                    interactive ? LitterTheme.accent.opacity(0.55) : LitterTheme.border.opacity(0.58),
+                    lineWidth: AlleyVisual.hairline
+                )
             }
-        } else {
-            content
-                .background(LitterTheme.surfaceLight)
-                .clipShape(Capsule())
-        }
     }
 }
 
 struct GlassCircleModifier: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular, in: .circle)
-        } else {
-            content
-                .background(LitterTheme.surfaceLight)
-                .clipShape(Circle())
-        }
+        content
+            .background(LitterTheme.surface.opacity(0.96))
+            .clipShape(Circle())
+            .overlay {
+                Circle().stroke(LitterTheme.border.opacity(0.62), lineWidth: AlleyVisual.hairline)
+            }
     }
 }
 

@@ -391,7 +391,7 @@ private struct SubagentDetailSheet: View {
                     .frame(maxWidth: .infinity)
                 }
             }
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -480,7 +480,7 @@ private struct AgentRowData {
 #if DEBUG
 #Preview("Subagent Card") {
     ZStack {
-        LitterTheme.backgroundGradient.ignoresSafeArea()
+        AlleyBackdrop().ignoresSafeArea()
         VStack(spacing: 20) {
             SubagentCardView(
                 data: ConversationMultiAgentActionData(

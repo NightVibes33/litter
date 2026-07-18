@@ -467,7 +467,7 @@ struct ContentView: View {
 
         GeometryReader { geometry in
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
 
                 #if DEBUG
                 if ConversationDisplayUITestHarnessView.isEnabled {
@@ -819,7 +819,7 @@ private struct HomeNavigationView: View {
                 // comes through flat unless we install the material
                 // ourselves. `.ultraThinMaterial` gives the proper
                 // sidebar frosted-glass look with subtle vibrancy.
-                .containerBackground(.ultraThinMaterial, for: .navigation)
+                .containerBackground(LitterTheme.surface.opacity(0.94), for: .navigation)
         } detail: {
             primaryNavigationStack
         }
@@ -843,7 +843,7 @@ private struct HomeNavigationView: View {
                         homeDashboard
                     }
                 } else {
-                    LitterTheme.backgroundGradient.ignoresSafeArea()
+                    AlleyBackdrop().ignoresSafeArea()
                 }
             }
             .overlay(alignment: .bottomLeading) {
@@ -867,7 +867,7 @@ private struct HomeNavigationView: View {
                         .navigationTitle(title)
                         .navigationBarTitleDisplayMode(.inline)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                        .background(AlleyBackdrop().ignoresSafeArea())
                         .onAppear {
                             appState.sessionsSelectedServerFilterId = serverId
                             appState.sessionsShowOnlyForks = false
@@ -916,7 +916,7 @@ private struct HomeNavigationView: View {
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                    .background(AlleyBackdrop().ignoresSafeArea())
                 case let .conversationInfo(threadKey):
                     ConversationInfoView(
                         threadKey: threadKey,
@@ -939,7 +939,7 @@ private struct HomeNavigationView: View {
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                    .background(AlleyBackdrop().ignoresSafeArea())
                 case let .wallpaperAdjust(threadKey):
                     WallpaperAdjustView(
                         threadKey: threadKey,
@@ -952,7 +952,7 @@ private struct HomeNavigationView: View {
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                    .background(AlleyBackdrop().ignoresSafeArea())
                 case let .serverInfo(serverId):
                     ConversationInfoView(
                         threadKey: nil,
@@ -975,7 +975,7 @@ private struct HomeNavigationView: View {
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                    .background(AlleyBackdrop().ignoresSafeArea())
                 case let .serverWallpaperAdjust(serverId):
                     WallpaperAdjustView(
                         threadKey: nil,
@@ -988,18 +988,18 @@ private struct HomeNavigationView: View {
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                    .background(AlleyBackdrop().ignoresSafeArea())
                 case .kittyStore:
                     if AppDistributionCapabilities.includesKittyStore {
                         KittyStoreRouteView()
                     } else {
-                        LitterTheme.backgroundGradient.ignoresSafeArea()
+                        AlleyBackdrop().ignoresSafeArea()
                     }
                 case .emexDE:
                     if AppDistributionCapabilities.includesEmexDE {
                         EmexDERouteView()
                     } else {
-                        LitterTheme.backgroundGradient.ignoresSafeArea()
+                        AlleyBackdrop().ignoresSafeArea()
                     }
                 case .filesWorkspace:
                     if proStore.hasProAccess {
@@ -2321,7 +2321,7 @@ private struct ConversationDestinationScreen: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                .background(AlleyBackdrop().ignoresSafeArea())
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -2420,7 +2420,7 @@ private struct ReplayDestinationScreen: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+                .background(AlleyBackdrop().ignoresSafeArea())
             }
         }
         .navigationTitle("Replay")
@@ -2577,7 +2577,7 @@ private struct ApprovalPromptView: View {
 struct LaunchView: View {
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             VStack(spacing: 24) {
                 BrandLogo(size: 132)
                 Text("AI coding agent on iOS")

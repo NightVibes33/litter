@@ -23,16 +23,26 @@ struct LockScreenCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 10) {
-                Image("brand_logo")
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: 24, height: 24)
-                    .padding(2)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(logoBackground)
+                ZStack {
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: 2, bottomLeadingRadius: 7,
+                        bottomTrailingRadius: 2, topTrailingRadius: 7,
+                        style: .continuous
                     )
+                    .fill(logoBackground)
+                    .overlay {
+                        UnevenRoundedRectangle(
+                            topLeadingRadius: 2, bottomLeadingRadius: 7,
+                            bottomTrailingRadius: 2, topTrailingRadius: 7,
+                            style: .continuous
+                        )
+                        .stroke(LitterPalette.accent.color(for: colorScheme).opacity(0.7), lineWidth: 0.75)
+                    }
+                    Image(systemName: "cat.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(LitterPalette.accent.color(for: colorScheme))
+                }
+                .frame(width: 28, height: 28)
 
                 Text(prompt)
                     .font(.system(size: 13, weight: .medium, design: LitterPalette.fontDesign))

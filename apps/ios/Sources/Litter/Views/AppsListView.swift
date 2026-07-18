@@ -12,7 +12,7 @@ struct AppsListView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             Group {
                 if store.apps.isEmpty {
                     emptyState

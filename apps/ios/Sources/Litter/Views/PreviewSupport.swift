@@ -505,7 +505,7 @@ struct LitterPreviewScene<Content: View>: View {
     var body: some View {
         ZStack {
             if includeBackground {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
             }
             content
         }

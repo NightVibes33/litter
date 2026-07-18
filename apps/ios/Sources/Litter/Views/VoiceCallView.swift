@@ -24,7 +24,7 @@ struct VoiceCallView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient
+            AlleyBackdrop()
                 .ignoresSafeArea()
 
             if let context = voiceContext {
@@ -854,7 +854,7 @@ private struct VoiceCallDebugSheet: View {
                     .listRowBackground(Color.black)
             }
             .scrollContentBackground(.hidden)
-            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
             .navigationTitle("Voice Debug")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

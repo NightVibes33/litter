@@ -10,7 +10,7 @@ struct TipJarView: View {
 
     var body: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
 
             Form {
                 headerSection
@@ -19,7 +19,7 @@ struct TipJarView: View {
                     Section {
                         ProgressView()
                             .frame(maxWidth: .infinity)
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                     }
                 } else {
                     tipsSection
@@ -38,7 +38,7 @@ struct TipJarView: View {
                         Text(message)
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.danger)
-                            .listRowBackground(LitterTheme.surface.opacity(0.6))
+                            .listRowBackground(LitterTheme.surface.opacity(0.88))
                     }
                 }
             }
@@ -78,7 +78,7 @@ struct TipJarView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
         }
     }
 
@@ -96,7 +96,7 @@ struct TipJarView: View {
                             .foregroundColor(LitterTheme.accent)
                     }
                     .padding(.vertical, 4)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
                 } else {
                     Button {
                         Task { await store.purchase(tier) }
@@ -114,7 +114,7 @@ struct TipJarView: View {
                     }
                     .padding(.vertical, 4)
                     .disabled(store.purchaseState == .purchasing)
-                    .listRowBackground(LitterTheme.surface.opacity(0.6))
+                    .listRowBackground(LitterTheme.surface.opacity(0.88))
                 }
             }
         } header: {
@@ -147,7 +147,7 @@ struct TipJarView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 4)
-                .listRowBackground(LitterTheme.surface.opacity(0.6))
+                .listRowBackground(LitterTheme.surface.opacity(0.88))
             }
         } header: {
             Text("Home Header")
@@ -169,7 +169,7 @@ struct TipJarView: View {
                     .frame(maxWidth: .infinity)
             }
             .disabled(store.purchaseState == .purchasing)
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
         }
     }
 
@@ -185,7 +185,7 @@ struct TipJarView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
-            .listRowBackground(LitterTheme.surface.opacity(0.6))
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
         }
         .transition(.opacity)
     }
@@ -241,10 +241,14 @@ struct SupporterKittyBadges: View {
                 HStack(spacing: 2) {
                     ForEach(purchased, id: \.id) { tier in
                         Button { showTipJar = true } label: {
-                            Image(tier.icon)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 28, height: 28)
+                            ZStack {
+                                AlleyCatMark(size: 26)
+                                Circle()
+                                    .fill(LitterTheme.success)
+                                    .frame(width: 7, height: 7)
+                                    .offset(x: 10, y: 10)
+                            }
+                            .frame(width: 30, height: 30)
                         }
                         .buttonStyle(.plain)
                     }
@@ -270,11 +274,9 @@ private struct TipCatIcon: View {
     let size: CGFloat
 
     var body: some View {
-        Image(name)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: size * 0.9, height: size * 0.9)
+        AlleyCatMark(size: size * 0.78)
             .frame(width: size, height: size)
             .modifier(GlassCircleModifier())
+            .accessibilityHidden(true)
     }
 }

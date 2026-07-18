@@ -178,7 +178,7 @@ struct LocalFileWorkspaceView: View {
 
     private var rootLayer: some View {
         ZStack {
-            LitterTheme.backgroundGradient.ignoresSafeArea()
+            AlleyBackdrop().ignoresSafeArea()
             VStack(spacing: 0) {
                 pathBar
                 Divider().overlay(LitterTheme.surfaceLight.opacity(0.4))
@@ -2033,7 +2033,7 @@ private struct LocalTextFileEditorView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 if isLoading {
                     ProgressView("Opening...")
                         .foregroundStyle(LitterTheme.textSecondary)
@@ -2113,7 +2113,7 @@ private struct LocalFilePreviewSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         previewHero
@@ -2245,7 +2245,7 @@ private struct LocalFileInspectorSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 12) {
@@ -3040,7 +3040,7 @@ private struct LocalCommandOutputSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                LitterTheme.backgroundGradient.ignoresSafeArea()
+                AlleyBackdrop().ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(output.command)

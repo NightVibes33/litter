@@ -3790,7 +3790,7 @@ private struct SubagentBreadcrumbBar: View {
         .padding(.top, topInset + 8)
         .background(
             LitterTheme.surface.opacity(0.85)
-                .background(.ultraThinMaterial)
+                .background(LitterTheme.surface.opacity(0.96))
                 .ignoresSafeArea()
         )
     }
@@ -3816,7 +3816,7 @@ private struct ConversationDebugButton: View {
                     .background(
                         Circle()
                             .fill(LitterTheme.surface.opacity(0.85))
-                            .background(Circle().fill(.ultraThinMaterial))
+                            .background(Circle().fill(LitterTheme.surface.opacity(0.96)))
                     )
             }
             .buttonStyle(.plain)
