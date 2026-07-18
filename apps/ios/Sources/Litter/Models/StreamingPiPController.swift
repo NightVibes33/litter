@@ -285,13 +285,13 @@ final class StreamingPiPController: NSObject {
             LLog.warn("pip", "ensureSetup: key window unavailable")
             return false
         }
-        let hostHeight = PiPContentView.minHeight
-        let host = PiPHostView(frame: CGRect(x: 0, y: 0, width: renderWidth, height: hostHeight))
-        host.alpha = 0.01
+        // Keep the source layer attached to the active window without making
+        // it effectively hidden. iOS can render a deeply buried/transparent
+        // layer while still refusing to mark its PiP controller as possible.
+        let host = PiPHostView(frame: CGRect(x: -1, y: -1, width: 1, height: 1))
         host.isUserInteractionEnabled = false
         host.accessibilityElementsHidden = true
-        host.layer.zPosition = -10_000
-        window.insertSubview(host, at: 0)
+        window.addSubview(host)
         hostView = host
         ensurePixelBufferPool()
 
