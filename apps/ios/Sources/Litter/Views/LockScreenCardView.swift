@@ -24,22 +24,14 @@ struct LockScreenCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 10) {
                 ZStack {
-                    UnevenRoundedRectangle(
-                        topLeadingRadius: 2, bottomLeadingRadius: 7,
-                        bottomTrailingRadius: 2, topTrailingRadius: 7,
-                        style: .continuous
-                    )
-                    .fill(logoBackground)
-                    .overlay {
-                        UnevenRoundedRectangle(
-                            topLeadingRadius: 2, bottomLeadingRadius: 7,
-                            bottomTrailingRadius: 2, topTrailingRadius: 7,
-                            style: .continuous
-                        )
-                        .stroke(LitterPalette.accent.color(for: colorScheme).opacity(0.7), lineWidth: 0.75)
-                    }
-                    Image(systemName: "cat.fill")
-                        .font(.system(size: 13, weight: .bold))
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(logoBackground)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .stroke(LitterPalette.accent.color(for: colorScheme).opacity(0.45), lineWidth: 0.75)
+                        }
+                    Text("AC")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
                         .foregroundStyle(LitterPalette.accent.color(for: colorScheme))
                 }
                 .frame(width: 28, height: 28)

@@ -309,11 +309,11 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                     }
                     .padding(14)
                     .background(
-                        UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 8, bottomTrailingRadius: 20, topTrailingRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(LitterTheme.surface.opacity(0.82))
                     )
                     .overlay(
-                        UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 8, bottomTrailingRadius: 20, topTrailingRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .stroke(LitterTheme.border.opacity(0.55), lineWidth: 1)
                     )
 
@@ -400,11 +400,11 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 7, bottomTrailingRadius: 18, topTrailingRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(LitterTheme.surface.opacity(0.82))
         )
         .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 7, bottomTrailingRadius: 18, topTrailingRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(LitterTheme.border.opacity(0.55), lineWidth: 1)
         )
     }
@@ -467,11 +467,11 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
         }
         .padding(12)
         .background(
-            UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 8, bottomTrailingRadius: 20, topTrailingRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(LitterTheme.surface.opacity(0.74))
         )
         .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 8, bottomTrailingRadius: 20, topTrailingRadius: 8, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(LitterTheme.border.opacity(0.5), lineWidth: 1)
         )
     }

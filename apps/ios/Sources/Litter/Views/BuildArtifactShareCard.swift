@@ -58,10 +58,10 @@ struct BuildArtifactShareCard: View {
         .padding(10)
         .background(LitterTheme.surface.opacity(0.74))
         .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(LitterTheme.accent.opacity(0.24), lineWidth: 1)
         )
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .task { await refreshSize() }
         .sheet(item: $sharePayload) { payload in
             ArtifactActivitySheet(items: [payload.url])

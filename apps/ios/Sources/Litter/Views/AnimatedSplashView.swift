@@ -56,24 +56,25 @@ struct AnimatedSplashView: View {
                     VStack(spacing: 7) {
                         Text("ALLEY C\u{00C3}T")
                             .litterFont(size: 28, weight: .bold)
-                            .tracking(4.5)
+                            .tracking(1.2)
                             .foregroundStyle(LitterTheme.textPrimary)
-                        Text("LOCAL CODE. OPEN ROADS.")
-                            .litterMonoFont(size: 10, weight: .semibold)
-                            .tracking(2.2)
+                        Text("Local coding workspace")
+                            .litterFont(.subheadline)
+                            .tracking(0.2)
                             .foregroundStyle(LitterTheme.accent)
                     }
                     Spacer()
                     HStack(spacing: 8) {
-                        Rectangle()
-                            .fill(LitterTheme.accent)
-                            .frame(width: appReady ? 64 : 24, height: 2)
-                        Text(appReady ? "READY" : "STARTING LOCAL RUNTIME")
-                            .litterMonoFont(size: 9, weight: .semibold)
-                            .tracking(1.2)
+                        if appReady {
+                            Circle().fill(LitterTheme.success).frame(width: 6, height: 6)
+                        } else {
+                            ProgressView().controlSize(.small).tint(LitterTheme.accent)
+                        }
+                        Text(appReady ? "Ready" : "Starting local runtime")
+                            .litterFont(.caption, weight: .medium)
                             .foregroundStyle(LitterTheme.textMuted)
                     }
-                    .animation(.easeInOut(duration: 0.35), value: appReady)
+                    .animation(.easeInOut(duration: 0.25), value: appReady)
                     .padding(.bottom, 54)
                 }
                 .padding(.horizontal, 32)

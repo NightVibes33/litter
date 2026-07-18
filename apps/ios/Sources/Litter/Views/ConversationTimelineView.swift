@@ -1891,9 +1891,9 @@ private struct ConversationCodeReviewFindingCard: View {
             }
         }
         .padding(20)
-        .background(LitterTheme.surface.opacity(0.72), in: UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 22, bottomTrailingRadius: 6, topTrailingRadius: 22))
+        .background(LitterTheme.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 6, bottomLeadingRadius: 22, bottomTrailingRadius: 6, topTrailingRadius: 22)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(LitterTheme.border.opacity(0.7), lineWidth: 1)
         )
     }

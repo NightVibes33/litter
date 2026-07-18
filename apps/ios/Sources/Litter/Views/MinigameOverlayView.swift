@@ -47,9 +47,9 @@ struct MinigameOverlayView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(LitterTheme.surface)
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 16, bottomTrailingRadius: 5, topTrailingRadius: 16, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 16, bottomTrailingRadius: 5, topTrailingRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(LitterTheme.accent.opacity(0.32), lineWidth: AlleyVisual.hairline)
         )
         .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: -4)

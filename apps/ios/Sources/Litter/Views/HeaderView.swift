@@ -36,9 +36,9 @@ struct HeaderView: View {
             .padding(.vertical, 7)
             .frame(maxWidth: isRegularSurface ? 320 : 250, minHeight: 34, alignment: .center)
             .background(LitterTheme.surface.opacity(0.9))
-            .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 10, bottomTrailingRadius: 4, topTrailingRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
-                UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 10, bottomTrailingRadius: 4, topTrailingRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(LitterTheme.border.opacity(0.55), lineWidth: AlleyVisual.hairline)
             }
         }

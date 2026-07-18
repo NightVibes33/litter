@@ -113,7 +113,7 @@ struct HomeBottomBar: View {
         .buttonStyle(.plain)
         .modifier(GlassCapsuleModifier(interactive: true))
         .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 9, bottomTrailingRadius: 4, topTrailingRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(LitterTheme.accent.opacity(0.5), lineWidth: 0.8)
                 .allowsHitTesting(false)
         )
@@ -136,7 +136,7 @@ struct HomeBottomBar: View {
         .buttonStyle(.plain)
         .modifier(GlassCapsuleModifier(interactive: true))
         .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 9, bottomTrailingRadius: 4, topTrailingRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(LitterTheme.textMuted.opacity(0.3), lineWidth: 0.6)
                 .allowsHitTesting(false)
         )
@@ -217,7 +217,7 @@ struct HomeBottomBar: View {
         .frame(height: buttonSize)
         .modifier(GlassCapsuleModifier(interactive: false))
         .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 9, bottomTrailingRadius: 4, topTrailingRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(LitterTheme.accent.opacity(0.5), lineWidth: 1.0)
                 .allowsHitTesting(false)
         )

@@ -920,18 +920,14 @@ private struct HomeCatFooterView: View {
     let playEntrance: Bool
 
     var body: some View {
-        VStack(spacing: 10) {
-            AlleyCatMark(size: 76)
-            Text("END OF THE ALLEY")
-                .litterFont(size: 10, weight: .bold)
-                .tracking(1.6)
-                .foregroundStyle(LitterTheme.textMuted)
-            Rectangle()
-                .fill(LitterTheme.border.opacity(0.55))
-                .frame(width: 120, height: AlleyVisual.hairline)
+        HStack(spacing: 10) {
+            Rectangle().fill(LitterTheme.border.opacity(0.28)).frame(height: AlleyVisual.hairline)
+            Circle().fill(LitterTheme.accent.opacity(0.55)).frame(width: 4, height: 4)
+            Rectangle().fill(LitterTheme.border.opacity(0.28)).frame(height: AlleyVisual.hairline)
         }
+        .frame(maxWidth: 180)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, 18)
+        .padding(.top, 28)
         .padding(.bottom, 20)
         .accessibilityHidden(true)
     }
@@ -1856,21 +1852,9 @@ struct HomeSessionRowContent: View {
             }
         }
         .background(LitterTheme.surface.opacity(session.hasTurnActive ? 0.92 : 0.72))
-        .clipShape(UnevenRoundedRectangle(
-            topLeadingRadius: 4,
-            bottomLeadingRadius: 10,
-            bottomTrailingRadius: 4,
-            topTrailingRadius: 10,
-            style: .continuous
-        ))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
-            UnevenRoundedRectangle(
-                topLeadingRadius: 4,
-                bottomLeadingRadius: 10,
-                bottomTrailingRadius: 4,
-                topTrailingRadius: 10,
-                style: .continuous
-            )
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
             .stroke(
                 session.hasTurnActive ? LitterTheme.accent.opacity(0.5) : LitterTheme.border.opacity(0.42),
                 lineWidth: AlleyVisual.hairline

@@ -808,11 +808,11 @@ private struct VoiceTranscriptUserImagesView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 14, bottomTrailingRadius: 5, topTrailingRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(LitterTheme.surface)
         )
         .overlay(
-            UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 14, bottomTrailingRadius: 5, topTrailingRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(LitterTheme.border, lineWidth: 0.5)
         )
     }

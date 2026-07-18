@@ -112,36 +112,25 @@ enum LitterTheme {
 }
 
 enum AlleyVisual {
-    static let panelRadius: CGFloat = 10
-    static let controlRadius: CGFloat = 7
+    static let panelRadius: CGFloat = 16
+    static let controlRadius: CGFloat = 12
     static let hairline: CGFloat = 0.75
-    static let gridSpacing: CGFloat = 28
 }
 
 struct AlleyBackdrop: View {
     var body: some View {
         ZStack {
             LitterTheme.backgroundGradient
-            Canvas { context, size in
-                var grid = Path()
-                var x: CGFloat = 0
-                while x <= size.width {
-                    grid.move(to: CGPoint(x: x, y: 0))
-                    grid.addLine(to: CGPoint(x: x, y: size.height))
-                    x += AlleyVisual.gridSpacing
-                }
-                var y: CGFloat = 0
-                while y <= size.height {
-                    grid.move(to: CGPoint(x: 0, y: y))
-                    grid.addLine(to: CGPoint(x: size.width, y: y))
-                    y += AlleyVisual.gridSpacing
-                }
-                context.stroke(grid, with: .color(LitterTheme.border.opacity(0.13)), lineWidth: 0.5)
-            }
+            RadialGradient(
+                colors: [LitterTheme.accent.opacity(0.10), .clear],
+                center: .topLeading,
+                startRadius: 0,
+                endRadius: 520
+            )
             LinearGradient(
-                colors: [LitterTheme.accent.opacity(0.07), .clear, LitterTheme.surface.opacity(0.12)],
-                startPoint: .topTrailing,
-                endPoint: .bottomLeading
+                colors: [.clear, LitterTheme.surface.opacity(0.18)],
+                startPoint: .top,
+                endPoint: .bottom
             )
         }
         .accessibilityHidden(true)
@@ -155,30 +144,13 @@ struct AlleyPanelModifier: ViewModifier {
     func body(content: Content) -> some View {
         let edge = tint ?? LitterTheme.border
         content
-            .background(LitterTheme.surface.opacity(0.94))
-            .clipShape(UnevenRoundedRectangle(
-                topLeadingRadius: cornerRadius * 0.45,
-                bottomLeadingRadius: cornerRadius,
-                bottomTrailingRadius: cornerRadius * 0.45,
-                topTrailingRadius: cornerRadius,
-                style: .continuous
-            ))
+            .background(LitterTheme.surface.opacity(0.88))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay {
-                UnevenRoundedRectangle(
-                    topLeadingRadius: cornerRadius * 0.45,
-                    bottomLeadingRadius: cornerRadius,
-                    bottomTrailingRadius: cornerRadius * 0.45,
-                    topTrailingRadius: cornerRadius,
-                    style: .continuous
-                )
-                .stroke(edge.opacity(0.62), lineWidth: AlleyVisual.hairline)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(edge.opacity(tint == nil ? 0.34 : 0.48), lineWidth: AlleyVisual.hairline)
             }
-            .overlay(alignment: .topLeading) {
-                Rectangle()
-                    .fill((tint ?? LitterTheme.accent).opacity(0.8))
-                    .frame(width: 28, height: 2)
-                    .padding(.leading, cornerRadius * 0.7)
-            }
+            .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 5)
     }
 }
 

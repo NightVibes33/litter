@@ -718,9 +718,9 @@ struct WidgetContainerView: View {
         }
         .padding(8)
         .background(LitterTheme.surface.opacity(0.72))
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
-            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(LitterTheme.border.opacity(0.48), lineWidth: AlleyVisual.hairline)
         }
         .fullScreenCover(isPresented: $isFullscreen) {

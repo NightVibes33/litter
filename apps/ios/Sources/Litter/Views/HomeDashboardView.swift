@@ -673,9 +673,9 @@ private struct EmptyHomeFatCatView: View {
     var body: some View {
         VStack(spacing: 12) {
             AlleyCatMark(size: 92)
-            Text("YOUR ALLEY IS CLEAR")
+            Text("No active threads")
                 .litterFont(size: 11, weight: .bold)
-                .tracking(1.8)
+                .tracking(0.2)
                 .foregroundStyle(LitterTheme.textPrimary)
             Text("Start a thread or open search")
                 .litterFont(.caption)
