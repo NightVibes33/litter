@@ -735,6 +735,9 @@ private struct TerminalConfigSheet: View {
                         .onChange(of: draftCursorBlink) { _, _ in applyDraft() }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(AlleyBackdrop().ignoresSafeArea())
+            .tint(LitterTheme.accent)
             .navigationTitle("Terminal")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

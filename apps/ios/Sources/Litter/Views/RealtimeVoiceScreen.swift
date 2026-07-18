@@ -365,10 +365,10 @@ struct RealtimeVoiceScreen: View {
         .frame(maxWidth: 420)
         .background(promptFillColor)
         .overlay(
-            RoundedRectangle(cornerRadius: 24)
+            UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 9, bottomTrailingRadius: 24, topTrailingRadius: 9)
                 .stroke(promptStrokeColor, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 9, bottomTrailingRadius: 24, topTrailingRadius: 9))
     }
 
     private func saveApiKeyAndRetry() {

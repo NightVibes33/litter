@@ -41,7 +41,8 @@ struct FeatherSigningSettingsView: View {
                     .listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
-            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            .background(AlleyBackdrop().ignoresSafeArea())
+            .tint(LitterTheme.accent)
             .disabled(isWorking)
 
             bottomSigningBar
@@ -321,7 +322,7 @@ struct FeatherSigningSettingsView: View {
     private var appIconPreview: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color(uiColor: .secondarySystemBackground))
+                .fill(LitterTheme.surfaceLight)
             if let iconPath = snapshot.importedIPA?.iconAppPath,
                let icon = UIImage(contentsOfFile: iconPath) {
                 Image(uiImage: icon)

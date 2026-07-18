@@ -813,12 +813,8 @@ private struct HomeNavigationView: View {
     private var splitRoot: some View {
         NavigationSplitView {
             sidebarDashboard
-                // Apply Liquid Glass material explicitly to the sidebar
-                // column. Catalyst 26 doesn't automatically paint the
-                // sidebar with glass the way iPadOS does, so the column
-                // comes through flat unless we install the material
-                // ourselves. `.ultraThinMaterial` gives the proper
-                // sidebar frosted-glass look with subtle vibrancy.
+                // Apply the Alley surface explicitly to the sidebar
+                // so iPadOS and Catalyst share the same navigation identity.
                 .containerBackground(LitterTheme.surface.opacity(0.94), for: .navigation)
         } detail: {
             primaryNavigationStack

@@ -10,6 +10,9 @@ struct AIProviderSettingsView: View {
             providersSection
             notesSection
         }
+        .scrollContentBackground(.hidden)
+        .background(AlleyBackdrop().ignoresSafeArea())
+        .tint(LitterTheme.accent)
         .navigationTitle("AI Providers")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -174,6 +177,9 @@ private struct AddAIProviderView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(AlleyBackdrop().ignoresSafeArea())
+        .tint(LitterTheme.accent)
         .navigationTitle("Add AI Server")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -266,6 +272,9 @@ private struct AIProviderDetailView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(AlleyBackdrop().ignoresSafeArea())
+        .tint(LitterTheme.accent)
         .navigationTitle(provider.displayName)
         .navigationBarTitleDisplayMode(.inline)
     }

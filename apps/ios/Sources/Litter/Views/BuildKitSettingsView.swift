@@ -21,6 +21,9 @@ struct BuildKitSettingsView: View {
             sourceSection
             actionOutputSection
         }
+        .scrollContentBackground(.hidden)
+        .background(AlleyBackdrop().ignoresSafeArea())
+        .tint(LitterTheme.accent)
         .navigationTitle("BuildKit")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
