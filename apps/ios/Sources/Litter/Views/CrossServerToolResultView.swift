@@ -195,9 +195,9 @@ struct SessionServerCardRow: View {
         .padding(.vertical, 12)
         .background(LitterTheme.surface.opacity(0.6))
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
+            UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 14, bottomTrailingRadius: 5, topTrailingRadius: 14, style: .continuous)
                 .stroke(LitterTheme.border.opacity(0.7), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 14, bottomTrailingRadius: 5, topTrailingRadius: 14, style: .continuous))
     }
 }

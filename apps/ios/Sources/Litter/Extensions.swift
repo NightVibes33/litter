@@ -488,15 +488,10 @@ struct GlassCapsuleModifier: ViewModifier {
     var interactive: Bool = false
 
     func body(content: Content) -> some View {
-        content
-            .background(LitterTheme.surface.opacity(interactive ? 0.98 : 0.92))
-            .clipShape(Capsule())
-            .overlay {
-                Capsule().stroke(
-                    interactive ? LitterTheme.accent.opacity(0.55) : LitterTheme.border.opacity(0.58),
-                    lineWidth: AlleyVisual.hairline
-                )
-            }
+        content.alleyPanel(
+            tint: interactive ? LitterTheme.accent : LitterTheme.border,
+            cornerRadius: 9
+        )
     }
 }
 

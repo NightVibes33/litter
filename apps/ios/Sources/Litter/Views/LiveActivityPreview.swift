@@ -74,7 +74,7 @@ private struct CardStack: View {
             }
             .padding(12)
         }
-        .background(Color(.systemBackground))
+        .background(AlleyBackdrop())
     }
 }
 

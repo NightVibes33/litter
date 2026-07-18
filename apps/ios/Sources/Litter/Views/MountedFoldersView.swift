@@ -151,11 +151,11 @@ struct MountedFoldersView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous)
                 .fill(LitterTheme.surface.opacity(0.6))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous)
                 .stroke(LitterTheme.textMuted.opacity(0.18), lineWidth: 0.6)
         )
     }
@@ -206,11 +206,11 @@ struct MountedFoldersView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous)
                 .fill(LitterTheme.surface.opacity(0.6))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous)
                 .stroke(LitterTheme.textMuted.opacity(0.18), lineWidth: 0.6)
         )
     }

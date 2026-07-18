@@ -271,6 +271,7 @@ struct SessionsScreen: View {
             }
 
         }
+        .background(AlleyBackdrop().ignoresSafeArea())
         .accessibilityIdentifier("sessions.container")
     }
 

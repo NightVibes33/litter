@@ -214,7 +214,7 @@ struct HomeComposerView: View {
         }
         .task {
             // Focus as early as possible so the keyboard rises in parallel
-            // with the glass-morph spring — the two animations then feel
+            // with the Alley control spring — the two animations then feel
             // like one fluid motion. A tiny 40ms yield lets the view land
             // in the window tree; the UIViewRepresentable picks up focus on
             // its next `updateUIView` pass. Re-issue once after the spring

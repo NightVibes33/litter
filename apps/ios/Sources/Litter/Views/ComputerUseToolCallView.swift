@@ -55,10 +55,10 @@ struct ComputerUseToolCallView: View {
         .padding(.vertical, 9)
         .background(LitterTheme.surface)
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous)
                 .stroke(LitterTheme.border, lineWidth: 0.5)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 12, bottomTrailingRadius: 4, topTrailingRadius: 12, style: .continuous))
         .animation(.spring(duration: 0.32, bounce: 0.12), value: resolvedExpanded)
         .onChange(of: data.status) { _, newStatus in
             if newStatus == .failed {

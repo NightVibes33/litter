@@ -4,6 +4,25 @@ final class LitterUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
+    @MainActor
+    func testAlleyVisualStatesRender() throws {
+        let app = conversationDisplayHarnessApp(reasoning: "expanded", commands: "expanded", tools: "expanded")
+        app.launch()
+
+        XCTAssertTrue(identifiedElement("conversationDisplayHarness.alleyMark", in: app).waitForExistence(timeout: 10))
+        let conversation = XCTAttachment(screenshot: app.screenshot())
+        conversation.name = "Alley-FVP-Conversation"
+        conversation.lifetime = .keepAlways
+        add(conversation)
+
+        app.buttons["conversationDisplayHarness.settingsButton"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        let settings = XCTAttachment(screenshot: app.screenshot())
+        settings.name = "Alley-FVP-Settings"
+        settings.lifetime = .keepAlways
+        add(settings)
+    }
+
 
     @MainActor
     func testConversationDisplaySettingsRowsAreReachable() throws {
