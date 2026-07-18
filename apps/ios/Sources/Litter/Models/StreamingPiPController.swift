@@ -23,6 +23,11 @@ final class StreamingPiPController: NSObject {
     /// Mirrored to the toolbar button so it can render `pip.fill` while open.
     private(set) var isActive: Bool = false
 
+    /// True while iOS is preparing the sample-buffer PiP controller.
+    /// `startPictureInPicture()` is asynchronous and can take multiple
+    /// run-loop turns after the first frame/audio session are primed.
+    private(set) var isStarting: Bool = false
+
     /// Surfaces a non-fatal startup error to UI (e.g. unsupported device).
     private(set) var lastErrorMessage: String?
 
@@ -102,7 +107,7 @@ final class StreamingPiPController: NSObject {
     var isSupported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
 
     func toggle() {
-        if isActive { stop() } else { start() }
+        if isActive || isStarting { stop() } else { start() }
     }
 
     /// Open PiP pinned to a specific thread (used by the home-card menu).
@@ -118,14 +123,17 @@ final class StreamingPiPController: NSObject {
     }
 
     func start() {
-        guard !isActive else { return }
+        guard !isActive, !isStarting else { return }
         lastErrorMessage = nil
+        isStarting = true
         guard isSupported else {
+            isStarting = false
             lastErrorMessage = "PiP not supported on this device."
             LLog.warn("pip", "start: device does not support PiP")
             return
         }
         guard ensureSetup() else {
+            isStarting = false
             lastErrorMessage = "Could not initialize PiP."
             return
         }
@@ -223,6 +231,7 @@ final class StreamingPiPController: NSObject {
         pendingStart = false
         stopStartReadinessRetryTimer()
         lastErrorMessage = "PiP could not start. Layer status: \(layerStatus), ready: \(ready), frames: \(frames)."
+        isStarting = false
         LLog.warn(
             "pip",
             "start timed out waiting for PiP readiness",
@@ -248,6 +257,7 @@ final class StreamingPiPController: NSObject {
         stopStartReadinessRetryTimer()
         audioKeeper.deactivate()
         isActive = false
+        isStarting = false
         pinnedThreadKey = nil
         userHeightOverride = nil
         isDirty = false
@@ -564,6 +574,7 @@ extension StreamingPiPController: AVPictureInPictureControllerDelegate {
         _ controller: AVPictureInPictureController
     ) {
         Task { @MainActor in
+            self.isStarting = false
             self.isActive = true
             LLog.info("pip", "didStartPictureInPicture")
         }
@@ -585,6 +596,7 @@ extension StreamingPiPController: AVPictureInPictureControllerDelegate {
         Task { @MainActor in
             LLog.warn("pip", "failedToStartPictureInPicture", fields: ["error": "\(error)"])
             self.lastErrorMessage = error.localizedDescription
+            self.isStarting = false
             self.endSession()
         }
     }

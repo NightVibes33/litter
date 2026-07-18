@@ -639,9 +639,10 @@ struct HomeDashboardView: View {
         let controller = StreamingPiPController.shared
         controller.start(for: session.key)
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_600_000_000)
-            guard !controller.isActive, controller.pinnedThreadKey == session.key else { return }
-            pipErrorMessage = controller.lastErrorMessage ?? "Picture in Picture did not become active."
+            try? await Task.sleep(nanoseconds: 4_500_000_000)
+            guard !controller.isActive, !controller.isStarting else { return }
+            guard let message = controller.lastErrorMessage else { return }
+            pipErrorMessage = message
         }
     }
 
