@@ -639,10 +639,16 @@ struct HomeDashboardView: View {
         let controller = StreamingPiPController.shared
         controller.start(for: session.key)
         Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 4_500_000_000)
-            guard !controller.isActive, !controller.isStarting else { return }
-            guard let message = controller.lastErrorMessage else { return }
-            pipErrorMessage = message
+            for _ in 0..<40 {
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                if controller.isActive { return }
+                if !controller.isStarting {
+                    if let message = controller.lastErrorMessage {
+                        pipErrorMessage = message
+                    }
+                    return
+                }
+            }
         }
     }
 

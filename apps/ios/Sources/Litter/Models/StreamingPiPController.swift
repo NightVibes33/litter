@@ -157,11 +157,22 @@ final class StreamingPiPController: NSObject {
     }
 
     func stop() {
+        let wasWaitingToStart = pendingStart
         pendingStart = false
         stopStartReadinessRetryTimer()
+        if wasWaitingToStart {
+            endSession()
+            return
+        }
         // didStop delegate handles per-session cleanup (timer + audio).
         // Host view + controller + pool persist for the next session.
-        pipController?.stopPictureInPicture()
+        if pipController?.isPictureInPictureActive == true {
+            pipController?.stopPictureInPicture()
+        } else if isStarting {
+            // The start call was sent but iOS has not delivered a delegate
+            // callback yet. Cancel local work; a late callback is stopped.
+            endSession()
+        }
     }
 
     /// Calls `startPictureInPicture()` if (a) we have a pending start and
@@ -224,7 +235,7 @@ final class StreamingPiPController: NSObject {
             return
         }
 
-        guard elapsed >= 3.0 else { return }
+        guard elapsed >= 8.0 else { return }
         let layerStatus = hostView?.displayLayer.status.rawValue ?? -1
         let ready = hostView?.displayLayer.isReadyForMoreMediaData ?? false
         let frames = startupFramePushCount
@@ -574,6 +585,10 @@ extension StreamingPiPController: AVPictureInPictureControllerDelegate {
         _ controller: AVPictureInPictureController
     ) {
         Task { @MainActor in
+            guard self.isStarting else {
+                controller.stopPictureInPicture()
+                return
+            }
             self.isStarting = false
             self.isActive = true
             LLog.info("pip", "didStartPictureInPicture")

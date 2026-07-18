@@ -2775,7 +2775,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = "$(APP_CODE_SIGN_STYLE)";
 				INFOPLIST_FILE = Sources/Litter/Info.plist;
-				INFOPLIST_KEY_UIBackgroundModes = "audio fetch remote-notification picture-in-picture";
+				INFOPLIST_KEY_UIBackgroundModes = "audio fetch remote-notification";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2824,7 +2824,7 @@
 				CODE_SIGN_IDENTITY = "$(APP_CODE_SIGN_IDENTITY)";
 				CODE_SIGN_STYLE = "$(APP_CODE_SIGN_STYLE)";
 				INFOPLIST_FILE = Sources/Litter/Info.plist;
-				INFOPLIST_KEY_UIBackgroundModes = "audio fetch remote-notification picture-in-picture";
+				INFOPLIST_KEY_UIBackgroundModes = "audio fetch remote-notification";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -3396,7 +3396,7 @@
 				CODE_SIGN_ENTITLEMENTS = Sources/Litter/Litter.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = Sources/Litter/Info.plist;
-				INFOPLIST_KEY_UIBackgroundModes = "audio fetch remote-notification picture-in-picture";
+				INFOPLIST_KEY_UIBackgroundModes = "audio fetch remote-notification";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
