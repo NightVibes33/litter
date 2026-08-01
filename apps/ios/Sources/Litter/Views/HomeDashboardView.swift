@@ -94,6 +94,8 @@ struct HomeDashboardView: View {
     @State private var isLoadingThreadListing = false
     @State private var suppressComposerCollapse = false
     @State private var pipErrorMessage: String?
+    @State private var showsZoomCat = false
+    @State private var zoomCatPresentation = 0
 
     private var launchableServers: [HomeDashboardServer] {
         connectedServers.filter(\.canLaunchSessions)
@@ -386,6 +388,7 @@ struct HomeDashboardView: View {
             withAnimation(Self.zoomAnimation) {
                 zoomLevel = ladder[max(0, min(ladder.count - 1, nextIdx))]
             }
+            presentZoomCat()
         } label: {
             Image(systemName: zoomIcon)
                 .foregroundColor(LitterTheme.textSecondary)
@@ -443,6 +446,11 @@ struct HomeDashboardView: View {
             }
         }
         .overlay {
+            if showsZoomCat {
+                ZoomMenuCatPopup()
+                    .transition(.scale(scale: 0.86).combined(with: .opacity))
+                    .zIndex(20)
+            }
             if showOnboardingCoachmarks {
                 emptyHomeFatCat
                     .transition(.opacity)
@@ -456,6 +464,21 @@ struct HomeDashboardView: View {
         }
         .animation(.easeInOut(duration: 0.25), value: showOnboardingCoachmarks)
     }
+    private func presentZoomCat() {
+        zoomCatPresentation += 1
+        let presentation = zoomCatPresentation
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.76)) {
+            showsZoomCat = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.4))
+            guard presentation == zoomCatPresentation else { return }
+            withAnimation(.easeOut(duration: 0.22)) {
+                showsZoomCat = false
+            }
+        }
+    }
+
 
     private func refreshSearchThreads() async {
         guard let onSearchThreads else { return }
@@ -666,6 +689,22 @@ struct HomeDashboardView: View {
                 .frame(width: catWidth, height: catHeight)
                 .position(x: w / 2, y: h * 0.42)
         }
+    }
+}
+
+private struct ZoomMenuCatPopup: View {
+    private let animationURL = Bundle.main.url(forResource: "home_cat_entrance", withExtension: "png")
+
+    var body: some View {
+        Group {
+            if let animationURL {
+                AlphaAnimatedImageView(fileURL: animationURL, repeatCount: 1)
+            }
+        }
+        .frame(width: 300, height: 169)
+        .shadow(color: Color.black.opacity(0.2), radius: 18, y: 8)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
