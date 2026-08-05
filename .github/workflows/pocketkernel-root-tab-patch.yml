@@ -1,0 +1,98 @@
+name: PocketKernel Root Tab Patch
+
+on:
+  push:
+    branches:
+      - pocketkernel/apple-foundation-models
+    paths:
+      - '.github/workflows/pocketkernel-root-tab-patch.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pocketkernel/apple-foundation-models
+          fetch-depth: 0
+
+      - name: Add Chat bottom tab and repair local executor parsing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('apps/ios/Sources/Litter/LitterApp.swift')
+          text = app.read_text()
+          old = '''    private func standardHomeNavigationView(topInset: CGFloat, bottomInset: CGFloat) -> some View {
+              HomeNavigationView(
+                  topInset: topInset,
+                  bottomInset: bottomInset
+              )
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+              .ignoresSafeArea(.container, edges: [.top, .bottom])
+              .id(themeManager.themeVersion)
+              .onAppear {
+                  if !splashDismissed {
+                      splashDismissed = true
+                      (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
+                  }
+              }
+          }
+          '''
+          new = '''    private func standardHomeNavigationView(topInset: CGFloat, bottomInset: CGFloat) -> some View {
+              TabView {
+                  HomeNavigationView(
+                      topInset: topInset,
+                      bottomInset: bottomInset + 52
+                  )
+                  .tabItem {
+                      Label("Home", systemImage: "house.fill")
+                  }
+
+                  NavigationStack {
+                      PocketKernelChatView()
+                  }
+                  .tabItem {
+                      Label("Chat", systemImage: "bubble.left.and.bubble.right.fill")
+                  }
+              }
+              .tint(LitterTheme.accent)
+              .toolbarBackground(.visible, for: .tabBar)
+              .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+              .ignoresSafeArea(.container, edges: .top)
+              .id(themeManager.themeVersion)
+              .onAppear {
+                  if !splashDismissed {
+                      splashDismissed = true
+                      (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
+                  }
+              }
+          }
+          '''
+          if old not in text:
+              raise SystemExit('standardHomeNavigationView target not found')
+          app.write_text(text.replace(old, new, 1))
+
+          agent = Path('apps/ios/Sources/Litter/Models/PocketKernelLocalAgent.swift')
+          text = agent.read_text()
+          old = 'guard let exitCode = Int32(statusText) else {'
+          new = 'guard let exitCode = Int32(String(statusText)) else {'
+          if old not in text:
+              raise SystemExit('exit status parser target not found')
+          agent.write_text(text.replace(old, new, 1))
+
+          workflow = Path('.github/workflows/pocketkernel-root-tab-patch.yml')
+          workflow.unlink()
+          PY
+
+      - name: Commit patch
+        run: |
+          git config user.name "PocketKernel CI"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Add dedicated PocketKernel Chat bottom tab"
+          git push origin HEAD:pocketkernel/apple-foundation-models
