@@ -1,0 +1,32 @@
+name: Wire PocketKernel Local Home V3
+
+on:
+  push:
+    branches:
+      - pocketkernel-foundation-models
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wire-pocketkernel-local-home-v3
+  cancel-in-progress: true
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pocketkernel-foundation-models
+
+      - name: Patch local-first routing
+        run: python3 tools/scripts/wire-pocketkernel-local-home.py
+
+      - name: Commit local Home route
+        run: |
+          git config user.name "Zyn"
+          git config user.email "bobbytatum999@gmail.com"
+          git add apps/ios/Sources/Litter .github/workflows/wire-pocketkernel-local-home-v3.yml tools/scripts/wire-pocketkernel-local-home.py
+          git commit -m "feat: route Home composer to Apple Intelligence"
+          git push origin HEAD:pocketkernel-foundation-models
