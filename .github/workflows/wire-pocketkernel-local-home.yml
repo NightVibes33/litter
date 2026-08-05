@@ -1,0 +1,230 @@
+name: Wire PocketKernel Local Home
+
+on:
+  push:
+    branches:
+      - pocketkernel-foundation-models
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wire-pocketkernel-local-home
+  cancel-in-progress: true
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pocketkernel-foundation-models
+
+      - name: Patch local-first routing
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"missing expected block in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace(
+              "apps/ios/Sources/Litter/Models/AIProviderModels.swift",
+              '''    static let defaults = GlobalModelSettings(
+                  routingMode: .automatic,
+                  preferredProviderId: nil
+              )''',
+              '''    static let defaults = GlobalModelSettings(
+                  routingMode: .appleIntelligence,
+                  preferredProviderId: nil
+              )'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Models/AIProviderStore.swift",
+              '''        case .automatic:
+                  return appleIntelligenceProvider != nil
+              case .openAI, .openAICompatible:''',
+              '''        case .automatic:
+                  return false
+              case .openAI, .openAICompatible:'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Views/HomeComposerView.swift",
+              '''    @Environment(AppModel.self) private var appModel
+              @Environment(AppState.self) private var appState
+
+              @State private var inputText = ""''',
+              '''    @Environment(AppModel.self) private var appModel
+              @Environment(AppState.self) private var appState
+              @StateObject private var providerStore = AIProviderStore.shared
+
+              @State private var inputText = ""'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Views/HomeComposerView.swift",
+              '''    @State private var showRemoteFilePicker = false
+              @State private var selectedPhoto: PhotosPickerItem?''',
+              '''    @State private var showRemoteFilePicker = false
+              @State private var showAppleIntelligenceChat = false
+              @State private var pendingApplePrompt: String?
+              @State private var selectedPhoto: PhotosPickerItem?'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Views/HomeComposerView.swift",
+              '''    private var isDisabled: Bool { project == nil }''',
+              '''    private var isDisabled: Bool {
+                  project == nil && !providerStore.shouldUseAppleIntelligence
+              }'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Views/HomeComposerView.swift",
+              '''        .fullScreenCover(isPresented: $showCamera) {
+                  CameraView(image: $capturedImage)
+                      .ignoresSafeArea()
+              }
+              .task {''',
+              '''        .fullScreenCover(isPresented: $showCamera) {
+                  CameraView(image: $capturedImage)
+                      .ignoresSafeArea()
+              }
+              .fullScreenCover(isPresented: $showAppleIntelligenceChat) {
+                  NavigationStack {
+                      AppleIntelligenceChatView(initialPrompt: pendingApplePrompt)
+                  }
+              }
+              .task {'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Views/HomeComposerView.swift",
+              '''        guard !isSubmitting else { return }
+              guard let project else {
+                  errorMessage = "Pick a project before sending."
+                  return
+              }
+
+              isSubmitting = true''',
+              '''        guard !isSubmitting else { return }
+
+              if providerStore.shouldUseAppleIntelligence {
+                  guard pendingAttachments.isEmpty else {
+                      errorMessage = "File and image tools are not wired to the on-device model yet. Send text only or use a Codex server for attachments."
+                      return
+                  }
+                  guard !text.isEmpty else {
+                      errorMessage = "Enter a message for Apple Intelligence."
+                      return
+                  }
+                  pendingApplePrompt = text
+                  inputText = ""
+                  composerSelectionRange = NSRange(location: 0, length: 0)
+                  isComposerFocused = false
+                  errorMessage = nil
+                  showAppleIntelligenceChat = true
+                  return
+              }
+
+              guard let project else {
+                  errorMessage = "Pick a project before sending, or select Apple Intelligence in AI Providers."
+                  return
+              }
+
+              isSubmitting = true'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Views/HomeModelChip.swift",
+              '''    @AppStorage("fastMode") private var fastMode = false
+
+              /// The server''',
+              '''    @AppStorage("fastMode") private var fastMode = false
+              @StateObject private var providerStore = AIProviderStore.shared
+
+              /// The server'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Views/HomeModelChip.swift",
+              '''    private var selectedModelLabel: String {
+                  let trimmed = appState.preferredModel.trimmingCharacters''',
+              '''    private var selectedModelLabel: String {
+                  if providerStore.shouldUseAppleIntelligence {
+                      return "Apple Intelligence"
+                  }
+                  let trimmed = appState.preferredModel.trimmingCharacters'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Views/HomeModelChip.swift",
+              '''        .disabled(disabled)
+              .opacity(disabled ? 0.5 : 1)
+              .sheet(isPresented: $showSheet) {
+                  ConversationOptionsSheet(
+                      models: availableModels,
+                      selectedModel: selectedModelBinding,
+                      selectedAgentRuntimeKind: selectedAgentRuntimeKindBinding,
+                      reasoningEffort: reasoningEffortBinding,
+                      serverId: serverId,
+                      threadKey: nil
+                  )
+                  .environment(appModel)
+                  .environment(appState)
+                  .presentationDetents([.medium, .large], selection: $selectedDetent)
+                  .presentationDragIndicator(.visible)
+                  .presentationContentInteraction(.scrolls)
+                  .presentationBackground(LitterTheme.surface)
+              }''',
+              '''        .disabled(disabled && !providerStore.shouldUseAppleIntelligence)
+              .opacity(disabled && !providerStore.shouldUseAppleIntelligence ? 0.5 : 1)
+              .sheet(isPresented: $showSheet) {
+                  if providerStore.shouldUseAppleIntelligence {
+                      NavigationStack {
+                          AppleIntelligenceChatView()
+                      }
+                  } else {
+                      ConversationOptionsSheet(
+                          models: availableModels,
+                          selectedModel: selectedModelBinding,
+                          selectedAgentRuntimeKind: selectedAgentRuntimeKindBinding,
+                          reasoningEffort: reasoningEffortBinding,
+                          serverId: serverId,
+                          threadKey: nil
+                      )
+                      .environment(appModel)
+                      .environment(appState)
+                      .presentationDetents([.medium, .large], selection: $selectedDetent)
+                      .presentationDragIndicator(.visible)
+                      .presentationContentInteraction(.scrolls)
+                      .presentationBackground(LitterTheme.surface)
+                  }
+              }'''
+          )
+
+          replace(
+              "apps/ios/Sources/Litter/Views/HomeModelChip.swift",
+              '''        .task(id: serverId) {
+                  guard let serverId else { return }''',
+              '''        .task(id: serverId) {
+                  guard !providerStore.shouldUseAppleIntelligence else { return }
+                  guard let serverId else { return }'''
+          )
+
+          Path(".github/workflows/wire-pocketkernel-local-home.yml").unlink()
+          PY
+
+      - name: Commit local Home route
+        run: |
+          git config user.name "Zyn"
+          git config user.email "bobbytatum999@gmail.com"
+          git add apps/ios/Sources/Litter .github/workflows/wire-pocketkernel-local-home.yml
+          git commit -m "feat: route Home composer to Apple Intelligence"
+          git push origin HEAD:pocketkernel-foundation-models
