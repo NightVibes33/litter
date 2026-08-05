@@ -177,6 +177,17 @@ final class AppleLocalTranscriptStore {
         postChange(identifier: identifier)
     }
 
+    func clearAll() {
+        let identifiers = Array(eventsByThread.keys)
+        eventsByThread.removeAll()
+        threadIdentifierByTurnID.removeAll()
+        UserDefaults.standard.removeObject(forKey: Self.defaultsKey)
+
+        for identifier in identifiers {
+            postChange(identifier: identifier)
+        }
+    }
+
     private func appendToTurn(
         kind: EventKind,
         turnID: String?,
