@@ -43,7 +43,7 @@ struct HomeModelChip: View {
     }
 
     private var selectedModelLabel: String {
-        if providerStore.shouldUseAppleIntelligence { return \"Apple Intelligence\" }
+        if providerStore.shouldUseAppleIntelligence { return "Apple Intelligence" }
         let trimmed = appState.preferredModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             if let match = availableModels.first(where: {
