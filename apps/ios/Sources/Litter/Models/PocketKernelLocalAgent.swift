@@ -268,7 +268,7 @@ final class PocketKernelLocalAgent {
 
         let statusText = rawOutput[markerRange.upperBound...]
             .prefix { $0.isNumber || $0 == "-" }
-        guard let exitCode = Int32(statusText) else {
+        guard let exitCode = Int32(String(statusText)) else {
             return nil
         }
 

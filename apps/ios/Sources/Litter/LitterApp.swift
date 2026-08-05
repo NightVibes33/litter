@@ -588,20 +588,35 @@ struct ContentView: View {
     }
 
     private func standardHomeNavigationView(topInset: CGFloat, bottomInset: CGFloat) -> some View {
+    TabView {
         HomeNavigationView(
             topInset: topInset,
-            bottomInset: bottomInset
+            bottomInset: bottomInset + 52
         )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea(.container, edges: [.top, .bottom])
-        .id(themeManager.themeVersion)
-        .onAppear {
-            if !splashDismissed {
-                splashDismissed = true
-                (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
-            }
+        .tabItem {
+            Label("Home", systemImage: "house.fill")
+        }
+
+        NavigationStack {
+            PocketKernelChatView()
+        }
+        .tabItem {
+            Label("Chat", systemImage: "bubble.left.and.bubble.right.fill")
         }
     }
+    .tint(LitterTheme.accent)
+    .toolbarBackground(.visible, for: .tabBar)
+    .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .ignoresSafeArea(.container, edges: .top)
+    .id(themeManager.themeVersion)
+    .onAppear {
+        if !splashDismissed {
+            splashDismissed = true
+            (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
+        }
+    }
+}
 
     @ViewBuilder
     private var standardOverlays: some View {
