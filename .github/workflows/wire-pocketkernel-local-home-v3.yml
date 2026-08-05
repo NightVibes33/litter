@@ -15,6 +15,8 @@ concurrency:
 jobs:
   wire:
     runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,10 +25,11 @@ jobs:
       - name: Patch local-first routing
         run: python3 tools/scripts/wire-pocketkernel-local-home.py
 
-      - name: Commit local Home route
-        run: |
-          git config user.name "Zyn"
-          git config user.email "bobbytatum999@gmail.com"
-          git add apps/ios/Sources/Litter .github/workflows/wire-pocketkernel-local-home-v3.yml tools/scripts/wire-pocketkernel-local-home.py
-          git commit -m "feat: route Home composer to Apple Intelligence"
-          git push origin HEAD:pocketkernel-foundation-models
+      - name: Create remote commit object
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/scripts/create-pocketkernel-patch-commit.py
+
+      - name: Show handoff commit
+        run: echo "REMOTE_COMMIT_SHA=${{ steps.commit.outputs.commit_sha }}"
