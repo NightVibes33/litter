@@ -1,6 +1,7 @@
 import Foundation
 
 enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
+    case appleIntelligence
     case openAI
     case openAICompatible
 
@@ -8,6 +9,7 @@ enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .appleIntelligence: return "Apple Intelligence"
         case .openAI: return "OpenAI"
         case .openAICompatible: return "OpenAI-Compatible Server"
         }
@@ -19,6 +21,13 @@ struct AIProviderCapabilities: Codable, Equatable {
     var supportsChatCompletions: Bool
     var supportsStreaming: Bool
     var requiresNetwork: Bool
+
+    static let appleIntelligence = AIProviderCapabilities(
+        supportsModelsEndpoint: false,
+        supportsChatCompletions: true,
+        supportsStreaming: false,
+        requiresNetwork: false
+    )
 
     static let openAI = AIProviderCapabilities(
         supportsModelsEndpoint: true,
@@ -47,7 +56,8 @@ struct AIProviderProfile: Codable, Identifiable, Equatable {
     var updatedAt: Date
 
     var normalizedBaseURL: URL? {
-        AIProviderProfile.normalizedBaseURL(baseURL)
+        guard kind != .appleIntelligence else { return nil }
+        return AIProviderProfile.normalizedBaseURL(baseURL)
     }
 
     static func normalizedBaseURL(_ raw: String) -> URL? {
@@ -63,6 +73,21 @@ struct AIProviderProfile: Codable, Identifiable, Equatable {
             return URL(string: value)
         }
         return URL(string: value + "/v1")
+    }
+
+    static func appleIntelligence() -> AIProviderProfile {
+        let now = Date()
+        return AIProviderProfile(
+            id: UUID(),
+            kind: .appleIntelligence,
+            displayName: "Apple Intelligence",
+            baseURL: "",
+            defaultModel: "system-language-model",
+            isEnabled: true,
+            capabilities: .appleIntelligence,
+            createdAt: now,
+            updatedAt: now
+        )
     }
 
     static func openAI(defaultModel: String = "gpt-4.1") -> AIProviderProfile {
@@ -126,6 +151,7 @@ struct AIProviderHealthReport: Equatable {
 
 enum AIModelRoutingMode: String, CaseIterable, Identifiable {
     case automatic
+    case appleIntelligence
     case openAI
     case openAICompatible
 
@@ -134,6 +160,7 @@ enum AIModelRoutingMode: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .automatic: return "Automatic"
+        case .appleIntelligence: return "On-device Apple Intelligence"
         case .openAI: return "OpenAI"
         case .openAICompatible: return "Ollama / OpenAI-Compatible"
         }
@@ -144,6 +171,8 @@ extension AIModelRoutingMode: Codable {
     init(from decoder: Decoder) throws {
         let rawValue = try decoder.singleValueContainer().decode(String.self)
         switch rawValue {
+        case Self.appleIntelligence.rawValue:
+            self = .appleIntelligence
         case Self.openAI.rawValue:
             self = .openAI
         case Self.openAICompatible.rawValue:
