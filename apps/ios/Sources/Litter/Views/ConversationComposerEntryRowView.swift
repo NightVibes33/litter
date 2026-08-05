@@ -16,6 +16,15 @@ struct ConversationComposerEntryRowView: View {
     let onStartRecording: () -> Void
     let onInterrupt: () -> Void
 
+    @StateObject private var providerStore = AIProviderStore.shared
+    @StateObject private var localAgentBridge = AppleLocalAgentBridge()
+    @AppStorage("workDir") private var workDir = FileManager.default.urls(
+        for: .documentDirectory,
+        in: .userDomainMask
+    ).first?.path ?? "/root"
+    @State private var showExpanded: Bool = false
+    @State private var showLocalAgentSheet: Bool = false
+
     private enum Metrics {
         static let controlSize: CGFloat = 44
         static let inputCornerRadius: CGFloat = controlSize / 2
@@ -54,14 +63,31 @@ struct ConversationComposerEntryRowView: View {
         self.onInterrupt = onInterrupt
     }
 
-    @State private var showExpanded: Bool = false
-
     private var hasText: Bool {
         !inputText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var canSend: Bool {
         hasText || hasAttachment
+    }
+
+    private var normalizedWorkDirectory: String {
+        let trimmed = workDir.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "/root" : trimmed
+    }
+
+    private var usesAppleOnDeviceRoute: Bool {
+        let settings = providerStore.globalModelSettings
+        switch settings.routingMode {
+        case .appleOnDevice:
+            return true
+        case .automatic:
+            let appleProviderId = AIProviderProfile.appleOnDevice().id
+            return settings.preferredProviderId == nil
+                || settings.preferredProviderId == appleProviderId
+        case .openAI, .openAICompatible:
+            return false
+        }
     }
 
     /// Show the expand affordance once the composer is multi-line or starts to
@@ -102,7 +128,7 @@ struct ConversationComposerEntryRowView: View {
                         selectedRange: $composerSelectionRange,
                         onPasteImage: onPasteImage,
                         onHardwareSubmit: {
-                            if canSend { onSendText() }
+                            if canSend { handleSendText() }
                         }
                     )
 
@@ -171,7 +197,7 @@ struct ConversationComposerEntryRowView: View {
             .animation(.easeInOut(duration: 0.15), value: shouldShowExpand)
 
             if canSend {
-                Button(action: onSendText) {
+                Button(action: handleSendText) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(LitterFont.styled(size: 30))
                         .foregroundColor(LitterTheme.accent)
@@ -182,7 +208,7 @@ struct ConversationComposerEntryRowView: View {
                 .hoverEffect(.highlight)
                 .disabled(voiceManager.isRecording || voiceManager.isTranscribing)
                 .opacity(voiceManager.isRecording || voiceManager.isTranscribing ? 0.45 : 1)
-                .accessibilityLabel("Send")
+                .accessibilityLabel(usesAppleOnDeviceRoute && !hasAttachment ? "Send on device" : "Send")
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
 
@@ -210,9 +236,43 @@ struct ConversationComposerEntryRowView: View {
                 inputText: $inputText,
                 isPresented: $showExpanded,
                 onPasteImage: onPasteImage,
-                onSend: onSendText,
+                onSend: handleSendText,
                 hasAttachment: hasAttachment
             )
+        }
+        .sheet(isPresented: $showLocalAgentSheet) {
+            AppleLocalAgentBridgeSheet(
+                bridge: localAgentBridge,
+                workDirectory: normalizedWorkDirectory
+            )
+        }
+    }
+
+    private func handleSendText() {
+        let prompt = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard usesAppleOnDeviceRoute,
+              !hasAttachment,
+              !isTurnActive,
+              !prompt.isEmpty else {
+            onSendText()
+            return
+        }
+
+        inputText = ""
+        composerSelectionRange = NSRange(location: 0, length: 0)
+        isComposerFocused = false
+        showExpanded = false
+        localAgentBridge.reset()
+        showLocalAgentSheet = true
+
+        let context = """
+        Current working directory: \(normalizedWorkDirectory)
+        Resolve relative command and filesystem paths against this directory.
+        The app will require explicit user approval before executing any action.
+        """
+
+        Task {
+            await localAgentBridge.submit(request: prompt, context: context)
         }
     }
 }
