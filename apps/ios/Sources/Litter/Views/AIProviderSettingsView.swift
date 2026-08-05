@@ -109,6 +109,7 @@ struct AIProviderSettingsView: View {
 
     private func providerSubtitle(_ provider: AIProviderProfile) -> String {
         switch provider.kind {
+        case .appleOnDevice: return "Private · Offline · \(provider.defaultModel)"
         case .openAI: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
         case .openAICompatible: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
         }
@@ -116,6 +117,7 @@ struct AIProviderSettingsView: View {
 
     private func icon(for kind: AIProviderKind) -> String {
         switch kind {
+        case .appleOnDevice: return "apple.logo"
         case .openAI: return "cloud"
         case .openAICompatible: return "desktopcomputer"
         }
