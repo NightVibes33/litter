@@ -20,6 +20,8 @@ final class AppleLocalAgentBridge: ObservableObject {
 
     let approval = LocalActionApprovalCoordinator()
 
+    private var localTurnID: String?
+
     var isBusy: Bool {
         phase == .proposing || phase == .executing
     }
@@ -37,6 +39,7 @@ final class AppleLocalAgentBridge: ObservableObject {
         output = nil
         errorMessage = nil
         phase = .proposing
+        localTurnID = AppleLocalTranscriptStore.shared.beginTurn(request: trimmed)
 
         do {
             let next = try await AppleOnDeviceAgent.shared.propose(
@@ -45,10 +48,24 @@ final class AppleLocalAgentBridge: ObservableObject {
             )
             proposal = next
 
+            let response = Self.answerText(for: next)
             if next.action == .answer {
-                output = Self.answerText(for: next)
+                output = response
+                AppleLocalTranscriptStore.shared.appendAssistant(
+                    turnID: localTurnID,
+                    text: response
+                )
                 phase = .completed
             } else {
+                AppleLocalTranscriptStore.shared.appendAssistant(
+                    turnID: localTurnID,
+                    text: response
+                )
+                AppleLocalTranscriptStore.shared.appendNote(
+                    turnID: localTurnID,
+                    title: "Approval Required",
+                    body: Self.approvalDetails(for: next)
+                )
                 approval.present(next)
                 phase = .awaitingApproval
             }
@@ -58,7 +75,8 @@ final class AppleLocalAgentBridge: ObservableObject {
     }
 
     func approve(workDirectory: String) async {
-        guard phase == .awaitingApproval else { return }
+        guard phase == .awaitingApproval,
+              let proposal else { return }
         phase = .executing
         errorMessage = nil
 
@@ -72,6 +90,11 @@ final class AppleLocalAgentBridge: ObservableObject {
 
         if let result {
             output = result
+            recordApprovedResult(
+                proposal,
+                result: result,
+                workDirectory: normalizedWorkDirectory
+            )
             phase = .completed
         } else {
             fail(approval.lastError ?? "The approved action could not be completed.")
@@ -79,9 +102,15 @@ final class AppleLocalAgentBridge: ObservableObject {
     }
 
     func reject() {
+        guard phase == .awaitingApproval else { return }
         approval.reject()
         output = "Action rejected. Nothing was executed."
         errorMessage = nil
+        AppleLocalTranscriptStore.shared.appendNote(
+            turnID: localTurnID,
+            title: "Action Rejected",
+            body: "Nothing was executed."
+        )
         phase = .completed
     }
 
@@ -91,12 +120,74 @@ final class AppleLocalAgentBridge: ObservableObject {
         proposal = nil
         output = nil
         errorMessage = nil
+        localTurnID = nil
         phase = .idle
     }
 
     private func fail(_ message: String) {
         errorMessage = message
+        AppleLocalTranscriptStore.shared.appendError(
+            turnID: localTurnID,
+            message: message
+        )
         phase = .failed
+    }
+
+    private func recordApprovedResult(
+        _ proposal: LocalAgentProposal,
+        result: String,
+        workDirectory: String
+    ) {
+        let store = AppleLocalTranscriptStore.shared
+        switch proposal.action {
+        case .answer:
+            store.appendAssistant(turnID: localTurnID, text: result)
+
+        case .runCommand:
+            store.appendCommand(
+                turnID: localTurnID,
+                command: proposal.command ?? "",
+                cwd: workDirectory,
+                output: result,
+                exitCode: 0
+            )
+
+        case .readFile:
+            let path = Self.resolvedPath(
+                proposal.path ?? "",
+                workDirectory: workDirectory
+            )
+            store.appendNote(
+                turnID: localTurnID,
+                title: "Read \(path)",
+                body: result
+            )
+
+        case .writeFile:
+            let path = Self.resolvedPath(
+                proposal.path ?? "",
+                workDirectory: workDirectory
+            )
+            store.appendFileChange(
+                turnID: localTurnID,
+                path: path,
+                content: proposal.content ?? "",
+                summary: result
+            )
+
+        case .listDirectory:
+            let path = Self.resolvedPath(
+                proposal.path ?? "",
+                workDirectory: workDirectory
+            )
+            store.appendCommand(
+                turnID: localTurnID,
+                command: "LC_ALL=C ls -la -- \(IshFS.shellQuote(path))",
+                cwd: workDirectory,
+                output: result,
+                exitCode: 0
+            )
+        }
     }
 
     nonisolated private static func execute(
@@ -165,6 +256,27 @@ final class AppleLocalAgentBridge: ObservableObject {
             return summary
         }
         return "\(summary)\n\n\(explanation)"
+    }
+
+    nonisolated private static func approvalDetails(for proposal: LocalAgentProposal) -> String {
+        var lines = [
+            "Action: \(proposal.action.rawValue)",
+            "Risk: \(proposal.risk.rawValue)"
+        ]
+        if let command = proposal.command {
+            lines.append("Command: \(command)")
+        }
+        if let path = proposal.path {
+            lines.append("Path: \(path)")
+        }
+        if let content = proposal.content {
+            let preview = content.count > 4_000
+                ? String(content.prefix(4_000)) + "\n… content truncated …"
+                : content
+            lines.append("Content:\n\(preview)")
+        }
+        lines.append("Nothing runs until this exact action is approved.")
+        return lines.joined(separator: "\n\n")
     }
 
     nonisolated private static func normalizedWorkDirectory(_ value: String) -> String {
