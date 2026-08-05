@@ -1,0 +1,23 @@
+name: Dispatch README-Restored PocketKernel Build
+
+on:
+  push:
+    branches:
+      - pocketkernel-foundation-models
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch unsigned IPA workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run ios-unsigned-ipa.yml \
+            --repo "${{ github.repository }}" \
+            --ref pocketkernel-foundation-models \
+            -f build_mode=fast-device
