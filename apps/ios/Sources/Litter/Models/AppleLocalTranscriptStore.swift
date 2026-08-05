@@ -42,6 +42,7 @@ final class AppleLocalTranscriptStore {
     private static let maximumEventsPerThread = 500
 
     private var eventsByThread: [String: [StoredEvent]]
+    private var threadIdentifierByTurnID: [String: String]
     private(set) var activeThreadKey: ThreadKey?
 
     private init(defaults: UserDefaults = .standard) {
@@ -51,6 +52,14 @@ final class AppleLocalTranscriptStore {
         } else {
             eventsByThread = [:]
         }
+
+        var turnIndex: [String: String] = [:]
+        for (threadIdentifier, events) in eventsByThread {
+            for event in events {
+                turnIndex[event.turnID] = threadIdentifier
+            }
+        }
+        threadIdentifierByTurnID = turnIndex
     }
 
     func activate(_ threadKey: ThreadKey) {
@@ -59,18 +68,20 @@ final class AppleLocalTranscriptStore {
 
     func beginTurn(request: String) -> String? {
         guard let threadKey = activeThreadKey else { return nil }
+        let threadIdentifier = Self.identifier(for: threadKey)
         let turnID = "apple-local-turn-\(UUID().uuidString.lowercased())"
+        threadIdentifierByTurnID[turnID] = threadIdentifier
         append(
             kind: .user,
             turnID: turnID,
             text: request,
-            for: threadKey
+            threadIdentifier: threadIdentifier
         )
         return turnID
     }
 
     func appendAssistant(turnID: String?, text: String) {
-        appendToActiveThread(
+        appendToTurn(
             kind: .assistant,
             turnID: turnID,
             text: text
@@ -78,7 +89,7 @@ final class AppleLocalTranscriptStore {
     }
 
     func appendNote(turnID: String?, title: String, body: String) {
-        appendToActiveThread(
+        appendToTurn(
             kind: .note,
             turnID: turnID,
             title: title,
@@ -87,7 +98,7 @@ final class AppleLocalTranscriptStore {
     }
 
     func appendError(turnID: String?, title: String = "Apple On-Device Error", message: String) {
-        appendToActiveThread(
+        appendToTurn(
             kind: .error,
             turnID: turnID,
             title: title,
@@ -102,7 +113,7 @@ final class AppleLocalTranscriptStore {
         output: String,
         exitCode: Int
     ) {
-        appendToActiveThread(
+        appendToTurn(
             kind: .command,
             turnID: turnID,
             text: output,
@@ -125,7 +136,7 @@ final class AppleLocalTranscriptStore {
             .map { "+\($0)" }
             .joined(separator: "\n")
 
-        appendToActiveThread(
+        appendToTurn(
             kind: .fileChange,
             turnID: turnID,
             text: summary,
@@ -157,12 +168,16 @@ final class AppleLocalTranscriptStore {
 
     func clear(threadKey: ThreadKey) {
         let identifier = Self.identifier(for: threadKey)
-        guard eventsByThread.removeValue(forKey: identifier) != nil else { return }
+        guard let removedEvents = eventsByThread.removeValue(forKey: identifier) else { return }
+        let removedTurnIDs = Set(removedEvents.map(\.turnID))
+        threadIdentifierByTurnID = threadIdentifierByTurnID.filter {
+            !removedTurnIDs.contains($0.key)
+        }
         persist()
         postChange(identifier: identifier)
     }
 
-    private func appendToActiveThread(
+    private func appendToTurn(
         kind: EventKind,
         turnID: String?,
         title: String? = nil,
@@ -176,9 +191,9 @@ final class AppleLocalTranscriptStore {
         additions: Int? = nil,
         deletions: Int? = nil
     ) {
-        guard let threadKey = activeThreadKey,
-              let turnID,
-              !turnID.isEmpty else { return }
+        guard let turnID,
+              !turnID.isEmpty,
+              let threadIdentifier = threadIdentifierByTurnID[turnID] else { return }
         append(
             kind: kind,
             turnID: turnID,
@@ -192,7 +207,7 @@ final class AppleLocalTranscriptStore {
             diff: diff,
             additions: additions,
             deletions: deletions,
-            for: threadKey
+            threadIdentifier: threadIdentifier
         )
     }
 
@@ -209,10 +224,9 @@ final class AppleLocalTranscriptStore {
         diff: String? = nil,
         additions: Int? = nil,
         deletions: Int? = nil,
-        for threadKey: ThreadKey
+        threadIdentifier: String
     ) {
-        let identifier = Self.identifier(for: threadKey)
-        var events = eventsByThread[identifier] ?? []
+        var events = eventsByThread[threadIdentifier] ?? []
         let nextSequence = (events.last?.sequence ?? -1) + 1
         events.append(
             StoredEvent(
@@ -238,10 +252,14 @@ final class AppleLocalTranscriptStore {
             for index in events.indices {
                 events[index].sequence = index
             }
+            let retainedTurnIDs = Set(events.map(\.turnID))
+            threadIdentifierByTurnID = threadIdentifierByTurnID.filter {
+                $0.value != threadIdentifier || retainedTurnIDs.contains($0.key)
+            }
         }
-        eventsByThread[identifier] = events
+        eventsByThread[threadIdentifier] = events
         persist()
-        postChange(identifier: identifier)
+        postChange(identifier: threadIdentifier)
     }
 
     private func persist() {
