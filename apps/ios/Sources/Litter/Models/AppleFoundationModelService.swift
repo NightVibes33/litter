@@ -77,7 +77,6 @@ actor AppleFoundationModelService {
             }
 
             let session = LanguageModelSession(
-                model: model,
                 instructions: instructions ?? defaultInstructions
             )
             let response = try await session.respond(to: prompt)
