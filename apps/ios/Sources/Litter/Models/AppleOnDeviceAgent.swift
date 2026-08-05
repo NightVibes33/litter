@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 #if canImport(FoundationModels)
@@ -59,6 +60,11 @@ actor AppleOnDeviceAgent {
     static let shared = AppleOnDeviceAgent()
 
     private let decoder = JSONDecoder()
+    private let maxSummaryCharacters = 500
+    private let maxExplanationCharacters = 4_000
+    private let maxCommandCharacters = 8_000
+    private let maxPathCharacters = 4_096
+    private let maxWriteCharacters = 1_000_000
 
     var availabilityDescription: String {
         get async {
@@ -94,8 +100,7 @@ actor AppleOnDeviceAgent {
             action must be one of: answer, runCommand, readFile, writeFile, listDirectory.
             risk must be one of: low, medium, high.
             Use null for command, path, or content when not applicable.
-            Any command, file write, deletion, package installation, network request, credential access,
-            or system mutation must set requiresApproval to true.
+            Every action other than answer must set requiresApproval to true.
             Never invent that an action already ran. Only propose it.
             Prefer a plain answer when execution is unnecessary.
             """
@@ -128,28 +133,59 @@ actor AppleOnDeviceAgent {
         }
 
         proposal.id = UUID()
+        proposal.summary = proposal.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        proposal.explanation = proposal.explanation.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !proposal.summary.isEmpty,
+              proposal.summary.count <= maxSummaryCharacters,
+              proposal.explanation.count <= maxExplanationCharacters else {
+            throw AppleOnDeviceAgentError.invalidStructuredResponse
+        }
 
         switch proposal.action {
         case .answer:
+            proposal.command = nil
+            proposal.path = nil
+            proposal.content = nil
             proposal.requiresApproval = false
+
         case .runCommand:
             guard let command = proposal.command?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !command.isEmpty else {
+                  !command.isEmpty,
+                  command.count <= maxCommandCharacters else {
                 throw AppleOnDeviceAgentError.invalidStructuredResponse
+            }
+            guard !command.contains("\0") else {
+                throw AppleOnDeviceAgentError.actionRejected("The proposed command contains invalid data.")
             }
             proposal.command = command
+            proposal.path = nil
+            proposal.content = nil
             proposal.requiresApproval = true
+
         case .readFile, .writeFile, .listDirectory:
             guard let path = proposal.path?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !path.isEmpty else {
+                  !path.isEmpty,
+                  path.count <= maxPathCharacters else {
                 throw AppleOnDeviceAgentError.invalidStructuredResponse
             }
-            guard !path.contains("\0") else {
+            guard !path.contains("\0"),
+                  path.rangeOfCharacter(from: .controlCharacters) == nil else {
                 throw AppleOnDeviceAgentError.actionRejected("The proposed path contains invalid data.")
             }
+
             proposal.path = path
+            proposal.command = nil
+            proposal.requiresApproval = true
+
             if proposal.action == .writeFile {
-                proposal.requiresApproval = true
+                guard let content = proposal.content,
+                      content.count <= maxWriteCharacters else {
+                    throw AppleOnDeviceAgentError.actionRejected("The proposed file content is missing or too large.")
+                }
+                proposal.content = content
+            } else {
+                proposal.content = nil
             }
         }
 
@@ -172,26 +208,30 @@ final class LocalActionApprovalCoordinator: ObservableObject {
     func reject() {
         pendingProposal = nil
         isExecuting = false
+        lastError = nil
     }
 
     /// The caller supplies Litter/litter-ish execution. This coordinator never bypasses approval.
-    func approve(
-        execute: @escaping @Sendable (LocalAgentProposal) async throws -> Void
-    ) async {
-        guard let proposal = pendingProposal else { return }
+    func approve<Result: Sendable>(
+        execute: @escaping @Sendable (LocalAgentProposal) async throws -> Result
+    ) async -> Result? {
+        guard let proposal = pendingProposal else { return nil }
         guard proposal.requiresApproval else {
             pendingProposal = nil
-            return
+            return nil
         }
 
         isExecuting = true
         lastError = nil
+        defer { isExecuting = false }
+
         do {
-            try await execute(proposal)
+            let result = try await execute(proposal)
             pendingProposal = nil
+            return result
         } catch {
             lastError = error.localizedDescription
+            return nil
         }
-        isExecuting = false
     }
 }
