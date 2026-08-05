@@ -11,7 +11,7 @@ final class AIProviderStore: ObservableObject {
 
     private let providersKey = "ai-provider-profiles-v1"
     private let globalModelSettingsKey = "global-model-settings-v1"
-    private let legacyOnDeviceAIKeys = [
+    private let legacyDownloadedModelKeys = [
         "local-gguf-models-v1",
         "local-model-runtime-settings-v1"
     ]
@@ -47,13 +47,14 @@ final class AIProviderStore: ObservableObject {
         } else {
             providers.append(next)
         }
-        if let apiKey {
+        if next.kind != .appleIntelligence, let apiKey {
             try saveSecret(apiKey, providerId: next.id)
         }
         try persistProviders()
     }
 
     func deleteProvider(_ provider: AIProviderProfile) throws {
+        guard provider.kind != .appleIntelligence else { return }
         providers.removeAll { $0.id == provider.id }
         try deleteSecret(providerId: provider.id)
         sanitizeGlobalSettings()
@@ -62,10 +63,24 @@ final class AIProviderStore: ObservableObject {
     }
 
     func secret(for provider: AIProviderProfile) -> String? {
-        try? loadSecret(providerId: provider.id)
+        guard provider.kind != .appleIntelligence else { return nil }
+        return try? loadSecret(providerId: provider.id)
     }
 
     func testProvider(_ provider: AIProviderProfile, apiKey: String?) async -> AIProviderHealthReport {
+        if provider.kind == .appleIntelligence {
+            let status = await AppleFoundationModelService.shared.status()
+            switch status {
+            case .available:
+                return AIProviderHealthReport(
+                    status: .healthy,
+                    models: ["system-language-model"]
+                )
+            case .unavailable(let reason):
+                return AIProviderHealthReport(status: .warning(reason), models: [])
+            }
+        }
+
         guard let base = provider.normalizedBaseURL else {
             return AIProviderHealthReport(status: .failed("Invalid base URL"), models: [])
         }
@@ -82,19 +97,42 @@ final class AIProviderStore: ObservableObject {
         }
     }
 
+    var appleIntelligenceProvider: AIProviderProfile? {
+        providers.first(where: { $0.kind == .appleIntelligence && $0.isEnabled })
+    }
+
+    var shouldUseAppleIntelligence: Bool {
+        switch globalModelSettings.routingMode {
+        case .appleIntelligence:
+            return appleIntelligenceProvider != nil
+        case .automatic:
+            return appleIntelligenceProvider != nil
+        case .openAI, .openAICompatible:
+            return false
+        }
+    }
+
     private func load() {
         providers = decodeProviders()
         globalModelSettings = decode(GlobalModelSettings.self, key: globalModelSettingsKey) ?? .defaults
+        ensureAppleIntelligenceProvider()
         ensureDefaultOpenAIProvider()
         sanitizeGlobalSettings()
-        purgeLegacyOnDeviceAIState()
+        purgeLegacyDownloadedModelState()
         try? persistProviders()
         try? persistGlobalModelSettings()
     }
 
+    private func ensureAppleIntelligenceProvider() {
+        guard !providers.contains(where: { $0.kind == .appleIntelligence }) else { return }
+        providers.insert(.appleIntelligence(), at: 0)
+        try? persistProviders()
+    }
+
     private func ensureDefaultOpenAIProvider() {
         guard !providers.contains(where: { $0.kind == .openAI }) else { return }
-        providers.insert(.openAI(), at: 0)
+        let insertionIndex = providers.first?.kind == .appleIntelligence ? 1 : 0
+        providers.insert(.openAI(), at: insertionIndex)
         try? persistProviders()
     }
 
@@ -105,8 +143,10 @@ final class AIProviderStore: ObservableObject {
         }
     }
 
-    private func purgeLegacyOnDeviceAIState() {
-        for key in legacyOnDeviceAIKeys {
+    /// Remove obsolete downloaded GGUF state. Apple's system model is managed by
+    /// the operating system and is intentionally not removed or modified here.
+    private func purgeLegacyDownloadedModelState() {
+        for key in legacyDownloadedModelKeys {
             defaults.removeObject(forKey: key)
         }
         let modelsURL = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
