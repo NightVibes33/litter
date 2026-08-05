@@ -1,0 +1,27 @@
+name: Trigger PocketKernel Foundation Models Build
+
+on:
+  push:
+    branches:
+      - pocketkernel-foundation-models
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: pocketkernel-foundation-models-dispatch
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch existing unsigned IPA pipeline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run ios-unsigned-ipa.yml \
+            --repo "${{ github.repository }}" \
+            --ref pocketkernel-foundation-models \
+            -f build_mode=fast-device
