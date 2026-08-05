@@ -1,6 +1,7 @@
 import Foundation
 
 enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
+    case appleOnDevice
     case openAI
     case openAICompatible
 
@@ -8,6 +9,7 @@ enum AIProviderKind: String, Codable, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .appleOnDevice: return "Apple On-Device"
         case .openAI: return "OpenAI"
         case .openAICompatible: return "OpenAI-Compatible Server"
         }
@@ -19,6 +21,13 @@ struct AIProviderCapabilities: Codable, Equatable {
     var supportsChatCompletions: Bool
     var supportsStreaming: Bool
     var requiresNetwork: Bool
+
+    static let appleOnDevice = AIProviderCapabilities(
+        supportsModelsEndpoint: false,
+        supportsChatCompletions: true,
+        supportsStreaming: true,
+        requiresNetwork: false
+    )
 
     static let openAI = AIProviderCapabilities(
         supportsModelsEndpoint: true,
@@ -47,7 +56,8 @@ struct AIProviderProfile: Codable, Identifiable, Equatable {
     var updatedAt: Date
 
     var normalizedBaseURL: URL? {
-        AIProviderProfile.normalizedBaseURL(baseURL)
+        guard capabilities.requiresNetwork else { return nil }
+        return AIProviderProfile.normalizedBaseURL(baseURL)
     }
 
     static func normalizedBaseURL(_ raw: String) -> URL? {
@@ -63,6 +73,21 @@ struct AIProviderProfile: Codable, Identifiable, Equatable {
             return URL(string: value)
         }
         return URL(string: value + "/v1")
+    }
+
+    static func appleOnDevice() -> AIProviderProfile {
+        let now = Date()
+        return AIProviderProfile(
+            id: UUID(uuidString: "A11E0000-0000-4000-8000-000000000001")!,
+            kind: .appleOnDevice,
+            displayName: "Apple On-Device",
+            baseURL: "",
+            defaultModel: "system-language-model",
+            isEnabled: true,
+            capabilities: .appleOnDevice,
+            createdAt: now,
+            updatedAt: now
+        )
     }
 
     static func openAI(defaultModel: String = "gpt-4.1") -> AIProviderProfile {
@@ -117,7 +142,7 @@ struct AIProviderHealthReport: Equatable {
     var summary: String {
         switch status {
         case .unknown: return "Not tested"
-        case .healthy: return models.isEmpty ? "Reachable" : "Reachable · \(models.count) models"
+        case .healthy: return models.isEmpty ? "Ready" : "Ready · \(models.count) models"
         case .warning(let message): return message
         case .failed(let message): return message
         }
@@ -126,6 +151,7 @@ struct AIProviderHealthReport: Equatable {
 
 enum AIModelRoutingMode: String, CaseIterable, Identifiable {
     case automatic
+    case appleOnDevice
     case openAI
     case openAICompatible
 
@@ -134,6 +160,7 @@ enum AIModelRoutingMode: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .automatic: return "Automatic"
+        case .appleOnDevice: return "Apple On-Device"
         case .openAI: return "OpenAI"
         case .openAICompatible: return "Ollama / OpenAI-Compatible"
         }
@@ -144,6 +171,8 @@ extension AIModelRoutingMode: Codable {
     init(from decoder: Decoder) throws {
         let rawValue = try decoder.singleValueContainer().decode(String.self)
         switch rawValue {
+        case Self.appleOnDevice.rawValue:
+            self = .appleOnDevice
         case Self.openAI.rawValue:
             self = .openAI
         case Self.openAICompatible.rawValue:
@@ -164,7 +193,7 @@ struct GlobalModelSettings: Codable, Equatable {
     var preferredProviderId: UUID?
 
     static let defaults = GlobalModelSettings(
-        routingMode: .automatic,
-        preferredProviderId: nil
+        routingMode: .appleOnDevice,
+        preferredProviderId: AIProviderProfile.appleOnDevice().id
     )
 }
