@@ -26,23 +26,14 @@ jobs:
 
           app = Path('apps/ios/Sources/Litter/LitterApp.swift')
           text = app.read_text()
-          old = '''    private func standardHomeNavigationView(topInset: CGFloat, bottomInset: CGFloat) -> some View {
-              HomeNavigationView(
-                  topInset: topInset,
-                  bottomInset: bottomInset
-              )
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .ignoresSafeArea(.container, edges: [.top, .bottom])
-              .id(themeManager.themeVersion)
-              .onAppear {
-                  if !splashDismissed {
-                      splashDismissed = true
-                      (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
-                  }
-              }
-          }
-          '''
-          new = '''    private func standardHomeNavigationView(topInset: CGFloat, bottomInset: CGFloat) -> some View {
+          start_marker = '    private func standardHomeNavigationView(topInset: CGFloat, bottomInset: CGFloat) -> some View {'
+          end_marker = '    @ViewBuilder\n    private var standardOverlays: some View {'
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit('standardHomeNavigationView boundaries not found')
+
+          replacement = '''    private func standardHomeNavigationView(topInset: CGFloat, bottomInset: CGFloat) -> some View {
               TabView {
                   HomeNavigationView(
                       topInset: topInset,
@@ -72,10 +63,9 @@ jobs:
                   }
               }
           }
+
           '''
-          if old not in text:
-              raise SystemExit('standardHomeNavigationView target not found')
-          app.write_text(text.replace(old, new, 1))
+          app.write_text(text[:start] + replacement + text[end:])
 
           agent = Path('apps/ios/Sources/Litter/Models/PocketKernelLocalAgent.swift')
           text = agent.read_text()
@@ -85,8 +75,7 @@ jobs:
               raise SystemExit('exit status parser target not found')
           agent.write_text(text.replace(old, new, 1))
 
-          workflow = Path('.github/workflows/pocketkernel-root-tab-patch.yml')
-          workflow.unlink()
+          Path('.github/workflows/pocketkernel-root-tab-patch.yml').unlink()
           PY
 
       - name: Commit patch
