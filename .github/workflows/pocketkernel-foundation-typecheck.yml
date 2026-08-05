@@ -1,0 +1,36 @@
+name: PocketKernel Foundation Models Typecheck
+
+on:
+  push:
+    branches:
+      - pocketkernel/apple-foundation-models
+    paths:
+      - '.github/workflows/pocketkernel-foundation-typecheck.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    runs-on: macos-26-intel
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pocketkernel/apple-foundation-models
+          fetch-depth: 1
+          submodules: false
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+      - name: Typecheck Apple provider against iOS 26 SDK
+        run: |
+          set -euo pipefail
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun swiftc \
+            -typecheck \
+            -parse-as-library \
+            -target arm64-apple-ios26.0 \
+            -sdk "$SDK_PATH" \
+            apps/ios/Sources/Litter/Models/AppleFoundationModelProvider.swift \
+            apps/ios/Sources/Litter/Models/AIProviderModels.swift
