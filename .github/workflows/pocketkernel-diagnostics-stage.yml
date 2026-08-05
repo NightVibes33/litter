@@ -23,20 +23,23 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           workflow = Path('.github/workflows/ios-unsigned-ipa.yml')
           text = workflow.read_text()
-          old = '''          if [ "$archive_status" -ne 0 ]; then
-            exit "$archive_status"
-          fi
-'''
-          new = '''          if [ "$archive_status" -ne 0 ]; then
-            echo "::group::Xcode compiler diagnostics"
-            grep -nE '(^|[[:space:]])(error:|fatal error:)|SwiftCompile|BUILD FAILED|Command SwiftCompile failed|Command CompileSwift failed' build/xcodebuild-archive.log | tail -n 400 || true
-            echo "::endgroup::"
-            exit "$archive_status"
-          fi
-'''
+          old = "\n".join([
+              '          if [ "$archive_status" -ne 0 ]; then',
+              '            exit "$archive_status"',
+              '          fi',
+              '',
+          ])
+          new = "\n".join([
+              '          if [ "$archive_status" -ne 0 ]; then',
+              '            echo "::group::Xcode compiler diagnostics"',
+              "            grep -nE '(^|[[:space:]])(error:|fatal error:)|SwiftCompile|BUILD FAILED|Command SwiftCompile failed|Command CompileSwift failed' build/xcodebuild-archive.log | tail -n 400 || true",
+              '            echo "::endgroup::"',
+              '            exit "$archive_status"',
+              '          fi',
+              '',
+          ])
           if old not in text:
               raise SystemExit('archive failure block not found')
           workflow.write_text(text.replace(old, new, 1))
