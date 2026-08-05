@@ -1,0 +1,104 @@
+name: PocketKernel On-Device CI
+
+on:
+  push:
+    branches:
+      - 'pocketkernel/**'
+    paths:
+      - 'apps/ios/Sources/Litter/Models/AIProviderModels.swift'
+      - 'apps/ios/Sources/Litter/Models/AIProviderStore.swift'
+      - 'apps/ios/Sources/Litter/Models/AppleFoundationModelsProvider.swift'
+      - 'apps/ios/Sources/Litter/Models/LocalCommandProposal.swift'
+      - '.github/workflows/pocketkernel-on-device-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  on-device-core:
+    name: Validate on-device model core
+    runs-on: macos-26-intel
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+
+      - name: Show toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+          swift --version
+
+      - name: Type-check Apple Foundation Models provider
+        run: |
+          set -euo pipefail
+          xcrun --sdk iphonesimulator swiftc \
+            -target arm64-apple-ios26.0-simulator \
+            -typecheck \
+            apps/ios/Sources/Litter/Models/AppleFoundationModelsProvider.swift
+
+      - name: Type-check provider model routing
+        run: |
+          set -euo pipefail
+          xcrun --sdk iphonesimulator swiftc \
+            -target arm64-apple-ios18.0-simulator \
+            -typecheck \
+            apps/ios/Sources/Litter/Models/AIProviderModels.swift
+
+      - name: Parse provider store
+        run: |
+          set -euo pipefail
+          xcrun swiftc -frontend -parse \
+            apps/ios/Sources/Litter/Models/AIProviderStore.swift
+
+      - name: Execute approval-gate smoke test
+        run: |
+          set -euo pipefail
+          cat > /tmp/ApprovalGateSmoke.swift <<'SWIFT'
+          import Foundation
+
+          @main
+          enum ApprovalGateSmoke {
+              static func main() async throws {
+                  let gate = LocalActionApprovalGate()
+                  let proposal = LocalCommandProposal(
+                      command: "printf pocketkernel",
+                      rationale: "Verify explicit approval gating"
+                  )
+
+                  _ = try await gate.register(proposal)
+
+                  do {
+                      _ = try await gate.claimForExecution(id: proposal.id)
+                      fatalError("Unapproved proposal was executable")
+                  } catch LocalActionApprovalError.executionNotApproved(.proposed) {
+                      // Expected: model output cannot execute without user approval.
+                  }
+
+                  _ = try await gate.approve(id: proposal.id)
+                  let claimed = try await gate.claimForExecution(id: proposal.id)
+                  precondition(claimed.approvalState == .running)
+                  _ = try await gate.complete(id: proposal.id, succeeded: true)
+
+                  guard let completed = await gate.proposal(id: proposal.id) else {
+                      fatalError("Proposal disappeared")
+                  }
+                  precondition(completed.approvalState == .succeeded)
+                  print("approval-gate-ok")
+              }
+          }
+          SWIFT
+
+          xcrun swiftc \
+            apps/ios/Sources/Litter/Models/LocalCommandProposal.swift \
+            /tmp/ApprovalGateSmoke.swift \
+            -o /tmp/approval-gate-smoke
+          /tmp/approval-gate-smoke
