@@ -108,8 +108,30 @@ final class ConversationScreenModel {
     @ObservationIgnored private var cachedConversationItemProjections: [String: CachedConversationItemProjection] = [:]
     @ObservationIgnored private var cachedHydratedConversationItems: [HydratedConversationItem] = []
     @ObservationIgnored private var cachedProjectedConversationItems: [ConversationItem] = []
+    @ObservationIgnored private var cachedLocalConversationItems: [ConversationItem] = []
     @ObservationIgnored private var transcriptRevision: Int = 0
     @ObservationIgnored private var minigameTask: Task<Void, Never>?
+    @ObservationIgnored private var localTranscriptTask: Task<Void, Never>?
+
+    init() {
+        localTranscriptTask = Task { @MainActor [weak self] in
+            for await notification in NotificationCenter.default.notifications(
+                named: .appleLocalTranscriptDidChange
+            ) {
+                guard let self,
+                      let thread = self.thread,
+                      AppleLocalTranscriptStore.shared.notification(
+                        notification,
+                        matches: thread.key
+                      ) else { continue }
+                self.refreshState()
+            }
+        }
+    }
+
+    deinit {
+        localTranscriptTask?.cancel()
+    }
 
     func bind(
         thread: AppThreadSnapshot,
@@ -123,12 +145,14 @@ final class ConversationScreenModel {
         self.thread = thread
         self.appModel = appModel
         self.agentDirectoryVersion = agentDirectoryVersion
+        AppleLocalTranscriptStore.shared.activate(thread.key)
 
         if threadChanged {
             followScrollToken = 0
             cachedHydratedConversationItems = []
             cachedConversationItemProjections = [:]
             cachedProjectedConversationItems = []
+            cachedLocalConversationItems = []
             transcriptRevision = 0
             minigameTask?.cancel()
             minigameTask = nil
@@ -152,7 +176,11 @@ final class ConversationScreenModel {
         let currentTranscript = transcript
 
         let projection = projectConversationItems(from: thread.hydratedConversationItems)
-        let items = projection.items
+        let remoteItems = projection.items
+        let localItems = AppleLocalTranscriptStore.shared.items(for: thread.key)
+        let localItemsChanged = localItems != cachedLocalConversationItems
+        cachedLocalConversationItems = localItems
+        let items = remoteItems + localItems
         let threadStatus = conversationStatus(from: thread)
         let activeTurnId: String?
         if let value = thread.activeTurnId?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -165,7 +193,7 @@ final class ConversationScreenModel {
         let pendingUserInputRequest = appModel.snapshot?.pendingUserInputs.first {
             $0.isRelevant(to: thread.key)
         }
-        let activeTaskSummary = items.latestActiveTaskSummary
+        let activeTaskSummary = remoteItems.latestActiveTaskSummary
         let composerPrefillRequest = appModel.composerPrefillRequest.flatMap { request in
             request.threadKey == thread.key ? request : nil
         }
@@ -196,6 +224,7 @@ final class ConversationScreenModel {
 
         let transcriptChanged =
             projection.didChange
+            || localItemsChanged
             || currentTranscript.threadStatus != threadStatus
             || currentTranscript.agentDirectoryVersion != agentDirectoryVersion
         if transcriptChanged {
@@ -203,6 +232,7 @@ final class ConversationScreenModel {
             if hasTurnInFlight {
                 LLog.trace("streaming", "transcript changed during turn", fields: [
                     "projDidChange": projection.didChange,
+                    "localDidChange": localItemsChanged,
                     "itemCount": items.count,
                     "revision": transcriptRevision,
                     "threadStatus": String(describing: threadStatus)
@@ -216,13 +246,14 @@ final class ConversationScreenModel {
             renderDigest: transcriptChanged ? transcriptRevision : currentTranscript.renderDigest
         )
         var nextFollowScrollToken = followScrollToken
-        if hasTurnInFlight,
-           projection.didChange {
+        if (hasTurnInFlight && projection.didChange) || localItemsChanged {
             nextFollowScrollToken &+= 1
         }
         if transcript != nextTranscript {
             transcript = nextTranscript
-            pinnedContextItems = items
+            // Local Apple turns are display-only. Keep them out of any server-bound
+            // context feature so private prompts cannot leak into remote requests.
+            pinnedContextItems = remoteItems
         }
         if composer != composerSnapshot {
             composer = composerSnapshot
@@ -241,7 +272,9 @@ extension ConversationScreenModel {
 
         var lastUser: String?
         var lastAssistant: String?
-        for item in transcript.items.reversed() {
+        // Only use the server transcript here. Apple-local turns are intentionally
+        // excluded so opening a minigame cannot upload private on-device context.
+        for item in pinnedContextItems.reversed() {
             switch item.content {
             case .user(let data) where lastUser == nil:
                 lastUser = data.text
