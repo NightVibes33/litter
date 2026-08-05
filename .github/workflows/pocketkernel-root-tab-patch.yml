@@ -1,4 +1,4 @@
-name: PocketKernel Root Tab Patch
+name: PocketKernel Root Tab Stage
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  patch:
+  stage:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +19,7 @@ jobs:
           ref: pocketkernel/apple-foundation-models
           fetch-depth: 0
 
-      - name: Add Chat bottom tab and repair local executor parsing
+      - name: Apply dedicated Chat tab patch
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -78,10 +78,12 @@ jobs:
           Path('.github/workflows/pocketkernel-root-tab-patch.yml').unlink()
           PY
 
-      - name: Commit patch
+      - name: Commit and publish staging tag
         run: |
           git config user.name "PocketKernel CI"
           git config user.email "actions@users.noreply.github.com"
           git add -A
           git commit -m "Add dedicated PocketKernel Chat bottom tab"
-          git push origin HEAD:pocketkernel/apple-foundation-models
+          git tag -f pocketkernel-root-tab-stage-1
+          git push --force origin refs/tags/pocketkernel-root-tab-stage-1
+          echo "STAGED_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
