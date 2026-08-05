@@ -1,0 +1,26 @@
+name: Dispatch Apple Agent iOS Build
+
+on:
+  push:
+    branches:
+      - feature/apple-on-device-agent
+    paths:
+      - 'apps/ios/**'
+      - '.github/workflows/apple-agent-ios-build-dispatch.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-ios-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch unsigned IPA compile
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run ios-unsigned-ipa.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF_NAME" \
+            -f build_mode=fast-device
