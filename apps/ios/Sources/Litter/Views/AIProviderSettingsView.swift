@@ -6,6 +6,7 @@ struct AIProviderSettingsView: View {
 
     var body: some View {
         List {
+            appleIntelligenceSection
             modelSettingsSection
             providersSection
             notesSection
@@ -35,6 +36,33 @@ struct AIProviderSettingsView: View {
         }
     }
 
+    private var appleIntelligenceSection: some View {
+        Section {
+            NavigationLink {
+                AppleIntelligenceChatView()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "apple.intelligence")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(LitterTheme.accent)
+                        .frame(width: 32)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Open On-device Chat")
+                            .litterFont(.subheadline, weight: .semibold)
+                            .foregroundStyle(LitterTheme.textPrimary)
+                        Text("No API key · no AI server")
+                            .litterFont(.caption)
+                            .foregroundStyle(LitterTheme.textSecondary)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+        } header: {
+            Text("PocketKernel Local")
+                .foregroundColor(LitterTheme.textSecondary)
+        }
+    }
+
     private var modelSettingsSection: some View {
         Section {
             Picker("Default Route", selection: globalRoutingBinding) {
@@ -42,7 +70,7 @@ struct AIProviderSettingsView: View {
                     Text(mode.displayName).tag(mode)
                 }
             }
-            Text("Use ChatGPT, OpenAI, or an OpenAI-compatible server such as Ollama, LM Studio, Tailscale, or another machine on your LAN.")
+            Text("Apple Intelligence runs through Apple’s Foundation Models framework on this device. Hosted routes remain available for larger remote models and existing Codex servers.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
         } header: {
@@ -88,7 +116,7 @@ struct AIProviderSettingsView: View {
 
     private var notesSection: some View {
         Section {
-            Text("For private/local models, run them on a computer and add the server's OpenAI-compatible /v1 endpoint here. The iPhone app stays focused on the terminal, file browser, remote bridges, and Swift BuildKit.")
+            Text("PocketKernel Local is the private on-device route. The embedded iSH runtime, files, terminal, remote Codex bridges, and BuildKit remain separate execution capabilities and must return a real result before the assistant reports an action as completed.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.88))
@@ -109,13 +137,18 @@ struct AIProviderSettingsView: View {
 
     private func providerSubtitle(_ provider: AIProviderProfile) -> String {
         switch provider.kind {
-        case .openAI: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
-        case .openAICompatible: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
+        case .appleIntelligence:
+            return "System language model · on device"
+        case .openAI, .openAICompatible:
+            return provider.defaultModel.isEmpty
+                ? provider.baseURL
+                : "\(provider.defaultModel) · \(provider.baseURL)"
         }
     }
 
     private func icon(for kind: AIProviderKind) -> String {
         switch kind {
+        case .appleIntelligence: return "apple.intelligence"
         case .openAI: return "cloud"
         case .openAICompatible: return "desktopcomputer"
         }
@@ -239,19 +272,28 @@ private struct AIProviderDetailView: View {
             Section {
                 Text(provider.displayName)
                 Text(provider.kind.displayName)
-                Text(provider.baseURL)
-                    .foregroundColor(LitterTheme.textSecondary)
-                if !provider.defaultModel.isEmpty {
-                    Text("Default model: \(provider.defaultModel)")
+                if provider.kind == .appleIntelligence {
+                    Text("Runs through Apple’s Foundation Models framework without an API key or AI server.")
+                        .foregroundColor(LitterTheme.textSecondary)
+                    NavigationLink("Open Local Chat") {
+                        AppleIntelligenceChatView()
+                    }
+                } else {
+                    Text(provider.baseURL)
+                        .foregroundColor(LitterTheme.textSecondary)
+                    if !provider.defaultModel.isEmpty {
+                        Text("Default model: \(provider.defaultModel)")
+                    }
                 }
             }
+
             Section {
                 Button {
                     Task { await test() }
                 } label: {
                     HStack {
                         if isTesting { ProgressView().scaleEffect(0.8) }
-                        Text("Test Connection")
+                        Text(provider.kind == .appleIntelligence ? "Check Device Availability" : "Test Connection")
                     }
                 }
                 Text(report.summary)
@@ -262,7 +304,8 @@ private struct AIProviderDetailView: View {
                         .foregroundColor(LitterTheme.textSecondary)
                 }
             }
-            if provider.kind != .openAI {
+
+            if provider.kind != .openAI && provider.kind != .appleIntelligence {
                 Section {
                     Button(role: .destructive) {
                         try? providerStore.deleteProvider(provider)
@@ -277,6 +320,11 @@ private struct AIProviderDetailView: View {
         .tint(LitterTheme.accent)
         .navigationTitle(provider.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if provider.kind == .appleIntelligence {
+                await test()
+            }
+        }
     }
 
     private var reportColor: Color {
