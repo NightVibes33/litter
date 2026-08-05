@@ -22,6 +22,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          # This feature branch is intentionally build-on-push. Superseded
+          # workflow-dispatch runs otherwise occupy the scarce macOS queue and
+          # compile commits that can no longer become the PR head.
+          stale_run_ids="$(
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow ios-unsigned-ipa.yml \
+              --branch "$GITHUB_REF_NAME" \
+              --event workflow_dispatch \
+              --limit 50 \
+              --json databaseId,headSha,status \
+              --jq '.[] | select(.headSha != env.GITHUB_SHA and (.status == "queued" or .status == "in_progress" or .status == "pending")) | .databaseId'
+          )"
+          if [ -n "$stale_run_ids" ]; then
+            while IFS= read -r stale_run_id; do
+              [ -n "$stale_run_id" ] || continue
+              echo "Cancelling superseded iOS build run: $stale_run_id"
+              gh run cancel "$stale_run_id" --repo "$GITHUB_REPOSITORY" || true
+            done <<< "$stale_run_ids"
+          fi
+
           gh workflow run ios-unsigned-ipa.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "$GITHUB_REF_NAME" \
