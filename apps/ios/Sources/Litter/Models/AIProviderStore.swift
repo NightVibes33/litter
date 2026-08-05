@@ -11,10 +11,7 @@ final class AIProviderStore: ObservableObject {
 
     private let providersKey = "ai-provider-profiles-v1"
     private let globalModelSettingsKey = "global-model-settings-v1"
-    private let legacyOnDeviceAIKeys = [
-        "local-gguf-models-v1",
-        "local-model-runtime-settings-v1"
-    ]
+    private let appleDefaultMigrationKey = "apple-on-device-provider-migration-v1"
     private let keychainService = "com.sigkitten.litter.ai-provider-secret"
     private let defaults = UserDefaults.standard
     private let encoder = JSONEncoder()
@@ -42,18 +39,38 @@ final class AIProviderStore: ObservableObject {
     func upsertProvider(_ provider: AIProviderProfile, apiKey: String?) throws {
         var next = provider
         next.updatedAt = Date()
-        if let index = providers.firstIndex(where: { $0.id == provider.id }) {
+
+        if next.kind == .appleOnDevice {
+            let builtIn = AIProviderProfile.appleOnDevice()
+            next.id = AIProviderProfile.appleOnDeviceProviderID
+            next.displayName = builtIn.displayName
+            next.baseURL = builtIn.baseURL
+            next.defaultModel = builtIn.defaultModel
+            next.isEnabled = true
+            next.capabilities = builtIn.capabilities
+        }
+
+        if let index = providers.firstIndex(where: { $0.id == next.id }) {
+            next.createdAt = providers[index].createdAt
             providers[index] = next
         } else {
             providers.append(next)
         }
-        if let apiKey {
+
+        if next.kind != .appleOnDevice, let apiKey {
             try saveSecret(apiKey, providerId: next.id)
         }
+
+        sortProviders()
         try persistProviders()
     }
 
     func deleteProvider(_ provider: AIProviderProfile) throws {
+        guard provider.kind != .appleOnDevice else {
+            ensureBuiltInAppleProvider()
+            return
+        }
+
         providers.removeAll { $0.id == provider.id }
         try deleteSecret(providerId: provider.id)
         sanitizeGlobalSettings()
@@ -62,10 +79,25 @@ final class AIProviderStore: ObservableObject {
     }
 
     func secret(for provider: AIProviderProfile) -> String? {
-        try? loadSecret(providerId: provider.id)
+        guard provider.kind != .appleOnDevice else { return nil }
+        return try? loadSecret(providerId: provider.id)
     }
 
     func testProvider(_ provider: AIProviderProfile, apiKey: String?) async -> AIProviderHealthReport {
+        if provider.kind == .appleOnDevice {
+            let availability = await AppleFoundationModelsProvider.shared.availability()
+            if availability.isAvailable {
+                return AIProviderHealthReport(
+                    status: .healthy,
+                    models: [provider.defaultModel]
+                )
+            }
+            return AIProviderHealthReport(
+                status: .warning(availability.summary),
+                models: []
+            )
+        }
+
         guard let base = provider.normalizedBaseURL else {
             return AIProviderHealthReport(status: .failed("Invalid base URL"), models: [])
         }
@@ -74,7 +106,11 @@ final class AIProviderStore: ObservableObject {
             let models = try await fetchModels(baseURL: base, apiKey: apiKey ?? secret(for: provider))
             let model = provider.defaultModel.isEmpty ? models.first : provider.defaultModel
             if let model, !model.isEmpty {
-                try await testChatCompletion(baseURL: base, apiKey: apiKey ?? secret(for: provider), model: model)
+                try await testChatCompletion(
+                    baseURL: base,
+                    apiKey: apiKey ?? secret(for: provider),
+                    model: model
+                )
             }
             return AIProviderHealthReport(status: .healthy, models: models)
         } catch {
@@ -85,33 +121,76 @@ final class AIProviderStore: ObservableObject {
     private func load() {
         providers = decodeProviders()
         globalModelSettings = decode(GlobalModelSettings.self, key: globalModelSettingsKey) ?? .defaults
-        ensureDefaultOpenAIProvider()
+        ensureBuiltInAppleProvider()
+        migrateToAppleOnDeviceDefaultIfNeeded()
         sanitizeGlobalSettings()
-        purgeLegacyOnDeviceAIState()
+        sortProviders()
         try? persistProviders()
         try? persistGlobalModelSettings()
     }
 
-    private func ensureDefaultOpenAIProvider() {
-        guard !providers.contains(where: { $0.kind == .openAI }) else { return }
-        providers.insert(.openAI(), at: 0)
-        try? persistProviders()
+    private func ensureBuiltInAppleProvider() {
+        if let index = providers.firstIndex(where: { $0.kind == .appleOnDevice }) {
+            let existing = providers[index]
+            let builtIn = AIProviderProfile.appleOnDevice()
+            providers[index] = AIProviderProfile(
+                id: AIProviderProfile.appleOnDeviceProviderID,
+                kind: .appleOnDevice,
+                displayName: builtIn.displayName,
+                baseURL: builtIn.baseURL,
+                defaultModel: builtIn.defaultModel,
+                isEnabled: true,
+                capabilities: builtIn.capabilities,
+                createdAt: existing.createdAt,
+                updatedAt: existing.updatedAt
+            )
+            providers.removeAll {
+                $0.kind == .appleOnDevice &&
+                $0.id != AIProviderProfile.appleOnDeviceProviderID
+            }
+            return
+        }
+
+        providers.insert(.appleOnDevice(), at: 0)
+    }
+
+    private func migrateToAppleOnDeviceDefaultIfNeeded() {
+        guard !defaults.bool(forKey: appleDefaultMigrationKey) else { return }
+
+        for index in providers.indices where providers[index].kind != .appleOnDevice {
+            providers[index].isEnabled = false
+            providers[index].updatedAt = Date()
+        }
+
+        globalModelSettings = .defaults
+        defaults.set(true, forKey: appleDefaultMigrationKey)
     }
 
     private func sanitizeGlobalSettings() {
         if let preferredProviderId = globalModelSettings.preferredProviderId,
-           !providers.contains(where: { $0.id == preferredProviderId }) {
-            globalModelSettings.preferredProviderId = nil
+           !providers.contains(where: { $0.id == preferredProviderId && $0.isEnabled }) {
+            globalModelSettings.preferredProviderId = AIProviderProfile.appleOnDeviceProviderID
+        }
+
+        switch globalModelSettings.routingMode {
+        case .automatic, .appleOnDevice:
+            break
+        case .openAI:
+            if !providers.contains(where: { $0.kind == .openAI && $0.isEnabled }) {
+                globalModelSettings = .defaults
+            }
+        case .openAICompatible:
+            if !providers.contains(where: { $0.kind == .openAICompatible && $0.isEnabled }) {
+                globalModelSettings = .defaults
+            }
         }
     }
 
-    private func purgeLegacyOnDeviceAIState() {
-        for key in legacyOnDeviceAIKeys {
-            defaults.removeObject(forKey: key)
-        }
-        let modelsURL = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
-        if FileManager.default.fileExists(atPath: modelsURL.path) {
-            try? FileManager.default.removeItem(at: modelsURL)
+    private func sortProviders() {
+        providers.sort {
+            if $0.kind == .appleOnDevice { return true }
+            if $1.kind == .appleOnDevice { return false }
+            return $0.createdAt < $1.createdAt
         }
     }
 
