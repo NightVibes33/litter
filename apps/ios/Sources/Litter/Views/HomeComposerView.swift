@@ -20,6 +20,7 @@ struct HomeComposerView: View {
 
     @Environment(AppModel.self) private var appModel
     @Environment(AppState.self) private var appState
+    @StateObject private var providerStore = AIProviderStore.shared
 
     @State private var inputText = ""
     @State private var attachments: [ConversationAttachment] = []
@@ -29,6 +30,8 @@ struct HomeComposerView: View {
     @State private var showCamera = false
     @State private var showFileImporter = false
     @State private var showRemoteFilePicker = false
+    @State private var showAppleIntelligenceChat = false
+    @State private var pendingApplePrompt: String?
     @State private var selectedPhoto: PhotosPickerItem?
     @State private var voiceManager = VoiceTranscriptionManager()
     @State private var isSubmitting = false
@@ -50,7 +53,9 @@ struct HomeComposerView: View {
     @State private var isComposerFocused: Bool = false
     @State private var composerSelectionRange = NSRange(location: 0, length: 0)
 
-    private var isDisabled: Bool { project == nil }
+    private var isDisabled: Bool {
+        project == nil && !providerStore.shouldUseAppleIntelligence
+    }
     private var resolvedTranscriptionServerId: String? {
         project?.serverId ?? transcriptionServerId
     }
@@ -212,6 +217,11 @@ struct HomeComposerView: View {
             CameraView(image: $capturedImage)
                 .ignoresSafeArea()
         }
+        .fullScreenCover(isPresented: $showAppleIntelligenceChat) {
+            NavigationStack {
+                AppleIntelligenceChatView(initialPrompt: pendingApplePrompt)
+            }
+        }
         .task {
             // Focus as early as possible so the keyboard rises in parallel
             // with the Alley control spring — the two animations then feel
@@ -239,8 +249,27 @@ struct HomeComposerView: View {
             return
         }
         guard !isSubmitting else { return }
+
+        if providerStore.shouldUseAppleIntelligence {
+            guard pendingAttachments.isEmpty else {
+                errorMessage = "File and image tools are not wired to the on-device model yet. Send text only or use a Codex server for attachments."
+                return
+            }
+            guard !text.isEmpty else {
+                errorMessage = "Enter a message for Apple Intelligence."
+                return
+            }
+            pendingApplePrompt = text
+            inputText = ""
+            composerSelectionRange = NSRange(location: 0, length: 0)
+            isComposerFocused = false
+            errorMessage = nil
+            showAppleIntelligenceChat = true
+            return
+        }
+
         guard let project else {
-            errorMessage = "Pick a project before sending."
+            errorMessage = "Pick a project before sending, or select Apple Intelligence in AI Providers."
             return
         }
 

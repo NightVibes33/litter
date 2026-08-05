@@ -9,6 +9,7 @@ struct HomeModelChip: View {
     @Environment(AppModel.self) private var appModel
     @Environment(AppState.self) private var appState
     @AppStorage("fastMode") private var fastMode = false
+    @StateObject private var providerStore = AIProviderStore.shared
 
     /// The server the chip should pull available models from. Typically
     /// the currently-selected project's serverId; when nothing is picked
@@ -18,6 +19,7 @@ struct HomeModelChip: View {
     var onSheetStateChange: (Bool) -> Void = { _ in }
 
     @State private var showSheet = false
+    @State private var showAppleIntelligenceChat = false
     @State private var selectedDetent: PresentationDetent = .large
 
     /// Whether the user has escalated the pre-thread launch permissions to
@@ -41,6 +43,7 @@ struct HomeModelChip: View {
     }
 
     private var selectedModelLabel: String {
+        if providerStore.shouldUseAppleIntelligence { return \"Apple Intelligence\" }
         let trimmed = appState.preferredModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             if let match = availableModels.first(where: {
@@ -89,8 +92,12 @@ struct HomeModelChip: View {
 
     var body: some View {
         Button {
-            selectedDetent = .large
-            showSheet = true
+            if providerStore.shouldUseAppleIntelligence {
+                showAppleIntelligenceChat = true
+            } else {
+                selectedDetent = .large
+                showSheet = true
+            }
         } label: {
             HStack(spacing: 6) {
                 if fastMode {
@@ -143,8 +150,8 @@ struct HomeModelChip: View {
                 .stroke(LitterTheme.textMuted.opacity(0.55), lineWidth: 0.8)
                 .allowsHitTesting(false)
         )
-        .disabled(disabled)
-        .opacity(disabled ? 0.5 : 1)
+        .disabled(disabled && !providerStore.shouldUseAppleIntelligence)
+        .opacity(disabled && !providerStore.shouldUseAppleIntelligence ? 0.5 : 1)
         .sheet(isPresented: $showSheet) {
             ConversationOptionsSheet(
                 models: availableModels,
@@ -161,10 +168,14 @@ struct HomeModelChip: View {
             .presentationContentInteraction(.scrolls)
             .presentationBackground(LitterTheme.surface)
         }
+        .fullScreenCover(isPresented: $showAppleIntelligenceChat) {
+            NavigationStack { AppleIntelligenceChatView() }
+        }
         .onChange(of: showSheet) { _, isPresented in
             onSheetStateChange(isPresented)
         }
         .task(id: serverId) {
+            guard !providerStore.shouldUseAppleIntelligence else { return }
             guard let serverId else { return }
             await appModel.loadConversationMetadataIfNeeded(serverId: serverId)
         }

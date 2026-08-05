@@ -106,7 +106,7 @@ final class AIProviderStore: ObservableObject {
         case .appleIntelligence:
             return appleIntelligenceProvider != nil
         case .automatic:
-            return appleIntelligenceProvider != nil
+            return false
         case .openAI, .openAICompatible:
             return false
         }

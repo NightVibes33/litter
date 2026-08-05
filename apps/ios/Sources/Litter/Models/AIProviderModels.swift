@@ -193,7 +193,7 @@ struct GlobalModelSettings: Codable, Equatable {
     var preferredProviderId: UUID?
 
     static let defaults = GlobalModelSettings(
-        routingMode: .automatic,
+        routingMode: .appleIntelligence,
         preferredProviderId: nil
     )
 }
