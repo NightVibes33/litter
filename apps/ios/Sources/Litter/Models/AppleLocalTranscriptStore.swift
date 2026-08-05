@@ -119,7 +119,7 @@ final class AppleLocalTranscriptStore {
         content: String,
         summary: String
     ) {
-        let lineCount = content.split(whereSeparator: \Character.isNewline).count
+        let lineCount = content.split(whereSeparator: { $0.isNewline }).count
         let diff = content
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { "+\($0)" }
