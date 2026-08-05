@@ -1,0 +1,42 @@
+name: Dispatch PocketKernel Foundation Build
+
+on:
+  push:
+    branches:
+      - pocketkernel-foundation-models
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: dispatch-pocketkernel-foundation-build
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pocketkernel-foundation-models
+      - name: Dispatch established unsigned IPA workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run ios-unsigned-ipa.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref pocketkernel-foundation-models \
+            -f build_mode=fast-device
+      - name: Remove one-shot dispatcher
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          path='.github/workflows/dispatch-pocketkernel-foundation-build.yml'
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/contents/$path?ref=pocketkernel-foundation-models" --jq .sha)"
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/contents/$path" \
+            -f message='chore: remove one-shot Foundation Models dispatcher' \
+            -f sha="$sha" \
+            -f branch='pocketkernel-foundation-models'
