@@ -117,6 +117,13 @@ nxos_version_objc_shim = "\n".join([
     "+ (NSArray<MDKOSVersion *> *)NXOSVersionSupportedBuildVersionsRaw;",
     "@end",
 ])
+theme_objc_shim = "\n".join([
+    "#import <UIKit/UIKit.h>",
+    "@interface LDETheme : NSObject",
+    "+ (nullable instancetype)current;",
+    "@property (nonatomic, readonly, nonnull) UIColor *gutterHairlineColor;",
+    "@end",
+])
 application_management_objc_shim = "\n".join([
     "#import <Foundation/Foundation.h>",
     "@class LDEApplicationObject;",
@@ -148,7 +155,7 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/NXConsoleView.m",
-    "",
+    theme_objc_shim,
     "NXConsoleView unused Swift import",
 )
 replace_generated_swift_import(
