@@ -108,7 +108,7 @@ targets:
         INFOPLIST_FILE: ../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas/Info.plist
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas"
         GCC_PREFIX_HEADER: ../../ThirdParty/SideStore/Source/Dependencies/Roxas/Roxas/Roxas-Prefix.pch
         GCC_PRECOMPILE_PREFIX_HEADER: "YES"
     sources:
@@ -126,7 +126,7 @@ targets:
         INFOPLIST_FILE: ../../ThirdParty/SideStore/Source/AltStoreCore/Info.plist
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStoreCore $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStoreCore/Types $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared/Connections $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared/Errors $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared/Categories"
     sources:
       - path: ../../ThirdParty/SideStore/Source/AltStoreCore
         excludes:
@@ -193,7 +193,7 @@ targets:
         PRODUCT_MODULE_NAME: SideStore
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStore $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStoreCore $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared"
     sources:
       - path: Sources/KittyStoreEmbedded
       - path: ../../ThirdParty/SideStore/Source/AltStore
@@ -292,7 +292,7 @@ targets:
         SWIFT_VERSION: "6.0"
         SWIFT_INSTALL_OBJC_HEADER: "NO"
         APPLICATION_EXTENSION_API_ONLY: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/Linker $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/Headers $(TOOLCHAIN_DIR)/usr/include"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz"
     sources:
@@ -332,7 +332,7 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         SWIFT_VERSION: "6.0"
         APPLICATION_EXTENSION_API_ONLY: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/PhaseEngine $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Tools/Linker $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers"
     sources:
       - path: ../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit
         headerVisibility: public
@@ -445,7 +445,7 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
         OTHER_LDFLAGS: "$(inherited) -Wl,-U,_OBJC_CLASS_$_FBSSceneParameters -Wl,-U,_OBJC_CLASS_$_LSApplicationWorkspace -lc++ -lz -larchive -framework OpenSSL"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator"
       configs:
@@ -1251,7 +1251,7 @@ targets:
         INFOPLIST_FILE: Sources/LitterLiveActivity/Info.plist
         OTHER_LDFLAGS: ""
         SWIFT_OBJC_BRIDGING_HEADER: ""
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited)"
         SWIFT_INCLUDE_PATHS: "$(inherited)"
         OTHER_SWIFT_FLAGS: "$(inherited)"
       configs:
@@ -1297,7 +1297,7 @@ targets:
         SUPPORTS_MACCATALYST: NO
         OTHER_LDFLAGS: ""
         SWIFT_OBJC_BRIDGING_HEADER: ""
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited)"
         SWIFT_INCLUDE_PATHS: "$(inherited)"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
@@ -1336,7 +1336,7 @@ targets:
         SDKROOT: watchos
         OTHER_LDFLAGS: ""
         SWIFT_OBJC_BRIDGING_HEADER: ""
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited)"
         SWIFT_INCLUDE_PATHS: "$(inherited)"
       configs:
         Debug:
