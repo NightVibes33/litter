@@ -68,7 +68,7 @@ struct SettingsView: View {
                     experimentalSection
                     aiProvidersSection
                     diagnosticsSection
-                    if developerToolsEnabled && Self.showsEmexDESettingsEntry {
+                    if Self.showsEmexDESettingsEntry {
                         buildKitSection
                     }
                     accountSection
@@ -751,7 +751,7 @@ struct SettingsView: View {
                         Text("emexDE")
                             .litterFont(.subheadline)
                             .foregroundColor(LitterTheme.textPrimary)
-                        Text("Open the embedded replacement for Nyxian BuildKit")
+                        Text("Open the full on-device Nyxian IDE")
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textSecondary)
                     }

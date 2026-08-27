@@ -13,7 +13,7 @@ for source in Path("ThirdParty/EmexDE/Source").rglob("*"):
     if source.suffix not in {".h", ".m", ".mm", ".cpp", ".hpp"}:
         continue
     text = source.read_text(errors="ignore")
-    normalized = text.replace("#import <emexDE-Swift.h>", '#import "emexDE-Swift.h"')
+    normalized = text.replace("#import <Nyxian-Swift.h>", '#import "Nyxian-Swift.h"').replace("#import <emexDE-Swift.h>", '#import "Nyxian-Swift.h"')
     if normalized != text:
         source.write_text(normalized)
         changed.append(source)
@@ -27,7 +27,6 @@ bridge_replacements = {
     "required init?(coder: NSCoder)": "public required init?(coder: NSCoder)",
     "override func willMove(toWindow newWindow: UIWindow?)": "public override func willMove(toWindow newWindow: UIWindow?)",
     "@objc func handleThemeChange(_ notification: Notification?)": "@objc public func handleThemeChange(_ notification: Notification?)",
-    "override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?)": "public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?)",
 }
 for before, after in bridge_replacements.items():
     if before not in bridge_text and after not in bridge_text:
@@ -48,29 +47,17 @@ terminal_session_shim = "\n".join([
     "- (nonnull instancetype)initWithFrame:(CGRect)frame masterFD:(int32_t)masterFD;",
     "@end",
 ])
-if '#import "emexDE-Swift.h"' not in terminal_session_text and terminal_session_shim not in terminal_session_text:
+if '#import "Nyxian-Swift.h"' not in terminal_session_text and terminal_session_shim not in terminal_session_text:
     raise SystemExit("Missing expected emexDE terminal session Swift import")
-terminal_session_text = terminal_session_text.replace('#import "emexDE-Swift.h"', terminal_session_shim)
+terminal_session_text = terminal_session_text.replace('#import "Nyxian-Swift.h"', terminal_session_shim)
 terminal_session.write_text(terminal_session_text)
 
 os_version_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/FileList/iOSVersionPickerView.swift")
 os_version_text = os_version_bridge.read_text()
 os_version_replacements = {
-    "@objc class NXOSVersion: NSObject, Comparable": "@objc(NXOSVersion) public class NXOSVersion: NSObject, Comparable",
-    "@objc let versionString: String": "@objc public let versionString: String",
-    "@objc let versionNumeric: Double": "@objc public let versionNumeric: Double",
-    "@objc private(set) var pickerVersionString: String": "@objc public private(set) var pickerVersionString: String",
-    "@objc static let hostVersion: NXOSVersion": "@objc public static let hostVersion: NXOSVersion",
-    "@objc static var minimumBuildVersion: NXOSVersion": "@objc public static var minimumBuildVersion: NXOSVersion",
-    "@objc static var maximumBuildVersion: NXOSVersion": "@objc public static var maximumBuildVersion: NXOSVersion",
-    "@objc static var iPadOSMinimumValidityVersion: NXOSVersion": "@objc public static var iPadOSMinimumValidityVersion: NXOSVersion",
-    "@objc init?(versionString inputString: String?)": "@objc public init?(versionString inputString: String?)",
-    "@objc override convenience init()": "@objc public override convenience init()",
-    "static func == (lhs: NXOSVersion, rhs: NXOSVersion) -> Bool": "public static func == (lhs: NXOSVersion, rhs: NXOSVersion) -> Bool",
-    "static func < (lhs: NXOSVersion, rhs: NXOSVersion) -> Bool": "public static func < (lhs: NXOSVersion, rhs: NXOSVersion) -> Bool",
-    "@objc override var description: String": "@objc public override var description: String",
-    "@objc override func isEqual(_ object: Any?) -> Bool": "@objc public override func isEqual(_ object: Any?) -> Bool",
-    "@objc override var hash: Int": "@objc public override var hash: Int",
+    "@objc class NXOSVersion: NSObject": "@objc(NXOSVersion) public class NXOSVersion: NSObject",
+    "@objc static var NXOSVersionSupportedBuildVersionsRaw: [MDKOSVersion]": "@objc public static var NXOSVersionSupportedBuildVersionsRaw: [MDKOSVersion]",
+    "@objc static var NXOSVersionSupportedBuildVersions: [String]": "@objc public static var NXOSVersionSupportedBuildVersions: [String]",
 }
 for before, after in os_version_replacements.items():
     if before not in os_version_text and after not in os_version_text:
@@ -78,7 +65,7 @@ for before, after in os_version_replacements.items():
     os_version_text = os_version_text.replace(before, after)
 os_version_bridge.write_text(os_version_text)
 
-notification_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/Project/Project+NotificationServer.swift")
+notification_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/Project+NotificationServer.swift")
 notification_text = notification_bridge.read_text()
 notification_replacements = {
     "@objc class NotificationServer: NSObject": "@objc(NotificationServer) public class NotificationServer: NSObject",
@@ -102,7 +89,7 @@ application_management_bridge.write_text(application_management_text.replace(app
 def replace_generated_swift_import(source_path, shim, label):
     source = Path(source_path)
     source_text = source.read_text()
-    marker = '#import "emexDE-Swift.h"'
+    marker = '#import "Nyxian-Swift.h"'
     if marker not in source_text:
         if shim and shim in source_text:
             return
@@ -124,12 +111,9 @@ notification_objc_shim = "\n".join([
 ])
 nxos_version_objc_shim = "\n".join([
     "#import <Foundation/Foundation.h>",
-    "#import <NXBootstrap.h>",
+    "#import <MobileDevelopmentKit/MDKOSVersion.h>",
     "@interface NXOSVersion : NSObject",
-    "+ (NXOSVersion *)hostVersion;",
-    "+ (NXOSVersion *)maximumBuildVersion;",
-    "@property (nonatomic, readonly, copy) NSString *versionString;",
-    "@property (nonatomic, readonly, copy) NSString *pickerVersionString;",
+    "+ (NSArray<MDKOSVersion *> *)NXOSVersionSupportedBuildVersionsRaw;",
     "@end",
 ])
 application_management_objc_shim = "\n".join([
@@ -142,40 +126,40 @@ application_management_objc_shim = "\n".join([
     "@end",
 ])
 replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/NXBootstrap.m",
+    "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m",
     notification_objc_shim,
     "NXBootstrap notification bridge",
 )
 replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Process/PEProcessManager.m",
+    "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEProcessManager.m",
     notification_objc_shim,
     "PEProcessManager notification bridge",
 )
 replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/Project/NXTarget.m",
-    nxos_version_objc_shim,
-    "NXTarget OS version bridge",
+    "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXTarget.m",
+    "",
+    "NXTarget unused Swift import",
 )
 replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/Project/NXProject.m",
+    "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEUserspaceManager.m",
+    "",
+    "PEUserspaceManager unused Swift import",
+)
+replace_generated_swift_import(
+    "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/NXConsoleView.m",
+    "",
+    "NXConsoleView unused Swift import",
+)
+replace_generated_swift_import(
+    "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m",
     nxos_version_objc_shim,
     "NXProject OS version bridge",
 )
-replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m",
-    application_management_objc_shim,
-    "LDEApplicationWorkspace application-management bridge",
-)
-replace_generated_swift_import(
-    "ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport/Shell.m",
-    "",
-    "Shell unused Swift import",
-)
 
-cc_driver = Path("ThirdParty/EmexDE/Source/CoreCompiler/Tools/CCDriver.cpp")
+cc_driver = Path("ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/CCDriver.cpp")
 cc_driver_text = cc_driver.read_text()
-cc_driver_before = '        case CCDriverTypeSwift:\n        {\n            if(!driver->swiftCompilation)\n            {\n                return nullptr;\n            }\n            const auto &Args = driver->swiftCompilation->getArgs();\n            if(const llvm::opt::Arg *A = Args.getLastArg(swift::options::OPT_sdk))\n            {\n                cxxstr = A->getValue();\n            }\n            break;\n        }\n'
-cc_driver_after = '        case CCDriverTypeSwift:\n        {\n            for(size_t i = 0; i + 1 < driver->argStorage.size(); ++i)\n            {\n                if(driver->argStorage[i] == "-sdk")\n                {\n                    cxxstr = driver->argStorage[i + 1];\n                    break;\n                }\n            }\n            break;\n        }\n'
+cc_driver_before = '        case kCCDriverTypeSwift:\n        {\n            if(!driver->swiftCompilation)\n            {\n                return nullptr;\n            }\n            const auto &Args = driver->swiftCompilation->getArgs();\n            if(const llvm::opt::Arg *A = Args.getLastArg(swift::options::OPT_sdk))\n            {\n                cxxstr = A->getValue();\n            }\n            break;\n        }\n'
+cc_driver_after = '        case kCCDriverTypeSwift:\n        {\n            for(size_t i = 0; i + 1 < driver->argStorage.size(); ++i)\n            {\n                if(driver->argStorage[i] == "-sdk")\n                {\n                    cxxstr = driver->argStorage[i + 1];\n                    break;\n                }\n            }\n            break;\n        }\n'
 if cc_driver_before not in cc_driver_text and cc_driver_after not in cc_driver_text:
     raise SystemExit("Missing expected CoreCompiler Swift SDK lookup block")
 cc_driver.write_text(cc_driver_text.replace(cc_driver_before, cc_driver_after))

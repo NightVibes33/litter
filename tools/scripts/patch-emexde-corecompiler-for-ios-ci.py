@@ -578,7 +578,7 @@ def replace_or_confirm(text: str, old: str, new: str, label: str) -> str:
 
 
 def patch(root: Path) -> None:
-    cc_root = root / "ThirdParty/EmexDE/Source/CoreCompiler"
+    cc_root = root / "ThirdParty/EmexDE/Source/Frameworks/CoreCompiler"
     cc_driver = cc_root / "Tools/CCDriver.cpp"
     dependency_scanner = cc_root / "Tools/CCDependencyScanner.cpp"
     cc_ast_unit = cc_root / "Tools/CCASTUnit.cpp"

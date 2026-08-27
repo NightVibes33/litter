@@ -4,7 +4,7 @@ set -euo pipefail
 RELEASE_TAG="${EMEXDE_CORECOMPILER_RELEASE_TAG:-emexde-corecompiler}"
 REPO="${GITHUB_REPOSITORY:-NightVibes33/litter}"
 ROOT="${ROOT:-$(pwd)}"
-CORECOMPILER_ROOT="$ROOT/ThirdParty/EmexDE/Source/CoreCompiler"
+CORECOMPILER_ROOT="$ROOT/ThirdParty/EmexDE/Source/Frameworks/CoreCompiler"
 DEST="$CORECOMPILER_ROOT/CoreCompilerSupportLibs"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT

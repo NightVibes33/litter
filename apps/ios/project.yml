@@ -75,7 +75,7 @@ packages:
     path: ../../ThirdParty/SideStore/AltSign
   EmexDERunestone:
     url: https://github.com/emexlab/Runestone
-    exactVersion: "0.0.2"
+    branch: main
   EmexDESwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
     exactVersion: "1.13.0"
@@ -95,8 +95,8 @@ packages:
     url: https://github.com/emexlab/tree-sitter-swift
     branch: main
   EmexDEUIOnboarding:
-    url: https://github.com/lascic/UIOnboarding.git
-    exactVersion: "2.0.5"
+    url: https://github.com/emexlab/UIOnboarding
+    branch: main
 targets:
   Roxas:
     type: framework
@@ -292,31 +292,31 @@ targets:
         SWIFT_VERSION: "6.0"
         SWIFT_INSTALL_OBJC_HEADER: "NO"
         APPLICATION_EXTENSION_API_ONLY: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/Tools/Linker $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/Headers $(TOOLCHAIN_DIR)/usr/include"
-        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/Linker $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/Headers $(TOOLCHAIN_DIR)/usr/include"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz"
     sources:
-      - path: ../../ThirdParty/EmexDE/Source/CoreCompiler
+      - path: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler
         headerVisibility: public
         excludes:
           - CCBaseSwift.swift
           - CoreCompiler.docc/**
           - CoreCompilerSupportLibs/**
     dependencies:
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftBasicFormat.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftCompilerPluginMessageHandling.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftDiagnostics.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftIDEUtils.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftIfConfig.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftLexicalLookup.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftOperators.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftParser.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftParserDiagnostics.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntax.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxBuilder.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxMacroExpansion.dylib
-      - framework: ../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxMacros.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftBasicFormat.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftCompilerPluginMessageHandling.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftDiagnostics.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftIDEUtils.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftIfConfig.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftLexicalLookup.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftOperators.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftParser.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftParserDiagnostics.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntax.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxBuilder.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxMacroExpansion.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxMacros.dylib
 
   MobileDevelopmentKit:
     type: framework
@@ -332,9 +332,9 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         SWIFT_VERSION: "6.0"
         APPLICATION_EXTENSION_API_ONLY: "YES"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/PhaseEngine $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/MobileDevelopmentKit/Tools/Linker $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/PhaseEngine $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Tools/Linker $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers"
     sources:
-      - path: ../../ThirdParty/EmexDE/Source/MobileDevelopmentKit
+      - path: ../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit
         headerVisibility: public
         excludes:
           - MobileDevelopmentKit.docc/**
@@ -358,18 +358,16 @@ targets:
         SWIFT_OBJC_INTERFACE_HEADER_NAME: emexDE-Swift.h
         GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) HOST_ENV=1 CHAR_BIT=8 INT_MAX=2147483647 LONG_MAX=9223372036854775807L ULONG_MAX=18446744073709551615UL"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz -larchive -framework OpenSSL -framework FrontBoard -framework FrontBoardServices -framework RunningBoardServices -framework BackBoardServices"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
-        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Synpush $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/JBSupport $(SRCROOT)/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64 $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
     sources:
       - path: Sources/EmexDEEmbedded
-      - path: ../../ThirdParty/EmexDE/Source/CoreCompiler/CCBaseSwift.swift
+      - path: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CCBaseSwift.swift
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationObject.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m
-        headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/containerd/PEContainer.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian
         headerVisibility: project
@@ -378,31 +376,19 @@ targets:
           - Preview Content/**
           - Nyxian.entitlements
           - bridge-jb.h
-          - LindChain/JBSupport/Shell.m
-          - LindChain/JBSupport/tshelper
-          - LindChain/LiveContainer/LCBootstrap.m
-          - LindChain/LiveContainer/Tweaks/Dead10ccFix.m
-          - LindChain/LiveContainer/Tweaks/Dyld.m
-          - LindChain/LiveContainer/Tweaks/NSFileManager+GuestHooks.m
-          - LindChain/LiveContainer/Tweaks/NSUserDefaults.m
-          - LindChain/LiveContainer/Tweaks/SecItem.m
-          - LindChain/LiveContainer/Tweaks/UIKit+GuestHooksInit.m
-          - LindChain/ProcEnvironment/application.m
-          - LindChain/ProcEnvironment/cred.c
-          - LindChain/ProcEnvironment/ioctl.c
-          - LindChain/ProcEnvironment/libproc.m
-          - LindChain/ProcEnvironment/posix_spawn.m
-          - LindChain/ProcEnvironment/proxy.m
-          - LindChain/ProcEnvironment/syscall.c
-          - LindChain/ProcEnvironment/sysctl.c
-          - LindChain/ProcEnvironment/tfp.c
-          - LindChain/ProcEnvironment/vfork.c
-          - LindChain/ProcEnvironment/Surface/limits.h
-          - LindChain/ProcEnvironment/posix_spawn.h
-          - LindChain/ProcEnvironment/syscall.h
-          - LindChain/ProcEnvironment/sysctl.h
-          - LindChain/ProcEnvironment/Surface/sys/syscall.h
-          - LindChain/ProcEnvironment/Surface/sys/host/sysctl.h
+          - LindChain/ProcEnvironment/LiveContainer/LCBootstrap.m
+          - LindChain/ProcEnvironment/LiveContainer/Tweaks/Dead10ccFix.m
+          - LindChain/ProcEnvironment/LiveContainer/Tweaks/Dyld.m
+          - LindChain/ProcEnvironment/LiveContainer/Tweaks/NSFileManager+GuestHooks.m
+          - LindChain/ProcEnvironment/LiveContainer/Tweaks/NSUserDefaults.m
+          - LindChain/ProcEnvironment/LiveContainer/Tweaks/SecItem.m
+          - LindChain/ProcEnvironment/LiveContainer/Tweaks/UIKit+GuestHooksInit.m
+          - LindChain/ProcEnvironment/Shims/application.m
+          - LindChain/ProcEnvironment/Shims/libproc.m
+          - LindChain/ProcEnvironment/Shims/posix_spawn.m
+          - LindChain/ProcEnvironment/Shims/proxy.m
+          - LindChain/ProcEnvironment/Shims/README.txt
+          - LindChain/ProcEnvironment/Shims/vfork.c
           - LindChain/Private/Frameworks/**
           - LindChain/OpenSSL.xcframework/**
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/Assets.xcassets
@@ -485,81 +471,75 @@ targets:
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspaceInternal.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/containerd/PEContainerService.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Debugger/Utils.c
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspaceService.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/litehook/litehook.c
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/Utils.c
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/LCBootstrap.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/litehook/litehook.c
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/LCMachOUtils.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/LCBootstrap.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/Dead10ccFix.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/LCMachOUtils.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/Dyld.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/Dead10ccFix.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/NSFileManager+GuestHooks.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/Dyld.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/NSUserDefaults.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/NSFileManager+GuestHooks.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/SecItem.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/NSUserDefaults.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/Tweaks/UIKit+GuestHooksInit.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/SecItem.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/utils.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/UIKit+GuestHooksInit.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/LiveContainer/ZSign/Utils.mm
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/utils.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign/Utils.mm
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/mach/fileport.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/application.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/application.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/attrstrnilfix.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/attrstrnilfix.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/cred.c
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/environment.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/environment.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/libproc.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/ioctl.c
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/LSApplicationWorkspace.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/libproc.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEArchiveHandle.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/ArchiveObject.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEFileTable.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/FDMapObject.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEFileHandle.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/FDObject.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEMachPort.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/PEMachPort.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/panic.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Object/PEObject.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/posix_spawn.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/panic.m
-        headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/posix_spawn.m
-        headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/proxy.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/proxy.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Surface/extra/relax.c
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/syscall.c
-        headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Syscall/mach_syscall_client.c
-        headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/sysctl.c
-        headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/tfp.c
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Surface/trust/signing.c
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/fd.c
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/ktfp.c
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/vfork.c
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/vnode.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/vfork.c
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/CFTools.c
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/Swizzle.m
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/Swizzle.c
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/Zip.m
         headerVisibility: project
@@ -775,7 +755,7 @@ targets:
             echo "Embedded $name.framework from $source"
           }
           embed_emexde_corecompiler_artifacts() {
-            support_source="$SRCROOT/../../ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
+            support_source="$SRCROOT/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs"
             if ! find "$support_source" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
               echo "error: missing emexDE CoreCompilerSupportLibs at $support_source" >&2
               exit 1
@@ -897,10 +877,6 @@ targets:
           fi
           rm -rf "$RESOURCES_DIR/Shared"
           /usr/bin/ditto "$EMEXDE_ROOT/Shared" "$RESOURCES_DIR/Shared"
-          if [ -f "$EMEXDE_ROOT/Nyxian/LindChain/JBSupport/tshelper" ]; then
-            /usr/bin/ditto "$EMEXDE_ROOT/Nyxian/LindChain/JBSupport/tshelper" "$RESOURCES_DIR/tshelper"
-            /bin/chmod 755 "$RESOURCES_DIR/tshelper" || true
-          fi
           EMEXDE_FRAMEWORK="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/emexDE.framework"
           if [ -d "$EMEXDE_FRAMEWORK/Frameworks" ]; then
             for private_framework in               FrontBoard.framework               FrontBoardServices.framework               RunningBoardServices.framework               BackBoardServices.framework

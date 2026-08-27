@@ -381,15 +381,15 @@ jobs:
         id: emexde_corecompiler_cache
         uses: actions/cache/restore@v4
         with:
-          path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
-          key: ios-emexde-corecompiler-artifacts-v1-${{ runner.os }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/CoreCompiler/**/*.swift') }}
+          path: ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs
+          key: ios-emexde-corecompiler-artifacts-v1-${{ runner.os }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.swift') }}
 
       - name: Check emexDE CoreCompiler artifact cache
         if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1'
         id: emexde_corecompiler_prebuilt
         run: |
           set -euo pipefail
-          support_source="ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs"
+          support_source="ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs"
           if [ "${{ steps.emexde_corecompiler_cache.outputs.cache-hit }}" != "true" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "No exact emexDE CoreCompiler artifact cache hit."
@@ -456,7 +456,7 @@ jobs:
         if: env.LITTER_TESTFLIGHT_SKIP_EMEXDE != '1' && steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
-          path: ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs
+          path: ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs
           key: ${{ steps.emexde_corecompiler_cache.outputs.cache-primary-key }}
 
       - name: Patch emexDE CoreCompiler Swift frontend for TestFlight CI
@@ -486,7 +486,7 @@ jobs:
             )
           fi
           if [[ "${LITTER_TESTFLIGHT_SKIP_EMEXDE:-0}" != "1" ]]; then
-            paths+=(ThirdParty/EmexDE/Source/CoreCompiler/CoreCompilerSupportLibs)
+            paths+=(ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs)
           fi
           tar -czf .ci-prep/ios/ios-release-prep.tgz -C . "${paths[@]}"
 
