@@ -341,6 +341,41 @@ targets:
     dependencies:
       - target: CoreCompiler
 
+  HWHook:
+    type: library.static
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_NAME: HWHook
+        SKIP_INSTALL: "YES"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source"
+        OTHER_LDFLAGS: "$(inherited) -ObjC"
+    sources:
+      - path: ../../ThirdParty/EmexDE/Source/Frameworks/HWHook
+        headerVisibility: public
+
+  LiveShim:
+    type: framework
+    platform: iOS
+    deploymentTarget: "18.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.liveshim
+        PRODUCT_MODULE_NAME: LiveShim
+        GENERATE_INFOPLIST_FILE: "YES"
+        DEFINES_MODULE: "YES"
+        SKIP_INSTALL: "YES"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/LiveShim $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/LiveShim/shims"
+    sources:
+      - path: ../../ThirdParty/EmexDE/Source/Frameworks/LiveShim
+        headerVisibility: public
+        excludes:
+          - LiveShim.docc/**
+    dependencies:
+      - target: HWHook
+
+
   emexDE:
     type: framework
     platform: iOS
@@ -359,7 +394,7 @@ targets:
         SWIFT_OBJC_INTERFACE_HEADER_NAME: emexDE-Swift.h
         GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) HOST_ENV=1 CHAR_BIT=8 INT_MAX=2147483647 LONG_MAX=9223372036854775807L ULONG_MAX=18446744073709551615UL"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz -larchive -framework OpenSSL -framework FrontBoard -framework FrontBoardServices -framework RunningBoardServices -framework BackBoardServices"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign/common $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign/common $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64 $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
@@ -400,6 +435,7 @@ targets:
     dependencies:
       - target: CoreCompiler
       - target: MobileDevelopmentKit
+      - target: LiveShim
       - sdk: MobileCoreServices.framework
       - sdk: UniformTypeIdentifiers.framework
       - sdk: libarchive.tbd
@@ -445,7 +481,7 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
         OTHER_LDFLAGS: "$(inherited) -Wl,-U,_OBJC_CLASS_$_FBSSceneParameters -Wl,-U,_OBJC_CLASS_$_LSApplicationWorkspace -lc++ -lz -larchive -framework OpenSSL"
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign/common $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64"
         "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator"
       configs:
@@ -549,6 +585,7 @@ targets:
     dependencies:
       - target: CoreCompiler
       - target: MobileDevelopmentKit
+      - target: LiveShim
       - sdk: libarchive.tbd
       - sdk: libz.tbd
 
@@ -638,6 +675,9 @@ targets:
         embed: true
         link: false
       - target: emexDE
+        embed: true
+        link: false
+      - target: LiveShim
         embed: true
         link: false
       - target: LiveProcess

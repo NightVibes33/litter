@@ -51,6 +51,8 @@ SIDELOAD_TARGETS = (
 )
 
 EMEXDE_TARGETS = (
+    "HWHook",
+    "LiveShim",
     "CoreCompiler",
     "MobileDevelopmentKit",
     "emexDE",
@@ -76,6 +78,10 @@ DEPENDENCY_BLOCKS = (
         link: false
 """,
     """      - target: emexDE
+        embed: true
+        link: false
+""",
+    """      - target: LiveShim
         embed: true
         link: false
 """,
