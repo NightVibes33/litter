@@ -19,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT_YML = ROOT / "apps/ios/project.yml"
 INFO_PLIST = ROOT / "apps/ios/Sources/Litter/Info.plist"
+BRIDGING_HEADER = ROOT / "apps/ios/Sources/Litter/Bridge/codex_bridge_objc.h"
 
 SIDELOAD_PACKAGES = (
     "AltSign",
@@ -210,7 +211,6 @@ def strip_info_plist_app_store_sensitive_keys(text: str) -> str:
     return text
 
 
-
 def transform(text: str) -> str:
     for before, after in PROJECT_LINE_REPLACEMENTS:
         text = text.replace(before, after)
@@ -262,6 +262,10 @@ def validate_fast_project(text: str) -> None:
         "copy_upstream_source emexDE",
         "../../ThirdParty/SideStore",
         "../../ThirdParty/EmexDE",
+        "UnsignedOnly/BadQuery",
+        "bad_query.c",
+        "bad_query.h",
+        "DeviceRouteAccess.swift",
     )
     for marker in forbidden_markers:
         if marker in text:
@@ -281,7 +285,6 @@ def validate_fast_project(text: str) -> None:
     if re.search(r'^        PRODUCT_NAME: Littër$', text, re.MULTILINE):
         failures.append("still uses non-ASCII iOS PRODUCT_NAME")
 
-
     if '        INFOPLIST_KEY_UIBackgroundModes: "audio fetch remote-notification picture-in-picture"\n' in text:
         failures.append("still enables background modes on the TestFlight-safe app target")
     if '    attributes:\n      SystemCapabilities:\n        com.apple.BackgroundModes:\n          enabled: true\n' in text:
@@ -299,6 +302,12 @@ def main() -> None:
     original = PROJECT_YML.read_text()
     patched = transform(original)
     validate_fast_project(patched)
+
+    bridge_header = BRIDGING_HEADER.read_text()
+    if "bad_query" in bridge_header or "UnsignedOnly/BadQuery" in bridge_header:
+        raise SystemExit(
+            "Fast TestFlight project patch failed: unsigned bad_query was referenced by the committed bridging header"
+        )
 
     info_original = INFO_PLIST.read_text()
     info_patched = strip_info_plist_app_store_sensitive_keys(info_original)
@@ -320,7 +329,7 @@ def main() -> None:
         raise SystemExit("Fast TestFlight Info.plist patch failed:\n- " + "\n- ".join(info_failures))
 
     if args.check:
-        print("Fast TestFlight project patch is App Store safe.")
+        print("Fast TestFlight project patch is App Store safe and contains no bad_query device-route implementation.")
         return
 
     if patched == original and info_patched == info_original:
@@ -330,7 +339,7 @@ def main() -> None:
     PROJECT_YML.write_text(patched)
     if info_patched != info_original:
         INFO_PLIST.write_text(info_patched)
-    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, embedded Watch app, background modes, file sharing, document-in-place support, IPA/signing document types, sideload URL schemes, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
+    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, embedded Watch app, background modes, file sharing, document-in-place support, IPA/signing document types, sideload URL schemes, private BuildKit packaging, and bad_query device-route sources are excluded; runtime feature flags hide those routes.")
 
 
 if __name__ == "__main__":

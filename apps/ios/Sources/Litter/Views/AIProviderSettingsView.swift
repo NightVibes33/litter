@@ -42,7 +42,7 @@ struct AIProviderSettingsView: View {
                     Text(mode.displayName).tag(mode)
                 }
             }
-            Text("Use ChatGPT, OpenAI, or an OpenAI-compatible server such as Ollama, LM Studio, Tailscale, or another machine on your LAN.")
+            Text("Apple On-Device runs privately on supported iPhones. OpenAI and compatible servers remain available as optional network fallbacks.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
         } header: {
@@ -88,7 +88,7 @@ struct AIProviderSettingsView: View {
 
     private var notesSection: some View {
         Section {
-            Text("For private/local models, run them on a computer and add the server's OpenAI-compatible /v1 endpoint here. The iPhone app stays focused on the terminal, file browser, remote bridges, and Swift BuildKit.")
+            Text("Apple On-Device keeps prompts, proposed actions, approvals, and results on this device. For larger local models, add a private OpenAI-compatible endpoint from Ollama, LM Studio, Tailscale, or another trusted machine.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.88))
@@ -109,6 +109,7 @@ struct AIProviderSettingsView: View {
 
     private func providerSubtitle(_ provider: AIProviderProfile) -> String {
         switch provider.kind {
+        case .appleOnDevice: return "Private · Offline · \(provider.defaultModel)"
         case .openAI: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
         case .openAICompatible: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
         }
@@ -116,6 +117,7 @@ struct AIProviderSettingsView: View {
 
     private func icon(for kind: AIProviderKind) -> String {
         switch kind {
+        case .appleOnDevice: return "apple.logo"
         case .openAI: return "cloud"
         case .openAICompatible: return "desktopcomputer"
         }
@@ -233,14 +235,17 @@ private struct AIProviderDetailView: View {
     let provider: AIProviderProfile
     @State private var report = AIProviderHealthReport(status: .unknown, models: [])
     @State private var isTesting = false
+    @State private var showClearHistoryConfirmation = false
 
     var body: some View {
         List {
             Section {
                 Text(provider.displayName)
                 Text(provider.kind.displayName)
-                Text(provider.baseURL)
-                    .foregroundColor(LitterTheme.textSecondary)
+                if !provider.baseURL.isEmpty {
+                    Text(provider.baseURL)
+                        .foregroundColor(LitterTheme.textSecondary)
+                }
                 if !provider.defaultModel.isEmpty {
                     Text("Default model: \(provider.defaultModel)")
                 }
@@ -251,7 +256,7 @@ private struct AIProviderDetailView: View {
                 } label: {
                     HStack {
                         if isTesting { ProgressView().scaleEffect(0.8) }
-                        Text("Test Connection")
+                        Text(provider.kind == .appleOnDevice ? "Check Availability" : "Test Connection")
                     }
                 }
                 Text(report.summary)
@@ -262,7 +267,20 @@ private struct AIProviderDetailView: View {
                         .foregroundColor(LitterTheme.textSecondary)
                 }
             }
-            if provider.kind != .openAI {
+            if provider.kind == .appleOnDevice {
+                Section {
+                    Button(role: .destructive) {
+                        showClearHistoryConfirmation = true
+                    } label: {
+                        Label("Clear On-Device Agent History", systemImage: "trash")
+                    }
+                } header: {
+                    Text("Privacy")
+                } footer: {
+                    Text("Removes every locally stored Apple on-device prompt, response, approval record, command result, and file-change entry. Remote conversations are not affected.")
+                }
+            }
+            if provider.kind == .openAICompatible {
                 Section {
                     Button(role: .destructive) {
                         try? providerStore.deleteProvider(provider)
@@ -277,6 +295,18 @@ private struct AIProviderDetailView: View {
         .tint(LitterTheme.accent)
         .navigationTitle(provider.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            "Clear all Apple on-device history?",
+            isPresented: $showClearHistoryConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear History", role: .destructive) {
+                AppleLocalTranscriptStore.shared.clearAll()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes the local agent timeline from every conversation on this device.")
+        }
     }
 
     private var reportColor: Color {

@@ -11,10 +11,7 @@ final class AIProviderStore: ObservableObject {
 
     private let providersKey = "ai-provider-profiles-v1"
     private let globalModelSettingsKey = "global-model-settings-v1"
-    private let legacyOnDeviceAIKeys = [
-        "local-gguf-models-v1",
-        "local-model-runtime-settings-v1"
-    ]
+    private let legacyOnDeviceAIKeys = ["local-gguf-models-v1", "local-model-runtime-settings-v1"]
     private let keychainService = "com.sigkitten.litter.ai-provider-secret"
     private let defaults = UserDefaults.standard
     private let encoder = JSONEncoder()
@@ -27,9 +24,7 @@ final class AIProviderStore: ObservableObject {
         migrateOpenAIKeyIfNeeded()
     }
 
-    func reload() {
-        load()
-    }
+    func reload() { load() }
 
     func updateGlobalModelSettings(_ update: (inout GlobalModelSettings) -> Void) {
         var next = globalModelSettings
@@ -47,13 +42,14 @@ final class AIProviderStore: ObservableObject {
         } else {
             providers.append(next)
         }
-        if let apiKey {
+        if provider.capabilities.requiresNetwork, let apiKey {
             try saveSecret(apiKey, providerId: next.id)
         }
         try persistProviders()
     }
 
     func deleteProvider(_ provider: AIProviderProfile) throws {
+        guard provider.kind != .appleOnDevice else { return }
         providers.removeAll { $0.id == provider.id }
         try deleteSecret(providerId: provider.id)
         sanitizeGlobalSettings()
@@ -62,10 +58,19 @@ final class AIProviderStore: ObservableObject {
     }
 
     func secret(for provider: AIProviderProfile) -> String? {
-        try? loadSecret(providerId: provider.id)
+        guard provider.capabilities.requiresNetwork else { return nil }
+        return try? loadSecret(providerId: provider.id)
     }
 
     func testProvider(_ provider: AIProviderProfile, apiKey: String?) async -> AIProviderHealthReport {
+        if provider.kind == .appleOnDevice {
+            let description = await AppleOnDeviceAgent.shared.availabilityDescription
+            if description == "Available" {
+                return AIProviderHealthReport(status: .healthy, models: [provider.defaultModel])
+            }
+            return AIProviderHealthReport(status: .failed(description), models: [])
+        }
+
         guard let base = provider.normalizedBaseURL else {
             return AIProviderHealthReport(status: .failed("Invalid base URL"), models: [])
         }
@@ -85,30 +90,40 @@ final class AIProviderStore: ObservableObject {
     private func load() {
         providers = decodeProviders()
         globalModelSettings = decode(GlobalModelSettings.self, key: globalModelSettingsKey) ?? .defaults
-        ensureDefaultOpenAIProvider()
+        ensureBuiltInProviders()
         sanitizeGlobalSettings()
         purgeLegacyOnDeviceAIState()
         try? persistProviders()
         try? persistGlobalModelSettings()
     }
 
-    private func ensureDefaultOpenAIProvider() {
-        guard !providers.contains(where: { $0.kind == .openAI }) else { return }
-        providers.insert(.openAI(), at: 0)
-        try? persistProviders()
+    private func ensureBuiltInProviders() {
+        let apple = AIProviderProfile.appleOnDevice()
+        if let index = providers.firstIndex(where: { $0.kind == .appleOnDevice }) {
+            providers[index].displayName = apple.displayName
+            providers[index].defaultModel = apple.defaultModel
+            providers[index].baseURL = ""
+            providers[index].capabilities = .appleOnDevice
+            providers[index].isEnabled = true
+        } else {
+            providers.insert(apple, at: 0)
+        }
+
+        if !providers.contains(where: { $0.kind == .openAI }) {
+            providers.append(.openAI())
+        }
     }
 
     private func sanitizeGlobalSettings() {
         if let preferredProviderId = globalModelSettings.preferredProviderId,
-           !providers.contains(where: { $0.id == preferredProviderId }) {
-            globalModelSettings.preferredProviderId = nil
+           !providers.contains(where: { $0.id == preferredProviderId && $0.isEnabled }) {
+            globalModelSettings.preferredProviderId = AIProviderProfile.appleOnDevice().id
+            globalModelSettings.routingMode = .appleOnDevice
         }
     }
 
     private func purgeLegacyOnDeviceAIState() {
-        for key in legacyOnDeviceAIKeys {
-            defaults.removeObject(forKey: key)
-        }
+        for key in legacyOnDeviceAIKeys { defaults.removeObject(forKey: key) }
         let modelsURL = URL.documentsDirectory.appendingPathComponent("Models", isDirectory: true)
         if FileManager.default.fileExists(atPath: modelsURL.path) {
             try? FileManager.default.removeItem(at: modelsURL)
@@ -123,13 +138,11 @@ final class AIProviderStore: ObservableObject {
     }
 
     private func persistProviders() throws {
-        let data = try encoder.encode(providers)
-        defaults.set(data, forKey: providersKey)
+        defaults.set(try encoder.encode(providers), forKey: providersKey)
     }
 
     private func persistGlobalModelSettings() throws {
-        let data = try encoder.encode(globalModelSettings)
-        defaults.set(data, forKey: globalModelSettingsKey)
+        defaults.set(try encoder.encode(globalModelSettings), forKey: globalModelSettingsKey)
     }
 
     private func decode<T: Decodable>(_ type: T.Type, key: String) -> T? {
@@ -138,25 +151,22 @@ final class AIProviderStore: ObservableObject {
     }
 
     private func decodeProviders() -> [AIProviderProfile] {
-        guard let data = defaults.data(forKey: providersKey) else { return [] }
-        guard let wrappers = try? decoder.decode([LossyProviderProfile].self, from: data) else { return [] }
+        guard let data = defaults.data(forKey: providersKey),
+              let wrappers = try? decoder.decode([LossyProviderProfile].self, from: data) else { return [] }
         return wrappers.compactMap(\.value)
     }
 
     private func fetchModels(baseURL: URL, apiKey: String?) async throws -> [String] {
-        let url = baseURL.appendingPathComponent("models")
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: baseURL.appendingPathComponent("models"))
         request.timeoutInterval = 12
         applyAuth(apiKey, to: &request)
         let (data, response) = try await URLSession.shared.data(for: request)
         try validate(response)
-        let decoded = try JSONDecoder().decode(OpenAIModelsResponse.self, from: data)
-        return decoded.data.map(\.id).sorted()
+        return try JSONDecoder().decode(OpenAIModelsResponse.self, from: data).data.map(\.id).sorted()
     }
 
     private func testChatCompletion(baseURL: URL, apiKey: String?, model: String) async throws {
-        let url = baseURL.appendingPathComponent("chat/completions")
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: baseURL.appendingPathComponent("chat/completions"))
         request.httpMethod = "POST"
         request.timeoutInterval = 20
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -173,19 +183,14 @@ final class AIProviderStore: ObservableObject {
 
     private func applyAuth(_ apiKey: String?, to request: inout URLRequest) {
         let trimmed = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        if !trimmed.isEmpty {
-            request.setValue("Bearer \(trimmed)", forHTTPHeaderField: "Authorization")
-        }
+        if !trimmed.isEmpty { request.setValue("Bearer \(trimmed)", forHTTPHeaderField: "Authorization") }
     }
 
     private func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { return }
         guard (200..<300).contains(http.statusCode) else {
-            throw NSError(
-                domain: "AIProviderStore",
-                code: http.statusCode,
-                userInfo: [NSLocalizedDescriptionKey: "Server returned HTTP \(http.statusCode)"]
-            )
+            throw NSError(domain: "AIProviderStore", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: "Server returned HTTP \(http.statusCode)"])
         }
     }
 
@@ -198,8 +203,7 @@ final class AIProviderStore: ObservableObject {
         ]) { _, new in new }
         let status = SecItemAdd(attrs as CFDictionary, nil)
         if status == errSecDuplicateItem {
-            let update = [kSecValueData as String: data]
-            let updateStatus = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+            let updateStatus = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
             guard updateStatus == errSecSuccess else { throw keychainError(updateStatus) }
             return
         }
@@ -225,28 +229,20 @@ final class AIProviderStore: ObservableObject {
     }
 
     private func keychainQuery(providerId: UUID) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keychainService,
-            kSecAttrAccount as String: providerId.uuidString
-        ]
+        [kSecClass as String: kSecClassGenericPassword,
+         kSecAttrService as String: keychainService,
+         kSecAttrAccount as String: providerId.uuidString]
     }
 
     private func keychainError(_ status: OSStatus) -> NSError {
-        NSError(
-            domain: NSOSStatusErrorDomain,
-            code: Int(status),
-            userInfo: [NSLocalizedDescriptionKey: "Keychain error (\(status))"]
-        )
+        NSError(domain: NSOSStatusErrorDomain, code: Int(status),
+                userInfo: [NSLocalizedDescriptionKey: "Keychain error (\(status))"])
     }
 }
 
 private struct LossyProviderProfile: Decodable {
     let value: AIProviderProfile?
-
-    init(from decoder: Decoder) throws {
-        value = try? AIProviderProfile(from: decoder)
-    }
+    init(from decoder: Decoder) throws { value = try? AIProviderProfile(from: decoder) }
 }
 
 private struct OpenAIModelsResponse: Decodable {

@@ -61,3 +61,13 @@ with open(sys.argv[1], 'r', encoding='utf-8') as fh:
 PYCOMMIT
 )"
 echo "Nyxian source import verified: $commit"
+
+# Full Nyxian unsigned lanes keep the complete emexDE/Nyxian graph and inject
+# bad_query separately. The fast-device patch is intentionally not used here
+# because that patch removes CoreCompiler/MobileDevelopmentKit/emexDE/LiveProcess.
+case "${LITTER_IOS_BUILD_MODE:-}" in
+  full-sideload|nyxian-private)
+    python3 "$ROOT_DIR/tools/scripts/patch-ios-full-sideload-bad-query.py"
+    python3 "$ROOT_DIR/tools/scripts/patch-ios-full-sideload-bad-query.py" --check
+    ;;
+esac
