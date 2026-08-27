@@ -221,7 +221,7 @@ require_grep "emexDE target compiles upstream Nyxian" "../../ThirdParty/EmexDE/S
 require_grep "emexDE target excludes private framework stubs from bundle" "LindChain/Private/Frameworks/**" "apps/ios/project.yml"
 require_grep "emexDE runtime cleanup removes private framework stubs" "Removed nested emexDE private framework stub" "apps/ios/project.yml"
 require_grep "emexDE runtime cleanup covers FrontBoardServices" "FrontBoardServices.framework" "apps/ios/project.yml"
-require_grep "emexDE target uses upstream bridge" "SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/bridge.h" "apps/ios/project.yml"
+require_grep "emexDE target uses upstream bridge" "SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/NXBridge.h" "apps/ios/project.yml"
 require_grep "emexDE target embeds LiveProcess" "target: LiveProcess" "apps/ios/project.yml"
 require_grep "emexDE route boots upstream projects" "ContentViewController()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
 require_grep "emexDE route boots upstream settings" "SettingsViewController()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"

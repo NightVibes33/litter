@@ -354,7 +354,7 @@ targets:
         CLANG_ENABLE_MODULES: "YES"
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         SWIFT_VERSION: "5.0"
-        SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/bridge.h
+        SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/NXBridge.h
         SWIFT_OBJC_INTERFACE_HEADER_NAME: emexDE-Swift.h
         GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) HOST_ENV=1 CHAR_BIT=8 INT_MAX=2147483647 LONG_MAX=9223372036854775807L ULONG_MAX=18446744073709551615UL"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz -larchive -framework OpenSSL -framework FrontBoard -framework FrontBoardServices -framework RunningBoardServices -framework BackBoardServices"
