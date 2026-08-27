@@ -62,7 +62,7 @@ using namespace llvm::opt;
 
 static CFTypeID gCCDriverTypeID = _kCFRuntimeNotATypeID;
 
-struct opaque_ccdriver {
+struct __CCDriver {
     CFRuntimeBase _base;
     CCDriverType type;
 
@@ -89,7 +89,7 @@ static void CCDriverInit(CFTypeRef cf)
     new (&driverRef->clangCompilation) std::unique_ptr<clang::driver::Compilation>();
     new (&driverRef->argStorage) llvm::SmallVector<std::string, 64>();
     new (&driverRef->argPtr) llvm::SmallVector<const char *, 64>();
-    driverRef->type = CCDriverTypeClang;
+    driverRef->type = kCCDriverTypeClang;
     driverRef->outputPathCallbackContext = nullptr;
     driverRef->callback = nullptr;
 }
@@ -132,7 +132,7 @@ CCDriverRef CCDriverCreate(CFAllocatorRef allocator, CFArrayRef arguments, CCDri
 {
     assert(arguments != nullptr);
 
-    CCDriverRef driverRef = (CCDriverRef)_CFRuntimeCreateInstance(allocator, CCDriverGetTypeID(), sizeof(struct opaque_ccdriver) - sizeof(CFRuntimeBase), NULL);
+    CCDriverRef driverRef = (CCDriverRef)_CFRuntimeCreateInstance(allocator, CCDriverGetTypeID(), sizeof(struct __CCDriver) - sizeof(CFRuntimeBase), NULL);
     if(!driverRef)
     {
         return nullptr;
@@ -141,12 +141,12 @@ CCDriverRef CCDriverCreate(CFAllocatorRef allocator, CFArrayRef arguments, CCDri
     driverRef->type = type;
     driverRef->argStorage = CCArrayToStringVector(arguments);
 
-    if(type == CCDriverTypeClang)
+    if(type == kCCDriverTypeClang)
     {
         driverRef->argStorage.insert(driverRef->argStorage.begin(), "-fuse-ld=lld");
         driverRef->argStorage.insert(driverRef->argStorage.begin(), "clang");
     }
-    else if(type == CCDriverTypeSwift)
+    else if(type == kCCDriverTypeSwift)
     {
         driverRef->argStorage.insert(driverRef->argStorage.begin(), "swiftc");
     }
@@ -162,7 +162,7 @@ CCDriverRef CCDriverCreate(CFAllocatorRef allocator, CFArrayRef arguments, CCDri
         driverRef->argPtr.push_back(arg.c_str());
     }
 
-    if(type == CCDriverTypeClang)
+    if(type == kCCDriverTypeClang)
     {
         IntrusiveRefCntPtr<clang::DiagnosticIDs> DiagID(new clang::DiagnosticIDs());
         IntrusiveRefCntPtr<clang::DiagnosticOptions> DiagOpts(new clang::DiagnosticOptions());
@@ -189,13 +189,13 @@ static CCJobType _CCJobTypeGetFromClangCommand(const clang::driver::Command *Cmd
     if(clang::isa<clang::driver::CompileJobAction>(source) ||
        clang::isa<clang::driver::AssembleJobAction>(source))
     {
-        return CCJobTypeCompiler;
+        return kCCJobTypeCompiler;
     }
     if(clang::isa<clang::driver::LinkJobAction>(source))
     {
-        return CCJobTypeLinker;
+        return kCCJobTypeLinker;
     }
-    return CCJobTypeUnknown;
+    return kCCJobTypeUnknown;
 }
 
 static std::string _CCStringToStd(CFStringRef s)
@@ -313,18 +313,18 @@ CFArrayRef CCDriverCreateJobs(CCDriverRef driver)
     CFAllocatorRef allocator = CFGetAllocator(driver);
     CFMutableArrayRef jobsArray = CFArrayCreateMutable(allocator, 0, &kCFTypeArrayCallBacks);
 
-    if(driver->type == CCDriverTypeSwift)
+    if(driver->type == kCCDriverTypeSwift)
     {
         llvm::opt::ArgStringList swiftArgs;
         for(size_t i = 1; i < driver->argPtr.size(); ++i)
         {
             swiftArgs.push_back(driver->argPtr[i]);
         }
-        _AppendJob(jobsArray, allocator, CCJobTypeSwiftCompiler, swiftArgs);
+        _AppendJob(jobsArray, allocator, kCCJobTypeSwiftCompiler, swiftArgs);
         return jobsArray;
     }
 
-    if(driver->type != CCDriverTypeClang)
+    if(driver->type != kCCDriverTypeClang)
     {
         CFRelease(jobsArray);
         return nullptr;
@@ -469,7 +469,7 @@ CFURLRef CCDriverCopySysrootURL(CCDriverRef driver)
 {
     std::string cxxstr;
 
-    if(driver->type == CCDriverTypeClang)
+    if(driver->type == kCCDriverTypeClang)
     {
         if(!driver->clangCompilation)
         {
@@ -477,7 +477,7 @@ CFURLRef CCDriverCopySysrootURL(CCDriverRef driver)
         }
         cxxstr = driver->clangCompilation->getSysRoot().str();
     }
-    else if(driver->type == CCDriverTypeSwift)
+    else if(driver->type == kCCDriverTypeSwift)
     {
         for(size_t i = 0; i + 1 < driver->argStorage.size(); ++i)
         {
