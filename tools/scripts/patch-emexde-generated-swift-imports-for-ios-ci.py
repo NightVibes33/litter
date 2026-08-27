@@ -111,6 +111,7 @@ notification_objc_shim = "\n".join([
 ])
 nxos_version_objc_shim = "\n".join([
     "#import <Foundation/Foundation.h>",
+    "#import <LindChain/IDEFoundation/NXBootstrap.h>",
     "#import <MobileDevelopmentKit/MDKOSVersion.h>",
     "@interface NXOSVersion : NSObject",
     "+ (NSArray<MDKOSVersion *> *)NXOSVersionSupportedBuildVersionsRaw;",
