@@ -29,6 +29,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
     private func installUpstreamRoot() {
         UIViewController.swizzlePresentAndDismissOnce
         UIBarButtonItem.swizzleBarButtonitem
+        RevertUI()
 
         #if !JAILBREAK_ENV
         guard liveProcessIsAvailable() else {

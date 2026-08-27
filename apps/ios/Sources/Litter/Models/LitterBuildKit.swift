@@ -408,7 +408,8 @@ actor LitterBuildKit {
         #if LITTER_APP_STORE_SAFE
         return base
         #else
-        return AppDistributionCapabilities.includesEmexDE ? ["nyxian"] + base : base
+        let unsignedCommands = ["device-route"] + base
+        return AppDistributionCapabilities.includesEmexDE ? ["nyxian"] + unsignedCommands : unsignedCommands
         #endif
     }
     private static let cFamilySourceExtensions: Set<String> = ["c", "cc", "cpp", "cxx", "m", "mm"]
@@ -732,6 +733,8 @@ actor LitterBuildKit {
         #if !LITTER_APP_STORE_SAFE
         case "nyxian":
             return await nyxianCommand(args: args, cwd: cwd)
+        case "device-route":
+            return await deviceRouteCommand(args: args, cwd: cwd)
         #endif
         case "litter-kittystore", "litter-kittystore-status":
             return await kittyStoreStatus(command: command, args: args)
@@ -803,6 +806,47 @@ actor LitterBuildKit {
     }
 
     #if !LITTER_APP_STORE_SAFE
+    private func deviceRouteCommand(args: String, cwd: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        let subcommand = tokens.first ?? "help"
+
+        do {
+            switch subcommand {
+            case "help", "--help", "-h":
+                return BuildKitCommandResult(exitCode: 0, status: "help", log: Self.deviceRouteUsage())
+            case "roots":
+                return BuildKitCommandResult(exitCode: 0, status: "roots", log: DeviceRouteAccess.supportedRoots.joined(separator: "\n") + "\n")
+            case "list":
+                guard tokens.count >= 2 else {
+                    return BuildKitCommandResult(exitCode: 64, status: "usage", log: Self.deviceRouteUsage())
+                }
+                let path = tokens[1]
+                let output = try DeviceRouteAccess.listDirectory(path: path)
+                return BuildKitCommandResult(exitCode: 0, status: "listed", log: "\(path)\n\n\(output)\n")
+            case "read":
+                guard tokens.count >= 2 else {
+                    return BuildKitCommandResult(exitCode: 64, status: "usage", log: Self.deviceRouteUsage())
+                }
+                let path = tokens[1]
+                let maxBytes = Self.optionValue("--max-bytes", in: tokens).flatMap(Int.init) ?? 256_000
+                let output = try DeviceRouteAccess.readText(path: path, maxBytes: min(max(maxBytes, 1), 2_000_000))
+                return BuildKitCommandResult(exitCode: 0, status: "read", log: "\(path)\n\n\(output)\n")
+            case "write":
+                guard tokens.count >= 2, let sourcePath = Self.optionValue("--from-file", in: tokens) else {
+                    return BuildKitCommandResult(exitCode: 64, status: "usage", log: Self.deviceRouteUsage())
+                }
+                let fakefsSource = Self.resolveFakefsPath(sourcePath, cwd: cwd)
+                let content = try await IshFS.readTextFile(path: fakefsSource, maxBytes: 2_000_000)
+                let count = try DeviceRouteAccess.writeText(path: tokens[1], text: content)
+                return BuildKitCommandResult(exitCode: 0, status: "written", log: "Wrote \(count) bytes to \(tokens[1]).\n")
+            default:
+                return BuildKitCommandResult(exitCode: 64, status: "usage", log: Self.deviceRouteUsage())
+            }
+        } catch {
+            return BuildKitCommandResult(exitCode: 74, status: "device-route-failed", log: error.localizedDescription + "\n")
+        }
+    }
+
     private func nyxianCommand(args: String, cwd: String) async -> BuildKitCommandResult {
         guard AppDistributionCapabilities.includesEmexDE else {
             return BuildKitCommandResult(exitCode: 69, status: "unavailable", log: "Nyxian is not embedded in this unsigned build.\n")
@@ -873,6 +917,20 @@ actor LitterBuildKit {
     private static func optionValue(_ option: String, in tokens: [String]) -> String? {
         guard let index = tokens.firstIndex(of: option), tokens.indices.contains(index + 1) else { return nil }
         return tokens[index + 1]
+    }
+
+    private static func deviceRouteUsage() -> String {
+        """
+        Extended iOS route access (unsigned IPA only)
+        Usage:
+          device-route roots
+          device-route list ABSOLUTE_IOS_PATH
+          device-route read ABSOLUTE_IOS_PATH [--max-bytes COUNT]
+          device-route write ABSOLUTE_IOS_PATH --from-file FAKEFS_PATH
+
+        Use roots first to discover the exact route families available to bad_query.
+        Writes require an explicit fakefs source file so ChatGPT can inspect content before applying it.
+        """ + "\n"
     }
 
     private static func nyxianUsage() -> String {

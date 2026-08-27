@@ -576,6 +576,7 @@ targets:
           - Generated/Minimuxer/**
           - Resources/BuildKitAssets/**
           - "**/*.h"
+      - path: UnsignedOnly/BadQuery
       - path: Sources/Litter/Bridge/UniFFICodexClient.generated.swift
       - path: Sources/LitterLiveActivity/CodexTurnLiveActivity.swift
       - path: Sources/LitterWatch/Models/WatchModels.swift

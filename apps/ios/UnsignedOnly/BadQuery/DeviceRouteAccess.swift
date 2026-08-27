@@ -34,6 +34,15 @@ enum DeviceRouteAccess {
     private static let defaultMaxInode: Int64 = 1_000_000
     private static let maxListedEntries = 2_000
 
+    static let supportedRoots = [
+        "/var/containers/Data/System",
+        "/var/containers/Shared/SystemGroup",
+        "/var/mobile/Containers/Data/Application",
+        "/var/mobile/Containers/Data/InternalDaemon",
+        "/var/mobile/Containers/Data/PluginKitPlugin",
+        "/var/mobile/Containers/Shared/AppGroup",
+    ]
+
     static func readText(path rawPath: String, maxBytes: Int = defaultReadLimit) throws -> String {
         let path = try normalizedAbsolutePath(rawPath)
         return try withExtension(path: path, create: false) {

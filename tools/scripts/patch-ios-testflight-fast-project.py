@@ -19,6 +19,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PROJECT_YML = ROOT / "apps/ios/project.yml"
 INFO_PLIST = ROOT / "apps/ios/Sources/Litter/Info.plist"
+BRIDGING_HEADER = ROOT / "apps/ios/Sources/Litter/Bridge/codex_bridge_objc.h"
+BAD_QUERY_SOURCE = "      - path: UnsignedOnly/BadQuery\n"
+BAD_QUERY_HEADER_BLOCK = "#if !LITTER_APP_STORE_SAFE\n#import \"../../../UnsignedOnly/BadQuery/bad_query.h\"\n#endif\n"
 
 SIDELOAD_PACKAGES = (
     "AltSign",
@@ -212,6 +215,7 @@ def strip_info_plist_app_store_sensitive_keys(text: str) -> str:
 
 
 def transform(text: str) -> str:
+    text = text.replace(BAD_QUERY_SOURCE, "")
     for before, after in PROJECT_LINE_REPLACEMENTS:
         text = text.replace(before, after)
     text = set_app_store_safe_flags(text)
@@ -262,6 +266,7 @@ def validate_fast_project(text: str) -> None:
         "copy_upstream_source emexDE",
         "../../ThirdParty/SideStore",
         "../../ThirdParty/EmexDE",
+        "UnsignedOnly/BadQuery",
     )
     for marker in forbidden_markers:
         if marker in text:
@@ -296,9 +301,14 @@ def main() -> None:
     parser.add_argument("--check", action="store_true", help="validate the transformed output without writing")
     args = parser.parse_args()
 
+    bridge_original = BRIDGING_HEADER.read_text()
+    bridge_patched = bridge_original.replace(BAD_QUERY_HEADER_BLOCK, "")
+
     original = PROJECT_YML.read_text()
     patched = transform(original)
     validate_fast_project(patched)
+    if "bad_query" in bridge_patched or "UnsignedOnly/BadQuery" in bridge_patched:
+        raise SystemExit("Fast TestFlight project patch failed: unsigned bad_query remains in the bridging header")
 
     info_original = INFO_PLIST.read_text()
     info_patched = strip_info_plist_app_store_sensitive_keys(info_original)
@@ -323,11 +333,13 @@ def main() -> None:
         print("Fast TestFlight project patch is App Store safe.")
         return
 
-    if patched == original and info_patched == info_original:
+    if patched == original and info_patched == info_original and bridge_patched == bridge_original:
         print("Fast TestFlight project patch already applied.")
         return
 
     PROJECT_YML.write_text(patched)
+    if bridge_patched != bridge_original:
+        BRIDGING_HEADER.write_text(bridge_patched)
     if info_patched != info_original:
         INFO_PLIST.write_text(info_patched)
     print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, embedded Watch app, background modes, file sharing, document-in-place support, IPA/signing document types, sideload URL schemes, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
