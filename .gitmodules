@@ -12,5 +12,5 @@
 	branch = master
 [submodule "ThirdParty/EmexDE/Source"]
 	path = ThirdParty/EmexDE/Source
-	url = https://github.com/emexlab/emexDE.git
+	url = https://github.com/emexlab/Nyxian.git
 	shallow = true

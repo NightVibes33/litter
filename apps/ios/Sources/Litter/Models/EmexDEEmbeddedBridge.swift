@@ -13,12 +13,24 @@ enum EmexDEEmbeddedBridge {
         }
         return EmexDEBridgeUnavailableViewController()
     }
+    #if !LITTER_APP_STORE_SAFE
+    @MainActor
+    static func runCommandJSON(_ requestJSON: String) -> String? {
+        guard AppDistributionCapabilities.includesEmexDE else { return nil }
+        loadEmbeddedFrameworksIfNeeded()
+        let classes = ["NyxianCommandBridge", "emexDE.NyxianCommandBridge"]
+        guard let resolved = resolveClass(classNames: classes, selectorName: "runJSON:") else { return nil }
+        let function = unsafeBitCast(method_getImplementation(resolved.method), to: ObjectStringIMP.self)
+        return function(resolved.classObject, resolved.selector, requestJSON as NSString)?.takeUnretainedValue() as? String
+    }
+    #endif
 
     private static let embeddedFactoryClassNames = [
         "EmexDEEmbeddedFactory",
         "emexDE.EmexDEEmbeddedFactory"
     ]
 
+    private typealias ObjectStringIMP = @convention(c) (AnyObject, Selector, NSString) -> Unmanaged<AnyObject>?
     private static let embeddedFrameworkNames = [
         "CoreCompiler",
         "MobileDevelopmentKit",

@@ -403,7 +403,14 @@ actor LitterBuildKit {
         "strings",
         "lipo"
     ]
-    private static let commandNames = canonicalCommandNames + nativeCompatibilityCommandNames + passThroughCommandNames
+    private static var commandNames: [String] {
+        let base = canonicalCommandNames + nativeCompatibilityCommandNames + passThroughCommandNames
+        #if LITTER_APP_STORE_SAFE
+        return base
+        #else
+        return AppDistributionCapabilities.includesEmexDE ? ["nyxian"] + base : base
+        #endif
+    }
     private static let cFamilySourceExtensions: Set<String> = ["c", "cc", "cpp", "cxx", "m", "mm"]
     private static let linkInputExtensions: Set<String> = ["o", "a", "dylib", "tbd"]
 
@@ -722,6 +729,10 @@ actor LitterBuildKit {
         case "litter-nyxian-status":
             let current = await status(checkRevocation: true)
             return BuildKitCommandResult(exitCode: 0, status: current.isReadyForNativeBuilds ? "nyxian-ready" : "nyxian-blocked", log: Self.nyxianStatusLog(current))
+        #if !LITTER_APP_STORE_SAFE
+        case "nyxian":
+            return await nyxianCommand(args: args, cwd: cwd)
+        #endif
         case "litter-kittystore", "litter-kittystore-status":
             return await kittyStoreStatus(command: command, args: args)
         case "litter-kittystore-config":
@@ -791,7 +802,95 @@ actor LitterBuildKit {
         }
     }
 
+    #if !LITTER_APP_STORE_SAFE
+    private func nyxianCommand(args: String, cwd: String) async -> BuildKitCommandResult {
+        guard AppDistributionCapabilities.includesEmexDE else {
+            return BuildKitCommandResult(exitCode: 69, status: "unavailable", log: "Nyxian is not embedded in this unsigned build.\n")
+        }
+        _ = await IshFS.ensureNativeContainerMount()
+        let tokens = Self.shellWords(args)
+        let subcommand = tokens.first ?? "help"
+        if subcommand == "help" || subcommand == "--help" || subcommand == "-h" {
+            return BuildKitCommandResult(exitCode: 0, status: "help", log: Self.nyxianUsage())
+        }
+
+        var request: [String: Any] = ["command": subcommand]
+        switch subcommand {
+        case "projects":
+            break
+        case "create":
+            guard tokens.count >= 2 else { return BuildKitCommandResult(exitCode: 64, status: "usage", log: Self.nyxianUsage()) }
+            request["name"] = tokens[1]
+            request["organization"] = Self.optionValue("--organization", in: tokens) ?? "com.alleycat"
+            request["bundleIdentifier"] = Self.optionValue("--bundle-id", in: tokens)
+            request["language"] = Self.optionValue("--language", in: tokens) ?? "swift"
+            request["type"] = Self.optionValue("--type", in: tokens) ?? "app"
+            request["interface"] = Self.optionValue("--interface", in: tokens) ?? "swiftui"
+        case "build", "run":
+            guard tokens.count >= 2 else { return BuildKitCommandResult(exitCode: 64, status: "usage", log: Self.nyxianUsage()) }
+            let fakefsPath = Self.resolveFakefsPath(tokens[1], cwd: cwd)
+            request["path"] = Self.nativePathForNyxian(fakefsPath)
+        default:
+            return BuildKitCommandResult(exitCode: 64, status: "usage", log: Self.nyxianUsage())
+        }
+
+        guard let data = try? JSONSerialization.data(withJSONObject: request),
+              let requestJSON = String(data: data, encoding: .utf8),
+              let responseJSON = await MainActor.run(body: { EmexDEEmbeddedBridge.runCommandJSON(requestJSON) }),
+              let responseData = responseJSON.data(using: .utf8),
+              let response = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] else {
+            return BuildKitCommandResult(exitCode: 70, status: "bridge-unavailable", log: "The embedded Nyxian command bridge could not be loaded.\n")
+        }
+        let code = response["exitCode"] as? Int ?? 70
+        let status = response["status"] as? String ?? "unknown"
+        var output = response
+        if let projects = output["projects"] as? [[String: Any]] {
+            output["projects"] = projects.map { project in
+                var mapped = project
+                if let path = project["path"] as? String { mapped["path"] = Self.fakefsPathForNyxian(path) }
+                return mapped
+            }
+        }
+        for key in ["path", "projectPath", "artifactPath"] {
+            if let path = output[key] as? String, !path.isEmpty { output[key] = Self.fakefsPathForNyxian(path) }
+        }
+        return BuildKitCommandResult(exitCode: code, status: status, log: Self.prettyJSON(output) + "\n")
+    }
+
+    #endif
+    private static func nativePathForNyxian(_ path: String) -> String {
+        let prefix = IshFS.nativeContainerMountPath
+        guard path == prefix || path.hasPrefix(prefix + "/") else { return path }
+        return NSHomeDirectory() + path.dropFirst(prefix.count)
+    }
+
+    private static func fakefsPathForNyxian(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        guard path == home || path.hasPrefix(home + "/") else { return path }
+        return IshFS.nativeContainerMountPath + path.dropFirst(home.count)
+    }
+
+    private static func optionValue(_ option: String, in tokens: [String]) -> String? {
+        guard let index = tokens.firstIndex(of: option), tokens.indices.contains(index + 1) else { return nil }
+        return tokens[index + 1]
+    }
+
+    private static func nyxianUsage() -> String {
+        """
+        Nyxian full on-device IDE bridge (unsigned IPA only)
+        Usage:
+          nyxian projects
+          nyxian create NAME [--type app|utility] [--language swift|objc|c|cpp]
+                             [--interface swiftui|uikit] [--bundle-id ID] [--organization PREFIX]
+          nyxian build PROJECT_PATH
+          nyxian run PROJECT_PATH
+
+        Project paths are exposed under /mnt/container so Codex can edit the real Nyxian project directly.
+        build uses NXBuilder export and returns the real IPA path; run uses NXBuilder plus LiveProcess.
+        """ + "\n"
+    }
     private func kittyStoreStatus(command: String, args: String) async -> BuildKitCommandResult {
+
         let tokens = Self.shellWords(args)
         if tokens.contains("--help") || tokens.contains("-help") {
             return BuildKitCommandResult(exitCode: 0, status: "kittystore-help", log: Self.kittyStoreUsage())
