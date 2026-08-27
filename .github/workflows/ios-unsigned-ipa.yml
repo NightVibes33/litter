@@ -759,10 +759,9 @@ jobs:
       - name: Reset SwiftPM binary artifact cache
         run: |
           set -euo pipefail
-          artifact_root="$HOME/Library/Caches/org.swift.swiftpm/artifacts"
-          if [ -d "$artifact_root" ]; then
-            find "$artifact_root" -maxdepth 1 -name 'https___github_com_stasel_WebRTC*' -exec rm -rf {} +
-          fi
+          local_artifacts="$PWD/build/DerivedData/SourcePackages/artifacts"
+          rm -rf "$local_artifacts"
+          mkdir -p "$PWD/build/DerivedData/SourcePackages"
 
       - name: Build unsigned archive
         env:
@@ -833,6 +832,8 @@ jobs:
             -destination "generic/platform=iOS"
             -archivePath "$ARCHIVE_PATH"
             -derivedDataPath "$DERIVED_DATA_PATH"
+            -clonedSourcePackagesDirPath "$DERIVED_DATA_PATH/SourcePackages"
+            -disablePackageRepositoryCache
             -showBuildTimingSummary
             CODE_SIGNING_ALLOWED=NO
             CODE_SIGNING_REQUIRED=NO
