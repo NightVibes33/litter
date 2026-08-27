@@ -6,6 +6,8 @@ on:
       - feature/apple-on-device-agent
     paths:
       - 'apps/ios/**'
+      - 'tools/scripts/patch-ios-fast-device-project.py'
+      - 'tools/scripts/patch-ios-testflight-fast-project.py'
       - '.github/workflows/apple-agent-ios-build-dispatch.yml'
 
 permissions:
@@ -16,6 +18,22 @@ jobs:
   dispatch-ios-build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 1
+
+      - name: Validate unsigned bad_query injection
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-ios-fast-device-project.py --check
+
+      - name: Validate TestFlight excludes bad_query
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-ios-testflight-fast-project.py --check
+
       - name: Dispatch unsigned IPA compile
         id: dispatch
         env:
