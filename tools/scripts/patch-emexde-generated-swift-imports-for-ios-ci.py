@@ -93,6 +93,14 @@ for before, after in notification_replacements.items():
     notification_text = notification_text.replace(before, after)
 notification_bridge.write_text(notification_text)
 
+theme_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/CodeEditor/CodeEditor+Theme.swift")
+theme_text = theme_bridge.read_text()
+theme_before = "@objc class LDETheme: NSObject, Theme"
+theme_after = "@objc(LDETheme) class LDETheme: NSObject, Theme"
+if theme_before not in theme_text and theme_after not in theme_text:
+    raise SystemExit("Missing expected emexDE LDETheme declaration")
+theme_bridge.write_text(theme_text.replace(theme_before, theme_after))
+
 application_management_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/Settings/ApplicationManagement.swift")
 application_management_text = application_management_bridge.read_text()
 application_management_before = "class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
