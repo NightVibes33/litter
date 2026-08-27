@@ -517,7 +517,7 @@ CCSDKRef CCDriverCopySDK(CCDriverRef driver)
         return nullptr;
     }
 
-    CCSDKRef sdk = CCSDKCreateWithFileURL(CFGetAllocator(driver), sdkRoot);
+    CCSDKRef sdk = CCSDKCreateWithDirectoryURL(CFGetAllocator(driver), sdkRoot);
     CFRelease(sdkRoot);
     return sdk;
 }
