@@ -204,6 +204,7 @@ require_grep "Litter runtime bridge locates private Frameworks directory" "Bundl
 require_grep "Litter runtime bridge exposes Nyxian commands" "runCommandJSON" "apps/ios/Sources/Litter/Models/EmexDEEmbeddedBridge.swift"
 require_path "Nyxian command bridge" "apps/ios/Sources/EmexDEEmbedded/NyxianCommandBridge.swift"
 require_grep "Nyxian command bridge uses upstream builder" "NXBuilder.buildProject" "apps/ios/Sources/EmexDEEmbedded/NyxianCommandBridge.swift"
+require_grep "Nyxian command bridge safely loads projects" "guard let project = NXProject" "apps/ios/Sources/EmexDEEmbedded/NyxianCommandBridge.swift"
 require_grep "BuildKit exposes Nyxian command" "case \"nyxian\"" "apps/ios/Sources/Litter/Models/LitterBuildKit.swift"
 require_grep "Litter runtime bridge resolves embedded emexDE framework" "NSClassFromString" "apps/ios/Sources/Litter/Models/EmexDEEmbeddedBridge.swift"
 require_grep "emexDE runtime bridge resolves upstream factory" "EmexDEEmbeddedFactory" "apps/ios/Sources/Litter/Models/EmexDEEmbeddedBridge.swift"

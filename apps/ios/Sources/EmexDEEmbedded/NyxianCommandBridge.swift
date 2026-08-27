@@ -58,7 +58,9 @@ public final class NyxianCommandBridge: NSObject {
             guard let path = request["path"] as? String, !path.isEmpty else {
                 return response(code: 64, status: "missing-path", message: "\(command) requires path.")
             }
-            let project = NXProject(url: URL(fileURLWithPath: path))
+            guard let project = NXProject(url: URL(fileURLWithPath: path)) else {
+                return response(code: 66, status: "project-invalid", message: "Nyxian could not load a project at the requested path.")
+            }
             let semaphore = DispatchSemaphore(value: 0)
             let buildResult = NyxianBuildResult()
             NXBuilder.buildProject(withProject: project, buildType: command == "run" ? .run : .export) { result, output in
