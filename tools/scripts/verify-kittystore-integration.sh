@@ -223,7 +223,7 @@ require_grep "emexDE target excludes private framework stubs from bundle" "LindC
 require_grep "emexDE runtime cleanup removes private framework stubs" "Removed nested emexDE private framework stub" "apps/ios/project.yml"
 require_grep "emexDE runtime cleanup covers FrontBoardServices" "FrontBoardServices.framework" "apps/ios/project.yml"
 require_grep "emexDE target uses upstream bridge" "SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/NXBridge.h" "apps/ios/project.yml"
-require_grep "emexDE target resolves complete upstream roots" "ThirdParty/EmexDE/Source/Frameworks \$(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private \$(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer \$(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign \$(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign/common" "apps/ios/project.yml"
+require_grep "emexDE target resolves complete upstream roots" "ThirdParty/EmexDE/Source \$(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private \$(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer \$(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign \$(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/ZSign/common" "apps/ios/project.yml"
 require_grep "emexDE project restores HWHook target" "HWHook:" "apps/ios/project.yml"
 require_grep "emexDE project restores LiveShim target" "LiveShim:" "apps/ios/project.yml"
 require_grep "LiveShim compiles upstream sources" "ThirdParty/EmexDE/Source/Frameworks/LiveShim" "apps/ios/project.yml"
