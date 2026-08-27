@@ -363,7 +363,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.liveshim
         PRODUCT_MODULE_NAME: LiveShim
-        OTHER_LDFLAGS: "$(inherited) -lHWHook"
+        OTHER_LDFLAGS: "-lHWHook"
         GENERATE_INFOPLIST_FILE: "YES"
         DEFINES_MODULE: "YES"
         SKIP_INSTALL: "YES"
