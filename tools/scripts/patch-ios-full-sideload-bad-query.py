@@ -3,9 +3,9 @@
 
 Unlike patch-ios-fast-device-project.py, this patch must not remove emexDE,
 CoreCompiler, MobileDevelopmentKit, LiveProcess, or their package/dependency
-wiring. It reuses the exact bad_query integration transforms and validation from
-the fast unsigned patch while limiting the project.yml change to the unsigned
-BadQuery source entry.
+wiring. It reuses the exact bad_query agent/bridge validation from the fast
+unsigned patch while limiting the project.yml change to one correctly placed
+UnsignedOnly/BadQuery source entry.
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ APPLE_BRIDGE = ROOT / "apps/ios/Sources/Litter/Views/AppleLocalAgentBridge.swift
 BRIDGING_HEADER = ROOT / "apps/ios/Sources/Litter/Bridge/codex_bridge_objc.h"
 
 helpers = runpy.run_path(str(FAST_PATCH))
-add_unsigned_bad_query_source = helpers["add_unsigned_bad_query_source"]
 transform_apple_agent = helpers["transform_apple_agent"]
 transform_apple_bridge = helpers["transform_apple_bridge"]
 transform_bridging_header = helpers["transform_bridging_header"]
@@ -42,6 +41,36 @@ NYXIAN_MARKERS = (
     "      - target: LiveProcess\n        embed: true\n",
 )
 
+LITTER_SOURCE_MARKER = "      - path: Sources/Litter\n"
+LITTER_MINIMUXER_EXCLUDE = "          - Generated/Minimuxer/**\n"
+
+
+def add_full_sideload_bad_query_source(text: str) -> str:
+    if UNSIGNED_BAD_QUERY_SOURCE in text:
+        return text
+
+    lines = text.splitlines(keepends=True)
+    try:
+        source_index = lines.index(LITTER_SOURCE_MARKER)
+    except ValueError as error:
+        raise SystemExit("Full sideload bad_query patch could not locate the Litter source entry") from error
+
+    insert_index = source_index + 1
+    while insert_index < len(lines):
+        line = lines[insert_index]
+        if line.startswith("      - path:") or line.startswith("    resources:"):
+            break
+        insert_index += 1
+
+    source_block = "".join(lines[source_index:insert_index])
+    if "        excludes:\n" not in source_block or LITTER_MINIMUXER_EXCLUDE not in source_block:
+        raise SystemExit(
+            "Full sideload bad_query patch refused to run because the Litter generated-Minimuxer exclusion is not attached to Sources/Litter"
+        )
+
+    lines.insert(insert_index, UNSIGNED_BAD_QUERY_SOURCE)
+    return "".join(lines)
+
 
 def transform_full_sideload_project(text: str) -> str:
     for marker in NYXIAN_MARKERS:
@@ -51,7 +80,7 @@ def transform_full_sideload_project(text: str) -> str:
                 + marker.strip()
             )
 
-    patched = add_unsigned_bad_query_source(text)
+    patched = add_full_sideload_bad_query_source(text)
 
     for marker in NYXIAN_MARKERS:
         if marker not in patched:
@@ -62,6 +91,13 @@ def transform_full_sideload_project(text: str) -> str:
 
     if UNSIGNED_BAD_QUERY_SOURCE not in patched:
         raise SystemExit("Full sideload bad_query patch failed to add UnsignedOnly/BadQuery to the Litter source list")
+
+    # Ensure the existing Litter exclusions remain attached to Sources/Litter.
+    litter_source_start = patched.index(LITTER_SOURCE_MARKER)
+    bad_query_index = patched.index(UNSIGNED_BAD_QUERY_SOURCE, litter_source_start)
+    litter_source_block = patched[litter_source_start:bad_query_index]
+    if LITTER_MINIMUXER_EXCLUDE not in litter_source_block:
+        raise SystemExit("Full sideload bad_query patch detached the generated KittyStore minimuxer exclusion")
 
     # The full-sideload project transform is intentionally surgical: the only
     # allowed project.yml change is the unsigned BadQuery source entry.
@@ -91,7 +127,7 @@ def main() -> None:
     validate_bad_query_agent(patched_agent, patched_bridge, patched_header)
 
     if args.check:
-        print("Full Nyxian sideload + exact bad_query integration is valid; Nyxian/emexDE wiring is preserved.")
+        print("Full Nyxian sideload + exact bad_query integration is valid; Nyxian/emexDE wiring and Litter source exclusions are preserved.")
         return
 
     changed = False
@@ -108,7 +144,7 @@ def main() -> None:
     if changed:
         print(
             "Applied full-sideload bad_query patch: exact upstream bad_query is injected while "
-            "CoreCompiler, MobileDevelopmentKit, emexDE, and LiveProcess remain enabled."
+            "CoreCompiler, MobileDevelopmentKit, emexDE, LiveProcess, and Litter source exclusions remain enabled."
         )
     else:
         print("Full-sideload exact bad_query integration already applied.")
