@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$PROJECT_DIR/../.." && pwd)"
 PROJECT_FILE="$PROJECT_DIR/Litter.xcodeproj"
 NESTED_PROJECT="$PROJECT_FILE/Litter.xcodeproj"
 REPAIR_ONLY=0
@@ -40,6 +41,14 @@ fi
 
 if [[ "$REPAIR_ONLY" -eq 1 && "$needs_regen" -eq 0 ]]; then
   exit 0
+fi
+
+# Full Nyxian sideload builds must apply the unsigned-only bad_query transform
+# immediately before XcodeGen. TestFlight and ordinary project regeneration do
+# not set this build mode, so they never import UnsignedOnly/BadQuery.
+if [[ "${LITTER_IOS_BUILD_MODE:-}" == "full-sideload" ]]; then
+  python3 "$ROOT_DIR/tools/scripts/patch-ios-full-sideload-bad-query.py"
+  python3 "$ROOT_DIR/tools/scripts/patch-ios-full-sideload-bad-query.py" --check
 fi
 
 echo "==> Regenerating $PROJECT_FILE"
