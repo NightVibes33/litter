@@ -582,11 +582,12 @@ def patch(root: Path) -> None:
     cc_driver = cc_root / "Tools/CCDriver.cpp"
     dependency_scanner = cc_root / "Tools/CCDependencyScanner.cpp"
     cc_ast_unit = cc_root / "Tools/CCASTUnit.cpp"
+    cc_sdk = cc_root / "Tools/CCSDK.cpp"
     cc_compiler = cc_root / "Tools/Compiler/CCCompiler.cpp"
     swift_compiler = cc_root / "Tools/Compiler/CCSwiftCompiler.cpp"
     cc_utils = cc_root / "CCUtils.cpp"
 
-    missing = [p for p in (cc_driver, dependency_scanner, cc_ast_unit, cc_compiler, swift_compiler, cc_utils) if not p.exists()]
+    missing = [p for p in (cc_driver, dependency_scanner, cc_ast_unit, cc_sdk, cc_compiler, swift_compiler, cc_utils) if not p.exists()]
     if missing:
         raise SystemExit("Missing emexDE CoreCompiler source files: " + ", ".join(str(p) for p in missing))
 
@@ -617,6 +618,15 @@ def patch(root: Path) -> None:
     )
     cc_ast_unit.write_text(ast_text)
 
+    sdk_text = cc_sdk.read_text()
+    sdk_text = replace_or_confirm(
+        sdk_text,
+        "    switch(sdk->sdkInfo->getOS())\n    {\n        case Triple::OSType::Darwin:\n            return CCSDKOSTypeDarwin;\n        default:\n            return CCSDKOSTypeUnknown;\n    }",
+        "    return sdk && sdk->sdkInfo ? CCSDKOSTypeDarwin : CCSDKOSTypeUnknown;",
+        "DarwinSDKInfo removed getOS API",
+    )
+    cc_sdk.write_text(sdk_text)
+
     compiler_text = cc_compiler.read_text()
     compiler_text = replace_or_confirm(
         compiler_text,
@@ -640,6 +650,7 @@ def patch(root: Path) -> None:
     print(f"  {cc_driver}")
     print(f"  {dependency_scanner} (normalized dependency scanner constructor)")
     print(f"  {cc_ast_unit} (normalized Clang diagnostics ownership)")
+    print(f"  {cc_sdk} (normalized Darwin SDK OS detection)")
     print(f"  {cc_compiler} (normalized Clang diagnostics ownership)")
     print(f"  {swift_compiler}")
     print(f"  {cc_utils} (removed unused Swift compiler header include)")
