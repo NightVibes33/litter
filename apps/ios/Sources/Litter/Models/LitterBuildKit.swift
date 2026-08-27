@@ -851,7 +851,7 @@ actor LitterBuildKit {
         guard AppDistributionCapabilities.includesEmexDE else {
             return BuildKitCommandResult(exitCode: 69, status: "unavailable", log: "Nyxian is not embedded in this unsigned build.\n")
         }
-        _ = await IshFS.ensureNativeContainerMount()
+        _ = await IshFS.repairNativeContainerBridge()
         let tokens = Self.shellWords(args)
         let subcommand = tokens.first ?? "help"
         if subcommand == "help" || subcommand == "--help" || subcommand == "-h" {
