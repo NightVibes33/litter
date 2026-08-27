@@ -5,16 +5,17 @@ The fast unsigned IPA still needs KittyStore/SideStore for sideload testing, but
 it should not build the hidden emexDE/BuildKit toolchain targets. Keep this
 separate from the TestFlight patch, which also removes SideStore and AltSign.
 
-This patch also wires the forcequitOS/bad_query research route into the Apple
-on-device agent. The bad_query source lives under apps/ios/UnsignedOnly and is
-added to the Litter target only by this unsigned-build patch. TestFlight never
-runs this script, so the sandbox-route implementation is not compiled into the
-TestFlight target.
+This patch wires the exact forcequitOS/bad_query source into Litter's existing
+readFile/writeFile/listDirectory actions. The bad_query source lives under
+apps/ios/UnsignedOnly and is added to the Litter target only by this unsigned
+build patch. TestFlight never runs this script and its separate preflight rejects
+all UnsignedOnly/BadQuery references.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 from pathlib import Path
 
@@ -24,9 +25,14 @@ PROJECT_YML = ROOT / "apps/ios/project.yml"
 APPLE_AGENT = ROOT / "apps/ios/Sources/Litter/Models/AppleOnDeviceAgent.swift"
 APPLE_BRIDGE = ROOT / "apps/ios/Sources/Litter/Views/AppleLocalAgentBridge.swift"
 BRIDGING_HEADER = ROOT / "apps/ios/Sources/Litter/Bridge/codex_bridge_objc.h"
+BAD_QUERY_C = ROOT / "apps/ios/UnsignedOnly/BadQuery/bad_query.c"
+BAD_QUERY_H = ROOT / "apps/ios/UnsignedOnly/BadQuery/bad_query.h"
+DEVICE_ROUTE_ACCESS = ROOT / "apps/ios/UnsignedOnly/BadQuery/DeviceRouteAccess.swift"
 
 UNSIGNED_BAD_QUERY_SOURCE = "      - path: UnsignedOnly/BadQuery\n"
 UNSIGNED_BAD_QUERY_HEADER = '#import "../../../UnsignedOnly/BadQuery/bad_query.h"\n'
+UPSTREAM_BAD_QUERY_C_BLOB = "dce2c4db47152efd4f84826c99e4348016126416"
+UPSTREAM_BAD_QUERY_H_BLOB = "4b79ce65ecfd3ed44055d1b1d10b4f24b801d258"
 
 EMEXDE_TARGETS = (
     "CoreCompiler",
@@ -156,219 +162,108 @@ def transform(text: str) -> str:
 
 
 def transform_apple_agent(text: str) -> str:
-    if "case readDeviceFile" not in text:
-        text = text.replace(
-            "        case listDirectory\n",
-            "        case listDirectory\n        case readDeviceFile\n        case writeDeviceFile\n        case listDeviceDirectory\n",
-            1,
-        )
-
-    text = text.replace(
-        "            action must be one of: answer, runCommand, readFile, writeFile, listDirectory.\n",
-        "            action must be one of: answer, runCommand, readFile, writeFile, listDirectory, readDeviceFile, writeDeviceFile, listDeviceDirectory.\n",
-        1,
-    )
-
     guidance_marker = "            Prefer a plain answer when execution is unnecessary.\n"
     guidance = (
         guidance_marker
-        + "            readFile/writeFile/listDirectory operate inside Litter's iSH/Linux filesystem.\n"
-        + "            readDeviceFile/writeDeviceFile/listDeviceDirectory operate on the iOS host filesystem and require an absolute path beginning with /.\n"
-        + "            Use a device action for paths such as /var/mobile, /var/containers, /private/var, or /System.\n"
+        + "            In this unsigned build, readFile/writeFile/listDirectory can also target the iOS device routes exposed by bad_query when the user supplies an absolute supported path.\n"
+        + "            Keep using those same three filesystem actions; the runtime selects iSH or bad_query from the path.\n"
     )
-    if "readDeviceFile/writeDeviceFile/listDeviceDirectory operate on the iOS host filesystem" not in text:
+    if "the runtime selects iSH or bad_query from the path" not in text:
         if guidance_marker not in text:
             raise SystemExit("Fast unsigned device patch failed: Apple agent guidance marker missing")
         text = text.replace(guidance_marker, guidance, 1)
-
-    text = text.replace(
-        "        case .readFile, .writeFile, .listDirectory:\n",
-        "        case .readFile, .writeFile, .listDirectory, .readDeviceFile, .writeDeviceFile, .listDeviceDirectory:\n",
-        1,
-    )
-
-    absolute_guard_marker = "            proposal.path = path\n            proposal.command = nil\n            proposal.requiresApproval = true\n\n"
-    absolute_guard = (
-        "            proposal.path = path\n"
-        "            proposal.command = nil\n"
-        "            proposal.requiresApproval = true\n\n"
-        "            let isDeviceAction = proposal.action == .readDeviceFile\n"
-        "                || proposal.action == .writeDeviceFile\n"
-        "                || proposal.action == .listDeviceDirectory\n"
-        "            if isDeviceAction && !path.hasPrefix(\"/\") {\n"
-        "                throw AppleOnDeviceAgentError.actionRejected(\"Device filesystem actions require an absolute iOS path.\")\n"
-        "            }\n\n"
-    )
-    if "let isDeviceAction = proposal.action == .readDeviceFile" not in text:
-        if absolute_guard_marker not in text:
-            raise SystemExit("Fast unsigned device patch failed: Apple agent path validation marker missing")
-        text = text.replace(absolute_guard_marker, absolute_guard, 1)
-
-    text = text.replace(
-        "            if proposal.action == .writeFile {\n",
-        "            if proposal.action == .writeFile || proposal.action == .writeDeviceFile {\n",
-        1,
-    )
     return text
 
 
 def transform_apple_bridge(text: str) -> str:
-    if "case .readDeviceFile:" not in text:
-        record_marker = """        case .listDirectory:
-            let path = Self.resolvedPath(
-                proposal.path ?? "",
-                workDirectory: workDirectory
-            )
-            store.appendCommand(
-                turnID: localTurnID,
-                command: "LC_ALL=C ls -la -- \\(IshFS.shellQuote(path))",
-                cwd: workDirectory,
-                output: result,
-                exitCode: 0
-            )
-        }
-    }
-"""
-        record_replacement = """        case .listDirectory:
-            let path = Self.resolvedPath(
-                proposal.path ?? "",
-                workDirectory: workDirectory
-            )
-            store.appendCommand(
-                turnID: localTurnID,
-                command: "LC_ALL=C ls -la -- \\(IshFS.shellQuote(path))",
-                cwd: workDirectory,
-                output: result,
-                exitCode: 0
-            )
-
-        case .readDeviceFile:
-            let path = proposal.path ?? ""
-            store.appendNote(
-                turnID: localTurnID,
-                title: "Read device \\(path)",
-                body: result
-            )
-
-        case .writeDeviceFile:
-            let path = proposal.path ?? ""
-            store.appendFileChange(
-                turnID: localTurnID,
-                path: path,
-                content: proposal.content ?? "",
-                summary: result
-            )
-
-        case .listDeviceDirectory:
-            let path = proposal.path ?? ""
-            store.appendNote(
-                turnID: localTurnID,
-                title: "Listed device \\(path)",
-                body: result
-            )
-        }
-    }
-"""
-        if record_marker not in text:
-            raise SystemExit("Fast unsigned device patch failed: Apple bridge transcript switch marker missing")
-        text = text.replace(record_marker, record_replacement, 1)
-
-        execute_marker = """        case .listDirectory:
-            guard let rawPath = proposal.path else {
-                throw bridgeError("The approved directory path is missing.")
-            }
-            let path = resolvedPath(rawPath, workDirectory: workDirectory)
-            let command = "LC_ALL=C ls -la -- \\(IshFS.shellQuote(path))"
-            let result = await IshFS.run(command, cwd: workDirectory)
-            guard result.exitCode == 0 else {
-                throw runtimeError(
-                    label: "Directory listing",
-                    exitCode: result.exitCode,
-                    output: result.output
-                )
-            }
-            let body = result.output.isEmpty ? "(empty directory)" : limited(result.output)
-            return "\\(path)\\n\\n\\(body)"
-        }
-    }
-"""
-        execute_replacement = """        case .listDirectory:
-            guard let rawPath = proposal.path else {
-                throw bridgeError("The approved directory path is missing.")
-            }
-            let path = resolvedPath(rawPath, workDirectory: workDirectory)
-            let command = "LC_ALL=C ls -la -- \\(IshFS.shellQuote(path))"
-            let result = await IshFS.run(command, cwd: workDirectory)
-            guard result.exitCode == 0 else {
-                throw runtimeError(
-                    label: "Directory listing",
-                    exitCode: result.exitCode,
-                    output: result.output
-                )
-            }
-            let body = result.output.isEmpty ? "(empty directory)" : limited(result.output)
-            return "\\(path)\\n\\n\\(body)"
-
-        case .readDeviceFile:
-            guard let path = proposal.path else {
-                throw bridgeError("The approved device file path is missing.")
-            }
-            let text = try DeviceRouteAccess.readText(path: path, maxBytes: 256_000)
+    read_marker = """            let path = resolvedPath(rawPath, workDirectory: workDirectory)
+            let text = try await IshFS.readTextFile(path: path, maxBytes: 256_000)
             return "\\(path)\\n\\n\\(limited(text))"
-
-        case .writeDeviceFile:
-            guard let path = proposal.path,
-                  let content = proposal.content else {
-                throw bridgeError("The approved device file write is incomplete.")
+"""
+    read_replacement = """            let path = resolvedPath(rawPath, workDirectory: workDirectory)
+            if DeviceRouteAccess.shouldHandle(path) {
+                let text = try DeviceRouteAccess.readText(path: path, maxBytes: 256_000)
+                return "\\(path)\\n\\n\\(limited(text))"
             }
-            let bytes = try DeviceRouteAccess.writeText(path: path, text: content)
-            return "Wrote \\(bytes) bytes to device route \\(path)."
+            let text = try await IshFS.readTextFile(path: path, maxBytes: 256_000)
+            return "\\(path)\\n\\n\\(limited(text))"
+"""
+    if "DeviceRouteAccess.readText(path: path" not in text:
+        if read_marker not in text:
+            raise SystemExit("Fast unsigned device patch failed: Apple bridge readFile marker missing")
+        text = text.replace(read_marker, read_replacement, 1)
 
-        case .listDeviceDirectory:
-            guard let path = proposal.path else {
-                throw bridgeError("The approved device directory path is missing.")
+    write_marker = """            let path = resolvedPath(rawPath, workDirectory: workDirectory)
+            try await IshFS.writeTextFile(path: path, text: content)
+            return "Wrote \\(content.utf8.count) bytes to \\(path)."
+"""
+    write_replacement = """            let path = resolvedPath(rawPath, workDirectory: workDirectory)
+            if DeviceRouteAccess.shouldHandle(path) {
+                let bytes = try DeviceRouteAccess.writeText(path: path, text: content)
+                return "Wrote \\(bytes) bytes to \\(path)."
             }
-            let body = try DeviceRouteAccess.listDirectory(path: path)
-            return "\\(path)\\n\\n\\(limited(body))"
-        }
-    }
+            try await IshFS.writeTextFile(path: path, text: content)
+            return "Wrote \\(content.utf8.count) bytes to \\(path)."
 """
-        if execute_marker not in text:
-            raise SystemExit("Fast unsigned device patch failed: Apple bridge execution switch marker missing")
-        text = text.replace(execute_marker, execute_replacement, 1)
+    if "DeviceRouteAccess.writeText(path: path" not in text:
+        if write_marker not in text:
+            raise SystemExit("Fast unsigned device patch failed: Apple bridge writeFile marker missing")
+        text = text.replace(write_marker, write_replacement, 1)
 
-        display_marker = """        case .answer: return "Answer"
-        case .runCommand: return "Run Command"
-        case .readFile: return "Read File"
-        case .writeFile: return "Write File"
-        case .listDirectory: return "List Directory"
+    list_marker = """            let path = resolvedPath(rawPath, workDirectory: workDirectory)
+            let command = "LC_ALL=C ls -la -- \\(IshFS.shellQuote(path))"
 """
-        display_replacement = display_marker + """        case .readDeviceFile: return "Read Device File"
-        case .writeDeviceFile: return "Write Device File"
-        case .listDeviceDirectory: return "List Device Directory"
+    list_replacement = """            let path = resolvedPath(rawPath, workDirectory: workDirectory)
+            if DeviceRouteAccess.shouldHandle(path) {
+                let body = try DeviceRouteAccess.listDirectory(path: path)
+                return "\\(path)\\n\\n\\(limited(body))"
+            }
+            let command = "LC_ALL=C ls -la -- \\(IshFS.shellQuote(path))"
 """
-        if display_marker not in text:
-            raise SystemExit("Fast unsigned device patch failed: action display-name switch marker missing")
-        text = text.replace(display_marker, display_replacement, 1)
+    if "DeviceRouteAccess.listDirectory(path: path)" not in text:
+        if list_marker not in text:
+            raise SystemExit("Fast unsigned device patch failed: Apple bridge listDirectory marker missing")
+        text = text.replace(list_marker, list_replacement, 1)
 
-        icon_marker = """        case .answer: return "text.bubble.fill"
-        case .runCommand: return "terminal.fill"
-        case .readFile: return "doc.text.fill"
-        case .writeFile: return "square.and.pencil"
-        case .listDirectory: return "folder.fill"
+    transcript_marker = """        case .listDirectory:
+            let path = Self.resolvedPath(
+                proposal.path ?? "",
+                workDirectory: workDirectory
+            )
+            store.appendCommand(
+                turnID: localTurnID,
+                command: "LC_ALL=C ls -la -- \\(IshFS.shellQuote(path))",
+                cwd: workDirectory,
+                output: result,
+                exitCode: 0
+            )
 """
-        icon_replacement = icon_marker + """        case .readDeviceFile: return "iphone.and.arrow.forward"
-        case .writeDeviceFile: return "iphone.and.arrow.forward"
-        case .listDeviceDirectory: return "iphone.gen3"
+    transcript_replacement = """        case .listDirectory:
+            let path = Self.resolvedPath(
+                proposal.path ?? "",
+                workDirectory: workDirectory
+            )
+            if DeviceRouteAccess.shouldHandle(path) {
+                store.appendNote(
+                    turnID: localTurnID,
+                    title: "List \\(path)",
+                    body: result
+                )
+            } else {
+                store.appendCommand(
+                    turnID: localTurnID,
+                    command: "LC_ALL=C ls -la -- \\(IshFS.shellQuote(path))",
+                    cwd: workDirectory,
+                    output: result,
+                    exitCode: 0
+                )
+            }
 """
-        if icon_marker not in text:
-            raise SystemExit("Fast unsigned device patch failed: action icon switch marker missing")
-        text = text.replace(icon_marker, icon_replacement, 1)
+    if "title: \"List \\(path)\"" not in text:
+        if transcript_marker not in text:
+            raise SystemExit("Fast unsigned device patch failed: Apple bridge list transcript marker missing")
+        text = text.replace(transcript_marker, transcript_replacement, 1)
 
-    text = text.replace(
-        "Using Litter's existing local iSH runtime.",
-        "Using Litter's approved local runtime.",
-    )
     return text
 
 
@@ -378,6 +273,30 @@ def transform_bridging_header(text: str) -> str:
     if not text.endswith("\n"):
         text += "\n"
     return text + UNSIGNED_BAD_QUERY_HEADER
+
+
+def git_blob_sha(path: Path) -> str:
+    data = path.read_bytes()
+    header = f"blob {len(data)}\0".encode()
+    return hashlib.sha1(header + data).hexdigest()
+
+
+def validate_exact_upstream_bad_query() -> list[str]:
+    failures: list[str] = []
+    expected = (
+        (BAD_QUERY_C, UPSTREAM_BAD_QUERY_C_BLOB),
+        (BAD_QUERY_H, UPSTREAM_BAD_QUERY_H_BLOB),
+    )
+    for path, blob_sha in expected:
+        if not path.is_file():
+            failures.append(f"missing unsigned bad_query source: {path.relative_to(ROOT)}")
+            continue
+        actual = git_blob_sha(path)
+        if actual != blob_sha:
+            failures.append(
+                f"{path.relative_to(ROOT)} is not byte-for-byte upstream: expected Git blob {blob_sha}, got {actual}"
+            )
+    return failures
 
 
 def validate_fast_device_project(text: str) -> None:
@@ -427,24 +346,29 @@ def validate_fast_device_project(text: str) -> None:
 
 
 def validate_bad_query_agent(agent: str, bridge: str, header: str) -> None:
-    failures: list[str] = []
+    failures = validate_exact_upstream_bad_query()
+
+    invented_actions = (
+        "readDeviceFile",
+        "writeDeviceFile",
+        "listDeviceDirectory",
+    )
+    for marker in invented_actions:
+        if marker in agent or marker in bridge:
+            failures.append(f"invented device action is still present: {marker}")
+
     for marker in (
-        "case readDeviceFile",
-        "case writeDeviceFile",
-        "case listDeviceDirectory",
-        "readDeviceFile/writeDeviceFile/listDeviceDirectory operate on the iOS host filesystem",
-        "proposal.action == .writeFile || proposal.action == .writeDeviceFile",
+        "action must be one of: answer, runCommand, readFile, writeFile, listDirectory.",
+        "the runtime selects iSH or bad_query from the path",
     ):
         if marker not in agent:
             failures.append(f"Apple agent missing marker: {marker}")
 
     for marker in (
-        "case .readDeviceFile:",
-        "case .writeDeviceFile:",
-        "case .listDeviceDirectory:",
-        "DeviceRouteAccess.readText",
-        "DeviceRouteAccess.writeText",
-        "DeviceRouteAccess.listDirectory",
+        "DeviceRouteAccess.shouldHandle(path)",
+        "DeviceRouteAccess.readText(path: path",
+        "DeviceRouteAccess.writeText(path: path",
+        "DeviceRouteAccess.listDirectory(path: path)",
     ):
         if marker not in bridge:
             failures.append(f"Apple bridge missing marker: {marker}")
@@ -452,13 +376,18 @@ def validate_bad_query_agent(agent: str, bridge: str, header: str) -> None:
     if UNSIGNED_BAD_QUERY_HEADER not in header:
         failures.append("bridging header does not import unsigned bad_query.h")
 
-    for path in (
-        ROOT / "apps/ios/UnsignedOnly/BadQuery/bad_query.c",
-        ROOT / "apps/ios/UnsignedOnly/BadQuery/bad_query.h",
-        ROOT / "apps/ios/UnsignedOnly/BadQuery/DeviceRouteAccess.swift",
-    ):
-        if not path.is_file():
-            failures.append(f"missing unsigned bad_query source: {path.relative_to(ROOT)}")
+    if not DEVICE_ROUTE_ACCESS.is_file():
+        failures.append(f"missing unsigned route glue: {DEVICE_ROUTE_ACCESS.relative_to(ROOT)}")
+    else:
+        route_glue = DEVICE_ROUTE_ACCESS.read_text()
+        for marker in (
+            "bad_query(pathBuffer.baseAddress",
+            "bad_query_list(buffer.baseAddress",
+            "bad_query_release(handle)",
+            "static func shouldHandle",
+        ):
+            if marker not in route_glue:
+                failures.append(f"DeviceRouteAccess missing marker: {marker}")
 
     if failures:
         raise SystemExit("Fast unsigned bad_query agent patch failed:\n- " + "\n- ".join(failures))
@@ -483,7 +412,7 @@ def main() -> None:
     validate_bad_query_agent(patched_agent, patched_bridge, patched_header)
 
     if args.check:
-        print("Fast unsigned device project + bad_query agent patch is valid.")
+        print("Fast unsigned device project + exact bad_query read/list/write integration is valid.")
         return
 
     changed = False
@@ -498,13 +427,13 @@ def main() -> None:
             changed = True
 
     if not changed:
-        print("Fast unsigned device project + bad_query agent patch already applied.")
+        print("Fast unsigned device project + exact bad_query integration already applied.")
         return
 
     print(
         "Applied fast unsigned device patch: KittyStore remains embedded, emexDE/private BuildKit are excluded, "
-        "and the Apple on-device agent gains approval-gated iOS device-route read/list/write via bad_query. "
-        "The bad_query source is injected only into this unsigned build target."
+        "and the existing Apple-agent readFile/writeFile/listDirectory actions route supported iOS paths through "
+        "byte-for-byte upstream forcequitOS/bad_query. The bad_query source is injected only into this unsigned target."
     )
 
 

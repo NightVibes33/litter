@@ -34,6 +34,31 @@ enum DeviceRouteAccess {
     private static let defaultMaxInode: Int64 = 1_000_000
     private static let maxListedEntries = 2_000
 
+    // Exactly the route families documented by forcequitOS/bad_query.
+    private static let routePrefixes = [
+        "/var/containers/Data/System",
+        "/var/containers/Shared/SystemGroup",
+        "/var/mobile/Containers/Data/Application",
+        "/var/mobile/Containers/Data/InternalDaemon",
+        "/var/mobile/Containers/Data/PluginKitPlugin",
+        "/var/mobile/Containers/Shared/AppGroup",
+    ]
+
+    static func shouldHandle(_ rawPath: String) -> Bool {
+        guard let path = try? normalizedAbsolutePath(rawPath) else { return false }
+        let normalized: String
+        if path == "/private/var" {
+            normalized = "/var"
+        } else if path.hasPrefix("/private/var/") {
+            normalized = String(path.dropFirst("/private".count))
+        } else {
+            normalized = path
+        }
+        return routePrefixes.contains { prefix in
+            normalized == prefix || normalized.hasPrefix(prefix + "/")
+        }
+    }
+
     static func readText(path rawPath: String, maxBytes: Int = defaultReadLimit) throws -> String {
         let path = try normalizedAbsolutePath(rawPath)
         return try withExtension(path: path, create: false) {
@@ -54,17 +79,7 @@ enum DeviceRouteAccess {
 
     static func writeText(path rawPath: String, text: String) throws -> Int {
         let path = try normalizedAbsolutePath(rawPath)
-        let fileManager = FileManager.default
-        let create = !fileManager.fileExists(atPath: path)
-        let parent = (path as NSString).deletingLastPathComponent
-
-        var parentHandle: Int64?
-        if create, !parent.isEmpty, parent != path {
-            parentHandle = try? acquire(path: parent, create: false)
-        }
-        defer {
-            if let parentHandle { bad_query_release(parentHandle) }
-        }
+        let create = !FileManager.default.fileExists(atPath: path)
 
         return try withExtension(path: path, create: create) {
             let data = Data(text.utf8)
@@ -112,6 +127,52 @@ enum DeviceRouteAccess {
         }
     }
 
+    // Direct access to the exact upstream parameters for App Group research.
+    static func acquire(
+        path rawPath: String,
+        create: Bool,
+        groupIdentifier: String? = nil,
+        isGroup: Bool = false
+    ) throws -> Int64 {
+        let path = try normalizedAbsolutePath(rawPath)
+        var cPath = Array(path.utf8CString)
+
+        let handle: Int64
+        if let groupIdentifier {
+            var cGroup = Array(groupIdentifier.utf8CString)
+            handle = cPath.withUnsafeMutableBufferPointer { pathBuffer in
+                cGroup.withUnsafeMutableBufferPointer { groupBuffer in
+                    bad_query(pathBuffer.baseAddress, create, groupBuffer.baseAddress, isGroup)
+                }
+            }
+        } else {
+            handle = cPath.withUnsafeMutableBufferPointer { pathBuffer in
+                bad_query(pathBuffer.baseAddress, create, nil, isGroup)
+            }
+        }
+
+        guard handle >= 0 else {
+            throw DeviceRouteAccessError.unavailable(handle, path)
+        }
+        return handle
+    }
+
+    static func release(_ handle: Int64) {
+        bad_query_release(handle)
+    }
+
+    static func listByInode(path rawPath: String, maxInode: Int64) throws -> String {
+        let path = try normalizedAbsolutePath(rawPath)
+        var cPath = Array(path.utf8CString)
+        guard let raw = cPath.withUnsafeMutableBufferPointer({ buffer in
+            bad_query_list(buffer.baseAddress, maxInode)
+        }) else {
+            throw DeviceRouteAccessError.listFailed(path)
+        }
+        defer { free(raw) }
+        return String(cString: raw)
+    }
+
     private static func normalizedAbsolutePath(_ value: String) throws -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("/") else {
@@ -120,24 +181,13 @@ enum DeviceRouteAccess {
         return (trimmed as NSString).standardizingPath
     }
 
-    private static func acquire(path: String, create: Bool) throws -> Int64 {
-        var cPath = Array(path.utf8CString)
-        let handle = cPath.withUnsafeMutableBufferPointer { buffer in
-            bad_query(buffer.baseAddress, create, nil, false)
-        }
-        guard handle >= 0 else {
-            throw DeviceRouteAccessError.unavailable(handle, path)
-        }
-        return handle
-    }
-
     private static func withExtension<T>(
         path: String,
         create: Bool,
         operation: () throws -> T
     ) throws -> T {
         let handle = try acquire(path: path, create: create)
-        defer { bad_query_release(handle) }
+        defer { release(handle) }
         return try operation()
     }
 }

