@@ -137,7 +137,7 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXTarget.m",
-    "",
+    "#import <MobileDevelopmentKit/MDKOSVersion.h>",
     "NXTarget unused Swift import",
 )
 replace_generated_swift_import(
