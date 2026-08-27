@@ -7,7 +7,9 @@ on:
     paths:
       - 'apps/ios/**'
       - 'tools/scripts/patch-ios-fast-device-project.py'
+      - 'tools/scripts/patch-ios-full-sideload-bad-query.py'
       - 'tools/scripts/patch-ios-testflight-fast-project.py'
+      - 'tools/scripts/verify-nyxian-source-import.sh'
       - '.github/workflows/apple-agent-ios-build-dispatch.yml'
 
 permissions:
@@ -24,10 +26,10 @@ jobs:
           submodules: false
           fetch-depth: 1
 
-      - name: Validate unsigned bad_query injection
+      - name: Validate full Nyxian sideload bad_query injection
         run: |
           set -euo pipefail
-          python3 tools/scripts/patch-ios-fast-device-project.py --check
+          python3 tools/scripts/patch-ios-full-sideload-bad-query.py --check
 
       - name: Validate TestFlight excludes bad_query
         run: |
@@ -65,7 +67,7 @@ jobs:
           gh workflow run ios-unsigned-ipa.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref "$GITHUB_REF_NAME" \
-            -f build_mode=fast-device
+            -f build_mode=full-sideload
 
           run_id=""
           for attempt in $(seq 1 60); do
@@ -92,7 +94,7 @@ jobs:
           fi
 
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-          echo "Dispatched iOS build run: $run_id"
+          echo "Dispatched full-sideload iOS build run: $run_id"
 
       - name: Wait for iOS build and collect logs
         id: child
