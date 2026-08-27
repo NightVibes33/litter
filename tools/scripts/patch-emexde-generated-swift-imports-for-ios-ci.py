@@ -18,6 +18,21 @@ for source in Path("ThirdParty/EmexDE/Source").rglob("*"):
         source.write_text(normalized)
         changed.append(source)
 
+application_workspace = Path("ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m")
+application_workspace_text = application_workspace.read_text()
+process_manager_import = "#import <LindChain/ProcEnvironment/PEProcessManager.h>"
+process_manager_anchor = "#import <LindChain/ProcEnvironment/PEArchiveHandle.h>"
+explicit_process_manager_import = process_manager_anchor + "\n" + process_manager_import
+if explicit_process_manager_import not in application_workspace_text:
+    if process_manager_anchor not in application_workspace_text:
+        raise SystemExit("Missing expected emexDE process manager import anchor")
+    application_workspace_text = application_workspace_text.replace(
+        process_manager_anchor,
+        explicit_process_manager_import,
+        1,
+    )
+    application_workspace.write_text(application_workspace_text)
+
 terminal_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/UIInit/Terminal.swift")
 bridge_text = terminal_bridge.read_text()
 bridge_replacements = {
