@@ -187,11 +187,9 @@ jobs:
             apps/ios/Resources/fs.tar.gz
             apps/ios/Resources/fs.version
             .build-stamps
-            build/DerivedData
-          key: ios-generated-assets-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**') }}-${{ github.sha }}
+          key: ios-generated-assets-v3-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**') }}-${{ github.sha }}
           restore-keys: |
-            ios-generated-assets-v2-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**') }}-
-            ios-generated-assets-${{ runner.os }}-
+            ios-generated-assets-v3-${{ runner.os }}-${{ hashFiles('Makefile', 'apps/ios/project.yml', 'apps/ios/scripts/**') }}-
 
       - name: Restore Alpine filesystem cache
         id: alpine_fs_cache
@@ -757,12 +755,30 @@ jobs:
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           time make xcgen
 
-      - name: Reset SwiftPM binary artifact cache
+      - name: Repair and resolve SwiftPM binary artifacts
         run: |
           set -euo pipefail
-          local_artifacts="$PWD/build/DerivedData/SourcePackages/artifacts"
-          rm -rf "$local_artifacts"
-          mkdir -p "$PWD/build/DerivedData/SourcePackages"
+          source_packages="$PWD/build/DerivedData/SourcePackages"
+          rm -rf "$source_packages/artifacts/webrtc"
+
+          global_artifacts="$HOME/Library/Caches/org.swift.swiftpm/artifacts"
+          if [ -d "$global_artifacts" ]; then
+            find "$global_artifacts" -maxdepth 1 -name 'https___github_com_stasel_WebRTC*' -exec rm -rf {} +
+          fi
+
+          mkdir -p "$source_packages"
+          xcodebuild -resolvePackageDependencies \
+            -project apps/ios/Litter.xcodeproj \
+            -scheme Litter \
+            -clonedSourcePackagesDirPath "$source_packages" \
+            -disablePackageRepositoryCache
+
+          webrtc_xcframework="$source_packages/artifacts/webrtc/WebRTC/WebRTC.xcframework"
+          if [ ! -d "$webrtc_xcframework" ]; then
+            echo "::error::SwiftPM resolution did not restore $webrtc_xcframework"
+            find "$source_packages/artifacts" -maxdepth 4 -print 2>/dev/null || true
+            exit 1
+          fi
 
       - name: Build unsigned archive
         env:
