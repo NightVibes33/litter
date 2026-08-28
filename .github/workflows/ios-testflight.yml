@@ -632,15 +632,6 @@ jobs:
           set -euo pipefail
           tools/scripts/prepare-appstore-signing-assets.sh
 
-      - name: Upload App Store certificate signing request
-        if: env.EXPORT_SIGNING_STYLE == 'manual' && env.TESTFLIGHT_SIGNING_SOURCE == 'appstore_connect_api'
-        uses: actions/upload-artifact@v4
-        with:
-          name: AlleyCat-AppStore-CSR
-          path: ${{ runner.temp }}/litter-appstore-signing/litter-appstore.csr
-          if-no-files-found: error
-          retention-days: 30
-
       - name: Install p12 signing certificate and provisioning profiles
         if: env.EXPORT_SIGNING_STYLE == 'manual' && env.TESTFLIGHT_SIGNING_SOURCE == 'p12'
         env:
