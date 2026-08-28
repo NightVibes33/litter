@@ -207,9 +207,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build/DerivedData/SourcePackages
-          key: ios-xcode-sourcepackages-v1-${{ runner.os }}-${{ hashFiles('apps/ios/project.yml') }}
+          key: ios-xcode-sourcepackages-v2-${{ runner.os }}-${{ hashFiles('apps/ios/project.yml') }}
           restore-keys: |
-            ios-xcode-sourcepackages-v1-${{ runner.os }}-
+            ios-xcode-sourcepackages-v2-${{ runner.os }}-
 
       - name: Ensure Swift UniFFI binding
         run: |
@@ -775,8 +775,17 @@ jobs:
 
           webrtc_xcframework="$source_packages/artifacts/webrtc/WebRTC/WebRTC.xcframework"
           if [ ! -d "$webrtc_xcframework" ]; then
-            echo "::error::SwiftPM resolution did not restore $webrtc_xcframework"
-            find "$source_packages/artifacts" -maxdepth 4 -print 2>/dev/null || true
+            staged_xcframework="$(find "$source_packages/artifacts/extract/webrtc" -type d -name WebRTC.xcframework -print -quit 2>/dev/null || true)"
+            if [ -n "$staged_xcframework" ] && [ -s "$staged_xcframework/Info.plist" ]; then
+              echo "SwiftPM left WebRTC staged at $staged_xcframework; promoting validated artifact."
+              mkdir -p "$(dirname "$webrtc_xcframework")"
+              cp -R "$staged_xcframework" "$webrtc_xcframework"
+            fi
+          fi
+
+          if [ ! -s "$webrtc_xcframework/Info.plist" ]; then
+            echo "::error::SwiftPM resolution did not restore a valid $webrtc_xcframework"
+            find "$source_packages/artifacts" -maxdepth 7 -print 2>/dev/null || true
             exit 1
           fi
 
