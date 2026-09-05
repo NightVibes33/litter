@@ -6,10 +6,10 @@ IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$IOS_DIR/../.." && pwd)"
 SUBMODULE_DIR="$REPO_DIR/shared/third_party/codex"
 PATCH_FILES=(
-    # Refreshed aggregate patch for upstream codex rust-v0.144.1.
+    # Refreshed aggregate patch for NightVibes33 codex base with GPT-6-Astra backport.
     # Older per-feature patches are kept for history but no longer apply cleanly
-    # after the 0.132 -> 0.144 bridge bump.
-    "$REPO_DIR/patches/codex/mobile-bridge-codex-0.144.1.patch"
+    # after the Astra Codex bridge bump.
+    "$REPO_DIR/patches/codex/mobile-bridge-codex-astra.patch"
 )
 
 patch_already_upstreamed() {
