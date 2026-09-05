@@ -52,6 +52,14 @@ if [[ "$GENERATE_SWIFT" -eq 0 && "$GENERATE_KOTLIN" -eq 0 ]]; then
     exit 1
 fi
 
+# rama-core 0.3.0-alpha.4 has a caret dependency on rama-error that can
+# resolve to stable 0.3.0, where OpaqueError was removed. Keep the Rama
+# alpha stack coherent until the upstream dependency constraint is fixed.
+if grep -A2 '^name = "rama-error"$' Cargo.lock 2>/dev/null | grep -q '^version = "0.3.0"$'; then
+    echo "==> Pinning rama-error to 0.3.0-alpha.4 for rama-core compatibility..."
+    cargo update -p rama-error@0.3.0 --precise 0.3.0-alpha.4
+fi
+
 # ---------------------------------------------------------------------------
 # 1. Build the cdylib so uniffi-bindgen can read its metadata
 # ---------------------------------------------------------------------------
