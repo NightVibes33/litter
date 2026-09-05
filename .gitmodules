@@ -13,4 +13,5 @@
 [submodule "ThirdParty/EmexDE/Source"]
 	path = ThirdParty/EmexDE/Source
 	url = https://github.com/emexlab/Nyxian.git
+	branch = main
 	shallow = true
