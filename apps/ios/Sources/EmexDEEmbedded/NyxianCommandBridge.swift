@@ -8,8 +8,14 @@ public final class NyxianCommandBridge: NSObject {
     // Ksurface kernel-extension project type.
     private static let kSurfaceKextKind = NXProjectSchemeKind(rawValue: 5)
 
-    @objc(runJSON:)
-    public static func runJSON(_ requestJSON: String) -> String {
+    @objc(runJSON:completion:)
+    public static func runJSON(_ requestJSON: String, completion: @escaping (String) -> Void) {
+        Task { @MainActor in
+            completion(await execute(requestJSON))
+        }
+    }
+
+    private static func execute(_ requestJSON: String) async -> String {
         guard let data = requestJSON.data(using: .utf8),
               let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let command = request["command"] as? String else {
@@ -100,18 +106,22 @@ public final class NyxianCommandBridge: NSObject {
                 )
             }
 
-            let semaphore = DispatchSemaphore(value: 0)
-            let buildResult = NyxianBuildResult()
-            NXBuilder.buildProject(withProject: project, buildType: command == "run" ? .run : .export) { result, output in
-                buildResult.success = result
-                buildResult.executablePath = output
-                semaphore.signal()
+            guard !NXBuilder.builds else {
+                return response(code: 75, status: "build-busy", message: "An EmexDE build is already running.")
             }
-            semaphore.wait()
-            let artifact = command == "build" ? project.packageURL.path : (buildResult.executablePath ?? "")
+            NXBuilder.builds = true
+            defer { NXBuilder.builds = false }
+            // Suspend the command while upstream builds on its worker queue.
+            // Blocking the main thread here freezes the IDE and signing UI.
+            let (success, executablePath): (Bool, String?) = await withCheckedContinuation { continuation in
+                NXBuilder.buildProject(withProject: project, buildType: command == "run" ? .run : .export) { result, output in
+                    continuation.resume(returning: (result, output))
+                }
+            }
+            let artifact = command == "build" ? project.packageURL.path : (executablePath ?? "")
             return response(
-                code: buildResult.success ? 0 : 65,
-                status: buildResult.success ? "\(command)-complete" : "\(command)-failed",
+                code: success ? 0 : 65,
+                status: success ? "\(command)-complete" : "\(command)-failed",
                 payload: [
                     "projectPath": project.url.path,
                     "artifactPath": artifact,
@@ -177,9 +187,4 @@ public final class NyxianCommandBridge: NSObject {
         }
         return String(data: data, encoding: .utf8) ?? "{\"exitCode\":70,\"status\":\"encode-failed\"}"
     }
-}
-
-private final class NyxianBuildResult: @unchecked Sendable {
-    var success = false
-    var executablePath: String?
 }
