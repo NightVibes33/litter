@@ -1846,7 +1846,7 @@ index 2ecdaacc..c63c7bed 100644
 +                            )
 +                        })
 +                    {
-+                        let item_id = id.clone().unwrap_or_default();
++                        let item_id = id.as_ref().map(ToString::to_string).unwrap_or_default();
 +                        active_dynamic_tool_call = Some((call_id.clone(), item_id));
 +                    }
                  }

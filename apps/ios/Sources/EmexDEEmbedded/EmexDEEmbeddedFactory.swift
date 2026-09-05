@@ -172,7 +172,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
-        if tabBarController.selectedViewController === viewController && Builder.builds {
+        if NXBuilder.builds {
             return false
         }
         if viewController.tabBarItem.tag == 2 {
