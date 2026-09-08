@@ -2109,7 +2109,7 @@ index c1d61ebd..b74b6b77 100644
      transcript: &Arc<Mutex<HeadTailBuffer>>,
      call_id: &str,
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
-index f5112dce..b763b86b 100644
+index f5112dce..029afcd7 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
 +++ b/codex-rs/core/src/unified_exec/process_manager.rs
 @@ -48,6 +48,8 @@ use crate::unified_exec::UnifiedExecProcessManager;
@@ -2134,7 +2134,7 @@ index f5112dce..b763b86b 100644
          let process = self
              .open_session_with_sandbox(&request, cwd.clone(), context)
              .await;
-@@ -653,6 +661,133 @@ impl UnifiedExecProcessManager {
+@@ -653,6 +661,135 @@ impl UnifiedExecProcessManager {
          Ok(response)
      }
  
@@ -2250,7 +2250,8 @@ index f5112dce..b763b86b 100644
 +
 +        self.release_process_id(request.process_id).await;
 +
-+        let original_token_count = approx_token_count(&text);
++        let original_token_count =
++            usize::try_from(approx_tokens_from_byte_count(raw_output.len())).unwrap_or(usize::MAX);
 +        Ok(ExecCommandToolOutput {
 +            event_call_id: context.call_id.clone(),
 +            chunk_id: generate_chunk_id(),
@@ -2261,6 +2262,7 @@ index f5112dce..b763b86b 100644
 +            process_id: None,
 +            exit_code: Some(exit_code),
 +            original_token_count: Some(original_token_count),
++            output_omitted_bytes: None,
 +            hook_command: Some(request.hook_command.clone()),
 +        })
 +    }
