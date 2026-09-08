@@ -491,8 +491,6 @@ targets:
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/NSUserDefaults.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/SecItem.m
-        headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/UIKit+GuestHooksInit.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/utils.m
@@ -518,8 +516,6 @@ targets:
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEFileHandle.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEMachPort.m
-        headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/panic.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/posix_spawn.m
         headerVisibility: project
