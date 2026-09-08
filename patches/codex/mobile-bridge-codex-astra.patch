@@ -904,6 +904,184 @@ index 93d15a29..50088237 100644
              }),
          )
          .await
+diff --git a/codex-rs/code-mode/Cargo.toml b/codex-rs/code-mode/Cargo.toml
+index 011fee6e..b7aa02f6 100644
+--- a/codex-rs/code-mode/Cargo.toml
++++ b/codex-rs/code-mode/Cargo.toml
+@@ -18,12 +18,14 @@ workspace = true
+ [dependencies]
+ codex-code-mode-protocol = { workspace = true }
+ codex-protocol = { workspace = true }
+-deno_core_icudata = { workspace = true }
+ futures = { workspace = true }
+ serde_json = { workspace = true }
+ tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "sync", "time"] }
+ tokio-util = { workspace = true, features = ["rt"] }
+ tracing = { workspace = true }
++
++[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
++deno_core_icudata = { workspace = true }
+ v8 = { workspace = true }
+ 
+ [dev-dependencies]
+diff --git a/codex-rs/code-mode/src/lib.rs b/codex-rs/code-mode/src/lib.rs
+index 6d332bf0..1ec97387 100644
+--- a/codex-rs/code-mode/src/lib.rs
++++ b/codex-rs/code-mode/src/lib.rs
+@@ -1,17 +1,34 @@
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ mod cell_actor;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ mod remote_session;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ mod runtime;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ mod service;
++#[cfg(any(target_os = "ios", target_os = "android"))]
++mod service_mobile;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ mod session_runtime;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ mod v8_init;
+ 
+ pub(crate) type TaskFailureHandler = std::sync::Arc<dyn Fn(String) + Send + Sync>;
+ 
+ pub use codex_code_mode_protocol::*;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ pub use remote_session::ProcessOwnedCodeModeSession;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ pub use remote_session::ProcessOwnedCodeModeSessionProvider;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ pub use service::InProcessCodeModeSession;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ pub use service::InProcessCodeModeSessionProvider;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ pub use service::NoopCodeModeSessionDelegate;
++#[cfg(any(target_os = "ios", target_os = "android"))]
++pub use service_mobile::*;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ pub use v8_init::V8JitMode;
++#[cfg(not(any(target_os = "ios", target_os = "android")))]
+ pub use v8_init::initialize_v8;
+diff --git a/codex-rs/code-mode/src/service_mobile.rs b/codex-rs/code-mode/src/service_mobile.rs
+new file mode 100644
+index 00000000..c4922d45
+--- /dev/null
++++ b/codex-rs/code-mode/src/service_mobile.rs
+@@ -0,0 +1,113 @@
++use std::path::PathBuf;
++use std::sync::Arc;
++
++use codex_code_mode_protocol::CellId;
++use codex_code_mode_protocol::CodeModeNestedToolCall;
++use codex_code_mode_protocol::CodeModeSession;
++use codex_code_mode_protocol::CodeModeSessionDelegate;
++use codex_code_mode_protocol::CodeModeSessionProvider;
++use codex_code_mode_protocol::CodeModeSessionProviderFuture;
++use codex_code_mode_protocol::CodeModeSessionResultFuture;
++use codex_code_mode_protocol::ExecuteRequest;
++use codex_code_mode_protocol::NotificationFuture;
++use codex_code_mode_protocol::StartedCell;
++use codex_code_mode_protocol::ToolInvocationFuture;
++use codex_code_mode_protocol::WaitOutcome;
++use codex_code_mode_protocol::WaitRequest;
++use tokio_util::sync::CancellationToken;
++
++const UNSUPPORTED: &str = "code mode is unavailable on mobile";
++
++pub struct NoopCodeModeSessionDelegate;
++
++impl CodeModeSessionDelegate for NoopCodeModeSessionDelegate {
++    fn invoke_tool<'a>(
++        &'a self,
++        _invocation: CodeModeNestedToolCall,
++        _cancellation_token: CancellationToken,
++    ) -> ToolInvocationFuture<'a> {
++        Box::pin(async { Err(UNSUPPORTED.to_string()) })
++    }
++
++    fn notify<'a>(
++        &'a self,
++        _call_id: String,
++        _cell_id: CellId,
++        _text: String,
++        _cancellation_token: CancellationToken,
++    ) -> NotificationFuture<'a> {
++        Box::pin(async { Ok(()) })
++    }
++
++    fn cell_closed(&self, _cell_id: &CellId) {}
++}
++
++#[derive(Default)]
++pub struct InProcessCodeModeSessionProvider;
++
++impl CodeModeSessionProvider for InProcessCodeModeSessionProvider {
++    fn create_session<'a>(
++        &'a self,
++        _delegate: Arc<dyn CodeModeSessionDelegate>,
++    ) -> CodeModeSessionProviderFuture<'a> {
++        Box::pin(async { Err(UNSUPPORTED.to_string()) })
++    }
++}
++
++pub struct InProcessCodeModeSession;
++
++impl InProcessCodeModeSession {
++    pub fn new() -> Self {
++        Self
++    }
++    pub fn with_delegate(_delegate: Arc<dyn CodeModeSessionDelegate>) -> Self {
++        Self
++    }
++}
++
++impl Default for InProcessCodeModeSession {
++    fn default() -> Self {
++        Self::new()
++    }
++}
++
++impl CodeModeSession for InProcessCodeModeSession {
++    fn execute<'a>(
++        &'a self,
++        _request: ExecuteRequest,
++    ) -> CodeModeSessionResultFuture<'a, StartedCell> {
++        Box::pin(async { Err(UNSUPPORTED.to_string()) })
++    }
++
++    fn wait<'a>(&'a self, _request: WaitRequest) -> CodeModeSessionResultFuture<'a, WaitOutcome> {
++        Box::pin(async { Err(UNSUPPORTED.to_string()) })
++    }
++
++    fn terminate<'a>(&'a self, _cell_id: CellId) -> CodeModeSessionResultFuture<'a, WaitOutcome> {
++        Box::pin(async { Err(UNSUPPORTED.to_string()) })
++    }
++
++    fn shutdown<'a>(&'a self) -> CodeModeSessionResultFuture<'a, ()> {
++        Box::pin(async { Ok(()) })
++    }
++}
++
++#[derive(Default)]
++pub struct ProcessOwnedCodeModeSessionProvider;
++
++impl ProcessOwnedCodeModeSessionProvider {
++    pub fn with_host_program(_host_program: PathBuf) -> Self {
++        Self
++    }
++}
++
++impl CodeModeSessionProvider for ProcessOwnedCodeModeSessionProvider {
++    fn create_session<'a>(
++        &'a self,
++        _delegate: Arc<dyn CodeModeSessionDelegate>,
++    ) -> CodeModeSessionProviderFuture<'a> {
++        Box::pin(async { Err(UNSUPPORTED.to_string()) })
++    }
++}
++
++pub type ProcessOwnedCodeModeSession = InProcessCodeModeSession;
 diff --git a/codex-rs/codex-api/src/endpoint/realtime_call.rs b/codex-rs/codex-api/src/endpoint/realtime_call.rs
 index af706091..f9b53f89 100644
 --- a/codex-rs/codex-api/src/endpoint/realtime_call.rs
@@ -1799,7 +1977,7 @@ index 552c0380..af3cb815 100644
                      realtime_conversation_list_voices(&sess, sub.id.clone()).await;
                      false
 diff --git a/codex-rs/core/src/session/turn.rs b/codex-rs/core/src/session/turn.rs
-index 2ecdaacc..c63c7bed 100644
+index 2ecdaacc..3ea6561f 100644
 --- a/codex-rs/core/src/session/turn.rs
 +++ b/codex-rs/core/src/session/turn.rs
 @@ -97,6 +97,7 @@ use codex_protocol::models::ResponseItem;
