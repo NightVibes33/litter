@@ -389,6 +389,7 @@ targets:
           - LindChain/ProcEnvironment/Shims/proxy.m
           - LindChain/ProcEnvironment/Shims/README.txt
           - LindChain/ProcEnvironment/Shims/vfork.c
+          - LindChain/ProcEnvironment/Surface/**/*.h
           - LindChain/Private/Frameworks/**
           - LindChain/OpenSSL.xcframework/**
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/Assets.xcassets

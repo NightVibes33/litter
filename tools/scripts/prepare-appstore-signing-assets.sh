@@ -163,7 +163,22 @@ create_and_install_profile() {
     profile_json="$SIGNING_DIR/${env_name}.json"
     profile_path="$SIGNING_DIR/${env_name}.mobileprovision"
 
-    asc profiles create         --name "$profile_name"         --profile-type IOS_APP_STORE         --bundle "$bundle_resource_id"         --certificate "$cert_id"         --output json >"$profile_json"
+    for attempt in 1 2 3 4 5; do
+        if asc profiles create \
+            --name "$profile_name" \
+            --profile-type IOS_APP_STORE \
+            --bundle "$bundle_resource_id" \
+            --certificate "$cert_id" \
+            --output json >"$profile_json"; then
+            break
+        fi
+        if [[ "$attempt" == "5" ]]; then
+            echo "App Store profile creation failed after $attempt attempts: $profile_name" >&2
+            return 1
+        fi
+        echo "App Store profile creation attempt $attempt failed; retrying shortly..." >&2
+        sleep "$((attempt * 10))"
+    done
 
     profile_id="$(jq -r '.data.id // empty' "$profile_json")"
     if [[ -z "$profile_id" ]]; then
