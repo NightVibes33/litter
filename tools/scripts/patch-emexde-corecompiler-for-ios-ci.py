@@ -634,6 +634,7 @@ def patch(root: Path) -> None:
 
     utils_text = cc_utils.read_text()
     utils_text = utils_text.replace("#include <swift/Basic/InitializeSwiftModules.h>\n", "")
+    utils_text = utils_text.replace("        initializeSwiftModules();\n", "")
     cc_utils.write_text(utils_text)
 
     print("Patched emexDE CoreCompiler for unsigned iOS CI:")
@@ -642,7 +643,7 @@ def patch(root: Path) -> None:
     print(f"  {cc_ast_unit} (normalized Clang diagnostics ownership)")
     print(f"  {cc_compiler} (normalized Clang diagnostics ownership)")
     print(f"  {swift_compiler}")
-    print(f"  {cc_utils} (removed unused Swift compiler header include)")
+    print(f"  {cc_utils} (removed unavailable Swift module initialization API)")
 
 
 def main() -> None:
