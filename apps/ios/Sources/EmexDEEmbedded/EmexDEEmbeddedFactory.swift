@@ -1,6 +1,12 @@
 import UIKit
 import UIOnboarding
 
+private func liveProcessIsAvailable() -> Bool {
+    guard let plugInsURL = Bundle.main.builtInPlugInsURL else { return false }
+    let extensionURL = plugInsURL.appendingPathComponent("LiveProcess.appex", isDirectory: true)
+    return FileManager.default.fileExists(atPath: extensionURL.path)
+}
+
 @MainActor
 @objc(EmexDEEmbeddedFactory)
 public final class EmexDEEmbeddedFactory: NSObject {

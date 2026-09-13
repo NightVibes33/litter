@@ -365,7 +365,9 @@ jobs:
           fi
 
           if [ "${{ steps.rust_generated_cache.outputs.cache-hit }}" != "true" ]; then
-            echo "No exact Rust generated cache hit; validating any restored fallback before rebuilding."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "No exact Rust generated cache hit; rebuilding so source changes cannot use a stale fallback library."
+            exit 0
           fi
 
           missing=0
