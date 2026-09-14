@@ -1,0 +1,573 @@
+name: ci
+
+on:
+  pull_request:
+    paths:
+      - '**'
+      - '!.gitignore'
+      - '!LICENSE'
+      - '!README.md'
+      - '!docs/**'
+      - '!examples/**'
+      - '.github/workflows/ci.yml'
+  push:
+    branches:
+      - master
+    paths:
+      - '**'
+      - '!.gitignore'
+      - '!LICENSE'
+      - '!README.md'
+      - '!docs/**'
+      - '!examples/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  codegen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: |
+          make codegen
+      - name: Check if the git repository is clean
+        run: $(exit $(git status --porcelain --untracked-files=no | head -255 | wc -l)) || (echo "Dirty git tree"; git diff; exit 1)
+
+  ci:
+    runs-on: ${{ matrix.config.os }}
+    name: ${{ matrix.config.os }} (${{ matrix.config.configType }}${{ matrix.config.arch }})
+    env:
+      ASAN_OPTIONS: halt_on_error=1
+      MSAN_OPTIONS: halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1
+    defaults:
+      run:
+        shell: ${{ matrix.config.arch == '' && 'sh' || 'alpine.sh' }} {0}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - { os: ubuntu-24.04-arm, configType: Debug }
+          - { os: ubuntu-24.04-arm, configType: Release, runTest262: true }
+          - { os: ubuntu-latest, configType: Debug }
+          - { os: ubuntu-latest, configType: Release, runTest262: true }
+          - { os: ubuntu-latest, configType: examples }
+          - { os: ubuntu-latest, configType: shared }
+          - { os: ubuntu-latest, configType: asan+ubsan, runTest262: true }
+          - { os: ubuntu-latest, configType: msan }
+          - { os: ubuntu-latest, configType: tcc }
+          - { os: ubuntu-latest, arch: x86 }
+          - { os: ubuntu-latest, arch: riscv64 }
+          - { os: ubuntu-latest, arch: s390x }
+
+          - { os: macos-14, configType: Debug }
+          - { os: macos-14, configType: Release }
+          - { os: macos-14, configType: examples }
+          - { os: macos-14, configType: shared }
+          - { os: macos-14, configType: asan+ubsan }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      # ASLR with big PIE slides does not work well with [AM]San
+      - name: disable ASLR
+        if: ${{ matrix.config.os == 'ubuntu-latest' && (matrix.config.configType == 'asan+ubsan' || matrix.config.configType == 'msan')}}
+        run: |
+          sudo sysctl -w kernel.randomize_va_space=0
+
+      - name: install TCC
+        if: ${{ matrix.config.configType == 'tcc' }}
+        run: |
+          pushd /tmp
+          git clone https://repo.or.cz/tinycc.git
+          cd tinycc
+          git checkout 9d2068c6309dc50dfdbbc30a5d6757683d3f884c
+          ./configure
+          make
+          sudo make install
+          tcc -v
+          popd
+          echo "CC=tcc" >> $GITHUB_ENV;
+
+      - name: Install extra dependencies
+        if: ${{ matrix.config.arch != '' }}
+        shell: 'sh'
+        run: |
+          sudo apt update && sudo apt install -y binfmt-support
+
+      - name: Setup Alpine
+        if: ${{ matrix.config.arch != '' }}
+        uses: jirutka/setup-alpine@v1
+        with:
+          arch: ${{ matrix.config.arch }}
+          packages: "build-base make cmake"
+
+      - name: uname
+        run: uname -a
+
+      - name: Set build ENV vars
+        run: |
+          if [ "${{ matrix.config.configType }}" = "Debug" ]; then
+            echo "BUILD_TYPE=Debug" >> $GITHUB_ENV;
+          elif [ "${{ matrix.config.configType }}" = "examples" ]; then
+            echo "BUILD_EXAMPLES=ON" >> $GITHUB_ENV;
+          elif [ "${{ matrix.config.configType }}" = "shared" ]; then
+            echo "BUILD_SHARED_LIBS=ON" >> $GITHUB_ENV;
+          elif [ "${{ matrix.config.configType }}" = "asan+ubsan" ]; then
+            echo "BUILD_TYPE=RelWithDebInfo" >> $GITHUB_ENV;
+            echo "CONFIG_ASAN=ON" >> $GITHUB_ENV;
+            echo "CONFIG_UBSAN=ON" >> $GITHUB_ENV;
+          elif [ "${{ matrix.config.configType }}" = "msan" ]; then
+            echo "BUILD_TYPE=RelWithDebInfo" >> $GITHUB_ENV;
+            echo "CONFIG_MSAN=ON" >> $GITHUB_ENV;
+            echo "CC=clang" >> $GITHUB_ENV;
+          fi
+
+      - name: build
+        run: |
+          make \
+            BUILD_TYPE=$BUILD_TYPE \
+            BUILD_EXAMPLES=$BUILD_EXAMPLES \
+            BUILD_SHARED_LIBS=$BUILD_SHARED_LIBS \
+            CONFIG_ASAN=$CONFIG_ASAN \
+            CONFIG_UBSAN=$CONFIG_UBSAN \
+            CONFIG_MSAN=$CONFIG_MSAN
+
+      - name: stats
+        if: ${{ matrix.config.configType != 'examples' }}
+        run: |
+          make stats
+
+      - name: cxxtest
+        run: |
+          make cxxtest
+
+      - name: test
+        if: ${{ matrix.config.configType != 'examples' }}
+        run: |
+          make test
+
+      - name: test examples
+        if: ${{ matrix.config.configType == 'examples' }}
+        run: |
+          cp build/fib.so examples/
+          cp build/point.so examples/
+          ./build/qjs examples/test_fib.js
+          ./build/qjs examples/test_point.js
+          ./build/qjs tests/test_bjson.js
+          ./build/function_source
+
+      - name: test 262
+        if: ${{ matrix.config.runTest262 }}
+        run: |
+          git submodule update --init --checkout --depth 1
+          time make test262
+
+      - name: test standalone
+        run: |
+          ./build/qjs -c examples/hello.js -o hello
+          ./hello
+      
+      - name: test interrupt
+        run: |
+          ./build/interrupt-test
+
+  windows-msvc:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, Win32]
+        buildType: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: |
+          cmake -B build -DBUILD_EXAMPLES=ON -G "Visual Studio 17 2022" -A ${{matrix.arch}}
+          cmake --build build --config ${{matrix.buildType}}
+      - name: stats
+        run: |
+          build\${{matrix.buildType}}\qjs.exe -qd
+      - name: test
+        run: |
+          cp build\${{matrix.buildType}}\fib.dll examples\
+          cp build\${{matrix.buildType}}\point.dll examples\
+          build\${{matrix.buildType}}\qjs.exe examples\test_fib.js
+          build\${{matrix.buildType}}\qjs.exe examples\test_point.js
+          build\${{matrix.buildType}}\run-test262.exe -c tests.conf
+          build\${{matrix.buildType}}\function_source.exe
+      - name: test standalone
+        run: |
+          build\${{matrix.buildType}}\qjs.exe -c examples\hello.js -o hello.exe
+          .\hello.exe
+      - name: test interrupt
+        run: |
+          build\${{matrix.buildType}}\interrupt-test.exe
+      - name: Set up Visual Studio shell
+        uses: egor-tensin/vs-shell@v2
+        with:
+          arch: ${{ matrix.arch == 'x64' && 'x64' || 'x86' }}
+      - name: cxxtest
+        run: |
+          cl.exe /DJS_NAN_BOXING=0 /Zs cxxtest.cc
+          cl.exe /DJS_NAN_BOXING=1 /Zs cxxtest.cc
+
+  windows-msvc-vs2019:
+    runs-on: windows-2019
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, Win32]
+        buildType: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: |
+          cmake -B build -DBUILD_EXAMPLES=ON -G "Visual Studio 16 2019" -A ${{matrix.arch}}
+          cmake --build build --config ${{matrix.buildType}} --target qjs_exe
+      - name: stats
+        run: |
+          build\${{matrix.buildType}}\qjs.exe -qd
+      - name: Set up Visual Studio shell
+        uses: egor-tensin/vs-shell@v2
+        with:
+          arch: ${{ matrix.arch == 'x64' && 'x64' || 'x86' }}
+      - name: cxxtest
+        run: |
+          cl.exe /DJS_NAN_BOXING=0 /Zs cxxtest.cc
+          cl.exe /DJS_NAN_BOXING=1 /Zs cxxtest.cc
+
+  windows-clang:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildType: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        run: |
+          git submodule update --init --checkout --depth 1
+          cmake -B build -DBUILD_EXAMPLES=ON -G "Visual Studio 17 2022" -T ClangCL
+          cmake --build build --config ${{matrix.buildType}}
+      - name: stats
+        run: |
+          build\${{matrix.buildType}}\qjs.exe -qd
+      - name: cxxtest
+        run: |
+          clang-cl.exe /DJS_NAN_BOXING=0 /Zs cxxtest.cc
+          clang-cl.exe /DJS_NAN_BOXING=1 /Zs cxxtest.cc
+      - name: test
+        run: |
+          cp build\${{matrix.buildType}}\fib.dll examples\
+          cp build\${{matrix.buildType}}\point.dll examples\
+          build\${{matrix.buildType}}\qjs.exe examples\test_fib.js
+          build\${{matrix.buildType}}\qjs.exe examples\test_point.js
+          build\${{matrix.buildType}}\run-test262.exe -c tests.conf
+          build\${{matrix.buildType}}\function_source.exe
+      - name: test interrupt
+        run: |
+          build\${{matrix.buildType}}\interrupt-test.exe
+
+  windows-ninja:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildType: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: install ninja
+        run: |
+          choco install ninja
+          ninja.exe --version
+      - name: build
+        run: |
+          git submodule update --init --checkout --depth 1
+          cmake -B build -DBUILD_EXAMPLES=ON -DCMAKE_BUILD_TYPE=${{matrix.buildType}} -G "Ninja"
+          cmake --build build
+      - name: stats
+        run: |
+          build\qjs.exe -qd
+      - name: test
+        run: |
+          cp build\fib.dll examples\
+          cp build\point.dll examples\
+          build\qjs.exe examples\test_fib.js
+          build\qjs.exe examples\test_point.js
+          build\run-test262.exe -c tests.conf
+          build\function_source.exe
+      - name: test interrupt
+        run: |
+          build\interrupt-test.exe
+
+  windows-sdk:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, Win32]
+        buildType: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install windows sdk
+        uses: ChristopheLav/windows-sdk-install@v1
+        with:
+          version-sdk: 26100
+          features: 'OptionId.DesktopCPPx86,OptionId.DesktopCPPx64'
+      - name: build
+        run: |
+          cmake -B build -DBUILD_EXAMPLES=ON -DCMAKE_SYSTEM_VERSION="10.0.26100.0" -A ${{matrix.arch}}
+          cmake --build build --config ${{matrix.buildType}}
+      - name: stats
+        run: |
+          build\${{matrix.buildType}}\qjs.exe -qd
+      - name: test
+        run: |
+          cp build\${{matrix.buildType}}\fib.dll examples\
+          cp build\${{matrix.buildType}}\point.dll examples\
+          build\${{matrix.buildType}}\qjs.exe examples\test_fib.js
+          build\${{matrix.buildType}}\qjs.exe examples\test_point.js
+          build\${{matrix.buildType}}\run-test262.exe -c tests.conf
+          build\${{matrix.buildType}}\function_source.exe
+      - name: test interrupt
+        run: |
+          build\${{matrix.buildType}}\interrupt-test.exe
+
+  windows-mingw:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildType: [Debug, Release]
+        sys:
+          - mingw32
+          - mingw64
+          - clang64
+          - ucrt64
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{matrix.sys}}
+        install: >-
+          git
+          make
+        pacboy: >-
+          cmake:p
+          ninja:p
+          toolchain:p
+    - name: build
+      run: |
+        make BUILD_TYPE=${{matrix.buildType}}
+    - name: stats
+      run: |
+        make stats
+        ldd build/qjs
+    - name: cxxtest
+      if: ${{ matrix.sys != 'clang64' }}
+      run: |
+        make cxxtest
+    - name: cxxtest
+      if: ${{ matrix.sys == 'clang64' }}
+      run: |
+        make cxxtest CXX=clang++
+    - name: test
+      run: |
+        make test
+    - name: test standalone
+      run: |
+        ./build/qjs -c examples/hello.js -o hello.exe
+        ./hello
+    - name: test interrupt
+      run: |
+        ./build/interrupt-test
+  windows-mingw-shared:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          install: >-
+            git
+            make
+          pacboy: >-
+            cmake:p
+            ninja:p
+            toolchain:p
+      - name: build
+        run: |
+          make BUILD_SHARED_LIBS=ON
+          ldd build/qjs
+      - name: stats
+        run: |
+          make stats
+
+  emscripten:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v13
+      - name: check emsdk
+        run: emcc -v
+      - name: build
+        run: |
+          emcmake cmake -B build -DBUILD_QJS_LIBC=ON
+          emmake make -C build qjs_wasm -j$(getconf _NPROCESSORS_ONLN)
+      - name: result
+        run: ls -lh build
+  wasi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jcbhmr/setup-wasmtime@v2
+      - name: setup wasi-sdk
+        run: |
+          wget -nv https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-21/wasi-sdk_21.0_amd64.deb -P /tmp
+          sudo apt install /tmp/wasi-sdk*.deb
+      - name: test
+        run: |
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk.cmake
+          make -C build qjs_exe
+          wasmtime run build/qjs -qd
+          echo "console.log('hello wasi!');" > t.js
+          wasmtime run --dir . build/qjs t.js
+
+  cygwin:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: C:\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
+    env:
+      CYGWIN_NOWINPATH: 1
+      CHERE_INVOKING: 1
+    steps:
+      - name: Set up Cygwin
+        uses: cygwin/cygwin-install-action@master
+        with:
+            packages: make cmake gcc-g++ bash
+
+      - uses: actions/checkout@v4
+
+      - name: build
+        run: make
+
+      - name: stats
+        run: make stats
+
+      - name: cxxtest
+        run: |
+          make cxxtest
+
+      - name: test
+        run: make test
+
+      - name: test interrupt
+        run: |
+          ./build/interrupt-test
+
+  openbsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build + test
+        uses: vmactions/openbsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg_add cmake gmake
+          run: |
+            gmake
+            gmake stats
+
+  freebsd:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build + test
+        uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y cmake gmake
+          run: |
+            gmake
+            gmake stats
+
+  android:
+    runs-on: ubuntu-latest
+    container: reactnativecommunity/react-native-android:v13.0
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure android arm64
+        # see build options you can use in https://developer.android.com/ndk/guides/cmake
+        run: |
+          mkdir build
+          cd build
+          $ANDROID_HOME/cmake/3.22.1/bin/cmake -DCMAKE_TOOLCHAIN_FILE=$ANDROID_HOME/ndk/26.0.10792818/build/cmake/android.toolchain.cmake -DCMAKE_BUILD_TYPE=Release -DANDROID_ABI="arm64-v8a" -DANDROID_PLATFORM=android-24 -DBUILD_QJS_LIBC=ON ..
+      - name: Build android arm64
+        run: |
+          $ANDROID_HOME/cmake/3.22.1/bin/cmake --build build --target qjs
+          ls -lh build
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: |
+          cmake -B build -GXcode -DCMAKE_SYSTEM_NAME:STRING=iOS -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED:BOOL=NO -DBUILD_QJS_LIBC=ON
+      - name: build
+        run: |
+          cmake --build build --config Release --target qjs
+          ls -lh build
+
+  mimalloc-linux:
+    runs-on: ubuntu-24.04
+    env:
+      BUILD_CLI_WITH_MIMALLOC: ON
+      MIMALLOC_SHOW_STATS: 1
+    steps:
+      - uses: actions/checkout@v4
+      - name: install dependencies
+        run: |
+          sudo apt update && sudo apt -y install libmimalloc-dev
+      - name: build
+        run: |
+          make
+      - name: cxxtest
+        run: |
+          make cxxtest
+      - name: test
+        run: |
+          make test
+
+  mimalloc-macos:
+    runs-on: macos-latest
+    env:
+      BUILD_CLI_WITH_STATIC_MIMALLOC: ON
+      MIMALLOC_SHOW_STATS: 1
+    steps:
+      - uses: actions/checkout@v4
+      - name: install dependencies
+        run: |
+          brew install mimalloc
+      - name: build
+        run: |
+          make
+      - name: cxxtest
+        run: |
+          make cxxtest
+      - name: test
+        run: |
+          make test

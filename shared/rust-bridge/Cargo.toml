@@ -88,6 +88,7 @@ debug = 0
 codegen-units = 16
 
 [patch.crates-io]
+rquickjs-sys = { path = "vendor/rquickjs-sys-0.9.0" }
 iroh-base = { path = "vendor/iroh-base-0.98.0" }
 starlark = { path = "vendor/starlark-0.14.2" }
 pagable = { path = "vendor/pagable-0.4.1" }
