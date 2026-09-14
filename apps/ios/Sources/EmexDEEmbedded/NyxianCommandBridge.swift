@@ -90,7 +90,9 @@ public final class NyxianCommandBridge: NSObject {
             guard let path = request["path"] as? String, !path.isEmpty else {
                 return response(code: 64, status: "missing-path", message: "\(command) requires path.")
             }
-            let project = NXProject(url: URL(fileURLWithPath: path))
+            guard let project = NXProject(url: URL(fileURLWithPath: path)) else {
+                return response(code: 66, status: "project-not-found", message: "Nyxian could not open the project at the requested path.")
+            }
             let projectKind = project.projectConfig.schemeKind
 
             // Upstream's Ksurface .run path installs the KEXT and restarts the
