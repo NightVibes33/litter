@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parents[2]
 PROJECT_YML = ROOT / "apps/ios/project.yml"
 
 EMEXDE_TARGETS = (
+    "HWHook",
+    "LiveShim",
     "CoreCompiler",
     "MobileDevelopmentKit",
     "emexDE",
@@ -44,6 +46,10 @@ EMEXDE_DEPENDENCY_BLOCKS = (
         link: false
 """,
     """      - target: emexDE
+        embed: true
+        link: false
+""",
+    """      - target: LiveShim
         embed: true
         link: false
 """,

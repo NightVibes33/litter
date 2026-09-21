@@ -48,6 +48,8 @@ SIDELOAD_TARGETS = (
 )
 
 EMEXDE_TARGETS = (
+    "HWHook",
+    "LiveShim",
     "CoreCompiler",
     "MobileDevelopmentKit",
     "emexDE",
@@ -73,6 +75,10 @@ DEPENDENCY_BLOCKS = (
         link: false
 """,
     """      - target: emexDE
+        embed: true
+        link: false
+""",
+    """      - target: LiveShim
         embed: true
         link: false
 """,
@@ -251,6 +257,8 @@ def validate_fast_project(text: str) -> None:
     forbidden_markers = (
         "product: AltSign-Dynamic",
         "target: SideStore",
+        "target: HWHook",
+        "target: LiveShim",
         "target: CoreCompiler",
         "target: MobileDevelopmentKit",
         "target: emexDE",
@@ -330,7 +338,7 @@ def main() -> None:
     PROJECT_YML.write_text(patched)
     if info_patched != info_original:
         INFO_PLIST.write_text(info_patched)
-    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, CoreCompiler, MobileDevelopmentKit, embedded Watch app, background modes, file sharing, document-in-place support, IPA/signing document types, sideload URL schemes, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
+    print("Applied fast TestFlight project patch: SideStore, AltSign, KittyStore, emexDE, LiveProcess, HWHook, LiveShim, CoreCompiler, MobileDevelopmentKit, embedded Watch app, background modes, file sharing, document-in-place support, IPA/signing document types, sideload URL schemes, and private BuildKit packaging are removed; runtime feature flags hide those routes.")
 
 
 if __name__ == "__main__":

@@ -291,6 +291,7 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         SWIFT_VERSION: "6.0"
         SWIFT_INSTALL_OBJC_HEADER: "NO"
+        CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES: "YES"
         APPLICATION_EXTENSION_API_ONLY: "YES"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/Linker $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/Headers $(TOOLCHAIN_DIR)/usr/include"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64"
@@ -346,6 +347,7 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         APPLICATION_EXTENSION_API_ONLY: "YES"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks"
+        CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES: "YES"
         OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
     sources:
       - path: ../../ThirdParty/EmexDE/Source/Frameworks/LiveShim
@@ -369,6 +371,7 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         SWIFT_VERSION: "6.0"
         APPLICATION_EXTENSION_API_ONLY: "YES"
+        CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES: "YES"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/PhaseEngine $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Support $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Tools $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Tools/Compiler $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit/Tools/Linker $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers"
     sources:
       - path: ../../ThirdParty/EmexDE/Source/Frameworks/MobileDevelopmentKit
@@ -391,6 +394,7 @@ targets:
         CLANG_ENABLE_MODULES: "YES"
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         SWIFT_VERSION: "5.0"
+        CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES: "YES"
         SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/NXBridge.h
         SWIFT_OBJC_INTERFACE_HEADER_NAME: emexDE-Swift.h
         GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) HOST_ENV=1 CHAR_BIT=8 INT_MAX=2147483647 LONG_MAX=9223372036854775807L ULONG_MAX=18446744073709551615UL"
@@ -480,6 +484,7 @@ targets:
         APPLICATION_EXTENSION_API_ONLY: "YES"
         DEAD_CODE_STRIPPING: "NO"
         CLANG_ENABLE_MODULES: "YES"
+        CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES: "YES"
         CLANG_CXX_LANGUAGE_STANDARD: "gnu++20"
         OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
         OTHER_LDFLAGS: "$(inherited) -Wl,-U,_OBJC_CLASS_$_FBSSceneParameters -Wl,-U,_OBJC_CLASS_$_LSApplicationWorkspace -lc++ -lz -larchive -framework OpenSSL"
