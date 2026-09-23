@@ -621,8 +621,8 @@ def patch(root: Path) -> None:
     sdk_text = cc_sdk.read_text()
     sdk_text = replace_or_confirm(
         sdk_text,
-        "sdk->sdkInfo->getOS()",
         "sdk->sdkInfo->getCanonicalPlatformTriple().getOS()",
+        "sdk->sdkInfo->getOS()",
         "DarwinSDKInfo OS accessor",
     )
     cc_sdk.write_text(sdk_text)
