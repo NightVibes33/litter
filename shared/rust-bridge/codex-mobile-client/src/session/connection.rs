@@ -1627,16 +1627,7 @@ fn spawn_remote_runtime_worker(
                     match command {
                         SessionCommand::Request { request, response_tx } => {
                             let request_retry = request.clone();
-                            let mut result = match client.request(request).await {
-                                Ok(Ok(value)) => Ok(value),
-                                Ok(Err(error)) => Err(RpcError::Server {
-                                    code: error.code,
-                                    message: error.message,
-                                }),
-                                Err(error) => Err(RpcError::Transport(
-                                    TransportError::SendFailed(error.to_string()),
-                                )),
-                            };
+                            let mut result = send_remote_request(&mut client, request).await;
                             if matches!(result, Err(RpcError::Transport(_)))
                                 && reconnect_remote_client(
                                     &mut client,
@@ -1648,16 +1639,7 @@ fn spawn_remote_runtime_worker(
                                 )
                                 .await
                             {
-                                result = match client.request(request_retry).await {
-                                    Ok(Ok(value)) => Ok(value),
-                                    Ok(Err(error)) => Err(RpcError::Server {
-                                        code: error.code,
-                                        message: error.message,
-                                    }),
-                                    Err(error) => Err(RpcError::Transport(
-                                        TransportError::SendFailed(error.to_string()),
-                                    )),
-                                };
+                                result = send_remote_request(&mut client, request_retry).await;
                             }
                             let _ = response_tx.send(result);
                         }
@@ -1738,6 +1720,38 @@ fn spawn_remote_runtime_worker(
         // resources (e.g. an iroh Connection) are dropped only after the worker exits.
         drop(keepalive);
     })
+}
+
+/// Deadline for request/response RPCs on the launch/open path, so a dead
+/// connection cannot hang the UI forever. Long-running operations (turns,
+/// compaction, etc.) are intentionally left unbounded.
+fn remote_request_timeout(method: &str) -> Option<Duration> {
+    match method {
+        "thread/list" => Some(Duration::from_secs(10)),
+        "model/list" => Some(Duration::from_secs(20)),
+        "thread/resume" | "thread/read" | "thread/turns/list" | "thread/items/list" => {
+            Some(Duration::from_secs(30))
+        }
+        _ => None,
+    }
+}
+
+async fn send_remote_request(
+    client: &mut AppServerClient,
+    request: ClientRequest,
+) -> Result<JsonValue, RpcError> {
+    let response = match remote_request_timeout(request.method()) {
+        Some(duration) => tokio::time::timeout(duration, client.request(request))
+            .await
+            .map_err(|_| RpcError::Timeout)?,
+        None => client.request(request).await,
+    };
+    response
+        .map_err(|error| RpcError::Transport(TransportError::SendFailed(error.to_string())))?
+        .map_err(|error| RpcError::Server {
+            code: error.code,
+            message: error.message,
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -1942,6 +1956,21 @@ fn next_request_id() -> i64 {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn remote_request_timeout_bounds_open_path_but_not_turns() {
+        assert_eq!(
+            remote_request_timeout("thread/resume"),
+            Some(Duration::from_secs(30))
+        );
+        assert!(remote_request_timeout("thread/read").is_some());
+        assert!(remote_request_timeout("thread/turns/list").is_some());
+        assert_eq!(
+            remote_request_timeout("thread/list"),
+            Some(Duration::from_secs(10))
+        );
+        assert_eq!(remote_request_timeout("turn/start"), None);
+    }
     use super::*;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
