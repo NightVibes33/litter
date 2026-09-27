@@ -155,6 +155,37 @@ install_swift_llvm_header_overlay() {
   done
 }
 
+install_trailing_objects_compatibility() {
+  # Swift 6.3's LLVM TrailingObjects header added a compile-time restriction
+  # that rejects the templated getter for classes with one trailing type.
+  # The bundled Clang 19 headers still use that getter. Its non-strict form
+  # has the same implementation and skips only that API-shape assertion, so
+  # adapt the two templated overloads while retaining the rest of the header.
+  python3 - "$LLVM_HEADERS/llvm/Support/TrailingObjects.h" <<'PY_TRAILING_OBJECTS'
+from pathlib import Path
+import sys
+
+header = Path(sys.argv[1])
+text = header.read_text()
+strict_call = "verifyTrailingObjectsAssertions<true>();"
+compat_call = "verifyTrailingObjectsAssertions<false>();"
+strict_count = text.count(strict_call)
+compat_count = text.count(compat_call)
+
+if strict_count == 2 and compat_count >= 2:
+    text = text.replace(strict_call, compat_call, 2)
+elif strict_count == 0 and compat_count >= 4:
+    pass  # Already adapted by an earlier artifact preparation.
+else:
+    raise SystemExit(
+        "unexpected Swift LLVM TrailingObjects assertion layout: "
+        f"strict={strict_count}, non_strict={compat_count}"
+    )
+
+header.write_text(text)
+PY_TRAILING_OBJECTS
+}
+
 generate_swift_build_headers() {
   mkdir -p "$LLVM_HEADERS/swift/Option" "$LLVM_HEADERS/swift/Runtime" "$LLVM_HEADERS/lld/Common"
   python3 - "$LLVM_HEADERS/swift/Option/Options.td" "$LLVM_HEADERS/swift/Option/Options.inc" <<'PY_OPTIONS'
@@ -272,6 +303,7 @@ if [ ! -f "$LLVM_HEADERS/llvm/Support/Threading.h" ]; then
 fi
 install_swift_headers
 install_swift_llvm_header_overlay
+install_trailing_objects_compatibility
 generate_swift_build_headers
 install_swift_header_compatibility
 if [ ! -f "$LLVM_HEADERS/swift/Basic/InitializeSwiftModules.h" ]; then
