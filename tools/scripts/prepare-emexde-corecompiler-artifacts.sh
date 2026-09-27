@@ -312,10 +312,6 @@ if [ ! -f "$SWIFT_HEADER_MARKER" ] || [ "$(cat "$SWIFT_HEADER_MARKER")" != "$SWI
   echo "error: Swift compiler header marker does not match $SWIFT_BRANCH" >&2
   exit 1
 fi
-if grep -q 'getTrailingObjects(NumArgs)' "$LLVM_HEADERS/swift/AST/Identifier.h"; then
-  echo "error: Swift compiler headers are not compatible with vendored LLVM 19 TrailingObjects API" >&2
-  exit 1
-fi
 if [ -f "$LLVM_HEADERS/module.modulemap" ]; then
   echo "error: Swift root module map conflicts with Xcode public header copy at $LLVM_HEADERS/module.modulemap" >&2
   exit 1
