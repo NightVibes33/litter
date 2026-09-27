@@ -39,7 +39,6 @@ on:
       - 'tools/scripts/build-sidestore-minimuxer.sh'
       - 'tools/scripts/prepare-emexde-corecompiler-artifacts.sh'
       - 'tools/scripts/patch-emexde-corecompiler-for-ios-ci.py'
-      - 'tools/scripts/patch-emexde-corecompiler-for-ios-ci.py'
       - 'tools/scripts/patch-ios-fast-device-project.py'
       - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
@@ -112,6 +111,21 @@ jobs:
         run: |
           set -euo pipefail
           tools/scripts/verify-nyxian-source-import.sh
+
+      - name: Resolve emexDE Swift revision
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        id: emexde_swift_revision
+        run: |
+          set -euo pipefail
+          llvm_repo="ThirdParty/EmexDE/Source/LLVM-On-iOS"
+          swift_branch="$(sed -n 's/^SWIFT_BRANCH ?= //p' "$llvm_repo/Makefile" | head -n 1)"
+          llvm_on_ios_sha="$(git -C "$llvm_repo" rev-parse HEAD)"
+          if [ -z "$swift_branch" ] || [ -z "$llvm_on_ios_sha" ]; then
+            echo "::error::Could not resolve the checked-out emexDE LLVM/Swift revision." >&2
+            exit 1
+          fi
+          echo "swift_branch=$swift_branch" >> "$GITHUB_OUTPUT"
+          echo "llvm_on_ios_sha=$llvm_on_ios_sha" >> "$GITHUB_OUTPUT"
 
       - name: Verify KittyStore/Feather integration
         run: |
@@ -217,6 +231,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
+          expected_swift_branch="${{ steps.emexde_swift_revision.outputs.swift_branch }}"
           require_file() {
             local path="$1"
             if [ ! -s "$path" ]; then
@@ -659,7 +674,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs
-          key: ios-emexde-corecompiler-artifacts-v1-${{ runner.os }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.swift') }}
+          key: ios-emexde-corecompiler-artifacts-v2-${{ runner.os }}-${{ steps.emexde_swift_revision.outputs.llvm_on_ios_sha }}-${{ steps.emexde_swift_revision.outputs.swift_branch }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.swift') }}
 
       - name: Check emexDE CoreCompiler artifact cache
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
@@ -697,12 +712,8 @@ jobs:
           require_nonempty "$swift_header_root/swift/Runtime/CMakeConfig.h"
           require_nonempty "$swift_header_root/lld/Common/Version.inc"
           require_nonempty "$swift_header_marker"
-          if [ -s "$swift_header_marker" ] && [ "$(cat "$swift_header_marker")" != "swift-6.0.3-RELEASE" ]; then
-            echo "Cached Swift compiler header overlay is for $(cat "$swift_header_marker"), expected swift-6.0.3-RELEASE."
-            missing=1
-          fi
-          if [ -s "$swift_header_root/swift/AST/Identifier.h" ] && grep -q 'getTrailingObjects(NumArgs)' "$swift_header_root/swift/AST/Identifier.h"; then
-            echo "Cached Swift compiler headers use the newer TrailingObjects API and are incompatible with vendored LLVM 19."
+          if [ -s "$swift_header_marker" ] && [ "$(cat "$swift_header_marker")" != "$expected_swift_branch" ]; then
+            echo "Cached Swift compiler header overlay is for $(cat "$swift_header_marker"), expected $expected_swift_branch."
             missing=1
           fi
           if [ -f "$swift_header_root/module.modulemap" ]; then
@@ -723,6 +734,9 @@ jobs:
 
       - name: Prepare emexDE CoreCompiler artifacts
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        env:
+          EMEXDE_SWIFT_BRANCH: ${{ steps.emexde_swift_revision.outputs.swift_branch }}
+          EMEXDE_SWIFT_LLVM_BRANCH: ${{ steps.emexde_swift_revision.outputs.swift_branch }}
         run: |
           set -euo pipefail
           time tools/scripts/prepare-emexde-corecompiler-artifacts.sh

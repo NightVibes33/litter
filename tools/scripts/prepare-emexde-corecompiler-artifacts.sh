@@ -59,7 +59,17 @@ tar -xJf "$TMP_DIR/LLVM.xcframework.tar.xz" -C "$DEST"
 SUPPORT="$DEST"
 LLVM_ROOT="$DEST/LLVM.xcframework/ios-arm64"
 LLVM_HEADERS="$LLVM_ROOT/Headers"
-SWIFT_BRANCH="${EMEXDE_SWIFT_BRANCH:-swift-6.0.3-RELEASE}"
+SWIFT_BRANCH="${EMEXDE_SWIFT_BRANCH:-}"
+if [ -z "$SWIFT_BRANCH" ]; then
+  llvm_makefile="$ROOT/ThirdParty/EmexDE/Source/LLVM-On-iOS/Makefile"
+  if [ -f "$llvm_makefile" ]; then
+    SWIFT_BRANCH="$(sed -n 's/^SWIFT_BRANCH ?= //p' "$llvm_makefile" | head -n 1)"
+  fi
+fi
+if [ -z "$SWIFT_BRANCH" ]; then
+  echo "error: could not resolve Swift branch from EMEXDE_SWIFT_BRANCH or LLVM-On-iOS/Makefile" >&2
+  exit 1
+fi
 SWIFT_LLVM_BRANCH="${EMEXDE_SWIFT_LLVM_BRANCH:-$SWIFT_BRANCH}"
 SWIFT_HEADER_MARKER="$LLVM_HEADERS/swift/.emexde-swift-header-branch"
 
@@ -128,7 +138,6 @@ install_swift_llvm_header_overlay() {
 
   for header in "${swift_llvm_headers[@]}"; do
     destination="$LLVM_HEADERS/$header"
-    [ -f "$destination" ] && continue
     case "$header" in
       clang/*) source_path="clang/include/$header" ;;
       llvm/*) source_path="llvm/include/$header" ;;
