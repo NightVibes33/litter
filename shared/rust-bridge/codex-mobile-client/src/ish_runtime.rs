@@ -43,7 +43,6 @@ pub const ISH_E_TIMEOUT: i32 = -8;
 pub const ISH_E_NOMEM: i32 = -9;
 pub const ISH_E_ARGS: i32 = -10;
 const BOOTSTRAP_COMMAND_TIMEOUT_MS: u64 = 10_000;
-const INSTANCE_WAIT_TIMEOUT: Duration = Duration::from_secs(60);
 const ROOTFS_STAMP_FILE: &str = ".litter-rootfs-id";
 const ROOTFS_ARCH_FILE: &str = "data/etc/apk/arch";
 const ROOTFS_ALPINE_RELEASE_FILE: &str = "data/etc/alpine-release";
@@ -103,36 +102,6 @@ pub(crate) async fn ready_instance_or_wait(timeout: Duration) -> Option<&'static
     } else {
         None
     }
-}
-
-fn ready_or_wait_blocking(timeout: Duration) -> bool {
-    if READY.get().is_some() {
-        return true;
-    }
-    let deadline = Instant::now() + timeout;
-    let poll = Duration::from_millis(100);
-    while Instant::now() < deadline {
-        std::thread::sleep(poll);
-        if READY.get().is_some() {
-            return true;
-        }
-    }
-    false
-}
-
-fn instance_or_wait_blocking(timeout: Duration) -> Option<&'static IshInstance> {
-    if let Some(instance) = INSTANCE.get() {
-        return Some(instance);
-    }
-    let deadline = Instant::now() + timeout;
-    let poll = Duration::from_millis(100);
-    while Instant::now() < deadline {
-        std::thread::sleep(poll);
-        if let Some(instance) = INSTANCE.get() {
-            return Some(instance);
-        }
-    }
-    None
 }
 
 /// One-time iSH boot. Mirrors `codex_ish_init` + the post-init setup calls in
@@ -247,14 +216,14 @@ fn run_streaming_inner<F>(
 where
     F: FnMut(&[u8]),
 {
-    if require_ready && !ready_or_wait_blocking(INSTANCE_WAIT_TIMEOUT) {
-        eprintln!("[ish] run() called before bootstrap completed");
+    if require_ready && READY.get().is_none() {
+        eprintln!("[ish] run() called before bootstrap completed; returning without waiting");
         let output = b"iSH runtime is not ready\n".to_vec();
         on_output(&output);
         return (ISH_E_NOT_RUNNING, output);
     }
 
-    let Some(instance) = instance_or_wait_blocking(INSTANCE_WAIT_TIMEOUT) else {
+    let Some(instance) = INSTANCE.get() else {
         eprintln!("[ish] run() called before bootstrap succeeded");
         let output = b"iSH runtime is not bootstrapped\n".to_vec();
         on_output(&output);
