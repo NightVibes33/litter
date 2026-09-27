@@ -619,12 +619,38 @@ def patch(root: Path) -> None:
     cc_ast_unit.write_text(ast_text)
 
     sdk_text = cc_sdk.read_text()
-    sdk_text = replace_or_confirm(
-        sdk_text,
-        "sdk->sdkInfo->getCanonicalPlatformTriple().getOS()",
-        "sdk->sdkInfo->getOS()",
-        "DarwinSDKInfo OS accessor",
+    # DarwinSDKInfo's public OS accessor differs across the Clang versions
+    # bundled with Xcode. In some versions it has neither getOS() nor
+    # getCanonicalPlatformTriple(). CCSDK only constructs this object through
+    # parseDarwinSDKInfo(), so a non-null sdkInfo already proves this is a
+    # Darwin SDK. Avoid depending on version-specific accessors.
+    sdk_switch_patterns = (
+        "    switch(sdk->sdkInfo->getOS())\n"
+        "    {\n"
+        "        case Triple::OSType::Darwin:\n"
+        "            return CCSDKOSTypeDarwin;\n"
+        "        default:\n"
+        "            return CCSDKOSTypeUnknown;\n"
+        "    }",
+        "    switch(sdk->sdkInfo->getCanonicalPlatformTriple().getOS())\n"
+        "    {\n"
+        "        case Triple::OSType::Darwin:\n"
+        "            return CCSDKOSTypeDarwin;\n"
+        "        default:\n"
+        "            return CCSDKOSTypeUnknown;\n"
+        "    }",
     )
+    sdk_replacement = (
+        "    return (sdk != nullptr && sdk->sdkInfo != nullptr)\n"
+        "        ? CCSDKOSTypeDarwin : CCSDKOSTypeUnknown;"
+    )
+    for old in sdk_switch_patterns:
+        sdk_text = sdk_text.replace(old, sdk_replacement)
+    if sdk_replacement not in sdk_text:
+        raise SystemExit(
+            "Missing expected emexDE CoreCompiler compatibility block: "
+            "DarwinSDKInfo OS accessor"
+        )
     cc_sdk.write_text(sdk_text)
 
     compiler_text = cc_compiler.read_text()
