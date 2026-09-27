@@ -122,6 +122,8 @@ CONFIG_H
 install_swift_llvm_header_overlay() {
   swift_llvm_headers=(
     clang/CAS/CASOptions.h
+    llvm/Support/TrailingObjects.h
+    llvm/Transforms/Utils/Instrumentation.h
     llvm/CAS/ActionCache.h
     llvm/CAS/CASID.h
     llvm/CAS/CASReference.h
