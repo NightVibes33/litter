@@ -142,8 +142,8 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEUserspaceManager.m",
-    "",
-    "PEUserspaceManager unused Swift import",
+    notification_objc_shim,
+    "PEUserspaceManager notification bridge",
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/NXConsoleView.m",
