@@ -329,6 +329,10 @@ if [ ! -f "$LLVM_HEADERS/llvm/MC/MCTargetOptions.h" ]; then
   echo "error: missing Swift LLVM CAS backend mode header at $LLVM_HEADERS/llvm/MC/MCTargetOptions.h" >&2
   exit 1
 fi
+if ! grep -q "enum class CASBackendMode" "$LLVM_HEADERS/llvm/MC/MCTargetOptions.h"; then
+  echo "error: Swift LLVM CAS backend mode declaration is missing from llvm/MC/MCTargetOptions.h" >&2
+  exit 1
+fi
 if [ ! -f "$LLVM_HEADERS/llvm/CAS/CASConfiguration.h" ]; then
   echo "error: missing Swift LLVM CAS configuration header at $LLVM_HEADERS/llvm/CAS/CASConfiguration.h" >&2
   exit 1
