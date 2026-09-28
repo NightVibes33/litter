@@ -6,6 +6,7 @@ struct AIProviderSettingsView: View {
 
     var body: some View {
         List {
+            appleIntelligenceSection
             modelSettingsSection
             providersSection
             notesSection
@@ -23,6 +24,7 @@ struct AIProviderSettingsView: View {
                     Image(systemName: "plus.circle.fill")
                 }
                 .foregroundColor(LitterTheme.accent)
+                .accessibilityLabel("Add compatible AI server")
             }
         }
         .sheet(isPresented: $showAddProvider) {
@@ -35,6 +37,41 @@ struct AIProviderSettingsView: View {
         }
     }
 
+    private var appleIntelligenceSection: some View {
+        Section {
+            NavigationLink {
+                PocketKernelChatView()
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "apple.intelligence")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(LitterTheme.accent)
+                        .frame(width: 28)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("PocketKernel Chat")
+                            .foregroundStyle(LitterTheme.textPrimary)
+                        Text(AppleFoundationModelProvider.shared.availability().summary)
+                            .litterFont(.caption)
+                            .foregroundStyle(
+                                AppleFoundationModelProvider.shared.availability().isAvailable
+                                    ? LitterTheme.accent
+                                    : LitterTheme.warning
+                            )
+                            .lineLimit(2)
+                    }
+                }
+            }
+            .listRowBackground(LitterTheme.surface.opacity(0.88))
+        } header: {
+            Text("On-device agent")
+                .foregroundColor(LitterTheme.textSecondary)
+        } footer: {
+            Text("PocketKernel plans locally with Apple Intelligence. Commands and file changes require approval before the embedded iSH runtime executes them.")
+                .foregroundStyle(LitterTheme.textMuted)
+        }
+    }
+
     private var modelSettingsSection: some View {
         Section {
             Picker("Default Route", selection: globalRoutingBinding) {
@@ -42,7 +79,7 @@ struct AIProviderSettingsView: View {
                     Text(mode.displayName).tag(mode)
                 }
             }
-            Text("Use ChatGPT, OpenAI, or an OpenAI-compatible server such as Ollama, LM Studio, Tailscale, or another machine on your LAN.")
+            Text("Apple On-Device is the default and does not require an account, API key, or network connection. Cloud and compatible-server routes remain optional.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
         } header: {
@@ -68,7 +105,7 @@ struct AIProviderSettingsView: View {
                             Text(providerSubtitle(provider))
                                 .litterFont(.caption)
                                 .foregroundColor(LitterTheme.textSecondary)
-                                .lineLimit(1)
+                                .lineLimit(2)
                         }
                         Spacer()
                         if provider.isEnabled {
@@ -88,12 +125,12 @@ struct AIProviderSettingsView: View {
 
     private var notesSection: some View {
         Section {
-            Text("For private/local models, run them on a computer and add the server's OpenAI-compatible /v1 endpoint here. The iPhone app stays focused on the terminal, file browser, remote bridges, and Swift BuildKit.")
+            Text("Apple's system language model runs on the device. Optional OpenAI-compatible providers can still be added for models hosted on a computer over LAN, VPN, or Tailscale.")
                 .litterFont(.caption)
                 .foregroundColor(LitterTheme.textMuted)
                 .listRowBackground(LitterTheme.surface.opacity(0.88))
         } header: {
-            Text("Runtime Guidance")
+            Text("Runtime guidance")
                 .foregroundColor(LitterTheme.textSecondary)
         }
     }
@@ -102,20 +139,30 @@ struct AIProviderSettingsView: View {
         Binding(
             get: { providerStore.globalModelSettings.routingMode },
             set: { value in
-                providerStore.updateGlobalModelSettings { $0.routingMode = value }
+                providerStore.updateGlobalModelSettings {
+                    $0.routingMode = value
+                    $0.preferredProviderId = value == .appleOnDevice
+                        ? AIProviderProfile.appleOnDeviceProviderID
+                        : nil
+                }
             }
         )
     }
 
     private func providerSubtitle(_ provider: AIProviderProfile) -> String {
         switch provider.kind {
-        case .openAI: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
-        case .openAICompatible: return provider.defaultModel.isEmpty ? provider.baseURL : "\(provider.defaultModel) · \(provider.baseURL)"
+        case .appleOnDevice:
+            return AppleFoundationModelProvider.shared.availability().summary
+        case .openAI, .openAICompatible:
+            return provider.defaultModel.isEmpty
+                ? provider.baseURL
+                : "\(provider.defaultModel) · \(provider.baseURL)"
         }
     }
 
     private func icon(for kind: AIProviderKind) -> String {
         switch kind {
+        case .appleOnDevice: return "apple.intelligence"
         case .openAI: return "cloud"
         case .openAICompatible: return "desktopcomputer"
         }
@@ -239,7 +286,7 @@ private struct AIProviderDetailView: View {
             Section {
                 Text(provider.displayName)
                 Text(provider.kind.displayName)
-                Text(provider.baseURL)
+                Text(providerSubtitle)
                     .foregroundColor(LitterTheme.textSecondary)
                 if !provider.defaultModel.isEmpty {
                     Text("Default model: \(provider.defaultModel)")
@@ -251,7 +298,7 @@ private struct AIProviderDetailView: View {
                 } label: {
                     HStack {
                         if isTesting { ProgressView().scaleEffect(0.8) }
-                        Text("Test Connection")
+                        Text(provider.kind == .appleOnDevice ? "Check Availability" : "Test Connection")
                     }
                 }
                 Text(report.summary)
@@ -262,7 +309,7 @@ private struct AIProviderDetailView: View {
                         .foregroundColor(LitterTheme.textSecondary)
                 }
             }
-            if provider.kind != .openAI {
+            if provider.kind == .openAICompatible {
                 Section {
                     Button(role: .destructive) {
                         try? providerStore.deleteProvider(provider)
@@ -277,6 +324,12 @@ private struct AIProviderDetailView: View {
         .tint(LitterTheme.accent)
         .navigationTitle(provider.displayName)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var providerSubtitle: String {
+        provider.kind == .appleOnDevice
+            ? AppleFoundationModelProvider.shared.availability().summary
+            : provider.baseURL
     }
 
     private var reportColor: Color {
