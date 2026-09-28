@@ -123,6 +123,7 @@ install_swift_llvm_header_overlay() {
   swift_llvm_headers=(
     clang/CAS/CASOptions.h
     llvm/CAS/CASConfiguration.h
+    llvm/MC/MCTargetOptions.h
     llvm/Support/Compiler.h
     llvm/Support/TrailingObjects.h
     llvm/Transforms/Utils/Instrumentation.h
@@ -322,6 +323,10 @@ if [ ! -f "$LLVM_HEADERS/swift/Config.h" ]; then
 fi
 if [ ! -f "$LLVM_HEADERS/clang/Basic/PathRemapper.h" ]; then
   echo "error: missing Clang PathRemapper compatibility header at $LLVM_HEADERS/clang/Basic/PathRemapper.h" >&2
+  exit 1
+fi
+if [ ! -f "$LLVM_HEADERS/llvm/MC/MCTargetOptions.h" ]; then
+  echo "error: missing Swift LLVM CAS backend mode header at $LLVM_HEADERS/llvm/MC/MCTargetOptions.h" >&2
   exit 1
 fi
 if [ ! -f "$LLVM_HEADERS/llvm/CAS/CASConfiguration.h" ]; then
