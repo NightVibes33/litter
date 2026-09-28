@@ -39,6 +39,7 @@ on:
       - 'tools/scripts/build-sidestore-minimuxer.sh'
       - 'tools/scripts/prepare-emexde-corecompiler-artifacts.sh'
       - 'tools/scripts/patch-emexde-corecompiler-for-ios-ci.py'
+      - 'tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py'
       - 'tools/scripts/patch-ios-fast-device-project.py'
       - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
