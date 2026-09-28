@@ -682,6 +682,7 @@ jobs:
         run: |
           set -euo pipefail
           support_source="ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs"
+          expected_swift_branch="${{ steps.emexde_swift_revision.outputs.swift_branch }}"
           if [ "${{ steps.emexde_corecompiler_cache.outputs.cache-hit }}" != "true" ]; then
             echo "available=false" >> "$GITHUB_OUTPUT"
             echo "No exact emexDE CoreCompiler artifact cache hit."
