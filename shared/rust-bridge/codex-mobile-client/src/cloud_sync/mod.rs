@@ -111,7 +111,7 @@ fn with_platform_table<R>(f: impl FnOnce(&mut HashMap<String, CloudEntry>) -> R)
     f(table)
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -119,7 +119,7 @@ fn now_ms() -> i64 {
 }
 
 fn is_platform_key(key: &str) -> bool {
-    PLATFORM_KEYS.iter().any(|candidate| *candidate == key)
+    PLATFORM_KEYS.contains(&key)
 }
 
 fn build_snapshot(directory: &str, device_id: &str) -> CloudSnapshot {
@@ -389,11 +389,29 @@ pub fn update_platform_value(key: &str, value_json: &str) -> Result<(), CloudSyn
     Ok(())
 }
 
-/// Clear the in-memory platform table. Test-only.
+/// Clear the in-memory platform table and hold a lock for the caller's
+/// lifetime. Test-only.
+///
+/// The platform table is process-global and cargo runs tests in parallel, so
+/// without serialization one test's reset lands in the middle of another's
+/// assertions. That surfaced as `export_includes_platform_table_entries`
+/// failing intermittently in CI while the same commit passed locally.
+///
+/// Callers must bind the returned guard (`let _guard = reset_platform_table();`)
+/// so it is held for the whole test body rather than dropped immediately.
 #[cfg(test)]
-fn reset_platform_table() {
-    let mut guard = platform_table_lock();
-    *guard = None;
+#[must_use = "bind the guard so the platform table stays locked for the test"]
+fn reset_platform_table() -> std::sync::MutexGuard<'static, ()> {
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // Recover from poisoning: one failing test must not cascade into every
+    // other test that touches the table.
+    let guard = TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut table = platform_table_lock();
+    *table = None;
+    drop(table);
+    guard
 }
 
 #[cfg(test)]
@@ -411,7 +429,7 @@ mod tests {
 
     #[test]
     fn export_includes_rust_prefs() {
-        reset_platform_table();
+        let _guard = reset_platform_table();
         let dir = tempdir().unwrap();
         let directory: String = dir.path().to_string_lossy().into();
 
@@ -422,7 +440,6 @@ mod tests {
                 pinned_threads: vec![pin("s", "a")],
                 hidden_threads: vec![],
                 home_selection: HomeSelection::default(),
-                ..Default::default()
             },
         );
 
@@ -436,7 +453,7 @@ mod tests {
 
     #[test]
     fn apply_writes_back_rust_prefs_when_remote_is_newer() {
-        reset_platform_table();
+        let _guard = reset_platform_table();
         let dir = tempdir().unwrap();
         let directory: String = dir.path().to_string_lossy().into();
 
@@ -447,7 +464,6 @@ mod tests {
                 pinned_threads: vec![pin("s", "a")],
                 hidden_threads: vec![],
                 home_selection: HomeSelection::default(),
-                ..Default::default()
             },
         );
 
@@ -473,7 +489,7 @@ mod tests {
 
     #[test]
     fn apply_platform_key_returns_writeback() {
-        reset_platform_table();
+        let _guard = reset_platform_table();
         let dir = tempdir().unwrap();
         let directory: String = dir.path().to_string_lossy().into();
 
@@ -498,7 +514,7 @@ mod tests {
 
     #[test]
     fn apply_ignores_unknown_platform_keys() {
-        reset_platform_table();
+        let _guard = reset_platform_table();
         let dir = tempdir().unwrap();
         let directory: String = dir.path().to_string_lossy().into();
 
@@ -521,7 +537,7 @@ mod tests {
 
     #[test]
     fn local_platform_change_wins_when_newer() {
-        reset_platform_table();
+        let _guard = reset_platform_table();
         let dir = tempdir().unwrap();
         let directory: String = dir.path().to_string_lossy().into();
 
@@ -551,7 +567,7 @@ mod tests {
 
     #[test]
     fn export_includes_platform_table_entries() {
-        reset_platform_table();
+        let _guard = reset_platform_table();
         let dir = tempdir().unwrap();
         let directory: String = dir.path().to_string_lossy().into();
 
@@ -563,7 +579,7 @@ mod tests {
 
     #[test]
     fn mismatched_version_is_ignored() {
-        reset_platform_table();
+        let _guard = reset_platform_table();
         let dir = tempdir().unwrap();
         let directory: String = dir.path().to_string_lossy().into();
 
@@ -578,7 +594,7 @@ mod tests {
 
     #[test]
     fn corrupt_bytes_return_error() {
-        reset_platform_table();
+        let _guard = reset_platform_table();
         let dir = tempdir().unwrap();
         let directory: String = dir.path().to_string_lossy().into();
 

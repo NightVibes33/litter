@@ -31,6 +31,7 @@ fn session_is_current(
 impl MobileClient {
     pub(super) fn spawn_event_reader(&self, server_id: String, session: Arc<ServerSession>) {
         let mut events = session.events();
+        let mut health = session.health();
         let processor = Arc::clone(&self.event_processor);
         let recorder = Arc::clone(&self.recorder);
         let oauth_callback_tunnels = Arc::clone(&self.oauth_callback_tunnels);
@@ -40,8 +41,21 @@ impl MobileClient {
         let widget_waiters = Arc::clone(&self.widget_waiters);
         let saved_apps_directory = Arc::clone(&self.saved_apps_directory);
         Self::spawn_detached(async move {
+            if !session_is_current(&sessions, &server_id, &oauth_session) {
+                return;
+            }
             loop {
-                let event = events.recv().await;
+                let event = tokio::select! {
+                    event = events.recv() => event,
+                    changed = health.changed() => {
+                        // A quiet session owns its event sender, so waiting only
+                        // on events would retain it forever after disconnect.
+                        if changed.is_err() || !session_is_current(&sessions, &server_id, &oauth_session) {
+                            break;
+                        }
+                        continue;
+                    }
+                };
                 if !session_is_current(&sessions, &server_id, &oauth_session) {
                     info!("event reader exiting for stale server session {server_id}");
                     break;
@@ -253,28 +267,6 @@ impl MobileClient {
         })
     }
 
-    /// Send a raw `ClientRequest` and return the JSON response value.
-    /// Used by tooling (e.g. fixture export) that needs raw upstream data.
-    pub async fn request_raw_for_server(
-        &self,
-        server_id: &str,
-        request: upstream::ClientRequest,
-    ) -> Result<serde_json::Value, String> {
-        let session = self.get_session(server_id).map_err(|e| e.to_string())?;
-        session.request_client(request).await.map_err(|error| {
-            self.reconcile_transport_error(server_id, &error);
-            error.to_string()
-        })
-    }
-
-    /// Return the configs of all currently connected servers (public for tooling).
-    pub fn connected_server_configs(&self) -> Vec<ServerConfig> {
-        self.sessions_read()
-            .values()
-            .map(|s| s.config().clone())
-            .collect()
-    }
-
     pub(crate) fn snapshot_thread(&self, key: &ThreadKey) -> Result<ThreadSnapshot, RpcError> {
         self.app_store
             .snapshot()
@@ -356,7 +348,7 @@ impl MobileClient {
         })
     }
 
-    fn runtime_for_request(
+    pub(crate) fn runtime_for_request(
         &self,
         server_id: &str,
         request: &upstream::ClientRequest,
@@ -386,6 +378,12 @@ impl MobileClient {
             }
             upstream::ClientRequest::TurnStart { params, .. } => Some(params.thread_id.as_str()),
             upstream::ClientRequest::TurnSteer { params, .. } => Some(params.thread_id.as_str()),
+            // turn/interrupt must go to the runtime that owns the thread.
+            // Without this arm it falls through to the `codex` default channel
+            // and, on a multi-runtime host, the cancel lands on the ChatGPT
+            // app-server which doesn't know the OpenCode thread id
+            // (`server error -32600: thread not found`).
+            upstream::ClientRequest::TurnInterrupt { params, .. } => Some(params.thread_id.as_str()),
             _ => None,
         };
         thread_id
@@ -437,6 +435,7 @@ impl MobileClient {
     }
 }
 
+#[cfg(test)]
 fn deserialize_typed_response<R>(value: &serde_json::Value) -> Result<R, serde_json::Error>
 where
     R: serde::de::DeserializeOwned,
@@ -1173,6 +1172,12 @@ fn note_notification_runtime(
         server_id: server_id.to_string(),
         thread_id,
     };
+    if runtime_kind == "local-studio"
+        && !matches!(notification, upstream::ServerNotification::ThreadStarted(_))
+        && app_store.thread_snapshot(&key).is_none()
+    {
+        return;
+    }
     app_store.set_thread_agent_runtime(&key, runtime_kind);
 }
 
@@ -1204,7 +1209,7 @@ fn find_thread_id_value(value: &serde_json::Value) -> Option<String> {
     }
 }
 
-fn client_request_wire_method(request: &upstream::ClientRequest) -> &'static str {
+pub(crate) fn client_request_wire_method(request: &upstream::ClientRequest) -> &'static str {
     match request {
         upstream::ClientRequest::GetAccount { .. } => "account/read",
         upstream::ClientRequest::GetAccountRateLimits { .. } => "account/rateLimits/read",
@@ -1221,6 +1226,7 @@ fn client_request_wire_method(request: &upstream::ClientRequest) -> &'static str
         upstream::ClientRequest::ThreadTurnsList { .. } => "thread/turns/list",
         upstream::ClientRequest::TurnStart { .. } => "turn/start",
         upstream::ClientRequest::TurnSteer { .. } => "turn/steer",
+        upstream::ClientRequest::TurnInterrupt { .. } => "turn/interrupt",
         upstream::ClientRequest::CollaborationModeList { .. } => "collaboration_mode/list",
         _ => "unknown",
     }
@@ -1229,12 +1235,92 @@ fn client_request_wire_method(request: &upstream::ClientRequest) -> &'static str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::store::snapshot::ThreadSnapshot;
     use codex_app_server_protocol::{
         CommandAction, CommandExecutionSource, CommandExecutionStatus, ThreadItem,
     };
     use serde::Deserialize;
     use serde::de::Error as _;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn quiet_event_reader_releases_disconnected_session() {
+        let client = MobileClient::new();
+        let config = ServerConfig {
+            server_id: "quiet-reader".into(),
+            display_name: "Quiet".into(),
+            host: "localhost".into(),
+            port: 0,
+            websocket_url: None,
+            is_local: false,
+            tls: false,
+        };
+        let session = Arc::new(ServerSession::test_stub_with_handlers(
+            config, None, None, None,
+        ));
+        client
+            .sessions_write()
+            .insert("quiet-reader".into(), session.clone());
+        let weak = Arc::downgrade(&session);
+        client.spawn_event_reader("quiet-reader".into(), session.clone());
+        tokio::task::yield_now().await;
+        client.sessions_write().remove("quiet-reader");
+        session.disconnect().await;
+        drop(session);
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while weak.strong_count() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("quiet event reader retained a disconnected session");
+    }
+
+    #[test]
+    fn unknown_local_studio_archive_does_not_leave_a_pending_runtime_route() {
+        let store = AppStoreReducer::new();
+        let notification: upstream::ServerNotification = serde_json::from_value(json!({
+            "method": "thread/archived",
+            "params": { "threadId": "thread-1" }
+        }))
+        .expect("archive notification should deserialize");
+
+        note_notification_runtime(
+            &store,
+            "alleycat:local-studio:controller",
+            "local-studio".to_string(),
+            &notification,
+        );
+        store.upsert_thread_snapshot(ThreadSnapshot::from_info(
+            "alleycat:local-studio:controller",
+            ThreadInfo {
+                id: "thread-1".to_string(),
+                title: None,
+                status: ThreadSummaryStatus::Idle,
+                preview: None,
+                cwd: None,
+                path: None,
+                model: None,
+                model_provider: None,
+                agent_nickname: None,
+                agent_role: None,
+                parent_thread_id: None,
+                forked_from_id: None,
+                agent_status: None,
+                created_at: None,
+                updated_at: None,
+            },
+        ));
+
+        let key = ThreadKey {
+            server_id: "alleycat:local-studio:controller".to_string(),
+            thread_id: "thread-1".to_string(),
+        };
+        assert_eq!(
+            store.thread_snapshot(&key).unwrap().agent_runtime_kind,
+            "codex"
+        );
+    }
 
     #[test]
     fn suspicious_relative_path_entries_reports_relative_values_in_known_path_fields() {
@@ -1556,7 +1642,7 @@ mod tests {
                 path
             } if command == "read .pi-tool-demo.txt"
                 && name == ".pi-tool-demo.txt"
-                && path.as_path() == Path::new("/tmp/project/.pi-tool-demo.txt")
+                && path.as_str() == "/tmp/project/.pi-tool-demo.txt"
         ));
         assert!(matches!(
             &command_actions[1],
@@ -1655,11 +1741,11 @@ mod tests {
                 status: upstream::CommandExecutionStatus::Failed,
                 command_actions,
                 ..
-            } if cwd.as_path() == Path::new("/repo")
+            } if cwd.as_str() == "/repo"
                 && matches!(
                     &command_actions[0],
                     upstream::CommandAction::Read { path, .. }
-                        if path.as_path() == Path::new("/repo/src/lib.rs")
+                        if path.as_str() == "/repo/src/lib.rs"
                 )
         ));
         assert!(matches!(
@@ -1704,9 +1790,11 @@ mod tests {
     #[test]
     fn deserialize_typed_response_resolves_read_action_paths_against_command_cwd() {
         let command_item = ThreadItem::CommandExecution {
+            plugin_id: None,
+            script_path: None,
             id: "cmd-1".into(),
             command: "cat crates/krusty-cli/src/main.rs".into(),
-            cwd: AbsolutePathBuf::from_absolute_path("/repo").expect("absolute cwd"),
+            cwd: AbsolutePathBuf::from_absolute_path("/repo").expect("absolute cwd").into(),
             process_id: None,
             source: CommandExecutionSource::Agent,
             status: CommandExecutionStatus::Completed,
@@ -1714,7 +1802,7 @@ mod tests {
                 command: "cat crates/krusty-cli/src/main.rs".into(),
                 name: "main.rs".into(),
                 path: AbsolutePathBuf::from_absolute_path("/repo/crates/krusty-cli/src/main.rs")
-                    .expect("absolute read path"),
+                    .expect("absolute read path").into(),
             }],
             aggregated_output: None,
             exit_code: Some(0),
@@ -1737,10 +1825,10 @@ mod tests {
             panic!("expected read command action");
         };
 
-        assert_eq!(cwd.as_path(), Path::new("/repo"));
+        assert_eq!(cwd.as_str(), "/repo");
         assert_eq!(
-            path.as_path(),
-            Path::new("/repo/crates/krusty-cli/src/main.rs")
+            path.as_str(),
+            "/repo/crates/krusty-cli/src/main.rs"
         );
     }
 
@@ -1895,5 +1983,17 @@ mod tests {
         // Upstream replaced `permissionProfile` with `activePermissionProfile`;
         // legacy compat only needs to confirm the response decodes.
         let _ = response.active_permission_profile;
+    }
+
+    #[test]
+    fn client_request_wire_method_maps_turn_interrupt() {
+        let request = upstream::ClientRequest::TurnInterrupt {
+            request_id: upstream::RequestId::Integer(crate::next_request_id()),
+            params: upstream::TurnInterruptParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+            },
+        };
+        assert_eq!(client_request_wire_method(&request), "turn/interrupt");
     }
 }
