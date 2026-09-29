@@ -22,6 +22,8 @@ on:
       - 'Package.swift'
       - 'apps/ios/**'
       - 'patches/codex/**'
+      - 'tools/scripts/patch-codex-mobile-code-mode.py'
+      - 'ThirdParty/Litter/**'
       - 'shared/third_party/ghostty'
       - 'patches/ghostty/**'
       - '.gitmodules'
