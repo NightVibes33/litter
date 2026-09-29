@@ -123,5 +123,12 @@
     "Nyxian.xcodeproj/project.pbxproj",
     "Nyxian.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
     "LLVM-On-iOS/Makefile"
+  ],
+  "nestedGitlinks": [
+    {
+      "path": "LLVM-On-iOS",
+      "repository": "https://github.com/emexlab/LLVM-On-iOS.git",
+      "commit": "5c2e215abf1f82fd3cfabba89d45b72e0b6bd8b9"
+    }
   ]
 }
