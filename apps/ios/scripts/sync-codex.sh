@@ -101,4 +101,66 @@ for PATCH_FILE in "${PATCH_FILES[@]}"; do
     fi
 done
 
+verify_mobile_code_mode_bridge() {
+    local code_mode_dir="$SUBMODULE_DIR/codex-rs/code-mode"
+    local lib_rs="$code_mode_dir/src/lib.rs"
+    local cargo_toml="$code_mode_dir/Cargo.toml"
+    local service_mobile="$code_mode_dir/src/service_mobile.rs"
+    local service_stub="$code_mode_dir/src/service_stub.rs"
+
+    if [ ! -f "$service_mobile" ]; then
+        echo "error: mobile code mode is missing service_mobile.rs" >&2
+        exit 1
+    fi
+
+    if [ -f "$service_stub" ]; then
+        echo "error: legacy mobile code-mode stub is present; refusing to build a tool-dead mobile Codex bridge" >&2
+        exit 1
+    fi
+
+    if ! grep -qF 'mod service_mobile;' "$lib_rs"; then
+        echo "error: code-mode lib.rs does not select service_mobile on mobile targets" >&2
+        exit 1
+    fi
+
+    if ! grep -qF 'pub use service_mobile::*;' "$lib_rs"; then
+        echo "error: mobile code-mode provider is not exported" >&2
+        exit 1
+    fi
+
+    if ! grep -qF 'rquickjs = { workspace = true }' "$cargo_toml"; then
+        echo "error: mobile code mode is missing its QuickJS runtime dependency" >&2
+        exit 1
+    fi
+
+    if ! grep -qF 'use rquickjs::AsyncRuntime;' "$service_mobile"; then
+        echo "error: service_mobile.rs is not the QuickJS-backed implementation" >&2
+        exit 1
+    fi
+
+    if ! grep -qF 'impl CodeModeSessionProvider for InProcessCodeModeSessionProvider' "$service_mobile"; then
+        echo "error: mobile code mode does not provide in-process sessions" >&2
+        exit 1
+    fi
+
+    if ! grep -qF 'delegate.invoke_tool' "$service_mobile"; then
+        echo "error: mobile code mode cannot delegate nested tool calls to the host" >&2
+        exit 1
+    fi
+
+    if ! grep -qF 'impl CodeModeSessionProvider for ProcessOwnedCodeModeSessionProvider' "$service_mobile"; then
+        echo "error: process-owned mobile code-mode provider is not routed to the in-process runtime" >&2
+        exit 1
+    fi
+
+    if grep -Eqi 'code mode is unavailable on mobile|exec is unavailable on mobile targets|MOBILE_UNSUPPORTED_MESSAGE|const[[:space:]]+UNSUPPORTED' "$service_mobile"; then
+        echo "error: unsupported mobile code-mode stub detected" >&2
+        exit 1
+    fi
+
+    echo "==> Mobile code mode verified: QuickJS runtime + nested host tool delegation"
+}
+
+verify_mobile_code_mode_bridge
+
 echo "==> codex submodule ready at $(git -C "$SUBMODULE_DIR" rev-parse --short HEAD)"
