@@ -19,10 +19,22 @@ def run(*args: str, cwd: pathlib.Path = ROOT) -> str:
 def fail(message: str) -> None:
     raise SystemExit(message)
 
+def canonical_git_url(value: str) -> str:
+    value = value.strip()
+    if value.startswith("git@github.com:"):
+        value = "https://github.com/" + value.split(":", 1)[1]
+    value = value.rstrip("/")
+    if value.lower().endswith(".git"):
+        value = value[:-4]
+    return value.lower()
+
 lock = json.loads(LOCK_PATH.read_text())
 expected_nyxian = lock["nyxian"]["commit"]
 expected_llvm = lock["llvmOnIOS"]["commit"]
 expected_swift = lock["llvmOnIOS"]["swiftBranch"]
+expected_gitlinks = {
+    item["path"]: item["commit"] for item in lock["nestedGitlinks"]
+}
 
 # The superproject gitlink, checked-out Nyxian worktree, nested LLVM gitlink,
 # and checked-out LLVM worktree must all agree with the machine-readable lock.
@@ -31,7 +43,31 @@ super_gitlink = run("git", "ls-tree", "HEAD", "ThirdParty/EmexDE/Source").split(
 if actual_nyxian != expected_nyxian or super_gitlink != expected_nyxian:
     fail(f"Nyxian pin mismatch: lock={expected_nyxian} checkout={actual_nyxian} gitlink={super_gitlink}")
 
-nested_gitlink = run("git", "ls-tree", "HEAD", "LLVM-On-iOS", cwd=SOURCE).split()[2]
+actual_gitlinks: dict[str, str] = {}
+for line in run("git", "ls-tree", "HEAD", cwd=SOURCE).splitlines():
+    meta, path = line.split("\t", 1)
+    mode, obj_type, sha = meta.split()
+    if mode == "160000" and obj_type == "commit":
+        actual_gitlinks[path] = sha
+if actual_gitlinks != expected_gitlinks:
+    fail(
+        "nested Nyxian gitlink closure mismatch: "
+        f"expected={expected_gitlinks} actual={actual_gitlinks}"
+    )
+
+for item in lock["nestedGitlinks"]:
+    configured_url = run(
+        "git", "config", "-f", ".gitmodules",
+        "--get", f"submodule.{item['path']}.url",
+        cwd=SOURCE,
+    )
+    if canonical_git_url(configured_url) != canonical_git_url(item["repository"]):
+        fail(
+            f"nested submodule URL mismatch for {item['path']}: "
+            f"lock={item['repository']} .gitmodules={configured_url}"
+        )
+
+nested_gitlink = actual_gitlinks.get("LLVM-On-iOS", "missing")
 actual_llvm = run("git", "rev-parse", "HEAD", cwd=LLVM)
 if nested_gitlink != expected_llvm or actual_llvm != expected_llvm:
     fail(f"LLVM-On-iOS pin mismatch: lock={expected_llvm} gitlink={nested_gitlink} checkout={actual_llvm}")
@@ -48,18 +84,36 @@ if actual_swift != expected_swift:
 resolved = json.loads(
     (SOURCE / "Nyxian.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved").read_text()
 )
-pins = {p["identity"]: p["state"]["revision"] for p in resolved["pins"]}
-locked_pins = {p["identity"]: p["revision"] for p in lock["swiftPackages"]}
+pins = {
+    p["identity"]: {
+        "revision": p["state"]["revision"],
+        "location": canonical_git_url(p["location"]),
+    }
+    for p in resolved["pins"]
+}
+locked_pins = {
+    p["identity"]: {
+        "revision": p["revision"],
+        "location": canonical_git_url(p["location"]),
+    }
+    for p in lock["swiftPackages"]
+}
 if pins != locked_pins:
     missing = sorted(set(pins) - set(locked_pins))
     stale = sorted(set(locked_pins) - set(pins))
-    mismatched = sorted(
+    revision_mismatched = sorted(
         identity for identity in set(pins) & set(locked_pins)
-        if pins[identity] != locked_pins[identity]
+        if pins[identity]["revision"] != locked_pins[identity]["revision"]
+    )
+    location_mismatched = sorted(
+        identity for identity in set(pins) & set(locked_pins)
+        if pins[identity]["location"] != locked_pins[identity]["location"]
     )
     fail(
         "SwiftPM dependency closure mismatch: "
-        f"unlocked={missing} stale={stale} revision_mismatch={mismatched}"
+        f"unlocked={missing} stale={stale} "
+        f"revision_mismatch={revision_mismatched} "
+        f"location_mismatch={location_mismatched}"
     )
 
 project = PROJECT.read_text()
@@ -70,8 +124,17 @@ for package in lock["swiftPackages"]:
     block_match = block_pattern.search(project)
     if not block_match:
         fail(f"apps/ios/project.yml is missing package alias {package['alias']}")
-    if f"revision: {package['revision']}" not in block_match.group(0):
+    block = block_match.group(0)
+    if f"revision: {package['revision']}" not in block:
         fail(f"{package['alias']} is not pinned to upstream revision {package['revision']}")
+    url_match = re.search(r"(?m)^    url:\s*(\S+)\s*$", block)
+    if not url_match:
+        fail(f"{package['alias']} is missing its upstream repository URL")
+    if canonical_git_url(url_match.group(1)) != canonical_git_url(package["location"]):
+        fail(
+            f"{package['alias']} repository mismatch: "
+            f"lock={package['location']} project={url_match.group(1)}"
+        )
 
 # Every explicitly compiled/referenced path under the Nyxian submodule must
 # exist in the exact locked checkout. Generated CoreCompilerSupportLibs are the
@@ -138,7 +201,8 @@ if dirty:
 
 print(f"Verified exact Nyxian upstream closure: {expected_nyxian}")
 print(f"  LLVM-On-iOS: {expected_llvm} ({expected_swift})")
-print(f"  SwiftPM closure: {len(locked_pins)} exact revisions")
+print(f"  Nested gitlinks: {len(expected_gitlinks)} exact path/revision pairs")
+print(f"  SwiftPM closure: {len(locked_pins)} exact repository/revision pairs")
 print(f"  Native prerequisites: {', '.join(lock['nativeBuildDependencies'])}")
 print(f"  Native targets: {', '.join(lock['upstreamTargets'])}")
 print(f"  Runtime binaries: {', '.join(lock['runtimeBinaries'])}")
