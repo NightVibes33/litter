@@ -1,0 +1,215 @@
+{
+  "sideStore": {
+    "repository": "https://github.com/SideStore/SideStore.git",
+    "branch": "main",
+    "commit": "7488d5cb2114f5c96145b0c9de2be0f859b1e00a"
+  },
+  "nestedGitlinks": [
+    {
+      "path": "Dependencies/minimuxer",
+      "repository": "https://github.com/SideStore/minimuxer.git",
+      "commit": "2e72b199801de268e2169d24ccc90357cf9ab692"
+    },
+    {
+      "path": "Dependencies/SideSign",
+      "repository": "https://github.com/SideStore/SideSign.git",
+      "commit": "7f818429fec3c8d7b63871b8bfdf063603cd2115"
+    }
+  ],
+  "swiftPM": {
+    "sideStore": [
+      {
+        "identity": "anisettekit",
+        "location": "https://github.com/mahee96/AnisetteKit.git",
+        "revision": "9d8ad7050e67a76fa40025d46e38ae6aed6a112e",
+        "branch": "main",
+        "version": null
+      },
+      {
+        "identity": "codesignkit",
+        "location": "https://github.com/mahee96/CodeSignKit.git",
+        "revision": "33b4f736f018ad4dfcd2e1d83590b9a5d674ab47",
+        "branch": "main",
+        "version": null
+      },
+      {
+        "identity": "gsacryptokit",
+        "location": "https://github.com/mahee96/GSACryptoKit.git",
+        "revision": "eae2590eaf17fe98ce9c76b3ec2bd42b780eb123",
+        "branch": "main",
+        "version": null
+      },
+      {
+        "identity": "keychainaccess",
+        "location": "https://github.com/kishikawakatsumi/KeychainAccess",
+        "revision": "e0c7eebc5a4465a3c4680764f26b7a61f567cdaf",
+        "branch": "master",
+        "version": null
+      },
+      {
+        "identity": "libdeflate",
+        "location": "https://github.com/SideStore/libdeflate",
+        "revision": "da6c7dae03b78dc71af973664575e4209786fbfe",
+        "branch": "master",
+        "version": null
+      },
+      {
+        "identity": "markdownkit",
+        "location": "https://github.com/bmoliveira/MarkdownKit.git",
+        "revision": "39ea7a3fc7e65bcafe55152592b834859be574a5",
+        "branch": null,
+        "version": "1.7.3"
+      },
+      {
+        "identity": "nuke",
+        "location": "https://github.com/kean/Nuke",
+        "revision": "30f7a7e72e0607d304fbf69c799474bd5fb6d1ce",
+        "branch": null,
+        "version": "13.2.0"
+      },
+      {
+        "identity": "remotepairingkit",
+        "location": "https://github.com/mahee96/RemotePairingKit.git",
+        "revision": "e3f70d16c0c551540a533a39d540e78e5b0a60a8",
+        "branch": "main",
+        "version": null
+      },
+      {
+        "identity": "semanticversion",
+        "location": "https://github.com/SwiftPackageIndex/SemanticVersion",
+        "revision": "ea8eea9d89842a29af1b8e6c7677f1c86e72fa42",
+        "branch": null,
+        "version": "0.4.0"
+      },
+      {
+        "identity": "starscream",
+        "location": "https://github.com/daltoniam/Starscream",
+        "revision": "c6bfd1af48efcc9a9ad203665db12375ba6b145a",
+        "branch": null,
+        "version": "4.0.8"
+      },
+      {
+        "identity": "swift-asn1",
+        "location": "https://github.com/apple/swift-asn1.git",
+        "revision": "9f542610331815e29cc3821d3b6f488db8715517",
+        "branch": null,
+        "version": "1.6.0"
+      },
+      {
+        "identity": "swift-crypto",
+        "location": "https://github.com/apple/swift-crypto.git",
+        "revision": "bb4ba815dab96d4edc1e0b86d7b9acf9ff973a84",
+        "branch": null,
+        "version": "4.3.1"
+      },
+      {
+        "identity": "zipfoundation",
+        "location": "https://github.com/weichsel/ZIPFoundation.git",
+        "revision": "22787ffb59de99e5dc1fbfe80b19c97a904ad48d",
+        "branch": null,
+        "version": "0.9.20"
+      }
+    ],
+    "minimuxer": [
+      {
+        "identity": "remotepairingkit",
+        "location": "https://github.com/mahee96/RemotePairingKit.git",
+        "revision": "e3f70d16c0c551540a533a39d540e78e5b0a60a8",
+        "branch": "main",
+        "version": null
+      },
+      {
+        "identity": "zipfoundation",
+        "location": "https://github.com/weichsel/ZIPFoundation.git",
+        "revision": "22787ffb59de99e5dc1fbfe80b19c97a904ad48d",
+        "branch": null,
+        "version": "0.9.20"
+      }
+    ],
+    "sideSign": [
+      {
+        "identity": "anisettekit",
+        "location": "https://github.com/mahee96/AnisetteKit.git",
+        "revision": "9d8ad7050e67a76fa40025d46e38ae6aed6a112e",
+        "branch": "main",
+        "version": null
+      },
+      {
+        "identity": "codesignkit",
+        "location": "https://github.com/mahee96/CodeSignKit.git",
+        "revision": "d0c67710fda9a2646b9e829cb2cf443892728371",
+        "branch": "main",
+        "version": null
+      },
+      {
+        "identity": "gsacryptokit",
+        "location": "https://github.com/mahee96/GSACryptoKit.git",
+        "revision": "eae2590eaf17fe98ce9c76b3ec2bd42b780eb123",
+        "branch": "main",
+        "version": null
+      },
+      {
+        "identity": "libdeflate",
+        "location": "https://github.com/SideStore/libdeflate",
+        "revision": "da6c7dae03b78dc71af973664575e4209786fbfe",
+        "branch": "master",
+        "version": null
+      },
+      {
+        "identity": "swift-asn1",
+        "location": "https://github.com/apple/swift-asn1.git",
+        "revision": "9f542610331815e29cc3821d3b6f488db8715517",
+        "branch": null,
+        "version": "1.6.0"
+      },
+      {
+        "identity": "swift-crypto",
+        "location": "https://github.com/apple/swift-crypto.git",
+        "revision": "bb4ba815dab96d4edc1e0b86d7b9acf9ff973a84",
+        "branch": null,
+        "version": "4.3.1"
+      }
+    ]
+  },
+  "binaryArtifacts": [
+    {
+      "package": "minimuxer",
+      "target": "EMProxy",
+      "url": "https://github.com/SideStore/em_proxy/releases/download/v0.9.3/EMProxy.xcframework.zip#Minimuxer",
+      "checksum": "3998789c38d09b55e488d46e31897affc7bbcb9c244d7a9d5b2d5cf6afd916c3"
+    },
+    {
+      "package": "minimuxer/DeviceGateway",
+      "target": "IDevice",
+      "url": "https://github.com/SideStore/idevice/releases/download/v0.1.66-ss-61c2704/idevice-xcframework-v0.1.66-ss-61c2704.zip#DeviceGateway",
+      "checksum": "6f32b32ca43d3f28c145742da926cc279d312abd99abe55c79f875e2d6d5e162"
+    },
+    {
+      "package": "minimuxer/DeviceGateway",
+      "target": "libimobiledevice",
+      "url": "https://github.com/SideStore/libimobiledevice-xcframework/releases/download/1.4.0-ss-0f88f7b/libimobiledevice.xcframework.zip#DeviceGateway",
+      "checksum": "7ccbdd56b074807461fc43d2e32ba92f20df2501a6c14cf9f64a917e7f3fe6e7"
+    }
+  ],
+  "requiredPaths": [
+    ".gitmodules",
+    "AltStore.xcodeproj/project.pbxproj",
+    "AltStore.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+    "AltStore/AppDelegate.swift",
+    "AltStore/SceneDelegate.swift",
+    "AltStore/iOS/Main.storyboard",
+    "AltStore/Authentication/Authentication.storyboard",
+    "AltStore/Settings/Settings.storyboard",
+    "AltStore/Sources/Sources.storyboard",
+    "AltStore/Resources/Assets.xcassets",
+    "AltStore/Core/Resources/Colors.xcassets",
+    "Shared",
+    "SideStore",
+    "Dependencies/minimuxer/Package.swift",
+    "Dependencies/minimuxer/Package.resolved",
+    "Dependencies/minimuxer/Common/Package.swift",
+    "Dependencies/minimuxer/DeviceGateway/Package.swift",
+    "Dependencies/SideSign/Package.swift",
+    "Dependencies/SideSign/Package.resolved"
+  ]
+}
