@@ -85,5 +85,43 @@
     "libBroadpatch.dylib",
     "bootstrapd.dylib",
     "MobileDevelopmentService.dylib"
+  ],
+  "upstreamTargets": [
+    "CoreCompiler",
+    "MobileDevelopmentKit",
+    "HWHook",
+    "Broadpatch",
+    "LiveShim",
+    "LiveProcess",
+    "SuperSlot",
+    "bootstrapd",
+    "MobileDevelopmentService",
+    "Nyxian"
+  ],
+  "requiredSourcePaths": [
+    "Frameworks/CoreCompiler/CoreCompiler.h",
+    "Frameworks/CoreCompiler/Tools/CCDriver.cpp",
+    "Frameworks/CoreCompiler/Tools/Compiler/CCSwiftCompiler.cpp",
+    "Frameworks/MobileDevelopmentKit/MobileDevelopmentKit.h",
+    "Frameworks/HWHook/HWHook.c",
+    "Frameworks/HWHook/HWHookThreadContext.c",
+    "Frameworks/Broadpatch/Broadpatch.h",
+    "Frameworks/Broadpatch/Broadpatch.m",
+    "Frameworks/LiveShim/LiveShim.h",
+    "LiveProcess/main.m",
+    "LiveProcess/Info.plist",
+    "LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m",
+    "Daemons/bootstrapd/main.m",
+    "Daemons/MobileDevelopmentService/main.m",
+    "Nyxian/NXBridge.h",
+    "Nyxian/UI/BootViewController.swift",
+    "Nyxian/Assets.xcassets",
+    "Nyxian/LindChain/IDEBuilder/NXBuilder.swift",
+    "Nyxian/LindChain/ProcEnvironment/Surface/fs/fs.m",
+    "Shared",
+    "KEXTs",
+    "Nyxian.xcodeproj/project.pbxproj",
+    "Nyxian.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+    "LLVM-On-iOS/Makefile"
   ]
 }
