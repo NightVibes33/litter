@@ -121,7 +121,7 @@ normalized_mobile_code_mode="$(tr -d '[:space:]' < "$MOBILE_CODE_MODE")"
 for required in     'globalThis.tools = Object.create(null);'     'globalThis.ALL_TOOLS = '     'delegate.invoke_tool'     'RuntimeResponse::Yielded'     'FunctionCallOutputContentItem::InputAudio'     'impl CodeModeSessionProvider for ProcessOwnedCodeModeSessionProvider'
 do
     normalized_required="$(printf '%s' "$required" | tr -d '[:space:]')"
-    if ! printf '%s' "$normalized_mobile_code_mode" | grep -qF "$normalized_required"; then
+    if ! printf '%s' "$normalized_mobile_code_mode" | grep -F "$normalized_required" > /dev/null; then
         echo "error: mobile code-mode verification failed: missing $required" >&2
         exit 1
     fi
