@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "litterUpstream": {
+    "repository": "https://github.com/0xSero/litter.git",
+    "commit": "effb1c826a002bdeee9d03eef4f4bc495ed89d45"
+  },
+  "codex": {
+    "repository": "https://github.com/openai/codex.git",
+    "commit": "be2951ea34f0d295ed0becf97079f92fa5f6950e"
+  },
+  "officialCodexPatches": [
+    "mobile-crypto-compat.patch",
+    "ios-exec-hook.patch",
+    "thread-read-permissions.patch",
+    "thread-list-fork-lineage.patch",
+    "mobile-shell-snapshot-timeout.patch",
+    "remote-app-server-websocket-cap.patch",
+    "absolute-path-cross-platform.patch",
+    "android-installation-id-lock.patch",
+    "dynamic-tool-call-arguments-delta.patch",
+    "approval-timestamps-serde-default.patch",
+    "realtime-webrtc-env-apikey.patch",
+    "realtime-handoff-server-hint.patch",
+    "realtime-dynamic-tools.patch",
+    "realtime-client-controlled-handoff.patch"
+  ],
+  "mobileCodeMode": {
+    "runtime": "rquickjs",
+    "version": "0.9.0",
+    "patcher": "tools/scripts/patch-codex-mobile-code-mode.py",
+    "template": "patches/codex/mobile-code-mode/service_mobile.rs"
+  },
+  "protectedSurface": "tools/upstream/ios-app-surface-lock.json"
+}

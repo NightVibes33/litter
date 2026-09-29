@@ -86,10 +86,14 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 ## emexDE
 
 - emexDE reference repo: https://github.com/emexlab/Nyxian.git
-- emexDE submodule commit: `8f606193bed2b5a40e1fccfc2f95123730b1bf26`
-- emexDE source path: `ThirdParty/EmexDE/Source`
-- Required nested upstream submodule: `ThirdParty/EmexDE/Source/LLVM-On-iOS`.
-- Litter opens emexDE from Settings as the replacement surface for the old private BuildKit toolbox entry point; the iOS target now builds an embedded `emexDE` module from the upstream Nyxian UI, CoreCompiler, MobileDevelopmentKit, and LiveProcess sources.
+- emexDE/Nyxian submodule commit: `3678a9c6612824c4234e9b98dc25687c46401687` (upstream Build iOS App run `36519089721`: green).
+- emexDE source path: `ThirdParty/EmexDE/Source`.
+- Exact nested LLVM-On-iOS commit: `5c2e215abf1f82fd3cfabba89d45b72e0b6bd8b9`.
+- Exact Swift toolchain branch: `swift-6.4.0-RELEASE`.
+- Reproducible dependency lock: `ThirdParty/EmexDE/UPSTREAM_LOCK.json`; it records every SwiftPM revision, native build dependency, and required runtime binary.
+- The iOS build uses Nyxian's own LLVM-On-iOS build to produce a coherent LLVM/Clang/Swift header/library set. It does not mix release headers with a different Swift LLVM branch.
+- Alley Cat embeds the latest Nyxian runtime binaries required by the stock-iOS boot/runtime path: `SuperSlot.dylib`, `libBroadpatch.dylib`, `bootstrapd.dylib`, and `MobileDevelopmentService.dylib`.
+- Litter opens emexDE from Settings as the user-facing IDE and exposes the same compiler/runtime stack to GPT/Codex/Terra for on-device app/tweak build workflows.
 - License: AGPL-3.0-or-later, see `ThirdParty/EmexDE/Source/LICENSE`.
 
 ## Ghostty

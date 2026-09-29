@@ -20,10 +20,14 @@ IOS_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-18.0}"
 MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 SUBMODULE_DIR="$REPO_DIR/shared/third_party/codex"
 IOS_CLANGXX_WRAPPER="$SCRIPT_DIR/ios-clangxx-wrapper.sh"
+# Legacy per-feature patches are checked only so cleanup can restore a developer
+# checkout after the aggregate sync patch is used. Mobile code mode is deliberately
+# not in this list: sync-codex.sh installs and verifies the real QuickJS-backed
+# service_mobile implementation. Reintroducing mobile-code-mode-stub.patch here can
+# silently turn code_mode_only models (for example Terra) into tool-dead sessions.
 PATCH_FILES=(
   "$REPO_DIR/patches/codex/ios-exec-hook.patch"
   "$REPO_DIR/patches/codex/client-controlled-handoff.patch"
-  "$REPO_DIR/patches/codex/mobile-code-mode-stub.patch"
   "$REPO_DIR/patches/codex/thread-read-permissions.patch"
 )
 

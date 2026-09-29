@@ -14,7 +14,8 @@ use tracing::{error, info, warn};
 
 use super::{
     CONNECT_TIMEOUT, KEEPALIVE_INTERVAL, SSH_CHANNEL_BUFFER_SIZE, SSH_CHANNEL_WINDOW_SIZE,
-    SSH_MAX_PACKET_SIZE, SshAuth, SshClient, SshCredentials, SshError, append_bridge_info_log,
+    SSH_MAX_PACKET_SIZE, SshAuth, SshClient, SshCredentials, SshDetection, SshError,
+    append_bridge_info_log,
     normalize_host,
 };
 
@@ -117,6 +118,18 @@ impl SshClient {
         let mut handle = match connect_result {
             Ok(Ok(handle)) => handle,
             Ok(Err(error)) => {
+                // russh surfaces a rejected host key as `UnknownKey` from
+                // `client::connect`; check the rejected-fingerprint flag
+                // before falling back to a generic connect error so callers
+                // can distinguish a changed host key from an unknown one.
+                if let Some(fp) = rejected_fp.lock().await.take() {
+                    warn!("SSH host key rejected addr={} fingerprint={}", addr, fp);
+                    append_bridge_info_log(&format!(
+                        "ssh_host_key_rejected addr={} fingerprint={}",
+                        addr, fp
+                    ));
+                    return Err(SshError::HostKeyVerification { fingerprint: fp });
+                }
                 error!("SSH connect failed addr={} error={:?}", addr, error);
                 append_bridge_info_log(&format!(
                     "ssh_connect_failed addr={} error_display={} error_debug={:?}",
@@ -215,6 +228,8 @@ impl SshClient {
             handle: Arc::new(Mutex::new(handle)),
             forward_tasks: Mutex::new(HashMap::new()),
             macos_keychain_password,
+            detection: std::sync::Mutex::new(SshDetection::default()),
+            shell_probe: Mutex::new(()),
         }
     }
 

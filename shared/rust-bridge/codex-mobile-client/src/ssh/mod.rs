@@ -25,14 +25,17 @@ mod clixml;
 mod codex_binary;
 mod connect;
 mod detect;
+mod detection;
 mod exec;
 mod forwarding;
+mod host_key;
 mod keychain;
 mod port_forward;
 mod probes;
 mod resolve_binary;
 mod terminal_channel;
 mod types;
+pub(crate) use types::exit_status_from_code;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,10 +57,13 @@ pub(crate) use crate::shell_quoting::posix_quote as shell_quote;
 pub(crate) use crate::ssh_scripts::posix::{PACKAGE_MANAGER_PROBE, PROFILE_INIT};
 pub(crate) use codex_binary::RemoteCodexBinary;
 pub(crate) use exec::build_posix_exec_command;
+pub(crate) use host_key::ssh_host_key_is_trusted;
+pub use host_key::{SshHostKeyChallenge, decode_ssh_host_key_challenge};
 pub use types::{
     ExecResult, SshAuth, SshBootstrapResult, SshCredentials, SshError, SshExecChild, SshExecIo,
     SshExecStderr, SshExecStdin, SshExecStdout,
 };
+pub(crate) use detection::{SshDetection, cli_key};
 pub(crate) use types::{RemoteShell, SshBootstrapTransport};
 
 // SSH channel sizing — tuned for high-throughput interactive workloads.
@@ -88,12 +94,16 @@ pub struct SshClient {
     /// The underlying russh handle, behind `Arc<Mutex>` so port-forwarding
     /// background tasks can open channels concurrently with foreground
     /// exec calls.
-    pub(super) handle: Arc<Mutex<Handle<ClientHandler>>>,
+    handle: Arc<Mutex<Handle<ClientHandler>>>,
     /// Tracks forwarding background tasks so we can abort them on disconnect.
     pub(super) forward_tasks: Mutex<HashMap<u16, ForwardTask>>,
     /// Optional login password to reuse for unlocking the remote macOS
     /// login keychain before detached headless launches.
     pub(super) macos_keychain_password: Option<String>,
+    /// Memoized remote detection results (see [`detection`]).
+    pub(super) detection: std::sync::Mutex<SshDetection>,
+    /// Single-flight guard so concurrent callers share one shell probe.
+    pub(super) shell_probe: Mutex<()>,
 }
 
 pub(super) struct ForwardTask {
@@ -123,10 +133,10 @@ pub(super) fn remote_shell_name(shell: RemoteShell) -> &'static str {
 pub(super) fn normalize_host(host: &str) -> String {
     let mut h = host.trim().trim_matches('[').trim_matches(']').to_string();
     h = h.replace("%25", "%");
-    if !h.contains(':') {
-        if let Some(idx) = h.find('%') {
-            h.truncate(idx);
-        }
+    if !h.contains(':')
+        && let Some(idx) = h.find('%')
+    {
+        h.truncate(idx);
     }
     h
 }

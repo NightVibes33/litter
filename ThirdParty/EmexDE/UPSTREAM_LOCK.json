@@ -1,0 +1,140 @@
+{
+  "nyxian": {
+    "repository": "https://github.com/emexlab/Nyxian.git",
+    "commit": "3678a9c6612824c4234e9b98dc25687c46401687",
+    "verifiedUpstreamWorkflowRun": 36519089721
+  },
+  "llvmOnIOS": {
+    "repository": "https://github.com/emexlab/LLVM-On-iOS.git",
+    "commit": "5c2e215abf1f82fd3cfabba89d45b72e0b6bd8b9",
+    "swiftBranch": "swift-6.4.0-RELEASE"
+  },
+  "swiftPackages": [
+    {
+      "alias": "EmexDERunestone",
+      "identity": "runestone",
+      "location": "https://github.com/emexlab/Runestone",
+      "revision": "718e718ad6a5f53a71d8df91779752262a19d531"
+    },
+    {
+      "alias": "EmexDESwiftArgumentParser",
+      "identity": "swift-argument-parser",
+      "location": "https://github.com/apple/swift-argument-parser",
+      "revision": "c5d11a805e765f52ba34ec7284bd4fcd6ba68615"
+    },
+    {
+      "alias": "EmexDESwiftTerm",
+      "identity": "swiftterm",
+      "location": "https://github.com/migueldeicaza/SwiftTerm",
+      "revision": "8e7a1e154f470e19c709a00a8768df348ba5fc43"
+    },
+    {
+      "alias": "EmexDETreeSitter",
+      "identity": "tree-sitter",
+      "location": "https://github.com/tree-sitter/tree-sitter",
+      "revision": "98be227227af10cc7a269cb3ffb23686c0610b17"
+    },
+    {
+      "alias": "EmexDETreeSitterC",
+      "identity": "tree-sitter-c",
+      "location": "https://github.com/tree-sitter/tree-sitter-c.git",
+      "revision": "7175a6dd5fc1cee660dce6fe23f6043d75af424a"
+    },
+    {
+      "alias": "EmexDETreeSitterCPP",
+      "identity": "tree-sitter-cpp",
+      "location": "https://github.com/tree-sitter/tree-sitter-cpp.git",
+      "revision": "f41e1a044c8a84ea9fa8577fdd2eab92ec96de02"
+    },
+    {
+      "alias": "EmexDETreeSitterObjc",
+      "identity": "tree-sitter-objc",
+      "location": "https://github.com/tree-sitter-grammars/tree-sitter-objc.git",
+      "revision": "181a81b8f23a2d593e7ab4259981f50122909fda"
+    },
+    {
+      "alias": "EmexDETreeSitterSwift",
+      "identity": "tree-sitter-swift",
+      "location": "https://github.com/emexlab/tree-sitter-swift",
+      "revision": "b787669ba973e5311234fad0aed2a03909281a5c"
+    },
+    {
+      "alias": "EmexDETreeSitterXML",
+      "identity": "tree-sitter-xml",
+      "location": "https://github.com/tree-sitter-grammars/tree-sitter-xml.git",
+      "revision": "0d9a8099c963ed53e183425c1b47fa2622c8eaf7"
+    },
+    {
+      "alias": "EmexDEUIOnboarding",
+      "identity": "uionboarding",
+      "location": "https://github.com/emexlab/UIOnboarding",
+      "revision": "a7f3fb04fcb2f2d2fc83cf6741b84fb506599644"
+    }
+  ],
+  "nativeBuildDependencies": [
+    "ldid",
+    "dpkg",
+    "libarchive",
+    "pkgconf",
+    "cmake",
+    "openssl",
+    "ninja"
+  ],
+  "runtimeBinaries": [
+    "SuperSlot.dylib",
+    "libBroadpatch.dylib",
+    "bootstrapd.dylib",
+    "MobileDevelopmentService.dylib"
+  ],
+  "upstreamTargets": [
+    "CoreCompiler",
+    "MobileDevelopmentKit",
+    "HWHook",
+    "Broadpatch",
+    "LiveShim",
+    "LiveProcess",
+    "SuperSlot",
+    "bootstrapd",
+    "MobileDevelopmentService",
+    "Nyxian"
+  ],
+  "requiredSourcePaths": [
+    "Frameworks/CoreCompiler/CoreCompiler.h",
+    "Frameworks/CoreCompiler/Tools/CCDriver.cpp",
+    "Frameworks/CoreCompiler/Tools/Compiler/CCSwiftCompiler.cpp",
+    "Frameworks/MobileDevelopmentKit/MobileDevelopmentKit.h",
+    "Frameworks/HWHook/HWHook.c",
+    "Frameworks/HWHook/HWHookThreadContext.c",
+    "Frameworks/Broadpatch/Broadpatch.h",
+    "Frameworks/Broadpatch/Broadpatch.m",
+    "Frameworks/LiveShim/LiveShim.h",
+    "LiveProcess/main.m",
+    "LiveProcess/Info.plist",
+    "LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m",
+    "Daemons/bootstrapd/main.m",
+    "Daemons/MobileDevelopmentService/main.m",
+    "Nyxian/NXBridge.h",
+    "Nyxian/UI/BootViewController.swift",
+    "Nyxian/Assets.xcassets",
+    "Nyxian/LindChain/IDEBuilder/NXBuilder.swift",
+    "Nyxian/LindChain/ProcEnvironment/Surface/fs/fs.m",
+    "Shared",
+    "KEXTs",
+    "Nyxian.xcodeproj/project.pbxproj",
+    "Nyxian.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+    "LLVM-On-iOS/Makefile",
+    ".gitmodules",
+    "Makefile",
+    "version.sh",
+    "superslotfix.sh",
+    "Nyxian.xcodeproj/xcshareddata/xcschemes/Nyxian.xcscheme",
+    "LLVM-On-iOS/Scripts/build-swift-toolchain.sh"
+  ],
+  "nestedGitlinks": [
+    {
+      "path": "LLVM-On-iOS",
+      "repository": "https://github.com/emexlab/LLVM-On-iOS.git",
+      "commit": "5c2e215abf1f82fd3cfabba89d45b72e0b6bd8b9"
+    }
+  ]
+}

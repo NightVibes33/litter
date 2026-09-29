@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 use tracing::Level;
 
 static TRACING_SUBSCRIBER_INSTALLED: OnceLock<()> = OnceLock::new();
-const JSON_LOG_PREVIEW_LIMIT: usize = 512;
 
 #[cfg(target_os = "android")]
 mod android_logcat {
@@ -152,10 +151,27 @@ pub(crate) fn install_tracing_subscriber() {
         // QUIC load (e.g., an iroh stream carrying a multi-MB
         // thread/list response) emits multiple log lines per packet, which
         // on iOS jetsamed the app inside seconds. RUST_LOG overrides if set.
+        // Release builds log at info: trace/debug formatting for every store
+        // and transport event cost CPU on every update in production.
+        #[cfg(debug_assertions)]
         const DEFAULT_FILTER: &str = "info,\
             codex_mobile_client=trace,\
             mobile=trace,\
             store=debug,\
+            quinn=warn,\
+            quinn_proto=warn,\
+            quinn_udp=warn,\
+            rustls=warn,\
+            ring=warn,\
+            h2=warn,\
+            hyper=warn,\
+            tokio_tungstenite=warn,\
+            tungstenite=warn";
+        #[cfg(not(debug_assertions))]
+        const DEFAULT_FILTER: &str = "info,\
+            codex_mobile_client=info,\
+            mobile=info,\
+            store=info,\
             quinn=warn,\
             quinn_proto=warn,\
             quinn_udp=warn,\
@@ -272,49 +288,9 @@ pub(crate) fn log_rust(
     }
 }
 
-pub(crate) fn summarize_json_for_log(payload: &str) -> String {
-    let compact = serde_json::from_str::<serde_json::Value>(payload)
-        .ok()
-        .and_then(|value| serde_json::to_string(&value).ok())
-        .unwrap_or_else(|| payload.trim().to_string());
-
-    truncate_log_preview(&compact, JSON_LOG_PREVIEW_LIMIT)
-}
-
-fn truncate_log_preview(value: &str, limit: usize) -> String {
-    let total_chars = value.chars().count();
-    let total_bytes = value.len();
-    if total_chars <= limit {
-        return value.to_string();
-    }
-
-    let preview: String = value.chars().take(limit).collect();
-    format!(
-        "{preview}… ({total_chars} chars, {})",
-        format_bytes(total_bytes)
-    )
-}
-
-fn format_bytes(bytes: usize) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-
-    let mut value = bytes as f64;
-    let mut unit_index = 0;
-    while value >= 1024.0 && unit_index < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit_index += 1;
-    }
-
-    if unit_index == 0 {
-        format!("{bytes} {}", UNITS[unit_index])
-    } else {
-        format!("{value:.1} {}", UNITS[unit_index])
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{LogLevelName, format_bytes, summarize_json_for_log};
+    use super::LogLevelName;
 
     #[test]
     fn log_level_name_strings_match_expected_format() {
@@ -323,29 +299,5 @@ mod tests {
         assert_eq!(LogLevelName::Info.as_str(), "INFO");
         assert_eq!(LogLevelName::Warn.as_str(), "WARN");
         assert_eq!(LogLevelName::Error.as_str(), "ERROR");
-    }
-
-    #[test]
-    fn summarize_json_for_log_keeps_short_payloads() {
-        let payload = r#"{"data":[{"agentNick":"worker"}]}"#;
-        assert_eq!(summarize_json_for_log(payload), payload);
-    }
-
-    #[test]
-    fn summarize_json_for_log_truncates_long_payloads() {
-        let payload = format!(r#"{{"data":[{{"message":"{}"}}]}}"#, "x".repeat(700));
-        let summary = summarize_json_for_log(&payload);
-        assert!(summary.len() < payload.len());
-        assert!(summary.contains("chars, "));
-        assert!(summary.contains("B)"));
-        assert!(summary.starts_with(r#"{"data":[{"message":"#));
-    }
-
-    #[test]
-    fn format_bytes_uses_human_readable_units() {
-        assert_eq!(format_bytes(999), "999 B");
-        assert_eq!(format_bytes(1024), "1.0 KB");
-        assert_eq!(format_bytes(1536), "1.5 KB");
-        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
     }
 }

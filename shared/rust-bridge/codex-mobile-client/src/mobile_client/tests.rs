@@ -9,6 +9,49 @@ mod mobile_client_tests {
     use std::sync::{Arc, Mutex as StdMutex};
 
     #[test]
+    fn unsupported_mcp_elicitations_always_cancel_without_accepting_fabricated_proof() {
+        for request in [
+            json!({"mode":"openai/userVerification", "title":"Verify", "description":"Approve", "challenge":"challenge"}),
+            json!({"mode":"openai/form", "message":"Approve", "requestedSchema":{"type":"object"}}),
+            json!({"mode":"openaiForm", "message":"Approve", "requestedSchema":{"type":"object"}}),
+        ] {
+            let mut raw_params = request;
+            raw_params["threadId"] = json!("thread");
+            raw_params["serverName"] = json!("test-mcp");
+            let seed = PendingUserInputSeed {
+                request_id: upstream::RequestId::Integer(1),
+                response_kind: PendingUserInputResponseKind::McpServerElicitation,
+                raw_params,
+            };
+            for answers in [
+                vec![],
+                vec![PendingUserInputAnswer {
+                    question_id: MCP_URL_ACTION_FIELD_ID.into(),
+                    answers: vec![MCP_URL_FINISHED_LABEL.into()],
+                }],
+                vec![PendingUserInputAnswer {
+                    question_id: MCP_APPROVAL_FIELD_ID.into(),
+                    answers: vec![
+                        MCP_APPROVAL_ACCEPT_ONCE_LABEL.into(),
+                        MCP_APPROVAL_ACCEPT_ALWAYS_LABEL.into(),
+                    ],
+                }],
+                vec![PendingUserInputAnswer {
+                    question_id: "proof".into(),
+                    answers: vec![r#"{"verified":true,"signature":"fabricated"}"#.into()],
+                }],
+            ] {
+                assert_eq!(
+                    mcp_elicitation_response_json(&seed, &answers).unwrap(),
+                    json!({
+                        "action": "cancel", "content": null, "_meta": null
+                    })
+                );
+            }
+        }
+    }
+
+    #[test]
     fn account_sync_warmup_only_runs_when_codex_runtime_is_present() {
         assert!(runtime_kinds_support_account_sync(&["codex".to_string()]));
         assert!(runtime_kinds_support_account_sync(&[
@@ -91,6 +134,7 @@ mod mobile_client_tests {
             supports_personality: false,
             is_default: false,
             agent_runtime_kind: runtime_kind,
+            provider_id: None,
         }
     }
 
@@ -118,6 +162,12 @@ mod mobile_client_tests {
             reasoning_effort_from_string(" high "),
             Some(crate::types::ReasoningEffort::High)
         );
+        for (value, expected) in [
+            ("max", crate::types::ReasoningEffort::Max),
+            ("ULTRA", crate::types::ReasoningEffort::Ultra),
+        ] {
+            assert_eq!(reasoning_effort_from_string(value), Some(expected));
+        }
         assert_eq!(reasoning_effort_from_string(""), None);
     }
 
@@ -213,8 +263,9 @@ mod mobile_client_tests {
             reasoning_effort: Some("high".to_string()),
             effective_approval_policy: None,
             effective_sandbox_policy: None,
-            items: Vec::new(),
-            local_overlay_items: Vec::new(),
+            items: Default::default(),
+            local_overlay_items: Default::default(),
+            activity_cache: Default::default(),
             queued_follow_ups: vec![AppQueuedFollowUpPreview {
                 id: "queued-1".to_string(),
                 kind: AppQueuedFollowUpKind::Message,
@@ -294,8 +345,9 @@ mod mobile_client_tests {
             reasoning_effort: None,
             effective_approval_policy: Some(crate::types::AppAskForApproval::Never),
             effective_sandbox_policy: Some(crate::types::AppSandboxPolicy::DangerFullAccess),
-            items: Vec::new(),
-            local_overlay_items: Vec::new(),
+            items: Default::default(),
+            local_overlay_items: Default::default(),
+            activity_cache: Default::default(),
             queued_follow_ups: Vec::new(),
             queued_follow_up_drafts: Vec::new(),
             active_turn_id: None,
@@ -336,6 +388,28 @@ mod mobile_client_tests {
         assert_eq!(
             client.runtime_for_thread_start("srv", None, Some("claude-sonnet-4.5")),
             "claude".to_string()
+        );
+    }
+
+    #[test]
+    fn thread_start_runtime_uses_sole_local_studio_runtime() {
+        let client = MobileClient::new();
+        client
+            .app_store
+            .upsert_server(&make_server_config("srv"), ServerHealthSnapshot::Connected);
+        client.app_store.update_server_agent_runtimes(
+            "srv",
+            vec![AgentRuntimeInfo {
+                kind: "local-studio".to_string(),
+                name: "local-studio".to_string(),
+                display_name: "Local Studio".to_string(),
+                available: true,
+            }],
+        );
+
+        assert_eq!(
+            client.runtime_for_thread_start("srv", None, None),
+            "local-studio".to_string()
         );
     }
 
@@ -467,6 +541,264 @@ mod mobile_client_tests {
     }
 
     #[test]
+    fn local_studio_controller_connections_preserve_local_studio_scope() {
+        assert!(is_local_studio_controller(
+            "alleycat:local-studio:controller-node"
+        ));
+        assert!(!is_local_studio_controller("alleycat:controller-node"));
+        let all_agents = HashSet::from([
+            "local-studio".to_string(),
+            "codex".to_string(),
+            "pi".to_string(),
+        ]);
+        assert!(alleycat_agent_is_requested(
+            true,
+            &all_agents,
+            "local-studio"
+        ));
+        assert!(!alleycat_agent_is_requested(true, &all_agents, "codex"));
+        assert!(!alleycat_agent_is_requested(true, &all_agents, "pi"));
+        assert!(alleycat_agent_is_requested(
+            false,
+            &all_agents,
+            "local-studio"
+        ));
+        assert!(alleycat_agent_is_requested(false, &all_agents, "codex"));
+        assert!(alleycat_agent_is_requested(false, &all_agents, "pi"));
+        assert!(alleycat_agent_is_requested(false, &HashSet::new(), "codex"));
+        assert_eq!(
+            alleycat_inventory_refresh_delays(true),
+            ALLEYCAT_AGENT_INVENTORY_REFRESH_DELAYS_MS
+        );
+        assert!(alleycat_inventory_refresh_delays(false).is_empty());
+        assert_eq!(
+            alleycat_dial_retry_delays(true),
+            ALLEYCAT_CONTROLLER_AGENT_DIAL_RETRY_DELAYS_MS
+        );
+        assert_eq!(
+            alleycat_dial_retry_delays(false),
+            ALLEYCAT_AGENT_DIAL_RETRY_DELAYS_MS
+        );
+    }
+
+    #[test]
+    fn alleycat_inventory_refresh_recovers_from_empty_initial_probe() {
+        let mut inventory = Vec::new();
+        merge_alleycat_agent_inventory(
+            &mut inventory,
+            vec![
+                AlleycatAgentInfo {
+                    name: "local-studio".to_string(),
+                    display_name: "Local Studio (ready)".to_string(),
+                    wire: AlleycatAgentWire::Jsonl,
+                    available: true,
+                    presentation: None,
+                    capabilities: None,
+                },
+                AlleycatAgentInfo {
+                    name: "codex".to_string(),
+                    display_name: "Codex".to_string(),
+                    wire: AlleycatAgentWire::Websocket,
+                    available: true,
+                    presentation: None,
+                    capabilities: None,
+                },
+            ],
+        );
+
+        assert_eq!(inventory.len(), 2);
+        assert_eq!(inventory[0].display_name, "Local Studio (ready)");
+        assert_eq!(inventory[1].name, "codex");
+
+        merge_alleycat_agent_inventory(
+            &mut inventory,
+            vec![AlleycatAgentInfo {
+                name: "codex".to_string(),
+                display_name: "Codex (ready)".to_string(),
+                wire: AlleycatAgentWire::Websocket,
+                available: true,
+                presentation: None,
+                capabilities: None,
+            }],
+        );
+        assert_eq!(inventory.len(), 2);
+        assert_eq!(inventory[1].display_name, "Codex (ready)");
+    }
+
+    #[test]
+    fn controller_inventory_stops_waiting_once_local_studio_is_available() {
+        let agent = |name: &str, available: bool| AlleycatAgentInfo {
+            name: name.to_string(),
+            display_name: name.to_string(),
+            wire: AlleycatAgentWire::Jsonl,
+            available,
+            presentation: None,
+            capabilities: None,
+        };
+        assert!(!alleycat_controller_inventory_ready(&[]));
+        assert!(!alleycat_controller_inventory_ready(&[agent("codex", true)]));
+        assert!(!alleycat_controller_inventory_ready(&[agent("local-studio", false)]));
+        assert!(alleycat_controller_inventory_ready(&[
+            agent("codex", true),
+            agent("local-studio", true)
+        ]));
+    }
+
+    #[test]
+    fn pi_runtimes_always_use_full_access_without_approvals() {
+        let client = MobileClient::new();
+        for runtime in ["pi", "local-studio"] {
+            let mut requests = vec![
+                upstream::ClientRequest::ThreadStart {
+                    request_id: upstream::RequestId::Integer(1),
+                    params: upstream::ThreadStartParams::default(),
+                },
+                upstream::ClientRequest::ThreadResume {
+                    request_id: upstream::RequestId::Integer(2),
+                    params: upstream::ThreadResumeParams::default(),
+                },
+                upstream::ClientRequest::ThreadFork {
+                    request_id: upstream::RequestId::Integer(3),
+                    params: upstream::ThreadForkParams::default(),
+                },
+                upstream::ClientRequest::TurnStart {
+                    request_id: upstream::RequestId::Integer(4),
+                    params: upstream::TurnStartParams::default(),
+                },
+            ];
+
+            for request in &mut requests {
+                client.normalize_model_selection_for_request("srv", runtime.into(), request);
+                match request {
+                    upstream::ClientRequest::ThreadStart { params, .. } => {
+                        assert_eq!(
+                            params.approval_policy,
+                            Some(upstream::AskForApproval::Never)
+                        );
+                        assert_eq!(
+                            params.sandbox,
+                            Some(upstream::SandboxMode::DangerFullAccess)
+                        );
+                    }
+                    upstream::ClientRequest::ThreadResume { params, .. } => {
+                        assert_eq!(
+                            params.approval_policy,
+                            Some(upstream::AskForApproval::Never)
+                        );
+                        assert_eq!(
+                            params.sandbox,
+                            Some(upstream::SandboxMode::DangerFullAccess)
+                        );
+                    }
+                    upstream::ClientRequest::ThreadFork { params, .. } => {
+                        assert_eq!(
+                            params.approval_policy,
+                            Some(upstream::AskForApproval::Never)
+                        );
+                        assert_eq!(
+                            params.sandbox,
+                            Some(upstream::SandboxMode::DangerFullAccess)
+                        );
+                    }
+                    upstream::ClientRequest::TurnStart { params, .. } => {
+                        assert_eq!(
+                            params.approval_policy,
+                            Some(upstream::AskForApproval::Never)
+                        );
+                        assert_eq!(
+                            params.sandbox_policy,
+                            Some(upstream::SandboxPolicy::DangerFullAccess)
+                        );
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn codex_mobile_threads_disable_login_hooks_without_changing_other_settings() {
+        let client = MobileClient::new();
+        for runtime in ["codex", "pi", "local-studio", "claude"] {
+            let config = Some(std::collections::HashMap::from([
+                ("allow_login_shell".into(), serde_json::json!(true)),
+                ("features.shell_snapshot".into(), serde_json::json!(true)),
+                ("model_reasoning_effort".into(), serde_json::json!("high")),
+            ]));
+            let mut requests = [
+                upstream::ClientRequest::ThreadStart {
+                    request_id: upstream::RequestId::Integer(1),
+                    params: upstream::ThreadStartParams {
+                        config: config.clone(),
+                        ..Default::default()
+                    },
+                },
+                upstream::ClientRequest::ThreadResume {
+                    request_id: upstream::RequestId::Integer(2),
+                    params: upstream::ThreadResumeParams {
+                        config: config.clone(),
+                        ..Default::default()
+                    },
+                },
+                upstream::ClientRequest::ThreadFork {
+                    request_id: upstream::RequestId::Integer(3),
+                    params: upstream::ThreadForkParams {
+                        config: config.clone(),
+                        ..Default::default()
+                    },
+                },
+            ];
+            for request in &mut requests {
+                client.normalize_model_selection_for_request("srv", runtime.into(), request);
+                let config = match request {
+                    upstream::ClientRequest::ThreadStart { params, .. } => params.config.as_ref(),
+                    upstream::ClientRequest::ThreadResume { params, .. } => params.config.as_ref(),
+                    upstream::ClientRequest::ThreadFork { params, .. } => params.config.as_ref(),
+                    _ => unreachable!(),
+                }
+                .unwrap();
+                assert_eq!(
+                    config["allow_login_shell"],
+                    serde_json::json!(runtime != "codex")
+                );
+                assert_eq!(
+                    config["features.shell_snapshot"],
+                    serde_json::json!(runtime != "codex")
+                );
+                assert_eq!(config["model_reasoning_effort"], serde_json::json!("high"));
+            }
+        }
+    }
+
+    #[test]
+    fn codex_permission_overrides_remain_unchanged() {
+        let client = MobileClient::new();
+        let mut request = upstream::ClientRequest::ThreadStart {
+            request_id: upstream::RequestId::Integer(1),
+            params: upstream::ThreadStartParams {
+                approval_policy: Some(upstream::AskForApproval::OnRequest),
+                sandbox: Some(upstream::SandboxMode::WorkspaceWrite),
+                ..Default::default()
+            },
+        };
+
+        client.normalize_model_selection_for_request("srv", "codex".into(), &mut request);
+
+        let upstream::ClientRequest::ThreadStart { params, .. } = request else {
+            unreachable!();
+        };
+        assert_eq!(
+            params.approval_policy,
+            Some(upstream::AskForApproval::OnRequest)
+        );
+        assert_eq!(params.sandbox, Some(upstream::SandboxMode::WorkspaceWrite));
+        assert_eq!(
+            params.config.unwrap()["allow_login_shell"],
+            serde_json::json!(false)
+        );
+    }
+
+    #[test]
     fn thread_runtime_infers_claude_from_existing_thread_model() {
         let client = MobileClient::new();
         let key = ThreadKey {
@@ -482,6 +814,38 @@ mod mobile_client_tests {
         client.note_thread_runtime(key.clone(), "codex".to_string());
 
         assert_eq!(client.runtime_for_thread(&key), "claude".to_string());
+    }
+
+    #[test]
+    fn turn_interrupt_routes_to_owning_runtime_not_codex() {
+        let client = MobileClient::new();
+        let key = ThreadKey {
+            server_id: "srv".to_string(),
+            thread_id: "thread-opencode".to_string(),
+        };
+        client
+            .app_store
+            .upsert_thread_snapshot(ThreadSnapshot::from_info(
+                &key.server_id,
+                make_thread_info(&key.thread_id),
+            ));
+        client.note_thread_runtime(key.clone(), "opencode".to_string());
+
+        let request = upstream::ClientRequest::TurnInterrupt {
+            request_id: upstream::RequestId::Integer(crate::next_request_id()),
+            params: upstream::TurnInterruptParams {
+                thread_id: key.thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+            },
+        };
+        // Regression for 0xSero/litter#283: turn/interrupt must be routed to
+        // the runtime that owns the thread, not the default "codex" channel
+        // (which yields `server error -32600: thread not found` on
+        // multi-runtime hosts).
+        assert_eq!(
+            client.runtime_for_request(&key.server_id, &request),
+            "opencode".to_string()
+        );
     }
 
     #[test]
@@ -532,7 +896,7 @@ mod mobile_client_tests {
     fn thread_runtime_infers_non_codex_from_existing_thread_model_prefix() {
         for (model, expected_runtime) in [
             ("opencode/qwen3-coder", "opencode".to_string()),
-            ("amp/smart", "amp".to_string()),
+            ("amp/medium", "amp".to_string()),
             ("pi.dev/default", "pi".to_string()),
             ("factory/droid", "droid".to_string()),
         ] {
@@ -583,7 +947,7 @@ mod mobile_client_tests {
         }))
         .expect("thread/read response should deserialize");
 
-        upsert_thread_snapshot_from_app_server_read_response(&reducer, "srv", response)
+        upsert_thread_snapshot_from_app_server_read_response(&reducer, "srv", response, true)
             .expect("upsert should succeed");
 
         let key = ThreadKey {
@@ -647,7 +1011,7 @@ mod mobile_client_tests {
         }))
         .expect("thread/read response should deserialize");
 
-        upsert_thread_snapshot_from_app_server_read_response(&reducer, "srv", response)
+        upsert_thread_snapshot_from_app_server_read_response(&reducer, "srv", response, true)
             .expect("upsert should succeed");
 
         let snapshot = reducer
@@ -659,6 +1023,107 @@ mod mobile_client_tests {
 
         assert_eq!(snapshot.active_turn_id, None);
         assert_eq!(snapshot.info.status, ThreadSummaryStatus::Idle);
+    }
+
+    #[test]
+    fn metadata_read_preserves_page_and_active_turn_despite_embedded_history() {
+        let reducer = AppStoreReducer::new();
+        let key = ThreadKey {
+            server_id: "srv".to_string(),
+            thread_id: "thread-1".to_string(),
+        };
+        let mut existing = ThreadSnapshot::from_info("srv", make_thread_info("thread-1"));
+        existing.active_turn_id = Some("turn-1".to_string());
+        existing.info.status = ThreadSummaryStatus::Active;
+        existing.items = vec![crate::conversation::make_error_item(
+            "paged-item".into(),
+            "kept".into(),
+            None,
+        )]
+        .into();
+        existing.older_turns_cursor = Some("older".to_string());
+        existing.initial_turns_loaded = true;
+        reducer.upsert_thread_snapshot(existing);
+
+        let response: upstream::ThreadReadResponse = serde_json::from_value(serde_json::json!({
+            "thread": {
+                "id": "thread-1",
+                "sessionId": "session-1",
+                "preview": "hi",
+                "ephemeral": false,
+                "modelProvider": "openai",
+                "createdAt": 1,
+                "updatedAt": 2,
+                "status": { "type": "idle" },
+                "path": "/tmp/thread",
+                "cwd": "/tmp/thread",
+                "cliVersion": "1.0.0",
+                "source": "cli",
+                "agentNickname": null,
+                "agentRole": null,
+                "gitInfo": null,
+                "name": "thread",
+                "turns": [
+                    {
+                        "id": "turn-1",
+                        "items": [],
+                        "itemsView": "full",
+                        "status": "completed",
+                        "error": null,
+                        "startedAt": null,
+                        "completedAt": null,
+                        "durationMs": null
+                    }
+                ]
+            }
+        }))
+        .expect("thread/read response should deserialize");
+
+        upsert_thread_snapshot_from_app_server_read_response(&reducer, "srv", response, false)
+            .expect("upsert should succeed");
+
+        let snapshot = reducer
+            .snapshot()
+            .threads
+            .get(&key)
+            .cloned()
+            .expect("thread snapshot should exist");
+
+        assert_eq!(snapshot.active_turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(snapshot.older_turns_cursor.as_deref(), Some("older"));
+        assert!(snapshot.initial_turns_loaded);
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].id, "paged-item");
+        assert_eq!(snapshot.info.status, ThreadSummaryStatus::Active);
+    }
+
+    #[test]
+    fn authoritative_completed_turn_clears_stale_active_status_and_id() {
+        let existing = thread_snapshot_with_active_turn("srv", "thread-1", "turn-1");
+        let mut target = existing.clone();
+        target.active_turn_id = None;
+        let turns: Vec<upstream::Turn> = serde_json::from_value(json!([{
+            "id": "turn-1",
+            "items": [],
+            "itemsView": "notLoaded",
+            "status": "completed",
+            "error": null,
+            "startedAt": 1,
+            "completedAt": 2,
+            "durationMs": 1
+        }]))
+        .expect("completed turn skeleton should deserialize");
+
+        reconcile_active_turn(Some(&existing), &mut target, &turns);
+
+        assert_eq!(target.active_turn_id, None);
+        assert_eq!(target.info.status, ThreadSummaryStatus::Idle);
+    }
+
+    #[test]
+    fn force_authoritative_waiter_does_not_reuse_normal_resume_marker() {
+        assert!(!can_reuse_waited_resume(true, true, true));
+        assert!(can_reuse_waited_resume(true, false, true));
     }
 
     #[tokio::test]
@@ -678,7 +1143,7 @@ mod mobile_client_tests {
                 requests
                     .lock()
                     .expect("request log lock should not be poisoned")
-                    .push(request.method().to_string());
+                    .push(request.method_name().to_string());
                 match request {
                     upstream::ClientRequest::ThreadResume { .. } => {
                         Err(RpcError::Transport(TransportError::SendFailed(
@@ -718,7 +1183,7 @@ mod mobile_client_tests {
                     }
                     other => Err(RpcError::Deserialization(format!(
                         "unexpected request in test: {}",
-                        other.method()
+                        other.method_name()
                     ))),
                 }
             })
@@ -788,7 +1253,7 @@ mod mobile_client_tests {
                 requests
                     .lock()
                     .expect("request log lock should not be poisoned")
-                    .push(format!("codex:{}", request.method()));
+                    .push(format!("codex:{}", request.method_name()));
                 Err(RpcError::Deserialization(
                     "no rollout found for thread id thread-1".to_string(),
                 ))
@@ -800,7 +1265,7 @@ mod mobile_client_tests {
                 requests
                     .lock()
                     .expect("request log lock should not be poisoned")
-                    .push(format!("claude:{}", request.method()));
+                    .push(format!("claude:{}", request.method_name()));
                 match request {
                     upstream::ClientRequest::ThreadResume { .. } => {
                         serde_json::to_value(serde_json::json!({
@@ -836,7 +1301,7 @@ mod mobile_client_tests {
                     }
                     other => Err(RpcError::Deserialization(format!(
                         "unexpected request in test: {}",
-                        other.method()
+                        other.method_name()
                     ))),
                 }
             })
@@ -902,7 +1367,7 @@ mod mobile_client_tests {
                 requests
                     .lock()
                     .expect("request log lock should not be poisoned")
-                    .push(request.method().to_string());
+                    .push(request.method_name().to_string());
                 match request {
                     upstream::ClientRequest::ThreadResume { .. } => {
                         serde_json::to_value(serde_json::json!({
@@ -938,7 +1403,7 @@ mod mobile_client_tests {
                     }
                     other => Err(RpcError::Deserialization(format!(
                         "unexpected request in test: {}",
-                        other.method()
+                        other.method_name()
                     ))),
                 }
             })
@@ -999,7 +1464,7 @@ mod mobile_client_tests {
                         requests
                             .lock()
                             .expect("request log lock should not be poisoned")
-                            .push(other.method().to_string());
+                            .push(other.method_name().to_string());
                     }
                 }
                 match request {
@@ -1062,7 +1527,7 @@ mod mobile_client_tests {
                     }
                     other => Err(RpcError::Deserialization(format!(
                         "unexpected request in test: {}",
-                        other.method()
+                        other.method_name()
                     ))),
                 }
             })
@@ -1146,7 +1611,7 @@ mod mobile_client_tests {
 
         let mut thread = thread_snapshot_with_active_turn(server_id, thread_id, "turn-active");
         thread.agent_runtime_kind = "amp".to_string();
-        thread.model = Some("amp/smart".to_string());
+        thread.model = Some("amp/medium".to_string());
         thread.info.model_provider = Some("amp".to_string());
         client.app_store.upsert_thread_snapshot(thread);
         client.note_thread_runtime(key.clone(), "amp".to_string());
@@ -1193,7 +1658,7 @@ mod mobile_client_tests {
                             "name": "thread",
                             "turns": turns
                         },
-                        "model": "amp/smart",
+                        "model": "amp/medium",
                         "modelProvider": "amp",
                         "cwd": "/tmp/thread",
                         "approvalPolicy": "never",
@@ -1215,7 +1680,7 @@ mod mobile_client_tests {
                 }
                 other => Err(RpcError::Deserialization(format!(
                     "unexpected request in test: {}",
-                    other.method()
+                    other.method_name()
                 ))),
             })
         };
@@ -1257,6 +1722,160 @@ mod mobile_client_tests {
         assert_eq!(snapshot.active_turn_id, None);
         assert_eq!(snapshot.info.status, ThreadSummaryStatus::Idle);
         assert!(client.app_store.server_supports_turn_pagination(server_id));
+    }
+
+    #[tokio::test]
+    async fn reopening_active_thread_repairs_items_missed_while_away() {
+        let client = MobileClient::new();
+        let server_id = "srv";
+        let thread_id = "thread-running";
+        let turn_id = "turn-active";
+        let key = ThreadKey {
+            server_id: server_id.to_string(),
+            thread_id: thread_id.to_string(),
+        };
+        let config = make_server_config(server_id);
+        client
+            .app_store
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
+        client
+            .app_store
+            .upsert_thread_snapshot(thread_snapshot_with_active_turn(
+                server_id, thread_id, turn_id,
+            ));
+
+        let requests = Arc::new(StdMutex::new(Vec::<String>::new()));
+        let request_handler: TestRequestHandler = {
+            let requests = Arc::clone(&requests);
+            Arc::new(move |request| match request {
+                upstream::ClientRequest::ThreadResume { params, .. } => {
+                    requests
+                        .lock()
+                        .expect("request log lock should not be poisoned")
+                        .push(format!("thread/resume:{}", params.exclude_turns));
+                    Ok(json!({
+                        "thread": {
+                            "id": thread_id,
+                            "preview": "Running",
+                            "ephemeral": false,
+                            "modelProvider": "pi",
+                            "createdAt": 1,
+                            "updatedAt": 2,
+                            "status": { "type": "active", "activeFlags": [] },
+                            "path": "/tmp/thread",
+                            "cwd": "/tmp/thread",
+                            "cliVersion": "1.0.0",
+                            "source": "appServer",
+                            "agentNickname": null,
+                            "agentRole": null,
+                            "gitInfo": null,
+                            "name": "thread",
+                            "turns": []
+                        },
+                        "model": "GLM-5.2",
+                        "modelProvider": "pi",
+                        "cwd": "/tmp/thread",
+                        "approvalPolicy": "never",
+                        "approvalsReviewer": "user",
+                        "sandbox": { "type": "dangerFullAccess" },
+                        "reasoningEffort": "high"
+                    }))
+                }
+                upstream::ClientRequest::ThreadTurnsList { params, .. } => {
+                    let skeleton_only =
+                        matches!(params.items_view, Some(upstream::TurnItemsView::NotLoaded));
+                    requests
+                        .lock()
+                        .expect("request log lock should not be poisoned")
+                        .push(format!("thread/turns/list:{skeleton_only}"));
+                    let items = if skeleton_only {
+                        json!([])
+                    } else {
+                        json!([{
+                            "id": "tool-running",
+                            "type": "commandExecution",
+                            "command": "sleep 30",
+                            "cwd": "/tmp/thread",
+                            "processId": null,
+                            "source": "agent",
+                            "status": "inProgress",
+                            "commandActions": [],
+                            "aggregatedOutput": null,
+                            "exitCode": null,
+                            "durationMs": null
+                        }])
+                    };
+                    Ok(json!({
+                        "data": [{
+                            "id": turn_id,
+                            "items": items,
+                            "itemsView": if skeleton_only { "notLoaded" } else { "full" },
+                            "status": "inProgress",
+                            "error": null,
+                            "startedAt": 1,
+                            "completedAt": null,
+                            "durationMs": null
+                        }],
+                        "nextCursor": null,
+                        "backwardsCursor": null
+                    }))
+                }
+                other => Err(RpcError::Deserialization(format!(
+                    "unexpected request in test: {}",
+                    other.method_name()
+                ))),
+            })
+        };
+        let session = Arc::new(ServerSession::test_stub_with_handlers(
+            config,
+            Some(request_handler),
+            None,
+            None,
+        ));
+        client
+            .sessions
+            .write()
+            .expect("sessions lock should not be poisoned")
+            .insert(server_id.to_string(), session);
+
+        client.mark_direct_resumed_thread(key.clone());
+        client
+            .external_resume_thread(server_id, thread_id, None)
+            .await
+            .expect("reopening should repair the active turn");
+
+        let requests = requests
+            .lock()
+            .expect("request log lock should not be poisoned");
+        assert_eq!(
+            requests.as_slice(),
+            [
+                "thread/resume:true",
+                "thread/turns/list:true",
+                "thread/turns/list:false"
+            ]
+        );
+        drop(requests);
+
+        let snapshot = client
+            .app_store
+            .snapshot()
+            .threads
+            .get(&key)
+            .cloned()
+            .expect("thread snapshot after force refresh");
+        assert_eq!(snapshot.active_turn_id.as_deref(), Some(turn_id));
+        assert_eq!(snapshot.info.status, ThreadSummaryStatus::Active);
+        assert!(
+            snapshot.items.iter().any(|item| {
+                item.id == "tool-running"
+                    && matches!(
+                        item.content,
+                        crate::conversation_uniffi::HydratedConversationItemContent::CommandExecution(_)
+                    )
+            }),
+            "the full repair page should restore the missed command item"
+        );
     }
 
     #[tokio::test]
@@ -1330,7 +1949,7 @@ mod mobile_client_tests {
                 }
                 other => Err(RpcError::Deserialization(format!(
                     "unexpected request in test: {}",
-                    other.method()
+                    other.method_name()
                 ))),
             })
         };
@@ -1452,7 +2071,7 @@ mod mobile_client_tests {
                 }
                 other => Err(RpcError::Deserialization(format!(
                     "unexpected request in test: {}",
-                    other.method()
+                    other.method_name()
                 ))),
             })
         };
@@ -1592,7 +2211,7 @@ mod mobile_client_tests {
                     }
                     other => Err(RpcError::Deserialization(format!(
                         "unexpected request in test: {}",
-                        other.method()
+                        other.method_name()
                     ))),
                 }
             })
@@ -1671,5 +2290,295 @@ mod mobile_client_tests {
 
         assert_eq!(preview.kind, AppQueuedFollowUpKind::PendingSteer);
         assert_eq!(preview.text, "Please try the same search again.");
+    }
+
+    #[tokio::test]
+    async fn start_turn_uses_persisted_plan_mode_after_cold_restore() {
+        let client = MobileClient::new();
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let preferences_dir = tempdir.path().to_string_lossy().to_string();
+        client.set_mobile_preferences_directory(preferences_dir.clone());
+        let server_id = "srv";
+        let thread_id = "thread-1";
+        let key = ThreadKey {
+            server_id: server_id.to_string(),
+            thread_id: thread_id.to_string(),
+        };
+        crate::thread_modes::set_mode(&preferences_dir, &key, AppModeKind::Plan);
+
+        let config = make_server_config(server_id);
+        client
+            .app_store
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
+        let mut thread = ThreadSnapshot::from_info(server_id, make_thread_info(thread_id));
+        thread.info.status = ThreadSummaryStatus::Idle;
+        thread.model = Some("gpt-5".to_string());
+        client.app_store.upsert_thread_snapshot(thread);
+
+        let turn_start_calls = Arc::new(StdMutex::new(Vec::<upstream::ClientRequest>::new()));
+        let request_handler: TestRequestHandler = {
+            let turn_start_calls = Arc::clone(&turn_start_calls);
+            Arc::new(move |request| {
+                turn_start_calls
+                    .lock()
+                    .expect("turn start calls lock should not be poisoned")
+                    .push(request.clone());
+                match request {
+                    upstream::ClientRequest::TurnStart { .. } => {
+                        serde_json::to_value(upstream::TurnStartResponse {
+                            turn: upstream::Turn {
+                                id: "turn-next".to_string(),
+                                items: Vec::new(),
+                                status: upstream::TurnStatus::InProgress,
+                                error: None,
+                                started_at: None,
+                                completed_at: None,
+                                duration_ms: None,
+                                items_view: upstream::TurnItemsView::default(),
+                            },
+                        })
+                        .map_err(|error| RpcError::Deserialization(error.to_string()))
+                    }
+                    other => Err(RpcError::Deserialization(format!(
+                        "unexpected request in test: {}",
+                        other.method_name()
+                    ))),
+                }
+            })
+        };
+        let session = Arc::new(ServerSession::test_stub_with_handlers(
+            config,
+            Some(request_handler),
+            None,
+            None,
+        ));
+        client
+            .sessions
+            .write()
+            .expect("sessions lock should not be poisoned")
+            .insert(server_id.to_string(), session);
+
+        client
+            .start_turn(
+                server_id,
+                upstream::TurnStartParams {
+                    additional_context: None,
+                    client_user_message_id: None,
+                    cyber_access_program: None,
+                    turn_trigger: None,
+                    tool_output: None,
+                    service_tier_for_turn: None,
+                    multi_agent_mode: None,
+                    thread_id: thread_id.to_string(),
+                    input: vec![upstream::UserInput::Text {
+                        text: "hello".to_string(),
+                        text_elements: Vec::new(),
+                    }],
+                    responsesapi_client_metadata: None,
+                    cwd: None,
+                    runtime_workspace_roots: None,
+                    approval_policy: None,
+                    approvals_reviewer: None,
+                    sandbox_policy: None,
+                    environments: None,
+                    permissions: None,
+                    model: None,
+                    service_tier: None,
+                    effort: None,
+                    summary: None,
+                    personality: None,
+                    output_schema: None,
+                    collaboration_mode: None,
+                },
+            )
+            .await
+            .expect("start turn should succeed");
+
+        let captured = turn_start_calls
+            .lock()
+            .expect("turn start calls lock should not be poisoned");
+        let upstream::ClientRequest::TurnStart { params, .. } = &captured[0] else {
+            panic!("expected turn/start request");
+        };
+        assert_eq!(
+            params
+                .collaboration_mode
+                .as_ref()
+                .map(|mode| mode.mode.clone()),
+            Some(codex_protocol::config_types::ModeKind::Plan)
+        );
+        assert_eq!(
+            client
+                .snapshot_thread(&key)
+                .expect("thread snapshot")
+                .collaboration_mode,
+            AppModeKind::Plan
+        );
+    }
+
+    fn interrupt_test_params(thread_id: &str, text: &str) -> upstream::TurnStartParams {
+        upstream::TurnStartParams {
+            additional_context: None,
+            client_user_message_id: None,
+            cyber_access_program: None,
+            turn_trigger: None,
+            tool_output: None,
+            service_tier_for_turn: None,
+            multi_agent_mode: None,
+            thread_id: thread_id.to_string(),
+            input: vec![upstream::UserInput::Text {
+                text: text.to_string(),
+                text_elements: Vec::new(),
+            }],
+            responsesapi_client_metadata: None,
+            cwd: None,
+            runtime_workspace_roots: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
+            environments: None,
+            permissions: None,
+            model: None,
+            service_tier: None,
+            effort: None,
+            summary: None,
+            personality: None,
+            output_schema: None,
+            collaboration_mode: None,
+        }
+    }
+
+    /// Returns a client whose thread has an in-progress `turn-1`, plus the
+    /// log of RPC method names the fake host received.
+    fn client_with_running_turn() -> (MobileClient, ThreadKey, Arc<StdMutex<Vec<String>>>) {
+        let client = MobileClient::new();
+        let server_id = "srv";
+        let key = ThreadKey {
+            server_id: server_id.to_string(),
+            thread_id: "thread-1".to_string(),
+        };
+        let config = make_server_config(server_id);
+        client
+            .app_store
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
+        let mut thread = ThreadSnapshot::from_info(server_id, make_thread_info("thread-1"));
+        thread.model = Some("gpt-5".to_string());
+        client.app_store.upsert_thread_snapshot(thread);
+        client.app_store.apply_ui_event(&UiEvent::TurnStarted {
+            key: key.clone(),
+            turn_id: "turn-1".to_string(),
+        });
+
+        let calls = Arc::new(StdMutex::new(Vec::<String>::new()));
+        let handler: TestRequestHandler = {
+            let calls = Arc::clone(&calls);
+            Arc::new(move |request| {
+                calls.lock().unwrap().push(request.method_name().to_string());
+                match request {
+                    upstream::ClientRequest::TurnStart { .. } => {
+                        serde_json::to_value(upstream::TurnStartResponse {
+                            turn: upstream::Turn {
+                                id: "turn-2".to_string(),
+                                items: Vec::new(),
+                                status: upstream::TurnStatus::InProgress,
+                                error: None,
+                                started_at: None,
+                                completed_at: None,
+                                duration_ms: None,
+                                items_view: upstream::TurnItemsView::default(),
+                            },
+                        })
+                        .map_err(|error| RpcError::Deserialization(error.to_string()))
+                    }
+                    other => Err(RpcError::Deserialization(format!(
+                        "unexpected request in test: {}",
+                        other.method_name()
+                    ))),
+                }
+            })
+        };
+        let session = Arc::new(ServerSession::test_stub_with_handlers(
+            config,
+            Some(handler),
+            None,
+            None,
+        ));
+        client
+            .sessions
+            .write()
+            .unwrap()
+            .insert(server_id.to_string(), session);
+        (client, key, calls)
+    }
+
+    #[tokio::test]
+    async fn send_while_turn_still_marked_active_is_silently_queued() {
+        // Reproduces the bug: a bridge that never sends turn/completed after
+        // an interrupt leaves `active_turn_id` set, so the next send is only
+        // parked as a queued follow-up and no turn/start reaches the host.
+        let (client, key, calls) = client_with_running_turn();
+        client
+            .start_turn("srv", interrupt_test_params("thread-1", "again"))
+            .await
+            .expect("send");
+        assert!(calls.lock().unwrap().iter().all(|m| m != "turn/start"));
+        assert_eq!(
+            client.snapshot_thread(&key).unwrap().queued_follow_up_drafts.len(),
+            1
+        );
+    }
+
+    async fn assert_send_after_interrupt_starts_new_turn(with_completion_event: bool) {
+        let (client, key, calls) = client_with_running_turn();
+        // Successful turn/interrupt response.
+        client.mark_turn_interrupted_locally("srv", "thread-1", "turn-1");
+        if with_completion_event {
+            client.app_store.apply_ui_event(&UiEvent::TurnCompleted {
+                key: key.clone(),
+                turn_id: "turn-1".to_string(),
+                error: None,
+            });
+        }
+        let thread = client.snapshot_thread(&key).unwrap();
+        assert_eq!(thread.active_turn_id, None);
+        assert_eq!(thread.info.status, ThreadSummaryStatus::Idle);
+
+        client
+            .start_turn("srv", interrupt_test_params("thread-1", "again"))
+            .await
+            .expect("send");
+        assert_eq!(calls.lock().unwrap().as_slice(), ["turn/start"]);
+        assert!(
+            client
+                .snapshot_thread(&key)
+                .unwrap()
+                .queued_follow_up_drafts
+                .is_empty()
+        );
+
+        // A late completion for the interrupted turn must not end turn-2.
+        client.app_store.apply_ui_event(&UiEvent::TurnStarted {
+            key: key.clone(),
+            turn_id: "turn-2".to_string(),
+        });
+        client.app_store.apply_ui_event(&UiEvent::TurnCompleted {
+            key: key.clone(),
+            turn_id: "turn-1".to_string(),
+            error: None,
+        });
+        assert_eq!(
+            client.snapshot_thread(&key).unwrap().active_turn_id.as_deref(),
+            Some("turn-2")
+        );
+    }
+
+    #[tokio::test]
+    async fn send_after_interrupt_without_completion_event_starts_new_turn() {
+        assert_send_after_interrupt_starts_new_turn(false).await;
+    }
+
+    #[tokio::test]
+    async fn send_after_interrupt_with_completion_event_starts_new_turn() {
+        assert_send_after_interrupt_starts_new_turn(true).await;
     }
 }
