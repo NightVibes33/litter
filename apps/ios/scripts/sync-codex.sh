@@ -117,9 +117,11 @@ echo "==> Installing mobile in-process code-mode runtime..."
 python3 "$REPO_DIR/tools/scripts/patch-codex-mobile-code-mode.py" "$SUBMODULE_DIR"
 
 MOBILE_CODE_MODE="$SUBMODULE_DIR/codex-rs/code-mode/src/service_mobile.rs"
+normalized_mobile_code_mode="$(tr -d '[:space:]' < "$MOBILE_CODE_MODE")"
 for required in     'globalThis.tools = Object.create(null);'     'globalThis.ALL_TOOLS = '     'delegate.invoke_tool'     'RuntimeResponse::Yielded'     'FunctionCallOutputContentItem::InputAudio'     'impl CodeModeSessionProvider for ProcessOwnedCodeModeSessionProvider'
 do
-    if ! grep -qF "$required" "$MOBILE_CODE_MODE"; then
+    normalized_required="$(printf '%s' "$required" | tr -d '[:space:]')"
+    if ! printf '%s' "$normalized_mobile_code_mode" | grep -qF "$normalized_required"; then
         echo "error: mobile code-mode verification failed: missing $required" >&2
         exit 1
     fi
