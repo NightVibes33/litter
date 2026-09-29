@@ -16,18 +16,13 @@ GENERATED_DEVICE_DIR="$GENERATED_RUST_DIR/ios-device"
 GENERATED_SIM_DIR="$GENERATED_RUST_DIR/ios-sim"
 GENERATED_MACABI_DIR="$GENERATED_RUST_DIR/ios-macabi"
 BINDINGS_HASH_FILE="$GENERATED_RUST_DIR/.swift-bindings.hash"
+BINDINGS_HASH_SCRIPT="$REPO_DIR/tools/scripts/uniffi-bindings-input-hash.sh"
 IOS_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-18.0}"
 MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 SUBMODULE_DIR="$REPO_DIR/shared/third_party/codex"
 IOS_CLANGXX_WRAPPER="$SCRIPT_DIR/ios-clangxx-wrapper.sh"
-# Legacy per-feature patches are checked only so cleanup can restore a developer
-# checkout after the aggregate sync patch is used. Mobile code mode is deliberately
-# not in this list: sync-codex.sh installs and verifies the real QuickJS-backed
-# service_mobile implementation. Reintroducing mobile-code-mode-stub.patch here can
-# silently turn code_mode_only models (for example Terra) into tool-dead sessions.
 PATCH_FILES=(
   "$REPO_DIR/patches/codex/ios-exec-hook.patch"
-  "$REPO_DIR/patches/codex/client-controlled-handoff.patch"
   "$REPO_DIR/patches/codex/thread-read-permissions.patch"
 )
 
@@ -141,23 +136,21 @@ trap cleanup_patch EXIT
 
 mkdir -p "$FRAMEWORKS_DIR" "$GENERATED_HEADERS_DIR" "$GENERATED_DEVICE_DIR" "$GENERATED_SIM_DIR" "$GENERATED_MACABI_DIR"
 
-if [ "${SCCACHE_DISABLE:-0}" != "1" ] && [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
-  export RUSTC_WRAPPER="$(command -v sccache)"
+if [ -z "${RUSTC_WRAPPER:-}" ] && [ "${CARGO_INCREMENTAL:-}" != "1" ] && command -v sccache >/dev/null 2>&1; then
+  sccache_path="$(command -v sccache)"
+  export RUSTC_WRAPPER="$sccache_path"
 fi
 
 "$REPO_DIR/tools/scripts/update-alleycat-main.sh" --shared
 
 # libghostty static libs + headers must exist before the Rust crate is
-# compiled because the iOS terminal renderer links against them. Build them
-# on demand so direct CI invocations of build-rust.sh are self-contained.
+# compiled (codex-mobile-client links against them). Build them on demand
+# when missing so this script is self-sufficient for CI workflows that
+# invoke it directly (without going through the Makefile's stamp dep).
 LIBGHOSTTY_DEVICE_LIB="$GENERATED_DEVICE_DIR/libghostty.a"
 LIBGHOSTTY_SIM_LIB="$GENERATED_SIM_DIR/libghostty.a"
 LIBGHOSTTY_MACABI_LIB="$GENERATED_MACABI_DIR/libghostty.a"
-LIBGHOSTTY_HEADER="$GENERATED_HEADERS_DIR/ghostty.h"
 NEEDS_GHOSTTY=0
-if [ ! -f "$LIBGHOSTTY_HEADER" ]; then
-  NEEDS_GHOSTTY=1
-fi
 if [ "$DEVICE_ONLY" -eq 1 ] && [ ! -f "$LIBGHOSTTY_DEVICE_LIB" ]; then
   NEEDS_GHOSTTY=1
 elif [ "$SIM_ONLY" -eq 1 ] && [ ! -f "$LIBGHOSTTY_SIM_LIB" ]; then
@@ -169,16 +162,8 @@ elif [ "$DEVICE_ONLY" -eq 0 ] && [ "$SIM_ONLY" -eq 0 ] && [ "$MACABI_ONLY" -eq 0
   NEEDS_GHOSTTY=1
 fi
 if [ "$NEEDS_GHOSTTY" -eq 1 ]; then
-  echo "==> libghostty artifacts missing; building"
-  ghostty_args=()
-  if [ "$DEVICE_ONLY" -eq 1 ]; then
-    ghostty_args+=(--device-only)
-  elif [ "$SIM_ONLY" -eq 1 ]; then
-    ghostty_args+=(--sim-only)
-  elif [ "$MACABI_ONLY" -eq 1 ]; then
-    ghostty_args+=(--macabi-only)
-  fi
-  "$REPO_DIR/apps/ios/scripts/build-ghostty.sh" "${ghostty_args[@]}"
+  echo "==> libghostty artifacts missing; building (use 'make ghostty-ios' to invoke with stamp caching)"
+  "$REPO_DIR/apps/ios/scripts/build-ghostty.sh"
 fi
 
 ensure_host_llvm_on_path() {
@@ -235,41 +220,36 @@ if [ -n "$IPHONESIM_SDK" ]; then
   export BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios_sim="--target=arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-simulator -isysroot ${IPHONESIM_SDK}"
 fi
 
-bindings_inputs() {
-  cat <<EOF
-$RUST_BRIDGE_DIR/codex-mobile-client/src/lib.rs
-$RUST_BRIDGE_DIR/codex-mobile-client/src/conversation_uniffi.rs
-$RUST_BRIDGE_DIR/codex-mobile-client/src/discovery_uniffi.rs
-$RUST_BRIDGE_DIR/codex-mobile-client/src/uniffi_shared.rs
-$RUST_BRIDGE_DIR/codex-mobile-client/Cargo.toml
-$RUST_BRIDGE_DIR/Cargo.lock
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/app-server-protocol/src/protocol/common.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/app-server-protocol/src/protocol/v1.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/app-server-protocol/src/protocol/v2.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/account.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/config_types.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/models.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/openai_models.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/parse_command.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/protocol.rs
-EOF
-  find "$RUST_BRIDGE_DIR/codex-mobile-client/src" -type f -name '*.rs' | sort
+compute_bindings_hash() {
+  "$BINDINGS_HASH_SCRIPT"
 }
 
-compute_bindings_hash() {
-  local file
-  {
-    while IFS= read -r file; do
-      [ -f "$file" ] || continue
-      shasum -a 256 "$file"
-    done < <(bindings_inputs | sort)
-  } | shasum -a 256 | awk '{print $1}'
+copy_if_changed() {
+  local source="$1"
+  local destination="$2"
+  if [ -f "$destination" ]; then
+    local source_size destination_size source_mtime destination_mtime
+    source_size="$(stat -f '%z' "$source")"
+    destination_size="$(stat -f '%z' "$destination")"
+    source_mtime="$(stat -f '%m' "$source")"
+    destination_mtime="$(stat -f '%m' "$destination")"
+    if [ "$source_size" = "$destination_size" ] && [ "$source_mtime" = "$destination_mtime" ]; then
+      return
+    fi
+    # One-time migration for artifacts copied before timestamps were
+    # preserved. Subsequent no-op builds take the metadata fast path above.
+    if cmp -s "$source" "$destination"; then
+      touch -r "$source" "$destination"
+      return
+    fi
+  fi
+  cp -p "$source" "$destination"
 }
 
 sync_generated_headers() {
-  cp "$GENERATED_SWIFT_DIR/codex_mobile_clientFFI.h" "$GENERATED_HEADERS_DIR/codex_mobile_clientFFI.h"
-  cp "$GENERATED_SWIFT_DIR/codex_mobile_clientFFI.modulemap" "$GENERATED_HEADERS_DIR/codex_mobile_clientFFI.modulemap"
-  cp "$GENERATED_SWIFT_DIR/module.modulemap" "$GENERATED_HEADERS_DIR/module.modulemap"
+  copy_if_changed "$GENERATED_SWIFT_DIR/codex_mobile_clientFFI.h" "$GENERATED_HEADERS_DIR/codex_mobile_clientFFI.h"
+  copy_if_changed "$GENERATED_SWIFT_DIR/codex_mobile_clientFFI.modulemap" "$GENERATED_HEADERS_DIR/codex_mobile_clientFFI.modulemap"
+  copy_if_changed "$GENERATED_SWIFT_DIR/module.modulemap" "$GENERATED_HEADERS_DIR/module.modulemap"
 }
 
 maybe_generate_swift_bindings() {
@@ -298,19 +278,19 @@ maybe_generate_swift_bindings() {
   echo "==> Regenerating UniFFI Swift bindings -> $UNIFFI_OUT"
   cd "$RUST_BRIDGE_DIR"
   "$RUST_BRIDGE_DIR/generate-bindings.sh" --swift-only
-  cp "$GENERATED_SWIFT_DIR/codex_mobile_client.swift" "$UNIFFI_OUT"
+  copy_if_changed "$GENERATED_SWIFT_DIR/codex_mobile_client.swift" "$UNIFFI_OUT"
   sync_generated_headers
   printf '%s\n' "$current_hash" >"$BINDINGS_HASH_FILE"
 }
 
 copy_device_artifact() {
-  cp "$CARGO_TARGET_DIR_EFFECTIVE/aarch64-apple-ios/$PROFILE/libcodex_mobile_client.a" \
+  copy_if_changed "$CARGO_TARGET_DIR_EFFECTIVE/aarch64-apple-ios/$PROFILE/libcodex_mobile_client.a" \
     "$GENERATED_DEVICE_DIR/libcodex_mobile_client.a"
 }
 
 copy_sim_artifact() {
   local sim_lib="$1"
-  cp "$sim_lib" "$GENERATED_SIM_DIR/libcodex_mobile_client.a"
+  copy_if_changed "$sim_lib" "$GENERATED_SIM_DIR/libcodex_mobile_client.a"
 }
 
 copy_macabi_artifact() {
@@ -318,6 +298,15 @@ copy_macabi_artifact() {
   local x86_64_lib="$CARGO_TARGET_DIR_EFFECTIVE/x86_64-apple-ios-macabi/$PROFILE/libcodex_mobile_client.a"
   lipo -create "$arm64_lib" "$x86_64_lib" \
     -output "$GENERATED_MACABI_DIR/libcodex_mobile_client.a"
+}
+
+# Fail the build instead of shipping an app whose embedded iSH runtime has a
+# broken (empty-stub) ARM64 vdso. litter-ish silently degrades the vdso to an
+# empty placeholder when no lld-capable clang is available; at runtime that
+# makes the app SIGABRT as soon as a guest process hits a signal.
+check_ish_vdso_for() {
+  local triple="$1"
+  "$REPO_DIR/tools/scripts/check-ish-vdso.sh" "$CARGO_TARGET_DIR_EFFECTIVE" "$triple" "$PROFILE"
 }
 
 echo "==> Preparing codex submodule..."
@@ -347,16 +336,19 @@ rustup target add i686-unknown-linux-musl aarch64-unknown-linux-musl
 if [ "$DEVICE_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios ($PROFILE)..."
   cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios --crate-type staticlib $CARGO_FEATURES
+  check_ish_vdso_for aarch64-apple-ios
   copy_device_artifact
 elif [ "$SIM_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios-sim ($PROFILE)..."
   cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios-sim --crate-type staticlib $CARGO_FEATURES
+  check_ish_vdso_for aarch64-apple-ios-sim
   copy_sim_artifact "$CARGO_TARGET_DIR_EFFECTIVE/aarch64-apple-ios-sim/$PROFILE/libcodex_mobile_client.a"
 elif [ "$MACABI_ONLY" -eq 1 ]; then
   if [ "$FAST_MACABI" -eq 1 ]; then
     echo "==> Building codex-mobile-client for $MACABI_HOST_TARGET ($PROFILE)..."
     cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target "$MACABI_HOST_TARGET" --crate-type staticlib $CARGO_FEATURES
-    cp "$CARGO_TARGET_DIR_EFFECTIVE/$MACABI_HOST_TARGET/$PROFILE/libcodex_mobile_client.a" \
+    check_ish_vdso_for "$MACABI_HOST_TARGET"
+    copy_if_changed "$CARGO_TARGET_DIR_EFFECTIVE/$MACABI_HOST_TARGET/$PROFILE/libcodex_mobile_client.a" \
       "$GENERATED_MACABI_DIR/libcodex_mobile_client.a"
   else
     echo "==> Building codex-mobile-client for Mac Catalyst macabi targets ($PROFILE) in parallel..."
@@ -385,6 +377,8 @@ elif [ "$MACABI_ONLY" -eq 1 ]; then
     fi
     [ "$FAILED" -eq 0 ] || exit 1
 
+    check_ish_vdso_for aarch64-apple-ios-macabi
+    check_ish_vdso_for x86_64-apple-ios-macabi
     copy_macabi_artifact
   fi
 else
@@ -434,6 +428,11 @@ else
     FAILED=1
   fi
   [ "$FAILED" -eq 0 ] || exit 1
+
+  check_ish_vdso_for aarch64-apple-ios
+  check_ish_vdso_for aarch64-apple-ios-sim
+  check_ish_vdso_for aarch64-apple-ios-macabi
+  check_ish_vdso_for x86_64-apple-ios-macabi
 
   copy_device_artifact
   copy_sim_artifact "$CARGO_TARGET_DIR_EFFECTIVE/aarch64-apple-ios-sim/$PROFILE/libcodex_mobile_client.a"
