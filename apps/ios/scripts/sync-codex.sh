@@ -113,4 +113,21 @@ for PATCH_FILE in "${PATCH_FILES[@]}"; do
     fi
 done
 
+echo "==> Installing mobile in-process code-mode runtime..."
+python3 "$REPO_DIR/tools/scripts/patch-codex-mobile-code-mode.py" "$SUBMODULE_DIR"
+
+MOBILE_CODE_MODE="$SUBMODULE_DIR/codex-rs/code-mode/src/service_mobile.rs"
+for required in     'globalThis.tools = Object.create(null);'     'globalThis.ALL_TOOLS = '     'delegate.invoke_tool'     'RuntimeResponse::Yielded'     'FunctionCallOutputContentItem::InputAudio'     'impl CodeModeSessionProvider for ProcessOwnedCodeModeSessionProvider'
+do
+    if ! grep -qF "$required" "$MOBILE_CODE_MODE"; then
+        echo "error: mobile code-mode verification failed: missing $required" >&2
+        exit 1
+    fi
+done
+if grep -Eq 'code mode is unavailable on mobile|exec is unavailable on mobile targets|MOBILE_UNSUPPORTED_MESSAGE' "$MOBILE_CODE_MODE"; then
+    echo "error: mobile code-mode verification found an unsupported stub" >&2
+    exit 1
+fi
+echo "==> Mobile code mode verified: QuickJS + nested host tools + wait/yield/terminate"
+
 echo "==> codex submodule ready at $(git -C "$SUBMODULE_DIR" rev-parse --short HEAD)"
