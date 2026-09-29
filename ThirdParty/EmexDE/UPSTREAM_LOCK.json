@@ -122,7 +122,13 @@
     "KEXTs",
     "Nyxian.xcodeproj/project.pbxproj",
     "Nyxian.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
-    "LLVM-On-iOS/Makefile"
+    "LLVM-On-iOS/Makefile",
+    ".gitmodules",
+    "Makefile",
+    "version.sh",
+    "superslotfix.sh",
+    "Nyxian.xcodeproj/xcshareddata/xcschemes/Nyxian.xcscheme",
+    "LLVM-On-iOS/Scripts/build-swift-toolchain.sh"
   ],
   "nestedGitlinks": [
     {
