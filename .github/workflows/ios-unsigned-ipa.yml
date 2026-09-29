@@ -16,6 +16,7 @@ on:
   push:
     branches:
       - main
+      - fix/nyxian-notification-bridge-ci-2026-09-28
     paths:
       - 'Makefile'
       - 'Package.swift'
