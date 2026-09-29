@@ -138,6 +138,16 @@ verify_mobile_code_mode_bridge() {
         exit 1
     fi
 
+    if ! grep -qF 'globalThis.tools = Object.create(null);' "$service_mobile"; then
+        echo "error: mobile code mode does not bootstrap the tools object" >&2
+        exit 1
+    fi
+
+    if ! grep -qF 'globalThis.ALL_TOOLS = ' "$service_mobile"; then
+        echo "error: mobile code mode does not expose ALL_TOOLS metadata" >&2
+        exit 1
+    fi
+
     if ! grep -qF 'impl CodeModeSessionProvider for InProcessCodeModeSessionProvider' "$service_mobile"; then
         echo "error: mobile code mode does not provide in-process sessions" >&2
         exit 1
