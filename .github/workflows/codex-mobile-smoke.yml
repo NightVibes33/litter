@@ -1,0 +1,57 @@
+name: Codex Mobile Smoke
+
+on:
+  push:
+    branches:
+      - integration/full-upstream-2026-09-29
+    paths:
+      - 'shared/third_party/codex'
+      - 'shared/rust-bridge/**'
+      - 'patches/codex/**'
+      - 'apps/ios/scripts/sync-codex.sh'
+      - 'apps/ios/scripts/build-rust.sh'
+      - 'tools/scripts/patch-codex-mobile-code-mode.py'
+      - '.github/workflows/codex-mobile-smoke.yml'
+
+concurrency:
+  group: codex-mobile-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-rust:
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Install native dependencies
+        run: |
+          set -euo pipefail
+          brew install cmake ninja pkgconf llvm autoconf automake libtool
+
+      - name: Verify exact Codex gitlink
+        run: |
+          set -euo pipefail
+          expected="be2951ea34f0d295ed0becf97079f92fa5f6950e"
+          actual="$(git -C shared/third_party/codex rev-parse HEAD)"
+          test "$actual" = "$expected"
+          echo "Codex pin verified: $actual"
+
+      - name: Apply upstream mobile patches and Terra code mode
+        run: |
+          set -euo pipefail
+          apps/ios/scripts/sync-codex.sh --recorded-gitlink
+
+      - name: Compile Codex mobile client for iOS
+        run: |
+          set -euo pipefail
+          ./apps/ios/scripts/build-rust.sh --preserve-current --fast-device --skip-bindings
