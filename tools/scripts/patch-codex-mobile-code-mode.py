@@ -9,6 +9,7 @@ QuickJS in-process because a mobile app cannot rely on spawning the host binary.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 SERVICE_MOBILE = r'''use std::collections::HashMap;
@@ -772,7 +773,11 @@ pub use service_mobile::*;
         "RuntimeResponse::Yielded",
         "FunctionCallOutputContentItem::InputAudio",
     )
-    missing = [marker for marker in required if marker not in service_text]
+    normalized_service_text = re.sub(r"\s+", "", service_text)
+    missing = [
+        marker for marker in required
+        if re.sub(r"\s+", "", marker) not in normalized_service_text
+    ]
     if missing:
         raise SystemExit(f"mobile code-mode bridge incomplete: missing {missing}")
     forbidden = (
