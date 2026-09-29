@@ -98,6 +98,11 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Verify protected Alley Cat app surface
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/verify-ios-app-surface.py
+
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:

@@ -1,0 +1,891 @@
+{
+  "schema": 1,
+  "baselineCommit": "192f849364adb758dbe7c7622256c9b0c39fd662",
+  "purpose": "Protect the existing Alley Cat/Litter iOS UI, branding, embedded host surfaces, and resources while upstream runtime/toolchain layers are merged.",
+  "files": [
+    {
+      "path": "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift",
+      "sha": "a03a673d17f9a93bcf61144e3c7d9c6d246cc342"
+    },
+    {
+      "path": "apps/ios/Sources/EmexDEEmbedded/NyxianCommandBridge.swift",
+      "sha": "17f9992cde55909b48477c483d90919d48b424ed"
+    },
+    {
+      "path": "apps/ios/Sources/KittyStoreEmbedded/KittyStoreBranding.swift",
+      "sha": "9cb0f7f4680b185369596b48969bee166e0adedc"
+    },
+    {
+      "path": "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift",
+      "sha": "26a27c9b13141a550bb636c14ea78ccebc83f328"
+    },
+    {
+      "path": "apps/ios/Sources/KittyStoreEmbedded/KittyStoreNukeCompatibility.swift",
+      "sha": "27abc9015018c94232a2ddfdf4570836c72df4d1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Info.plist",
+      "sha": "ff5da0eb795b34bda613512118a7cbee891b0733"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/LitterApp.swift",
+      "sha": "a2d43ed740bc27b2f3a18eb6c2857972534a82bf"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/brand_logo.png",
+      "sha": "33db3e97805ae5ac68c6c14af94d85ae62aa7a52"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/brand_logo.svg",
+      "sha": "a4b85692d8cfa37874195ba86bb4139179459e6a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/BuildKit/BuildKitAssetManifest.template.json",
+      "sha": "e0d6e097449253bef14e19e6e0e2884de9f9a6d8"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/BuildKit/LitterBuild.template.json",
+      "sha": "9e2f217a7cba53851615840eb8b22939c794b8aa"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/BuildKit/nyxian-import-manifest.json",
+      "sha": "ff9b310d25763af33b902e7ba1d0a8e9af276cb7"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/BuildKitAssets/README.md",
+      "sha": "0775222f236f7c6fd4b43e41d3e6abcfec317b8c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/cat_transmission_01.png",
+      "sha": "6e2b64100d7fe35db8e4587028d7b961a14333dd"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/cat_transmission_02.png",
+      "sha": "d5eea5d94768e463bcac7bb59bfdc88dc13993f1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/cat_transmission_03.png",
+      "sha": "9b3fa9e7d2f43585a4d86a613bdd5adf89a82ba6"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/cat_transmission_04.png",
+      "sha": "bd087dcaa084372fee35a6bc11187b09e63fb8c4"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/cat_transmission_05.png",
+      "sha": "ec8c99f319ef185a29fb2f53d8c3d604e19f1b1f"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/cat_transmission_06.png",
+      "sha": "b6ea1c745d77bd76ea5b08048cf179dcd4c1b7d5"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Fonts/BerkeleyMono-Bold-Oblique.otf",
+      "sha": "10b135e820cec3eb4b5a3b90256133bdafffbc86"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Fonts/BerkeleyMono-Bold.otf",
+      "sha": "a8d9523495876efe81e53b77176ad86181ff8d2b"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Fonts/BerkeleyMono-Oblique.otf",
+      "sha": "a006e581462437edb64c5e643afc41bba9f42ff7"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Fonts/BerkeleyMono-Regular.otf",
+      "sha": "8195868965ccc6776887a44b5ce5d9d21ea84f14"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/home_cat_entrance.png",
+      "sha": "0ad5111e8d841a0958327bc9dd6e6c635fff4042"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/home_cat.png",
+      "sha": "d7cc35e11ba35763d8facb78e4e5b6ac7388e973"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/absolutely-dark.json",
+      "sha": "8ff977b367aba7256ad0036918bb408a7c80191e"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/absolutely-light.json",
+      "sha": "dd3c4bf3bfbedbff0d7045561eb381229e1a9d0d"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/ayu-dark.json",
+      "sha": "c0f4c0438c4f97193c14c14e9c7d3f5986753ad0"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/catppuccin-frappe.json",
+      "sha": "0bef70112d656e82d7f2beeacc6d8bd0c8e3542c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/catppuccin-latte-Bd1wq-gC.json",
+      "sha": "a6e8dc2f17bd8eaab82d9e9f99061f08ba3ff3da"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/catppuccin-macchiato.json",
+      "sha": "729311a2b724445c882d97bf146eaf80a3e1658c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/catppuccin-mocha-Ry8aD-5u.json",
+      "sha": "e6408002b1e67308ac6d5445f08afa2778993984"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/codex-dark.json",
+      "sha": "8cd3adf2f890c62c39ae71abdb1b339186482f3a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/codex-light.json",
+      "sha": "d3c0a958e1cee00b0cd95fc284c31f214ebdb61c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/dark-plus-B1yOZ-Hy.json",
+      "sha": "02f57ae6afb902f870c3f7d6331fd041b0b7359c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/dracula-soft.json",
+      "sha": "f89c7c2ccdc9f080593a978ee8c5cfc6675da899"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/dracula.json",
+      "sha": "038cedbbc00f0aec3227d008c9210da2915c4cc6"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/everforest-dark.json",
+      "sha": "8418628a96a6248078f19fb1859ec0aa035c9c31"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/everforest-light.json",
+      "sha": "97ec3d31bf472689ed4914960373ef33e2345b6e"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/github-dark-default.json",
+      "sha": "1a10d6aa5f83dc8c5c76e291b3a0e4024f774c47"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/github-dark-dimmed.json",
+      "sha": "49d6a64722b5de8e84b330be041c7f41c29615f0"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/github-dark-high-contrast.json",
+      "sha": "01f1df89915d6a37e0e05815796017fbd53a2999"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/github-dark.json",
+      "sha": "88d171a61fb6c5e74194967846ed8b3da8a0ec1b"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/github-light-default.json",
+      "sha": "fd95a46780160d5613ce50457098cd9d73b6fbba"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/github-light-high-contrast.json",
+      "sha": "cab3caa0879c66d859bd6bf3bdcb74ea6209798f"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/github-light.json",
+      "sha": "dbe07513e28b682a772c44c219b6fe2b0b2be2fe"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/gruvbox-dark-hard.json",
+      "sha": "88d3ee58f4fd8a13a2f5006f5148027d047b40c2"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/gruvbox-dark-medium.json",
+      "sha": "135bdeedc15361f9b60e0914b4b1e8cc8ade5ee7"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/gruvbox-dark-soft.json",
+      "sha": "23f764f38dcea9b3ac4a1e2cdcbee1b233b66352"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/gruvbox-light-hard.json",
+      "sha": "3d6bc20b2dafbec2369793b78db209977a8588b1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/gruvbox-light-medium.json",
+      "sha": "9b25bd97c099ddb73db4862bd031900b4291fdb0"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/gruvbox-light-soft.json",
+      "sha": "023243b4f77fb02ddc7100d90e396d3f4819c767"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/houston.json",
+      "sha": "d83a22e1c85df2f95a5525cdbe9d41bc7683e86b"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/kanagawa-dragon-VscOyZL-.json",
+      "sha": "e84e48dffd34a566b13be1f29d19c2290b0fe9c7"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/kanagawa-lotus.json",
+      "sha": "058fc13a11462371f20211cbe7b8d9ef7ad5518e"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/kanagawa-wave.json",
+      "sha": "de8af111e63b292738db2c2ccced7bffe371784a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/kitty-litter-dark.json",
+      "sha": "67f77f30ece4a05f5e42a7333097e0585a96d032"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/kitty-litter-light.json",
+      "sha": "ff31feb07933fd3e900ce7dc82b5faea2a2b891c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/laserwave.json",
+      "sha": "78f18deeabeeb74a188e8317b0d8998a7e9cee31"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/light-plus.json",
+      "sha": "223082457682e2648c6eb14c00dbb53046ace2c7"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/linear-dark.json",
+      "sha": "df8eedb81c1d677e1b56d903bc0d97f1ed610e59"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/linear-light.json",
+      "sha": "39a61d2c4dadf7b1c10154ebee174cc42d864cd6"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/lobster-dark-dxSKfHK-.json",
+      "sha": "2790743b78ceb1861120b5379deb6dd2eb9b5560"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/material-theme-darker-D.json",
+      "sha": "2966a643aeecdbe63b013a5345b0316b37957ff5"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/material-theme-lighter.json",
+      "sha": "09653d50653dc70cc6f99898488fbcec04b16b9d"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/material-theme-ocean.json",
+      "sha": "72b9253bdebe96603c881c806a453acf28f515d6"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/material-theme-palenight.json",
+      "sha": "5d7cfaa406691e661ce3700171a66af5844e82f6"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/material-theme.json",
+      "sha": "1a3aa50d99b3892ea749d4d8cdfc3d423b48216f"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/matrix-dark.json",
+      "sha": "bc43244e07e1095d7e85f9ab4b13be541176a38f"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/min-dark-.json",
+      "sha": "8ad7b39a147f9f649d1d5158688c1e596f5da44e"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/min-light.json",
+      "sha": "b7d39feaedd3f38f36f81da75fe7687dd592ddef"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/monokai.json",
+      "sha": "fba5ad17b99ee5e56433975108f462758c864e51"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/night-owl.json",
+      "sha": "37837bb8251d9203ae8bfc2fc467798538945f03"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/nord.json",
+      "sha": "91e9a4fd7320617bab4ad7a9d5a1539803d97da7"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/notion-dark-BTRKJ-yg.json",
+      "sha": "81f6984cf39339e29f0fecd312df80f8c283ef3c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/notion-light.json",
+      "sha": "ff916766affd15cde232ddd24e95659bfdaaaf1d"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/one-dark-pro-D.json",
+      "sha": "baa54fa3db4dad09e4eb144c3d2289d421e4e7ef"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/one-light.json",
+      "sha": "6ce1fc48209fb76677d46fc3dff74e87fd235b60"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/oscurange-C.json",
+      "sha": "a0cbdc2421322e7e1b7b9fe713491fb191dcc20a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/pierre-dark.json",
+      "sha": "d6a4f64bcb901895012f192d05c8a4124a8d6476"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/pierre-light.json",
+      "sha": "95a80b1d2335459f5b810c5776246621a470bd86"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/poimandres.json",
+      "sha": "b8186c8862a43772f67d9a00920487a06931764a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/proof-light.json",
+      "sha": "0fe80dbd9a48b422b1ad570ad0c7d62404fb8fec"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/rose-pine-dawn.json",
+      "sha": "20d628cef504a615ee1686188852012c1480a481"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/rose-pine-moon.json",
+      "sha": "2e9bfe120de4b97896e6964503c96da01c8eef9e"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/rose-pine-x.json",
+      "sha": "2c85b62d8a2bf4553b7b30b5a39e299cff342165"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/sentry-dark.json",
+      "sha": "399cbcafdff0a61d3ec3c4a17509ef0d8afaf991"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/slack-dark.json",
+      "sha": "349507ac43b38cb0e1ec9e06c0bf44ce4e3b6d8c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/slack-ochin-CRg.json",
+      "sha": "27b5af16c4e6aef7e8d6fab7aa7b34baf2ba92b3"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/snazzy-light.json",
+      "sha": "e3f44d62b70f5c61f0b4348ebd7f4bcee7e11dec"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/solarized-dark.json",
+      "sha": "f14478f618b00d7db7594ea1d037bc91448adcb1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/solarized-light.json",
+      "sha": "5889d6a45690ea0656a6b116e722d023c2cc9e1f"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/temple-dark.json",
+      "sha": "21018f82e17ef4d6ff349ba22fb891597b7b4b41"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/theme-manifest.json",
+      "sha": "e6c69a9fade457699e26d8e62b5943dcb67ae85f"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/tokyo-night.json",
+      "sha": "00c194e4598dee78f74c49709d59d87bc71beec1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/usgc-epitaxy.json",
+      "sha": "58d8294a96b661da1edc345211a570f461cb0d6d"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/usgc-highk.json",
+      "sha": "7a5dbb7d5ad3de977e494aa14ee53a4db7b66f91"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/usgc-metalgate.json",
+      "sha": "a7522264df5418a798dbcad009864d7bb851558f"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/usgc-polyimide.json",
+      "sha": "25f775318b8d5ad277508eedc166eaed1c553173"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/usgc-reticle.json",
+      "sha": "e403d0be7d06de406da66f057e554311fd0ae766"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/usgc-themes-LICENSE.txt",
+      "sha": "152051aa0f4d5b8bfb2617abf8970702a138df16"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/vesper.json",
+      "sha": "549f6bf3bab467149e1064282615effb3918a530"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/vitesse-black.json",
+      "sha": "91a84ec3558a283871e8dc7056c672a15ad018d4"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/vitesse-dark.json",
+      "sha": "3053c41c850fc0fda4cb592b6261e15fb78dc229"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/Themes/vitesse-light.json",
+      "sha": "2381ef961c7096a67e7510d65220d9e465142178"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Resources/TipJarProducts.storekit",
+      "sha": "d0f6741bec4bca51772c77bf3a6780ed569bf3f0"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AccountView.swift",
+      "sha": "7f062b8fb3a01340b9acc068172da98ee55d48e6"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AgentRuntimePresentation.swift",
+      "sha": "f2685cd58bb9a6d0b593e6cb52d07cab7c1c3658"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AIProviderSettingsView.swift",
+      "sha": "647d0bd848016a9efdc0d0724dd5de8fd6abf94a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AlleycatAddServerSheet.swift",
+      "sha": "ce75e018829ef760c58e6930875fc36f5ae57292"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AmbientSuggestionsList.swift",
+      "sha": "0f1af6267c20c02bcc3921e3be7fa8e24403d56c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AnimatedLogo.swift",
+      "sha": "7191627cf9559536e8d6b8d100fa7bf2ea52c3cd"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AnimatedSplashView.swift",
+      "sha": "c9ad2e41ca14858144919af3f878bd541b8cf899"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AppearanceSettingsView.swift",
+      "sha": "6f93176e72dec9bfb9a77a8fb26feb57d43b55f3"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AppIconSettingsView.swift",
+      "sha": "b8cef24c867a4a695560d3bcfb9efcecb2d54d45"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AppsListView.swift",
+      "sha": "141a073161ac431a765dbeed7a133955c4b86ada"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AppUpdateSettingsView.swift",
+      "sha": "777809086a8b058f9b7d7145e2cd30b9d2341737"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/AudioWaveformView.swift",
+      "sha": "1878af6a86a04ff1b0a12b1924b9fc232f1daea1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/BrandLogo.swift",
+      "sha": "902d1d2a5b3901a9140a120be4dec04bd90f45ed"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/BuildArtifactShareCard.swift",
+      "sha": "6be072e26454ad19708ede97168d435a08ab2cf9"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/BuildKitSettingsView.swift",
+      "sha": "3b030b5031e681246d1b5ad57038aba22aff6bd8"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/CatalystVoiceStubs.swift",
+      "sha": "dd2c9d03aaab5dbd9456a0e6ece176f311dbafdb"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/CatTransmissionView.swift",
+      "sha": "66f13990418e3572d1d278043b944cd384101095"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ChatWallpaperBackground.swift",
+      "sha": "d602a8f0c5ba8b0786b3ddd893b1e14188223a73"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/CodeBlockView.swift",
+      "sha": "3c132d40cf93f50034aeffb636ebfb0ab0ba10cc"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ComputerUseToolCallView.swift",
+      "sha": "c6248a897d72961ecdcb9ed13227c1807ac1a07e"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConnectorSettingsView.swift",
+      "sha": "8c9ef3bd7256a639a96f29399e18e3184820b447"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ContextBadgeView.swift",
+      "sha": "5b7f7e57160c3bc809bede540b45874056dc2feb"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationComposerAttachSheet.swift",
+      "sha": "1f53d61763b3c3aa6915642835a10eaaced5c039"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationComposerContentView.swift",
+      "sha": "094763ae4274c698c471869a02d25aa575473901"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationComposerContextBarView.swift",
+      "sha": "e3dd2b61d7e655d4debe820954240e3f7b4d9140"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationComposerEntryRowView.swift",
+      "sha": "02474470de03d4b394bfe2e361118168c1da4392"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationComposerExpandedView.swift",
+      "sha": "2cae0b5d4824e5dafe993c571d98941bff259e28"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationComposerModalCoordinator.swift",
+      "sha": "79dff17ac4054cb9b2a761c17f781aeef9daebe9"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationComposerPopupOverlayView.swift",
+      "sha": "08546418ed6366c2c6cff9d5c1745c666463cfed"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationComposerTextView.swift",
+      "sha": "19ff6d40ad279268230e50db5206dc34c633d717"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationDisplayUITestHarnessView.swift",
+      "sha": "2660d2d27b06a7c90b5dd5b0b317ddd46164d745"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationInfoView.swift",
+      "sha": "6dd56fad1934bb1a931e5b67580e5b96e021b554"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationOptionsSheet.swift",
+      "sha": "709d39ad4c1a7ba788e2987119ddce6a656e5979"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationScreenModel.swift",
+      "sha": "c8e704eb223dccdc46a1434ec1667caa7fa16755"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationTimelineView.swift",
+      "sha": "03272583b07e7581c9091054aaa064a7b2b9d82b"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationView.swift",
+      "sha": "aad83b8b08e764efe55503d1c92c8df14dadbb32"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ConversationWarmupView.swift",
+      "sha": "7041384448c591cc1e8839792889b6e8c27390ac"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/CrossServerToolResultView.swift",
+      "sha": "01cea85740a83d3561aec67b08f9ac892c21bf3f"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/DebugBuildLabel.swift",
+      "sha": "ec684a38690047ee3ade97b012f2167f4c9b6408"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/DiagnosticsBundleView.swift",
+      "sha": "5238859002134c80c0240495bdf7df8671ac5ab3"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/DiffRendering.swift",
+      "sha": "3e09fa40fb22c180215db700e1b23e9f3efe8c33"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/DirectoryPickerView.swift",
+      "sha": "fe1394d4a8e4272bad8153b177858cd8867cf911"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/DiscoveryView.swift",
+      "sha": "78a83260e9ccaf94839eb694a6f4263361153fb8"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/EmexDEHostView.swift",
+      "sha": "1f0adb4ce111ab50c3146d939b4a460afb5da365"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ExperimentalFeaturesView.swift",
+      "sha": "5d8ee34ada0946762cf75d60b012d675cfbd4ec8"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/FeatherSigningSettingsView.swift",
+      "sha": "eca69a428fb19f956ea1f0809849d1b3af91ef15"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/FormattedText.swift",
+      "sha": "c353eb9a81ddb4da02b1084d83c1e5aca53c1667"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/GhosttyTerminalView.swift",
+      "sha": "808ea1cf74a2999aa30cbe3cba3ecd836b2cd99c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/HeaderView.swift",
+      "sha": "be7caf95e2880423ab82498ce316904b81b40711"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/HomeBottomBar.swift",
+      "sha": "2b12ec9b7991ea28c7cd1a19b7031e0d636c6bbf"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/HomeComposerView.swift",
+      "sha": "3347cfa6377887cfb7a4a636c28738265a39f3eb"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/HomeDashboardModel.swift",
+      "sha": "f6a540bdcf23de92b010fd4728a1befc0871f876"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/HomeDashboardSupport.swift",
+      "sha": "81cc3457f0481983a77d4a026c20d3ec1bf6d0af"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/HomeDashboardView.swift",
+      "sha": "c3b97a422d16c2ef997f20f3e326b9c394d2219a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/HomeModelChip.swift",
+      "sha": "6b780a282a24d7e5ee6b3e512863fc9d13dd7304"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/HomeSessionsScrollView.swift",
+      "sha": "75072c705171b4904995d541e2198cca1bae203a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/HomeVoiceOrbButton.swift",
+      "sha": "906a219342d90232deed86c42c0477d0ea205001"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ImageGenerationToolCallView.swift",
+      "sha": "93660a800e8e77af90dd10fb49dcc7b1f0d64561"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/InlineHandoffView.swift",
+      "sha": "ed0d0074421e25152cb7d8c242649dcd28af5ed9"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/InlineVoiceButton.swift",
+      "sha": "3c7d3d989bbf9b5030639ca472de9ecc3b939385"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/InlineVoiceStatusStrip.swift",
+      "sha": "0beb0ab771ee1a0c6551966b9f6c97b59298a8ad"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift",
+      "sha": "d588ec8436cff517b4a7bcc13018a53a768a7359"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/LiveActivityPreview.swift",
+      "sha": "788c56e14a111b76c8164a2c9a30de5f7639d7b5"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/LocalFileWorkspaceView.swift",
+      "sha": "b4fb28660f98932b9de1c93a6335f333297ec3cc"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/LockScreenCardView.swift",
+      "sha": "02e2476a472750d31380c9c1fc976ae24813a9af"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/MessageBubbleView.swift",
+      "sha": "9af9cd53494c81addf597803b65f0fdfe17352cc"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/MessageRenderCache.swift",
+      "sha": "487db6670cbc42aa1f14c223fe2242026fd9a5f7"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/MinigameOverlayView.swift",
+      "sha": "2f3454141bc967041938994c56ad7d5fcf8d902c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/MountedFoldersView.swift",
+      "sha": "c9e60b3fea634d89396002d57b8eeed926862d5a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/NewThreadHeroView.swift",
+      "sha": "fd605b607d77113d5079443e12a70a8e28e21f2a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/OnboardingCoachmarks.swift",
+      "sha": "8c4f4f900688bd4e6ec95526ee7cc41a74b315d5"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/OnboardingView.swift",
+      "sha": "6114b562923638fe13381af9dc9da7266454d5d2"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/PetSettingsView.swift",
+      "sha": "e97a4c1b0ad62c6ed9c4bdf0e27eeaa853c22303"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/PetSpriteView.swift",
+      "sha": "3b66194858c088a1489153d564b5b9b033a1c84a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/PiPContentView.swift",
+      "sha": "9f89127a92ebd8cfa0c12b37b31a8127db730850"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/PiPHostView.swift",
+      "sha": "d704a19b5ba1fef3a488488300b1c949a8194952"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/PluginSettingsView.swift",
+      "sha": "8bcec42a982c15bec3bfba6de23c02710bc8c734"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/PreviewSupport.swift",
+      "sha": "7ca3cfc2b8731880ca309200d16325d9f9280bc9"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ProjectChip.swift",
+      "sha": "a5d349742f30f53ead63c48a3cd4c4d6d2dee243"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ProjectPickerSheet.swift",
+      "sha": "663dc3e75b1f224355e29b5530956ae0c03ec277"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ProPaywallView.swift",
+      "sha": "3e6fc5aae2cc65b1022a93f09c59f57729336b00"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ProximityPairView.swift",
+      "sha": "73f396b3f10365d96f6ad20d9dd30139b6704460"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/QuickReplySheet.swift",
+      "sha": "d538484820223f592040c38dab6258eaccc001c8"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/RealtimeVoiceScreen.swift",
+      "sha": "2e5f89dffda1564aaad22155169abacee169590a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/RollingMetricText.swift",
+      "sha": "09e753d4c4f8ec7a96b1bce579464c4c2e1d38c9"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SavedAppDetailView.swift",
+      "sha": "f9d94ed45f1168e7d50e35e8cc87dfa58f67b898"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SavedAppUpdateOverlay.swift",
+      "sha": "deb2e3568748458e054c53e727099857e402282b"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ServerPill.swift",
+      "sha": "f94eebac384a080e85ea39ac2890956162b9f638"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ServerPillRow.swift",
+      "sha": "88a894571cab5f333f7e4edaad62be3bf622d75a"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SessionLaunchSupport.swift",
+      "sha": "47a7a34a850e877b315596217b957d88f962a351"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SessionReplySwipe.swift",
+      "sha": "4369da115157212a7a521d73c9c35fb1673ee07d"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SessionsDerivation.swift",
+      "sha": "f2fa61c08b168863911544cb057f74ae6e0dea44"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SessionsModel.swift",
+      "sha": "57d08554e9532577a3f2eaccb9fbb7e0617f75dd"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SessionsScreen.swift",
+      "sha": "bd217e0a064def5d66c29d726825b576e0ff64c4"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SessionsTypes.swift",
+      "sha": "c498cadc6252dd68e944f30138f09b821870a1bf"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SettingsView.swift",
+      "sha": "8fcdcf27c159c009abc0d4c7e585708243893d60"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SSHAgentPickerSheet.swift",
+      "sha": "12393fe2a86480784bf3ae9669bbf4dd7fa62cc1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SSHLoginSheet.swift",
+      "sha": "33f764c652b11f0260a0ce20ee7e02827b51daa5"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/StatusDot.swift",
+      "sha": "6d4e24a82f207b84e043638309e2a6cdac3d486c"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/StreamingAssistantRenderCache.swift",
+      "sha": "2dd59cadea9d6c732198e40eb03cd0425e80c0d1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SubagentCardView.swift",
+      "sha": "87bb721ce20b3fe4227dcb755eed2fd173c0a768"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/SwipeableRow.swift",
+      "sha": "082c12d45c4f8c2deee3fb6ba5d24ba1fef37a00"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/TerminalScreen.swift",
+      "sha": "f5e3041b842cd104c389333ad3e8d60474cd21e0"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ThreadSearchResultsView.swift",
+      "sha": "c3e9c08ad96185445c542b32439d9c9937e4a7d1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/TipJarView.swift",
+      "sha": "506494962fa7db7c6c7d4bf905a89f61d420d358"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ToolCallCardView.swift",
+      "sha": "073d95030b11daad8c6afaa6a15170e3270a8ec5"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ToolCallModels.swift",
+      "sha": "6753dd36d1856960cd1b7585f47304dc55a78882"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/TranscriptTurn.swift",
+      "sha": "76d08e6b00e70446c73fbb43f6ba80106d45c2d2"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/UWBDebugView.swift",
+      "sha": "c50207b467970bd57f6b930f8533ecde22312be1"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/VideoWallpaperPlayerView.swift",
+      "sha": "2c035c93085b1c724987b80591bd88cf9687a8ca"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/ViewTaskBag.swift",
+      "sha": "03ac9e2cd5d41bae65252192ef72dadd092815d9"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/VoiceCallView.swift",
+      "sha": "3f2edfd3815666a04c11e5095457d25c77439104"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/WallpaperAdjustView.swift",
+      "sha": "a8508803e72217d7f31570660bd9457540ef9449"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/WallpaperSelectionView.swift",
+      "sha": "4753df90f20daebfdfab7481e0864930edffb486"
+    },
+    {
+      "path": "apps/ios/Sources/Litter/Views/WidgetWebView.swift",
+      "sha": "94ee2d8b9abbc845bfb2134b3d0abbfed8008b6c"
+    }
+  ]
+}
