@@ -73,30 +73,39 @@ packages:
     from: "1.7.1"
   AltSign:
     path: ../../ThirdParty/SideStore/AltSign
+  # Exact pins copied from the green upstream Nyxian Package.resolved.
+  # Do not track moving branches here: Alley Cat and Nyxian must build from one
+  # reproducible dependency closure.
   EmexDERunestone:
     url: https://github.com/emexlab/Runestone
-    branch: main
+    revision: 718e718ad6a5f53a71d8df91779752262a19d531
+  EmexDESwiftArgumentParser:
+    url: https://github.com/apple/swift-argument-parser
+    revision: c5d11a805e765f52ba34ec7284bd4fcd6ba68615
   EmexDESwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
-    exactVersion: "1.13.0"
+    revision: 8e7a1e154f470e19c709a00a8768df348ba5fc43
+  EmexDETreeSitter:
+    url: https://github.com/tree-sitter/tree-sitter
+    revision: 98be227227af10cc7a269cb3ffb23686c0610b17
   EmexDETreeSitterObjc:
     url: https://github.com/tree-sitter-grammars/tree-sitter-objc.git
-    branch: master
+    revision: 181a81b8f23a2d593e7ab4259981f50122909fda
   EmexDETreeSitterC:
     url: https://github.com/tree-sitter/tree-sitter-c.git
-    exactVersion: "0.20.2"
+    revision: 7175a6dd5fc1cee660dce6fe23f6043d75af424a
   EmexDETreeSitterCPP:
     url: https://github.com/tree-sitter/tree-sitter-cpp.git
-    exactVersion: "0.23.4"
+    revision: f41e1a044c8a84ea9fa8577fdd2eab92ec96de02
   EmexDETreeSitterXML:
     url: https://github.com/tree-sitter-grammars/tree-sitter-xml.git
-    branch: master
+    revision: 0d9a8099c963ed53e183425c1b47fa2622c8eaf7
   EmexDETreeSitterSwift:
     url: https://github.com/emexlab/tree-sitter-swift
-    branch: main
+    revision: b787669ba973e5311234fad0aed2a03909281a5c
   EmexDEUIOnboarding:
     url: https://github.com/emexlab/UIOnboarding
-    branch: main
+    revision: a7f3fb04fcb2f2d2fc83cf6741b84fb506599644
 targets:
   Roxas:
     type: framework
@@ -300,7 +309,6 @@ targets:
       - path: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler
         headerVisibility: public
         excludes:
-          - CCBaseSwift.swift
           - CoreCompiler.docc/**
           - CoreCompilerSupportLibs/**
     dependencies:
@@ -318,6 +326,7 @@ targets:
       - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxBuilder.dylib
       - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxMacroExpansion.dylib
       - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftSyntaxMacros.dylib
+      - framework: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs/lib_CompilerSwiftWarningControl.dylib
 
   HWHook:
     type: library.static
@@ -356,6 +365,7 @@ targets:
           - LiveShim.docc/**
     dependencies:
       - target: HWHook
+      - framework: GeneratedNyxianRuntime/libBroadpatch.dylib
 
   MobileDevelopmentKit:
     type: framework
@@ -396,7 +406,7 @@ targets:
         SWIFT_VERSION: "5.0"
         CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES: "YES"
         SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/NXBridge.h
-        SWIFT_OBJC_INTERFACE_HEADER_NAME: emexDE-Swift.h
+        SWIFT_OBJC_INTERFACE_HEADER_NAME: Nyxian-Swift.h
         GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) HOST_ENV=1 CHAR_BIT=8 INT_MAX=2147483647 LONG_MAX=9223372036854775807L ULONG_MAX=18446744073709551615UL"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz -larchive -framework OpenSSL -framework FrontBoard -framework FrontBoardServices -framework RunningBoardServices -framework BackBoardServices"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers $(BUILT_PRODUCTS_DIR)/LiveShim.framework/Headers"
@@ -405,10 +415,9 @@ targets:
         "FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*]": "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/AltSign/Dependencies/OpenSSL.xcframework/ios-arm64_x86_64-simulator $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Private/Frameworks"
     sources:
       - path: Sources/EmexDEEmbedded
-      - path: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CCBaseSwift.swift
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationObject.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationObject.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian
         headerVisibility: project
@@ -450,6 +459,8 @@ targets:
         product: Runestone
       - package: EmexDESwiftTerm
         product: SwiftTerm
+      - package: EmexDETreeSitter
+        product: TreeSitter
       - package: EmexDETreeSitterObjc
         product: TreeSitterObjc
       - package: EmexDETreeSitterC
@@ -509,15 +520,13 @@ targets:
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/ResecureDecoder.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/ServiceKit/Service.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationObject.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationObject.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspaceInternal.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspaceInternal.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m
-        headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspaceService.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspaceService.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/Utils.c
         headerVisibility: project
@@ -530,6 +539,8 @@ targets:
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/Dead10ccFix.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/Dyld.m
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/DyldHook.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/LiveContainer/Tweaks/NSFileManager+GuestHooks.m
         headerVisibility: project
@@ -549,8 +560,6 @@ targets:
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/environment.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/libproc.m
-        headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/LSApplicationWorkspace.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEArchiveHandle.m
@@ -565,19 +574,21 @@ targets:
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/proxy.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Surface/extra/relax.c
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Surface/libkern/task_handoff.c
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Surface/trust/signing.c
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/fd.c
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/ktfp.c
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/PEMachOUtils.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/vnode.c
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/vfork.c
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/vfork.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/CFTools.c
+        headerVisibility: project
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/IconUtils.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/Swizzle.c
         headerVisibility: project
@@ -589,6 +600,7 @@ targets:
       - target: CoreCompiler
       - target: MobileDevelopmentKit
       - target: LiveShim
+      - framework: GeneratedNyxianRuntime/libBroadpatch.dylib
       - sdk: libarchive.tbd
       - sdk: libz.tbd
 
@@ -932,7 +944,23 @@ targets:
             done
             rmdir "$EMEXDE_FRAMEWORK/Frameworks" 2>/dev/null || true
           fi
-          echo "Embedded emexDE Shared runtime resources"
+          RUNTIME_ROOT="$SRCROOT/GeneratedNyxianRuntime"
+          mkdir -p "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
+          for runtime_binary in SuperSlot.dylib libBroadpatch.dylib bootstrapd.dylib MobileDevelopmentService.dylib; do
+            source_binary="$RUNTIME_ROOT/$runtime_binary"
+            if [ ! -s "$source_binary" ]; then
+              echo "error: missing exact upstream Nyxian runtime binary: $source_binary" >&2
+              exit 1
+            fi
+            destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$runtime_binary"
+            rm -f "$destination"
+            /usr/bin/ditto "$source_binary" "$destination"
+            if [ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ] && [ "${EXPANDED_CODE_SIGN_IDENTITY:-}" != "-" ]; then
+              /usr/bin/codesign --force --sign "$EXPANDED_CODE_SIGN_IDENTITY" --timestamp=none "$destination"
+            fi
+            echo "Embedded upstream Nyxian runtime binary: $runtime_binary"
+          done
+          echo "Embedded emexDE Shared runtime resources and exact upstream runtime binaries"
       - name: Package Private BuildKit Assets
         basedOnDependencyAnalysis: false
         script: |
