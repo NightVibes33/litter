@@ -115,6 +115,22 @@ mod tests {
     }
 
     #[test]
+    fn bad_query_instructions_require_exact_per_command_approval() {
+        assert!(IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS.contains(
+            "Before every `bad-query acquire`, `bad-query list`, `bad-query release`, or `bad-query release-all` invocation"
+        ));
+        assert!(IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS.contains(
+            "request user approval for the exact full command"
+        ));
+        assert!(IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS.contains(
+            "Do not request or persist an \"always allow\" prefix rule for BadQuery"
+        ));
+        assert!(IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS.contains(
+            "`bad-query status` and `bad-query help` are read-only capability checks"
+        ));
+    }
+
+    #[test]
     fn skips_remote_server() {
         let client = MobileClient::new();
         client.app_store.upsert_server(
