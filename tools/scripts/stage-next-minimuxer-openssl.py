@@ -32,6 +32,28 @@ text = replace(text, 'name: "CCoreCrypto",\n\t\t\tpath:', 'name: "CCoreCrypto",\
 text = replace(text, '"CoreCrypto",\n\t\t\t\t"ldid",', '"CoreCrypto",\n\t\t\t\t"ldid",\n                ' + product + ',')
 alt.write_text(text)
 
+# The retained parser leaves output pointers uninitialized on malformed input.
+# Guard the parse result and release its allocations in the staged candidate.
+certificate = root / 'altsign/AltSign/Model/Apple API/ALTCertificate.m'
+text = certificate.read_text()
+text = replace(text,
+    'BIO *inputP12Buffer = BIO_new_mem_buf((const void *)p12Data.bytes, (int)p12Data.length);',
+    'BIO *inputP12Buffer = BIO_new_mem_buf((const void *)p12Data.bytes, (int)p12Data.length);\n'
+    '    if (inputP12Buffer == NULL) { return nil; }')
+text = replace(text, 'BIO_free(inputP12Buffer);',
+    'BIO_free(inputP12Buffer);\n    if (inputP12 == NULL) { return nil; }')
+text = replace(text,
+    'EVP_PKEY *key;\n    X509 *certificate;\n    PKCS12_parse(inputP12, password.UTF8String, &key, &certificate, NULL);\n\n'
+    '    if (key == nil || certificate == nil)\n    {\n        return nil;\n    }',
+    'EVP_PKEY *key = NULL;\n    X509 *certificate = NULL;\n'
+    '    int parsed = PKCS12_parse(inputP12, password.UTF8String, &key, &certificate, NULL);\n'
+    '    PKCS12_free(inputP12);\n'
+    '    if (parsed != 1 || key == NULL || certificate == NULL)\n    {\n'
+    '        EVP_PKEY_free(key);\n        X509_free(certificate);\n        return nil;\n    }')
+text = replace(text, 'BIO_free(privateKeyBuffer);\n\n    return self;',
+    'BIO_free(privateKeyBuffer);\n    EVP_PKEY_free(key);\n    X509_free(certificate);\n\n    return self;')
+certificate.write_text(text)
+
 remote = root / 'remotepairingkit/Package.swift'
 text = remote.read_text()
 text = replace(text, ',\n        .library(\n            name: "OpenSSL",\n            targets: ["OpenSSL"]\n        )', '')
