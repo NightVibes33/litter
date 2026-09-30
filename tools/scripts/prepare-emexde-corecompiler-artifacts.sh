@@ -8,6 +8,7 @@ CORECOMPILER_ROOT="$ROOT/ThirdParty/EmexDE/Source/Frameworks/CoreCompiler"
 DEST="$CORECOMPILER_ROOT/CoreCompilerSupportLibs"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+ARTIFACT_MANIFEST="${EMEXDE_CORECOMPILER_ARTIFACT_MANIFEST:-$ROOT/docs/architecture/emexde-corecompiler-artifacts.json}"
 
 mkdir -p "$CORECOMPILER_ROOT"
 rm -rf "$DEST"
@@ -26,7 +27,7 @@ curl -fL --retry 3 --retry-delay 5 --max-time 120 \
   "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" \
   -o "$RELEASE_JSON"
 
-python3 - "$RELEASE_JSON" "$TMP_DIR" <<'PY_INNER'
+python3 - "$RELEASE_JSON" "$TMP_DIR" "$ARTIFACT_MANIFEST" "$REPO" "$RELEASE_TAG" <<'PY_INNER'
 import json
 import pathlib
 import sys
@@ -34,6 +35,11 @@ import sys
 release_json = pathlib.Path(sys.argv[1])
 out_dir = pathlib.Path(sys.argv[2])
 release = json.loads(release_json.read_text())
+manifest = json.loads(pathlib.Path(sys.argv[3]).read_text())
+if manifest['repository'] != sys.argv[4] or manifest['releaseTag'] != sys.argv[5]:
+    raise SystemExit('Provide an artifact manifest matching the selected compiler repository/release')
+if release['id'] != manifest['releaseId']:
+    raise SystemExit('Compiler release identity differs from its recorded manifest')
 required = {"CoreCompilerSupportLibs.tar.xz", "LLVM.xcframework.tar.xz"}
 assets = {asset.get("name"): asset for asset in release.get("assets", [])}
 missing = sorted(required - set(assets))
@@ -41,6 +47,9 @@ if missing:
     raise SystemExit("missing release assets: " + ", ".join(missing))
 for name in sorted(required):
     asset = assets[name]
+    expected = manifest['assets'][name]
+    if asset['id'] != expected['id'] or asset['size'] != expected['size']:
+        raise SystemExit('Compiler asset identity differs from its recorded manifest: ' + name)
     (out_dir / f"{name}.asset-url").write_text(asset["url"])
 PY_INNER
 
@@ -52,6 +61,21 @@ for name in CoreCompilerSupportLibs.tar.xz LLVM.xcframework.tar.xz; do
     "$asset_url" \
     -o "$TMP_DIR/$name"
 done
+
+python3 - "$TMP_DIR" "$ARTIFACT_MANIFEST" <<'PY_CHECKSUM'
+import hashlib, json, pathlib, sys
+root=pathlib.Path(sys.argv[1]); manifest=json.loads(pathlib.Path(sys.argv[2]).read_text())
+for name, expected in manifest['assets'].items():
+    path=root / name
+    digest=hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(chunk)
+    actual=digest.hexdigest()
+    if path.stat().st_size != expected['size'] or actual != expected['sha256']:
+        raise SystemExit('Compiler asset checksum mismatch: ' + name)
+    print('Verified pinned compiler asset: ' + name)
+PY_CHECKSUM
 
 tar -xJf "$TMP_DIR/CoreCompilerSupportLibs.tar.xz" -C "$CORECOMPILER_ROOT"
 tar -xJf "$TMP_DIR/LLVM.xcframework.tar.xz" -C "$DEST"
