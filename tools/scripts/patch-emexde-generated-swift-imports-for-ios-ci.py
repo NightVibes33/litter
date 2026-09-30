@@ -31,7 +31,8 @@ bridge_replacements = {
 for before, after in bridge_replacements.items():
     if before not in bridge_text and after not in bridge_text:
         raise SystemExit(f"Missing expected emexDE terminal bridge declaration: {before}")
-    bridge_text = bridge_text.replace(before, after)
+    if after not in bridge_text:
+        bridge_text = bridge_text.replace(before, after)
 terminal_bridge.write_text(bridge_text)
 
 terminal_session = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/WindowServer/Session/NXWindowSessionTerminal.m")
@@ -62,7 +63,8 @@ os_version_replacements = {
 for before, after in os_version_replacements.items():
     if before not in os_version_text and after not in os_version_text:
         raise SystemExit(f"Missing expected emexDE NXOSVersion declaration: {before}")
-    os_version_text = os_version_text.replace(before, after)
+    if after not in os_version_text:
+        os_version_text = os_version_text.replace(before, after)
 os_version_bridge.write_text(os_version_text)
 
 notification_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/Project+NotificationServer.swift")
@@ -75,7 +77,8 @@ notification_replacements = {
 for before, after in notification_replacements.items():
     if before not in notification_text and after not in notification_text:
         raise SystemExit(f"Missing expected emexDE notification bridge declaration: {before}")
-    notification_text = notification_text.replace(before, after)
+    if after not in notification_text:
+        notification_text = notification_text.replace(before, after)
 notification_bridge.write_text(notification_text)
 
 application_management_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/Settings/ApplicationManagement.swift")
@@ -84,7 +87,9 @@ application_management_before = "class ApplicationManagementViewController: UITh
 application_management_after = "@objc(ApplicationManagementViewController) class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
 if application_management_before not in application_management_text and application_management_after not in application_management_text:
     raise SystemExit("Missing expected emexDE ApplicationManagementViewController declaration")
-application_management_bridge.write_text(application_management_text.replace(application_management_before, application_management_after))
+if application_management_after not in application_management_text:
+    application_management_text = application_management_text.replace(application_management_before, application_management_after)
+application_management_bridge.write_text(application_management_text)
 
 def replace_generated_swift_import(source_path, shim, label):
     source = Path(source_path)
