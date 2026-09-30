@@ -8,6 +8,8 @@ on:
       - 'ThirdParty/**'
       - 'patches/codex/**'
       - 'apps/ios/scripts/sync-codex.sh'
+      - 'apps/ios/Sources/KittyStoreSigning/**'
+      - 'tools/scripts/verify-sidesign-adapter.sh'
       - 'tools/scripts/vendor-nyxian*'
       - 'tools/scripts/verify-*'
       - '.github/workflows/upstream-runtime-integration.yml'
@@ -50,3 +52,15 @@ jobs:
           cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-slingshot --test mobile_model_catalog --locked
       - name: Verify shared mobile runtime
         run: cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-mobile-client --lib --locked
+
+  sidesign:
+    name: Verify SideSign and KittyStore signing adapter
+    runs-on: macos-26-intel
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+      - name: Verify signer and host data boundary
+        run: bash tools/scripts/verify-sidesign-adapter.sh

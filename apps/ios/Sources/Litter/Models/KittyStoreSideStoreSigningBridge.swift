@@ -818,15 +818,18 @@ private extension KittyStoreSideStoreSigningBridge {
     }
 
     static func sign(signer: ALTSigner, appURL: URL, provisioningProfiles: [ALTProvisioningProfile]) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            _ = signer.signApp(at: appURL, provisioningProfiles: provisioningProfiles) { success, error in
-                if success {
-                    continuation.resume()
-                } else {
-                    continuation.resume(throwing: error ?? NSError(domain: "KittyStoreSigningBridge", code: 70, userInfo: [NSLocalizedDescriptionKey: "AltSign failed without a specific error."]))
-                }
-            }
+        guard let certificateP12 = signer.certificate.p12Data() else {
+            throw NSError(domain: "KittyStoreSigningBridge", code: 70,
+                          userInfo: [NSLocalizedDescriptionKey: "The signing certificate has no exportable private key."])
         }
+        try await KittyStoreSideSignEngine.sign(
+            appURL: appURL,
+            teamIdentifier: signer.team.identifier,
+            teamName: signer.team.name,
+            teamType: teamTypeDescription(signer.team.type),
+            certificateP12: certificateP12,
+            provisioningProfileData: provisioningProfiles.map { $0.data }
+        )
     }
 }
 #endif

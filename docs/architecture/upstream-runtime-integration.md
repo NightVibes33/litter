@@ -53,3 +53,26 @@ The existing embedded KittyStore still uses AltSign; replacing that snapshot
 alone would remove dependencies required by its current build. Migration of
 that signing boundary remains outstanding, as does Nyxian's coordinated newer
 compiler/LLVM API migration. Neither latest revision is marked integrated.
+
+### Further runtime and signing integration
+
+Additional adapted runtime fixes: `a8fb7bfb` routes interrupts to their owning
+runtime and retains new/active threads omitted by a list page; `d25bbca2` bounds
+thread-opening RPCs and parallelizes reconnect/account probes. Model picker
+cache behavior already matched `abee3ace`; its regression coverage is now
+included. Realtime item-boundary behavior from `700a2eca` was already present.
+
+The SideSign engine from SideStore's latest recorded revision is now imported
+in full at `6b68651697f99791ef85404b7aea1891a26a285d`. Its four moving package
+branches are pinned to its upstream resolved revisions. A data-only adapter
+connects host signing and embedded KittyStore resigning to the new engine while
+retaining AltSign's existing account and Objective-C model boundary. Both the
+upstream signer tests and adapter smoke tests run in a macOS CI job. Their
+results and full iOS compile validation are pending; this change is not yet
+release-ready. The latest minimuxer/pairing architecture is still outstanding.
+
+Latest ProjectNyxian head reviewed: `de9cec58b50af005e5a949f811829a062c8e3e88`.
+Its guarded-process-access bypass and credential-modification paths are excluded
+from this work. The newer compiler APIs and Swift 6.4 toolchain still need
+compatible integration; the existing BuildKit and embedded compiler pins have
+not been relabeled as upgraded.

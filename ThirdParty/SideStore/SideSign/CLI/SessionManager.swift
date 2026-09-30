@@ -1,0 +1,289 @@
+//
+//  SessionManager.swift
+//  SideSign
+//
+//  Created by Magesh K on 31/08/26.
+//  Copyright © 2026 SideSign. All rights reserved.
+//
+
+import Foundation
+import Crypto
+import GSACryptoKit
+import SideSign
+
+public enum SessionStorageError: LocalizedError, Sendable {
+    case fileNotFound(URL)
+    case corruptedData
+    case invalidPassword
+    case encryptionFailed(String)
+    case decryptionFailed(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .fileNotFound(let url):
+            return "Session file not found at '\(url.path)'."
+        case .corruptedData:
+            return "Session file is corrupted or in an unrecognized format."
+        case .invalidPassword:
+            return "Failed to decrypt session: invalid password."
+        case .encryptionFailed(let reason):
+            return "Session encryption failed: \(reason)"
+        case .decryptionFailed(let reason):
+            return "Session decryption failed: \(reason)"
+        }
+    }
+}
+public struct SessionManager: Sendable {
+
+    public static var defaultSessionDirectory: URL {
+        #if os(tvOS)
+        if let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first {
+            return caches.appendingPathComponent(Constants.Anisette.defaultBaseDirName, isDirectory: true)
+                .appendingPathComponent(Constants.Session.sessionSubdirectory, isDirectory: true)
+        }
+        #elseif os(iOS) || os(watchOS) || os(visionOS)
+        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            return appSupport.appendingPathComponent(Constants.Anisette.defaultBaseDirName, isDirectory: true)
+                .appendingPathComponent(Constants.Session.sessionSubdirectory, isDirectory: true)
+        }
+        #endif
+
+        let env = ProcessInfo.processInfo.environment
+        let baseDir: URL
+        if let xdgConfig = env[Constants.Session.envXDGConfig], !xdgConfig.isEmpty {
+            baseDir = URL(fileURLWithPath: xdgConfig).appendingPathComponent(Constants.Anisette.defaultBaseDirName, isDirectory: true)
+        } else if let appData = env[Constants.Session.envAppData], !appData.isEmpty {
+            baseDir = URL(fileURLWithPath: appData).appendingPathComponent(Constants.Session.defaultDirName, isDirectory: true)
+        } else {
+            let home = env[Constants.Session.envHome] ?? NSHomeDirectory()
+            baseDir = URL(fileURLWithPath: home, isDirectory: true).appendingPathComponent(Constants.Anisette.defaultBaseDirName, isDirectory: true)
+        }
+        return baseDir.appendingPathComponent(Constants.Session.sessionSubdirectory, isDirectory: true)
+    }
+
+    public static var defaultSessionURL: URL {
+        return defaultSessionDirectory.appendingPathComponent(Constants.Session.defaultFileName)
+    }
+
+    public static func url(for identifier: String? = nil) -> URL {
+        if let id = identifier, !id.isEmpty {
+            return defaultSessionDirectory.appendingPathComponent("\(Constants.Session.filePrefix)\(id)\(Constants.Session.fileExtension)")
+        }
+        return defaultSessionURL
+    }
+
+    public static func hasSession(at url: URL? = nil) -> Bool {
+        let targetURL = url ?? defaultSessionURL
+        return FileManager.default.fileExists(atPath: targetURL.path)
+    }
+
+    public static func listSessions() -> [(teamID: String?, url: URL)] {
+        guard let files = try? FileManager.default.contentsOfDirectory(at: defaultSessionDirectory, includingPropertiesForKeys: nil) else {
+            return []
+        }
+        var results: [(teamID: String?, url: URL)] = []
+        for file in files {
+            let name = file.lastPathComponent
+            if name == Constants.Session.defaultFileName {
+                results.append((teamID: nil, url: file))
+            } else if name.hasPrefix(Constants.Session.filePrefix) && name.hasSuffix(Constants.Session.fileExtension) {
+                let id = String(name.dropFirst(Constants.Session.filePrefix.count).dropLast(Constants.Session.fileExtension.count))
+                results.append((teamID: id, url: file))
+            }
+        }
+        return results.sorted { ($0.teamID ?? "") < ($1.teamID ?? "") }
+    }
+
+    public static func setActiveSession(forTeamID teamID: String) throws {
+        let teamSessionURL = url(for: teamID)
+        guard FileManager.default.fileExists(atPath: teamSessionURL.path) else {
+            throw SessionStorageError.fileNotFound(teamSessionURL)
+        }
+        let data = try Data(contentsOf: teamSessionURL)
+        try data.write(to: defaultSessionURL, options: .atomic)
+
+        let teamMachineURL = DeviceDataManager.url(for: teamID)
+        if FileManager.default.fileExists(atPath: teamMachineURL.path) {
+            let mData = try Data(contentsOf: teamMachineURL)
+            try mData.write(to: DeviceDataManager.defaultURL, options: .atomic)
+        }
+        AnisetteDataManager.shared.clearCache()
+    }
+
+    public static func setActiveSession(at sourceURL: URL) throws {
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+            throw SessionStorageError.fileNotFound(sourceURL)
+        }
+        let data = try Data(contentsOf: sourceURL)
+        try data.write(to: defaultSessionURL, options: .atomic)
+        AnisetteDataManager.shared.clearCache()
+    }
+
+    public static func save(
+        _ authSession: AuthSession,
+        to destinationURL: URL? = nil,
+        password: String? = nil
+    ) throws {
+        let targetURL = destinationURL ?? defaultSessionURL
+        let dirURL = targetURL.deletingLastPathComponent()
+
+        if !FileManager.default.fileExists(atPath: dirURL.path) {
+            try FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
+        }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let plainData = try encoder.encode(authSession)
+
+        let isPasswordMode = (password != nil && !password!.isEmpty)
+        let magic = isPasswordMode ? Constants.Session.passMagic : Constants.Session.autoMagic
+
+        let salt = Data((0..<Constants.Session.saltLength).map { _ in UInt8.random(in: 0...255) })
+
+        let symmetricKey: SymmetricKey
+        if let pwd = password, !pwd.isEmpty {
+            guard let pwdData = pwd.data(using: .utf8),
+                  let derived = CryptoUtilities.pbkdf2SHA256(
+                    password: pwdData,
+                    salt: salt,
+                    rounds: Constants.Session.pbkdf2Rounds,
+                    outputLength: Constants.Session.keyOutputLength
+                  ) else {
+                throw SessionStorageError.encryptionFailed("Failed to derive encryption key from password.")
+            }
+            symmetricKey = SymmetricKey(data: derived)
+        } else {
+            symmetricKey = deriveMachineKey(salt: salt)
+        }
+
+        let sealedBox: AES.GCM.SealedBox
+        do {
+            sealedBox = try AES.GCM.seal(plainData, using: symmetricKey)
+        } catch {
+            throw SessionStorageError.encryptionFailed(error.localizedDescription)
+        }
+
+        var outputData = Data()
+        outputData.append(contentsOf: magic)
+        outputData.append(salt)
+        outputData.append(Data(sealedBox.nonce))
+        outputData.append(sealedBox.tag)
+        outputData.append(sealedBox.ciphertext)
+
+        try outputData.write(to: targetURL, options: .atomic)
+
+        #if !os(Windows)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: targetURL.path)
+        #endif
+    }
+
+    public static func load(
+        from sourceURL: URL? = nil,
+        password: String? = nil
+    ) throws -> AuthSession {
+        let targetURL = sourceURL ?? defaultSessionURL
+
+        guard FileManager.default.fileExists(atPath: targetURL.path) else {
+            throw SessionStorageError.fileNotFound(targetURL)
+        }
+
+        let fileData = try Data(contentsOf: targetURL)
+        let headerSize = 4 + Constants.Session.saltLength + Constants.Session.nonceLength + Constants.Session.tagLength
+
+        guard fileData.count > headerSize else {
+            throw SessionStorageError.corruptedData
+        }
+
+        let magic = Array(fileData[0..<4])
+        let salt = fileData.subdata(in: 4..<4 + Constants.Session.saltLength)
+        let nonceData = fileData.subdata(in: 4 + Constants.Session.saltLength..<4 + Constants.Session.saltLength + Constants.Session.nonceLength)
+        let tag = fileData.subdata(in: 4 + Constants.Session.saltLength + Constants.Session.nonceLength..<headerSize)
+        let ciphertext = fileData.subdata(in: headerSize..<fileData.count)
+
+        let symmetricKey: SymmetricKey
+
+        if magic == Constants.Session.passMagic {
+            guard let pwd = password, !pwd.isEmpty else {
+                throw SessionStorageError.invalidPassword
+            }
+            guard let pwdData = pwd.data(using: .utf8),
+                  let derived = CryptoUtilities.pbkdf2SHA256(
+                    password: pwdData,
+                    salt: salt,
+                    rounds: Constants.Session.pbkdf2Rounds,
+                    outputLength: Constants.Session.keyOutputLength
+                  ) else {
+                throw SessionStorageError.decryptionFailed("Failed to derive decryption key from password.")
+            }
+            symmetricKey = SymmetricKey(data: derived)
+        } else if magic == Constants.Session.autoMagic {
+            symmetricKey = deriveMachineKey(salt: salt)
+        } else {
+            throw SessionStorageError.corruptedData
+        }
+
+        let nonce: AES.GCM.Nonce
+        do {
+            nonce = try AES.GCM.Nonce(data: nonceData)
+        } catch {
+            throw SessionStorageError.corruptedData
+        }
+
+        guard let sealedBox = try? AES.GCM.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag) else {
+            throw SessionStorageError.corruptedData
+        }
+
+        let decryptedData: Data
+        do {
+            decryptedData = try AES.GCM.open(sealedBox, using: symmetricKey)
+        } catch {
+            if magic == Constants.Session.passMagic {
+                throw SessionStorageError.invalidPassword
+            } else {
+                throw SessionStorageError.decryptionFailed("Decryption failed. Machine credentials or session file may have changed.")
+            }
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        do {
+            return try decoder.decode(AuthSession.self, from: decryptedData)
+        } catch {
+            throw SessionStorageError.corruptedData
+        }
+    }
+
+    public static func clear(at url: URL? = nil) throws {
+        let targetURL = url ?? defaultSessionURL
+        if FileManager.default.fileExists(atPath: targetURL.path) {
+            try FileManager.default.removeItem(at: targetURL)
+        }
+        AnisetteDataManager.shared.clearCache()
+    }
+
+    private static func deriveMachineKey(salt: Data) -> SymmetricKey {
+        let env = ProcessInfo.processInfo.environment
+        let username = env[Constants.Session.envUser] ?? env[Constants.Session.envUsername] ?? NSUserName()
+        let hostname = ProcessInfo.processInfo.hostName
+
+        var machineSeed = "\(username):\(hostname):\(Constants.Session.machineSeedDomain)"
+
+        #if os(Linux)
+        if let machineID = try? String(contentsOfFile: "/etc/machine-id", encoding: .utf8) {
+            machineSeed += ":\(machineID.trimmingCharacters(in: .whitespacesAndNewlines))"
+        }
+        #endif
+
+        let ikmData = machineSeed.data(using: .utf8) ?? Data(Constants.Session.fallbackSeed.utf8)
+        let ikm = SymmetricKey(data: ikmData)
+
+        return HKDF<SHA256>.deriveKey(
+            inputKeyMaterial: ikm,
+            salt: salt,
+            info: Data(Constants.Session.machineSeedInfo.utf8),
+            outputByteCount: Constants.Session.keyOutputLength
+        )
+    }
+}
+
+

@@ -71,6 +71,8 @@ packages:
   MarkdownKit:
     url: https://github.com/bmoliveira/MarkdownKit.git
     from: "1.7.1"
+  SideSign:
+    path: ../../ThirdParty/SideStore/SideSign
   AltSign:
     path: ../../ThirdParty/SideStore/AltSign
   EmexDERunestone:
@@ -196,6 +198,7 @@ targets:
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStore $(SRCROOT)/../../ThirdParty/SideStore/Source/AltStoreCore $(SRCROOT)/../../ThirdParty/SideStore/Source/Shared"
     sources:
       - path: Sources/KittyStoreEmbedded
+      - path: Sources/KittyStoreSigning
       - path: ../../ThirdParty/SideStore/Source/AltStore
         excludes:
           - AppDelegate.swift
@@ -263,6 +266,8 @@ targets:
       - sdk: SafariServices.framework
       - sdk: UniformTypeIdentifiers.framework
       - sdk: WidgetKit.framework
+      - package: SideSign
+        product: SideSign
       - package: AltSign
         product: AltSign-Dynamic
       - package: SemanticVersion
@@ -611,6 +616,7 @@ targets:
         com.apple.BackgroundModes:
           enabled: true
     sources:
+      - path: Sources/KittyStoreSigning
       - path: Sources/Litter
         excludes:
           - AppIcon.icon/**
@@ -665,6 +671,8 @@ targets:
         product: Nuke
       - package: Nuke
         product: NukeUI
+      - package: SideSign
+        product: SideSign
       - package: AltSign
         product: AltSign-Dynamic
         embed: true

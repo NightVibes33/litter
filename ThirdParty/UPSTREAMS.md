@@ -113,3 +113,11 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 - Ghostty submodule path: `shared/third_party/ghostty`
 - Litter mobile embedding patch: `patches/ghostty/litter-mobile-embed.patch`
 - License: see `shared/third_party/ghostty/LICENSE` when the submodule is checked out.
+
+## SideSign signing engine
+
+- Imported from SideStore's new signing dependency at `6b68651697f99791ef85404b7aea1891a26a285d`.
+- Reference SideStore revision: `0dd743f75afc358b0ba4a002feb5f19474492371`.
+- Full signing-package source: `ThirdParty/SideStore/SideSign`.
+- Four upstream moving branches are replaced with the immutable revisions in the upstream `Package.resolved`; provenance and all six transitive package pins are recorded in `LITTER_IMPORT.json`.
+- The host retains its existing AltSign account/model boundary and current KittyStore UI. Signing uses SideSign through a data-only adapter shared by the host and embedded store; no account credentials or keychain schemas are migrated.

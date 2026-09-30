@@ -114,6 +114,7 @@ def verify(root):
         "apps/ios/Litter.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
         "ThirdParty/EmexDE/Source/Nyxian.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
         "ThirdParty/SideStore/Source/Dependencies/minimuxer/Package.resolved",
+        "ThirdParty/SideStore/SideSign/Package.resolved",
     ):
         lock = root / relative
         require(lock)
@@ -121,6 +122,27 @@ def verify(root):
             for pin in json.loads(lock.read_text()).get("pins", []):
                 if not re.fullmatch(r"[0-9a-f]{40}", pin.get("state", {}).get("revision", "")):
                     errors.append(f"missing Swift package revision: {relative}: {pin.get('identity')}")
+
+    sidesign = root / "ThirdParty/SideStore/SideSign"
+    for relative in ("Package.swift", "LITTER_IMPORT.json", ".litter-upstream-commit", "Sources/CodeSigning/CodeSignerAPI.swift"):
+        require(sidesign / relative)
+    if (sidesign / "LITTER_IMPORT.json").is_file():
+        manifest = json.loads((sidesign / "LITTER_IMPORT.json").read_text())
+        if (sidesign / ".litter-upstream-commit").read_text().strip() != manifest["commit"]:
+            errors.append("SideSign source revision does not match its import manifest")
+        package = (sidesign / "Package.swift").read_text()
+        resolved = json.loads((sidesign / "Package.resolved").read_text())["pins"]
+        if resolved != manifest["dependencies"]:
+            errors.append("SideSign resolved dependency graph differs from its import manifest")
+        for pin in manifest["dependencies"]:
+            state = pin["state"]
+            requirement = state.get("version") or state["revision"]
+            kind = "exact" if "version" in state else "revision"
+            pattern = r'\.package\(url:\s*"' + re.escape(pin["location"]) + r'",\s*' + kind + r':\s*"' + re.escape(requirement) + r'"'
+            if not re.search(pattern, package) and pin["identity"] != "swift-asn1":
+                errors.append(f"SideSign dependency requirement is not pinned: {pin['identity']}")
+        if re.search(r"^\s*\.package\(.*branch:", package, re.MULTILINE):
+            errors.append("SideSign has a moving branch dependency")
 
     return checked, errors
 
