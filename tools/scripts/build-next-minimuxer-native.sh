@@ -120,3 +120,33 @@ xcodegen generate --spec "$build/Smoke/project.yml" --project "$build/Smoke"
 xcodebuild -project "$build/Smoke/NextMinimuxerSmoke.xcodeproj" -scheme NextMinimuxerSmoke \
     -destination 'generic/platform=iOS' -derivedDataPath "$build/SmokeDerivedData" \
     CODE_SIGNING_ALLOWED=NO build
+
+# Retained account/certificate models and the new transport must share one
+# OpenSSL module. Validate that combined graph separately from the app.
+checkout altsign https://github.com/SideStore/AltSign.git 7efe511440cfdbddc04a723490def86232c42f6c
+checkout remotepairingkit https://github.com/mahee96/RemotePairingKit.git e3f70d16c0c551540a533a39d540e78e5b0a60a8
+python3 "$root/tools/scripts/stage-next-minimuxer-openssl.py" "$build"
+python3 - "$build" <<'PYCOMBINED'
+from pathlib import Path
+import json, sys
+root=Path(sys.argv[1]); smoke=root / 'Smoke'
+source=smoke / 'Smoke.swift'
+source.write_text('import AltSign\n' + source.read_text() + '\npublic func retainedCertificateType() -> ALTCertificate.Type { ALTCertificate.self }\n')
+manifest=smoke / 'project.yml'
+text=manifest.read_text().replace('targets:\n', '  RetainedAltSign:\n    path: ' + json.dumps(str(root / 'altsign')) + '\ntargets:\n')
+text += '      - package: RetainedAltSign\n        product: AltSign-Dynamic\n'
+manifest.write_text(text)
+PYCOMBINED
+xcodegen generate --spec "$build/Smoke/project.yml" --project "$build/Smoke"
+xcodebuild -project "$build/Smoke/NextMinimuxerSmoke.xcodeproj" -scheme NextMinimuxerSmoke \
+    -destination 'generic/platform=iOS' -derivedDataPath "$build/CombinedDerivedData" \
+    CODE_SIGNING_ALLOWED=NO build
+python3 - "$build/Smoke/NextMinimuxerSmoke.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" <<'PYLOCK'
+import json, sys
+pins=json.load(open(sys.argv[1]))['pins']
+openssl=[p for p in pins if p['identity'].lower() == 'openssl']
+assert len(openssl) == 1, 'Expected one OpenSSL package identity'
+assert openssl[0]['state']['version'] == '3.6.2000'
+assert openssl[0]['state']['revision'] == 'fdc9231384f37f053dffe058fd6dfc6c5072dae5'
+print('Combined account/transport graph uses verified OpenSSL 3.6.2000 pin')
+PYLOCK
