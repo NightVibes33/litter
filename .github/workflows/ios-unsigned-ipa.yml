@@ -769,6 +769,12 @@ jobs:
           set -euo pipefail
           python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
 
+      - name: Patch emexDE LiveProcess HOST_ENV declarations
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        run: |
+          set -euo pipefail
+          python3 tools/scripts/patch-emexde-liveprocess-host-env.py
+
       - name: Patch emexDE CoreCompiler Swift frontend for unsigned CI
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1'
         run: |

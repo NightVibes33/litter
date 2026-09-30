@@ -1,4 +1,7 @@
 #import <Foundation/Foundation.h>
+#ifdef LBN_ENABLE_BAD_QUERY
+#import <UIKit/UIKit.h>
+#endif
 
 #include "LitterBuildKitNative.h"
 
@@ -149,6 +152,61 @@ static NSString *LBNBadQueryFailure(int64_t code)
     }
 }
 
+static UIViewController *LBNBadQueryTopViewController(void)
+{
+    UIWindow *window = nil;
+    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes)
+    {
+        if(scene.activationState != UISceneActivationStateForegroundActive || ![scene isKindOfClass:UIWindowScene.class]) { continue; }
+        for(UIWindow *candidate in ((UIWindowScene *)scene).windows)
+        {
+            if(candidate.isKeyWindow) { window = candidate; break; }
+            if(window == nil && !candidate.hidden) { window = candidate; }
+        }
+        if(window != nil) { break; }
+    }
+    UIViewController *controller = window.rootViewController;
+    while(controller.presentedViewController != nil) { controller = controller.presentedViewController; }
+    if([controller isKindOfClass:UINavigationController.class]) { controller = ((UINavigationController *)controller).visibleViewController; }
+    if([controller isKindOfClass:UITabBarController.class]) { controller = ((UITabBarController *)controller).selectedViewController; }
+    return controller;
+}
+
+static BOOL LBNBadQueryRequireApproval(NSString *args)
+{
+    // Fail closed if the bridge is invoked on the UI thread: blocking it while
+    // waiting for an alert response would deadlock. Normal BuildKit requests
+    // execute off-main.
+    if(NSThread.isMainThread) { return NO; }
+
+    __block BOOL approved = NO;
+    dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+    NSString *exactCommand = [NSString stringWithFormat:@"bad-query %@", args ?: @""];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *presenter = LBNBadQueryTopViewController();
+        if(presenter == nil)
+        {
+            dispatch_semaphore_signal(semaphore);
+            return;
+        }
+        UIAlertController *alert = [UIAlertController
+            alertControllerWithTitle:@"Allow BadQuery access?"
+            message:[NSString stringWithFormat:@"Alley Cãt is requesting this exact native operation:\n\n%@\n\nApproval applies once to this command only.", exactCommand]
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Deny" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
+            dispatch_semaphore_signal(semaphore);
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Allow Once" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+            approved = YES;
+            dispatch_semaphore_signal(semaphore);
+        }]];
+        [presenter presentViewController:alert animated:YES completion:nil];
+    });
+    // Never leave an agent/tool call blocked forever if presentation fails.
+    long result = dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 60LL * NSEC_PER_SEC));
+    return result == 0 && approved;
+}
+
 static char *LBNRunBadQuery(NSString *args)
 {
     NSArray<NSString *> *tokens = LBNBadQueryTokens(args ?: @"");
@@ -174,6 +232,12 @@ static char *LBNRunBadQuery(NSString *args)
             @"BadQuery native runtime\nupstream=forcequitOS/bad_query\ncommit=%s\nactiveHandles=%lu\n",
             BAD_QUERY_UPSTREAM_COMMIT, (unsigned long)count];
         return LBNResponse(0, @"bad-query-ready", log);
+    }
+
+    NSSet<NSString *> *approvalOperations = [NSSet setWithArray:@[@"acquire", @"list", @"release", @"release-all"]];
+    if([approvalOperations containsObject:operation] && !LBNBadQueryRequireApproval(args))
+    {
+        return LBNResponse(77, @"bad-query-user-denied", @"BadQuery operation was not approved by the user at the native runtime boundary.\n");
     }
 
     if([operation isEqualToString:@"acquire"])
