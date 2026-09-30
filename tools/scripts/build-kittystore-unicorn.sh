@@ -11,6 +11,19 @@ git -C "$root" submodule update --init --recursive ThirdParty/SideStore/Unicorn
 [[ "$(git -C "$source" rev-parse HEAD)" == "$expected" ]] || { echo 'error: unexpected Unicorn revision' >&2; exit 1; }
 build="$root/build/kittystore-unicorn"
 mkdir -p "$build"
+# Keep the pinned checkout intact; apply the mobile configure overlay in staging.
+python3 - "$source" "$build/source" <<'PYSOURCE'
+from pathlib import Path
+import shutil, sys
+source, staged = map(Path, sys.argv[1:])
+if staged.exists(): shutil.rmtree(staged)
+shutil.copytree(source, staged, ignore=shutil.ignore_patterns('.git', 'docs', 'build*', '.build'))
+p=staged / 'qemu/configure'
+s=p.read_text(); original='  QEMU_LDFLAGS="-framework CoreFoundation -framework IOKit $QEMU_LDFLAGS"'
+assert s.count(original) == 1, 'Unicorn Darwin configure overlay needs rebasing'
+s=s.replace(original, '  if test "$LITTER_UNICORN_MOBILE" = "1"; then\n    QEMU_LDFLAGS="-framework CoreFoundation $QEMU_LDFLAGS"\n  else\n' + original + '\n  fi')
+p.write_text(s)
+PYSOURCE
 args=()
 for slice in macos ios simulator; do
     case "$slice" in
@@ -26,7 +39,8 @@ from pathlib import Path
 import shlex, sys
 p=Path(sys.argv[1]); p.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.argv[2]) + ' -target ' + shlex.quote(sys.argv[3]) + ' "$@"\n'); p.chmod(0o755)
 PYCOMPILER
-    ARCHFLAGS="$flags" cmake -S "$source" -B "$build/$slice" \
+    mobile=1; [[ "$slice" == macos ]] && mobile=0
+    LITTER_UNICORN_MOBILE="$mobile" ARCHFLAGS="$flags" cmake -S "$build/source" -B "$build/$slice" \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME="$system" \
         -DCMAKE_C_COMPILER="$build/$slice/clang-target" \
         -DCMAKE_OSX_SYSROOT="$(xcrun --sdk "$sdk" --show-sdk-path)" \
