@@ -27,7 +27,6 @@ for name in emproxy idevice; do
     else
         manifest="$build/$name/ffi/Cargo.toml"; library=libidevice_ffi.a; headers="$build/$name/swift/include"; product=IDevice
         package=idevice-ffi
-        cp "$build/$name/ffi/idevice.h" "$headers/idevice.h"
     fi
     target_dir="$build/$name-target"
     for target in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios; do
@@ -37,6 +36,10 @@ for name in emproxy idevice; do
             cargo build --manifest-path "$manifest" -p "$package" --release --locked \
             --target "$target" --target-dir "$target_dir"
     done
+    if [[ "$name" == idevice ]]; then
+        # cbindgen generates this header while building the pinned FFI crate.
+        cp "$build/$name/ffi/idevice.h" "$headers/idevice.h"
+    fi
     lipo -create "$target_dir/aarch64-apple-ios-sim/release/$library" \
         "$target_dir/x86_64-apple-ios/release/$library" -output "$build/$product-simulator.a"
     lipo "$build/$product-simulator.a" -verify_arch arm64 x86_64
