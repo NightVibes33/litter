@@ -8,6 +8,7 @@
   ],
   "basePatch": "mobile-bridge-codex-astra.patch",
   "compatibilityAdaptations": [
-    "Populate mandatory base_instructions from upstream instructions_template for the pinned Codex schema."
+    "Populate mandatory base_instructions from upstream instructions_template for the pinned Codex schema.",
+    "Preserve existing Astra default and Terra picker priority while adding Sol 6.1."
   ]
 }
