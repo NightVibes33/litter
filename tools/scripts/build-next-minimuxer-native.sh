@@ -141,13 +141,14 @@ xcodegen generate --spec "$build/Smoke/project.yml" --project "$build/Smoke"
 xcodebuild -project "$build/Smoke/NextMinimuxerSmoke.xcodeproj" -scheme NextMinimuxerSmoke \
     -destination 'generic/platform=iOS' -derivedDataPath "$build/CombinedDerivedData" \
     CODE_SIGNING_ALLOWED=NO build
-python3 - "$build/Smoke/NextMinimuxerSmoke.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved" <<'PYLOCK'
-import json, sys
-pins=json.load(open(sys.argv[1]))['pins']
-openssl=[p for p in pins if p['identity'].lower() == 'openssl']
-assert len(openssl) == 1, 'Expected one OpenSSL package identity'
-assert openssl[0]['state']['version'] == '3.6.2000'
-assert openssl[0]['state']['revision'] == 'fdc9231384f37f053dffe058fd6dfc6c5072dae5'
+python3 - "$build/CombinedDerivedData/SourcePackages/checkouts" <<'PYLOCK'
+from pathlib import Path
+import subprocess, sys
+checkouts=Path(sys.argv[1])
+openssl=[path for path in checkouts.iterdir() if path.name.casefold() == 'openssl']
+assert len(openssl) == 1, 'Expected one OpenSSL package checkout'
+revision=subprocess.check_output(['git', '-C', str(openssl[0]), 'rev-parse', 'HEAD'], text=True).strip()
+assert revision == 'fdc9231384f37f053dffe058fd6dfc6c5072dae5', 'Compiled OpenSSL revision differs from the 3.6.2000 pin'
 print('Combined account/transport graph uses verified OpenSSL 3.6.2000 pin')
 PYLOCK
 bash "$root/tools/scripts/verify-next-minimuxer-certificate.sh" "$build"

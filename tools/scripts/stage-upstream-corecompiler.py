@@ -102,6 +102,19 @@ def main():
             destination.write_bytes(bundle.read(name))
     spec=importlib.util.spec_from_file_location('deployment', root/'tools/scripts/verify-unicorn-deployment.py')
     deployment=importlib.util.module_from_spec(spec); spec.loader.exec_module(deployment)
+    for name, expected in record['runtimeResources'].items():
+        path=source/name; data=path.read_bytes()
+        blob=subprocess.check_output(['git', '-C', str(source), 'rev-parse', revision+':'+name], text=True).strip()
+        if blob != expected['gitBlob'] or len(data) != expected['size'] or hashlib.sha256(data).hexdigest() != expected['sha256']:
+            raise SystemExit('Compiler bootstrap resource differs from its matching release: '+name)
+        with zipfile.ZipFile(path) as resources:
+            for member in resources.infolist():
+                if member.filename.startswith('__MACOSX/') or not member.filename.endswith(('.a', '.o', '.dylib')):
+                    continue
+                native=resources.read(member)
+                versions=list(deployment.versions(native))
+                if not versions or any(platform != 2 or version > 18 << 16 for platform, version in versions):
+                    raise SystemExit('Incompatible compiler bootstrap native resource: '+member.filename)
     support=framework/'Frameworks'
     libraries=sorted(support.glob('lib_Compiler*.dylib'))
     if len(libraries) != record['supportLibraryCount']:

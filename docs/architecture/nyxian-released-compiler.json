@@ -36,5 +36,22 @@
       "path": "COPYING",
       "sha256": "c22e885f33b821bddb24cf007145e5540655b6c0f403e49e6c76a93c28e6d9a9"
     }
-  ]
+  ],
+  "runtimeResources": {
+    "Shared/include.zip": {
+      "gitBlob": "70b79d2f98c26b6de458b3ae9b301c09f72baadd",
+      "sha256": "4aa281ef55071210ab076149ecc4457beb4cb1f6ef0efb0448e00e56a5a9b88b",
+      "size": 1209276
+    },
+    "Shared/lib.zip": {
+      "gitBlob": "39ae3395fe04c56a233583fbc70be0fe5e17dba2",
+      "sha256": "2569b40a72e66c68f2d436b091d789acf999da4de78b2108f8ca2af08b051117",
+      "size": 64571
+    },
+    "Shared/swift.zip": {
+      "gitBlob": "e88a10c9bb486cd52fb52619528be021f7a8464e",
+      "sha256": "50e561c40b76372c1b142ec443509023120f581c554b25a309e5d18592c9019a",
+      "size": 17747159
+    }
+  }
 }
