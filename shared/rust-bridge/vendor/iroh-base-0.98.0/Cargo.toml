@@ -62,6 +62,8 @@ path = "src/lib.rs"
 
 [dependencies.curve25519-dalek]
 version = "=5.0.0-pre.6"
+git = "https://github.com/dalek-cryptography/curve25519-dalek.git"
+rev = "61533d75cfc5df3452cbee20181c89ab2e40bccd"
 features = [
     "serde",
     "rand_core",
