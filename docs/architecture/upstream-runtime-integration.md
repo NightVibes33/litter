@@ -66,8 +66,8 @@ in full at `6b68651697f99791ef85404b7aea1891a26a285d`. Its four moving package
 branches are pinned to its upstream resolved revisions. A data-only adapter
 connects host signing and embedded KittyStore resigning to the new engine while
 retaining AltSign's existing account and Objective-C model boundary. Both the
-upstream signer tests and adapter smoke tests run in a macOS CI job. Their tests passed in run `36682706245`; the subsequent Unicorn source rebuild
-and full iOS compile validation are pending; this change is not yet
+upstream signer tests and adapter smoke tests run in a macOS CI job. Their tests passed in run `36682706245` and again after the compatible Unicorn rebuild
+in run `36686776755`; full iOS compile validation is pending; this change is not yet
 release-ready. The latest minimuxer/pairing architecture is still outstanding.
 
 Latest ProjectNyxian head reviewed: `de9cec58b50af005e5a949f811829a062c8e3e88`.
@@ -98,4 +98,4 @@ claiming full Nyxian compiler support.
 
 ### Unicorn deployment compatibility
 
-The pinned AnisetteKit release artifact contains iOS objects requiring iOS 26.5. KittyStore instead builds Unicorn source `a53ddc9ac6d65b24936d4a37917333fcd816cfd0` with the software interpreter for iOS 18 and macOS 12. AnisetteKit is imported at `db8b41022697b6c19be8a5f01a1ce834145a2a26` and consumes the generated local XCFramework. The build checks actual object deployment metadata; it does not relabel downloaded binaries. Runtime integration and the signing smoke tests passed before this dependency rebuild; the rebuild and full iOS archive need independent CI validation.
+The pinned AnisetteKit release artifact contains iOS objects requiring iOS 26.5. KittyStore instead builds Unicorn source `a53ddc9ac6d65b24936d4a37917333fcd816cfd0` with the software interpreter for iOS 18 and macOS 12. AnisetteKit is imported at `db8b41022697b6c19be8a5f01a1ce834145a2a26` and consumes the generated local XCFramework. The build checks actual object deployment metadata; it does not relabel downloaded binaries. Run `36686776755` rebuilt all three platform slices, verified their object deployment targets, and passed five SideSign tests plus two adapter tests, including local app signing. The full iOS archive still needs independent validation.
