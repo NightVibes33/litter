@@ -1740,7 +1740,7 @@ async fn send_remote_request(
     client: &mut AppServerClient,
     request: ClientRequest,
 ) -> Result<JsonValue, RpcError> {
-    let response = match remote_request_timeout(request.method()) {
+    let response = match remote_request_timeout(&request.method()) {
         Some(duration) => tokio::time::timeout(duration, client.request(request))
             .await
             .map_err(|_| RpcError::Timeout)?,

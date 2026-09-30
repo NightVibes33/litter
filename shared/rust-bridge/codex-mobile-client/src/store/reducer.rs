@@ -253,7 +253,7 @@ impl AppStoreReducer {
         {
             let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
             snapshot.servers.remove(server_id);
-            snapshot.threads.retain(|key, thread| {
+            snapshot.threads.retain(|key, _| {
                 let keep = key.server_id != server_id;
                 if !keep {
                     removed_thread_keys.push(key.clone());
