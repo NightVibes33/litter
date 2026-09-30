@@ -76,3 +76,12 @@ Its guarded-process-access bypass and credential-modification paths are excluded
 from this work. The newer compiler APIs and Swift 6.4 toolchain still need
 compatible integration; the existing BuildKit and embedded compiler pins have
 not been relabeled as upgraded.
+
+The root XcodeGen package declarations now freeze existing moving branches and
+open-ended version ranges to their already recorded revisions/versions. This
+prevents adding SideSign from silently upgrading UI packages during dependency
+resolution. The app's package versions are preserved.
+
+Networking dependency adaptation from `49bc1514` uses exact Iroh `1.0.3` and
+Russh `0.62.6`, including the new embedded TLS-root configuration API. With the
+new lockfile, all 767 shared-runtime tests pass (five live-host tests ignored).
