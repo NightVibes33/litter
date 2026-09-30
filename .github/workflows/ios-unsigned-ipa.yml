@@ -3,6 +3,11 @@ name: Build Unsigned iOS IPA
 on:
   workflow_dispatch:
     inputs:
+      publish_release:
+        description: "Publish release and update app-source metadata"
+        required: true
+        default: false
+        type: boolean
       build_mode:
         description: "Build mode"
         required: true
@@ -1601,7 +1606,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish unsigned IPA release asset
-        if: success()
+        if: success() && (github.event_name == 'push' || inputs.publish_release == true)
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           BUILD_MODE: ${{ env.LITTER_IOS_BUILD_MODE }}

@@ -33,3 +33,11 @@ the complete scenario; production preference synchronization is unchanged.
 The matching-turn completion guard is adapted from upstream `e051f104`.
 Follow-up validation: 760 shared-runtime tests passed, 5 existing live-host tests
 ignored; dependency source closure and whitespace checks passed.
+
+### Xcode validation without publishing
+
+The unsigned iOS workflow accepts `publish_release: false` (the manual default).
+It builds and uploads the IPA as an Actions artifact while skipping release
+creation and stable KittyStore/AltStore source updates. Push builds on main
+retain the existing publication behavior. Use `build_mode: full-sideload` on
+the integration branch to validate the embedded frameworks and KittyStore.
