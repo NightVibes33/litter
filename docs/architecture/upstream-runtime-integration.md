@@ -50,9 +50,8 @@ This avoids indefinitely stalled KittyStore builds when OpenSSL is missing.
 Latest SideStore `0dd743f75afc358b0ba4a002feb5f19474492371` replaces AltSign with
 SideSign and updates minimuxer while removing several old native submodules.
 The existing embedded KittyStore still uses AltSign; replacing that snapshot
-alone would remove dependencies required by its current build. Migration of
-that signing boundary remains outstanding, as does Nyxian's coordinated newer
-compiler/LLVM API migration. Neither latest revision is marked integrated.
+alone would remove dependencies required by its current build. The signing engine has since been adapted through the boundary described below.
+Nyxian's coordinated newer compiler/LLVM API migration remains outstanding. Neither latest revision is marked integrated.
 
 ### Further runtime and signing integration
 
@@ -67,8 +66,8 @@ in full at `6b68651697f99791ef85404b7aea1891a26a285d`. Its four moving package
 branches are pinned to its upstream resolved revisions. A data-only adapter
 connects host signing and embedded KittyStore resigning to the new engine while
 retaining AltSign's existing account and Objective-C model boundary. Both the
-upstream signer tests and adapter smoke tests run in a macOS CI job. Their
-results and full iOS compile validation are pending; this change is not yet
+upstream signer tests and adapter smoke tests run in a macOS CI job. Their tests passed in run `36682706245`; the subsequent Unicorn source rebuild
+and full iOS compile validation are pending; this change is not yet
 release-ready. The latest minimuxer/pairing architecture is still outstanding.
 
 Latest ProjectNyxian head reviewed: `de9cec58b50af005e5a949f811829a062c8e3e88`.

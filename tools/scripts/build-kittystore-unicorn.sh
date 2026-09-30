@@ -14,13 +14,21 @@ mkdir -p "$build"
 args=()
 for slice in macos ios simulator; do
     case "$slice" in
-        macos) sdk=macosx; archs='arm64;x86_64'; flags='-arch arm64 -arch x86_64'; minimum=12.0; system=Darwin ;;
-        ios) sdk=iphoneos; archs=arm64; flags='-arch arm64'; minimum=18.0; system=iOS ;;
-        simulator) sdk=iphonesimulator; archs='arm64;x86_64'; flags='-arch arm64 -arch x86_64'; minimum=18.0; system=iOS ;;
+        macos) sdk=macosx; archs='arm64;x86_64'; flags='-arch arm64 -arch x86_64'; minimum=12.0; system=Darwin; triple=x86_64-apple-macos12.0 ;;
+        ios) sdk=iphoneos; archs=arm64; flags='-arch arm64'; minimum=18.0; system=iOS; triple=arm64-apple-ios18.0 ;;
+        simulator) sdk=iphonesimulator; archs='arm64;x86_64'; flags='-arch arm64 -arch x86_64'; minimum=18.0; system=iOS; triple=x86_64-apple-ios18.0-simulator ;;
     esac
+    mkdir -p "$build/$slice"
+    # QEMU configure invokes the compiler directly, outside CMake's target flags.
+    # A compiler wrapper carries the same deployment target into those probes.
+    python3 - "$build/$slice/clang-target" "$(xcrun --sdk "$sdk" --find clang)" "$triple" <<'PYCOMPILER'
+from pathlib import Path
+import shlex, sys
+p=Path(sys.argv[1]); p.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.argv[2]) + ' -target ' + shlex.quote(sys.argv[3]) + ' "$@"\n'); p.chmod(0o755)
+PYCOMPILER
     ARCHFLAGS="$flags" cmake -S "$source" -B "$build/$slice" \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME="$system" \
-        -DCMAKE_C_COMPILER="$(xcrun --sdk "$sdk" --find clang)" \
+        -DCMAKE_C_COMPILER="$build/$slice/clang-target" \
         -DCMAKE_OSX_SYSROOT="$(xcrun --sdk "$sdk" --show-sdk-path)" \
         -DCMAKE_OSX_ARCHITECTURES="$archs" -DCMAKE_OSX_DEPLOYMENT_TARGET="$minimum" \
         -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DBUILD_SHARED_LIBS=OFF \
