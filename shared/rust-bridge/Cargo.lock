@@ -3777,6 +3777,7 @@ dependencies = [
  "chrono",
  "codex-app-server-client",
  "codex-app-server-protocol",
+ "codex-models-manager",
  "futures",
  "p256 0.13.2",
  "rand_core 0.6.4",

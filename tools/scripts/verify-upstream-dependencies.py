@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Check the recorded runtime dependency closure without changing any revisions."""
+
+from pathlib import Path
+import argparse
+import json
+import re
+import subprocess
+import sys
+import tomllib
+
+
+def git(root, *args):
+    return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
+
+
+def verify(root):
+    errors = []
+    checked = 0
+
+    def require(path):
+        nonlocal checked
+        checked += 1
+        if not path.exists() or (path.is_file() and path.stat().st_size == 0):
+            errors.append(f"missing or empty dependency: {path.relative_to(root)}")
+
+    def submodules(repo):
+        # Read gitlinks, not .gitmodules: upstream can retain obsolete entries.
+        for line in git(repo, "ls-tree", "-r", "HEAD").splitlines():
+            entry, name = line.split("\t", 1)
+            mode, _, revision = entry.split()
+            if mode != "160000":
+                continue
+            path = repo / name
+            require(path / ".git")
+            if not (path / ".git").exists():
+                continue
+            actual = git(path, "rev-parse", "HEAD")
+            if actual != revision:
+                errors.append(f"wrong revision: {path.relative_to(root)}: {actual}, expected {revision}")
+            submodules(path)
+
+    submodules(root)
+
+    for name in ("SideStore", "Feather", "Nyxian"):
+        source = root / "ThirdParty" / name
+        if name != "Nyxian":
+            source /= "Source"
+        inventory = source / ".litter-submodules.txt"
+        require(inventory)
+        if not inventory.is_file():
+            continue
+        for line in inventory.read_text().splitlines():
+            match = re.fullmatch(r" ([0-9a-f]{40}) (\S+)(?: \(.*\))?", line)
+            if not match:
+                errors.append(f"invalid snapshot submodule record: {inventory.relative_to(root)}: {line}")
+                continue
+            require(source / match[2])
+            # A directory alone is not a populated source snapshot.
+            if not any(p.is_file() for p in (source / match[2]).rglob("*")):
+                errors.append(f"empty snapshot submodule: {name}/{match[2]}")
+
+    # Check every committed file in the source snapshots, including nested
+    # dependencies. Git object availability does not establish checkout readiness.
+    for line in git(root, "ls-files", "ThirdParty").splitlines():
+        path = root / line
+        if path.is_symlink():
+            if not path.exists():
+                errors.append(f"broken dependency symlink: {line}")
+        elif not path.exists():
+            errors.append(f"missing source snapshot file: {line}")
+
+    for relative in (
+        "ThirdParty/SideStore/minimuxer/Cargo.toml",
+        "ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml",
+        "shared/rust-bridge/Cargo.toml",
+    ):
+        manifest = root / relative
+        require(manifest)
+        require(manifest.with_name("Cargo.lock"))
+        if not manifest.is_file():
+            continue
+        data = tomllib.loads(manifest.read_text())
+        tables = [data.get("dependencies", {}), data.get("build-dependencies", {}),
+                  data.get("workspace", {}).get("dependencies", {})]
+        tables.extend(data.get("patch", {}).values())
+        for table in tables:
+            for dependency in table.values():
+                if isinstance(dependency, dict) and "path" in dependency:
+                    require((manifest.parent / dependency["path"] / "Cargo.toml").resolve())
+
+    for relative in (
+        "apps/ios/Litter.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+        "ThirdParty/EmexDE/Source/Nyxian.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+        "ThirdParty/SideStore/Source/Dependencies/minimuxer/Package.resolved",
+    ):
+        lock = root / relative
+        require(lock)
+        if lock.is_file():
+            for pin in json.loads(lock.read_text()).get("pins", []):
+                if not re.fullmatch(r"[0-9a-f]{40}", pin.get("state", {}).get("revision", "")):
+                    errors.append(f"missing Swift package revision: {relative}: {pin.get('identity')}")
+
+    return checked, errors
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[2])
+    args = parser.parse_args()
+    checked, errors = verify(args.root.resolve())
+    for error in errors:
+        print(f"error: {error}", file=sys.stderr)
+    if errors:
+        return 1
+    print(f"Recorded upstream dependency sources verified ({checked} required paths).")
+    print("This source check does not validate downloaded native binaries, SDKs, or device behavior.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

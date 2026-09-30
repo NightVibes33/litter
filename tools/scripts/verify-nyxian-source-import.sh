@@ -9,7 +9,7 @@ require_path() {
   label="$1"
   path="$2"
   rel="${path#$ROOT_DIR/}"
-  if [ ! -e "$path" ] && ! git -C "$ROOT_DIR" cat-file -e "HEAD:$rel" 2>/dev/null; then
+  if [ ! -e "$path" ]; then
     echo "error: missing $label: $rel" >&2
     missing=1
   fi
@@ -18,6 +18,10 @@ require_path() {
 require_path "Nyxian import manifest" "$NYXIAN_ROOT/LITTER_NYXIAN_IMPORT.json"
 require_path "Nyxian license" "$NYXIAN_ROOT/LICENSE"
 require_path "Nyxian submodule metadata" "$NYXIAN_ROOT/.gitmodules"
+require_path "Nyxian recursive dependency inventory" "$NYXIAN_ROOT/.litter-submodules.txt"
+require_path "Litter compiler compatibility overlay inventory" "$NYXIAN_ROOT/LITTER_LOCAL_OVERLAYS.json"
+require_path "Nyxian LLVM build scripts" "$NYXIAN_ROOT/LLVM-On-iOS/Scripts/build-swift-toolchain.sh"
+require_path "Nyxian LLVM toolchain presets" "$NYXIAN_ROOT/LLVM-On-iOS/Scripts/swift-ios-toolchain-presets.ini"
 require_path "Nyxian Makefile" "$NYXIAN_ROOT/Makefile"
 require_path "Nyxian Xcode project" "$NYXIAN_ROOT/Nyxian.xcodeproj/project.pbxproj"
 require_path "CoreCompiler source" "$NYXIAN_ROOT/CoreCompiler/CoreCompiler.h"

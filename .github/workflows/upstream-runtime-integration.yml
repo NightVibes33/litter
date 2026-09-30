@@ -1,0 +1,48 @@
+name: Upstream runtime integration
+
+on:
+  pull_request:
+    paths:
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/**'
+      - 'ThirdParty/**'
+      - 'patches/codex/**'
+      - 'apps/ios/scripts/sync-codex.sh'
+      - 'tools/scripts/vendor-nyxian*'
+      - 'tools/scripts/verify-*'
+      - '.github/workflows/upstream-runtime-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config libssl-dev libclang-dev protobuf-compiler
+      - name: Verify recorded dependency closure
+        run: |
+          python3 tools/scripts/verify-upstream-dependencies.py
+          sh tools/scripts/verify-nyxian-source-import.sh
+          bash tools/scripts/verify-kittystore-integration.sh
+      - name: Apply reproducible mobile Codex patches
+        run: bash apps/ios/scripts/sync-codex.sh --recorded-gitlink
+      - name: Verify tool lifecycle and model catalog
+        run: |
+          cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-slingshot --lib json_line_wire --locked
+          cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-slingshot --test mobile_model_catalog --locked
+      - name: Verify shared mobile runtime
+        run: cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-mobile-client --lib --locked

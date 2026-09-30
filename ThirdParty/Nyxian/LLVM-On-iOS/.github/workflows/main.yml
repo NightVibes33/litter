@@ -1,0 +1,38 @@
+name: Build LLVM XCFrameworks for Release
+on: [push]
+jobs:
+  prepare-build-tools:
+    runs-on: macos-latest
+    if: ${{ false }}
+    steps:
+      - uses: actions/checkout@v3
+      - run: ./build-tools.sh
+      - run: |
+          curl -OL https://github.com/ninja-build/ninja/releases/download/v1.10.2/ninja-mac.zip
+          unzip ninja-mac.zip
+          mv ninja tools/bin
+      - run: tar -cJf tools.tar.xz tools/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tools
+          path: tools.tar.xz
+
+  build-llvm:
+    runs-on: macos-latest
+    timeout-minutes: 1200
+    steps:
+      - uses: actions/checkout@v3
+      - run: |
+          make all
+      - name: create CoreCompiler framework archive
+        run: tar -cJf CoreCompiler.framework.tar.xz CoreCompiler.framework
+      - name: create CoreCompilerSupportLibs archive
+        run: tar -cJf CoreCompilerSupportLibs.tar.xz CoreCompilerSupportLibs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CoreCompiler.framework
+          path: CoreCompiler.framework.tar.xz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CoreCompilerSupportLibs
+          path: CoreCompilerSupportLibs.tar.xz

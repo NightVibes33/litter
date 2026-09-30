@@ -1,0 +1,14 @@
+{
+  "baseCommit": "d955607acf4e8112c28d1db01837fc3e11631de3",
+  "paths": [
+    "CoreCompiler/Tools/Compiler/CCSwiftCompiler.cpp",
+    "IMPORT_MANIFEST.json",
+    "LLVM-On-iOS/Makefile",
+    "LLVM-On-iOS/Patches/DarwinToolChains.cpp",
+    "MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m",
+    "Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/Headers/e_os2.h",
+    "Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/Headers/pkcs12.h",
+    "README-LITTER-IMPORT.md"
+  ],
+  "notes": "Preserve existing Alley Cat compiler/toolchain compatibility changes. Rebase these overlays before changing the source revision."
+}

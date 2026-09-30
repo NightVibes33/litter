@@ -2,6 +2,20 @@
 
 These source drops are kept source-only. Generated build products, IPAs, provisioning profiles, certificates, and private assets are intentionally excluded.
 
+## Nyxian BuildKit source dependency closure
+
+- Source repository: https://github.com/ProjectNyxian/Nyxian.git
+- Pinned source commit: `d955607acf4e8112c28d1db01837fc3e11631de3`
+- Snapshot: `ThirdParty/Nyxian`
+- Recursive dependency inventory: `ThirdParty/Nyxian/.litter-submodules.txt`
+- LLVM-On-iOS: `e1387a4b485cd74e2027f7ff4c08c10dd2884803`
+- TrollStore source: `d11c04666a77435d1ac142af1b0b749214d60a9a`
+- TrollStore/ChOma source: `964023ddac2286ef8e843f90df64d44ac6a673df`
+- `LITTER_LOCAL_OVERLAYS.json` records the existing Alley Cãt compiler compatibility files preserved during import. These overlays must be rebased before advancing the source revision.
+- `LITTER_NYXIAN_IMPORT.json` is the current import record. `VENDOR_LOCK.json` describes a superseded focused import, including the separate `ThirdParty/LLVM-On-iOS` toolchain lane.
+- Source assets and nested dependency sources are included. The existing device OpenSSL slice is preserved; generated frameworks and signing credentials remain excluded.
+- The independently embedded emexDE module below remains pinned separately; its LLVM dependency is checked recursively by `make upstream-dependencies-verify`.
+
 ## Feather / Zsign
 
 - Feather reference repo: https://github.com/claration/Feather.git

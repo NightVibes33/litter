@@ -1,23 +1,26 @@
 {
-  "repository": "https://github.com/ProjectNyxian/Nyxian",
+  "repository": "https://github.com/ProjectNyxian/Nyxian.git",
   "commit": "d955607acf4e8112c28d1db01837fc3e11631de3",
-  "archiveUrl": "https://codeload.github.com/ProjectNyxian/Nyxian/tar.gz/d955607acf4e8112c28d1db01837fc3e11631de3",
   "preservedLocalPaths": [
-    "LitterBuildKitNative"
+    "LitterBuildKitNative",
+    "CoreCompiler/Tools/Compiler/CCSwiftCompiler.cpp",
+    "IMPORT_MANIFEST.json",
+    "LLVM-On-iOS/Makefile",
+    "LLVM-On-iOS/Patches/DarwinToolChains.cpp",
+    "MobileDevelopmentKit/Tools/Compiler/MDKSwiftCompiler.m",
+    "Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/Headers/e_os2.h",
+    "Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework/Headers/pkcs12.h",
+    "README-LITTER-IMPORT.md"
   ],
   "excludedFromVendorArchive": [
     ".git",
-    ".github",
-    "*.framework",
-    "*.xcframework",
-    "*.ipa",
-    "*.mobileprovision",
-    "*.p12",
-    "*.cer"
+    "*.framework (except OpenSSL ios-arm64)",
+    "*.xcframework (except OpenSSL ios-arm64)",
+    ".ipa",
+    ".mobileprovision",
+    ".p12",
+    ".cer"
   ],
-  "submodules": {
-    "LLVM-On-iOS": "https://github.com/ProjectNyxian/LLVM-On-iOS.git",
-    "libroot": "https://github.com/Opa334/libroot.git",
-    "TrollStore": "https://github.com/opa334/TrollStore"
-  }
+  "submoduleStatusFile": ".litter-submodules.txt",
+  "vendoringMode": "recursive-pinned-source-import"
 }

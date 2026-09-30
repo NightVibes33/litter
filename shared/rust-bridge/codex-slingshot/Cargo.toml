@@ -26,4 +26,5 @@ url = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+codex-models-manager = { path = "../../third_party/codex/codex-rs/models-manager" }
 tempfile = "3"

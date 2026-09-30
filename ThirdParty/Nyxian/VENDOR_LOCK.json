@@ -16,7 +16,7 @@
     "repo": "https://github.com/ProjectNyxian/LLVM-On-iOS.git",
     "vendoredFileCount": 6
   },
-  "notes": "Focused Nyxian/LLVM-On-iOS source import for Litter BuildKit. Apple SDK/CoreCompiler private assets are not committed; the vendored OpenSSL.xcframework is limited to the iOS arm64 slice used by device builds.",
+  "notes": "Historical focused import; current revisions are in LITTER_NYXIAN_IMPORT.json and .litter-submodules.txt.",
   "nyxian": {
     "commit": "4c1957c0fe9410d4d514e5ab2dc380292c236a17",
     "ref": "main",
@@ -40,5 +40,6 @@
     "path": "ThirdParty/Nyxian/Nyxian/LindChain/OpenSSL.xcframework",
     "reason": "Needed by LiveContainer/ZSign and referenced by Nyxian.xcodeproj for iOS device builds."
   },
-  "vendoringMode": "focused-buildkit-source-import"
+  "vendoringMode": "focused-buildkit-source-import",
+  "supersededBy": "LITTER_NYXIAN_IMPORT.json"
 }
