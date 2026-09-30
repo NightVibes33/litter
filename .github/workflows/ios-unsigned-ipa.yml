@@ -595,7 +595,7 @@ jobs:
             ThirdParty/SideStore/minimuxer/generated
             ThirdParty/SideStore/minimuxer/target/libminimuxer-ios.a
             ~/.cargo/bin/bindgen
-          key: ios-minimuxer-bridge-v1-${{ runner.os }}-xcode26-ios18-${{ hashFiles('tools/scripts/build-sidestore-minimuxer.sh', 'ThirdParty/SideStore/minimuxer/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.toml', 'ThirdParty/SideStore/minimuxer/src/**', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.lock', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/src/**') }}
+          key: ios-minimuxer-bridge-v2-${{ runner.os }}-xcode26-ios18-${{ hashFiles('tools/scripts/build-sidestore-minimuxer.sh', 'ThirdParty/SideStore/NATIVE_DEPENDENCIES.json', 'ThirdParty/SideStore/native-dependencies.rs', 'ThirdParty/SideStore/rusty_libimobiledevice/**', 'ThirdParty/SideStore/plist_plus/**', 'ThirdParty/SideStore/minimuxer/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.toml', 'ThirdParty/SideStore/minimuxer/src/**', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.lock', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/src/**') }}
 
       - name: Check KittyStore minimuxer bridge cache
         id: minimuxer_bridge_prebuilt

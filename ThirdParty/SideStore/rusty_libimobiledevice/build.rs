@@ -2,12 +2,17 @@
 
 extern crate bindgen;
 
+#[path = "../native-dependencies.rs"]
+mod native_dependencies;
+
 use std::{env, fs::canonicalize, path::PathBuf};
 
 fn main() {
     // Tell cargo to invalidate the built crate whenever build files change
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=../native-dependencies.rs");
+    println!("cargo:rerun-if-changed=../NATIVE_DEPENDENCIES.json");
 
     ////////////////////////////
     //   BINDGEN GENERATION   //
@@ -357,15 +362,5 @@ fn autotools_host_for_target(target: &str) -> Option<&'static str> {
 }
 
 fn repo_setup(url: &str) {
-    let mut cmd = std::process::Command::new("git");
-    cmd.arg("clone");
-    cmd.arg("--depth=1");
-    cmd.arg(url);
-    cmd.output().unwrap();
-    env::set_current_dir(url.split('/').last().unwrap().replace(".git", "")).unwrap();
-    env::set_var("NOCONFIGURE", "1");
-    let mut cmd = std::process::Command::new("./autogen.sh");
-    let _ = cmd.output();
-    env::remove_var("NOCONFIGURE");
-    env::set_current_dir("..").unwrap();
+    native_dependencies::repo_setup(url);
 }

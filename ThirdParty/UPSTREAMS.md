@@ -83,7 +83,7 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 - plist_plus source version: `0.2.6`
 - plist_plus source path: `ThirdParty/SideStore/plist_plus`
 - libtatsu repo: https://github.com/libimobiledevice/libtatsu.git
-- libtatsu is cloned and built by the rusty_libimobiledevice build script.
+- libtatsu and the other native C libraries are pinned as submodules under `ThirdParty/SideStore/NativeDependencies`. Exact revisions are in `ThirdParty/SideStore/NATIVE_DEPENDENCIES.json`. The vendored rusty_libimobiledevice and plist_plus build scripts clone from those local pinned checkouts rather than fetching moving remote heads.
 - Minimuxer wrapper path: `ThirdParty/SideStore/MinimuxerWrapper.swift`
 - KittyStore layout reference files adapted from SideStore at the inspected commit:
   - `AltStore/TabBarController.swift`

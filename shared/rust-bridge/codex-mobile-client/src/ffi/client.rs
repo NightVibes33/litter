@@ -3486,12 +3486,14 @@ mod tests {
     }
 
     mod plugin_list {
-        use super::super::shape_plugin_list;
+        use super::super::{shape_plugin_list, shape_plugin_catalog};
         use codex_app_server_protocol as upstream;
         use codex_utils_absolute_path::AbsolutePathBuf;
 
         fn iface(display_name: &str, short_description: &str) -> upstream::PluginInterface {
             upstream::PluginInterface {
+                logo_dark: None,
+                logo_url_dark: None,
                 display_name: Some(display_name.into()),
                 short_description: Some(short_description.into()),
                 long_description: None,
@@ -3521,6 +3523,8 @@ mod tests {
             display: Option<&str>,
         ) -> upstream::PluginSummary {
             upstream::PluginSummary {
+                version: None,
+                install_policy_source: None,
                 id: id.into(),
                 remote_plugin_id: None,
                 local_version: None,

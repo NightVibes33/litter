@@ -1284,6 +1284,8 @@ mod tests {
             | proto::ThreadItem::HookPrompt { id, .. }
             | proto::ThreadItem::AgentMessage { id, .. }
             | proto::ThreadItem::Plan { id, .. }
+            | proto::ThreadItem::SubAgentActivity { id, .. }
+            | proto::ThreadItem::Sleep { id, .. }
             | proto::ThreadItem::Reasoning { id, .. }
             | proto::ThreadItem::CommandExecution { id, .. }
             | proto::ThreadItem::FileChange { id, .. }
@@ -1325,6 +1327,10 @@ mod tests {
     fn thread_started() {
         let notification = ServerNotification::ThreadStarted(proto::ThreadStartedNotification {
             thread: proto::Thread {
+                extra: None,
+                parent_thread_id: None,
+                history_mode: Default::default(),
+                recency_at: None,
                 id: "thr_1".to_string(),
                 session_id: "session_1".to_string(),
                 forked_from_id: None,
@@ -1846,6 +1852,7 @@ mod tests {
         let notification = ServerNotification::AccountRateLimitsUpdated(
             proto::AccountRateLimitsUpdatedNotification {
                 rate_limits: proto::RateLimitSnapshot {
+                    individual_limit: None,
                     limit_id: Some("primary".to_string()),
                     limit_name: Some("Primary".to_string()),
                     primary: Some(proto::RateLimitWindow {
@@ -1912,6 +1919,10 @@ mod tests {
         let notifications = vec![
             ServerNotification::ThreadStarted(proto::ThreadStartedNotification {
                 thread: proto::Thread {
+                    extra: None,
+                    parent_thread_id: None,
+                    history_mode: Default::default(),
+                    recency_at: None,
                     id: "thr_1".to_string(),
                     session_id: "session_1".to_string(),
                     forked_from_id: None,
@@ -2042,6 +2053,7 @@ mod tests {
         let request = ServerRequest::CommandExecutionRequestApproval {
             request_id: proto::RequestId::Integer(42),
             params: proto::CommandExecutionRequestApprovalParams {
+                environment_id: None,
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
@@ -2098,6 +2110,7 @@ mod tests {
         let request = ServerRequest::PermissionsRequestApproval {
             request_id: proto::RequestId::Integer(11),
             params: proto::PermissionsRequestApprovalParams {
+                environment_id: None,
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
@@ -2169,6 +2182,7 @@ mod tests {
         let request = ServerRequest::ToolRequestUserInput {
             request_id: proto::RequestId::Integer(13),
             params: proto::ToolRequestUserInputParams {
+                auto_resolution_ms: None,
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
@@ -2213,6 +2227,7 @@ mod tests {
         let request = ServerRequest::ToolRequestUserInput {
             request_id: proto::RequestId::Integer(14),
             params: proto::ToolRequestUserInputParams {
+                auto_resolution_ms: None,
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
@@ -2311,6 +2326,7 @@ mod tests {
         let req1 = ServerRequest::CommandExecutionRequestApproval {
             request_id: proto::RequestId::Integer(1),
             params: proto::CommandExecutionRequestApprovalParams {
+                environment_id: None,
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),
@@ -2349,6 +2365,7 @@ mod tests {
         let req1 = ServerRequest::CommandExecutionRequestApproval {
             request_id: proto::RequestId::Integer(1),
             params: proto::CommandExecutionRequestApprovalParams {
+                environment_id: None,
                 thread_id: "thr_1".to_string(),
                 turn_id: "turn_1".to_string(),
                 item_id: "item_1".to_string(),

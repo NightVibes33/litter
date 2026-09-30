@@ -40,6 +40,10 @@ jobs:
           bash tools/scripts/verify-kittystore-integration.sh
       - name: Apply reproducible mobile Codex patches
         run: bash apps/ios/scripts/sync-codex.sh --recorded-gitlink
+      - name: Verify pinned native dependency checkout behavior
+        run: |
+          rustc --edition 2021 --test ThirdParty/SideStore/native-dependencies.rs -o /tmp/litter-native-dependency-tests
+          /tmp/litter-native-dependency-tests
       - name: Verify tool lifecycle and model catalog
         run: |
           cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-slingshot --lib json_line_wire --locked

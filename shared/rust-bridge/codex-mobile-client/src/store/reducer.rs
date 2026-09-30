@@ -4866,6 +4866,7 @@ mod tests {
         let _ = drain_updates(&mut update_receiver);
 
         let upstream_item = upstream::ThreadItem::UserMessage {
+            client_id: None,
             id: "server-user-item".to_string(),
             content: inputs.clone(),
         };
@@ -4910,6 +4911,10 @@ mod tests {
         // thread.turns. Build the equivalent ThreadSnapshot via the same
         // helper apply_thread_read_response uses, then upsert.
         let upstream_thread = upstream::Thread {
+            extra: None,
+            parent_thread_id: None,
+            history_mode: Default::default(),
+            recency_at: None,
             id: "thread-1".to_string(),
             session_id: "session-1".to_string(),
             forked_from_id: None,
@@ -4933,6 +4938,7 @@ mod tests {
                 id: "turn-1".to_string(),
                 status: upstream::TurnStatus::Completed,
                 items: vec![upstream::ThreadItem::UserMessage {
+                    client_id: None,
                     id: "server-user-item".to_string(),
                     content: inputs.clone(),
                 }],

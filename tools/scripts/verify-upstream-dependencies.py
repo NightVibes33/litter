@@ -42,6 +42,27 @@ def verify(root):
 
     submodules(root)
 
+    native_lock = root / "ThirdParty/SideStore/NATIVE_DEPENDENCIES.json"
+    native_helper = root / "ThirdParty/SideStore/native-dependencies.rs"
+    require(native_lock)
+    require(native_helper)
+    if native_lock.is_file() and native_helper.is_file():
+        helper_source = native_helper.read_text()
+        for name, dependency in json.loads(native_lock.read_text())["dependencies"].items():
+            revision = dependency["commit"]
+            if not re.fullmatch(r"[0-9a-f]{40}", revision):
+                errors.append(f"invalid native dependency revision: {name}")
+                continue
+            pattern = (r'\(\s*"' + re.escape(dependency["repository"]) +
+                       r'"\s*,\s*"' + revision + r'"\s*,?\s*\)')
+            if not re.search(pattern, helper_source):
+                errors.append(f"native build helper does not match the dependency lock: {name}")
+            source = root / "ThirdParty/SideStore/NativeDependencies" / name
+            require(source / ".git")
+            require(source / "autogen.sh")
+            if (source / ".git").exists() and git(source, "rev-parse", "HEAD") != revision:
+                errors.append(f"native source does not match the dependency lock: {name}")
+
     for name in ("SideStore", "Feather", "Nyxian"):
         source = root / "ThirdParty" / name
         if name != "Nyxian":
@@ -81,7 +102,7 @@ def verify(root):
         if not manifest.is_file():
             continue
         data = tomllib.loads(manifest.read_text())
-        tables = [data.get("dependencies", {}), data.get("build-dependencies", {}),
+        tables = [data.get("dependencies", {}), data.get("build-dependencies", {}), data.get("dev-dependencies", {}),
                   data.get("workspace", {}).get("dependencies", {})]
         tables.extend(data.get("patch", {}).values())
         for table in tables:

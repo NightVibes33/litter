@@ -34,6 +34,8 @@ esac
 require_cmd cargo
 require_cmd rustup
 require_cmd xcrun
+require_cmd git
+require_cmd autoreconf
 
 MIN_IOS="${LITTER_MINIMUXER_MIN_IOS:-18.0}"
 IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"

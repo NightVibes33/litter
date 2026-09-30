@@ -1655,7 +1655,7 @@ mod tests {
                 status: upstream::CommandExecutionStatus::Failed,
                 command_actions,
                 ..
-            } if cwd.as_path() == Path::new("/repo")
+            } if cwd.as_str() == "/repo"
                 && matches!(
                     &command_actions[0],
                     upstream::CommandAction::Read { path, .. }
@@ -1706,7 +1706,7 @@ mod tests {
         let command_item = ThreadItem::CommandExecution {
             id: "cmd-1".into(),
             command: "cat crates/krusty-cli/src/main.rs".into(),
-            cwd: AbsolutePathBuf::from_absolute_path("/repo").expect("absolute cwd"),
+            cwd: AbsolutePathBuf::from_absolute_path("/repo").expect("absolute cwd").into(),
             process_id: None,
             source: CommandExecutionSource::Agent,
             status: CommandExecutionStatus::Completed,
@@ -1737,7 +1737,7 @@ mod tests {
             panic!("expected read command action");
         };
 
-        assert_eq!(cwd.as_path(), Path::new("/repo"));
+        assert_eq!(cwd.as_str(), "/repo");
         assert_eq!(
             path.as_path(),
             Path::new("/repo/crates/krusty-cli/src/main.rs")
