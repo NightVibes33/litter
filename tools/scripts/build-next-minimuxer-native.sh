@@ -150,3 +150,4 @@ assert openssl[0]['state']['version'] == '3.6.2000'
 assert openssl[0]['state']['revision'] == 'fdc9231384f37f053dffe058fd6dfc6c5072dae5'
 print('Combined account/transport graph uses verified OpenSSL 3.6.2000 pin')
 PYLOCK
+bash "$root/tools/scripts/verify-next-minimuxer-certificate.sh" "$build"
