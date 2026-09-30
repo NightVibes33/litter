@@ -120,3 +120,27 @@ The repository uses Rust crates, Swift packages, Xcode/Apple SDK files, and othe
 ## Apple SDK Assets
 
 Apple iPhoneOS SDK files are not committed to this repository. They are resolved from Xcode on the private macOS build runner and packaged only into the private `LitterBuildKitAssets.zip` used by sideload builds.
+
+## Updated KittyStore Signing Dependencies
+
+- SideSign / SideStore contributors
+  - Upstream: https://github.com/SideStore/SideSign
+  - Vendored source: `ThirdParty/SideStore/SideSign`, revision `6b68651697f99791ef85404b7aea1891a26a285d`.
+  - Role: KittyStore signing engine, called through a public adapter owned by the SideStore framework.
+  - Upstream license declaration: GPL-3.0, retained in `ThirdParty/SideStore/SideSign/README.md`.
+- AnisetteKit / mahee96 and contributors
+  - Upstream: https://github.com/mahee96/AnisetteKit
+  - Vendored source: `ThirdParty/SideStore/AnisetteKit`, revision `db8b41022697b6c19be8a5f01a1ce834145a2a26`.
+  - License: AGPL-3.0, retained in `ThirdParty/SideStore/AnisetteKit/LICENSE`.
+- Unicorn Engine and contributors
+  - Pinned source fork: https://github.com/mahee96/unicorn at `a53ddc9ac6d65b24936d4a37917333fcd816cfd0`.
+  - Source: `ThirdParty/SideStore/Unicorn`; rebuilt for iOS 18 and macOS 12.
+  - Upstream license texts are retained in `COPYING`, `COPYING.LGPL2`, `COPYING_GLIB`, and nested component notices.
+- EMProxy / SideStore contributors
+  - Source build reference: https://github.com/SideStore/em_proxy at `6e117e140ca7cff4ff106bdefa18147552a0e592`.
+  - License: AGPL-3.0, retained by the pinned source build in its upstream `LICENSE`.
+- IDevice / Jackson Coxson and contributors
+  - Source build reference: https://github.com/SideStore/idevice at `3e55c8486b2057e40c1f74aaaa1155c82341cf76`.
+  - License: MIT, retained by the pinned source build in its upstream `LICENSE.txt`.
+
+Exact signing dependencies and local compatibility overlays are recorded in `ThirdParty/SideStore/SideSign/LITTER_IMPORT.json`, `ThirdParty/SideStore/AnisetteKit/LITTER_IMPORT.json`, and `ThirdParty/UPSTREAMS.md`. The next minimuxer graph is audited separately in `docs/architecture/minimuxer-next-dependency-audit.json` and has not replaced the current transport.
