@@ -144,3 +144,9 @@ Apple iPhoneOS SDK files are not committed to this repository. They are resolved
   - License: MIT, retained by the pinned source build in its upstream `LICENSE.txt`.
 
 Exact signing dependencies and local compatibility overlays are recorded in `ThirdParty/SideStore/SideSign/LITTER_IMPORT.json`, `ThirdParty/SideStore/AnisetteKit/LITTER_IMPORT.json`, and `ThirdParty/UPSTREAMS.md`. The next minimuxer graph is audited separately in `docs/architecture/minimuxer-next-dependency-audit.json` and has not replaced the current transport.
+
+## Released Nyxian Compiler
+
+The full device build stages only CoreCompiler and its 13 matching compiler support libraries from Nyxian release `0.11.4`, source revision `0c61cfb57ee3d85d96a7102132db4268bcaa1db3`. The original compiler implementation and library bytes are preserved. Exact archive identifiers, checksum, source dependency pins, and license sources are recorded in `docs/architecture/nyxian-released-compiler.json`.
+
+CoreCompiler's public source headers retain their MIT notices. Swift and LLVM license texts, including their LLVM exceptions, and cmark's component notices are retained in `docs/licenses/upstream-compiler` and copied into the staged compiler framework. The pinned source references for those notices are Swift `064859e41d68596f486c5d724401cb370f260409`, LLVM project `82cdc19fa54d566969527b56f587ea8ea30bef51`, and swift-cmark `924936d0427cb25a61169739a7660230bffa6ea6`.

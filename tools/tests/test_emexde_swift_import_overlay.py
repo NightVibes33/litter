@@ -39,6 +39,8 @@ class SwiftImportOverlayTests(unittest.TestCase):
             self.assertIn('@interface LDETheme : NSObject', console)
             self.assertIn('UIColor *gutterHairlineColor', console)
             self.assertIn('@objc(LDETheme) class LDETheme', theme)
+            bootstrap = (workspace / 'ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m').read_text()
+            self.assertIn('#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>', bootstrap)
 
 
 if __name__ == '__main__':

@@ -81,6 +81,9 @@ def main():
     source=root/'ThirdParty/EmexDE/Source'; revision=record['sourceRevision']
     if subprocess.run(['git', '-C', str(source), 'cat-file', '-e', revision+'^{commit}'], capture_output=True).returncode:
         subprocess.run(['git', '-C', str(source), 'fetch', '--depth', '1', 'origin', revision], check=True)
+    llvm_pin=subprocess.check_output(['git', '-C', str(source), 'rev-parse', revision+':LLVM-On-iOS'], text=True).strip()
+    if llvm_pin != record['llvmSourceRevision']:
+        raise SystemExit('Released compiler source dependency pin differs from its record')
     framework=output/'CoreCompiler.framework'
     if framework.exists():
         shutil.rmtree(framework)
@@ -143,6 +146,12 @@ def main():
         (headers/Path(name).name).write_bytes(data)
     modules=framework/'Modules'; modules.mkdir()
     (modules/'module.modulemap').write_text('framework module CoreCompiler {\n  umbrella header "CoreCompiler.h"\n  export *\n  module * { export * }\n}\n')
+    notices=framework/'Licenses'; notices.mkdir()
+    for license_record in record['componentLicenseSources']:
+        path=root/'docs/licenses/upstream-compiler'/license_record['file']
+        if hashlib.sha256(path.read_bytes()).hexdigest() != license_record['sha256']:
+            raise SystemExit('Compiler component license differs from its recorded source')
+        shutil.copyfile(path, notices/path.name)
     # Existing app embedding/signing expects support dylibs at app Frameworks
     # level. Keep all of them from this release and preserve their binary bytes.
     destination=source/'Frameworks/CoreCompiler/CoreCompilerSupportLibs'

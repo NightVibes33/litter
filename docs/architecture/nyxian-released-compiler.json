@@ -2,6 +2,8 @@
   "repository": "emexlab/Nyxian",
   "releaseTag": "0.11.4",
   "sourceRevision": "0c61cfb57ee3d85d96a7102132db4268bcaa1db3",
+  "llvmSourceRevision": "c2becf9cd633094221cbc37c487117344c8c8aae",
+  "swiftReleaseTag": "swift-6.3.3-RELEASE",
   "releaseId": 386256319,
   "assetId": 555023113,
   "assetName": "Nyxian.ipa",
@@ -11,5 +13,28 @@
   "frameworkPrefix": "Payload/Nyxian.app/Frameworks/CoreCompiler.framework/",
   "deviceOnly": true,
   "maximumDeploymentTarget": "18.0",
-  "supportLibraryCount": 13
+  "supportLibraryCount": 13,
+  "componentLicenseSources": [
+    {
+      "file": "Swift-LICENSE.txt",
+      "repository": "swiftlang/swift",
+      "revision": "064859e41d68596f486c5d724401cb370f260409",
+      "path": "LICENSE.txt",
+      "sha256": "770af8291f708538d8ff885a0bbc4e045cd700531741c4f99528d435c14d7f55"
+    },
+    {
+      "file": "LLVM-LICENSE.txt",
+      "repository": "swiftlang/llvm-project",
+      "revision": "82cdc19fa54d566969527b56f587ea8ea30bef51",
+      "path": "llvm/LICENSE.TXT",
+      "sha256": "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee"
+    },
+    {
+      "file": "Cmark-COPYING.txt",
+      "repository": "swiftlang/swift-cmark",
+      "revision": "924936d0427cb25a61169739a7660230bffa6ea6",
+      "path": "COPYING",
+      "sha256": "c22e885f33b821bddb24cf007145e5540655b6c0f403e49e6c76a93c28e6d9a9"
+    }
+  ]
 }

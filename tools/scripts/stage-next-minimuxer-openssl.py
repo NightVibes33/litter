@@ -54,6 +54,25 @@ text = replace(text, 'BIO_free(privateKeyBuffer);\n\n    return self;',
     'BIO_free(privateKeyBuffer);\n    EVP_PKEY_free(key);\n    X509_free(certificate);\n\n    return self;')
 certificate.write_text(text)
 
+# The new gateway's binary also exposes plist headers. AltSign's private plist
+# implementation must compile against its own pinned headers, including the
+# older C++ assignment signatures, rather than resolving another package's API.
+plist = root / 'altsign/Dependencies/ldid/libplist'
+if not (plist / 'include/plist/Uid.h').is_file():
+    raise SystemExit('Missing recursive AltSign libplist source dependency')
+for source in [*(plist / 'src').glob('*'), *(plist / 'include/plist').glob('*.h')]:
+    if source.suffix not in {'.cpp', '.c', '.h'}:
+        continue
+    text = source.read_text()
+    def private_header(match):
+        name = match.group(1)
+        if not (plist / 'include/plist' / name).is_file():
+            raise SystemExit('Missing private plist header: ' + name)
+        prefix = '../include/plist/' if source.parent.name == 'src' else ''
+        return '#include "' + prefix + name + '"'
+    text = re.sub(r'#include\s+[<"]plist/([^>"\n]+)[>"]', private_header, text)
+    source.write_text(text)
+
 remote = root / 'remotepairingkit/Package.swift'
 text = remote.read_text()
 text = replace(text, ',\n        .library(\n            name: "OpenSSL",\n            targets: ["OpenSSL"]\n        )', '')

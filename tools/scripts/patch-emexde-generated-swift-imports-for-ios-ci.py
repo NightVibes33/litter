@@ -133,7 +133,7 @@ application_management_objc_shim = "\n".join([
 ])
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m",
-    notification_objc_shim,
+    notification_objc_shim + "\n#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>",
     "NXBootstrap notification bridge",
 )
 replace_generated_swift_import(
