@@ -22,6 +22,7 @@ p=staged / 'qemu/configure'
 s=p.read_text(); original='  QEMU_LDFLAGS="-framework CoreFoundation -framework IOKit $QEMU_LDFLAGS"'
 assert s.count(original) == 1, 'Unicorn Darwin configure overlay needs rebasing'
 s=s.replace(original, '  if test "$LITTER_UNICORN_MOBILE" = "1"; then\n    QEMU_LDFLAGS="-framework CoreFoundation $QEMU_LDFLAGS"\n  else\n' + original + '\n  fi')
+s=s.replace("# parse CC options first", 'cpu="${LITTER_UNICORN_CONFIGURE_CPU:-$cpu}"\n# parse CC options first', 1)
 p.write_text(s)
 PYSOURCE
 trap 'status=$?; for log in "$build"/*/config.log; do if [[ -f "$log" ]]; then echo "Configure diagnostics: $log" >&2; tail -n 80 "$log" >&2; fi; done; exit "$status"' ERR
@@ -41,7 +42,8 @@ import shlex, sys
 p=Path(sys.argv[1]); p.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.argv[2]) + ' -target ' + shlex.quote(sys.argv[3]) + ' "$@"\n'); p.chmod(0o755)
 PYCOMPILER
     mobile=1; [[ "$slice" == macos ]] && mobile=0
-    LITTER_UNICORN_MOBILE="$mobile" ARCHFLAGS="$flags" cmake -S "$build/source" -B "$build/$slice" \
+    configure_cpu=x86_64; [[ "$slice" == ios ]] && configure_cpu=aarch64
+    LITTER_UNICORN_CONFIGURE_CPU="$configure_cpu" LITTER_UNICORN_MOBILE="$mobile" ARCHFLAGS="$flags" cmake -S "$build/source" -B "$build/$slice" \
         -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME="$system" \
         -DCMAKE_C_COMPILER="$build/$slice/clang-target" \
         -DCMAKE_OSX_SYSROOT="$(xcrun --sdk "$sdk" --show-sdk-path)" \
