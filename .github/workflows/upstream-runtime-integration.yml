@@ -10,6 +10,7 @@ on:
       - 'apps/ios/scripts/sync-codex.sh'
       - 'apps/ios/Sources/KittyStoreSigning/**'
       - 'tools/scripts/verify-sidesign-adapter.sh'
+      - 'tools/scripts/build-kittystore-unicorn.sh'
       - 'tools/scripts/vendor-nyxian*'
       - 'tools/scripts/verify-*'
       - '.github/workflows/upstream-runtime-integration.yml'

@@ -121,3 +121,5 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 - Full signing-package source: `ThirdParty/SideStore/SideSign`.
 - Four upstream moving branches are replaced with the immutable revisions in the upstream `Package.resolved`; provenance and all six transitive package pins are recorded in `LITTER_IMPORT.json`.
 - The host retains its existing AltSign account/model boundary and current KittyStore UI. Signing uses SideSign through a data-only adapter shared by the host and embedded store; no account credentials or keychain schemas are migrated.
+
+KittyStore SideSign uses local AnisetteKit source pinned at `db8b41022697b6c19be8a5f01a1ce834145a2a26`. Its Unicorn dependency is recursively pinned at `a53ddc9ac6d65b24936d4a37917333fcd816cfd0` and rebuilt for iOS 18/macOS 12 using `tools/scripts/build-kittystore-unicorn.sh`. The upstream binary requires iOS 26.5 and is intentionally replaced by a source build with verified object deployment targets. Generated XCFrameworks are excluded from Git.

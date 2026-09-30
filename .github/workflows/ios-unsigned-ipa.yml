@@ -42,6 +42,8 @@ on:
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
       - 'tools/scripts/build-sidestore-minimuxer.sh'
+      - 'tools/scripts/build-kittystore-unicorn.sh'
+      - 'tools/scripts/verify-unicorn-deployment.py'
       - 'tools/scripts/prepare-emexde-corecompiler-artifacts.sh'
       - 'tools/scripts/patch-emexde-corecompiler-for-ios-ci.py'
       - 'tools/scripts/patch-ios-fast-device-project.py'
