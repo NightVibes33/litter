@@ -42,6 +42,7 @@ for library in info['AvailableLibraries']:
     for actual, minimum in found:
         if actual != expected or minimum > maximum:
             raise SystemExit(f'Incompatible Unicorn object: {key}, platform={actual}, minimum={minimum >> 16}.{(minimum >> 8) & 255}.{minimum & 255}')
-if seen != {('macos', ''), ('ios', ''), ('ios', 'simulator')}:
+required = {('ios', ''), ('ios', 'simulator')} if '--ios-only' in sys.argv else {('macos', ''), ('ios', ''), ('ios', 'simulator')}
+if seen != required:
     raise SystemExit(f'Missing Unicorn slices: {seen}')
-print('Unicorn object deployment targets support macOS 12 and iOS 18')
+print(f'{root.name} object deployment targets support iOS 18' + (' and macOS 12' if ('macos', '') in required else ''))

@@ -15,12 +15,18 @@ on:
       - 'tools/scripts/verify-*'
       - '.github/workflows/upstream-runtime-integration.yml'
   workflow_dispatch:
+    inputs:
+      next_minimuxer_native_only:
+        description: Build and verify the next minimuxer native dependencies only
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    if: inputs.next_minimuxer_native_only != true
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -55,6 +61,7 @@ jobs:
         run: cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-mobile-client --lib --locked
 
   sidesign:
+    if: inputs.next_minimuxer_native_only != true
     name: Verify SideSign and KittyStore signing adapter
     runs-on: macos-26-intel
     timeout-minutes: 60
@@ -76,3 +83,21 @@ jobs:
         with:
           path: ThirdParty/SideStore/SideSign/.build
           key: ${{ steps.sidesign_cache.outputs.cache-primary-key }}
+
+  next-minimuxer-native:
+    if: github.event_name == 'workflow_dispatch' && inputs.next_minimuxer_native_only == true
+    runs-on: macos-26-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build pinned device and simulator dependencies
+        run: bash tools/scripts/build-next-minimuxer-native.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: next-minimuxer-ios18-native
+          path: build/next-minimuxer-native/*.xcframework
+          if-no-files-found: error
