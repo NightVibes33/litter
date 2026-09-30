@@ -35,6 +35,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         OpenAIApiKeyStore.shared.applyToEnvironment()
         LitterPlatform.bootstrapLocalRuntimeIfNeeded()
         LLog.bootstrap()
+        if !AppDistributionCapabilities.isAppStoreSafe {
+            Task.detached(priority: .utility) {
+                await LitterBuildKit.shared.bootstrapBadQueryVerifiedRoots()
+                _ = await IshFS.repairNativeContainerBridge()
+            }
+        }
         if AppDistributionCapabilities.includesKittyStore {
             Task { @MainActor in
                 KittyStoreEmbeddedBridge.bootstrap()
