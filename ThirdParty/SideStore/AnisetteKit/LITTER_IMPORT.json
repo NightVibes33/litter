@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/mahee96/AnisetteKit.git",
+  "commit": "db8b41022697b6c19be8a5f01a1ce834145a2a26",
+  "unicornCommit": "a53ddc9ac6d65b24936d4a37917333fcd816cfd0",
+  "overlays": [
+    "Package.swift: use locally rebuilt Unicorn framework; require iOS 18"
+  ]
+}

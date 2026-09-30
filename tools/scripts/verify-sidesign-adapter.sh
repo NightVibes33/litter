@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+bash "$root/tools/scripts/build-kittystore-unicorn.sh"
 command -v swift >/dev/null || { echo "error: Swift is required to verify the signing adapter" >&2; exit 127; }
 workspace="$(mktemp -d)"
 trap 'rm -rf "$workspace"' EXIT

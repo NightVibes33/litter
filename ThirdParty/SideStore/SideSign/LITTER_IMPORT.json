@@ -4,7 +4,8 @@
   "sourceSideStoreCommit": "0dd743f75afc358b0ba4a002feb5f19474492371",
   "overlays": [
     "Package.swift: replace four moving branch requirements with upstream resolved revisions",
-    "Tests/SideSignTests/SideSignTests.swift: import Foundation for filesystem/archive tests on Darwin"
+    "Tests/SideSignTests/SideSignTests.swift: import Foundation for filesystem/archive tests on Darwin",
+    "Package.swift: use pinned local AnisetteKit with Unicorn rebuilt for iOS 18"
   ],
   "dependencies": [
     {

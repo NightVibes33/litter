@@ -30,3 +30,6 @@
 [submodule "ThirdParty/SideStore/NativeDependencies/libimobiledevice"]
 	path = ThirdParty/SideStore/NativeDependencies/libimobiledevice
 	url = https://github.com/libimobiledevice/libimobiledevice.git
+[submodule "ThirdParty/SideStore/Unicorn"]
+	path = ThirdParty/SideStore/Unicorn
+	url = https://github.com/mahee96/unicorn.git

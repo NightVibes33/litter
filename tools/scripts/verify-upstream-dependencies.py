@@ -159,6 +159,13 @@ def verify(root):
         if resolved != manifest["dependencies"]:
             errors.append("SideSign resolved dependency graph differs from its import manifest")
         for pin in manifest["dependencies"]:
+            if pin["identity"] == "anisettekit":
+                require(root / "ThirdParty/SideStore/AnisetteKit/Package.swift")
+                stamp = root / "ThirdParty/SideStore/AnisetteKit/.litter-upstream-commit"
+                require(stamp)
+                if stamp.read_text().strip() != pin["state"]["revision"] or '.package(path: "../AnisetteKit")' not in package:
+                    errors.append("Local AnisetteKit source or dependency requirement differs from its pin")
+                continue
             state = pin["state"]
             requirement = state.get("version") or state["revision"]
             kind = "exact" if "version" in state else "revision"

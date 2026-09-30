@@ -114,6 +114,9 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           swift --version
 
+      - name: Build compatible KittyStore emulator dependency
+        run: bash tools/scripts/build-kittystore-unicorn.sh
+
       - name: Verify Nyxian source import
         run: |
           set -euo pipefail

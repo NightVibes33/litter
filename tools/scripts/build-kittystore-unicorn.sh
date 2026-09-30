@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source="$root/ThirdParty/SideStore/Unicorn"
+output="$source/../AnisetteKit/Frameworks/KittyStoreUnicorn.xcframework"
+expected=a53ddc9ac6d65b24936d4a37917333fcd816cfd0
+recipe="$(shasum -a 256 "${BASH_SOURCE[0]}" | cut -d' ' -f1)"
+if [[ -f "$output/.litter-recipe" ]] && [[ "$(cat "$output/.litter-recipe")" == "$recipe:$expected" ]] && python3 "$root/tools/scripts/verify-unicorn-deployment.py" "$output"; then exit 0; fi
+command -v xcodebuild >/dev/null || { echo 'error: Xcode is required to rebuild Unicorn' >&2; exit 1; }
+git -C "$root" submodule update --init --recursive ThirdParty/SideStore/Unicorn
+[[ "$(git -C "$source" rev-parse HEAD)" == "$expected" ]] || { echo 'error: unexpected Unicorn revision' >&2; exit 1; }
+build="$root/build/kittystore-unicorn"
+mkdir -p "$build"
+args=()
+for slice in macos ios simulator; do
+    case "$slice" in
+        macos) sdk=macosx; archs='arm64;x86_64'; flags='-arch arm64 -arch x86_64'; minimum=12.0; system=Darwin ;;
+        ios) sdk=iphoneos; archs=arm64; flags='-arch arm64'; minimum=18.0; system=iOS ;;
+        simulator) sdk=iphonesimulator; archs='arm64;x86_64'; flags='-arch arm64 -arch x86_64'; minimum=18.0; system=iOS ;;
+    esac
+    ARCHFLAGS="$flags" cmake -S "$source" -B "$build/$slice" \
+        -DCMAKE_BUILD_TYPE=Release -DCMAKE_SYSTEM_NAME="$system" \
+        -DCMAKE_C_COMPILER="$(xcrun --sdk "$sdk" --find clang)" \
+        -DCMAKE_OSX_SYSROOT="$(xcrun --sdk "$sdk" --show-sdk-path)" \
+        -DCMAKE_OSX_ARCHITECTURES="$archs" -DCMAKE_OSX_DEPLOYMENT_TARGET="$minimum" \
+        -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY -DBUILD_SHARED_LIBS=OFF \
+        -DUNICORN_ARCH=aarch64 -DUNICORN_ENABLE_TCI=ON \
+        -DUNICORN_LEGACY_STATIC_ARCHIVE=ON -DUNICORN_BUILD_TESTS=OFF -DUNICORN_INSTALL=OFF
+    if [[ "$slice" != macos ]]; then
+        python3 - "$build/$slice/config-host.h" <<'PY'
+from pathlib import Path
+import sys
+p=Path(sys.argv[1]); p.write_text(p.read_text().replace('#define HAVE_PTHREAD_JIT_PROTECT 1', '/* TCI does not use pthread JIT protection. */'))
+PY
+    fi
+    cmake --build "$build/$slice" --parallel 3
+    args+=(-library "$build/$slice/libunicorn.a" -headers "$source/include")
+done
+rm -rf "$output"
+mkdir -p "$(dirname "$output")"
+xcodebuild -create-xcframework "${args[@]}" -output "$output"
+python3 "$root/tools/scripts/verify-unicorn-deployment.py" "$output"
+printf '%s:%s\n' "$recipe" "$expected" > "$output/.litter-recipe"

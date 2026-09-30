@@ -96,3 +96,7 @@ available in its support artifact set. A successful archive alone therefore
 cannot establish working on-device Swift compilation. Replacing that fallback
 with the real frontend and matching generated headers remains necessary before
 claiming full Nyxian compiler support.
+
+### Unicorn deployment compatibility
+
+The pinned AnisetteKit release artifact contains iOS objects requiring iOS 26.5. KittyStore instead builds Unicorn source `a53ddc9ac6d65b24936d4a37917333fcd816cfd0` with the software interpreter for iOS 18 and macOS 12. AnisetteKit is imported at `db8b41022697b6c19be8a5f01a1ce834145a2a26` and consumes the generated local XCFramework. The build checks actual object deployment metadata; it does not relabel downloaded binaries. Runtime integration and the signing smoke tests passed before this dependency rebuild; the rebuild and full iOS archive need independent CI validation.

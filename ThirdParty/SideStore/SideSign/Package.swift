@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "SideSign",
     platforms: [
-        .iOS(.v15),
+        .iOS(.v18),
         .macOS(.v12),
         .tvOS(.v15),
         .watchOS(.v8),
@@ -35,7 +35,7 @@ let package = Package(
         .package(url: "https://github.com/mahee96/CodeSignKit.git",   revision: "d0c67710fda9a2646b9e829cb2cf443892728371"),
         .package(url: "https://github.com/mahee96/GSACryptoKit.git",  revision: "eae2590eaf17fe98ce9c76b3ec2bd42b780eb123"),
         .package(url: "https://github.com/SideStore/libdeflate",      revision: "da6c7dae03b78dc71af973664575e4209786fbfe"),
-        .package(url: "https://github.com/mahee96/AnisetteKit.git",   revision: "db8b41022697b6c19be8a5f01a1ce834145a2a26"),
+        .package(path: "../AnisetteKit"),
 
 //        .package(name: "CodeSignKit",  path: "../../local/CodeSignKit"),
 //        .package(name: "GSACryptoKit", path: "../../local/GSACryptoKit"),
