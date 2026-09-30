@@ -66,6 +66,57 @@ static NSMutableSet<NSNumber *> *LBNBadQueryHandles(void)
     return handles;
 }
 
+uint64_t litter_bad_query_active_handle_count(void)
+{
+    @synchronized(LBNBadQueryHandles()) { return (uint64_t)LBNBadQueryHandles().count; }
+}
+
+int64_t litter_bad_query_acquire(const char *path, bool create, const char *group_identifier, bool is_group)
+{
+    if(path == NULL) { return -255; }
+    int64_t handle = bad_query(
+        (char *)path,
+        create,
+        group_identifier != NULL && group_identifier[0] != '\0' ? (char *)group_identifier : NULL,
+        is_group
+    );
+    if(handle >= 0)
+    {
+        @synchronized(LBNBadQueryHandles()) { [LBNBadQueryHandles() addObject:@(handle)]; }
+    }
+    return handle;
+}
+
+char *litter_bad_query_list_copy(const char *path, int64_t max_inode)
+{
+    if(path == NULL || max_inode <= 0) { return NULL; }
+    return bad_query_list((char *)path, max_inode);
+}
+
+bool litter_bad_query_release_handle(int64_t handle)
+{
+    NSNumber *number = @(handle);
+    @synchronized(LBNBadQueryHandles())
+    {
+        if(![LBNBadQueryHandles() containsObject:number]) { return false; }
+        [LBNBadQueryHandles() removeObject:number];
+    }
+    bad_query_release(handle);
+    return true;
+}
+
+uint64_t litter_bad_query_release_all(void)
+{
+    NSArray<NSNumber *> *handles = nil;
+    @synchronized(LBNBadQueryHandles())
+    {
+        handles = LBNBadQueryHandles().allObjects;
+        [LBNBadQueryHandles() removeAllObjects];
+    }
+    for(NSNumber *number in handles) { bad_query_release(number.longLongValue); }
+    return (uint64_t)handles.count;
+}
+
 static NSArray<NSString *> *LBNBadQueryTokens(NSString *args)
 {
     NSMutableArray<NSString *> *tokens = [NSMutableArray array];
@@ -168,8 +219,7 @@ static char *LBNRunBadQuery(NSString *args)
 
     if([operation isEqualToString:@"status"])
     {
-        NSUInteger count = 0;
-        @synchronized(LBNBadQueryHandles()) { count = LBNBadQueryHandles().count; }
+        uint64_t count = litter_bad_query_active_handle_count();
         NSString *log = [NSString stringWithFormat:
             @"BadQuery native runtime\nupstream=forcequitOS/bad_query\ncommit=%s\nactiveHandles=%lu\n",
             BAD_QUERY_UPSTREAM_COMMIT, (unsigned long)count];
@@ -187,10 +237,10 @@ static char *LBNRunBadQuery(NSString *args)
         BOOL create = [tokens containsObject:@"--create"];
         BOOL isGroup = [tokens containsObject:@"--is-group"];
         NSString *groupID = LBNBadQueryOption(tokens, @"--group-id");
-        int64_t handle = bad_query(
-            (char *)path.fileSystemRepresentation,
+        int64_t handle = litter_bad_query_acquire(
+            path.fileSystemRepresentation,
             create,
-            groupID.length > 0 ? (char *)groupID.UTF8String : NULL,
+            groupID.length > 0 ? groupID.UTF8String : NULL,
             isGroup
         );
         if(handle < 0)
@@ -200,7 +250,6 @@ static char *LBNRunBadQuery(NSString *args)
                 path, create, groupID ?: @"(systemgroup default)", isGroup, handle, LBNBadQueryFailure(handle)];
             return LBNResponse(77, @"bad-query-denied", log);
         }
-        @synchronized(LBNBadQueryHandles()) { [LBNBadQueryHandles() addObject:@(handle)]; }
         NSString *log = [NSString stringWithFormat:
             @"BadQuery acquire succeeded\npath=%@\ncreate=%d\ngroupIdentifier=%@\nisGroup=%d\nhandle=%lld\n",
             path, create, groupID ?: @"(systemgroup default)", isGroup, handle];
@@ -217,7 +266,7 @@ static char *LBNRunBadQuery(NSString *args)
         {
             return LBNResponse(64, @"bad-query-usage", @"list requires --path /absolute/path [--max-inode N]\n");
         }
-        char *listing = bad_query_list((char *)path.fileSystemRepresentation, (int64_t)maxInode);
+        char *listing = litter_bad_query_list_copy(path.fileSystemRepresentation, (int64_t)maxInode);
         if(listing == NULL)
         {
             return LBNResponse(74, @"bad-query-list-failed",
@@ -243,23 +292,16 @@ static char *LBNRunBadQuery(NSString *args)
         {
             return LBNResponse(66, @"bad-query-handle-not-found", @"release requires a live handle returned by this BadQuery runtime\n");
         }
-        bad_query_release((int64_t)parsed);
-        @synchronized(LBNBadQueryHandles()) { [LBNBadQueryHandles() removeObject:handleNumber]; }
+        litter_bad_query_release_handle((int64_t)parsed);
         return LBNResponse(0, @"bad-query-released",
             [NSString stringWithFormat:@"Released BadQuery handle %lld\n", parsed]);
     }
 
     if([operation isEqualToString:@"release-all"])
     {
-        NSArray<NSNumber *> *handles = nil;
-        @synchronized(LBNBadQueryHandles())
-        {
-            handles = LBNBadQueryHandles().allObjects;
-            [LBNBadQueryHandles() removeAllObjects];
-        }
-        for(NSNumber *number in handles) { bad_query_release(number.longLongValue); }
+        uint64_t released = litter_bad_query_release_all();
         return LBNResponse(0, @"bad-query-released-all",
-            [NSString stringWithFormat:@"Released %lu BadQuery handles\n", (unsigned long)handles.count]);
+            [NSString stringWithFormat:@"Released %llu BadQuery handles\n", (unsigned long long)released]);
     }
 
     return LBNResponse(64, @"bad-query-usage", @"Unknown BadQuery operation. Run: bad-query help\n");
