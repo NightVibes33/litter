@@ -420,6 +420,25 @@ actor LitterBuildKit {
 
     private init() {}
 
+    func bootstrapBadQueryVerifiedRoots() {
+        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
+        let driver = Self.loadNativeDriver()
+        guard let handle = driver.handle,
+              let symbol = dlsym(handle, "litter_bad_query_refresh_verified_roots") else {
+            LLog.warn("bad-query", "verified-root probe unavailable", fields: [
+                "driverDiagnostics": driver.diagnostics.joined(separator: " | ")
+            ])
+            return
+        }
+        typealias ProbeFn = @convention(c) () -> Bool
+        let probe = unsafeBitCast(symbol, to: ProbeFn.self)
+        if probe() {
+            LLog.info("bad-query", "verified-root probe completed")
+        } else {
+            LLog.warn("bad-query", "verified-root probe did not run")
+        }
+    }
+
     func signKittyStorePlan(planJSON: String) async -> KittyStoreSigningResult {
         let buildID = "kittystore-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8))"
         let buildDir = "\(Self.buildRoot)/\(buildID)"
