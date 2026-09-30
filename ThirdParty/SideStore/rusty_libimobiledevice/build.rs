@@ -78,6 +78,10 @@ fn main() {
         // Search for where openssl-src placed my libs
         env::set_current_dir("../../").unwrap();
         let mut openssl_found = false;
+        // Cargo may build the normal OpenSSL dependency concurrently with this
+        // build script. Bound discovery so a missing vendored artifact cannot
+        // leave the KittyStore build waiting indefinitely.
+        let openssl_deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
         loop {
             for path in std::fs::read_dir(".").unwrap() {
                 let path = path.unwrap().path();
@@ -132,10 +136,17 @@ fn main() {
             if openssl_found {
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_secs(10));
+            if std::time::Instant::now() >= openssl_deadline {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
         if !openssl_found {
-            panic!("\nopenssl-src was not found, exiting\n");
+            panic!(
+                "vendored OpenSSL install was not found within 300 seconds in {} for target {};                  verify that openssl/vendored is enabled and its native build succeeded",
+                env::current_dir().unwrap().display(),
+                env::var("TARGET").unwrap()
+            );
         }
 
         // Clone the vendored libraries

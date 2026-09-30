@@ -41,3 +41,15 @@ It builds and uploads the IPA as an Actions artifact while skipping release
 creation and stable KittyStore/AltStore source updates. Push builds on main
 retain the existing publication behavior. Use `build_mode: full-sideload` on
 the integration branch to validate the embedded frameworks and KittyStore.
+
+SideStore's native build also had an unbounded loop searching for a vendored
+OpenSSL installation. Discovery now waits at most five minutes for Cargo's
+concurrent OpenSSL build, then reports the searched directory and target.
+This avoids indefinitely stalled KittyStore builds when OpenSSL is missing.
+
+Latest SideStore `0dd743f75afc358b0ba4a002feb5f19474492371` replaces AltSign with
+SideSign and updates minimuxer while removing several old native submodules.
+The existing embedded KittyStore still uses AltSign; replacing that snapshot
+alone would remove dependencies required by its current build. Migration of
+that signing boundary remains outstanding, as does Nyxian's coordinated newer
+compiler/LLVM API migration. Neither latest revision is marked integrated.
