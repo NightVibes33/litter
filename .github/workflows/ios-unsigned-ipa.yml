@@ -1243,6 +1243,14 @@ jobs:
             echo "::error::Embedded LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
             exit 1
           fi
+          if ! /usr/bin/nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_bad_query_upstream_commit'; then
+            echo "::error::Embedded LitterBuildKitNative.framework does not export the BadQuery revision marker" >&2
+            exit 1
+          fi
+          if ! /usr/bin/strings "$DRIVER" | /usr/bin/grep -q '73ef6da1adabef0982fd00e36cb85f21b8f8194a'; then
+            echo "::error::Embedded LitterBuildKitNative.framework does not contain pinned forcequitOS/bad_query revision 73ef6da1adabef0982fd00e36cb85f21b8f8194a" >&2
+            exit 1
+          fi
 
           is_buildkit_support_dylib_name() {
             case "$1" in
