@@ -153,9 +153,22 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/NXConsoleView.m",
-    "",
-    "NXConsoleView unused Swift import",
+    "\n".join([
+        "#import <UIKit/UIKit.h>",
+        "@interface LDETheme : NSObject",
+        "+ (nullable instancetype)current;",
+        "@property (nonatomic, readonly) UIColor *gutterHairlineColor;",
+        "@end",
+    ]),
+    "NXConsoleView theme bridge",
 )
+theme_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/CodeEditor/CodeEditor+Theme.swift")
+theme_text = theme_bridge.read_text()
+theme_before = "@objc class LDETheme: NSObject, Theme"
+theme_after = "@objc(LDETheme) class LDETheme: NSObject, Theme"
+if theme_before not in theme_text and theme_after not in theme_text:
+    raise SystemExit("Missing expected emexDE theme bridge declaration")
+theme_bridge.write_text(theme_text.replace(theme_before, theme_after))
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m",
     nxos_version_objc_shim,

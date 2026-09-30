@@ -34,6 +34,11 @@ class SwiftImportOverlayTests(unittest.TestCase):
             self.assertIn('@"arm64-apple-ios18.0"', project)
             self.assertIn('#import <MobileDevelopmentKit/MDKOSVersion.h>', target)
             self.assertIn('@interface NotificationServer : NSObject', userspace)
+            console = (workspace / 'ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/NXConsoleView.m').read_text()
+            theme = (workspace / 'ThirdParty/EmexDE/Source/Nyxian/UI/CodeEditor/CodeEditor+Theme.swift').read_text()
+            self.assertIn('@interface LDETheme : NSObject', console)
+            self.assertIn('UIColor *gutterHairlineColor', console)
+            self.assertIn('@objc(LDETheme) class LDETheme', theme)
 
 
 if __name__ == '__main__':
