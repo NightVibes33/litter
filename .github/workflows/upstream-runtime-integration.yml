@@ -42,6 +42,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build pkg-config libssl-dev libclang-dev protobuf-compiler
+      - name: Verify native deployment metadata parsing
+        run: python3 -m unittest discover -s tools/tests -p test_apple_native_deployment.py
       - name: Verify recorded dependency closure
         run: |
           python3 tools/scripts/verify-upstream-dependencies.py
@@ -94,6 +96,8 @@ jobs:
         with:
           xcode-version: '26.3'
       - uses: dtolnay/rust-toolchain@stable
+      - name: Verify native deployment metadata parsing
+        run: python3 -m unittest discover -s tools/tests -p test_apple_native_deployment.py
       - name: Build pinned device and simulator dependencies
         run: bash tools/scripts/build-next-minimuxer-native.sh
       - uses: actions/upload-artifact@v4
