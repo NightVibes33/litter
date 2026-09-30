@@ -85,3 +85,7 @@ resolution. The app's package versions are preserved.
 Networking dependency adaptation from `49bc1514` uses exact Iroh `1.0.3` and
 Russh `0.62.6`, including the new embedded TLS-root configuration API. With the
 new lockfile, all 767 shared-runtime tests pass (five live-host tests ignored).
+The signing adapter smoke test also creates a disposable local RSA identity,
+CMS provisioning profile, and compiled test app, then signs that app through
+the adapter and verifies its embedded profile, resource seal, and completed
+progress. It does not use user credentials or contact Apple's portal.
