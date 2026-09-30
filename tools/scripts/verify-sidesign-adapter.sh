@@ -28,7 +28,7 @@ PY
 cat > "$workspace/Tests/KittyStoreSigningSmokeTests/SigningBoundaryTests.swift" <<'SWIFT'
 import Foundation
 import Testing
-@testable import KittyStoreSigningSmoke
+import KittyStoreSigningSmoke
 
 @Test func rejectsInvalidSigningMaterialWithoutCreatingOutput() async throws {
     let appURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".app")

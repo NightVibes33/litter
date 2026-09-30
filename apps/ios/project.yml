@@ -616,7 +616,6 @@ targets:
         com.apple.BackgroundModes:
           enabled: true
     sources:
-      - path: Sources/KittyStoreSigning
       - path: Sources/Litter
         excludes:
           - AppIcon.icon/**
@@ -671,8 +670,6 @@ targets:
         product: Nuke
       - package: Nuke
         product: NukeUI
-      - package: SideSign
-        product: SideSign
       - package: AltSign
         product: AltSign-Dynamic
         embed: true

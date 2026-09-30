@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import SideStore
 
 #if canImport(AltSign)
 import AltSign

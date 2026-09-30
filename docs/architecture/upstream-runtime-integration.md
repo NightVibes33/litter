@@ -99,3 +99,7 @@ claiming full Nyxian compiler support.
 ### Unicorn deployment compatibility
 
 The pinned AnisetteKit release artifact contains iOS objects requiring iOS 26.5. KittyStore instead builds Unicorn source `a53ddc9ac6d65b24936d4a37917333fcd816cfd0` with the software interpreter for iOS 18 and macOS 12. AnisetteKit is imported at `db8b41022697b6c19be8a5f01a1ce834145a2a26` and consumes the generated local XCFramework. The build checks actual object deployment metadata; it does not relabel downloaded binaries. Run `36686776755` rebuilt all three platform slices, verified their object deployment targets, and passed five SideSign tests plus two adapter tests, including local app signing. The full iOS archive still needs independent validation.
+
+### Signer linkage ownership
+
+Full archive run `36686792856` rejected duplicate static SideSign linkage from Litter and SideStore. The SideStore framework now owns the signer and adapter; Litter calls its public data-only adapter and does not link SideSign directly. The adapter smoke tests import its module through the public boundary. Full archive validation must be repeated with this correction.

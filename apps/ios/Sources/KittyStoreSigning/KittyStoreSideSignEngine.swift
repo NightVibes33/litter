@@ -2,8 +2,8 @@ import Foundation
 import SideSign
 
 /// Keep the host's account and UI models stable while using SideStore's new signer.
-enum KittyStoreSideSignEngine {
-    static func sign(
+public enum KittyStoreSideSignEngine {
+    public static func sign(
         appURL: URL,
         teamIdentifier: String,
         teamName: String,
