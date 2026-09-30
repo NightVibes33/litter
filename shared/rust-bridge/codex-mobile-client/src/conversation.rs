@@ -1882,7 +1882,7 @@ fn stringify_json_value(value: &serde_json::Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_app_server_protocol::TurnStatus;
+    use codex_app_server_protocol::{TurnStatus, WebSearchItem, ImageGenerationItem};
     use std::collections::HashMap;
 
     fn test_abs_path(path: &str) -> codex_utils_absolute_path::AbsolutePathBuf {
@@ -1908,6 +1908,7 @@ mod tests {
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::UserMessage {
+                client_id: None,
                 id: "u1".into(),
                 content: vec![UserInput::Text {
                     text: "  Hello world  ".into(),
@@ -1933,6 +1934,7 @@ mod tests {
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::UserMessage {
+                client_id: None,
                 id: "u1".into(),
                 content: vec![UserInput::Text {
                     text: "   ".into(),
@@ -2061,7 +2063,7 @@ diff --git a/parser.rs b/parser.rs\n\
             vec![ThreadItem::CommandExecution {
                 id: "c1".into(),
                 command: "ls -la".into(),
-                cwd: test_abs_path("/tmp"),
+                cwd: test_abs_path("/tmp").into(),
                 process_id: Some("p1".into()),
                 source: Default::default(),
                 status: CommandExecutionStatus::Completed,
@@ -2117,7 +2119,7 @@ diff --git a/parser.rs b/parser.rs\n\
             vec![ThreadItem::CommandExecution {
                 id: "c1".into(),
                 command: "/bin/zsh -lc 'npm test'".into(),
-                cwd: test_abs_path("/tmp"),
+                cwd: test_abs_path("/tmp").into(),
                 process_id: None,
                 source: Default::default(),
                 status: CommandExecutionStatus::InProgress,
@@ -2191,6 +2193,7 @@ diff --git a/parser.rs b/parser.rs\n\
             make_turn(
                 "t1",
                 vec![ThreadItem::UserMessage {
+                    client_id: None,
                     id: "u1".into(),
                     content: vec![UserInput::Text {
                         text: "Hello".into(),
@@ -2231,6 +2234,8 @@ diff --git a/parser.rs b/parser.rs\n\
             "t-tools",
             vec![
                 ThreadItem::McpToolCall {
+                    app_context: None,
+                    plugin_id: None,
                     id: "mcp-1".into(),
                     server: "filesystem".into(),
                     tool: "read_file".into(),
@@ -2274,13 +2279,14 @@ diff --git a/parser.rs b/parser.rs\n\
                     agents_states: agent_states,
                 },
                 ThreadItem::WebSearch(WebSearchItem {
+                    results: None,
                     id: "web-1".into(),
                     query: "swiftui subagent cards".into(),
                     action: None,
                 }),
                 ThreadItem::ImageView {
                     id: "img-1".into(),
-                    path: test_abs_path("/tmp/screenshot.png"),
+                    path: test_abs_path("/tmp/screenshot.png").into(),
                 },
             ],
         )];
@@ -2390,6 +2396,8 @@ diff --git a/parser.rs b/parser.rs\n\
             "t-computer-use",
             vec![
                 ThreadItem::McpToolCall {
+                    app_context: None,
+                    plugin_id: None,
                     id: "cu-1".into(),
                     server: "computer-use".into(),
                     tool: "click".into(),
@@ -2419,6 +2427,8 @@ diff --git a/parser.rs b/parser.rs\n\
                 },
                 // Non-computer-use MCP should not populate the typed view.
                 ThreadItem::McpToolCall {
+                    app_context: None,
+                    plugin_id: None,
                     id: "other-1".into(),
                     server: "filesystem".into(),
                     tool: "read_file".into(),
@@ -2478,7 +2488,7 @@ diff --git a/parser.rs b/parser.rs\n\
                     status: "completed".into(),
                     revised_prompt: Some("a grumpy pirate kitty".into()),
                     result: png_base64.into(),
-                    saved_path: Some(test_abs_path("/tmp/ig-1.png")),
+                    saved_path: Some(test_abs_path("/tmp/ig-1.png").into()),
                 }),
                 // A still-streaming item should stay InProgress with no bytes.
                 ThreadItem::ImageGeneration(ImageGenerationItem {
@@ -2496,7 +2506,7 @@ diff --git a/parser.rs b/parser.rs\n\
                     status: "generating".into(),
                     revised_prompt: None,
                     result: png_base64.into(),
-                    saved_path: Some(test_abs_path("/tmp/ig-3.png")),
+                    saved_path: Some(test_abs_path("/tmp/ig-3.png").into()),
                 }),
             ],
         )];
@@ -2540,7 +2550,7 @@ diff --git a/parser.rs b/parser.rs\n\
             vec![ThreadItem::CommandExecution {
                 id: "cmd-1".into(),
                 command: long_command,
-                cwd: test_abs_path("/tmp"),
+                cwd: test_abs_path("/tmp").into(),
                 source: Default::default(),
                 status: CommandExecutionStatus::Completed,
                 command_actions: vec![CommandAction::Search {

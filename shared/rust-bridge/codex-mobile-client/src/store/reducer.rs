@@ -305,6 +305,24 @@ impl AppStoreReducer {
         self.emit(AppStoreUpdateRecord::ActiveThreadChanged { key: None });
     }
 
+    /// Whether a thread that is absent from an incoming `thread/list` page
+    /// should survive the reconcile anyway. Besides the active thread and
+    /// local-studio, never evict a thread we are actively using: one with an
+    /// in-flight turn, queued follow-ups, a staged local overlay, or one
+    /// created within the last minute. The brand-new-thread window matters
+    /// because a just-started OpenCode session may not appear in
+    /// `GET /session` until its first message lands; evicting it then causes
+    /// the first `turn/start` overlay and its streamed events to be dropped
+    /// (0xSero/litter#283).
+    fn keep_thread_absent_from_incoming_page(thread: &ThreadSnapshot) -> bool {
+        thread.active_turn_id.is_some()
+            || !thread.queued_follow_ups.is_empty()
+            || !thread.local_overlay_items.is_empty()
+            || thread.info.created_at.is_some_and(|created_at| {
+                created_at > 0 && (now_ms() as i64 / 1000).saturating_sub(created_at) < 60
+            })
+    }
+
     pub fn sync_thread_list(&self, server_id: &str, threads: &[ThreadInfo]) {
         self.sync_thread_list_for_runtime(server_id, "codex".to_string(), threads);
     }
@@ -329,10 +347,11 @@ impl AppStoreReducer {
         {
             let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
             let active_thread_key = snapshot.active_thread.clone();
-            snapshot.threads.retain(|key, _| {
+            snapshot.threads.retain(|key, thread| {
                 let keep = key.server_id != server_id
                     || incoming_ids.contains(&key.thread_id)
-                    || active_thread_key.as_ref() == Some(key);
+                    || active_thread_key.as_ref() == Some(key)
+                    || Self::keep_thread_absent_from_incoming_page(thread);
                 if !keep {
                     removed_thread_keys.push(key.clone());
                 }
@@ -487,10 +506,11 @@ impl AppStoreReducer {
         {
             let mut snapshot = self.snapshot.write().expect("app store lock poisoned");
             let active_thread_key = snapshot.active_thread.clone();
-            snapshot.threads.retain(|key, _| {
+            snapshot.threads.retain(|key, thread| {
                 let keep = key.server_id != server_id
                     || incoming_ids.contains(&key.thread_id)
-                    || active_thread_key.as_ref() == Some(key);
+                    || active_thread_key.as_ref() == Some(key)
+                    || Self::keep_thread_absent_from_incoming_page(thread);
                 if !keep {
                     removed_thread_keys.push(key.clone());
                 }
@@ -635,6 +655,7 @@ impl AppStoreReducer {
                 thread.is_resumed = thread.is_resumed || existing.is_resumed;
                 preserve_local_overlay_items(existing, &mut thread);
                 preserve_queued_follow_ups(existing, &mut thread);
+                preserve_live_tool_items(existing, &mut thread);
                 // Preserve existing items when the incoming snapshot has none
                 // (e.g. thread/read with include_turns=false).
                 if thread.items.is_empty() && !existing.items.is_empty() {
@@ -1529,6 +1550,10 @@ impl AppStoreReducer {
             UiEvent::TurnCompleted { key, turn_id, .. } => {
                 if self
                     .mutate_thread_with_result(key, |thread| {
+                        // A delayed completion must not terminate a newer turn.
+                        if thread.active_turn_id.as_ref().is_some_and(|id| id != turn_id) {
+                            return false;
+                        }
                         thread.active_turn_id = None;
                         thread.active_plan_progress = None;
                         thread.info.status = ThreadSummaryStatus::Idle;
@@ -1560,8 +1585,9 @@ impl AppStoreReducer {
                         {
                             thread.pending_plan_implementation_turn_id = Some(turn_id.to_string());
                         }
+                        true
                     })
-                    .is_some()
+                    .is_some_and(|changed| changed)
                 {
                     self.emit_thread_metadata_changed(key);
                 }
@@ -3320,6 +3346,74 @@ fn preserve_local_overlay_items(source: &ThreadSnapshot, target: &mut ThreadSnap
     }
 }
 
+fn preserve_live_tool_items(source: &ThreadSnapshot, target: &mut ThreadSnapshot) {
+    let incoming_ids: HashSet<&str> = target.items.iter().map(|item| item.id.as_str()).collect();
+    let missing = source
+        .items
+        .iter()
+        .enumerate()
+        .filter(|item| {
+            item.1.source_turn_id.is_none()
+                && is_tool_item(&item.1.content)
+                && !incoming_ids.contains(item.1.id.as_str())
+        })
+        .map(|(index, item)| (index, item.clone()))
+        .collect::<Vec<_>>();
+    for (source_index, item) in missing {
+        let next_anchor = source.items[source_index + 1..]
+            .iter()
+            .find_map(replay_anchor_key);
+        let insertion_index = next_anchor
+            .as_ref()
+            .and_then(|anchor| {
+                target
+                    .items
+                    .iter()
+                    .position(|candidate| replay_anchor_key(candidate).as_ref() == Some(anchor))
+            })
+            .or_else(|| {
+                target.items.iter().rposition(|candidate| {
+                    matches!(
+                        candidate.content,
+                        HydratedConversationItemContent::Assistant(ref data)
+                            if data.phase == Some(crate::types::AppMessagePhase::FinalAnswer)
+                    )
+                })
+            })
+            .unwrap_or(target.items.len());
+        target.items.insert(insertion_index, item);
+    }
+}
+
+fn replay_anchor_key(item: &HydratedConversationItem) -> Option<String> {
+    match &item.content {
+        HydratedConversationItemContent::User(data) => Some(format!(
+            "user:{}:{}",
+            data.text,
+            serde_json::to_string(&data.image_data_uris).unwrap_or_default()
+        )),
+        HydratedConversationItemContent::Assistant(data) => {
+            Some(format!("assistant:{}:{:?}", data.text, data.phase))
+        }
+        _ => None,
+    }
+}
+
+fn is_tool_item(content: &HydratedConversationItemContent) -> bool {
+    matches!(
+        content,
+        HydratedConversationItemContent::CommandExecution(_)
+            | HydratedConversationItemContent::FileChange(_)
+            | HydratedConversationItemContent::McpToolCall(_)
+            | HydratedConversationItemContent::DynamicToolCall(_)
+            | HydratedConversationItemContent::MultiAgentAction(_)
+            | HydratedConversationItemContent::WebSearch(_)
+            | HydratedConversationItemContent::ImageView(_)
+            | HydratedConversationItemContent::Widget(_)
+            | HydratedConversationItemContent::ImageGeneration(_)
+    )
+}
+
 fn duplicate_local_overlay_item_ids(thread: &ThreadSnapshot) -> Vec<String> {
     let active_turn_id = thread.active_turn_id.as_deref();
     thread
@@ -3739,6 +3833,50 @@ mod tests {
         let snapshot = reducer.snapshot();
         let server = snapshot.servers.get("srv").expect("server snapshot");
         assert_eq!(server.wake_mac.as_deref(), Some("aa:bb:cc:dd:ee:ff"));
+    }
+
+    #[test]
+    fn sync_thread_list_preserves_recently_created_thread_not_in_incoming_page() {
+        let reducer = AppStoreReducer::new();
+        let fresh_key = ThreadKey {
+            server_id: "srv".to_string(),
+            thread_id: "fresh".to_string(),
+        };
+        let mut info = make_thread_info("fresh");
+        info.created_at = Some((now_ms() / 1000) as i64);
+        reducer.upsert_thread_snapshot(ThreadSnapshot::from_info("srv", info));
+
+        // The incoming page does not include the just-created thread (e.g. a
+        // brand-new OpenCode session is not yet returned by GET /session).
+        reducer.sync_thread_list("srv", &[make_thread_info("other")]);
+
+        let snapshot = reducer.snapshot();
+        assert!(snapshot.threads.contains_key(&fresh_key));
+        assert!(snapshot.threads.contains_key(&ThreadKey {
+            server_id: "srv".to_string(),
+            thread_id: "other".to_string(),
+        }));
+    }
+
+    #[test]
+    fn sync_thread_list_evicts_old_inactive_thread_not_in_incoming_page() {
+        let reducer = AppStoreReducer::new();
+        let stale_key = ThreadKey {
+            server_id: "srv".to_string(),
+            thread_id: "stale".to_string(),
+        };
+        let mut info = make_thread_info("stale");
+        info.created_at = Some((now_ms() / 1000) as i64 - 3600);
+        reducer.upsert_thread_snapshot(ThreadSnapshot::from_info("srv", info));
+
+        reducer.sync_thread_list("srv", &[make_thread_info("other")]);
+
+        let snapshot = reducer.snapshot();
+        assert!(!snapshot.threads.contains_key(&stale_key));
+        assert!(snapshot.threads.contains_key(&ThreadKey {
+            server_id: "srv".to_string(),
+            thread_id: "other".to_string(),
+        }));
     }
 
     #[test]
@@ -4797,6 +4935,7 @@ mod tests {
         let _ = drain_updates(&mut update_receiver);
 
         let upstream_item = upstream::ThreadItem::UserMessage {
+            client_id: None,
             id: "server-user-item".to_string(),
             content: inputs.clone(),
         };
@@ -4841,6 +4980,10 @@ mod tests {
         // thread.turns. Build the equivalent ThreadSnapshot via the same
         // helper apply_thread_read_response uses, then upsert.
         let upstream_thread = upstream::Thread {
+            extra: None,
+            parent_thread_id: None,
+            history_mode: Default::default(),
+            recency_at: None,
             id: "thread-1".to_string(),
             session_id: "session-1".to_string(),
             forked_from_id: None,
@@ -4864,6 +5007,7 @@ mod tests {
                 id: "turn-1".to_string(),
                 status: upstream::TurnStatus::Completed,
                 items: vec![upstream::ThreadItem::UserMessage {
+                    client_id: None,
                     id: "server-user-item".to_string(),
                     content: inputs.clone(),
                 }],
@@ -4977,6 +5121,67 @@ mod tests {
             thread.info.preview.as_deref(),
             Some("First user message"),
             "existing preview should be preserved when incoming is None"
+        );
+    }
+
+    #[test]
+    fn upsert_thread_snapshot_preserves_live_tool_omitted_from_replay() {
+        let reducer = AppStoreReducer::new();
+        let key = ThreadKey {
+            server_id: "srv".to_string(),
+            thread_id: "thread".to_string(),
+        };
+        let item = |id: &str, content: HydratedConversationItemContent| {
+            HydratedConversationItem {
+                id: id.to_string(),
+                content,
+                source_turn_id: None,
+                source_turn_index: None,
+                timestamp: None,
+                is_from_user_turn_boundary: false,
+            }
+        };
+        let mut live = ThreadSnapshot::from_info("srv", make_thread_info("thread"));
+        live.items.push(item(
+            "tool",
+            HydratedConversationItemContent::CommandExecution(HydratedCommandExecutionData {
+                command: "create image".to_string(),
+                cwd: "/tmp".to_string(),
+                status: AppOperationStatus::Completed,
+                output: Some("done".to_string()),
+                exit_code: Some(0),
+                duration_ms: Some(1),
+                process_id: None,
+                actions: Vec::new(),
+            }),
+        ));
+        reducer.upsert_thread_snapshot(live);
+
+        let mut replay = ThreadSnapshot::from_info("srv", make_thread_info("thread"));
+        replay.items.push(item(
+            "final",
+            HydratedConversationItemContent::Assistant(HydratedAssistantMessageData {
+                text: "![image](/tmp/image.png)".to_string(),
+                agent_nickname: None,
+                agent_role: None,
+                phase: Some(crate::types::AppMessagePhase::FinalAnswer),
+            }),
+        ));
+        reducer.upsert_thread_snapshot(replay);
+
+        let thread = reducer
+            .snapshot()
+            .threads
+            .get(&key)
+            .cloned()
+            .expect("thread exists");
+        assert_eq!(
+            thread
+                .items
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["tool", "final"]
         );
     }
 

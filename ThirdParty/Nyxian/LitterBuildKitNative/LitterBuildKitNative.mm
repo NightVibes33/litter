@@ -2,6 +2,12 @@
 
 #include "LitterBuildKitNative.h"
 
+#ifdef LBN_ENABLE_BAD_QUERY
+extern "C" {
+#include "bad_query.h"
+}
+#endif
+
 #include <spawn.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +50,263 @@ static char *LBNResponse(int exitCode, NSString *status, NSString *log)
         @"log": log ?: @""
     });
 }
+
+#ifdef LBN_ENABLE_BAD_QUERY
+#ifndef BAD_QUERY_UPSTREAM_COMMIT
+#define BAD_QUERY_UPSTREAM_COMMIT "unknown"
+#endif
+
+static NSMutableSet<NSNumber *> *LBNBadQueryHandles(void)
+{
+    static NSMutableSet<NSNumber *> *handles = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        handles = [NSMutableSet set];
+    });
+    return handles;
+}
+
+uint64_t litter_bad_query_active_handle_count(void)
+{
+    @synchronized(LBNBadQueryHandles()) { return (uint64_t)LBNBadQueryHandles().count; }
+}
+
+int64_t litter_bad_query_acquire(const char *path, bool create, const char *group_identifier, bool is_group)
+{
+    if(path == NULL) { return -255; }
+    int64_t handle = bad_query(
+        (char *)path,
+        create,
+        group_identifier != NULL && group_identifier[0] != '\0' ? (char *)group_identifier : NULL,
+        is_group
+    );
+    if(handle >= 0)
+    {
+        @synchronized(LBNBadQueryHandles()) { [LBNBadQueryHandles() addObject:@(handle)]; }
+    }
+    return handle;
+}
+
+char *litter_bad_query_list_copy(const char *path, int64_t max_inode)
+{
+    if(path == NULL || max_inode <= 0) { return NULL; }
+    return bad_query_list((char *)path, max_inode);
+}
+
+bool litter_bad_query_release_handle(int64_t handle)
+{
+    NSNumber *number = @(handle);
+    @synchronized(LBNBadQueryHandles())
+    {
+        if(![LBNBadQueryHandles() containsObject:number]) { return false; }
+        [LBNBadQueryHandles() removeObject:number];
+    }
+    bad_query_release(handle);
+    return true;
+}
+
+uint64_t litter_bad_query_release_all(void)
+{
+    NSArray<NSNumber *> *handles = nil;
+    @synchronized(LBNBadQueryHandles())
+    {
+        handles = LBNBadQueryHandles().allObjects;
+        [LBNBadQueryHandles() removeAllObjects];
+    }
+    for(NSNumber *number in handles) { bad_query_release(number.longLongValue); }
+    return (uint64_t)handles.count;
+}
+
+static NSArray<NSString *> *LBNBadQueryTokens(NSString *args)
+{
+    NSMutableArray<NSString *> *tokens = [NSMutableArray array];
+    NSMutableString *current = [NSMutableString string];
+    unichar quote = 0;
+    BOOL escaping = NO;
+
+    for(NSUInteger index = 0; index < args.length; index++)
+    {
+        unichar character = [args characterAtIndex:index];
+
+        if(escaping)
+        {
+            [current appendFormat:@"%C", character];
+            escaping = NO;
+            continue;
+        }
+
+        if(character == '\\' && quote != '\'')
+        {
+            escaping = YES;
+            continue;
+        }
+
+        if(quote != 0)
+        {
+            if(character == quote)
+            {
+                quote = 0;
+            }
+            else
+            {
+                [current appendFormat:@"%C", character];
+            }
+            continue;
+        }
+
+        if(character == '\'' || character == '"')
+        {
+            quote = character;
+            continue;
+        }
+
+        if([[NSCharacterSet whitespaceAndNewlineCharacterSet] characterIsMember:character])
+        {
+            if(current.length > 0)
+            {
+                [tokens addObject:[current copy]];
+                [current setString:@""];
+            }
+            continue;
+        }
+
+        [current appendFormat:@"%C", character];
+    }
+
+    if(escaping) { [current appendString:@"\\"]; }
+    if(current.length > 0) { [tokens addObject:[current copy]]; }
+    return tokens;
+}
+
+static NSString *LBNBadQueryOption(NSArray<NSString *> *tokens, NSString *name)
+{
+    NSUInteger index = [tokens indexOfObject:name];
+    if(index == NSNotFound || index + 1 >= tokens.count) { return nil; }
+    return tokens[index + 1];
+}
+
+static NSString *LBNBadQueryFailure(int64_t code)
+{
+    switch(code)
+    {
+        case -255: return @"path must be absolute";
+        case -254: return @"target path does not exist";
+        case -1: return @"private container/sandbox symbols could not be loaded";
+        case -2: return @"container query could not be created";
+        case -3: return @"container query returned no result";
+        case -4: return @"kernel refused to issue a sandbox extension";
+        case -5: return @"path traversal string allocation failed";
+        default: return [NSString stringWithFormat:@"BadQuery returned %lld", code];
+    }
+}
+
+static char *LBNRunBadQuery(NSString *args)
+{
+    NSArray<NSString *> *tokens = LBNBadQueryTokens(args ?: @"");
+    NSString *operation = tokens.firstObject ?: @"help";
+    if([operation isEqualToString:@"help"] || [operation isEqualToString:@"--help"] || [operation isEqualToString:@"-h"])
+    {
+        NSString *usage =
+            @"Real forcequitOS/bad_query runtime\n"
+             "  bad-query status\n"
+             "  bad-query acquire --path /absolute/path [--create] [--group-id group.id] [--is-group]\n"
+             "  bad-query list --path /absolute/path --max-inode N\n"
+             "  bad-query release --handle N\n"
+             "  bad-query release-all\n"
+             "Sandbox-extension handles remain active in the Alley Cat process until released or the process exits.\n";
+        return LBNResponse(0, @"bad-query-help", usage);
+    }
+
+    if([operation isEqualToString:@"status"])
+    {
+        uint64_t count = litter_bad_query_active_handle_count();
+        NSString *log = [NSString stringWithFormat:
+            @"BadQuery native runtime\nupstream=forcequitOS/bad_query\ncommit=%s\nactiveHandles=%lu\n",
+            BAD_QUERY_UPSTREAM_COMMIT, (unsigned long)count];
+        return LBNResponse(0, @"bad-query-ready", log);
+    }
+
+    if([operation isEqualToString:@"acquire"])
+    {
+        NSString *path = LBNBadQueryOption(tokens, @"--path");
+        if(path.length == 0 && tokens.count > 1 && ![tokens[1] hasPrefix:@"-"]) { path = tokens[1]; }
+        if(path.length == 0 || ![path hasPrefix:@"/"])
+        {
+            return LBNResponse(64, @"bad-query-usage", @"acquire requires --path /absolute/path\n");
+        }
+        BOOL create = [tokens containsObject:@"--create"];
+        BOOL isGroup = [tokens containsObject:@"--is-group"];
+        NSString *groupID = LBNBadQueryOption(tokens, @"--group-id");
+        int64_t handle = litter_bad_query_acquire(
+            path.fileSystemRepresentation,
+            create,
+            groupID.length > 0 ? groupID.UTF8String : NULL,
+            isGroup
+        );
+        if(handle < 0)
+        {
+            NSString *log = [NSString stringWithFormat:
+                @"BadQuery acquire failed\npath=%@\ncreate=%d\ngroupIdentifier=%@\nisGroup=%d\nresult=%lld\nreason=%@\n",
+                path, create, groupID ?: @"(systemgroup default)", isGroup, handle, LBNBadQueryFailure(handle)];
+            return LBNResponse(77, @"bad-query-denied", log);
+        }
+        NSString *log = [NSString stringWithFormat:
+            @"BadQuery acquire succeeded\npath=%@\ncreate=%d\ngroupIdentifier=%@\nisGroup=%d\nhandle=%lld\n",
+            path, create, groupID ?: @"(systemgroup default)", isGroup, handle];
+        return LBNResponse(0, @"bad-query-acquired", log);
+    }
+
+    if([operation isEqualToString:@"list"])
+    {
+        NSString *path = LBNBadQueryOption(tokens, @"--path");
+        if(path.length == 0 && tokens.count > 1 && ![tokens[1] hasPrefix:@"-"]) { path = tokens[1]; }
+        NSString *maxText = LBNBadQueryOption(tokens, @"--max-inode");
+        long long maxInode = maxText.length > 0 ? maxText.longLongValue : 1000000LL;
+        if(path.length == 0 || ![path hasPrefix:@"/"] || maxInode <= 0)
+        {
+            return LBNResponse(64, @"bad-query-usage", @"list requires --path /absolute/path [--max-inode N]\n");
+        }
+        char *listing = litter_bad_query_list_copy(path.fileSystemRepresentation, (int64_t)maxInode);
+        if(listing == NULL)
+        {
+            return LBNResponse(74, @"bad-query-list-failed",
+                [NSString stringWithFormat:@"bad_query_list returned NULL\npath=%@\nmaxInode=%lld\n", path, maxInode]);
+        }
+        NSString *entries = [NSString stringWithUTF8String:listing] ?: @"";
+        free(listing);
+        NSString *log = [NSString stringWithFormat:
+            @"BadQuery inode enumeration\npath=%@\nmaxInode=%lld\n\n%@",
+            path, maxInode, entries];
+        return LBNResponse(0, @"bad-query-list", log);
+    }
+
+    if([operation isEqualToString:@"release"])
+    {
+        NSString *handleText = LBNBadQueryOption(tokens, @"--handle");
+        if(handleText.length == 0 && tokens.count > 1 && ![tokens[1] hasPrefix:@"-"]) { handleText = tokens[1]; }
+        long long parsed = handleText.longLongValue;
+        NSNumber *handleNumber = @(parsed);
+        BOOL tracked = NO;
+        @synchronized(LBNBadQueryHandles()) { tracked = [LBNBadQueryHandles() containsObject:handleNumber]; }
+        if(handleText.length == 0 || parsed < 0 || !tracked)
+        {
+            return LBNResponse(66, @"bad-query-handle-not-found", @"release requires a live handle returned by this BadQuery runtime\n");
+        }
+        litter_bad_query_release_handle((int64_t)parsed);
+        return LBNResponse(0, @"bad-query-released",
+            [NSString stringWithFormat:@"Released BadQuery handle %lld\n", parsed]);
+    }
+
+    if([operation isEqualToString:@"release-all"])
+    {
+        uint64_t released = litter_bad_query_release_all();
+        return LBNResponse(0, @"bad-query-released-all",
+            [NSString stringWithFormat:@"Released %llu BadQuery handles\n", (unsigned long long)released]);
+    }
+
+    return LBNResponse(64, @"bad-query-usage", @"Unknown BadQuery operation. Run: bad-query help\n");
+}
+#endif
 
 static NSDictionary *LBNParseRequest(const char *requestJSON, NSString **error)
 {
@@ -215,6 +478,13 @@ const char *litter_buildkit_run_json(const char *request_json)
             return LBNResponse(64, @"request-missing-fields", @"BuildKit native request requires command, buildDir, buildKitRoot, toolchainRoot, and sdkRoot.\n");
         }
 
+#ifdef LBN_ENABLE_BAD_QUERY
+        if([command isEqualToString:@"bad-query"])
+        {
+            return LBNRunBadQuery(args);
+        }
+#endif
+
         NSString *writeError = nil;
         NSString *requestDirectory = hostWorkDir.length > 0 ? hostWorkDir : buildDir;
         NSString *requestPath = LBNWriteRequestFile(request, requestDirectory, &writeError);
@@ -261,6 +531,15 @@ const char *litter_buildkit_run_json(const char *request_json)
         NSString *log = [NSString stringWithFormat:@"Runner: %@\nCommand: %@\nRequest: %@\n\n%@", runner, command, requestPath, output ?: @""];
         return LBNResponse(exitCode, status, log);
     }
+}
+
+const char *litter_bad_query_upstream_commit(void)
+{
+#ifdef LBN_ENABLE_BAD_QUERY
+    return BAD_QUERY_UPSTREAM_COMMIT;
+#else
+    return NULL;
+#endif
 }
 
 void litter_buildkit_free_string(const char *response_json)

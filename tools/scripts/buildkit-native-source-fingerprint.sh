@@ -13,6 +13,7 @@ import sys
 root = pathlib.Path(sys.argv[1])
 paths = [
     "ThirdParty/Nyxian/LitterBuildKitNative",
+    "ThirdParty/bad_query",
     "ThirdParty/Feather/Zsign-Package/src",
     "ThirdParty/Nyxian/MobileDevelopmentKit/Support",
     "ThirdParty/Nyxian/MobileDevelopmentKit/Tools",
@@ -59,6 +60,20 @@ for rel in files:
     digest.update(str(len(data)).encode("ascii"))
     digest.update(b"\0")
     digest.update(hashlib.sha256(data).hexdigest().encode("ascii"))
+    digest.update(b"\n")
+
+bad_query = root / "ThirdParty/bad_query"
+if bad_query.is_dir():
+    try:
+        revision = subprocess.check_output(
+            ["git", "-C", str(bad_query), "rev-parse", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        revision = ""
+    digest.update(b"ThirdParty/bad_query\0")
+    digest.update(revision.encode("ascii"))
     digest.update(b"\n")
 
 print(digest.hexdigest())

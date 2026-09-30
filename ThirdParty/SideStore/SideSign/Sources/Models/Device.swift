@@ -1,0 +1,191 @@
+//
+//  Device.swift
+//  SideSign
+//
+//  Created by Magesh K on 30/08/26.
+//  Copyright © 2026 SideSign. All rights reserved.
+//
+
+import Foundation
+
+public struct DeviceType: OptionSet, Sendable, Codable, Equatable, Hashable {
+    public let rawValue: Int
+
+    public static let iPhone     = DeviceType(rawValue: 1 << 1)
+    public static let iPad       = DeviceType(rawValue: 1 << 2)
+    public static let appleTV    = DeviceType(rawValue: 1 << 3)
+    public static let appleWatch = DeviceType(rawValue: 1 << 4)
+    public static let mac        = DeviceType(rawValue: 1 << 5)
+    public static let visionPro  = DeviceType(rawValue: 1 << 6)
+
+    public static let none: DeviceType = []
+    public static let all: DeviceType = [.iPhone, .iPad, .appleTV, .appleWatch, .mac, .visionPro]
+
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    public var displayName: String {
+        if contains(.iPhone)        { return "iPhone" }
+        if contains(.iPad)          { return "iPad" }
+        if contains(.appleTV)       { return "Apple TV" }
+        if contains(.appleWatch)    { return "Apple Watch" }
+        if contains(.mac)           { return "Mac" }
+        if contains(.visionPro)     { return "Apple Vision Pro" }
+        return "Device"
+    }
+}
+
+public struct Device: Sendable, Codable, Equatable, Hashable, Identifiable {
+    public var id: String { identifier }
+    public var name: String
+    public var identifier: String // UDID
+    public var type: DeviceType
+    public var osVersion: OperatingSystemVersion?
+    public var deviceID: String?
+    public var status: String?
+
+    public init(name: String, identifier: String, type: DeviceType, osVersion: OperatingSystemVersion? = nil, deviceID: String? = nil, status: String? = nil) {
+        self.name = name
+        self.identifier = identifier
+        self.type = type
+        self.osVersion = osVersion
+        self.deviceID = deviceID
+        self.status = status
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case identifier = "deviceNumber"
+        case deviceID = "deviceId"
+        case deviceClass
+        case status
+        case type
+        case osVersion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        self.identifier = try container.decodeIfPresent(String.self, forKey: .identifier) ?? ""
+        self.deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID)
+        self.status = try container.decodeIfPresent(String.self, forKey: .status)
+
+        if let directType = try? container.decodeIfPresent(DeviceType.self, forKey: .type) {
+            self.type = directType
+        } else {
+            let deviceClass = ((try? container.decodeIfPresent(String.self, forKey: .deviceClass)) ?? "iphone").lowercased()
+            switch deviceClass {
+            case "iphone":                        self.type = .iPhone
+            case "ipad":                          self.type = .iPad
+            case "tvos", "appletv":               self.type = .appleTV
+            case "watchos", "applewatch", "watch": self.type = .appleWatch
+            case "mac", "macos":                  self.type = .mac
+            case "visionos", "applevision", "xr": self.type = .visionPro
+            default:                              self.type = .none
+            }
+        }
+        self.osVersion = try? container.decodeIfPresent(OperatingSystemVersion.self, forKey: .osVersion)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(name, forKey: .name)
+        try container.encode(identifier, forKey: .identifier)
+        try container.encodeIfPresent(deviceID, forKey: .deviceID)
+        try container.encodeIfPresent(status, forKey: .status)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(osVersion, forKey: .osVersion)
+    }
+}
+
+#if canImport(Darwin)
+extension OperatingSystemVersion: @retroactive Equatable, @retroactive Hashable, @retroactive Codable, @retroactive Comparable, @retroactive LosslessStringConvertible, @retroactive CustomStringConvertible {
+    public static func == (lhs: OperatingSystemVersion, rhs: OperatingSystemVersion) -> Bool {
+        lhs.majorVersion == rhs.majorVersion &&
+        lhs.minorVersion == rhs.minorVersion &&
+        lhs.patchVersion == rhs.patchVersion
+    }
+
+    public static func < (lhs: OperatingSystemVersion, rhs: OperatingSystemVersion) -> Bool {
+        if lhs.majorVersion != rhs.majorVersion {
+            return lhs.majorVersion < rhs.majorVersion
+        }
+        if lhs.minorVersion != rhs.minorVersion {
+            return lhs.minorVersion < rhs.minorVersion
+        }
+        return lhs.patchVersion < rhs.patchVersion
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(majorVersion)
+        hasher.combine(minorVersion)
+        hasher.combine(patchVersion)
+    }
+
+    public init?(_ description: String) {
+        self.init(string: description)
+    }
+
+    public init?(string: String) {
+        let parts = string.split(separator: ".").compactMap { Int($0) }
+        guard !parts.isEmpty else { return nil }
+        self.init(
+            majorVersion: parts.indices.contains(0) ? parts[0] : 0,
+            minorVersion: parts.indices.contains(1) ? parts[1] : 0,
+            patchVersion: parts.indices.contains(2) ? parts[2] : 0
+        )
+    }
+
+    public var description: String {
+        "\(majorVersion).\(minorVersion).\(patchVersion)"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let str = try container.decode(String.self)
+        let parts = str.split(separator: ".").compactMap { Int($0) }
+        self.init(
+            majorVersion: parts.indices.contains(0) ? parts[0] : 0,
+            minorVersion: parts.indices.contains(1) ? parts[1] : 0,
+            patchVersion: parts.indices.contains(2) ? parts[2] : 0
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        let str = "\(majorVersion).\(minorVersion).\(patchVersion)"
+        try container.encode(str)
+    }
+}
+#else
+extension OperatingSystemVersion: @retroactive Comparable, @retroactive LosslessStringConvertible, @retroactive CustomStringConvertible {
+    public static func < (lhs: OperatingSystemVersion, rhs: OperatingSystemVersion) -> Bool {
+        if lhs.majorVersion != rhs.majorVersion {
+            return lhs.majorVersion < rhs.majorVersion
+        }
+        if lhs.minorVersion != rhs.minorVersion {
+            return lhs.minorVersion < rhs.minorVersion
+        }
+        return lhs.patchVersion < rhs.patchVersion
+    }
+
+    public init?(_ description: String) {
+        self.init(string: description)
+    }
+
+    public init?(string: String) {
+        let parts = string.split(separator: ".").compactMap { Int($0) }
+        guard !parts.isEmpty else { return nil }
+        self.init(
+            majorVersion: parts.indices.contains(0) ? parts[0] : 0,
+            minorVersion: parts.indices.contains(1) ? parts[1] : 0,
+            patchVersion: parts.indices.contains(2) ? parts[2] : 0
+        )
+    }
+
+    public var description: String {
+        "\(majorVersion).\(minorVersion).\(patchVersion)"
+    }
+}
+#endif

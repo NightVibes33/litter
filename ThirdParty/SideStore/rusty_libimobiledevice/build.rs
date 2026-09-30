@@ -2,12 +2,17 @@
 
 extern crate bindgen;
 
+#[path = "../native-dependencies.rs"]
+mod native_dependencies;
+
 use std::{env, fs::canonicalize, path::PathBuf};
 
 fn main() {
     // Tell cargo to invalidate the built crate whenever build files change
     println!("cargo:rerun-if-changed=wrapper.h");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=../native-dependencies.rs");
+    println!("cargo:rerun-if-changed=../NATIVE_DEPENDENCIES.json");
 
     ////////////////////////////
     //   BINDGEN GENERATION   //
@@ -73,6 +78,10 @@ fn main() {
         // Search for where openssl-src placed my libs
         env::set_current_dir("../../").unwrap();
         let mut openssl_found = false;
+        // Cargo may build the normal OpenSSL dependency concurrently with this
+        // build script. Bound discovery so a missing vendored artifact cannot
+        // leave the KittyStore build waiting indefinitely.
+        let openssl_deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
         loop {
             for path in std::fs::read_dir(".").unwrap() {
                 let path = path.unwrap().path();
@@ -127,10 +136,17 @@ fn main() {
             if openssl_found {
                 break;
             }
-            std::thread::sleep(std::time::Duration::from_secs(10));
+            if std::time::Instant::now() >= openssl_deadline {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
         if !openssl_found {
-            panic!("\nopenssl-src was not found, exiting\n");
+            panic!(
+                "vendored OpenSSL install was not found within 300 seconds in {} for target {};                  verify that openssl/vendored is enabled and its native build succeeded",
+                env::current_dir().unwrap().display(),
+                env::var("TARGET").unwrap()
+            );
         }
 
         // Clone the vendored libraries
@@ -357,15 +373,5 @@ fn autotools_host_for_target(target: &str) -> Option<&'static str> {
 }
 
 fn repo_setup(url: &str) {
-    let mut cmd = std::process::Command::new("git");
-    cmd.arg("clone");
-    cmd.arg("--depth=1");
-    cmd.arg(url);
-    cmd.output().unwrap();
-    env::set_current_dir(url.split('/').last().unwrap().replace(".git", "")).unwrap();
-    env::set_var("NOCONFIGURE", "1");
-    let mut cmd = std::process::Command::new("./autogen.sh");
-    let _ = cmd.output();
-    env::remove_var("NOCONFIGURE");
-    env::set_current_dir("..").unwrap();
+    native_dependencies::repo_setup(url);
 }

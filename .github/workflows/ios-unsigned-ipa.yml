@@ -3,6 +3,11 @@ name: Build Unsigned iOS IPA
 on:
   workflow_dispatch:
     inputs:
+      publish_release:
+        description: "Publish release and update app-source metadata"
+        required: true
+        default: false
+        type: boolean
       build_mode:
         description: "Build mode"
         required: true
@@ -16,6 +21,7 @@ on:
   push:
     branches:
       - main
+      - codex/upstream-runtime-dependencies
     paths:
       - 'Makefile'
       - 'Package.swift'
@@ -37,13 +43,17 @@ on:
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
       - 'tools/scripts/build-sidestore-minimuxer.sh'
+      - 'tools/scripts/build-kittystore-unicorn.sh'
+      - 'tools/scripts/verify-unicorn-deployment.py'
       - 'tools/scripts/prepare-emexde-corecompiler-artifacts.sh'
       - 'tools/scripts/patch-emexde-corecompiler-for-ios-ci.py'
       - 'tools/scripts/patch-ios-fast-device-project.py'
       - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
       - 'tools/scripts/vendor-nyxian.sh'
+      - 'tools/scripts/vendor-nyxian.py'
       - 'tools/scripts/verify-nyxian-source-import.sh'
+      - 'tools/scripts/verify-upstream-dependencies.py'
       - 'tools/scripts/verify-kittystore-integration.sh'
       - 'tools/scripts/verify-altstore-source.py'
       - 'tools/scripts/build-nyxian-buildkit-assets.sh'
@@ -84,6 +94,7 @@ jobs:
       # Only the manual nyxian-private lane embeds the private SDK/toolchain asset zip.
       LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'full-sideload' }}
       LITTER_NYXIAN_PRIVATE_BUILD: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
+      LITTER_EMEXDE_RELEASED_COMPILER: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload') && '1' || '0' }}
       LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
       LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
       LITTER_SKIP_ALLEYCAT_UPDATE: "1"
@@ -107,9 +118,13 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           swift --version
 
+      - name: Build compatible KittyStore emulator dependency
+        run: bash tools/scripts/build-kittystore-unicorn.sh
+
       - name: Verify Nyxian source import
         run: |
           set -euo pipefail
+          python3 tools/scripts/verify-upstream-dependencies.py
           tools/scripts/verify-nyxian-source-import.sh
 
       - name: Resolve emexDE Swift revision
@@ -592,7 +607,7 @@ jobs:
             ThirdParty/SideStore/minimuxer/generated
             ThirdParty/SideStore/minimuxer/target/libminimuxer-ios.a
             ~/.cargo/bin/bindgen
-          key: ios-minimuxer-bridge-v1-${{ runner.os }}-xcode26-ios18-${{ hashFiles('tools/scripts/build-sidestore-minimuxer.sh', 'ThirdParty/SideStore/minimuxer/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.toml', 'ThirdParty/SideStore/minimuxer/src/**', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.lock', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/src/**') }}
+          key: ios-minimuxer-bridge-v2-${{ runner.os }}-xcode26-ios18-${{ hashFiles('tools/scripts/build-sidestore-minimuxer.sh', 'ThirdParty/SideStore/NATIVE_DEPENDENCIES.json', 'ThirdParty/SideStore/native-dependencies.rs', 'ThirdParty/SideStore/rusty_libimobiledevice/**', 'ThirdParty/SideStore/plist_plus/**', 'ThirdParty/SideStore/minimuxer/Cargo.lock', 'ThirdParty/SideStore/minimuxer/Cargo.toml', 'ThirdParty/SideStore/minimuxer/src/**', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.lock', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml', 'ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/src/**') }}
 
       - name: Check KittyStore minimuxer bridge cache
         id: minimuxer_bridge_prebuilt
@@ -669,15 +684,15 @@ jobs:
           key: ${{ steps.minimuxer_bridge_cache.outputs.cache-primary-key }}
 
       - name: Restore emexDE CoreCompiler artifact cache
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1'
         id: emexde_corecompiler_cache
         uses: actions/cache/restore@v4
         with:
           path: ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs
-          key: ios-emexde-corecompiler-artifacts-v2-${{ runner.os }}-${{ steps.emexde_swift_revision.outputs.llvm_on_ios_sha }}-${{ steps.emexde_swift_revision.outputs.swift_branch }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.swift') }}
+          key: ios-emexde-corecompiler-artifacts-v2-${{ runner.os }}-${{ steps.emexde_swift_revision.outputs.llvm_on_ios_sha }}-${{ steps.emexde_swift_revision.outputs.swift_branch }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'docs/architecture/emexde-corecompiler-artifacts.json', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.swift') }}
 
       - name: Check emexDE CoreCompiler artifact cache
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1'
         id: emexde_corecompiler_prebuilt
         run: |
           set -euo pipefail
@@ -734,7 +749,7 @@ jobs:
           fi
 
       - name: Prepare emexDE CoreCompiler artifacts
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         env:
           EMEXDE_SWIFT_BRANCH: ${{ steps.emexde_swift_revision.outputs.swift_branch }}
           EMEXDE_SWIFT_LLVM_BRANCH: ${{ steps.emexde_swift_revision.outputs.swift_branch }}
@@ -743,7 +758,7 @@ jobs:
           time tools/scripts/prepare-emexde-corecompiler-artifacts.sh
 
       - name: Save emexDE CoreCompiler artifact cache
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1' && steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
           path: ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs
@@ -755,11 +770,21 @@ jobs:
           set -euo pipefail
           python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
 
-      - name: Patch emexDE CoreCompiler Swift frontend for unsigned CI
+      - name: Patch emexDE LiveProcess HOST_ENV declarations
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         run: |
           set -euo pipefail
+          python3 tools/scripts/patch-emexde-liveprocess-host-env.py
+
+      - name: Patch emexDE CoreCompiler Swift frontend for unsigned CI
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1'
+        run: |
+          set -euo pipefail
           python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
+
+      - name: Stage pinned upstream compiler and matching support libraries
+        if: env.LITTER_EMEXDE_RELEASED_COMPILER == '1'
+        run: python3 tools/scripts/stage-upstream-corecompiler.py
 
       - name: Patch fast unsigned device project
         if: env.LITTER_IOS_BUILD_MODE == 'fast-device' || env.LITTER_IOS_BUILD_MODE == 'release-device'
@@ -1225,6 +1250,14 @@ jobs:
             echo "::error::Embedded LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
             exit 1
           fi
+          if ! /usr/bin/nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_bad_query_upstream_commit'; then
+            echo "::error::Embedded LitterBuildKitNative.framework does not export the BadQuery revision marker" >&2
+            exit 1
+          fi
+          if ! /usr/bin/strings "$DRIVER" | /usr/bin/grep -q '73ef6da1adabef0982fd00e36cb85f21b8f8194a'; then
+            echo "::error::Embedded LitterBuildKitNative.framework does not contain pinned forcequitOS/bad_query revision 73ef6da1adabef0982fd00e36cb85f21b8f8194a" >&2
+            exit 1
+          fi
 
           is_buildkit_support_dylib_name() {
             case "$1" in
@@ -1598,7 +1631,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish unsigned IPA release asset
-        if: success()
+        if: success() && (github.event_name == 'push' || inputs.publish_release == true)
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           BUILD_MODE: ${{ env.LITTER_IOS_BUILD_MODE }}

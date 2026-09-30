@@ -31,7 +31,8 @@ bridge_replacements = {
 for before, after in bridge_replacements.items():
     if before not in bridge_text and after not in bridge_text:
         raise SystemExit(f"Missing expected emexDE terminal bridge declaration: {before}")
-    bridge_text = bridge_text.replace(before, after)
+    if after not in bridge_text:
+        bridge_text = bridge_text.replace(before, after)
 terminal_bridge.write_text(bridge_text)
 
 terminal_session = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/WindowServer/Session/NXWindowSessionTerminal.m")
@@ -62,7 +63,8 @@ os_version_replacements = {
 for before, after in os_version_replacements.items():
     if before not in os_version_text and after not in os_version_text:
         raise SystemExit(f"Missing expected emexDE NXOSVersion declaration: {before}")
-    os_version_text = os_version_text.replace(before, after)
+    if after not in os_version_text:
+        os_version_text = os_version_text.replace(before, after)
 os_version_bridge.write_text(os_version_text)
 
 notification_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/Project+NotificationServer.swift")
@@ -75,7 +77,8 @@ notification_replacements = {
 for before, after in notification_replacements.items():
     if before not in notification_text and after not in notification_text:
         raise SystemExit(f"Missing expected emexDE notification bridge declaration: {before}")
-    notification_text = notification_text.replace(before, after)
+    if after not in notification_text:
+        notification_text = notification_text.replace(before, after)
 notification_bridge.write_text(notification_text)
 
 application_management_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/Settings/ApplicationManagement.swift")
@@ -84,7 +87,9 @@ application_management_before = "class ApplicationManagementViewController: UITh
 application_management_after = "@objc(ApplicationManagementViewController) class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
 if application_management_before not in application_management_text and application_management_after not in application_management_text:
     raise SystemExit("Missing expected emexDE ApplicationManagementViewController declaration")
-application_management_bridge.write_text(application_management_text.replace(application_management_before, application_management_after))
+if application_management_after not in application_management_text:
+    application_management_text = application_management_text.replace(application_management_before, application_management_after)
+application_management_bridge.write_text(application_management_text)
 
 def replace_generated_swift_import(source_path, shim, label):
     source = Path(source_path)
@@ -112,6 +117,7 @@ notification_objc_shim = "\n".join([
 nxos_version_objc_shim = "\n".join([
     "#import <Foundation/Foundation.h>",
     "#import <MobileDevelopmentKit/MDKOSVersion.h>",
+    "#import <LindChain/IDEFoundation/NXBootstrap.h>",
     "@interface NXOSVersion : NSObject",
     "+ (NSArray<MDKOSVersion *> *)NXOSVersionSupportedBuildVersionsRaw;",
     "@end",
@@ -127,7 +133,7 @@ application_management_objc_shim = "\n".join([
 ])
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m",
-    notification_objc_shim,
+    notification_objc_shim + "\n#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>",
     "NXBootstrap notification bridge",
 )
 replace_generated_swift_import(
@@ -137,24 +143,45 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXTarget.m",
-    "",
-    "NXTarget unused Swift import",
+    "#import <MobileDevelopmentKit/MDKOSVersion.h>",
+    "NXTarget native SDK version declaration",
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEUserspaceManager.m",
-    "",
-    "PEUserspaceManager unused Swift import",
+    notification_objc_shim,
+    "PEUserspaceManager notification bridge",
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/NXConsoleView.m",
-    "",
-    "NXConsoleView unused Swift import",
+    "\n".join([
+        "#import <UIKit/UIKit.h>",
+        "@interface LDETheme : NSObject",
+        "+ (nullable instancetype)current;",
+        "@property (nonatomic, readonly) UIColor *gutterHairlineColor;",
+        "@end",
+    ]),
+    "NXConsoleView theme bridge",
 )
+theme_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/CodeEditor/CodeEditor+Theme.swift")
+theme_text = theme_bridge.read_text()
+theme_before = "@objc class LDETheme: NSObject, Theme"
+theme_after = "@objc(LDETheme) class LDETheme: NSObject, Theme"
+if theme_before not in theme_text and theme_after not in theme_text:
+    raise SystemExit("Missing expected emexDE theme bridge declaration")
+theme_bridge.write_text(theme_text.replace(theme_before, theme_after))
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m",
     nxos_version_objc_shim,
     "NXProject OS version bridge",
 )
+
+# The host supports iOS 18; compiled user projects must share that default target.
+project_source = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m")
+project_text = project_source.read_text()
+old_target, new_target = '@"apple-arm64-ios26.5"', '@"arm64-apple-ios18.0"'
+if old_target not in project_text and new_target not in project_text:
+    raise SystemExit("Missing expected Nyxian default compiler target")
+project_source.write_text(project_text.replace(old_target, new_target))
 
 cc_driver = Path("ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/CCDriver.cpp")
 cc_driver_text = cc_driver.read_text()

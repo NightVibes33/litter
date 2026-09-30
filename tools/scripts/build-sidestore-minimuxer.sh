@@ -34,6 +34,8 @@ esac
 require_cmd cargo
 require_cmd rustup
 require_cmd xcrun
+require_cmd git
+require_cmd autoreconf
 
 MIN_IOS="${LITTER_MINIMUXER_MIN_IOS:-18.0}"
 IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
@@ -118,6 +120,8 @@ if [ ! -f "$RUSTBRIDGE_ROOT/Cargo.toml" ]; then
   echo "error: KittyStore RustBridge source is missing: $RUSTBRIDGE_ROOT" >&2
   exit 1
 fi
+require_file "$MINIMUXER_ROOT/Cargo.lock"
+require_file "$RUSTBRIDGE_ROOT/Cargo.lock"
 
 rustup target add aarch64-apple-ios >/dev/null
 if [ "$SKIP_SIM" != "true" ]; then
@@ -131,7 +135,7 @@ mkdir -p "$RUSTBRIDGE_DEVICE_LIB_DIR/Headers"
 (
   cd "$RUSTBRIDGE_ROOT"
   echo "==> Building KittyStore RustBridge for iOS device"
-  cargo build --release --target aarch64-apple-ios
+  cargo build --locked --release --target aarch64-apple-ios
   cp target/aarch64-apple-ios/release/librust_bridge.a "$RUSTBRIDGE_DEVICE_LIB_DIR/librust_bridge.a"
 )
 require_file "$RUSTBRIDGE_DEVICE_LIB_DIR/librust_bridge.a"
@@ -253,13 +257,13 @@ MODULEMAP
 (
   cd "$MINIMUXER_ROOT"
   echo "==> Building KittyStore minimuxer for iOS device"
-  cargo build --release --target aarch64-apple-ios
+  cargo build --locked --release --target aarch64-apple-ios
   cp target/aarch64-apple-ios/release/libminimuxer.a target/libminimuxer-ios.a
 
   if [ "$SKIP_SIM" != "true" ]; then
     echo "==> Building KittyStore minimuxer for iOS simulator"
-    cargo build --release --target aarch64-apple-ios-sim
-    cargo build --release --target x86_64-apple-ios
+    cargo build --locked --release --target aarch64-apple-ios-sim
+    cargo build --locked --release --target x86_64-apple-ios
     lipo -create \
       -output target/libminimuxer-sim.a \
       target/aarch64-apple-ios-sim/release/libminimuxer.a \

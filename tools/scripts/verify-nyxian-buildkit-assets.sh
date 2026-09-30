@@ -82,7 +82,7 @@ if missing:
         print(f"- {rel}")
     raise SystemExit(1)
 capabilities = set(manifest.get("capabilities") or [])
-required_capabilities = {"clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports"}
+required_capabilities = {"clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports", "bad-query"}
 missing_capabilities = sorted(required_capabilities - capabilities)
 if missing_capabilities:
     print("error: BuildKit asset manifest is missing toolchain capability declarations:")
@@ -192,6 +192,14 @@ if [[ "$(uname -s)" = "Darwin" ]]; then
     /usr/bin/lipo -info "$DRIVER"
     if ! /usr/bin/nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'; then
       echo "error: LitterBuildKitNative.framework does not export litter_buildkit_run_json" >&2
+      exit 1
+    fi
+    if ! /usr/bin/nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_bad_query_upstream_commit'; then
+      echo "error: LitterBuildKitNative.framework does not export the BadQuery revision marker" >&2
+      exit 1
+    fi
+    if ! /usr/bin/strings "$DRIVER" | /usr/bin/grep -q '73ef6da1adabef0982fd00e36cb85f21b8f8194a'; then
+      echo "error: LitterBuildKitNative.framework does not contain the pinned BadQuery revision 73ef6da1adabef0982fd00e36cb85f21b8f8194a" >&2
       exit 1
     fi
     /usr/bin/otool -L "$DRIVER" | sed -n '1,30p'

@@ -10,6 +10,7 @@ PATCH_FILES=(
     # Older per-feature patches are kept for history but no longer apply cleanly
     # after the Astra Codex bridge bump.
     "$REPO_DIR/patches/codex/mobile-bridge-codex-astra.patch"
+    "$REPO_DIR/patches/codex/mobile-models-sol-terra.patch"
 )
 
 patch_already_upstreamed() {

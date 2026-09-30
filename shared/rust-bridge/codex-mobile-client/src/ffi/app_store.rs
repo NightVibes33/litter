@@ -45,6 +45,8 @@ mod tests {
     #[test]
     fn thread_item_parses_mcp_arguments_json() {
         let item = upstream::ThreadItem::McpToolCall {
+            app_context: None,
+            plugin_id: None,
             id: "mcp-1".into(),
             server: "filesystem".into(),
             tool: "read_file".into(),

@@ -1,0 +1,19 @@
+{
+  "repository": "NightVibes33/litter",
+  "releaseTag": "emexde-corecompiler",
+  "releaseId": 332263966,
+  "compilerAbiVerified": false,
+  "note": "Recorded existing CI support artifacts. Checksums establish reproducibility, not compatibility with the real Swift frontend or generated compiler headers.",
+  "assets": {
+    "CoreCompilerSupportLibs.tar.xz": {
+      "id": 434871738,
+      "size": 2626220,
+      "sha256": "2ddea2bcfde954160bd6da7f012e4fadc4219a9186870c7e10dc58de82fcb5fb"
+    },
+    "LLVM.xcframework.tar.xz": {
+      "id": 434910460,
+      "size": 39836168,
+      "sha256": "d642fb157c1c3107497035a32826f83d210cd947e47cadd822035d7cc1c66328"
+    }
+  }
+}

@@ -15,3 +15,26 @@
 	url = https://github.com/emexlab/Nyxian.git
 	branch = main
 	shallow = true
+[submodule "ThirdParty/SideStore/NativeDependencies/libplist"]
+	path = ThirdParty/SideStore/NativeDependencies/libplist
+	url = https://github.com/libimobiledevice/libplist.git
+[submodule "ThirdParty/SideStore/NativeDependencies/libimobiledevice-glue"]
+	path = ThirdParty/SideStore/NativeDependencies/libimobiledevice-glue
+	url = https://github.com/libimobiledevice/libimobiledevice-glue.git
+[submodule "ThirdParty/SideStore/NativeDependencies/libtatsu"]
+	path = ThirdParty/SideStore/NativeDependencies/libtatsu
+	url = https://github.com/libimobiledevice/libtatsu.git
+[submodule "ThirdParty/SideStore/NativeDependencies/libusbmuxd"]
+	path = ThirdParty/SideStore/NativeDependencies/libusbmuxd
+	url = https://github.com/libimobiledevice/libusbmuxd.git
+[submodule "ThirdParty/SideStore/NativeDependencies/libimobiledevice"]
+	path = ThirdParty/SideStore/NativeDependencies/libimobiledevice
+	url = https://github.com/libimobiledevice/libimobiledevice.git
+[submodule "ThirdParty/SideStore/Unicorn"]
+	path = ThirdParty/SideStore/Unicorn
+	url = https://github.com/mahee96/unicorn.git
+
+[submodule "ThirdParty/bad_query"]
+	path = ThirdParty/bad_query
+	url = https://github.com/forcequitOS/bad_query.git
+	shallow = true

@@ -1,69 +1,251 @@
 {
-  "originHash" : "8640d4afe991e1a726c9692e08cbdebd1f34daa2581757c0d2c2172dd321b38a",
-  "pins" : [
+  "originHash": "8640d4afe991e1a726c9692e08cbdebd1f34daa2581757c0d2c2172dd321b38a",
+  "pins": [
     {
-      "identity" : "hairball",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/dnakov/hairball.git",
-      "state" : {
-        "branch" : "main",
-        "revision" : "42d52f5a5aa788b49b02f96c682949478cf01e91"
+      "identity": "anisettekit",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/mahee96/AnisetteKit.git",
+      "state": {
+        "branch": "main",
+        "revision": "db8b41022697b6c19be8a5f01a1ce834145a2a26"
       }
     },
     {
-      "identity" : "highlightr",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/raspu/Highlightr.git",
-      "state" : {
-        "revision" : "05e7fcc63b33925cd0c1faaa205cdd5681e7bbef",
-        "version" : "2.3.0"
+      "identity": "codesignkit",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/mahee96/CodeSignKit.git",
+      "state": {
+        "branch": "main",
+        "revision": "d0c67710fda9a2646b9e829cb2cf443892728371"
       }
     },
     {
-      "identity" : "nuke",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/kean/Nuke.git",
-      "state" : {
-        "revision" : "83e19143355b02e9261edb2323b3e1e93287ebb9",
-        "version" : "12.9.0"
+      "identity": "gsacryptokit",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/mahee96/GSACryptoKit.git",
+      "state": {
+        "branch": "main",
+        "revision": "eae2590eaf17fe98ce9c76b3ec2bd42b780eb123"
       }
     },
     {
-      "identity" : "swift-cmark",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/swiftlang/swift-cmark.git",
-      "state" : {
-        "revision" : "5d9bdaa4228b381639fff09403e39a04926e2dbe",
-        "version" : "0.7.1"
+      "identity": "hairball",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/dnakov/hairball.git",
+      "state": {
+        "revision": "42d52f5a5aa788b49b02f96c682949478cf01e91"
       }
     },
     {
-      "identity" : "swift-markdown",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-markdown.git",
-      "state" : {
-        "revision" : "7d9a5ce307528578dfa777d505496bd5f544ad94",
-        "version" : "0.7.3"
+      "identity": "highlightr",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/raspu/Highlightr.git",
+      "state": {
+        "revision": "05e7fcc63b33925cd0c1faaa205cdd5681e7bbef",
+        "version": "2.3.0"
       }
     },
     {
-      "identity" : "swiftmath",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mgriebling/SwiftMath.git",
-      "state" : {
-        "revision" : "fa8244ed032f4a1ade4cb0571bf87d2f1a9fd2d7",
-        "version" : "1.7.3"
+      "identity": "keychainaccess",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/kishikawakatsumi/KeychainAccess.git",
+      "state": {
+        "revision": "e0c7eebc5a4465a3c4680764f26b7a61f567cdaf"
       }
     },
     {
-      "identity" : "webrtc",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/stasel/WebRTC.git",
-      "state" : {
-        "revision" : "e8b5efb9d921a7d3044d3928ae235b8846436e41",
-        "version" : "147.0.0"
+      "identity": "libdeflate",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/SideStore/libdeflate",
+      "state": {
+        "branch": "master",
+        "revision": "da6c7dae03b78dc71af973664575e4209786fbfe"
+      }
+    },
+    {
+      "identity": "markdownkit",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/bmoliveira/MarkdownKit.git",
+      "state": {
+        "revision": "5056f3305d3499f44d8815530d560b87082e0cf5",
+        "version": "1.7.1"
+      }
+    },
+    {
+      "identity": "nuke",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/kean/Nuke.git",
+      "state": {
+        "revision": "83e19143355b02e9261edb2323b3e1e93287ebb9",
+        "version": "12.9.0"
+      }
+    },
+    {
+      "identity": "runestone",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/emexlab/Runestone",
+      "state": {
+        "revision": "718e718ad6a5f53a71d8df91779752262a19d531"
+      }
+    },
+    {
+      "identity": "semanticversion",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/SwiftPackageIndex/SemanticVersion.git",
+      "state": {
+        "revision": "ea8eea9d89842a29af1b8e6c7677f1c86e72fa42",
+        "version": "0.4.0"
+      }
+    },
+    {
+      "identity": "starscream",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/daltoniam/Starscream.git",
+      "state": {
+        "revision": "c6bfd1af48efcc9a9ad203665db12375ba6b145a",
+        "version": "4.0.8"
+      }
+    },
+    {
+      "identity": "swift-argument-parser",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/apple/swift-argument-parser",
+      "state": {
+        "revision": "c5d11a805e765f52ba34ec7284bd4fcd6ba68615",
+        "version": "1.7.0"
+      }
+    },
+    {
+      "identity": "swift-asn1",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/apple/swift-asn1.git",
+      "state": {
+        "revision": "9f542610331815e29cc3821d3b6f488db8715517",
+        "version": "1.6.0"
+      }
+    },
+    {
+      "identity": "swift-cmark",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/swiftlang/swift-cmark.git",
+      "state": {
+        "revision": "5d9bdaa4228b381639fff09403e39a04926e2dbe",
+        "version": "0.7.1"
+      }
+    },
+    {
+      "identity": "swift-crypto",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/apple/swift-crypto.git",
+      "state": {
+        "revision": "bb4ba815dab96d4edc1e0b86d7b9acf9ff973a84",
+        "version": "4.3.1"
+      }
+    },
+    {
+      "identity": "swift-markdown",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/apple/swift-markdown.git",
+      "state": {
+        "revision": "7d9a5ce307528578dfa777d505496bd5f544ad94",
+        "version": "0.7.3"
+      }
+    },
+    {
+      "identity": "swiftmath",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/mgriebling/SwiftMath.git",
+      "state": {
+        "revision": "fa8244ed032f4a1ade4cb0571bf87d2f1a9fd2d7",
+        "version": "1.7.3"
+      }
+    },
+    {
+      "identity": "swiftterm",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/migueldeicaza/SwiftTerm",
+      "state": {
+        "revision": "8e7a1e154f470e19c709a00a8768df348ba5fc43",
+        "version": "1.13.0"
+      }
+    },
+    {
+      "identity": "tree-sitter",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/tree-sitter/tree-sitter",
+      "state": {
+        "revision": "98be227227af10cc7a269cb3ffb23686c0610b17",
+        "version": "0.20.9"
+      }
+    },
+    {
+      "identity": "tree-sitter-c",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/tree-sitter/tree-sitter-c.git",
+      "state": {
+        "revision": "7175a6dd5fc1cee660dce6fe23f6043d75af424a",
+        "version": "0.20.2"
+      }
+    },
+    {
+      "identity": "tree-sitter-cpp",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/tree-sitter/tree-sitter-cpp.git",
+      "state": {
+        "revision": "f41e1a044c8a84ea9fa8577fdd2eab92ec96de02",
+        "version": "0.23.4"
+      }
+    },
+    {
+      "identity": "tree-sitter-objc",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/tree-sitter-grammars/tree-sitter-objc.git",
+      "state": {
+        "revision": "181a81b8f23a2d593e7ab4259981f50122909fda"
+      }
+    },
+    {
+      "identity": "tree-sitter-swift",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/emexlab/tree-sitter-swift",
+      "state": {
+        "revision": "b787669ba973e5311234fad0aed2a03909281a5c"
+      }
+    },
+    {
+      "identity": "tree-sitter-xml",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/tree-sitter-grammars/tree-sitter-xml.git",
+      "state": {
+        "revision": "0d9a8099c963ed53e183425c1b47fa2622c8eaf7"
+      }
+    },
+    {
+      "identity": "uionboarding",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/emexlab/UIOnboarding",
+      "state": {
+        "revision": "a7f3fb04fcb2f2d2fc83cf6741b84fb506599644"
+      }
+    },
+    {
+      "identity": "webrtc",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/stasel/WebRTC.git",
+      "state": {
+        "revision": "e8b5efb9d921a7d3044d3928ae235b8846436e41",
+        "version": "147.0.0"
+      }
+    },
+    {
+      "identity": "zipfoundation",
+      "kind": "remoteSourceControl",
+      "location": "https://github.com/weichsel/ZIPFoundation.git",
+      "state": {
+        "revision": "22787ffb59de99e5dc1fbfe80b19c97a904ad48d",
+        "version": "0.9.20"
       }
     }
   ],
-  "version" : 3
+  "version": 3
 }

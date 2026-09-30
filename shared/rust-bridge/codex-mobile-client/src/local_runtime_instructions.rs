@@ -12,7 +12,11 @@ The shell tool is backed by a persistent iSH Alpine Linux fakefs, not the iOS ho
 - Use POSIX `/bin/sh` and Alpine/BusyBox userland expectations. Bash, zsh, and macOS tools may be absent unless installed in the fakefs.
 - Use Alpine's `apk` package manager when installing packages is necessary and permitted.
 - The iSH fakefs cannot see arbitrary iOS app sandbox paths such as `/var`, `/private`, `/Users`, `/Library`, `/System`, or `/Applications`. Work under fakefs paths such as `/root`, or app-provided bridge mounts such as `/mnt/apps` and `/root/.codex`.
-- Do not assume ios_system-specific behavior for local commands."#;
+- Unsigned Alley Cãt builds may expose a `bad-query` command. It bridges out of iSH into the real native forcequitOS/bad_query implementation compiled into LitterBuildKitNative; paths passed to it are iOS host paths, not fakefs paths.
+- BadQuery is an AlleyCat host-runtime capability, not a Codex-owned exploit or authorization mechanism. The `bad-query` command is a compatibility/debug frontend to the native host runtime.
+- Do not add BadQuery-specific shell approval policy. Apply the same generic shell/tool policy that applies to other AlleyCat host-runtime commands.
+- A successful `bad-query acquire` returns a real process-wide sandbox-extension handle owned by the AlleyCat process. Keep it only as long as needed and release it explicitly; process exit also drops it.
+- Do not assume ios_system-specific behavior for other local commands."#;
 
 pub(crate) fn splice_local_runtime_developer_instructions(
     client: &MobileClient,
@@ -108,6 +112,19 @@ mod tests {
 
         assert!(result.starts_with(IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS));
         assert!(result.ends_with("keep this"));
+    }
+
+    #[test]
+    fn bad_query_instructions_describe_host_runtime_ownership() {
+        assert!(IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS.contains(
+            "BadQuery is an AlleyCat host-runtime capability"
+        ));
+        assert!(IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS.contains(
+            "Do not add BadQuery-specific shell approval policy"
+        ));
+        assert!(!IOS_LOCAL_RUNTIME_DEVELOPER_INSTRUCTIONS.contains(
+            "Before every `bad-query acquire`"
+        ));
     }
 
     #[test]

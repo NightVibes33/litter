@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "dependencies": {
+    "libplist": {
+      "repository": "https://github.com/libimobiledevice/libplist.git",
+      "commit": "fe3dc34dc3484006e12b403f7ceb06f0ad40b6f4"
+    },
+    "libimobiledevice-glue": {
+      "repository": "https://github.com/libimobiledevice/libimobiledevice-glue.git",
+      "commit": "da770a7687f35fbb981db4d7b47b1b032cd5c2c7"
+    },
+    "libtatsu": {
+      "repository": "https://github.com/libimobiledevice/libtatsu.git",
+      "commit": "e7d6ad13ef928aa609d0ccdfc586f7d6e8e049bf"
+    },
+    "libusbmuxd": {
+      "repository": "https://github.com/libimobiledevice/libusbmuxd.git",
+      "commit": "93eb168bf6b07472d17781328c21df0c60300524"
+    },
+    "libimobiledevice": {
+      "repository": "https://github.com/libimobiledevice/libimobiledevice.git",
+      "commit": "fa0f79190142bc309307967c058f89c1b36eb6b8"
+    }
+  }
+}

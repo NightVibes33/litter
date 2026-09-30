@@ -281,20 +281,40 @@ private extension ResignAppOperation
     
     func resignAppBundle(at fileURL: URL, team: ALTTeam, certificate: ALTCertificate, profiles: [ALTProvisioningProfile], completionHandler: @escaping (Result<URL, Error>) -> Void) -> Progress
     {
-        let signer = ALTSigner(team: team, certificate: certificate)
-        let progress = signer.signApp(at: fileURL, provisioningProfiles: profiles) { (success, error) in
-            do
-            {
-                try Result(success, error).get()
-                
+        let progress = Progress(totalUnitCount: 100)
+        let task = Task {
+            defer { progress.cancellationHandler = nil }
+            do {
+                try Task.checkCancellation()
+                guard let certificateP12 = certificate.p12Data() else {
+                    throw NSError(domain: "KittyStoreSigningBridge", code: 70,
+                                  userInfo: [NSLocalizedDescriptionKey: "The signing certificate has no exportable private key."])
+                }
+                let teamType: String
+                switch team.type {
+                case .free: teamType = "free"
+                case .individual: teamType = "individual"
+                case .organization: teamType = "organization"
+                default: teamType = "unknown"
+                }
+                try await KittyStoreSideSignEngine.sign(
+                    appURL: fileURL,
+                    teamIdentifier: team.identifier,
+                    teamName: team.name,
+                    teamType: teamType,
+                    certificateP12: certificateP12,
+                    provisioningProfileData: profiles.map { $0.data },
+                    progress: progress
+                )
+                try Task.checkCancellation()
                 let ipaURL = try FileManager.default.zipAppBundle(at: fileURL)
                 completionHandler(.success(ipaURL))
-            }
-            catch
-            {
+            } catch {
                 completionHandler(.failure(error))
             }
         }
+        progress.cancellationHandler = { task.cancel() }
+        if progress.isCancelled { task.cancel() }
         
         return progress
     }

@@ -1,0 +1,128 @@
+name: Upstream runtime integration
+
+on:
+  pull_request:
+    paths:
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/**'
+      - 'ThirdParty/**'
+      - 'patches/codex/**'
+      - 'apps/ios/scripts/sync-codex.sh'
+      - 'apps/ios/Sources/KittyStoreSigning/**'
+      - 'tools/scripts/verify-sidesign-adapter.sh'
+      - 'tools/scripts/build-kittystore-unicorn.sh'
+      - 'tools/scripts/vendor-nyxian*'
+      - 'tools/scripts/verify-*'
+      - '.github/workflows/upstream-runtime-integration.yml'
+  workflow_dispatch:
+    inputs:
+      next_minimuxer_native_only:
+        description: Build and verify the next minimuxer native dependencies only
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: inputs.next_minimuxer_native_only != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build pkg-config libssl-dev libclang-dev protobuf-compiler
+      - name: Verify native deployment metadata parsing
+        run: python3 -m unittest discover -s tools/tests -p test_apple_native_deployment.py
+      - name: Verify compiler bridge overlay repeatability
+        run: python3 -m unittest discover -s tools/tests -p test_emexde_swift_import_overlay.py
+      - name: Verify recorded dependency closure
+        run: |
+          python3 tools/scripts/verify-upstream-dependencies.py
+          sh tools/scripts/verify-nyxian-source-import.sh
+          bash tools/scripts/verify-kittystore-integration.sh
+      - name: Apply reproducible mobile Codex patches
+        run: bash apps/ios/scripts/sync-codex.sh --recorded-gitlink
+      - name: Verify pinned native dependency checkout behavior
+        run: |
+          rustc --edition 2021 --test ThirdParty/SideStore/native-dependencies.rs -o /tmp/litter-native-dependency-tests
+          /tmp/litter-native-dependency-tests
+      - name: Verify tool lifecycle and model catalog
+        run: |
+          cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-slingshot --lib json_line_wire --locked
+          cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-slingshot --test mobile_model_catalog --locked
+      - name: Verify shared mobile runtime
+        run: cargo test --manifest-path shared/rust-bridge/Cargo.toml -p codex-mobile-client --lib --locked
+
+  sidesign:
+    if: inputs.next_minimuxer_native_only != true
+    name: Verify SideSign and KittyStore signing adapter
+    runs-on: macos-26-intel
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+      - uses: actions/cache/restore@v4
+        id: sidesign_cache
+        with:
+          path: ThirdParty/SideStore/SideSign/.build
+          key: sidesign-v1-${{ runner.os }}-xcode26.3-${{ hashFiles('ThirdParty/SideStore/SideSign/Package.swift') }}
+          restore-keys: sidesign-v1-${{ runner.os }}-xcode26.3-
+      - name: Build BadQuery-enabled native runtime smoke
+        run: |
+          set -euo pipefail
+          git submodule update --init --depth 1 ThirdParty/bad_query
+          test "$(git -C ThirdParty/bad_query rev-parse HEAD)" = "73ef6da1adabef0982fd00e36cb85f21b8f8194a"
+          out="$RUNNER_TEMP/LitterBuildKitNative.framework"
+          LITTER_BUILDKIT_NATIVE_MODE=runner \
+          LITTER_BUILDKIT_ENABLE_BAD_QUERY=1 \
+          LITTER_BUILDKIT_NATIVE_OUT_DIR="$out" \
+            bash tools/scripts/build-litter-buildkit-native.sh
+          test -f "$out/LitterBuildKitNative"
+          /usr/bin/nm -gU "$out/LitterBuildKitNative" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'
+          /usr/bin/nm -gU "$out/LitterBuildKitNative" | awk '{print $NF}' | grep -qx '_litter_bad_query_upstream_commit'
+          /usr/bin/strings "$out/LitterBuildKitNative" | /usr/bin/grep -q '73ef6da1adabef0982fd00e36cb85f21b8f8194a'
+          /usr/bin/lipo -info "$out/LitterBuildKitNative"
+
+      - name: Verify signer and host data boundary
+        run: bash tools/scripts/verify-sidesign-adapter.sh
+      - uses: actions/cache/save@v4
+        if: always() && steps.sidesign_cache.outputs.cache-hit != 'true'
+        with:
+          path: ThirdParty/SideStore/SideSign/.build
+          key: ${{ steps.sidesign_cache.outputs.cache-primary-key }}
+
+  next-minimuxer-native:
+    if: github.event_name == 'workflow_dispatch' && inputs.next_minimuxer_native_only == true
+    runs-on: macos-26-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify native deployment metadata parsing
+        run: python3 -m unittest discover -s tools/tests -p test_apple_native_deployment.py
+      - name: Build pinned device and simulator dependencies
+        run: bash tools/scripts/build-next-minimuxer-native.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: next-minimuxer-ios18-native
+          path: |
+            build/next-minimuxer-native/*.xcframework
+            build/next-minimuxer-native/BUILD_PROVENANCE.json
+            build/next-minimuxer-native/licenses/**
+          if-no-files-found: error

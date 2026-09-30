@@ -120,3 +120,44 @@ The repository uses Rust crates, Swift packages, Xcode/Apple SDK files, and othe
 ## Apple SDK Assets
 
 Apple iPhoneOS SDK files are not committed to this repository. They are resolved from Xcode on the private macOS build runner and packaged only into the private `LitterBuildKitAssets.zip` used by sideload builds.
+
+## Updated KittyStore Signing Dependencies
+
+- SideSign / SideStore contributors
+  - Upstream: https://github.com/SideStore/SideSign
+  - Vendored source: `ThirdParty/SideStore/SideSign`, revision `6b68651697f99791ef85404b7aea1891a26a285d`.
+  - Role: KittyStore signing engine, called through a public adapter owned by the SideStore framework.
+  - Upstream license declaration: GPL-3.0, retained in `ThirdParty/SideStore/SideSign/README.md`.
+- AnisetteKit / mahee96 and contributors
+  - Upstream: https://github.com/mahee96/AnisetteKit
+  - Vendored source: `ThirdParty/SideStore/AnisetteKit`, revision `db8b41022697b6c19be8a5f01a1ce834145a2a26`.
+  - License: AGPL-3.0, retained in `ThirdParty/SideStore/AnisetteKit/LICENSE`.
+- Unicorn Engine and contributors
+  - Pinned source fork: https://github.com/mahee96/unicorn at `a53ddc9ac6d65b24936d4a37917333fcd816cfd0`.
+  - Source: `ThirdParty/SideStore/Unicorn`; rebuilt for iOS 18 and macOS 12.
+  - Upstream license texts are retained in `COPYING`, `COPYING.LGPL2`, `COPYING_GLIB`, and nested component notices.
+- EMProxy / SideStore contributors
+  - Source build reference: https://github.com/SideStore/em_proxy at `6e117e140ca7cff4ff106bdefa18147552a0e592`.
+  - License: AGPL-3.0, retained by the pinned source build in its upstream `LICENSE`.
+- IDevice / Jackson Coxson and contributors
+  - Source build reference: https://github.com/SideStore/idevice at `3e55c8486b2057e40c1f74aaaa1155c82341cf76`.
+  - License: MIT, retained by the pinned source build in its upstream `LICENSE.txt`.
+
+Exact signing dependencies and local compatibility overlays are recorded in `ThirdParty/SideStore/SideSign/LITTER_IMPORT.json`, `ThirdParty/SideStore/AnisetteKit/LITTER_IMPORT.json`, and `ThirdParty/UPSTREAMS.md`. The next minimuxer graph is audited separately in `docs/architecture/minimuxer-next-dependency-audit.json` and has not replaced the current transport.
+
+## Released Nyxian Compiler
+
+The full device build stages only CoreCompiler and its 13 matching compiler support libraries from Nyxian release `0.11.4`, source revision `0c61cfb57ee3d85d96a7102132db4268bcaa1db3`. The original compiler implementation and library bytes are preserved. Exact archive identifiers, checksum, source dependency pins, and license sources are recorded in `docs/architecture/nyxian-released-compiler.json`.
+
+CoreCompiler's public source headers retain their MIT notices. Swift and LLVM license texts, including their LLVM exceptions, and cmark's component notices are retained in `docs/licenses/upstream-compiler` and copied into the staged compiler framework. The pinned source references for those notices are Swift `064859e41d68596f486c5d724401cb370f260409`, LLVM project `82cdc19fa54d566969527b56f587ea8ea30bef51`, and swift-cmark `924936d0427cb25a61169739a7660230bffa6ea6`.
+
+## BadQuery
+
+Alley Cãt's unsigned/private BuildKit runtime can compile the real forcequitOS BadQuery sandbox-escape PoC into `LitterBuildKitNative.framework`.
+
+- Upstream: https://github.com/forcequitOS/bad_query
+- Vendored path: `ThirdParty/bad_query` (git submodule)
+- Pinned commit: `73ef6da1adabef0982fd00e36cb85f21b8f8194a`
+- Runtime API retained from upstream: `bad_query`, `bad_query_list`, and `bad_query_release`.
+- Upstream describes the PoC as targeting iOS 26.0-26.6.1 and iOS 27.0 beta 4, with documented access to selected system/app container roots.
+- The pinned upstream snapshot does not contain a LICENSE file. Review upstream redistribution terms before distributing builds that contain this source.

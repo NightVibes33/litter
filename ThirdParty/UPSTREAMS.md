@@ -2,6 +2,20 @@
 
 These source drops are kept source-only. Generated build products, IPAs, provisioning profiles, certificates, and private assets are intentionally excluded.
 
+## Nyxian BuildKit source dependency closure
+
+- Source repository: https://github.com/ProjectNyxian/Nyxian.git
+- Pinned source commit: `d955607acf4e8112c28d1db01837fc3e11631de3`
+- Snapshot: `ThirdParty/Nyxian`
+- Recursive dependency inventory: `ThirdParty/Nyxian/.litter-submodules.txt`
+- LLVM-On-iOS: `e1387a4b485cd74e2027f7ff4c08c10dd2884803`
+- TrollStore source: `d11c04666a77435d1ac142af1b0b749214d60a9a`
+- TrollStore/ChOma source: `964023ddac2286ef8e843f90df64d44ac6a673df`
+- `LITTER_LOCAL_OVERLAYS.json` records the existing Alley Cãt compiler compatibility files preserved during import. These overlays must be rebased before advancing the source revision.
+- `LITTER_NYXIAN_IMPORT.json` is the current import record. `VENDOR_LOCK.json` describes a superseded focused import, including the separate `ThirdParty/LLVM-On-iOS` toolchain lane.
+- Source assets and nested dependency sources are included. The existing device OpenSSL slice is preserved; generated frameworks and signing credentials remain excluded.
+- The independently embedded emexDE module below remains pinned separately; its LLVM dependency is checked recursively by `make upstream-dependencies-verify`.
+
 ## Feather / Zsign
 
 - Feather reference repo: https://github.com/claration/Feather.git
@@ -69,7 +83,7 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 - plist_plus source version: `0.2.6`
 - plist_plus source path: `ThirdParty/SideStore/plist_plus`
 - libtatsu repo: https://github.com/libimobiledevice/libtatsu.git
-- libtatsu is cloned and built by the rusty_libimobiledevice build script.
+- libtatsu and the other native C libraries are pinned as submodules under `ThirdParty/SideStore/NativeDependencies`. Exact revisions are in `ThirdParty/SideStore/NATIVE_DEPENDENCIES.json`. The vendored rusty_libimobiledevice and plist_plus build scripts clone from those local pinned checkouts rather than fetching moving remote heads.
 - Minimuxer wrapper path: `ThirdParty/SideStore/MinimuxerWrapper.swift`
 - KittyStore layout reference files adapted from SideStore at the inspected commit:
   - `AltStore/TabBarController.swift`
@@ -99,3 +113,23 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 - Ghostty submodule path: `shared/third_party/ghostty`
 - Litter mobile embedding patch: `patches/ghostty/litter-mobile-embed.patch`
 - License: see `shared/third_party/ghostty/LICENSE` when the submodule is checked out.
+
+## SideSign signing engine
+
+- Imported from SideStore's new signing dependency at `6b68651697f99791ef85404b7aea1891a26a285d`.
+- Reference SideStore revision: `0dd743f75afc358b0ba4a002feb5f19474492371`.
+- Full signing-package source: `ThirdParty/SideStore/SideSign`.
+- Four upstream moving branches are replaced with the immutable revisions in the upstream `Package.resolved`; provenance and all six transitive package pins are recorded in `LITTER_IMPORT.json`.
+- The host retains its existing AltSign account/model boundary and current KittyStore UI. Signing uses SideSign through a data-only adapter shared by the host and embedded store; no account credentials or keychain schemas are migrated.
+
+KittyStore SideSign uses local AnisetteKit source pinned at `db8b41022697b6c19be8a5f01a1ce834145a2a26`. Its Unicorn dependency is recursively pinned at `a53ddc9ac6d65b24936d4a37917333fcd816cfd0` and rebuilt for iOS 18/macOS 12 using `tools/scripts/build-kittystore-unicorn.sh`. The upstream binary requires iOS 26.5 and is intentionally replaced by a source build with verified object deployment targets. Generated XCFrameworks are excluded from Git.
+
+## BadQuery
+
+- Source repository: https://github.com/forcequitOS/bad_query.git
+- Pinned source commit: `73ef6da1adabef0982fd00e36cb85f21b8f8194a`
+- Source path: `ThirdParty/bad_query` (git submodule)
+- Native integration: `ThirdParty/Nyxian/LitterBuildKitNative`
+- Build integration: `tools/scripts/build-litter-buildkit-native.sh`
+- Agent command: `bad-query` in unsigned Alley Cãt builds.
+- The runtime preserves upstream `bad_query(path, create, group_identifier, is_group)`, `bad_query_list(path, max_inode)`, and `bad_query_release(handle)` behavior. Agent runtime instructions require explicit user approval for each state-changing/access-granting BadQuery invocation.

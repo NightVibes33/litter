@@ -704,6 +704,10 @@ mod tests {
 
     fn test_upstream_thread(id: &str) -> upstream::Thread {
         upstream::Thread {
+            extra: None,
+            parent_thread_id: None,
+            history_mode: Default::default(),
+            recency_at: None,
             id: id.to_string(),
             session_id: format!("session-{id}"),
             forked_from_id: None,
@@ -744,7 +748,7 @@ mod tests {
 
         let response = upstream::GetAccountResponse {
             account: Some(upstream::Account::Chatgpt {
-                email: "user@example.com".into(),
+                email: Some("user@example.com".into()),
                 plan_type: codex_protocol::account::PlanType::Pro,
             }),
             requires_openai_auth: true,
@@ -781,7 +785,9 @@ mod tests {
         );
 
         let response = upstream::GetAccountRateLimitsResponse {
+            rate_limit_reset_credits: None,
             rate_limits: upstream::RateLimitSnapshot {
+                individual_limit: None,
                 limit_id: Some("primary".to_string()),
                 limit_name: Some("Primary".to_string()),
                 primary: Some(upstream::RateLimitWindow {
@@ -840,6 +846,7 @@ mod tests {
 
         let response = upstream::ModelListResponse {
             data: vec![upstream::Model {
+                default_service_tier: None,
                 id: "gpt-5.4".to_string(),
                 model: "gpt-5.4".to_string(),
                 upgrade: None,
@@ -1297,6 +1304,7 @@ mod tests {
             ServerHealthSnapshot::Connected,
         );
         let response = upstream::ThreadStartResponse {
+            multi_agent_mode: Default::default(),
             thread: test_upstream_thread("thread-1"),
             model: "gpt-5".to_string(),
             model_provider: "openai".to_string(),
@@ -1402,6 +1410,7 @@ mod tests {
             id: "turn-1".to_string(),
             status: upstream::TurnStatus::Completed,
             items: vec![upstream::ThreadItem::UserMessage {
+                client_id: None,
                 id: "server-user-item".to_string(),
                 content: vec![upstream::UserInput::Text {
                     text: "hi".to_string(),

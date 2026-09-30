@@ -597,6 +597,11 @@ ish-dev-random:
 nyxian-vendor:
 	@tools/scripts/vendor-nyxian.sh
 
+upstream-dependencies-verify:
+	@python3 tools/scripts/verify-upstream-dependencies.py
+
+.PHONY: upstream-dependencies-verify
+
 nyxian-source-verify:
 	@tools/scripts/verify-nyxian-source-import.sh
 

@@ -485,6 +485,38 @@ mod mobile_client_tests {
     }
 
     #[test]
+    fn turn_interrupt_routes_to_owning_runtime_not_codex() {
+        let client = MobileClient::new();
+        let key = ThreadKey {
+            server_id: "srv".to_string(),
+            thread_id: "thread-opencode".to_string(),
+        };
+        client
+            .app_store
+            .upsert_thread_snapshot(ThreadSnapshot::from_info(
+                &key.server_id,
+                make_thread_info(&key.thread_id),
+            ));
+        client.note_thread_runtime(key.clone(), "opencode".to_string());
+
+        let request = upstream::ClientRequest::TurnInterrupt {
+            request_id: upstream::RequestId::Integer(crate::next_request_id()),
+            params: upstream::TurnInterruptParams {
+                thread_id: key.thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+            },
+        };
+        // Regression for 0xSero/litter#283: turn/interrupt must be routed to
+        // the runtime that owns the thread, not the default "codex" channel
+        // (which yields `server error -32600: thread not found` on
+        // multi-runtime hosts).
+        assert_eq!(
+            client.runtime_for_request(&key.server_id, &request),
+            "opencode".to_string()
+        );
+    }
+
+    #[test]
     fn thread_runtime_infers_claude_from_existing_thread_model_provider() {
         let client = MobileClient::new();
         let key = ThreadKey {
@@ -1671,5 +1703,167 @@ mod mobile_client_tests {
 
         assert_eq!(preview.kind, AppQueuedFollowUpKind::PendingSteer);
         assert_eq!(preview.text, "Please try the same search again.");
+    }
+
+    fn interrupt_test_params(thread_id: &str, text: &str) -> upstream::TurnStartParams {
+        upstream::TurnStartParams {
+            additional_context: None,
+            client_user_message_id: None,
+            multi_agent_mode: None,
+            thread_id: thread_id.to_string(),
+            input: vec![upstream::UserInput::Text {
+                text: text.to_string(),
+                text_elements: Vec::new(),
+            }],
+            responsesapi_client_metadata: None,
+            cwd: None,
+            runtime_workspace_roots: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
+            environments: None,
+            permissions: None,
+            model: None,
+            service_tier: None,
+            effort: None,
+            summary: None,
+            personality: None,
+            output_schema: None,
+            collaboration_mode: None,
+        }
+    }
+
+    /// Returns a client whose thread has an in-progress `turn-1`, plus the
+    /// log of RPC method names the fake host received.
+    fn client_with_running_turn() -> (MobileClient, ThreadKey, Arc<StdMutex<Vec<String>>>) {
+        let client = MobileClient::new();
+        let server_id = "srv";
+        let key = ThreadKey {
+            server_id: server_id.to_string(),
+            thread_id: "thread-1".to_string(),
+        };
+        let config = make_server_config(server_id);
+        client
+            .app_store
+            .upsert_server(&config, ServerHealthSnapshot::Connected);
+        let mut thread = ThreadSnapshot::from_info(server_id, make_thread_info("thread-1"));
+        thread.model = Some("gpt-5".to_string());
+        client.app_store.upsert_thread_snapshot(thread);
+        client.app_store.apply_ui_event(&UiEvent::TurnStarted {
+            key: key.clone(),
+            turn_id: "turn-1".to_string(),
+        });
+
+        let calls = Arc::new(StdMutex::new(Vec::<String>::new()));
+        let handler: TestRequestHandler = {
+            let calls = Arc::clone(&calls);
+            Arc::new(move |request| {
+                calls.lock().unwrap().push(request.method().to_string());
+                match request {
+                    upstream::ClientRequest::TurnStart { .. } => {
+                        serde_json::to_value(upstream::TurnStartResponse {
+                            turn: upstream::Turn {
+                                id: "turn-2".to_string(),
+                                items: Vec::new(),
+                                status: upstream::TurnStatus::InProgress,
+                                error: None,
+                                started_at: None,
+                                completed_at: None,
+                                duration_ms: None,
+                                items_view: upstream::TurnItemsView::default(),
+                            },
+                        })
+                        .map_err(|error| RpcError::Deserialization(error.to_string()))
+                    }
+                    other => Err(RpcError::Deserialization(format!(
+                        "unexpected request in test: {}",
+                        other.method()
+                    ))),
+                }
+            })
+        };
+        let session = Arc::new(ServerSession::test_stub_with_handlers(
+            config,
+            Some(handler),
+            None,
+            None,
+        ));
+        client
+            .sessions
+            .write()
+            .unwrap()
+            .insert(server_id.to_string(), session);
+        (client, key, calls)
+    }
+
+    #[tokio::test]
+    async fn send_while_turn_still_marked_active_is_silently_queued() {
+        // Reproduces the bug: a bridge that never sends turn/completed after
+        // an interrupt leaves `active_turn_id` set, so the next send is only
+        // parked as a queued follow-up and no turn/start reaches the host.
+        let (client, key, calls) = client_with_running_turn();
+        client
+            .start_turn("srv", interrupt_test_params("thread-1", "again"))
+            .await
+            .expect("send");
+        assert!(calls.lock().unwrap().iter().all(|m| m != "turn/start"));
+        assert_eq!(
+            client.snapshot_thread(&key).unwrap().queued_follow_up_drafts.len(),
+            1
+        );
+    }
+
+    async fn assert_send_after_interrupt_starts_new_turn(with_completion_event: bool) {
+        let (client, key, calls) = client_with_running_turn();
+        // Successful turn/interrupt response.
+        client.mark_turn_interrupted_locally("srv", "thread-1", "turn-1");
+        if with_completion_event {
+            client.app_store.apply_ui_event(&UiEvent::TurnCompleted {
+                key: key.clone(),
+                turn_id: "turn-1".to_string(),
+                error: None,
+            });
+        }
+        let thread = client.snapshot_thread(&key).unwrap();
+        assert_eq!(thread.active_turn_id, None);
+        assert_eq!(thread.info.status, ThreadSummaryStatus::Idle);
+
+        client
+            .start_turn("srv", interrupt_test_params("thread-1", "again"))
+            .await
+            .expect("send");
+        assert_eq!(calls.lock().unwrap().as_slice(), ["turn/start"]);
+        assert!(
+            client
+                .snapshot_thread(&key)
+                .unwrap()
+                .queued_follow_up_drafts
+                .is_empty()
+        );
+
+        // A late completion for the interrupted turn must not end turn-2.
+        client.app_store.apply_ui_event(&UiEvent::TurnStarted {
+            key: key.clone(),
+            turn_id: "turn-2".to_string(),
+        });
+        client.app_store.apply_ui_event(&UiEvent::TurnCompleted {
+            key: key.clone(),
+            turn_id: "turn-1".to_string(),
+            error: None,
+        });
+        assert_eq!(
+            client.snapshot_thread(&key).unwrap().active_turn_id.as_deref(),
+            Some("turn-2")
+        );
+    }
+
+    #[tokio::test]
+    async fn send_after_interrupt_without_completion_event_starts_new_turn() {
+        assert_send_after_interrupt_starts_new_turn(false).await;
+    }
+
+    #[tokio::test]
+    async fn send_after_interrupt_with_completion_event_starts_new_turn() {
+        assert_send_after_interrupt_starts_new_turn(true).await;
     }
 }

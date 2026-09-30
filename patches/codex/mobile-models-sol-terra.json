@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/openai/codex",
+  "commit": "90abcfac02665ad882853a04155591cd863b2ca7",
+  "sourcePath": "codex-rs/models-manager/models.json",
+  "models": [
+    "gpt-6.1-sol",
+    "gpt-5.6-terra"
+  ],
+  "basePatch": "mobile-bridge-codex-astra.patch",
+  "compatibilityAdaptations": [
+    "Populate mandatory base_instructions from upstream instructions_template for the pinned Codex schema.",
+    "Preserve existing Astra default and Terra picker priority while adding Sol 6.1."
+  ]
+}

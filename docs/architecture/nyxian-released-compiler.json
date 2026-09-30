@@ -1,0 +1,57 @@
+{
+  "repository": "emexlab/Nyxian",
+  "releaseTag": "0.11.4",
+  "sourceRevision": "0c61cfb57ee3d85d96a7102132db4268bcaa1db3",
+  "llvmSourceRevision": "c2becf9cd633094221cbc37c487117344c8c8aae",
+  "swiftReleaseTag": "swift-6.3.3-RELEASE",
+  "releaseId": 386256319,
+  "assetId": 555023113,
+  "assetName": "Nyxian.ipa",
+  "assetSize": 111250101,
+  "assetSha256": "295fd286aa0ea56cde28a2c6a8a0a0d781c760243a9dad231b1129db9dc145d0",
+  "downloadUrl": "https://github.com/emexlab/Nyxian/releases/download/0.11.4/Nyxian.ipa",
+  "frameworkPrefix": "Payload/Nyxian.app/Frameworks/CoreCompiler.framework/",
+  "deviceOnly": true,
+  "maximumDeploymentTarget": "18.0",
+  "supportLibraryCount": 13,
+  "componentLicenseSources": [
+    {
+      "file": "Swift-LICENSE.txt",
+      "repository": "swiftlang/swift",
+      "revision": "064859e41d68596f486c5d724401cb370f260409",
+      "path": "LICENSE.txt",
+      "sha256": "770af8291f708538d8ff885a0bbc4e045cd700531741c4f99528d435c14d7f55"
+    },
+    {
+      "file": "LLVM-LICENSE.txt",
+      "repository": "swiftlang/llvm-project",
+      "revision": "82cdc19fa54d566969527b56f587ea8ea30bef51",
+      "path": "llvm/LICENSE.TXT",
+      "sha256": "8d85c1057d742e597985c7d4e6320b015a9139385cff4cbae06ffc0ebe89afee"
+    },
+    {
+      "file": "Cmark-COPYING.txt",
+      "repository": "swiftlang/swift-cmark",
+      "revision": "924936d0427cb25a61169739a7660230bffa6ea6",
+      "path": "COPYING",
+      "sha256": "c22e885f33b821bddb24cf007145e5540655b6c0f403e49e6c76a93c28e6d9a9"
+    }
+  ],
+  "runtimeResources": {
+    "Shared/include.zip": {
+      "gitBlob": "70b79d2f98c26b6de458b3ae9b301c09f72baadd",
+      "sha256": "4aa281ef55071210ab076149ecc4457beb4cb1f6ef0efb0448e00e56a5a9b88b",
+      "size": 1209276
+    },
+    "Shared/lib.zip": {
+      "gitBlob": "39ae3395fe04c56a233583fbc70be0fe5e17dba2",
+      "sha256": "2569b40a72e66c68f2d436b091d789acf999da4de78b2108f8ca2af08b051117",
+      "size": 64571
+    },
+    "Shared/swift.zip": {
+      "gitBlob": "e88a10c9bb486cd52fb52619528be021f7a8464e",
+      "sha256": "50e561c40b76372c1b142ec443509023120f581c554b25a309e5d18592c9019a",
+      "size": 17747159
+    }
+  }
+}

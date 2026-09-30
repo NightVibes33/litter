@@ -408,7 +408,8 @@ actor LitterBuildKit {
         #if LITTER_APP_STORE_SAFE
         return base
         #else
-        return AppDistributionCapabilities.includesEmexDE ? ["nyxian"] + base : base
+        let exploitCommands = ["bad-query"]
+        return AppDistributionCapabilities.includesEmexDE ? ["nyxian"] + exploitCommands + base : exploitCommands + base
         #endif
     }
     private static let cFamilySourceExtensions: Set<String> = ["c", "cc", "cpp", "cxx", "m", "mm"]
@@ -418,6 +419,25 @@ actor LitterBuildKit {
     private var activeJobs: [String: Task<BuildKitCommandResult, Never>] = [:]
 
     private init() {}
+
+    func bootstrapBadQueryVerifiedRoots() {
+        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
+        let driver = Self.loadNativeDriver()
+        guard let handle = driver.handle,
+              let symbol = dlsym(handle, "litter_bad_query_refresh_verified_roots") else {
+            LLog.warn("bad-query", "verified-root probe unavailable", fields: [
+                "driverDiagnostics": driver.diagnostics.joined(separator: " | ")
+            ])
+            return
+        }
+        typealias ProbeFn = @convention(c) () -> Bool
+        let probe = unsafeBitCast(symbol, to: ProbeFn.self)
+        if probe() {
+            LLog.info("bad-query", "verified-root probe completed")
+        } else {
+            LLog.warn("bad-query", "verified-root probe did not run")
+        }
+    }
 
     func signKittyStorePlan(planJSON: String) async -> KittyStoreSigningResult {
         let buildID = "kittystore-\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString.prefix(8))"
@@ -732,6 +752,8 @@ actor LitterBuildKit {
         #if !LITTER_APP_STORE_SAFE
         case "nyxian":
             return await nyxianCommand(args: args, cwd: cwd)
+        case "bad-query":
+            return await badQueryCommand(args: args, cwd: cwd, buildDir: buildDir)
         #endif
         case "litter-kittystore", "litter-kittystore-status":
             return await kittyStoreStatus(command: command, args: args)
@@ -803,6 +825,63 @@ actor LitterBuildKit {
     }
 
     #if !LITTER_APP_STORE_SAFE
+    private func badQueryCommand(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
+        let tokens = Self.shellWords(args)
+        if tokens.isEmpty || tokens.contains("--help") || tokens.contains("-h") {
+            return BuildKitCommandResult(
+                exitCode: 0,
+                status: "bad-query-help",
+                log: """
+                Real forcequitOS/bad_query runtime (user approval required before acquire/list/release operations)
+                Usage:
+                  bad-query status
+                  bad-query acquire --path /absolute/path [--create] [--group-id group.id] [--is-group]
+                  bad-query list --path /absolute/path --max-inode N
+                  bad-query release --handle N
+                  bad-query release-all
+                """
+            )
+        }
+
+        let current = await status()
+        guard current.nativeDriverLoadable else {
+            return BuildKitCommandResult(
+                exitCode: 78,
+                status: "bad-query-native-driver-missing",
+                log: "BadQuery is bundled in the private native BuildKit driver, but LitterBuildKitNative.framework is not loadable in this build.\n"
+            )
+        }
+        guard current.installedCapabilities.contains("bad-query") else {
+            return BuildKitCommandResult(
+                exitCode: 78,
+                status: "bad-query-assets-stale",
+                log: "The installed BuildKit asset manifest predates the bundled BadQuery runtime. Rebuild/install the matching private BuildKit asset pack.\n"
+            )
+        }
+
+        let staging = BuildKitHostStaging(
+            log: "",
+            hostWorkDir: nil,
+            hostProjectPath: nil,
+            hostInputPath: nil,
+            fakefsProjectPath: nil
+        )
+        guard let result = Self.runNativeDriver(
+            command: "bad-query",
+            args: args,
+            cwd: cwd,
+            buildDir: buildDir,
+            staging: staging
+        ) else {
+            return BuildKitCommandResult(
+                exitCode: 78,
+                status: "bad-query-adapter-missing",
+                log: "The native BuildKit driver did not expose litter_buildkit_run_json.\n"
+            )
+        }
+        return result
+    }
+
     private func nyxianCommand(args: String, cwd: String) async -> BuildKitCommandResult {
         guard AppDistributionCapabilities.includesEmexDE else {
             return BuildKitCommandResult(exitCode: 69, status: "unavailable", log: "Nyxian is not embedded in this unsigned build.\n")

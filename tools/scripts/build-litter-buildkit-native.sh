@@ -12,6 +12,9 @@ MODE="${LITTER_BUILDKIT_NATIVE_MODE:-runner}"
 CORECOMPILER_FRAMEWORK="${CORECOMPILER_FRAMEWORK:-}"
 KITTYSTORE_SIGNER="${LITTER_BUILDKIT_ENABLE_KITTYSTORE_SIGNER:-1}"
 OPENSSL_FRAMEWORK="${LITTER_BUILDKIT_OPENSSL_FRAMEWORK:-$NYXIAN_ROOT/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework}"
+BAD_QUERY_ROOT="${BAD_QUERY_ROOT:-$ROOT_DIR/ThirdParty/bad_query}"
+BAD_QUERY_ENABLED="${LITTER_BUILDKIT_ENABLE_BAD_QUERY:-1}"
+BAD_QUERY_UPSTREAM_COMMIT="${LITTER_BAD_QUERY_REF:-73ef6da1adabef0982fd00e36cb85f21b8f8194a}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: build-litter-buildkit-native.sh must run on macOS with Xcode available" >&2
@@ -62,6 +65,27 @@ LINK_FLAGS=(
   -framework Foundation
   -lz
 )
+
+if [[ "$BAD_QUERY_ENABLED" != "0" ]]; then
+  if [[ ! -f "$BAD_QUERY_ROOT/bad_query/bad_query.c" || ! -f "$BAD_QUERY_ROOT/bad_query/bad_query.h" ]]; then
+    echo "error: real BadQuery source is missing from $BAD_QUERY_ROOT" >&2
+    exit 1
+  fi
+  ACTUAL_BAD_QUERY_COMMIT="$(git -C "$BAD_QUERY_ROOT" rev-parse HEAD 2>/dev/null || true)"
+  if [[ "$ACTUAL_BAD_QUERY_COMMIT" != "$BAD_QUERY_UPSTREAM_COMMIT" ]]; then
+    echo "error: BadQuery source revision mismatch" >&2
+    echo "expected=$BAD_QUERY_UPSTREAM_COMMIT" >&2
+    echo "actual=${ACTUAL_BAD_QUERY_COMMIT:-missing}" >&2
+    exit 1
+  fi
+  COMMON_COMPILE_FLAGS+=(
+    -DLBN_ENABLE_BAD_QUERY=1
+    "-DBAD_QUERY_UPSTREAM_COMMIT=\"$BAD_QUERY_UPSTREAM_COMMIT\""
+    -I"$BAD_QUERY_ROOT/bad_query"
+  )
+  SOURCES+=("$SRC_DIR/LitterBadQueryVerifiedRoots.mm")
+  SOURCES+=("$BAD_QUERY_ROOT/bad_query/bad_query.c")
+fi
 
 if [[ "$MODE" = "inprocess" ]]; then
   if [[ -z "$CORECOMPILER_FRAMEWORK" || ! -d "$CORECOMPILER_FRAMEWORK" ]]; then
