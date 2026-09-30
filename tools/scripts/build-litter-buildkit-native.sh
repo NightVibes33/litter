@@ -83,6 +83,7 @@ if [[ "$BAD_QUERY_ENABLED" != "0" ]]; then
     "-DBAD_QUERY_UPSTREAM_COMMIT=\"$BAD_QUERY_UPSTREAM_COMMIT\""
     -I"$BAD_QUERY_ROOT/bad_query"
   )
+  SOURCES+=("$SRC_DIR/LitterBadQueryVerifiedRoots.mm")
   SOURCES+=("$BAD_QUERY_ROOT/bad_query/bad_query.c")
 fi
 
