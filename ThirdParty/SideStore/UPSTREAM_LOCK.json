@@ -211,5 +211,8 @@
     "Dependencies/minimuxer/DeviceGateway/Package.swift",
     "Dependencies/SideSign/Package.swift",
     "Dependencies/SideSign/Package.resolved"
-  ]
+  ],
+  "sourcePath": "ThirdParty/SideStore/Upstream",
+  "embeddedSourcePath": "ThirdParty/SideStore/Source",
+  "integrationStatus": "runtime-migration-pending"
 }

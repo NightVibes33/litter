@@ -14,3 +14,8 @@
 	path = ThirdParty/EmexDE/Source
 	url = https://github.com/emexlab/Nyxian.git
 	branch = main
+
+[submodule "ThirdParty/SideStore/Upstream"]
+	path = ThirdParty/SideStore/Upstream
+	url = https://github.com/SideStore/SideStore.git
+	shallow = true

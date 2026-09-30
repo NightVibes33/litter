@@ -1,0 +1,28 @@
+name: SideStore Upstream Closure
+
+on:
+  push:
+    branches:
+      - integration/full-upstream-2026-09-29
+    paths:
+      - '.gitmodules'
+      - 'ThirdParty/SideStore/Upstream'
+      - 'ThirdParty/SideStore/UPSTREAM_LOCK.json'
+      - 'tools/scripts/verify-sidestore-upstream-closure.py'
+      - '.github/workflows/sidestore-upstream-closure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+      - name: Verify exact source, nested repositories, SwiftPM pins, and binary locks
+        run: python3 tools/scripts/verify-sidestore-upstream-closure.py
