@@ -24,6 +24,7 @@ assert s.count(original) == 1, 'Unicorn Darwin configure overlay needs rebasing'
 s=s.replace(original, '  if test "$LITTER_UNICORN_MOBILE" = "1"; then\n    QEMU_LDFLAGS="-framework CoreFoundation $QEMU_LDFLAGS"\n  else\n' + original + '\n  fi')
 p.write_text(s)
 PYSOURCE
+trap 'status=$?; for log in "$build"/*/config.log; do if [[ -f "$log" ]]; then echo "Configure diagnostics: $log" >&2; tail -n 80 "$log" >&2; fi; done; exit "$status"' ERR
 args=()
 for slice in macos ios simulator; do
     case "$slice" in
