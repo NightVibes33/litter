@@ -39,7 +39,7 @@ for name in emproxy idevice; do
     done
     lipo -create "$target_dir/aarch64-apple-ios-sim/release/$library" \
         "$target_dir/x86_64-apple-ios/release/$library" -output "$build/$product-simulator.a"
-    lipo -verify_arch arm64 x86_64 "$build/$product-simulator.a"
+    lipo "$build/$product-simulator.a" -verify_arch arm64 x86_64
     output="$build/$product.xcframework"
     rm -rf "$output"
     xcodebuild -create-xcframework \
