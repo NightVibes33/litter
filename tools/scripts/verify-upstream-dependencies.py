@@ -123,6 +123,30 @@ def verify(root):
                 if not re.fullmatch(r"[0-9a-f]{40}", pin.get("state", {}).get("revision", "")):
                     errors.append(f"missing Swift package revision: {relative}: {pin.get('identity')}")
 
+    project = root / "apps/ios/project.yml"
+    app_lock = root / "apps/ios/Litter.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+    if project.is_file() and app_lock.is_file():
+        normalize = lambda url: url.lower().removesuffix(".git").rstrip("/")
+        pins = {normalize(pin["location"]): pin for pin in json.loads(app_lock.read_text())["pins"]}
+        package_block = project.read_text().split("packages:\n", 1)[1].split("targets:\n", 1)[0]
+        for block in re.finditer(r"^  (\w+):\n(?:^    .+\n)+", package_block, re.MULTILINE):
+            url = re.search(r"^    url: (.+)$", block[0], re.MULTILINE)
+            if not url:
+                continue
+            pin = pins.get(normalize(url[1]))
+            if not pin:
+                errors.append(f"root Swift package is absent from the lockfile: {block[1]}")
+                continue
+            revision = re.search(r"^    revision: ([0-9a-f]{40})$", block[0], re.MULTILINE)
+            version = re.search(r'^    exactVersion: "([^\"]+)"$', block[0], re.MULTILINE)
+            state = pin["state"]
+            if revision and revision[1] != state.get("revision"):
+                errors.append(f"root Swift package revision differs from its lockfile: {block[1]}")
+            elif version and version[1] != state.get("version"):
+                errors.append(f"root Swift package version differs from its lockfile: {block[1]}")
+            elif not revision and not version:
+                errors.append(f"root Swift package requirement is not immutable: {block[1]}")
+
     sidesign = root / "ThirdParty/SideStore/SideSign"
     for relative in ("Package.swift", "LITTER_IMPORT.json", ".litter-upstream-commit", "Sources/CodeSigning/CodeSignerAPI.swift"):
         require(sidesign / relative)

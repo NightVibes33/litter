@@ -92,4 +92,4 @@ openssl smime -sign -binary -nodetach -in "$fixture/profile.plist" \
     -signer "$fixture/cert.pem" -inkey "$fixture/key.pem" -outform DER -out "$fixture/profile.mobileprovision"
 export LITTER_SIGNING_SMOKE_FIXTURE="$fixture"
 swift test --package-path "$root/ThirdParty/SideStore/SideSign"
-swift test --package-path "$workspace"
+swift test --package-path "$workspace" --scratch-path "$root/ThirdParty/SideStore/SideSign/.build"

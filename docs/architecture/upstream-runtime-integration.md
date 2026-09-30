@@ -89,3 +89,10 @@ The signing adapter smoke test also creates a disposable local RSA identity,
 CMS provisioning profile, and compiled test app, then signs that app through
 the adapter and verifies its embedded profile, resource seal, and completed
 progress. It does not use user credentials or contact Apple's portal.
+
+The existing unsigned iOS lane substitutes a Swift frontend implementation that
+returns failure because matching generated Swift compiler headers are not
+available in its support artifact set. A successful archive alone therefore
+cannot establish working on-device Swift compilation. Replacing that fallback
+with the real frontend and matching generated headers remains necessary before
+claiming full Nyxian compiler support.

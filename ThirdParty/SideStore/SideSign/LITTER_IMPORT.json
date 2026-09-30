@@ -3,7 +3,8 @@
   "commit": "6b68651697f99791ef85404b7aea1891a26a285d",
   "sourceSideStoreCommit": "0dd743f75afc358b0ba4a002feb5f19474492371",
   "overlays": [
-    "Package.swift: replace four moving branch requirements with upstream resolved revisions"
+    "Package.swift: replace four moving branch requirements with upstream resolved revisions",
+    "Tests/SideSignTests/SideSignTests.swift: import Foundation for filesystem/archive tests on Darwin"
   ],
   "dependencies": [
     {

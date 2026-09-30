@@ -62,5 +62,16 @@ jobs:
       - uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.3'
+      - uses: actions/cache/restore@v4
+        id: sidesign_cache
+        with:
+          path: ThirdParty/SideStore/SideSign/.build
+          key: sidesign-v1-${{ runner.os }}-xcode26.3-${{ hashFiles('ThirdParty/SideStore/SideSign/Package.swift') }}
+          restore-keys: sidesign-v1-${{ runner.os }}-xcode26.3-
       - name: Verify signer and host data boundary
         run: bash tools/scripts/verify-sidesign-adapter.sh
+      - uses: actions/cache/save@v4
+        if: always() && steps.sidesign_cache.outputs.cache-hit != 'true'
+        with:
+          path: ThirdParty/SideStore/SideSign/.build
+          key: ${{ steps.sidesign_cache.outputs.cache-primary-key }}
