@@ -105,5 +105,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: next-minimuxer-ios18-native
-          path: build/next-minimuxer-native/*.xcframework
+          path: |
+            build/next-minimuxer-native/*.xcframework
+            build/next-minimuxer-native/BUILD_PROVENANCE.json
+            build/next-minimuxer-native/licenses/**
           if-no-files-found: error

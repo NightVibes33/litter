@@ -50,3 +50,73 @@ for name in emproxy idevice; do
         -library "$build/$product-simulator.a" -headers "$headers" -output "$output"
     python3 "$root/tools/scripts/verify-unicorn-deployment.py" "$output" --ios-only
 done
+
+python3 - "$build" <<'PYPROVENANCE'
+from pathlib import Path
+import hashlib, json, shutil, subprocess, sys
+root=Path(sys.argv[1]); sources={}
+licenses=root / 'licenses'; licenses.mkdir(exist_ok=True)
+for name, license_name in [('emproxy', 'LICENSE'), ('idevice', 'LICENSE.txt')]:
+    source=root / name
+    sources[name]={'revision': subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip(),
+                   'cargoLockSha256': hashlib.sha256((source / 'Cargo.lock').read_bytes()).hexdigest()}
+    shutil.copyfile(source / license_name, licenses / (name + '.LICENSE'))
+record={'sources': sources, 'deploymentTarget': '18.0', 'simulatorArchitectures': ['arm64', 'x86_64'],
+        'rustc': subprocess.check_output(['rustc', '--version'], text=True).strip(),
+        'xcode': subprocess.check_output(['xcodebuild', '-version'], text=True).strip()}
+(root / 'BUILD_PROVENANCE.json').write_text(json.dumps(record, indent=2) + '\n')
+PYPROVENANCE
+
+# Compile the complete new package graph in isolation before changing the app.
+checkout minimuxer https://github.com/SideStore/minimuxer.git 12be70dc2627307a16bfd2dc7a009080d5bec909
+python3 - "$build" <<'PYSTAGE'
+from pathlib import Path
+import json, re, shutil, sys
+root=Path(sys.argv[1]); package=root / 'minimuxer'
+for name, destination in [('EMProxy', package / 'Binaries'), ('IDevice', package / 'DeviceGateway/Binaries')]:
+    destination.mkdir(parents=True, exist_ok=True)
+    output=destination / (name + '.xcframework')
+    if output.exists(): shutil.rmtree(output)
+    shutil.copytree(root / (name + '.xcframework'), output)
+for manifest, name in [(package / 'Package.swift', 'EMProxy'), (package / 'DeviceGateway/Package.swift', 'IDevice')]:
+    text=manifest.read_text()
+    pattern=r'\.binaryTarget\(\s*name:\s*"' + name + r'",\s*url:\s*"[^"\n]+",\s*checksum:\s*"[0-9a-f]+"\s*\)'
+    replacement='.binaryTarget(name: "' + name + '", path: "Binaries/' + name + '.xcframework")'
+    text, count=re.subn(pattern, lambda _:replacement, text)
+    assert count == 1 or replacement in text, 'Missing expected ' + name + ' requirement'
+    if name == 'EMProxy':
+        text=text.replace('.upToNextMajor(from: "0.9.0")', 'exact: "0.9.20"')
+    else:
+        text=text.replace('branch: "main"', 'revision: "e3f70d16c0c551540a533a39d540e78e5b0a60a8"')
+    manifest.write_text(text)
+smoke=root / 'Smoke'; smoke.mkdir(exist_ok=True)
+(smoke / 'Smoke.swift').write_text('import Minimuxer\npublic enum NextMinimuxerSmoke {\n    public static func makeTransport() -> Minimuxer { Minimuxer.shared }\n}\n')
+(smoke / 'project.yml').write_text("""name: NextMinimuxerSmoke
+options:
+  deploymentTarget:
+    iOS: "18.0"
+packages:
+  NextMinimuxer:
+    path: """ + json.dumps(str(package)) + """
+targets:
+  NextMinimuxerSmoke:
+    type: framework
+    platform: iOS
+    sources:
+      - path: Smoke.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.kittystore.minimuxer-smoke
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+        CODE_SIGNING_ALLOWED: NO
+    dependencies:
+      - package: NextMinimuxer
+        product: Minimuxer
+""")
+PYSTAGE
+command -v xcodegen >/dev/null || brew install xcodegen
+xcodegen generate --spec "$build/Smoke/project.yml" --project "$build/Smoke"
+xcodebuild -project "$build/Smoke/NextMinimuxerSmoke.xcodeproj" -scheme NextMinimuxerSmoke \
+    -destination 'generic/platform=iOS' -derivedDataPath "$build/SmokeDerivedData" \
+    CODE_SIGNING_ALLOWED=NO build
