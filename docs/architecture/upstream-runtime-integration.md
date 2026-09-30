@@ -17,3 +17,19 @@ This is a staged integration, not a full merge of every later upstream revision.
 Remaining release validation: compile the full sideload IPA with Xcode, exercise Terra 5.6 and Sol 6.1 tool calls with an authorized account, run a Nyxian Swift/IPA job on device, and verify KittyStore signing/install/refresh using LocalDevVPN. This Linux environment cannot perform those iOS checks. Catalog inclusion does not grant model access to an account.
 
 The shared mobile runtime test fixtures are aligned to the pinned Codex protocol (optional client/environment IDs, path wrappers, plugin metadata, thread metadata, and new item kinds). The suite passes with 757 tests and five existing ignored tests; fixture updates preserve the assertions and do not change the app UI.
+
+### Interrupt recovery follow-up
+
+Adapted upstream `da7bf861af790d2752a1d6439527ea5f96fe0299` to the fork's
+recorded protocol: an acknowledged interrupt clears the matching active turn
+locally and broadcasts completion so later messages reach the host. Regression
+coverage checks missing host completion, duplicate completion, and a late old
+completion after a newer turn starts. The upstream test fixtures use newer
+request fields; those fixtures were adapted to the existing protocol.
+
+The first GitHub runtime check exposed parallel cloud-sync tests resetting the
+same process-wide preference table. The tests now hold a shared test mutex for
+the complete scenario; production preference synchronization is unchanged.
+The matching-turn completion guard is adapted from upstream `e051f104`.
+Follow-up validation: 760 shared-runtime tests passed, 5 existing live-host tests
+ignored; dependency source closure and whitespace checks passed.

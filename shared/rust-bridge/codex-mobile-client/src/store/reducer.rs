@@ -1530,6 +1530,10 @@ impl AppStoreReducer {
             UiEvent::TurnCompleted { key, turn_id, .. } => {
                 if self
                     .mutate_thread_with_result(key, |thread| {
+                        // A delayed completion must not terminate a newer turn.
+                        if thread.active_turn_id.as_ref().is_some_and(|id| id != turn_id) {
+                            return false;
+                        }
                         thread.active_turn_id = None;
                         thread.active_plan_progress = None;
                         thread.info.status = ThreadSummaryStatus::Idle;
@@ -1561,8 +1565,9 @@ impl AppStoreReducer {
                         {
                             thread.pending_plan_implementation_turn_id = Some(turn_id.to_string());
                         }
+                        true
                     })
-                    .is_some()
+                    .is_some_and(|changed| changed)
                 {
                     self.emit_thread_metadata_changed(key);
                 }

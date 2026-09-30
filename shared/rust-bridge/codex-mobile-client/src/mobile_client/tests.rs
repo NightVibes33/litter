@@ -1677,10 +1677,6 @@ mod mobile_client_tests {
         upstream::TurnStartParams {
             additional_context: None,
             client_user_message_id: None,
-            cyber_access_program: None,
-            turn_trigger: None,
-            tool_output: None,
-            service_tier_for_turn: None,
             multi_agent_mode: None,
             thread_id: thread_id.to_string(),
             input: vec![upstream::UserInput::Text {
@@ -1730,7 +1726,7 @@ mod mobile_client_tests {
         let handler: TestRequestHandler = {
             let calls = Arc::clone(&calls);
             Arc::new(move |request| {
-                calls.lock().unwrap().push(request.method_name().to_string());
+                calls.lock().unwrap().push(request.method().to_string());
                 match request {
                     upstream::ClientRequest::TurnStart { .. } => {
                         serde_json::to_value(upstream::TurnStartResponse {
@@ -1749,7 +1745,7 @@ mod mobile_client_tests {
                     }
                     other => Err(RpcError::Deserialization(format!(
                         "unexpected request in test: {}",
-                        other.method_name()
+                        other.method()
                     ))),
                 }
             })
