@@ -27,6 +27,10 @@ bool litter_bad_query_release_handle(int64_t handle);
 uint64_t litter_bad_query_release_all(void);
 uint64_t litter_bad_query_active_handle_count(void);
 
+/// Re-run the Filza-style verified-root probe in the AlleyCat host process.
+/// Returns false when unsupported or when the probe output directory cannot be prepared.
+bool litter_bad_query_refresh_verified_roots(void);
+
 /// Optional. Called by Litter after copying the response string.
 void litter_buildkit_free_string(const char *response_json);
 
