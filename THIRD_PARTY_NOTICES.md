@@ -150,3 +150,14 @@ Exact signing dependencies and local compatibility overlays are recorded in `Thi
 The full device build stages only CoreCompiler and its 13 matching compiler support libraries from Nyxian release `0.11.4`, source revision `0c61cfb57ee3d85d96a7102132db4268bcaa1db3`. The original compiler implementation and library bytes are preserved. Exact archive identifiers, checksum, source dependency pins, and license sources are recorded in `docs/architecture/nyxian-released-compiler.json`.
 
 CoreCompiler's public source headers retain their MIT notices. Swift and LLVM license texts, including their LLVM exceptions, and cmark's component notices are retained in `docs/licenses/upstream-compiler` and copied into the staged compiler framework. The pinned source references for those notices are Swift `064859e41d68596f486c5d724401cb370f260409`, LLVM project `82cdc19fa54d566969527b56f587ea8ea30bef51`, and swift-cmark `924936d0427cb25a61169739a7660230bffa6ea6`.
+
+## BadQuery
+
+Alley Cãt's unsigned/private BuildKit runtime can compile the real forcequitOS BadQuery sandbox-escape PoC into `LitterBuildKitNative.framework`.
+
+- Upstream: https://github.com/forcequitOS/bad_query
+- Vendored path: `ThirdParty/bad_query` (git submodule)
+- Pinned commit: `73ef6da1adabef0982fd00e36cb85f21b8f8194a`
+- Runtime API retained from upstream: `bad_query`, `bad_query_list`, and `bad_query_release`.
+- Upstream describes the PoC as targeting iOS 26.0-26.6.1 and iOS 27.0 beta 4, with documented access to selected system/app container roots.
+- The pinned upstream snapshot does not contain a LICENSE file. Review upstream redistribution terms before distributing builds that contain this source.

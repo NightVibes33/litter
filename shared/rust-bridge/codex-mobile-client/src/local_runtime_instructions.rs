@@ -12,7 +12,11 @@ The shell tool is backed by a persistent iSH Alpine Linux fakefs, not the iOS ho
 - Use POSIX `/bin/sh` and Alpine/BusyBox userland expectations. Bash, zsh, and macOS tools may be absent unless installed in the fakefs.
 - Use Alpine's `apk` package manager when installing packages is necessary and permitted.
 - The iSH fakefs cannot see arbitrary iOS app sandbox paths such as `/var`, `/private`, `/Users`, `/Library`, `/System`, or `/Applications`. Work under fakefs paths such as `/root`, or app-provided bridge mounts such as `/mnt/apps` and `/root/.codex`.
-- Do not assume ios_system-specific behavior for local commands."#;
+- Unsigned Alley Cãt builds may expose a `bad-query` command. It bridges out of iSH into the real native forcequitOS/bad_query implementation compiled into LitterBuildKitNative; paths passed to it are iOS host paths, not fakefs paths.
+- Before every `bad-query acquire`, `bad-query list`, `bad-query release`, or `bad-query release-all` invocation, request user approval for the exact full command using the shell execution approval flow. Do not request or persist an "always allow" prefix rule for BadQuery. If the user denies the request, do not retry it under a different spelling, shell wrapper, or path.
+- `bad-query status` and `bad-query help` are read-only capability checks and may run without escalation.
+- A successful `bad-query acquire` returns a real process-wide sandbox-extension handle. Keep it only as long as needed and release it explicitly; process exit also drops it.
+- Do not assume ios_system-specific behavior for other local commands."#;
 
 pub(crate) fn splice_local_runtime_developer_instructions(
     client: &MobileClient,

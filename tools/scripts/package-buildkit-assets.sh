@@ -379,7 +379,7 @@ manifest = {
         "clangResourceDir": clang_resource_rel,
         "cxxStandardLibraryIncludeDir": cxx_include_rel,
     },
-    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package", "clang-ios-build", "objc-ios-build", "cxx-ios-build", "objcxx-ios-build", "ld-ios-link", "xcrun-compat", "plutil-compat", "clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports"] + (["nyxian-runner"] if runner_rel else []) + (["feather-zsign", "kittystore-zsign"] if openssl_rel and native_mode == "inprocess" else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
+    "capabilities": ["swift-check", "swift-build", "swift-test", "unsigned-ipa-build", "unsigned-ipa-package", "clang-ios-build", "objc-ios-build", "cxx-ios-build", "objcxx-ios-build", "ld-ios-link", "xcrun-compat", "plutil-compat", "clang-resource-dir", "cxx-stdlib-headers", "swift-resource-dir", "ui-framework-imports", "bad-query"] + (["nyxian-runner"] if runner_rel else []) + (["feather-zsign", "kittystore-zsign"] if openssl_rel and native_mode == "inprocess" else []) + (["in-process-native-driver", "in-process-ipa-packager"] if native_mode == "inprocess" else ["runner-native-driver"]),
     "requiredPaths": required,
     "sha256": hashes,
 }

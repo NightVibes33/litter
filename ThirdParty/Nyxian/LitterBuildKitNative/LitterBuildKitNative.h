@@ -10,6 +10,10 @@ extern "C" {
 /// Output: allocated UTF-8 JSON response with exitCode, status, and log.
 const char *litter_buildkit_run_json(const char *request_json);
 
+/// Returns the exact forcequitOS/bad_query source revision compiled into the
+/// native runtime, or NULL when BadQuery support was not compiled.
+const char *litter_bad_query_upstream_commit(void);
+
 /// Optional. Called by Litter after copying the response string.
 void litter_buildkit_free_string(const char *response_json);
 

@@ -123,3 +123,13 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 - The host retains its existing AltSign account/model boundary and current KittyStore UI. Signing uses SideSign through a data-only adapter shared by the host and embedded store; no account credentials or keychain schemas are migrated.
 
 KittyStore SideSign uses local AnisetteKit source pinned at `db8b41022697b6c19be8a5f01a1ce834145a2a26`. Its Unicorn dependency is recursively pinned at `a53ddc9ac6d65b24936d4a37917333fcd816cfd0` and rebuilt for iOS 18/macOS 12 using `tools/scripts/build-kittystore-unicorn.sh`. The upstream binary requires iOS 26.5 and is intentionally replaced by a source build with verified object deployment targets. Generated XCFrameworks are excluded from Git.
+
+## BadQuery
+
+- Source repository: https://github.com/forcequitOS/bad_query.git
+- Pinned source commit: `73ef6da1adabef0982fd00e36cb85f21b8f8194a`
+- Source path: `ThirdParty/bad_query` (git submodule)
+- Native integration: `ThirdParty/Nyxian/LitterBuildKitNative`
+- Build integration: `tools/scripts/build-litter-buildkit-native.sh`
+- Agent command: `bad-query` in unsigned Alley Cãt builds.
+- The runtime preserves upstream `bad_query(path, create, group_identifier, is_group)`, `bad_query_list(path, max_inode)`, and `bad_query_release(handle)` behavior. Agent runtime instructions require explicit user approval for each state-changing/access-granting BadQuery invocation.

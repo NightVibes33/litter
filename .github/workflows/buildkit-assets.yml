@@ -106,6 +106,19 @@ jobs:
           set -euo pipefail
           tools/scripts/verify-nyxian-source-import.sh
 
+      - name: Verify pinned BadQuery source
+        run: |
+          set -euo pipefail
+          test -f ThirdParty/bad_query/bad_query/bad_query.c
+          test -f ThirdParty/bad_query/bad_query/bad_query.h
+          actual="$(git -C ThirdParty/bad_query rev-parse HEAD)"
+          expected="73ef6da1adabef0982fd00e36cb85f21b8f8194a"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::BadQuery pin mismatch: expected $expected, got $actual"
+            exit 1
+          fi
+          echo "Verified forcequitOS/bad_query $actual"
+
       - name: Reuse existing private BuildKit release
         id: existing_assets
         if: inputs.use_existing_private_release == true && inputs.force_rebuild != true && inputs.upload_private_release == true
@@ -150,7 +163,7 @@ jobs:
             artifacts/buildkit/LitterBuildKitNative.framework
             artifacts/buildkit/LitterBuildKitAssets
             artifacts/buildkit/LitterBuildKitAssets.zip
-          key: buildkit-assets-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Feather/Zsign-Package/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}
+          key: buildkit-assets-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/bad_query/**', 'ThirdParty/Feather/Zsign-Package/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}
           restore-keys: |
             buildkit-assets-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
             buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
@@ -176,7 +189,7 @@ jobs:
             artifacts/buildkit/LitterBuildKitNative.framework
             artifacts/buildkit/LitterBuildKitAssets
             artifacts/buildkit/LitterBuildKitAssets.zip
-          key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Feather/Zsign-Package/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}
+          key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/bad_query/**', 'ThirdParty/Feather/Zsign-Package/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}
           restore-keys: |
             buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-
 
@@ -232,7 +245,7 @@ jobs:
             artifacts/buildkit/LitterBuildKitNative.framework
             artifacts/buildkit/LitterBuildKitAssets
             artifacts/buildkit/LitterBuildKitAssets.zip
-          key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/Feather/Zsign-Package/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          key: buildkit-partial-${{ runner.os }}-xcode-${{ inputs.xcode_version }}-sdk-${{ steps.toolchain.outputs.sdk_version }}-swift-${{ inputs.swift_branch }}-${{ hashFiles('ThirdParty/LLVM-On-iOS/**', 'ThirdParty/Nyxian/CoreCompiler/**', 'ThirdParty/Nyxian/MobileDevelopmentKit/**', 'ThirdParty/Nyxian/LitterBuildKitNative/**', 'ThirdParty/bad_query/**', 'ThirdParty/Feather/Zsign-Package/**', 'ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj', 'tools/scripts/build-nyxian-buildkit-assets.sh', 'tools/scripts/build-litter-buildkit-native.sh', 'tools/scripts/package-buildkit-assets.sh', 'tools/scripts/verify-nyxian-buildkit-assets.sh', 'tools/scripts/buildkit-native-source-fingerprint.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Verify private BuildKit assets
         if: steps.existing_assets.outputs.available == 'true' || steps.cached_assets.outputs.available == 'true' || steps.build_assets.outcome == 'success'

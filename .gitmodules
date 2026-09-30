@@ -33,3 +33,8 @@
 [submodule "ThirdParty/SideStore/Unicorn"]
 	path = ThirdParty/SideStore/Unicorn
 	url = https://github.com/mahee96/unicorn.git
+
+[submodule "ThirdParty/bad_query"]
+	path = ThirdParty/bad_query
+	url = https://github.com/forcequitOS/bad_query.git
+	shallow = true

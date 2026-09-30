@@ -80,6 +80,22 @@ jobs:
           path: ThirdParty/SideStore/SideSign/.build
           key: sidesign-v1-${{ runner.os }}-xcode26.3-${{ hashFiles('ThirdParty/SideStore/SideSign/Package.swift') }}
           restore-keys: sidesign-v1-${{ runner.os }}-xcode26.3-
+      - name: Build BadQuery-enabled native runtime smoke
+        run: |
+          set -euo pipefail
+          git submodule update --init --depth 1 ThirdParty/bad_query
+          test "$(git -C ThirdParty/bad_query rev-parse HEAD)" = "73ef6da1adabef0982fd00e36cb85f21b8f8194a"
+          out="$RUNNER_TEMP/LitterBuildKitNative.framework"
+          LITTER_BUILDKIT_NATIVE_MODE=runner \
+          LITTER_BUILDKIT_ENABLE_BAD_QUERY=1 \
+          LITTER_BUILDKIT_NATIVE_OUT_DIR="$out" \
+            bash tools/scripts/build-litter-buildkit-native.sh
+          test -f "$out/LitterBuildKitNative"
+          /usr/bin/nm -gU "$out/LitterBuildKitNative" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'
+          /usr/bin/nm -gU "$out/LitterBuildKitNative" | awk '{print $NF}' | grep -qx '_litter_bad_query_upstream_commit'
+          /usr/bin/strings "$out/LitterBuildKitNative" | /usr/bin/grep -q '73ef6da1adabef0982fd00e36cb85f21b8f8194a'
+          /usr/bin/lipo -info "$out/LitterBuildKitNative"
+
       - name: Verify signer and host data boundary
         run: bash tools/scripts/verify-sidesign-adapter.sh
       - uses: actions/cache/save@v4
