@@ -1,0 +1,15 @@
+{
+  "repository": "emexlab/Nyxian",
+  "releaseTag": "0.11.4",
+  "sourceRevision": "0c61cfb57ee3d85d96a7102132db4268bcaa1db3",
+  "releaseId": 386256319,
+  "assetId": 555023113,
+  "assetName": "Nyxian.ipa",
+  "assetSize": 111250101,
+  "assetSha256": "295fd286aa0ea56cde28a2c6a8a0a0d781c760243a9dad231b1129db9dc145d0",
+  "downloadUrl": "https://github.com/emexlab/Nyxian/releases/download/0.11.4/Nyxian.ipa",
+  "frameworkPrefix": "Payload/Nyxian.app/Frameworks/CoreCompiler.framework/",
+  "deviceOnly": true,
+  "maximumDeploymentTarget": "18.0",
+  "supportLibraryCount": 13
+}

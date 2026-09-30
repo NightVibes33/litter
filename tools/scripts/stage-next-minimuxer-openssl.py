@@ -9,9 +9,9 @@ dependency = '.package(url: "https://github.com/krzyzanowskim/OpenSSL.git", exac
 product = '.product(name: "OpenSSL", package: "OpenSSL")'
 
 def replace(text, before, after):
-    if after and after in text:
+    if after and before in after and after in text:
         return text
-    if not after and before not in text:
+    if before not in text and (not after or after in text):
         return text
     if text.count(before) != 1:
         raise SystemExit(f"Expected exactly one manifest declaration: {before}")

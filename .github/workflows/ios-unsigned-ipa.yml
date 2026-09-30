@@ -93,6 +93,7 @@ jobs:
       # Only the manual nyxian-private lane embeds the private SDK/toolchain asset zip.
       LITTER_IOS_BUILD_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode || 'full-sideload' }}
       LITTER_NYXIAN_PRIVATE_BUILD: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
+      LITTER_EMEXDE_RELEASED_COMPILER: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload') && '1' || '0' }}
       LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
       LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
       LITTER_SKIP_ALLEYCAT_UPDATE: "1"
@@ -682,7 +683,7 @@ jobs:
           key: ${{ steps.minimuxer_bridge_cache.outputs.cache-primary-key }}
 
       - name: Restore emexDE CoreCompiler artifact cache
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1'
         id: emexde_corecompiler_cache
         uses: actions/cache/restore@v4
         with:
@@ -690,7 +691,7 @@ jobs:
           key: ios-emexde-corecompiler-artifacts-v2-${{ runner.os }}-${{ steps.emexde_swift_revision.outputs.llvm_on_ios_sha }}-${{ steps.emexde_swift_revision.outputs.swift_branch }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'docs/architecture/emexde-corecompiler-artifacts.json', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.swift') }}
 
       - name: Check emexDE CoreCompiler artifact cache
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1'
         id: emexde_corecompiler_prebuilt
         run: |
           set -euo pipefail
@@ -747,7 +748,7 @@ jobs:
           fi
 
       - name: Prepare emexDE CoreCompiler artifacts
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         env:
           EMEXDE_SWIFT_BRANCH: ${{ steps.emexde_swift_revision.outputs.swift_branch }}
           EMEXDE_SWIFT_LLVM_BRANCH: ${{ steps.emexde_swift_revision.outputs.swift_branch }}
@@ -756,7 +757,7 @@ jobs:
           time tools/scripts/prepare-emexde-corecompiler-artifacts.sh
 
       - name: Save emexDE CoreCompiler artifact cache
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1' && steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
         uses: actions/cache/save@v4
         with:
           path: ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs
@@ -769,10 +770,14 @@ jobs:
           python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
 
       - name: Patch emexDE CoreCompiler Swift frontend for unsigned CI
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && env.LITTER_EMEXDE_RELEASED_COMPILER != '1'
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
+
+      - name: Stage pinned upstream compiler and matching support libraries
+        if: env.LITTER_EMEXDE_RELEASED_COMPILER == '1'
+        run: python3 tools/scripts/stage-upstream-corecompiler.py
 
       - name: Patch fast unsigned device project
         if: env.LITTER_IOS_BUILD_MODE == 'fast-device' || env.LITTER_IOS_BUILD_MODE == 'release-device'
