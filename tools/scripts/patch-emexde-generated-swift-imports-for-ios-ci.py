@@ -112,6 +112,7 @@ notification_objc_shim = "\n".join([
 nxos_version_objc_shim = "\n".join([
     "#import <Foundation/Foundation.h>",
     "#import <MobileDevelopmentKit/MDKOSVersion.h>",
+    "#import <LindChain/IDEFoundation/NXBootstrap.h>",
     "@interface NXOSVersion : NSObject",
     "+ (NSArray<MDKOSVersion *> *)NXOSVersionSupportedBuildVersionsRaw;",
     "@end",
@@ -137,8 +138,8 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXTarget.m",
-    "",
-    "NXTarget unused Swift import",
+    "#import <MobileDevelopmentKit/MDKOSVersion.h>",
+    "NXTarget native SDK version declaration",
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEUserspaceManager.m",
@@ -155,6 +156,14 @@ replace_generated_swift_import(
     nxos_version_objc_shim,
     "NXProject OS version bridge",
 )
+
+# The host supports iOS 18; compiled user projects must share that default target.
+project_source = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m")
+project_text = project_source.read_text()
+old_target, new_target = '@"apple-arm64-ios26.5"', '@"arm64-apple-ios18.0"'
+if old_target not in project_text and new_target not in project_text:
+    raise SystemExit("Missing expected Nyxian default compiler target")
+project_source.write_text(project_text.replace(old_target, new_target))
 
 cc_driver = Path("ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/CCDriver.cpp")
 cc_driver_text = cc_driver.read_text()
