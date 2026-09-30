@@ -103,3 +103,7 @@ The pinned AnisetteKit release artifact contains iOS objects requiring iOS 26.5.
 ### Signer linkage ownership
 
 Full archive run `36686792856` rejected duplicate static SideSign linkage from Litter and SideStore. The SideStore framework now owns the signer and adapter; Litter calls its public data-only adapter and does not link SideSign directly. The adapter smoke tests import its module through the public boundary. Full archive validation must be repeated with this correction.
+
+### New minimuxer dependency audit
+
+The complete direct/local package graph at `12be70dc2627307a16bfd2dc7a009080d5bec909` introduces Common, DeviceGateway, pinned-to-be RemotePairingKit, and four native artifacts. All four artifact checksums were verified against their manifests. Actual Mach-O object metadata shows EMProxy and IDevice simulator slices require iOS 26.5 and omit x86_64; libimobiledevice and OpenSSL device/simulator deployment targets fit iOS 18. RemotePairingKit also introduces an OpenSSL target colliding with retained AltSign. The new async API lacks the existing installed-app enumeration method, which must be preserved during migration. Exact artifacts, revisions, and requirements are recorded in `minimuxer-next-dependency-audit.json`; the incompatible graph has not been wired into the app.

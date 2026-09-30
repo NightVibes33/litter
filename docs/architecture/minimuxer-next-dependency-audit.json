@@ -1,0 +1,64 @@
+{
+  "minimuxerCommit": "12be70dc2627307a16bfd2dc7a009080d5bec909",
+  "remotePairingKitCommit": "e3f70d16c0c551540a533a39d540e78e5b0a60a8",
+  "zipFoundation": {
+    "version": "0.9.20",
+    "commit": "22787ffb59de99e5dc1fbfe80b19c97a904ad48d"
+  },
+  "artifactChecks": [
+    {
+      "name": "EMProxy",
+      "release": "v0.9.3",
+      "sha256": "3998789c38d09b55e488d46e31897affc7bbcb9c244d7a9d5b2d5cf6afd916c3",
+      "checksumVerified": true,
+      "iosDeviceMinimum": "15.0",
+      "iosSimulatorMinimum": "26.5",
+      "simulatorArchitectures": [
+        "arm64"
+      ]
+    },
+    {
+      "name": "IDevice",
+      "release": "v0.1.68-ss-3e55c84",
+      "sha256": "445702d53942597deb4cdec2c4122d16a3f4ac124ce26cd75b68dab3dad92416",
+      "checksumVerified": true,
+      "iosDeviceMinimum": "17.0",
+      "iosSimulatorMinimum": "26.5",
+      "simulatorArchitectures": [
+        "arm64"
+      ]
+    },
+    {
+      "name": "libimobiledevice",
+      "release": "1.4.0-ss-0f88f7b",
+      "sha256": "7ccbdd56b074807461fc43d2e32ba92f20df2501a6c14cf9f64a917e7f3fe6e7",
+      "checksumVerified": true,
+      "iosDeviceMinimum": "13.0",
+      "iosSimulatorMinimum": "14.0",
+      "simulatorArchitectures": [
+        "arm64",
+        "x86_64"
+      ]
+    },
+    {
+      "name": "OpenSSL",
+      "release": "3.6.2000",
+      "sha256": "37846a8bd302cb2443eff47f1045ab844d0cd40bf82cc6159cfad9aa5c3eff9e",
+      "checksumVerified": true,
+      "iosDeviceMinimum": "12.0",
+      "iosSimulatorMinimum": "14.0",
+      "simulatorArchitectures": [
+        "arm64",
+        "x86_64"
+      ]
+    }
+  ],
+  "integrationRequirements": [
+    "Rebuild pinned EMProxy and IDevice simulator sources for iOS 18 and both supported simulator architectures.",
+    "Pin RemotePairingKit to its recorded revision instead of main.",
+    "Resolve the OpenSSL target-name collision with the retained AltSign package before Xcode package resolution.",
+    "Adapt synchronous static call sites to the instance asynchronous MinimuxerAPI without blocking the main thread.",
+    "Preserve KittyStore installed-app enumeration; the new public MinimuxerAPI does not expose the existing listInstalledAppsPlist operation."
+  ],
+  "status": "audited; not wired into the app"
+}
