@@ -92,8 +92,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0
+
+      - name: Identify pinned Codex revision
+        id: codex_revision
+        run: echo "sha=$(git rev-parse HEAD:shared/third_party/codex)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Codex submodule Git cache
+        id: codex_git_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .git/modules/shared/third_party/codex
+          key: ios-codex-git-v1-${{ steps.codex_revision.outputs.sha }}
+          restore-keys: |
+            ios-codex-git-v1-
+
+      - name: Checkout pinned Codex submodule
+        env:
+          SUBMODULE_CHECKOUT_PATHS: shared/third_party/codex
+        run: tools/scripts/checkout-submodules-with-retry.sh
+
+      - name: Save Codex submodule Git cache
+        if: steps.codex_git_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .git/modules/shared/third_party/codex
+          key: ios-codex-git-v1-${{ steps.codex_revision.outputs.sha }}
+
+      - name: Checkout remaining pinned submodules
+        env:
+          SUBMODULE_CHECKOUT_PATHS: shared/third_party/ghostty ThirdParty/SideStore/AltSign ThirdParty/EmexDE/Source
+        run: tools/scripts/checkout-submodules-with-retry.sh
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
