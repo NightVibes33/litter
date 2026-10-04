@@ -5,20 +5,27 @@ struct SubagentCardView: View {
     @Environment(AppModel.self) private var appModel
     let data: ConversationMultiAgentActionData
     let serverId: String
+    let resolveTargetLabel: (String) -> String?
+    let resolveThreadKey: (String) -> ThreadKey?
+    let resolveLiveStatus: (ThreadKey) -> AppSubagentStatus?
     @State private var expanded: Bool
     @State private var sheetThreadKey: ThreadKey?
     @State private var sheetAgentLabel: String?
 
     init(
         data: ConversationMultiAgentActionData,
-        serverId: String
+        serverId: String,
+        resolveTargetLabel: @escaping (String) -> String?,
+        resolveThreadKey: @escaping (String) -> ThreadKey?,
+        resolveLiveStatus: @escaping (ThreadKey) -> AppSubagentStatus?
     ) {
         self.data = data
         self.serverId = serverId
+        self.resolveTargetLabel = resolveTargetLabel
+        self.resolveThreadKey = resolveThreadKey
+        self.resolveLiveStatus = resolveLiveStatus
         _expanded = State(initialValue: true)
     }
-
-    private var isInProgress: Bool { data.isInProgress }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -39,11 +46,14 @@ struct SubagentCardView: View {
                 .padding(.top, 6)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, LitterSpace.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .sheet(item: $sheetThreadKey) { key in
-            let resolvedKey = appModel.snapshot?.resolvedThreadKey(for: key.threadId, serverId: key.serverId) ?? key
+            // `resolveThreadKey` is precomputed by `ConversationScreenModel`
+            // from a captured snapshot and mirrors
+            // `AppSnapshotRecord.resolvedThreadKey(for:serverId:)`, so this
+            // closure no longer reads `appModel.snapshot`.
+            let resolvedKey = resolveThreadKey(key.threadId) ?? key
             SubagentDetailSheet(threadKey: resolvedKey, agentLabel: sheetAgentLabel)
                 .environment(appModel)
         }
@@ -52,18 +62,16 @@ struct SubagentCardView: View {
     // MARK: - Header
 
     private var headerRow: some View {
-        HStack(spacing: 8) {
-            Text(actionLabel)
-                .litterFont(.caption)
-                .foregroundColor(LitterTheme.textSystem)
+        HStack(spacing: LitterSpace.xs) {
+            Text("subagent · \(actionLabel.lowercased()) \(expanded ? "⌄" : "›")")
+                .litterMeta()
                 .lineLimit(1)
-
-            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                .litterFont(size: 11, weight: .medium)
-                .foregroundColor(LitterTheme.textMuted)
-
             Spacer()
         }
+        .frame(minHeight: LitterSpace.hitTarget - 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(expanded ? "Collapses agent list" : "Expands agent list")
     }
 
     private var actionLabel: String {
@@ -129,11 +137,11 @@ struct SubagentCardView: View {
         if !row.label.isEmpty && !looksLikeRawId(row.label) {
             return row.label
         }
-        if let resolved = appModel.snapshot?.resolvedAgentTargetLabel(for: row.label, serverId: serverId) {
+        if let resolved = resolveTargetLabel(row.label) {
             return resolved
         }
         if let threadId = row.threadId,
-           let resolved = appModel.snapshot?.resolvedAgentTargetLabel(for: threadId, serverId: serverId) {
+           let resolved = resolveTargetLabel(threadId) {
             return resolved
         }
         return row.label
@@ -141,18 +149,15 @@ struct SubagentCardView: View {
 
     private func resolvedThreadKey(for row: AgentRowData) -> ThreadKey? {
         if let threadId = row.threadId {
-            return appModel.snapshot?.resolvedThreadKey(for: threadId, serverId: serverId)
+            return resolveThreadKey(threadId)
         }
         return nil
     }
 
     private func liveStatus(for row: AgentRowData) -> AppSubagentStatus? {
         if let key = resolvedThreadKey(for: row),
-           let summary = appModel.snapshot?.sessionSummary(for: key) {
-            if summary.hasActiveTurn { return .running }
-            if summary.agentStatus != .unknown {
-                return summary.agentStatus
-            }
+           let status = resolveLiveStatus(key) {
+            return status
         }
         return row.status
     }
@@ -175,7 +180,6 @@ struct SubagentCardView: View {
             // Line 1: Name + status + Open
             HStack(alignment: .firstTextBaseline, spacing: 0) {
                 let statusStr = readableStatus(status)
-                let isActive = status == .running
 
                 (
                     Text(parts.nickname)
@@ -188,7 +192,6 @@ struct SubagentCardView: View {
                 .litterFont(.caption)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .modifier(ShimmerText(active: isActive))
 
                 Spacer(minLength: 8)
 
@@ -271,42 +274,6 @@ struct SubagentCardView: View {
     }
 }
 
-// MARK: - Shimmer
-
-private struct ShimmerText: ViewModifier {
-    let active: Bool
-
-    func body(content: Content) -> some View {
-        if active {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                let t = timeline.date.timeIntervalSinceReferenceDate
-                let phase = CGFloat(t.truncatingRemainder(dividingBy: 2.0) / 2.0)
-
-                content
-                    .overlay {
-                        GeometryReader { geo in
-                            let w = geo.size.width
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .white.opacity(0), location: max(0, phase - 0.2)),
-                                    .init(color: .white.opacity(0.35), location: phase),
-                                    .init(color: .white.opacity(0), location: min(1, phase + 0.2))
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                            .frame(width: w, height: geo.size.height)
-                        }
-                        .blendMode(.sourceAtop)
-                    }
-                    .compositingGroup()
-            }
-        } else {
-            content
-        }
-    }
-}
-
 // MARK: - Detail Sheet
 
 private struct SubagentDetailSheet: View {
@@ -315,23 +282,50 @@ private struct SubagentDetailSheet: View {
     var agentLabel: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var isLoading = false
+    /// Live thread + title, mirrored out of `appModel.snapshot` by
+    /// `snapshotObserver`. Both used to be computed in `body`, which meant the
+    /// sheet re-rendered its whole timeline on every snapshot revision
+    /// (~8 fps) rather than only when this thread changed.
+    @State private var threadSnapshot: AppThreadSnapshot?
+    /// Title resolved in the same precedence order the body used to compute
+    /// inline. Seeded from the caller's already-resolved `agentLabel` so the
+    /// first frame is correct, then kept current by `snapshotObserver`.
+    @State private var title: String
+    @State private var snapshotObserver = AppSnapshotObserver()
 
-    private var threadSnapshot: AppThreadSnapshot? {
-        appModel.snapshot?.threadSnapshot(for: threadKey)
+    init(threadKey: ThreadKey, agentLabel: String? = nil) {
+        self.threadKey = threadKey
+        self.agentLabel = agentLabel
+        let seed = agentLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        _title = State(initialValue: seed.isEmpty ? "Agent" : seed)
+        _threadSnapshot = State<AppThreadSnapshot?>(initialValue: nil)
     }
 
-    private var title: String {
-        if let label = threadSnapshot.flatMap({ appModel.snapshot?.sessionSummary(for: $0.key)?.agentDisplayLabel }) {
-            return label
+    /// Called from `snapshotObserver`, never from `body`. Preserves the
+    /// original resolution order: live summary for the resolved key, summary
+    /// for the requested key, the caller's label, then the directory lookup.
+    private func refreshSnapshotProjections(_ appModel: AppModel) {
+        let snapshot = appModel.snapshot
+        let nextThread = snapshot?.threadSnapshot(for: threadKey)
+        if threadSnapshot != nextThread {
+            threadSnapshot = nextThread
         }
-        if let label = appModel.snapshot?.sessionSummary(for: threadKey)?.agentDisplayLabel {
-            return label
+
+        var nextTitle = nextThread.flatMap { snapshot?.sessionSummary(for: $0.key)?.agentDisplayLabel }
+            ?? snapshot?.sessionSummary(for: threadKey)?.agentDisplayLabel
+        if nextTitle == nil, let label = agentLabel, !label.isEmpty, !looksLikeId(label) {
+            nextTitle = label
         }
-        if let label = agentLabel, !label.isEmpty, !looksLikeId(label) { return label }
-        if let resolved = appModel.snapshot?.resolvedAgentTargetLabel(for: threadKey.threadId, serverId: threadKey.serverId) {
-            return resolved
+        if nextTitle == nil {
+            nextTitle = snapshot?.resolvedAgentTargetLabel(
+                for: threadKey.threadId,
+                serverId: threadKey.serverId
+            )
         }
-        return agentLabel ?? "Agent"
+        let resolved = nextTitle ?? agentLabel ?? "Agent"
+        if title != resolved {
+            title = resolved
+        }
     }
 
     private func looksLikeId(_ value: String) -> Bool {
@@ -363,9 +357,9 @@ private struct SubagentDetailSheet: View {
                                 originThreadId: threadKey.threadId,
                                 agentDirectoryVersion: 0,
                                 messageActionsDisabled: true,
-                                onStreamingSnapshotRendered: nil,
-                                onLiveContentLayoutChanged: nil,
                                 resolveTargetLabel: { _ in nil },
+                                resolveThreadKey: { _ in nil },
+                                resolveLiveStatus: { _ in nil },
                                 onWidgetPrompt: { _ in },
                                 onEditUserItem: { _ in },
                                 onForkFromUserItem: { _ in }
@@ -413,8 +407,14 @@ private struct SubagentDetailSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .task(id: threadKey.id) {
+            // Start (or re-target) the projection before the load so
+            // `loadThreadIfNeeded` sees the current thread state, and so the
+            // sheet keeps streaming while it is open.
+            let model = appModel
+            snapshotObserver.start(appModel: model) { refreshSnapshotProjections(model) }
             await loadThreadIfNeeded()
         }
+        .onDisappear { snapshotObserver.stop() }
     }
 
     private func parseLabel(_ label: String) -> (nickname: String, roleSuffix: String) {

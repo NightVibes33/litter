@@ -17,9 +17,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.litter.android.ui.LitterTheme
+import com.sigkitten.litter.android.R
 import uniffi.codex_mobile_client.AppAgentMetadata
 
 /**
@@ -48,7 +48,11 @@ val AgentRuntimeKind.metadata: AppAgentMetadata?
 
 /** Short label used in lists. Falls back to titlecased id on cold start. */
 val AgentRuntimeKind.runtimeLabel: String
-    get() = metadata?.displayName?.takeIf { it.isNotEmpty() } ?: titlecased()
+    get() = if (this == "local-studio") {
+        "Local Studio"
+    } else {
+        metadata?.displayName?.takeIf { it.isNotEmpty() } ?: titlecased()
+    }
 
 /** Header / title rendering. Prefers metadata `presentation.title`. */
 val AgentRuntimeKind.titleDisplayLabel: String
@@ -75,11 +79,14 @@ val AgentRuntimeKind.isBeta: Boolean
 
 /** Whether this runtime accepts client-side thread permission overrides. */
 val AgentRuntimeKind.supportsThreadPermissionOverrides: Boolean
-    get() = metadata?.capabilities?.supportsThreadPermissionOverrides ?: true
+    get() = !hasFixedFullAccess && (metadata?.capabilities?.supportsThreadPermissionOverrides ?: true)
 
 /** Whether this runtime reports effective permissions as authoritative state. */
 val AgentRuntimeKind.reportsEffectiveThreadPermissions: Boolean
-    get() = metadata?.capabilities?.reportsEffectiveThreadPermissions ?: true
+    get() = !hasFixedFullAccess && (metadata?.capabilities?.reportsEffectiveThreadPermissions ?: true)
+
+val AgentRuntimeKind.hasFixedFullAccess: Boolean
+    get() = this == "pi" || this == "local-studio"
 
 /** Picker callers that only know `name` / `displayName` from a probe. */
 fun isBetaAgentName(name: String, displayName: String): Boolean {
@@ -92,7 +99,8 @@ fun isBetaAgentName(name: String, displayName: String): Boolean {
 }
 
 private fun isStableAgentIdentity(name: String, displayName: String): Boolean =
-    name.trim().lowercase() == "codex" || displayName.trim().lowercase() == "codex"
+    name.trim().lowercase() in setOf("codex", "local-studio") ||
+        displayName.trim().lowercase() in setOf("codex", "local studio")
 
 private fun AgentRuntimeKind.titlecased(): String {
     if (isEmpty()) return "Agent"
@@ -100,10 +108,9 @@ private fun AgentRuntimeKind.titlecased(): String {
 }
 
 /**
- * Renders an agent's icon from the local drawable catalog
- * (`R.drawable.agent_<id>`) when one is bundled, falling back to a
- * monogram letter chip. Use this everywhere — new alleycat-advertised
- * agents stay renderable without needing a litter release first.
+ * Renders an agent's bundled icon, falling back to a monogram letter chip.
+ * The explicit resource map keeps Android's resource shrinker and lint aware
+ * of every bundled asset; new Alleycat agents remain renderable via fallback.
  */
 @Composable
 fun AgentIconView(
@@ -111,10 +118,8 @@ fun AgentIconView(
     sizeDp: Int = 24,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val resName = "agent_${kind.lowercase()}"
-    val resId = context.resources.getIdentifier(resName, "drawable", context.packageName)
-    if (resId != 0) {
+    val resId = kind.bundledIconResource()
+    if (resId != null) {
         Image(
             painter = painterResource(id = resId),
             contentDescription = kind.runtimeLabel,
@@ -124,6 +129,20 @@ fun AgentIconView(
         AgentMonogram(kind = kind, sizeDp = sizeDp, modifier = modifier)
     }
 }
+
+private fun AgentRuntimeKind.bundledIconResource(): Int? =
+    when (lowercase().replace("-", "_")) {
+        "amp" -> R.drawable.agent_amp
+        "claude" -> R.drawable.agent_claude
+        "codex" -> R.drawable.agent_codex
+        "devin" -> R.drawable.agent_devin
+        "droid" -> R.drawable.agent_droid
+        "grok" -> R.drawable.agent_grok
+        "hermes" -> R.drawable.agent_hermes
+        "opencode" -> R.drawable.agent_opencode
+        "pi" -> R.drawable.agent_pi
+        else -> null
+    }
 
 @Composable
 fun AgentMonogram(

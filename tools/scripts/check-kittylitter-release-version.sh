@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+manifest="services/kittylitter/Cargo.toml"
+version=$(awk -F'"' '/^version/ { print $2; exit }' "$manifest")
+
+if [[ -z "$version" ]]; then
+  echo "could not parse kittylitter version from $manifest" >&2
+  exit 1
+fi
+
+tag="v$version"
+for source in \
+  apps/ios/Sources/Litter/Views/AlleycatAddServerSheet.swift \
+  apps/android/app/src/main/java/com/litter/android/ui/discovery/AlleycatAddServerSheet.kt; do
+  if ! grep -Fq "/releases/download/$tag/kittylitter-npm-package.tar.gz" "$source"; then
+    echo "$source must pair with kittylitter $tag" >&2
+    exit 1
+  fi
+done
+
+if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+  exit 0
+fi
+
+git fetch --no-tags --no-recurse-submodules origin "refs/tags/$tag:refs/tags/$tag"
+# Installation documentation can change without republishing the host binary.
+if git diff --quiet "$tag" -- services/kittylitter ':!services/kittylitter/README.md'; then
+  exit 0
+fi
+
+echo "kittylitter source changed after $tag was released; bump the package version" >&2
+exit 1

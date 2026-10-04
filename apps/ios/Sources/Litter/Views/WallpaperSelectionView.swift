@@ -949,4 +949,3 @@ private struct StreamingEffectPreview: View {
         }
     }
 }
-

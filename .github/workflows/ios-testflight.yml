@@ -3,6 +3,11 @@ name: iOS TestFlight Release
 on:
   workflow_dispatch:
     inputs:
+      build_only:
+        description: "Validate the build without publishing or uploading to TestFlight"
+        required: false
+        default: false
+        type: boolean
       existing_build_id:
         description: "Repair distribution of an uploaded build without rebuilding"
         required: false
@@ -758,12 +763,14 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           LITTER_TESTFLIGHT_FAST: "1"
           INCLUDE_LIVEPROCESS: "0"
+          TESTFLIGHT_SKIP_UPLOAD: ${{ inputs.build_only && '1' || '0' }}
           ALLOW_XCODE_EXPORTED_SEAL_WARNING: "0"
         run: |
           set -euo pipefail
           ./apps/ios/scripts/testflight-upload.sh
 
       - name: Commit TestFlight version bump
+        if: ${{ !inputs.build_only }}
         run: |
           set -euo pipefail
           if git diff --quiet -- apps/ios/project.yml docs/releases/testflight-whats-new.md; then

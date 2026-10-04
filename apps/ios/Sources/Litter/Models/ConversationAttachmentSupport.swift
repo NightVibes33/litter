@@ -53,20 +53,22 @@ struct ConversationAttachment: Identifiable {
     }
 }
 
-struct PreparedImageAttachment {
+struct PreparedImageAttachment: Sendable {
     let data: Data
     let mimeType: String
+    /// Built once at preparation time (off the main actor via
+    /// `prepareImages`) so base64-encoding a multi-MB image never happens on
+    /// the main thread when the composer payload is assembled.
+    let dataURI: String
+
+    init(data: Data, mimeType: String) {
+        self.data = data
+        self.mimeType = mimeType
+        self.dataURI = "data:\(mimeType);base64,\(data.base64EncodedString())"
+    }
 
     var userInput: AppUserInput {
         .image(url: dataURI)
-    }
-
-    var chatImage: ChatImage {
-        ChatImage(data: data, mimeType: mimeType)
-    }
-
-    private var dataURI: String {
-        "data:\(mimeType);base64,\(data.base64EncodedString())"
     }
 }
 
@@ -298,6 +300,7 @@ enum ConversationAttachmentSupport {
             return String(text[matchRange])
         }
     }
+    static let supportedFileContentTypes: [UTType] = [.data]
 
     static func prepareImage(_ image: UIImage) -> PreparedImageAttachment? {
         let imageForUpload = resizedImageIfNeeded(image, maxPixelSize: attachmentMaxPixelSize) ?? image
@@ -313,6 +316,16 @@ enum ConversationAttachmentSupport {
         downsampledImage(source: CGImageSourceCreateWithData(data as CFData, nil), maxPixelSize: attachmentMaxPixelSize)
     }
 
+    /// Resize + JPEG/PNG encode + base64 for a batch of images on a
+    /// background executor. Order is preserved; undecodable images are
+    /// dropped (same as `compactMap(prepareImage)`).
+    static func prepareImages(_ images: [UIImage]) async -> [PreparedImageAttachment] {
+        guard !images.isEmpty else { return [] }
+        return await Task.detached(priority: .userInitiated) {
+            images.compactMap { prepareImage($0) }
+        }.value
+    }
+
     static func loadPickedFile(at url: URL) -> PickedComposerFile? {
         let scoped = url.startAccessingSecurityScopedResource()
         defer {
@@ -321,9 +334,11 @@ enum ConversationAttachmentSupport {
             }
         }
 
-        if isSupportedImageFile(url),
-           let data = try? Data(contentsOf: url),
-           let image = UIImage(data: data) {
+        if shouldLoadAsImageOnly(url) {
+            guard let data = try? Data(contentsOf: url),
+                  let image = UIImage(data: data) else {
+                return nil
+            }
             return .image(image)
         }
 
@@ -527,22 +542,62 @@ enum ConversationAttachmentSupport {
         }
     }
 
+    private static let maxTransportPixelDimension: CGFloat = 2048
+    private static let minTransportPixelDimension: CGFloat = 1024
+    private static let maxTransportImageBytes = 1_200_000
+    private static let transportJpegQuality: CGFloat = 0.7
+
     private static func encodedImageData(for image: UIImage) -> (data: Data, mimeType: String)? {
-        if image.litterHasAlpha, let pngData = image.pngData() {
+        var current = downscaled(image, longestSide: maxTransportPixelDimension)
+        if current.litterHasAlpha,
+           let pngData = current.pngData(),
+           pngData.count <= maxTransportImageBytes {
             return (pngData, "image/png")
         }
-        if let jpegData = image.jpegData(compressionQuality: 0.82) {
-            return (jpegData, "image/jpeg")
+        var dimension = maxTransportPixelDimension
+        while true {
+            guard let jpegData = current.jpegData(compressionQuality: transportJpegQuality) else { break }
+            if jpegData.count <= maxTransportImageBytes || dimension <= minTransportPixelDimension {
+                return (jpegData, "image/jpeg")
+            }
+            dimension = max(dimension * 0.75, minTransportPixelDimension)
+            current = downscaled(current, longestSide: dimension)
         }
-        if let pngData = image.pngData() {
-            return (pngData, "image/png")
+        return current.pngData().map { ($0, "image/png") }
+    }
+
+    private static func downscaled(_ image: UIImage, longestSide limit: CGFloat) -> UIImage {
+        let pixelWidth = image.size.width * image.scale
+        let pixelHeight = image.size.height * image.scale
+        let longestSide = max(pixelWidth, pixelHeight)
+        guard longestSide > limit else { return image }
+        let ratio = limit / longestSide
+        let targetSize = CGSize(width: pixelWidth * ratio, height: pixelHeight * ratio)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
         }
-        return nil
     }
 
     private static func isSupportedImageFile(_ url: URL) -> Bool {
         let pathExtension = url.pathExtension.lowercased()
-        return ["png", "jpg", "jpeg", "gif", "webp"].contains(pathExtension)
+        return ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif"].contains(pathExtension)
+    }
+
+    private static func shouldLoadAsImageOnly(_ url: URL) -> Bool {
+        isSupportedImageFile(url) || isPhotosLibraryInternalURL(url)
+    }
+
+    static func isPhotosLibraryInternalURL(_ url: URL) -> Bool {
+        isPhotosLibraryInternalPath(url.path)
+    }
+
+    static func isPhotosLibraryInternalPath(_ path: String) -> Bool {
+        let path = path.lowercased()
+        return path.contains(".photoslibrary/")
+            || path.contains(".photoslibrary\\")
+            || path.hasSuffix(".photoslibrary")
     }
 
     private static func fileLabel(for url: URL) -> String {

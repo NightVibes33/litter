@@ -9,14 +9,30 @@ extension Notification.Name {
 enum SavedServerStore {
     private static let savedServersKey = "codex_saved_servers"
 
+    /// Last raw bytes read/written plus their decoded+migrated result. Keyed
+    /// by the stored bytes (not a flag) so writes from elsewhere — e.g. the
+    /// iCloud KVS writeback path — still invalidate it. `Data ==` is a
+    /// memcmp, far cheaper than a JSON decode + migration on every access.
+    private static var cachedRaw: Data?
+    private static var cachedServers: [SavedServer] = []
+
     static func save(_ servers: [SavedServer]) {
         guard let data = try? JSONEncoder().encode(servers) else { return }
         UserDefaults.standard.set(data, forKey: savedServersKey)
+        cachedRaw = data
+        cachedServers = servers
         NotificationCenter.default.post(name: .litterSavedServersDidChange, object: nil)
     }
 
     static func load() -> [SavedServer] {
-        guard let data = UserDefaults.standard.data(forKey: savedServersKey) else { return [] }
+        guard let data = UserDefaults.standard.data(forKey: savedServersKey) else {
+            cachedRaw = nil
+            cachedServers = []
+            return []
+        }
+        if let cachedRaw, cachedRaw == data {
+            return cachedServers
+        }
         let decoded = (try? JSONDecoder().decode([SavedServer].self, from: data)) ?? []
         let migrated = decoded.map { saved -> SavedServer in
             let server = saved.toDiscoveredServer()
@@ -39,6 +55,9 @@ enum SavedServerStore {
         }
         if migrated != decoded {
             save(migrated)
+        } else {
+            cachedRaw = data
+            cachedServers = migrated
         }
         return migrated
     }
@@ -60,19 +79,6 @@ enum SavedServerStore {
         var saved = load()
         saved.removeAll { entry in matches(server, entry) }
         saved.append(SavedServer.from(server, rememberedByUser: true))
-        save(saved)
-    }
-
-    /// Legacy Alleycat persistence path. Kept so old app builds can still
-    /// decode records; current host pairings use `rememberAlleycat`.
-    static func rememberAlleycat(_ server: DiscoveredServer, relayHost: String) {
-        var saved = load()
-        saved.removeAll { entry in matches(server, entry) }
-        saved.append(
-            SavedServer
-                .from(server, rememberedByUser: true)
-                .withAlleycatHost(relayHost)
-        )
         save(saved)
     }
 
@@ -137,6 +143,7 @@ enum SavedServerStore {
                     sshPortForwardingEnabled: nil,
                     websocketUrl: nil,
                     rememberedByUser: true,
+                    detachedTransport: false,
                     alleycatHost: nil,
                     alleycatUdpPort: nil,
                     alleycatNodeId: nil,
@@ -151,9 +158,37 @@ enum SavedServerStore {
     }
 
     static func remove(serverId: String) {
-        var saved = load()
-        saved.removeAll { $0.id == serverId }
-        save(saved)
+        let saved = load()
+        let nodeIdsToForget = orphanedAlleycatNodeIds(removing: serverId, from: saved)
+        let remaining = saved.filter { $0.id != serverId }
+        save(remaining)
+
+        for nodeId in nodeIdsToForget {
+            do {
+                try AlleycatCredentialStore.shared.deleteToken(nodeId: nodeId)
+            } catch {
+                LLog.error("alleycat", "keychain token deletion failed while forgetting server", error: error)
+            }
+        }
+    }
+
+    /// An Alleycat token is keyed by node ID, so retain it when another saved
+    /// server still refers to the same node. The installation-wide device key
+    /// is deliberately not part of this server-scoped cleanup.
+    static func orphanedAlleycatNodeIds(removing serverId: String, from servers: [SavedServer]) -> [String] {
+        let removedNodeIds = Set(
+            servers
+                .filter { $0.id == serverId }
+                .compactMap { normalizedAlleycatNodeId($0.alleycatNodeId) }
+        )
+        guard !removedNodeIds.isEmpty else { return [] }
+
+        let retainedNodeIds = Set(
+            servers
+                .filter { $0.id != serverId }
+                .compactMap { normalizedAlleycatNodeId($0.alleycatNodeId) }
+        )
+        return removedNodeIds.subtracting(retainedNodeIds).sorted()
     }
 
     static func rename(serverId: String, newName: String) {
@@ -262,5 +297,12 @@ enum SavedServerStore {
             return "Alleycat \(nodeId)"
         }
         return "Alleycat \(nodeId.prefix(8))...\(nodeId.suffix(8))"
+    }
+
+    private static func normalizedAlleycatNodeId(_ nodeId: String?) -> String? {
+        let normalized = nodeId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return normalized?.isEmpty == false ? normalized : nil
     }
 }

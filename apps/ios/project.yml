@@ -32,6 +32,7 @@ settings:
     LITTER_RELEASE_STABLE_TAG: app-source
     LITTER_RELEASE_TAG_PREFIX: litter-v
     OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
+    SWIFT_OBJC_BRIDGING_HEADER: Sources/Litter/Bridge/codex_bridge_objc.h
     HEADER_SEARCH_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
     SWIFT_INCLUDE_PATHS: "$(inherited) $(PROJECT_DIR)/GeneratedRust/Headers"
     OTHER_SWIFT_FLAGS: "$(inherited)"
@@ -619,11 +620,13 @@ targets:
           - "**/*.h"
       - path: Sources/Litter/Bridge/UniFFICodexClient.generated.swift
       - path: Sources/LitterLiveActivity/CodexTurnLiveActivity.swift
-      - path: Sources/LitterWatch/Models/WatchModels.swift
-      - path: Sources/LitterWatch/Models/WatchSize.swift
-      - path: Sources/LitterWatch/Models/WatchHapticDetector.swift
-      - path: Sources/LitterWatch/Models/WatchSnapshotStore.swift
-      - path: Sources/LitterWatch/Models/WatchDeepLinkRouter.swift
+      - path: Sources/LitterWatch/Models
+        includes:
+          - WatchModels.swift
+          - WatchSize.swift
+          - WatchHapticDetector.swift
+          - WatchSnapshotStore.swift
+          - WatchDeepLinkRouter.swift
       - path: Sources/LitterWatchComplications/LitterServerListPayload.swift
       - path: Sources/LitterWatchComplications/LitterComplicationEntry.swift
       - path: Sources/LitterWatchComplications/LitterRunningTurnPayload.swift
@@ -634,8 +637,6 @@ targets:
       - path: Resources/fs.tar.gz
       - path: Resources/fs.version
       - path: Sources/Litter/Resources/TipJarProducts.storekit
-      - path: Sources/Litter/Resources/home_cat.png
-      - path: Sources/Litter/Resources/home_cat_entrance.png
       - path: Sources/Litter/Resources/cat_transmission_01.png
       - path: Sources/Litter/Resources/cat_transmission_02.png
       - path: Sources/Litter/Resources/cat_transmission_03.png
@@ -1140,6 +1141,10 @@ targets:
         Debug:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic
+          # The transferred team has not yet been granted Apple's managed
+          # CarPlay entitlement. Keep physical-device development installable
+          # without weakening the Release entitlement contract.
+          CODE_SIGN_ENTITLEMENTS: Sources/Litter/Litter-Debug.entitlements
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
           OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
@@ -1147,7 +1152,11 @@ targets:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "$(APP_CODE_SIGN_IDENTITY)"
-          APP_CODE_SIGN_IDENTITY: ""
+          APP_CODE_SIGN_IDENTITY: Apple Development
+          # CarPlay is a managed entitlement and has not been granted to the
+          # transferred Apple team. Keep the production push/app-group
+          # contract while making App Store archives signable today.
+          CODE_SIGN_ENTITLEMENTS: Sources/Litter/Litter-AppStore.entitlements
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
           OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
@@ -1201,7 +1210,6 @@ targets:
           - Views/LiveActivityPreview.swift
           - Views/LockScreenCardView.swift
           - Views/RealtimeVoiceScreen.swift
-          - Views/VoiceCallView.swift
           - "**/*.h"
       - path: Sources/Litter/Bridge/UniFFICodexClient.generated.swift
     resources:
@@ -1209,8 +1217,6 @@ targets:
       - path: Sources/Litter/Resources/Themes
       - path: Sources/Litter/Resources/BuildKit
       - path: Sources/Litter/Resources/TipJarProducts.storekit
-      - path: Sources/Litter/Resources/home_cat.png
-      - path: Sources/Litter/Resources/home_cat_entrance.png
       - path: Sources/Litter/Resources/cat_transmission_01.png
       - path: Sources/Litter/Resources/cat_transmission_02.png
       - path: Sources/Litter/Resources/cat_transmission_03.png
@@ -1253,7 +1259,7 @@ targets:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "$(APP_CODE_SIGN_IDENTITY)"
-          APP_CODE_SIGN_IDENTITY: ""
+          APP_CODE_SIGN_IDENTITY: Apple Development
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
           OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
@@ -1266,7 +1272,7 @@ targets:
           CODE_SIGN_STYLE: "$(APP_CODE_SIGN_STYLE)"
           APP_CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "$(APP_CODE_SIGN_IDENTITY)"
-          APP_CODE_SIGN_IDENTITY: ""
+          APP_CODE_SIGN_IDENTITY: Developer ID Application
           PROVISIONING_PROFILE_SPECIFIER: "$(APP_PROVISIONING_PROFILE_SPECIFIER)"
           APP_PROVISIONING_PROFILE_SPECIFIER: ""
           OTHER_LDFLAGS: "$(inherited) -lc++ -lz -lresolv -lcodex_mobile_client -lghostty"
@@ -1307,7 +1313,7 @@ targets:
           CODE_SIGN_STYLE: "$(LIVE_ACTIVITY_CODE_SIGN_STYLE)"
           LIVE_ACTIVITY_CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "$(LIVE_ACTIVITY_CODE_SIGN_IDENTITY)"
-          LIVE_ACTIVITY_CODE_SIGN_IDENTITY: ""
+          LIVE_ACTIVITY_CODE_SIGN_IDENTITY: Apple Development
           PROVISIONING_PROFILE_SPECIFIER: "$(LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER)"
           LIVE_ACTIVITY_PROVISIONING_PROFILE_SPECIFIER: ""
   LitterWatch:
@@ -1322,9 +1328,17 @@ targets:
       - path: Sources/LitterWatch
         excludes:
           - "Assets.xcassets"
+          - "Models/**"
+      - path: Sources/LitterWatch/Models
+      - path: Sources/Litter/AppIcon.icon
+      - path: Sources/Litter/Resources/Fonts/BerkeleyMono-Regular.otf
+        buildPhase: resources
+      - path: Sources/Litter/Resources/Fonts/BerkeleyMono-Bold.otf
+        buildPhase: resources
     resources:
       - path: Sources/Litter/Resources/Fonts
       - path: Sources/LitterWatch/Assets.xcassets
+        buildPhase: resources
     dependencies:
       - target: LitterWatchComplications
         embed: true
@@ -1352,7 +1366,7 @@ targets:
           CODE_SIGN_STYLE: "$(WATCH_CODE_SIGN_STYLE)"
           WATCH_CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "$(WATCH_CODE_SIGN_IDENTITY)"
-          WATCH_CODE_SIGN_IDENTITY: ""
+          WATCH_CODE_SIGN_IDENTITY: Apple Development
           PROVISIONING_PROFILE_SPECIFIER: "$(WATCH_PROVISIONING_PROFILE_SPECIFIER)"
           WATCH_PROVISIONING_PROFILE_SPECIFIER: ""
 
@@ -1390,7 +1404,7 @@ targets:
           CODE_SIGN_STYLE: "$(WATCH_COMP_CODE_SIGN_STYLE)"
           WATCH_COMP_CODE_SIGN_STYLE: Automatic
           CODE_SIGN_IDENTITY: "$(WATCH_COMP_CODE_SIGN_IDENTITY)"
-          WATCH_COMP_CODE_SIGN_IDENTITY: ""
+          WATCH_COMP_CODE_SIGN_IDENTITY: Apple Development
           PROVISIONING_PROFILE_SPECIFIER: "$(WATCH_COMP_PROVISIONING_PROFILE_SPECIFIER)"
           WATCH_COMP_PROVISIONING_PROFILE_SPECIFIER: ""
 

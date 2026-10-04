@@ -1,27 +1,24 @@
 import SwiftUI
 import UIKit
+import Observation
 
 extension Color {
     init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let r = Double((int >> 16) & 0xFF) / 255
-        let g = Double((int >> 8) & 0xFF) / 255
-        let b = Double(int & 0xFF) / 255
-        self.init(red: r, green: g, blue: b)
+        if let rgba = litterHexRGBA(hex) {
+            self.init(red: rgba.red, green: rgba.green, blue: rgba.blue, opacity: rgba.alpha)
+        } else {
+            self.init(red: 0, green: 0, blue: 0)
+        }
     }
 }
 
 extension UIColor {
     convenience init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let r = CGFloat((int >> 16) & 0xFF) / 255
-        let g = CGFloat((int >> 8) & 0xFF) / 255
-        let b = CGFloat(int & 0xFF) / 255
-        self.init(red: r, green: g, blue: b, alpha: 1)
+        if let rgba = litterHexRGBA(hex) {
+            self.init(red: rgba.red, green: rgba.green, blue: rgba.blue, alpha: rgba.alpha)
+        } else {
+            self.init(red: 0, green: 0, blue: 0, alpha: 1)
+        }
     }
 }
 
@@ -36,9 +33,38 @@ enum LitterTheme {
         Color(hex: colorScheme == .dark ? dark : light)
     }
 
+    /// Slug of the theme currently supplying colors, i.e. the light or dark
+    /// resolved theme depending on the active color scheme.
+    ///
+    /// Caches that bake resolved colors into a stored value (see
+    /// `MarkdownThemeCache`) key on this so they drop when the theme changes.
+    /// It reads through `ThemeStore`, which is `@Observable`, so a read from a
+    /// view body also registers the dependency that repaints on theme switch.
+    static var activeThemeSlug: String {
+        colorScheme == .dark ? dark.slug : light.slug
+    }
+
     static var accent: Color        { adaptive(light: light.accent, dark: dark.accent) }
     static var accentStrong: Color   { adaptive(light: light.accentStrong, dark: dark.accentStrong) }
     static var background: Color     { adaptive(light: light.background, dark: dark.background) }
+    static var linkColor: Color {
+        adaptive(
+            light: chromaticHex(light.accent, fallback: "#0A66C2"),
+            dark: chromaticHex(dark.accent, fallback: "#6CB2FF")
+        )
+    }
+
+    private static func chromaticHex(_ hexColor: String, fallback: String) -> String {
+        let hex = hexColor.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let r = Double((int >> 16) & 0xFF)
+        let g = Double((int >> 8) & 0xFF)
+        let b = Double(int & 0xFF)
+        let maxChannel = max(r, g, b)
+        let saturation = maxChannel == 0 ? 0 : (maxChannel - min(r, g, b)) / maxChannel
+        return saturation < 0.15 ? fallback : hexColor
+    }
     static var textPrimary: Color    { adaptive(light: light.textPrimary, dark: dark.textPrimary) }
     static var textSecondary: Color  { adaptive(light: light.textSecondary, dark: dark.textSecondary) }
     static var textMuted: Color      { adaptive(light: light.textMuted, dark: dark.textMuted) }
@@ -53,12 +79,6 @@ enum LitterTheme {
     static var warning: Color        { adaptive(light: light.warning, dark: dark.warning) }
     static var textOnAccent: Color   { adaptive(light: light.textOnAccent, dark: dark.textOnAccent) }
     static var codeBackground: Color { adaptive(light: light.codeBackground, dark: dark.codeBackground) }
-
-    static var overlayScrim: Color {
-        colorScheme == .dark
-            ? Color.black.opacity(0.5)
-            : Color.black.opacity(0.3)
-    }
 
     static var gradientColors: [Color] {
         [
@@ -104,6 +124,21 @@ enum LitterTheme {
             endPoint: .bottomTrailing
         )
     }
+
+    // MARK: Litter Quiet roles
+    //
+    // Semantic aliases over the resolved theme so views can speak in the
+    // design's vocabulary (meta, raised, rule) while the user-selected theme
+    // keeps supplying the actual colors in light and dark.
+
+    /// Mono metadata text: timestamps, server · project, counts.
+    static var meta: Color { textMuted }
+    /// Raised surfaces only: code, widgets, sheets, menus, composer.
+    static var raised: Color { codeBackground }
+    /// 2pt rule beside user messages.
+    static var userRule: Color { textMuted.opacity(0.45) }
+    /// Faint 1pt line between whole turns.
+    static var turnDivider: Color { separator.opacity(0.6) }
 
     static var headerScrim: [Color] {
         let bgColor = adaptive(light: light.background, dark: dark.background)
@@ -160,20 +195,81 @@ extension View {
     }
 }
 
+// MARK: - Litter Quiet layout tokens
+
+/// Spacing scale: 4 / 8 / 12 / 20 / 32. Margins are 20; turns sit 32 apart.
+enum LitterSpace {
+    static let xs: CGFloat = 4
+    static let s: CGFloat = 8
+    static let m: CGFloat = 12
+    static let l: CGFloat = 20
+    static let xl: CGFloat = 32
+    static let margin: CGFloat = 20
+    /// Max width of the conversation column (transcript and composer) on
+    /// wide surfaces, so text stays centered at a fixed reading width.
+    static let readableColumn: CGFloat = 760
+
+    /// Transcript column width for a container: the full width minus the
+    /// page margins on a phone, capped at `readableColumn` on wide screens.
+    static func readableColumnWidth(for containerWidth: CGFloat) -> CGFloat {
+        max(0, min(readableColumn, containerWidth - margin * 2))
+    }
+    static let betweenTurns: CGFloat = 32
+    /// Smallest point size used for any text.
+    static let minText: CGFloat = 13
+    /// Minimum hit target for tappable controls.
+    static let hitTarget: CGFloat = 44
+}
+
+/// Corner radii for raised surfaces.
+enum LitterRadius {
+    static let raised: CGFloat = 14
+    static let sheet: CGFloat = 16
+    static let composer: CGFloat = 26
+}
+
 enum FontFamilyOption: String, CaseIterable, Identifiable {
     case mono = "mono"
     case system = "system"
+    case systemMono = "system-mono"
+    case serif = "serif"
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .mono: return "Monospaced"
-        case .system: return "System (SF Pro)"
+        case .mono: return "Berkeley Mono"
+        case .system: return "ChatGPT (System)"
+        case .systemMono: return "System Mono"
+        case .serif: return "Reader Serif"
         }
     }
 
-    var isMono: Bool { self == .mono }
+    var isMono: Bool { self == .mono || self == .systemMono }
+}
+
+/// Makes app-wide SwiftUI font modifiers observe a preference change without
+/// recreating the navigation hierarchy or disrupting an active conversation.
+@Observable
+final class FontPreferenceObserver {
+    static let shared = FontPreferenceObserver()
+
+    private(set) var revision = 0
+
+    func didChange() {
+        revision &+= 1
+    }
+}
+
+private struct FontPreferenceObserverKey: EnvironmentKey {
+    static let defaultValue = FontPreferenceObserver.shared
+}
+
+extension EnvironmentValues {
+    var fontPreferenceObserver: FontPreferenceObserver {
+        get { self[FontPreferenceObserverKey.self] }
+        set { self[FontPreferenceObserverKey.self] = newValue }
+    }
 }
 
 enum LitterFont {
@@ -181,17 +277,28 @@ enum LitterFont {
     private static let berkeleyBold = "BerkeleyMono-Bold"
 
     static var storedFamily: FontFamilyOption {
-        let raw = UserDefaults.standard.string(forKey: "fontFamily") ?? "mono"
-        return FontFamilyOption(rawValue: raw) ?? .mono
+        let raw = UserDefaults.standard.string(forKey: "fontFamily") ?? FontFamilyOption.system.rawValue
+        return FontFamilyOption(rawValue: raw) ?? .system
     }
 
-    static var markdownFontName: String {
-        switch storedFamily {
-        case .mono:
-            return preferredMonoFontName(weight: .regular) ?? "SFMono-Regular"
-        case .system:
-            return ".AppleSystemUIFont"
-        }
+    static var codeFontName: String {
+        let name = storedFamily == .mono
+            ? preferredMonoFontName(weight: .regular) ?? "SFMono-Regular"
+            : "SFMono-Regular"
+        return UIFont(name: name, size: conversationBodyPointSize)?.fontName
+            ?? UIFont.monospacedSystemFont(ofSize: conversationBodyPointSize, weight: .regular).fontName
+    }
+
+    /// Hairball receives a SwiftUI `Font`, not an internal UIKit font name.
+    /// Passing the latter through `Font.custom` turns the system selection
+    /// into a serif fallback on iOS 26. Keeping this as a real system/design
+    /// font makes conversation prose match the rest of the app.
+    static func markdownBodyFont(size: CGFloat) -> Font {
+        font(family: storedFamily, size: size, weight: .regular, relativeTo: nil)
+    }
+
+    static func markdownHeadingFont(size: CGFloat, weight: Font.Weight) -> Font {
+        font(family: storedFamily, size: size, weight: weight, relativeTo: nil)
     }
 
     static func styled(
@@ -221,20 +328,37 @@ enum LitterFont {
     }
 
     private static func styled(size: CGFloat, weight: Font.Weight, relativeTo style: Font.TextStyle?) -> Font {
-        if storedFamily.isMono {
-            return monoFont(size: size, weight: weight, relativeTo: style)
-        }
-        return .system(size: size, weight: weight)
+        font(family: storedFamily, size: size, weight: weight, relativeTo: style)
     }
 
     private static func monoFont(size: CGFloat, weight: Font.Weight, relativeTo style: Font.TextStyle?) -> Font {
-        if let fontName = preferredMonoFontName(weight: weight) {
+        let family: FontFamilyOption = storedFamily == .mono ? .mono : .systemMono
+        return font(family: family, size: size, weight: weight, relativeTo: style)
+    }
+
+    private static func font(
+        family: FontFamilyOption,
+        size: CGFloat,
+        weight: Font.Weight,
+        relativeTo style: Font.TextStyle?
+    ) -> Font {
+        if family == .mono, let fontName = preferredMonoFontName(weight: weight) {
             if let style {
                 return .custom(fontName, size: size, relativeTo: style)
             }
             return .custom(fontName, size: size)
         }
-        return .system(size: size, weight: weight, design: .monospaced)
+
+        let design: Font.Design
+        switch family {
+        case .mono, .systemMono:
+            design = .monospaced
+        case .system:
+            design = .default
+        case .serif:
+            design = .serif
+        }
+        return .system(size: size, weight: weight, design: design)
     }
 
     private static func preferredMonoFontName(weight: Font.Weight) -> String? {
@@ -258,21 +382,56 @@ enum LitterFont {
     }
 
     static func uiMonoFont(size: CGFloat, bold: Bool = false) -> UIFont {
-        let name = bold
-            ? preferredMonoFontName(weight: .bold) ?? "SFMono-Bold"
-            : preferredMonoFontName(weight: .regular) ?? "SFMono-Regular"
-        return UIFont(name: name, size: size) ?? UIFont.monospacedSystemFont(ofSize: size, weight: bold ? .bold : .regular)
+        if storedFamily == .mono {
+            let name = bold
+                ? preferredMonoFontName(weight: .bold) ?? "SFMono-Bold"
+                : preferredMonoFontName(weight: .regular) ?? "SFMono-Regular"
+            if let font = UIFont(name: name, size: size) {
+                return font
+            }
+        }
+        return UIFont.monospacedSystemFont(ofSize: size, weight: bold ? .bold : .regular)
+    }
+
+    static func uiFont(size: CGFloat, bold: Bool = false) -> UIFont {
+        uiFont(family: storedFamily, size: size, bold: bold)
+    }
+
+    private static func uiFont(family: FontFamilyOption, size: CGFloat, bold: Bool = false) -> UIFont {
+        let weight: UIFont.Weight = bold ? .bold : .regular
+        switch family {
+        case .mono:
+            let name = bold
+                ? preferredMonoFontName(weight: .bold) ?? "SFMono-Bold"
+                : preferredMonoFontName(weight: .regular) ?? "SFMono-Regular"
+            return UIFont(name: name, size: size) ?? UIFont.monospacedSystemFont(ofSize: size, weight: weight)
+        case .system:
+            return UIFont.systemFont(ofSize: size, weight: weight)
+        case .systemMono:
+            return UIFont.monospacedSystemFont(ofSize: size, weight: weight)
+        case .serif:
+            let base = UIFont.systemFont(ofSize: size, weight: weight)
+            guard let descriptor = base.fontDescriptor.withDesign(.serif) else { return base }
+            return UIFont(descriptor: descriptor, size: size)
+        }
     }
 
     static func sampleFont(family: FontFamilyOption, size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        if family.isMono {
-            return monoFont(size: size, weight: weight, relativeTo: nil)
-        }
-        return .system(size: size, weight: weight)
+        font(family: family, size: size, weight: weight, relativeTo: nil)
     }
 
     static var conversationBodyPointSize: CGFloat {
-        UIFont.preferredFont(forTextStyle: .body).pointSize
+        // The system body metric follows Dynamic Type (17pt at the default
+        // size). Conversation prose is the reading surface, so it uses the
+        // full body size; `conversationBodyLineSpacing` opens the leading to
+        // roughly 1.45.
+        max(UIFont.preferredFont(forTextStyle: .body).pointSize, 15)
+    }
+
+    /// Extra leading that takes body text from the font's natural ~1.2 line
+    /// height to roughly 1.45.
+    static var conversationBodyLineSpacing: CGFloat {
+        (conversationBodyPointSize * 0.22).rounded()
     }
 
     static var conversationDiffPointSize: CGFloat {
@@ -346,35 +505,70 @@ extension View {
     func litterMonoFont(size: CGFloat, weight: Font.Weight = .regular) -> some View {
         modifier(ScaledMonoFontModifier(size: size, weight: weight))
     }
+
+    /// Metadata style: mono 13 (footnote, so it follows Dynamic Type), gray.
+    func litterMeta(_ color: Color = LitterTheme.meta) -> some View {
+        modifier(ScaledMonoStyleFontModifier(style: .footnote, weight: .regular))
+            .foregroundStyle(color)
+    }
+
+    /// Lowercase mono section label ("now", "today", "general").
+    func litterSectionLabel() -> some View {
+        litterMeta()
+            .textCase(.lowercase)
+            .accessibilityAddTraits(.isHeader)
+    }
 }
 
 private struct ScaledSizeFontModifier: ViewModifier {
     @Environment(\.textScale) private var textScale
+    @Environment(\.fontPreferenceObserver) private var fontPreferenceObserver
     let size: CGFloat
     let weight: Font.Weight
 
     func body(content: Content) -> some View {
-        content.font(LitterFont.styled(size: size, weight: weight, scale: textScale))
+        content
+            .font(LitterFont.styled(size: size, weight: weight, scale: textScale))
+            .id(fontPreferenceObserver.revision)
     }
 }
 
 private struct ScaledStyleFontModifier: ViewModifier {
     @Environment(\.textScale) private var textScale
+    @Environment(\.fontPreferenceObserver) private var fontPreferenceObserver
     let style: Font.TextStyle
     let weight: Font.Weight
 
     func body(content: Content) -> some View {
-        content.font(LitterFont.styled(style, weight: weight, scale: textScale))
+        content
+            .font(LitterFont.styled(style, weight: weight, scale: textScale))
+            .id(fontPreferenceObserver.revision)
     }
 }
 
 private struct ScaledMonoFontModifier: ViewModifier {
     @Environment(\.textScale) private var textScale
+    @Environment(\.fontPreferenceObserver) private var fontPreferenceObserver
     let size: CGFloat
     let weight: Font.Weight
 
     func body(content: Content) -> some View {
-        content.font(LitterFont.monospaced(size: size, weight: weight, scale: textScale))
+        content
+            .font(LitterFont.monospaced(size: size, weight: weight, scale: textScale))
+            .id(fontPreferenceObserver.revision)
+    }
+}
+
+private struct ScaledMonoStyleFontModifier: ViewModifier {
+    @Environment(\.textScale) private var textScale
+    @Environment(\.fontPreferenceObserver) private var fontPreferenceObserver
+    let style: Font.TextStyle
+    let weight: Font.Weight
+
+    func body(content: Content) -> some View {
+        content
+            .font(LitterFont.monospaced(style, weight: weight, scale: textScale))
+            .id(fontPreferenceObserver.revision)
     }
 }
 
@@ -397,26 +591,6 @@ private extension Font.TextStyle {
     }
 }
 
-func serverIconName(for server: DiscoveredServer) -> String {
-    if server.source == .local { return "iphone" }
-
-    if let os = server.os?.lowercased() {
-        if os.contains("windows") { return "pc" }
-        if os.contains("raspbian") { return "cpu" }
-        if os.contains("ubuntu") || os.contains("debian")
-            || os.contains("fedora") || os.contains("red hat")
-            || os.contains("freebsd") || os.contains("linux") { return "server.rack" }
-    }
-
-    switch server.source {
-    case .local: return "iphone"
-    case .bonjour: return "macbook"
-    case .ssh: return "terminal"
-    case .tailscale: return "network"
-    case .manual: return "server.rack"
-    }
-}
-
 func abbreviateHomePath(_ path: String) -> String {
     let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return "~" }
@@ -430,11 +604,15 @@ func abbreviateHomePath(_ path: String) -> String {
     return trimmed
 }
 
-func relativeDate(_ timestamp: Int64) -> String {
-    let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
+private let cachedRelativeDateFormatter: RelativeDateTimeFormatter = {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .abbreviated
-    return formatter.localizedString(for: date, relativeTo: Date())
+    return formatter
+}()
+
+func relativeDate(_ timestamp: Int64) -> String {
+    let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
+    return cachedRelativeDateFormatter.localizedString(for: date, relativeTo: Date())
 }
 
 // MARK: - Glass Effect Availability Wrappers
@@ -464,6 +642,29 @@ struct GlassCapsuleModifier: ViewModifier {
             tint: interactive ? LitterTheme.accent : LitterTheme.border,
             cornerRadius: 9
         )
+    }
+}
+
+/// Quiet raised fill for small circular/capsule controls (matches the
+/// composer card): no glass, no stroke, no shadow.
+struct RaisedCapsuleModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(Capsule(style: .continuous).fill(LitterTheme.composerControl))
+            .contentShape(Capsule(style: .continuous))
+    }
+}
+
+extension ToolbarContent {
+    /// Opts a toolbar item out of iOS 26's shared glass capsule so its
+    /// glyph sits directly on the background.
+    @ToolbarContentBuilder
+    func litterPlainToolbarItem() -> some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
     }
 }
 
@@ -506,4 +707,79 @@ extension View {
             self.matchedGeometryEffect(id: id, in: namespace)
         }
     }
+}
+
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        guard size > 0 else { return [self] }
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}
+
+extension URL {
+    var isWebLink: Bool {
+        let scheme = scheme?.lowercased()
+        return scheme == "http" || scheme == "https"
+    }
+}
+
+extension OpenURLAction {
+    static var externalBrowser: OpenURLAction {
+        OpenURLAction { url in
+            guard url.isWebLink else { return .systemAction }
+            UIApplication.shared.open(url)
+            return .handled
+        }
+    }
+}
+
+enum MessageLinks {
+    static let detector: NSDataDetector? =
+        try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
+    static func links(in text: String, limit: Int = 5) -> [URL] {
+        guard text.contains("://") || text.lowercased().contains("www."),
+              let detector else { return [] }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        var seen = Set<String>()
+        var links: [URL] = []
+        for match in detector.matches(in: text, options: [], range: range) {
+            guard let url = match.url,
+                  url.isWebLink,
+                  seen.insert(url.absoluteString).inserted else { continue }
+            links.append(url)
+            if links.count >= limit { break }
+        }
+        return links
+    }
+
+    static func copyTitle(for url: URL) -> String {
+        let display = url.host.map { host in
+            let port = url.port.map { ":\($0)" } ?? ""
+            let path = url.path.count > 1 ? url.path : ""
+            let query = url.query.map { "?\($0)" } ?? ""
+            let fragment = url.fragment.map { "#\($0)" } ?? ""
+            return "\(host)\(port)\(path)\(query)\(fragment)"
+        } ?? url.absoluteString
+        let trimmed = display.count > 40 ? String(display.prefix(40)) + "…" : display
+        return "Copy \(trimmed)"
+    }
+}
+
+// MARK: - Litter Quiet composer roles
+
+extension LitterTheme {
+    /// Fill of the raised composer card.
+    static var composerFill: Color { raised }
+    /// 1pt outline around the composer card, a touch lighter than its fill.
+    static var composerOutline: Color { textPrimary.opacity(0.10) }
+    /// Fill of the round/capsule controls sitting on the composer card.
+    static var composerControl: Color { textPrimary.opacity(0.07) }
+}
+
+extension LitterSpace {
+    /// Inner padding of the composer card.
+    static let composerInset: CGFloat = 14
 }

@@ -63,33 +63,16 @@ impl TryFrom<AppDynamicToolSpec> for codex_protocol::dynamic_tools::DynamicToolS
     type Error = RpcClientError;
 
     fn try_from(value: AppDynamicToolSpec) -> Result<Self, Self::Error> {
-        Ok(Self::Function(codex_protocol::dynamic_tools::DynamicToolFunctionSpec {
-            name: value.name,
-            description: value.description,
-            input_schema: serde_json::from_str(&value.input_schema_json).map_err(|e| {
-                RpcClientError::Serialization(format!("invalid input_schema JSON: {e}"))
-            })?,
-            defer_loading: value.defer_loading,
-        }))
-    }
-}
-
-impl From<codex_protocol::dynamic_tools::DynamicToolSpec> for AppDynamicToolSpec {
-    fn from(value: codex_protocol::dynamic_tools::DynamicToolSpec) -> Self {
-        let codex_protocol::dynamic_tools::DynamicToolSpec::Function(value) = value else {
-            return Self {
-                name: "namespace".to_string(),
-                description: "Dynamic tool namespace".to_string(),
-                input_schema_json: "{}".to_string(),
-                defer_loading: true,
-            };
-        };
-        Self {
-            name: value.name,
-            description: value.description,
-            input_schema_json: serde_json::to_string(&value.input_schema).unwrap_or_default(),
-            defer_loading: value.defer_loading,
-        }
+        Ok(Self::Function(
+            codex_protocol::dynamic_tools::DynamicToolFunctionSpec {
+                name: value.name,
+                description: value.description,
+                input_schema: serde_json::from_str(&value.input_schema_json).map_err(|e| {
+                    RpcClientError::Serialization(format!("invalid input_schema JSON: {e}"))
+                })?,
+                defer_loading: value.defer_loading,
+            },
+        ))
     }
 }
 
@@ -210,14 +193,12 @@ impl From<upstream::Thread> for ThreadInfo {
 
         Self {
             id: thread.id,
-            title: thread.name,
+            // Bridges derive names/previews from transcript text, which can
+            // carry Claude Code wrapper markup (`<local-command-caveat>` …).
+            title: crate::thread_display_text::sanitize_optional_thread_display_text(thread.name),
             model: None,
             status: ThreadSummaryStatus::from(thread.status),
-            preview: if thread.preview.is_empty() {
-                None
-            } else {
-                Some(thread.preview)
-            },
+            preview: crate::thread_display_text::sanitize_thread_display_text(&thread.preview),
             cwd: Some(thread.cwd.to_string_lossy().to_string()),
             path: match thread.path {
                 Some(path) => Some(path.to_string_lossy().to_string()),
@@ -247,7 +228,12 @@ impl From<codex_protocol::account::PlanType> for PlanType {
             codex_protocol::account::PlanType::Enterprise => Self::Enterprise,
             codex_protocol::account::PlanType::Edu => Self::Edu,
             codex_protocol::account::PlanType::Unknown => Self::Unknown,
-            codex_protocol::account::PlanType::ProLite => Self::Unknown,
+            codex_protocol::account::PlanType::ProLite => Self::Pro,
+            codex_protocol::account::PlanType::SelfServeBusinessProLite => Self::Business,
+            codex_protocol::account::PlanType::Ent26
+            | codex_protocol::account::PlanType::EnterpriseCbpAutomation => Self::Enterprise,
+            codex_protocol::account::PlanType::EduPlus
+            | codex_protocol::account::PlanType::EduPro => Self::Edu,
             codex_protocol::account::PlanType::SelfServeBusinessUsageBased => Self::Business,
             codex_protocol::account::PlanType::EnterpriseCbpUsageBased => Self::Enterprise,
         }
@@ -302,7 +288,6 @@ impl TryFrom<codex_protocol::config_types::ModeKind> for AppModeKind {
         match value {
             codex_protocol::config_types::ModeKind::Default => Ok(Self::Default),
             codex_protocol::config_types::ModeKind::Plan => Ok(Self::Plan),
-            other => Err(format!("unsupported collaboration mode: {:?}", other)),
         }
     }
 }
@@ -509,6 +494,13 @@ pub enum AuthMode {
     ChatgptAuthTokens,
     #[serde(rename = "agentIdentity")]
     AgentIdentity,
+    Headers,
+    #[serde(rename = "personalAccessToken")]
+    PersonalAccessToken,
+    #[serde(rename = "bedrockApiKey")]
+    BedrockApiKey,
+    #[serde(rename = "bedrockAccessKeys")]
+    BedrockAccessKeys,
 }
 
 impl From<upstream::AuthMode> for AuthMode {
@@ -518,28 +510,10 @@ impl From<upstream::AuthMode> for AuthMode {
             upstream::AuthMode::Chatgpt => Self::Chatgpt,
             upstream::AuthMode::ChatgptAuthTokens => Self::ChatgptAuthTokens,
             upstream::AuthMode::AgentIdentity => Self::AgentIdentity,
-            upstream::AuthMode::Headers => Self::ApiKey,
-            upstream::AuthMode::PersonalAccessToken => Self::ApiKey,
-            upstream::AuthMode::BedrockApiKey => Self::ApiKey,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-#[derive(uniffi::Record)]
-pub struct CommandExecResult {
-    pub exit_code: i32,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-impl From<upstream::CommandExecResponse> for CommandExecResult {
-    fn from(value: upstream::CommandExecResponse) -> Self {
-        Self {
-            exit_code: value.exit_code,
-            stdout: value.stdout,
-            stderr: value.stderr,
+            upstream::AuthMode::Headers => Self::Headers,
+            upstream::AuthMode::PersonalAccessToken => Self::PersonalAccessToken,
+            upstream::AuthMode::BedrockApiKey => Self::BedrockApiKey,
+            upstream::AuthMode::BedrockAccessKeys => Self::BedrockAccessKeys,
         }
     }
 }
@@ -684,6 +658,7 @@ pub enum PlanType {
 pub enum InputModality {
     Text,
     Image,
+    Audio,
 }
 
 impl From<codex_protocol::openai_models::InputModality> for InputModality {
@@ -691,6 +666,7 @@ impl From<codex_protocol::openai_models::InputModality> for InputModality {
         match value {
             codex_protocol::openai_models::InputModality::Text => Self::Text,
             codex_protocol::openai_models::InputModality::Image => Self::Image,
+            codex_protocol::openai_models::InputModality::Audio => Self::Audio,
         }
     }
 }
@@ -744,9 +720,11 @@ pub enum AppMergeStrategy {
     Upsert,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
-#[serde(rename_all = "lowercase")]
-#[derive(uniffi::Enum)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, uniffi::Enum)]
+#[serde(
+    from = "codex_protocol::openai_models::ReasoningEffort",
+    into = "codex_protocol::openai_models::ReasoningEffort"
+)]
 pub enum ReasoningEffort {
     None,
     Minimal,
@@ -756,24 +734,64 @@ pub enum ReasoningEffort {
     High,
     XHigh,
     Max,
+    Ultra,
+    Persistent,
+    Custom {
+        value: String,
+    },
 }
-
 impl From<codex_protocol::openai_models::ReasoningEffort> for ReasoningEffort {
     fn from(value: codex_protocol::openai_models::ReasoningEffort) -> Self {
+        use codex_protocol::openai_models::ReasoningEffort as Core;
         match value {
-            codex_protocol::openai_models::ReasoningEffort::None => Self::None,
-            codex_protocol::openai_models::ReasoningEffort::Minimal => Self::Minimal,
-            codex_protocol::openai_models::ReasoningEffort::Low => Self::Low,
-            codex_protocol::openai_models::ReasoningEffort::Medium => Self::Medium,
-            codex_protocol::openai_models::ReasoningEffort::High => Self::High,
-            codex_protocol::openai_models::ReasoningEffort::XHigh => Self::XHigh,
-            // Newer/local codex checkouts may expose Max before the pinned
-            // submodule advances. Do not name that upstream variant here, so
-            // clean checkouts at the committed gitlink still compile.
-            #[allow(unreachable_patterns)]
-            _ => Self::Max,
+            Core::None => Self::None,
+            Core::Minimal => Self::Minimal,
+            Core::Low => Self::Low,
+            Core::Medium => Self::Medium,
+            Core::High => Self::High,
+            Core::XHigh => Self::XHigh,
+            Core::Max => Self::Max,
+            Core::Ultra => Self::Ultra,
+            Core::Persistent => Self::Persistent,
+            Core::Custom(value) => Self::Custom { value },
         }
     }
+}
+impl From<ReasoningEffort> for codex_protocol::openai_models::ReasoningEffort {
+    fn from(value: ReasoningEffort) -> Self {
+        match value {
+            ReasoningEffort::None => Self::None,
+            ReasoningEffort::Minimal => Self::Minimal,
+            ReasoningEffort::Low => Self::Low,
+            ReasoningEffort::Medium => Self::Medium,
+            ReasoningEffort::High => Self::High,
+            ReasoningEffort::XHigh => Self::XHigh,
+            ReasoningEffort::Max => Self::Max,
+            ReasoningEffort::Ultra => Self::Ultra,
+            ReasoningEffort::Persistent => Self::Persistent,
+            ReasoningEffort::Custom { value } => Self::Custom(value),
+        }
+    }
+}
+/// Preserve model-defined wire identifiers exactly; do not lowercase custom efforts.
+#[uniffi::export]
+pub fn reasoning_effort_from_wire_value(value: Option<String>) -> Option<ReasoningEffort> {
+    let value = value?;
+    let normalized = value.trim().to_ascii_lowercase();
+    let wire = match normalized.as_str() {
+        "" => return None,
+        "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra"
+        | "persistent" => normalized.as_str(),
+        "x-high" => "xhigh",
+        _ => value.as_str(),
+    };
+    wire.parse::<codex_protocol::openai_models::ReasoningEffort>()
+        .ok()
+        .map(Into::into)
+}
+#[uniffi::export]
+pub fn reasoning_effort_wire_value(value: ReasoningEffort) -> String {
+    codex_protocol::openai_models::ReasoningEffort::from(value).to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1220,6 +1238,156 @@ pub struct ModelInfo {
     pub is_default: bool,
     #[serde(default = "default_agent_runtime_kind")]
     pub agent_runtime_kind: AgentRuntimeKind,
+    #[serde(default)]
+    #[uniffi(default = None)]
+    pub provider_id: Option<String>,
+    /// What this catalog entry selects. Some runtimes (Amp) list *modes*
+    /// in their model catalog; pickers must present those as modes, not
+    /// as models. Classified once in Rust when the catalog is fetched.
+    #[serde(default)]
+    pub entry_kind: ModelEntryKind,
+    /// Short picker label: the mode name for mode entries, otherwise the
+    /// display name without its provider/catalog prefix or suffix.
+    #[serde(default)]
+    #[uniffi(default = "")]
+    pub picker_name: String,
+    /// Human-readable provider name for `provider_id` ("OpenAI", "xAI").
+    #[serde(default)]
+    #[uniffi(default = None)]
+    pub provider_label: Option<String>,
+}
+
+/// Kind of choice a model-catalog entry represents.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[derive(uniffi::Enum)]
+pub enum ModelEntryKind {
+    /// A real model.
+    #[default]
+    Model,
+    /// A built-in runtime mode from the agent's `visible_modes` allowlist
+    /// (Amp `low` / `medium` / `high` / `ultra`).
+    Mode,
+    /// A mode contributed by a runtime plugin (Amp plugin modes).
+    PluginMode,
+}
+
+impl ModelInfo {
+    /// Fill the picker presentation fields (`entry_kind`, `picker_name`,
+    /// `provider_label`). `visible_modes` is the runtime's mode allowlist;
+    /// `Some` means the runtime's catalog lists modes rather than models.
+    pub fn apply_picker_presentation(&mut self, visible_modes: Option<&[String]>) {
+        self.provider_label = self
+            .provider_id
+            .as_deref()
+            .filter(|provider| !provider.is_empty())
+            .map(provider_display_label);
+        let Some(visible_modes) = visible_modes else {
+            self.entry_kind = ModelEntryKind::Model;
+            self.picker_name = model_name_within_provider(self);
+            return;
+        };
+        let kind = self.agent_runtime_kind.as_str();
+        let mut mode = normalized_mode_name(&self.id, kind);
+        if mode.is_empty() {
+            mode = normalized_mode_name(&self.model, kind);
+        }
+        let is_builtin = visible_modes
+            .iter()
+            .any(|visible| visible.trim().eq_ignore_ascii_case(&mode));
+        if is_builtin {
+            self.entry_kind = ModelEntryKind::Mode;
+            self.picker_name = mode;
+        } else {
+            // Plugin modes carry a host-chosen display name; prefer it.
+            self.entry_kind = ModelEntryKind::PluginMode;
+            self.picker_name = if !self.display_name.trim().is_empty() || mode.is_empty() {
+                fallback_display_name(self)
+            } else {
+                mode
+            };
+        }
+    }
+}
+
+fn fallback_display_name(model: &ModelInfo) -> String {
+    if model.display_name.trim().is_empty() {
+        model.id.clone()
+    } else {
+        model.display_name.clone()
+    }
+}
+
+/// Lowercased mode name with an optional `<kind>/`, `<kind>:` or
+/// `<kind>\` prefix removed.
+fn normalized_mode_name(value: &str, kind: &str) -> String {
+    let mut out = value.trim().to_lowercase();
+    if kind.is_empty() {
+        return out;
+    }
+    for separator in ['/', ':', '\\'] {
+        if out.starts_with(kind) && out[kind.len()..].starts_with(separator) {
+            out = out[kind.len() + separator.len_utf8()..].to_string();
+        }
+    }
+    out
+}
+
+fn model_name_within_provider(model: &ModelInfo) -> String {
+    let mut name = fallback_display_name(model);
+    if let Some((catalog, _)) = model.id.split_once('/') {
+        let suffix = format!(" ({catalog})");
+        if name.len() > suffix.len() && name.to_lowercase().ends_with(&suffix.to_lowercase()) {
+            name.truncate(name.len() - suffix.len());
+        }
+    }
+    if let Some(provider) = model.provider_id.as_deref().filter(|p| !p.is_empty()) {
+        let prefix = format!("{provider}/");
+        if name.len() > prefix.len() && name.starts_with(&prefix) {
+            name = name[prefix.len()..].to_string();
+        }
+    }
+    name
+}
+
+/// Display label for a provider id. Well-known ids get their brand
+/// spelling; everything else is title-cased on `-` / `_`.
+pub fn provider_display_label(provider: &str) -> String {
+    let known = match provider.to_ascii_lowercase().as_str() {
+        "ai21" => Some("AI21"),
+        "anthropic" => Some("Anthropic"),
+        "arcee-ai" => Some("Arcee AI"),
+        "bytedance-seed" => Some("ByteDance"),
+        "deepseek" => Some("DeepSeek"),
+        "google" => Some("Google"),
+        "meta-llama" => Some("Meta"),
+        "minimax" => Some("MiniMax"),
+        "mistralai" => Some("Mistral AI"),
+        "moonshotai" => Some("Moonshot AI"),
+        "nvidia" => Some("NVIDIA"),
+        "openai" => Some("OpenAI"),
+        "openai-codex" => Some("OpenAI Codex"),
+        "openrouter" => Some("OpenRouter"),
+        "qwen" => Some("Qwen"),
+        "x-ai" | "xai" => Some("xAI"),
+        "z-ai" | "zai" => Some("Z.ai"),
+        _ => None,
+    };
+    if let Some(known) = known {
+        return known.to_string();
+    }
+    provider
+        .split(['-', '_'])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().chain(chars).collect::<String>(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 impl From<upstream::Model> for ModelInfo {
@@ -1252,6 +1420,10 @@ impl From<upstream::Model> for ModelInfo {
             supports_personality: value.supports_personality,
             is_default: value.is_default,
             agent_runtime_kind: "codex".to_string(),
+            provider_id: None,
+            entry_kind: ModelEntryKind::Model,
+            picker_name: String::new(),
+            provider_label: None,
         }
     }
 }
@@ -1973,5 +2145,34 @@ mod tests {
         .expect("thread/read response should tolerate legacy fields");
 
         assert_eq!(response.thread.id, "thread-1");
+    }
+}
+
+#[cfg(test)]
+mod reasoning_effort_compatibility_tests {
+    use super::*;
+    #[test]
+    fn persistent_and_model_defined_efforts_round_trip_as_wire_strings() {
+        for wire in ["persistent", "provider/Adaptive-v2", "deep_2048"] {
+            let mobile: ReasoningEffort = serde_json::from_value(serde_json::json!(wire)).unwrap();
+            assert_eq!(
+                serde_json::to_value(&mobile).unwrap(),
+                serde_json::json!(wire)
+            );
+            let upstream: codex_protocol::openai_models::ReasoningEffort = mobile.clone().into();
+            assert_eq!(upstream.as_str(), wire);
+            assert_eq!(ReasoningEffort::from(upstream), mobile);
+            assert_eq!(
+                reasoning_effort_wire_value(
+                    reasoning_effort_from_wire_value(Some(wire.into())).unwrap()
+                ),
+                wire
+            );
+        }
+        assert_eq!(
+            reasoning_effort_from_wire_value(Some(" HIGH ".into())),
+            Some(ReasoningEffort::High)
+        );
+        assert!(serde_json::from_str::<ReasoningEffort>("\"\"").is_err());
     }
 }

@@ -3,6 +3,9 @@
 //! This crate owns the single public UniFFI surface for mobile. Keep shared
 //! business logic here so Swift/Kotlin only compile one binding set.
 
+// Upstream app-server dispatch futures exceed the default layout query depth on iOS.
+#![recursion_limit = "256"]
+
 #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]
 pub mod ish_exec;
 
@@ -133,10 +136,14 @@ pub fn ish_runtime_preflight() -> IshRunResult {
     }
 }
 
+mod local_studio;
+mod remote_dir_cache;
 #[cfg(any(all(target_os = "ios", not(target_abi = "macabi")), test))]
 mod mobile_exec_command;
 mod shell_quoting;
 pub(crate) mod ssh_scripts;
+#[cfg(any(target_os = "android", test))]
+mod tls_roots;
 
 #[cfg(target_os = "android")]
 mod android_context;
@@ -153,14 +160,11 @@ pub mod proot_runtime;
 pub mod shell_preflight;
 
 pub mod alleycat;
-pub mod ambient_suggestions;
-pub mod capability;
 pub mod cloud_sync;
 pub mod conversation;
 pub mod conversation_uniffi;
-pub mod discovery;
-pub mod discovery_uniffi;
 pub mod ffi;
+mod home_cache;
 pub mod hydration;
 mod local_runtime_instructions;
 pub mod local_server;
@@ -178,17 +182,24 @@ pub mod reconnect;
 pub mod recorder;
 pub mod remote_path;
 pub mod saved_apps;
+pub mod runtime_settings;
 pub mod session;
 pub(crate) mod slingshot_url;
 pub mod ssh;
 pub mod ssh_bridge;
+pub(crate) mod ssh_detect_cache;
 pub mod ssh_detached_launcher;
 pub mod ssh_launcher;
 pub mod store;
 pub mod terminal;
+mod thread_modes;
 pub mod transport;
+pub mod thread_display_text;
 pub mod types;
 pub mod widget_guidelines;
+
+#[cfg(test)]
+mod perf_profile;
 
 pub use mobile_client::*;
 

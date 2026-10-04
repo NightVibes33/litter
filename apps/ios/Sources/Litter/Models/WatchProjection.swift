@@ -291,10 +291,14 @@ enum WatchProjection {
         if delta < 3600 { return "\(Int(delta) / 60)m" }
         if delta < 86400 { return "\(Int(delta) / 3600)h" }
         if delta < 7 * 86400 { return "\(Int(delta) / 86400)d" }
+        return shortMonthDayFormatter.string(from: updatedDate)
+    }
+
+    private static let shortMonthDayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
-        return formatter.string(from: updatedDate)
-    }
+        return formatter
+    }()
 
     // MARK: - Diff projection
 
@@ -407,7 +411,7 @@ enum WatchProjection {
 
     private static func mapStatus(_ status: AppOperationStatus) -> WatchTaskStep.State {
         switch status {
-        case .completed, .failed, .declined: return .done
+        case .completed, .failed, .declined, .interrupted: return .done
         case .inProgress: return .active
         case .pending, .unknown: return .pending
         }

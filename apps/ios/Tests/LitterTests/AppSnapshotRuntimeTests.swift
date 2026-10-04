@@ -134,9 +134,24 @@ final class AppSnapshotRuntimeTests: XCTestCase {
             agentRuntimeKind: .opencode
         )
 
+        // A runtime the built-in agent catalog knows about now gets its
+        // label from the catalog's `display_name`, which mirrors the
+        // upstream alleycat manifest. opencode brands itself lowercase, so
+        // the seeded label deliberately differs from the titlecase the bare
+        // fallback would produce.
+        let unknown = makeThreadSnapshot(
+            key: ThreadKey(serverId: "srv", threadId: "thread-unknown"),
+            modelProvider: nil,
+            agentRuntimeKind: "some-unshipped-agent"
+        )
+
         XCTAssertEqual(claude.resolvedModel, "")
         XCTAssertEqual(claude.displayModelLabel, "Claude")
         XCTAssertEqual(opencode.displayModelLabel, "opencode")
+        // The titlecase fallback still applies to runtimes the catalog has
+        // never heard of — that path is what keeps a brand-new alleycat
+        // agent renderable without a litter release.
+        XCTAssertEqual(unknown.displayModelLabel, "Some-unshipped-agent")
     }
 
     func testApplyLocalThreadTitleUpdatesThreadAndSessionSummary() {
@@ -358,8 +373,7 @@ final class AppSnapshotRuntimeTests: XCTestCase {
             availableModels: nil,
             agentRuntimes: [AgentRuntimeInfo(kind: .codex, name: "codex", displayName: "Codex", available: true)],
             connectionProgress: nil,
-            usageStats: nil,
-            codexVersion: nil
+            usageStats: nil
         )
         let sessionSummaries = threads.map { thread in
             AppSessionSummary(
@@ -411,7 +425,9 @@ final class AppSnapshotRuntimeTests: XCTestCase {
                 lastError: nil,
                 transcriptEntries: [],
                 handoffThreadKey: nil
-            )
+            ),
+            terminalSessions: [],
+            activeTerminalId: nil
         )
     }
 

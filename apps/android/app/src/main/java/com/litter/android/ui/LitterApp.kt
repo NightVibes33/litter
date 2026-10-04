@@ -23,8 +23,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import com.litter.android.state.AppModel
 import com.litter.android.state.LocalAccountLoginRequiredException
-import com.litter.android.state.NetworkDiscovery
 import com.litter.android.state.PetOverlayController
+import com.litter.android.state.PerfTrace
 import com.litter.android.state.AlleycatCredentialStore
 import com.litter.android.state.SavedServerStore
 import com.litter.android.state.SavedThreadsStore
@@ -46,7 +46,6 @@ import com.litter.android.ui.settings.SettingsStartDestination
 import com.litter.android.ui.sessions.DirectoryPickerServerOption
 import com.litter.android.ui.sessions.DirectoryPickerSheet
 import com.litter.android.ui.sessions.SessionLaunchSupport
-import com.litter.android.ui.sessions.SessionsUiState
 import com.litter.android.ui.terminal.TerminalScreen
 import uniffi.codex_mobile_client.AppProject
 import uniffi.codex_mobile_client.ApprovalKind
@@ -118,7 +117,6 @@ fun LitterApp(
         // Navigation state
         var navStack by remember { mutableStateOf<List<Route>>(listOf(Route.Home)) }
         val currentRoute = navStack.lastOrNull() ?: Route.Home
-        val sessionsUiState = remember { SessionsUiState() }
 
         // Global sheet state
         var showDiscovery by remember { mutableStateOf(false) }
@@ -134,18 +132,28 @@ fun LitterApp(
             mutableStateOf(SavedProjectStore.selectedServerId(context))
         }
         var selectedProject by remember { mutableStateOf<AppProject?>(null) }
+        // True only after the user taps the selected server pill to clear
+        // the scope. Automatic clears (server not reconnected yet at launch)
+        // must not overwrite the persisted last-used server/project.
+        var userClearedServer by remember { mutableStateOf(false) }
 
         // Persist selections
         LaunchedEffect(selectedServerId) {
-            SavedProjectStore.setSelectedServerId(context, selectedServerId)
+            if (selectedServerId != null) userClearedServer = false
+            if (selectedServerId != null || userClearedServer) {
+                SavedProjectStore.setSelectedServerId(context, selectedServerId)
+            }
         }
         LaunchedEffect(selectedProject?.id) {
-            SavedProjectStore.setSelectedProjectId(context, selectedProject?.id)
+            selectedProject?.id?.let { SavedProjectStore.setSelectedProjectId(context, it) }
         }
 
-        // Derive projects from current sessions
-        val projects = remember(snapshot) {
-            snapshot?.let { deriveProjects(it.sessionSummaries) } ?: emptyList()
+        // Derive projects from current sessions. Keyed on the summaries, not
+        // the whole snapshot, so streaming and server-status updates don't
+        // re-run the FFI copy and sort.
+        val sessionSummaries = snapshot?.sessionSummaries
+        val projects = remember(sessionSummaries) {
+            sessionSummaries?.let { deriveProjects(it) } ?: emptyList()
         }
 
         // Keep selectedServerId valid against connected servers. Default is
@@ -156,6 +164,13 @@ fun LitterApp(
             } ?: emptyList()
             if (selectedServerId != null && selectedServerId !in connected) {
                 selectedServerId = null
+            }
+            // Restore the last-used server as soon as it is connected again.
+            if (selectedServerId == null && !userClearedServer) {
+                val persisted = SavedProjectStore.selectedServerId(context)
+                if (persisted != null && persisted in connected) {
+                    selectedServerId = persisted
+                }
             }
         }
 
@@ -175,13 +190,26 @@ fun LitterApp(
                 return@LaunchedEffect
             }
             val persistedId = SavedProjectStore.selectedProjectId(context)
+            // Last-used project with no threads loaded (yet) is synthesized
+            // from its "<serverId>::<cwd>" id rather than replaced.
+            val prefix = "$currentServerId::"
+            val persistedCwd = persistedId
+                ?.takeIf { it.startsWith(prefix) }
+                ?.removePrefix(prefix)
+                ?.takeIf { it.isNotEmpty() }
             val match = serverProjects.firstOrNull { it.id == persistedId }
+                ?: persistedCwd?.let {
+                    AppProject(
+                        id = persistedId,
+                        serverId = currentServerId,
+                        cwd = it,
+                        lastUsedAtMs = null,
+                    )
+                }
                 ?: serverProjects.firstOrNull()
             selectedProject = match
         }
 
-        // Network discovery
-        val networkDiscovery = remember { NetworkDiscovery(appModel.discovery) }
         val voiceController = remember { VoiceRuntimeController.shared }
 
         LaunchedEffect(openPetSettingsRequest) {
@@ -198,7 +226,11 @@ fun LitterApp(
             { if (navStack.size > 1) navStack = navStack.dropLast(1) }
         }
         val navigateToConversation = remember {
-            { key: ThreadKey -> navStack = listOf(Route.Home, Route.Conversation(key)) }
+            { key: ThreadKey ->
+                // Closed by `ConversationScreen` on its first composition.
+                PerfTrace.beginInterval("OpenThread", PerfTrace.intervalKey(key))
+                navStack = listOf(Route.Home, Route.Conversation(key))
+            }
         }
         val connectedServerOptions = remember(snapshot) {
             snapshot?.let { snap ->
@@ -261,10 +293,7 @@ fun LitterApp(
                 directoryPickerServerId != null -> directoryPickerServerId = null
                 showProjectPicker -> showProjectPicker = false
                 showSettings -> showSettings = false
-                showDiscovery -> {
-                    showDiscovery = false
-                    networkDiscovery.stopScanning()
-                }
+                showDiscovery -> showDiscovery = false
                 navStack.size > 1 -> navStack = navStack.dropLast(1)
             }
         }
@@ -301,6 +330,7 @@ fun LitterApp(
                     HomeDashboardScreen(
                         onOpenConversation = navigateToConversation,
                         onShowDiscovery = { showDiscovery = true },
+                        discoveryVisible = showDiscovery,
                         onShowSettings = { showSettings = true },
                         onShowApps = { navigate(Route.Apps) },
                         onOpenProjectPicker = { showProjectPicker = true },
@@ -310,6 +340,7 @@ fun LitterApp(
                         onSelectServer = { server ->
                             // Tap again to clear the filter and show all.
                             if (selectedServerId == server.serverId) {
+                                userClearedServer = true
                                 selectedServerId = null
                                 selectedProject = null
                             } else {
@@ -341,18 +372,6 @@ fun LitterApp(
                         } else {
                             null
                         },
-                    )
-                }
-
-                is Route.Sessions -> {
-                    com.litter.android.ui.sessions.SessionsScreen(
-                        serverId = route.serverId,
-                        title = route.title,
-                        sessionsUiState = sessionsUiState,
-                        onOpenConversation = navigateToConversation,
-                        onNewSession = { openDirectoryPicker(route.serverId) },
-                        onBack = navigateBack,
-                        onInfo = { navigate(Route.ServerInfo(route.serverId)) },
                     )
                 }
 
@@ -520,35 +539,13 @@ fun LitterApp(
 
         // Discovery bottom sheet
         if (showDiscovery) {
-            val discoveredServers by networkDiscovery.servers.collectAsState()
-            val isScanning by networkDiscovery.isScanning.collectAsState()
-            val scanProgress by networkDiscovery.scanProgress.collectAsState()
-            val scanProgressLabel by networkDiscovery.scanProgressLabel.collectAsState()
-            val context = LocalContext.current
-
-            // Start scanning when discovery sheet opens
-            LaunchedEffect(showDiscovery) {
-                networkDiscovery.startScanning(context)
-            }
-
             ModalBottomSheet(
-                onDismissRequest = {
-                    showDiscovery = false
-                    networkDiscovery.stopScanning()
-                },
+                onDismissRequest = { showDiscovery = false },
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
                 containerColor = LitterTheme.background,
             ) {
                 DiscoveryScreen(
-                    discoveredServers = discoveredServers,
-                    isScanning = isScanning,
-                    scanProgress = scanProgress,
-                    scanProgressLabel = scanProgressLabel,
-                    onRefresh = { networkDiscovery.startScanning(context) },
-                    onDismiss = {
-                        showDiscovery = false
-                        networkDiscovery.stopScanning()
-                    },
+                    onDismiss = { showDiscovery = false },
                 )
             }
         }

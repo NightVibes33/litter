@@ -1173,6 +1173,23 @@ private struct HomeNavigationView: View {
             .environment(appModel)
             .environment(appState)
         }
+        .alert("SSH Host Identity Changed", isPresented: Binding(
+            get: { appModel.sshHostKeyChangeChallenge != nil },
+            set: { if !$0 { appModel.clearSshHostKeyChange() } }
+        )) {
+            Button("Replace Stored Identity", role: .destructive) {
+                guard let challenge = appModel.sshHostKeyChangeChallenge else { return }
+                Task {
+                    await AppRuntimeController.shared.replaceSshHostKey(
+                        serverId: challenge.serverId,
+                        fingerprint: challenge.fingerprint
+                    )
+                }
+            }
+            Button("Cancel", role: .cancel) { appModel.clearSshHostKeyChange() }
+        } message: {
+            Text("The SSH identity for this server changed. This can happen after a server is recreated, but may also indicate a man-in-the-middle attack. New fingerprint: \(appModel.sshHostKeyChangeChallenge?.fingerprint ?? "unknown")")
+        }
     }
 
     private func presentFirstRunOnboardingIfNeeded() {
@@ -2266,16 +2283,29 @@ private struct ConversationDestinationScreen: View {
     var body: some View {
         Group {
             if let conversationThread {
-                @Bindable var bindableScreenModel = screenModel
+                @Bindable var composerDraft = screenModel.composerDraft
                 ConversationView(
                     thread: conversationThread,
                     activeThreadKey: resolvedThreadKey,
                     transcript: screenModel.transcript,
-                    followScrollToken: screenModel.followScrollToken,
+                    followScrollToken: screenModel.transcript.renderDigest,
                     pinnedContextItems: screenModel.pinnedContextItems,
                     composer: screenModel.composer,
-                    composerInputText: $bindableScreenModel.composerInputText,
-                    composerAttachedImage: $bindableScreenModel.composerAttachedImage,
+                    composerInputText: $composerDraft.text,
+                    composerAttachedImage: Binding(
+                        get: { composerDraft.attachedImages.first },
+                        set: { image in
+                            if let image {
+                                if composerDraft.attachedImages.isEmpty {
+                                    composerDraft.attachedImages.append(image)
+                                } else {
+                                    composerDraft.attachedImages[0] = image
+                                }
+                            } else if !composerDraft.attachedImages.isEmpty {
+                                composerDraft.attachedImages.removeFirst()
+                            }
+                        }
+                    ),
                     topInset: 0,
                     bottomInset: bottomInset,
                     onOpenConversation: onOpenConversation,
@@ -2385,16 +2415,29 @@ private struct ReplayDestinationScreen: View {
     var body: some View {
         Group {
             if let thread = conversationThread, let key = replayThreadKey {
-                @Bindable var bindableScreenModel = screenModel
+                @Bindable var composerDraft = screenModel.composerDraft
                 ConversationView(
                     thread: thread,
                     activeThreadKey: key,
                     transcript: screenModel.transcript,
-                    followScrollToken: screenModel.followScrollToken,
+                    followScrollToken: screenModel.transcript.renderDigest,
                     pinnedContextItems: screenModel.pinnedContextItems,
                     composer: screenModel.composer,
-                    composerInputText: $bindableScreenModel.composerInputText,
-                    composerAttachedImage: $bindableScreenModel.composerAttachedImage,
+                    composerInputText: $composerDraft.text,
+                    composerAttachedImage: Binding(
+                        get: { composerDraft.attachedImages.first },
+                        set: { image in
+                            if let image {
+                                if composerDraft.attachedImages.isEmpty {
+                                    composerDraft.attachedImages.append(image)
+                                } else {
+                                    composerDraft.attachedImages[0] = image
+                                }
+                            } else if !composerDraft.attachedImages.isEmpty {
+                                composerDraft.attachedImages.removeFirst()
+                            }
+                        }
+                    ),
                     topInset: 0,
                     bottomInset: bottomInset,
                     onOpenConversation: nil,

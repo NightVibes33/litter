@@ -3,6 +3,109 @@ import XCTest
 
 @MainActor
 final class HomeDashboardSupportTests: XCTestCase {
+    func testLocalStudioOnlyCatalogsDeferToServerConfiguredDefault() {
+        XCTAssertTrue(usesServerConfiguredModelDefault([.localStudio]))
+        XCTAssertTrue(
+            usesServerConfiguredModelDefault([.localStudio, .localStudio])
+        )
+        XCTAssertFalse(usesServerConfiguredModelDefault([]))
+        XCTAssertFalse(
+            usesServerConfiguredModelDefault([.localStudio, .codex])
+        )
+    }
+
+    func testLocalStudioPinsKeepNewlySyncedSessionsVisible() async {
+        let appModel = AppModel()
+        let pinnedKey = SavedThreadsStore.PinnedKey(
+            threadKey: ThreadKey(serverId: "studio", threadId: "pinned")
+        )
+        let model = HomeDashboardModel(
+            persistence: persistence(pinned: [pinnedKey]),
+            observedRefreshDelayNanoseconds: 0
+        )
+        model.bind(appModel: appModel)
+        model.activate()
+
+        appModel.applySnapshot(
+            makeSnapshot(
+                servers: [
+                    makeServerSnapshot(
+                        id: "studio",
+                        name: "Local Studio",
+                        runtimeKind: .localStudio
+                    )
+                ],
+                threads: [
+                    makeThreadSnapshot(
+                        serverId: "studio",
+                        threadId: "pinned",
+                        updatedAt: 20,
+                        runtimeKind: .localStudio
+                    ),
+                    makeThreadSnapshot(
+                        serverId: "studio",
+                        threadId: "recent",
+                        updatedAt: 40,
+                        runtimeKind: .localStudio
+                    )
+                ],
+                activeThread: nil
+            )
+        )
+        await waitUntil("Local Studio keeps its pinned and recent sessions") {
+            model.recentSessions.map(\.key.threadId) == ["pinned", "recent"]
+        }
+
+        XCTAssertEqual(model.recentSessions.map(\.key.threadId), ["pinned", "recent"])
+    }
+
+    func testCodexPinsKeepExistingPinsOnlyBehavior() async {
+        let appModel = AppModel()
+        let pinnedKey = SavedThreadsStore.PinnedKey(
+            threadKey: ThreadKey(serverId: "codex", threadId: "pinned")
+        )
+        let model = HomeDashboardModel(
+            persistence: persistence(pinned: [pinnedKey]),
+            observedRefreshDelayNanoseconds: 0
+        )
+        model.bind(appModel: appModel)
+        model.activate()
+
+        appModel.applySnapshot(
+            makeSnapshot(
+                servers: [makeServerSnapshot(id: "codex", name: "Codex")],
+                threads: [
+                    makeThreadSnapshot(serverId: "codex", threadId: "pinned", updatedAt: 20),
+                    makeThreadSnapshot(serverId: "codex", threadId: "recent", updatedAt: 40)
+                ],
+                activeThread: nil
+            )
+        )
+        await waitUntil("Codex keeps its existing pins-only home list") {
+            model.recentSessions.map(\.key.threadId) == ["pinned"]
+        }
+
+        XCTAssertEqual(model.recentSessions.map(\.key.threadId), ["pinned"])
+    }
+
+    func testLocalStudioDoesNotShowFalseOpenAISignInWarning() {
+        let studio = makeServerSnapshot(
+            id: "studio",
+            name: "Local Studio",
+            runtimeKind: .localStudio
+        )
+        let codex = makeServerSnapshot(
+            id: "codex",
+            name: "Codex",
+            requiresOpenaiAuth: true
+        )
+
+        XCTAssertEqual(studio.statusLabel, "Connected")
+        XCTAssertEqual(studio.statusDotState, .ok)
+        XCTAssertEqual(codex.statusLabel, "Sign in required")
+        XCTAssertEqual(codex.statusDotState, .pending)
+    }
+
     func testRecentConnectedSessionsFiltersDisconnectedServersAndLimitsToThreeNewest() {
         let servers = [
             makeServerSnapshot(id: "server-a", name: "Server A"),
@@ -94,7 +197,7 @@ final class HomeDashboardSupportTests: XCTestCase {
 
     func testHomeDashboardModelRefreshesWhenObservedSnapshotChanges() async {
         let appModel = AppModel()
-        let model = HomeDashboardModel()
+        let model = HomeDashboardModel(persistence: .empty, observedRefreshDelayNanoseconds: 0)
         model.bind(appModel: appModel)
         model.activate()
 
@@ -105,19 +208,21 @@ final class HomeDashboardSupportTests: XCTestCase {
                 activeThread: nil
             )
         )
-        await flushMainQueue()
+        await waitUntil("dashboard observes the connected server") {
+            model.connectedServers.map(\.id) == ["server-a"]
+        }
 
         XCTAssertEqual(model.connectedServers.map(\.id), ["server-a"])
     }
 
-    func testSortedConnectedServersDeduplicatesEquivalentHostsAndPrefersActiveConnection() {
+    func testSortedConnectedServersPreservesDistinctLiveEndpointsAndPrefersActiveConnection() {
         let primary = makeServerSnapshot(
             id: "server-a",
             name: "Mac Studio",
             host: "192.168.1.167",
             port: 8390
         )
-        let duplicate = makeServerSnapshot(
+        let active = makeServerSnapshot(
             id: "server-b",
             name: "Mac Studio",
             host: "192.168.1.167",
@@ -125,16 +230,16 @@ final class HomeDashboardSupportTests: XCTestCase {
         )
 
         let result = HomeDashboardSupport.sortedConnectedServers(
-            from: [duplicate, primary],
-            activeServerId: duplicate.serverId
+            from: [active, primary],
+            activeServerId: active.serverId
         )
 
-        XCTAssertEqual(result.map(\.id), [duplicate.serverId])
+        XCTAssertEqual(result.map(\.id), [active.serverId, primary.serverId])
     }
 
     func testHomeDashboardModelRefreshesRecentSessionsWhenObservedSnapshotThreadChanges() async {
         let appModel = AppModel()
-        let model = HomeDashboardModel()
+        let model = HomeDashboardModel(persistence: .empty, observedRefreshDelayNanoseconds: 0)
         model.bind(appModel: appModel)
         model.activate()
 
@@ -148,7 +253,9 @@ final class HomeDashboardSupportTests: XCTestCase {
                 activeThread: nil
             )
         )
-        await flushMainQueue()
+        await waitUntil("dashboard observes the initial thread ordering") {
+            model.recentSessions.map(\.key.threadId) == ["thread-newer", "thread-older"]
+        }
 
         appModel.applySnapshot(
             makeSnapshot(
@@ -160,14 +267,16 @@ final class HomeDashboardSupportTests: XCTestCase {
                 activeThread: nil
             )
         )
-        await flushMainQueue()
+        await waitUntil("dashboard observes the updated thread ordering") {
+            model.recentSessions.map(\.key.threadId) == ["thread-older", "thread-newer"]
+        }
 
         XCTAssertEqual(model.recentSessions.map(\.key.threadId), ["thread-older", "thread-newer"])
     }
 
     func testHomeDashboardModelRefreshesRecentSessionsWhenThreadsArriveAfterBind() async {
         let appModel = AppModel()
-        let model = HomeDashboardModel()
+        let model = HomeDashboardModel(persistence: .empty, observedRefreshDelayNanoseconds: 0)
         model.bind(appModel: appModel)
         model.activate()
 
@@ -178,7 +287,9 @@ final class HomeDashboardSupportTests: XCTestCase {
                 activeThread: nil
             )
         )
-        await flushMainQueue()
+        await waitUntil("dashboard observes threads arriving after binding") {
+            model.recentSessions.map(\.key.threadId) == ["thread-late"]
+        }
 
         XCTAssertEqual(model.recentSessions.map(\.key.threadId), ["thread-late"])
     }
@@ -237,7 +348,7 @@ final class HomeDashboardSupportTests: XCTestCase {
 
     func testHomeDashboardModelIgnoresThreadChangesWhileInactiveAndRefreshesOnReactivate() async {
         let appModel = AppModel()
-        let model = HomeDashboardModel()
+        let model = HomeDashboardModel(persistence: .empty, observedRefreshDelayNanoseconds: 0)
         model.bind(appModel: appModel)
         model.activate()
 
@@ -248,7 +359,9 @@ final class HomeDashboardSupportTests: XCTestCase {
                 activeThread: nil
             )
         )
-        await flushMainQueue()
+        await waitUntil("dashboard observes the initial thread") {
+            model.recentSessions.map(\.key.threadId) == ["thread-initial"]
+        }
 
         XCTAssertEqual(model.recentSessions.map(\.key.threadId), ["thread-initial"])
         let rebuildCountBeforeDeactivate = model.rebuildCount
@@ -276,7 +389,12 @@ final class HomeDashboardSupportTests: XCTestCase {
         XCTAssertGreaterThan(model.rebuildCount, rebuildCountBeforeDeactivate)
     }
 
-    private func makeThreadSnapshot(serverId: String, threadId: String, updatedAt: TimeInterval) -> AppThreadSnapshot {
+    private func makeThreadSnapshot(
+        serverId: String,
+        threadId: String,
+        updatedAt: TimeInterval,
+        runtimeKind: AgentRuntimeKind = .codex
+    ) -> AppThreadSnapshot {
         AppThreadSnapshot(
             key: ThreadKey(serverId: serverId, threadId: threadId),
             info: ThreadInfo(
@@ -296,7 +414,7 @@ final class HomeDashboardSupportTests: XCTestCase {
                 createdAt: nil,
                 updatedAt: Int64(updatedAt)
             ),
-            agentRuntimeKind: .codex,
+            agentRuntimeKind: runtimeKind,
             collaborationMode: .default,
             model: nil,
             reasoningEffort: nil,
@@ -373,7 +491,9 @@ final class HomeDashboardSupportTests: XCTestCase {
             activeThread: activeThread,
             pendingApprovals: [],
             pendingUserInputs: [],
-            voiceSession: inactiveVoiceSession()
+            voiceSession: inactiveVoiceSession(),
+            terminalSessions: [],
+            activeTerminalId: nil
         )
     }
 
@@ -383,7 +503,9 @@ final class HomeDashboardSupportTests: XCTestCase {
         host: String? = nil,
         port: UInt16 = 8390,
         isLocal: Bool = false,
-        health: AppServerHealth = .connected
+        health: AppServerHealth = .connected,
+        runtimeKind: AgentRuntimeKind = .codex,
+        requiresOpenaiAuth: Bool = false
     ) -> AppServerSnapshot {
         AppServerSnapshot(
             serverId: id,
@@ -402,14 +524,20 @@ final class HomeDashboardSupportTests: XCTestCase {
                 supportsTurnPagination: true
             ),
             account: nil,
-            requiresOpenaiAuth: false,
+            requiresOpenaiAuth: requiresOpenaiAuth,
             rateLimits: nil,
             rateLimitsByRuntime: [],
             availableModels: nil,
-            agentRuntimes: [AgentRuntimeInfo(kind: .codex, name: "codex", displayName: "Codex", available: true)],
+            agentRuntimes: [
+                AgentRuntimeInfo(
+                    kind: runtimeKind,
+                    name: runtimeKind,
+                    displayName: runtimeKind.displayLabel,
+                    available: true
+                )
+            ],
             connectionProgress: nil,
-            usageStats: nil,
-            codexVersion: nil
+            usageStats: nil
         )
     }
 
@@ -424,8 +552,42 @@ final class HomeDashboardSupportTests: XCTestCase {
         )
     }
 
+    private func persistence(
+        pinned: [SavedThreadsStore.PinnedKey]
+    ) -> HomeDashboardPersistence {
+        var pinnedKeys = pinned
+        return HomeDashboardPersistence(
+            rememberedServers: { [] },
+            pinnedKeys: { pinnedKeys },
+            hiddenKeys: { [] },
+            addPinned: { key in
+                if !pinnedKeys.contains(key) {
+                    pinnedKeys.append(key)
+                }
+            },
+            removePinned: { key in pinnedKeys.removeAll { $0 == key } },
+            hide: { _ in },
+            unhide: { _ in },
+            selectedServerId: { nil },
+            setSelectedServerId: { _ in },
+            selectedProjectId: { nil },
+            setSelectedProjectId: { _ in }
+        )
+    }
+
     private func flushMainQueue() async {
-        await Task.yield()
-        await Task.yield()
+        for _ in 0..<10 {
+            await Task.yield()
+        }
+    }
+
+    private func waitUntil(_ description: String, condition: () -> Bool) async {
+        for _ in 0..<1_000 {
+            if condition() {
+                return
+            }
+            await Task.yield()
+        }
+        XCTFail("Timed out waiting for \(description)")
     }
 }

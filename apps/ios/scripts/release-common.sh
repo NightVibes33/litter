@@ -5,6 +5,7 @@ IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$IOS_DIR/../.." && pwd)"
 IOS_PROJECT_YML="${IOS_PROJECT_YML:-$IOS_DIR/project.yml}"
 TESTFLIGHT_WHATS_NEW_FILE="${TESTFLIGHT_WHATS_NEW_FILE:-$ROOT_DIR/docs/releases/testflight-whats-new.md}"
+TESTFLIGHT_BETA_DESCRIPTION_FILE="${TESTFLIGHT_BETA_DESCRIPTION_FILE:-$ROOT_DIR/docs/releases/testflight-beta-description.txt}"
 FASTLANE_DIR="${FASTLANE_DIR:-$IOS_DIR/fastlane}"
 
 require_cmd() {
@@ -68,25 +69,31 @@ EOF
 
 resolve_team_from_profile() {
     local profile_name="$1"
-    local profile_dir="$HOME/Library/MobileDevice/Provisioning Profiles"
+    local profile_dir
     local profile_path profile_display team_id
+    local -a profile_dirs=(
+        "$HOME/Library/MobileDevice/Provisioning Profiles"
+        "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+    )
 
-    [[ -d "$profile_dir" ]] || return 1
-    for profile_path in "$profile_dir"/*.mobileprovision; do
-        [[ -e "$profile_path" ]] || continue
-        profile_display="$(
-            security cms -D -i "$profile_path" 2>/dev/null |
-                plutil -extract Name raw - 2>/dev/null || true
-        )"
-        [[ "$profile_display" == "$profile_name" ]] || continue
-        team_id="$(
-            security cms -D -i "$profile_path" 2>/dev/null |
-                plutil -extract TeamIdentifier.0 raw - 2>/dev/null || true
-        )"
-        if [[ -n "$team_id" ]]; then
-            echo "$team_id"
-            return 0
-        fi
+    for profile_dir in "${profile_dirs[@]}"; do
+        [[ -d "$profile_dir" ]] || continue
+        for profile_path in "$profile_dir"/*.mobileprovision; do
+            [[ -e "$profile_path" ]] || continue
+            profile_display="$(
+                security cms -D -i "$profile_path" 2>/dev/null |
+                    plutil -extract Name raw - 2>/dev/null || true
+            )"
+            [[ "$profile_display" == "$profile_name" ]] || continue
+            team_id="$(
+                security cms -D -i "$profile_path" 2>/dev/null |
+                    plutil -extract TeamIdentifier.0 raw - 2>/dev/null || true
+            )"
+            if [[ -n "$team_id" ]]; then
+                echo "$team_id"
+                return 0
+            fi
+        done
     done
     return 1
 }
@@ -244,4 +251,71 @@ validate_fastlane_metadata() {
     done
 
     asc migrate validate --fastlane-dir "$fastlane_dir" --output json >/dev/null
+}
+
+# Make the single in-flight App Store version slot available for $2.
+#
+# App Store Connect allows one in-flight version per platform, so `versions create`
+# fails with "You cannot create a new version of the App in the current state"
+# while another version holds the slot. Cancel any open review submission, then
+# reuse the version that held it by renaming it to $2. Deleting is not an escape
+# hatch here: Apple only permits deleting the first version of a platform. A version
+# that is still under review is waited on rather than renamed.
+clear_in_flight_version() {
+    local app_store_app_id="$1"
+    local marketing_version="$2"
+    local attempts="${3:-12}"
+
+    local submissions_json
+    submissions_json="$(asc review submissions-list --app "$app_store_app_id" --platform IOS --output json)"
+
+    while IFS=$'\t' read -r submission_id submission_state; do
+        [[ -z "$submission_id" ]] && continue
+        case "$submission_state" in
+            READY_FOR_REVIEW | WAITING_FOR_REVIEW | IN_REVIEW | UNRESOLVED_ISSUES) ;;
+            *) continue ;;
+        esac
+        echo "    Cancelling review submission $submission_id ($submission_state)"
+        asc review submissions-update \
+            --id "$submission_id" \
+            --canceled=true \
+            --confirm \
+            --output json >/dev/null
+    done < <(printf '%s' "$submissions_json" |
+        jq -r '.data[]? | [.id, (.attributes.state // "unknown")] | @tsv')
+
+    local attempt blocking version_id version_string state
+    for ((attempt = 1; attempt <= attempts; attempt++)); do
+        blocking=""
+
+        local versions_json
+        versions_json="$(asc versions list --app "$app_store_app_id" --platform IOS --output json)"
+
+        while IFS=$'\t' read -r version_id version_string state; do
+            [[ -z "$version_id" ]] && continue
+            [[ "$version_string" == "$marketing_version" ]] && return 0
+            case "$state" in
+                PREPARE_FOR_SUBMISSION | DEVELOPER_REJECTED)
+                    echo "    Reusing $state version $version_string as $marketing_version ($version_id)"
+                    asc versions update \
+                        --version-id "$version_id" \
+                        --version "$marketing_version" \
+                        --output json >/dev/null
+                    return 0
+                    ;;
+                WAITING_FOR_REVIEW | IN_REVIEW | READY_FOR_REVIEW | UNRESOLVED_ISSUES)
+                    blocking="$version_string $state"
+                    ;;
+            esac
+        done < <(printf '%s' "$versions_json" |
+            jq -r '.data[]? | [.id, (.attributes.versionString // "?"), (.attributes.appStoreState // "?")] | @tsv')
+
+        [[ -z "$blocking" ]] && return 0
+
+        echo "    Waiting for $blocking to clear (attempt $attempt/$attempts)"
+        sleep 10
+    done
+
+    echo "Version $blocking still holds the in-flight App Store slot" >&2
+    exit 1
 }

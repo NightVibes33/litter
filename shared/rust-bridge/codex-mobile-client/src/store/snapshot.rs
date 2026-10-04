@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use codex_app_server_protocol as upstream;
@@ -185,13 +187,26 @@ pub struct ServerSnapshot {
     pub agent_runtimes: Vec<AgentRuntimeInfo>,
     pub connection_progress: Option<AppConnectionProgressSnapshot>,
     pub transport: ServerTransportDiagnostics,
-    /// Semver string parsed from the server's `initialize.user_agent`
-    /// response. `None` when the user-agent is absent or unparseable.
-    pub codex_version: Option<String>,
-    /// Whether the remote supports `thread/turns/list` + `exclude_turns`.
-    /// Derived from `codex_version` at handshake time; can be flipped to
-    /// `false` at runtime if a paginated RPC comes back as method-not-found.
-    pub supports_turn_pagination: bool,
+    /// Turn-history paging capability per agent runtime. One Kittylitter
+    /// host multiplexes several runtimes (codex, claude, pi, opencode, …)
+    /// whose `thread/turns/list` implementations differ, so what one runtime
+    /// proves must not change how another runtime's history loads. A
+    /// runtime missing from the map has not been observed yet and is
+    /// assumed to page correctly.
+    pub turn_pagination_by_runtime: HashMap<AgentRuntimeKind, TurnPaginationSupport>,
+}
+
+/// What the client has learned about one runtime's `thread/turns/list`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnPaginationSupport {
+    /// The runtime returned a `nextCursor`, so a page without one really is
+    /// the end of history.
+    Confirmed,
+    /// The runtime cannot page history: `thread/turns/list` is missing, it
+    /// ignores `exclude_turns`, or it truncates a page to `limit` without
+    /// returning a cursor (the Claude and Pi bridges do this). History for
+    /// its threads is loaded in full through an embedded-turn resume.
+    Unsupported,
 }
 
 #[derive(Debug, Clone, Default, uniffi::Record)]
@@ -204,6 +219,207 @@ pub struct AppVoiceSessionSnapshot {
     pub handoff_thread_key: Option<ThreadKey>,
 }
 
+/// Process-wide monotonic counter handing out `ThreadItems` revisions.
+///
+/// Revisions are never reused, so a cache keyed on a revision stays correct
+/// even when a whole `ThreadItems` value is replaced wholesale (the
+/// replacement necessarily carries a revision the cache has never seen).
+static THREAD_ITEMS_REVISION: AtomicU64 = AtomicU64::new(1);
+
+fn next_items_revision() -> u64 {
+    THREAD_ITEMS_REVISION.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Ordered conversation-item list with an `id -> index` map kept in sync by
+/// construction.
+///
+/// Item lookup by id used to be a linear scan over the whole thread, which
+/// runs once per streaming token (`append_*_delta`, `upsert_item`,
+/// reconciliation). Every mutating entry point here maintains `index` and
+/// bumps `revision`; read access goes through `Deref<Target = [_]>` so the
+/// invariant cannot be broken from outside this module.
+///
+/// `revision` is globally unique and monotonic. Derived state computed from
+/// the list (see `boundary::ThreadActivityCache`) keys on it for
+/// invalidation.
+#[derive(Clone)]
+pub struct ThreadItems {
+    /// Shared copy-on-write: cloning a snapshot bumps a refcount instead of
+    /// deep-copying every hydrated item; mutation goes through
+    /// `Arc::make_mut`, which copies only while a clone is still alive.
+    items: Arc<Vec<HydratedConversationItem>>,
+    /// First index at which each id occurs, mirroring the `iter().position()`
+    /// / `iter().find()` semantics the linear scans had.
+    index: Arc<HashMap<String, usize>>,
+    revision: u64,
+}
+
+impl ThreadItems {
+    pub fn new() -> Self {
+        Self {
+            items: Arc::new(Vec::new()),
+            index: Arc::new(HashMap::new()),
+            revision: next_items_revision(),
+        }
+    }
+
+    /// Monotonic, globally unique stamp that changes on every mutation.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn as_slice(&self) -> &[HydratedConversationItem] {
+        &self.items
+    }
+
+    /// O(1) replacement for `items.iter().position(|item| item.id == id)`.
+    pub fn index_of(&self, id: &str) -> Option<usize> {
+        self.index.get(id).copied()
+    }
+
+    /// O(1) replacement for `items.iter().find(|item| item.id == id)`.
+    pub fn get_by_id(&self, id: &str) -> Option<&HydratedConversationItem> {
+        self.index_of(id).map(|index| &self.items[index])
+    }
+
+    pub fn contains_id(&self, id: &str) -> bool {
+        self.index.contains_key(id)
+    }
+
+    /// Mutable access by id. The caller must not change `item.id`; use
+    /// [`Self::replace_at`] for that.
+    pub fn get_mut_by_id(&mut self, id: &str) -> Option<&mut HydratedConversationItem> {
+        let index = self.index_of(id)?;
+        self.revision = next_items_revision();
+        Arc::make_mut(&mut self.items).get_mut(index)
+    }
+
+    /// Mutable access by position. The caller must not change `item.id`; use
+    /// [`Self::replace_at`] for that.
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut HydratedConversationItem> {
+        if index >= self.items.len() {
+            return None;
+        }
+        self.revision = next_items_revision();
+        Arc::make_mut(&mut self.items).get_mut(index)
+    }
+
+    pub fn push(&mut self, item: HydratedConversationItem) {
+        self.revision = next_items_revision();
+        let len = self.items.len();
+        Arc::make_mut(&mut self.index).entry(item.id.clone()).or_insert(len);
+        Arc::make_mut(&mut self.items).push(item);
+    }
+
+    pub fn insert(&mut self, index: usize, item: HydratedConversationItem) {
+        self.revision = next_items_revision();
+        Arc::make_mut(&mut self.items).insert(index, item);
+        self.rebuild_index();
+    }
+
+    /// Replace the item at `index` outright, allowing the id to change.
+    pub fn replace_at(&mut self, index: usize, item: HydratedConversationItem) {
+        self.revision = next_items_revision();
+        let id_changed = self.items[index].id != item.id;
+        Arc::make_mut(&mut self.items)[index] = item;
+        if id_changed {
+            self.rebuild_index();
+        }
+    }
+
+    pub fn retain<F>(&mut self, predicate: F)
+    where
+        F: FnMut(&HydratedConversationItem) -> bool,
+    {
+        self.revision = next_items_revision();
+        Arc::make_mut(&mut self.items).retain(predicate);
+        self.rebuild_index();
+    }
+
+    pub fn clear(&mut self) {
+        self.revision = next_items_revision();
+        match Arc::get_mut(&mut self.items) {
+            Some(items) => items.clear(),
+            None => self.items = Arc::new(Vec::new()),
+        }
+        match Arc::get_mut(&mut self.index) {
+            Some(index) => index.clear(),
+            None => self.index = Arc::new(HashMap::new()),
+        }
+    }
+
+    pub fn into_vec(self) -> Vec<HydratedConversationItem> {
+        Arc::try_unwrap(self.items).unwrap_or_else(|shared| (*shared).clone())
+    }
+
+    fn rebuild_index(&mut self) {
+        let mut index = HashMap::with_capacity(self.items.len());
+        for (position, item) in self.items.iter().enumerate() {
+            index.entry(item.id.clone()).or_insert(position);
+        }
+        self.index = Arc::new(index);
+    }
+}
+
+impl Default for ThreadItems {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::ops::Deref for ThreadItems {
+    type Target = [HydratedConversationItem];
+
+    fn deref(&self) -> &Self::Target {
+        &self.items
+    }
+}
+
+impl std::fmt::Debug for ThreadItems {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.items.fmt(formatter)
+    }
+}
+
+impl From<Vec<HydratedConversationItem>> for ThreadItems {
+    fn from(items: Vec<HydratedConversationItem>) -> Self {
+        let mut value = Self {
+            items: Arc::new(items),
+            index: Arc::new(HashMap::new()),
+            revision: next_items_revision(),
+        };
+        value.rebuild_index();
+        value
+    }
+}
+
+impl FromIterator<HydratedConversationItem> for ThreadItems {
+    fn from_iter<I: IntoIterator<Item = HydratedConversationItem>>(iter: I) -> Self {
+        Self::from(iter.into_iter().collect::<Vec<_>>())
+    }
+}
+
+impl Extend<HydratedConversationItem> for ThreadItems {
+    fn extend<I: IntoIterator<Item = HydratedConversationItem>>(&mut self, iter: I) {
+        self.revision = next_items_revision();
+        let items = Arc::make_mut(&mut self.items);
+        let index = Arc::make_mut(&mut self.index);
+        for item in iter {
+            index.entry(item.id.clone()).or_insert(items.len());
+            items.push(item);
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a ThreadItems {
+    type Item = &'a HydratedConversationItem;
+    type IntoIter = std::slice::Iter<'a, HydratedConversationItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.items.iter()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ThreadSnapshot {
     pub key: ThreadKey,
@@ -214,8 +430,12 @@ pub struct ThreadSnapshot {
     pub reasoning_effort: Option<String>,
     pub effective_approval_policy: Option<crate::types::AppAskForApproval>,
     pub effective_sandbox_policy: Option<crate::types::AppSandboxPolicy>,
-    pub items: Vec<HydratedConversationItem>,
-    pub local_overlay_items: Vec<HydratedConversationItem>,
+    pub items: ThreadItems,
+    pub local_overlay_items: ThreadItems,
+    /// Memoized `extract_conversation_activity` output for this thread,
+    /// invalidated by `items` / `local_overlay_items` revisions. Purely
+    /// derived state; never part of equality or the wire projection.
+    pub(crate) activity_cache: super::boundary::ThreadActivityCache,
     pub queued_follow_ups: Vec<AppQueuedFollowUpPreview>,
     pub(crate) queued_follow_up_drafts: Vec<QueuedFollowUpDraft>,
     pub active_turn_id: Option<String>,
@@ -277,8 +497,9 @@ impl ThreadSnapshot {
             reasoning_effort: None,
             effective_approval_policy: None,
             effective_sandbox_policy: None,
-            items: Vec::new(),
-            local_overlay_items: Vec::new(),
+            items: ThreadItems::new(),
+            local_overlay_items: ThreadItems::new(),
+            activity_cache: super::boundary::ThreadActivityCache::default(),
             queued_follow_ups: Vec::new(),
             queued_follow_up_drafts: Vec::new(),
             active_turn_id: None,
@@ -317,6 +538,10 @@ pub struct AppSnapshot {
     /// "Run in terminal" code-block action via
     /// [`crate::ffi::AppStore::write_to_active_terminal`].
     pub active_terminal_id: Option<String>,
+    /// Session summaries restored from the launch cache (`home_cache`).
+    /// A projection overlay only: shadowed by any live thread with the same
+    /// key, and cleared per server after an authoritative thread listing.
+    pub(crate) cached_session_summaries: Vec<crate::store::boundary::AppSessionSummary>,
 }
 
 /// Lifecycle phase of a terminal session as seen by the store. Maps
@@ -345,4 +570,146 @@ pub struct TerminalSessionSnapshot {
     pub output_tail: Vec<u8>,
     /// Exit code if the session has exited. `None` otherwise.
     pub exit_code: Option<i32>,
+}
+
+#[cfg(test)]
+mod thread_items_tests {
+    use super::{ThreadItems, next_items_revision};
+    use crate::conversation_uniffi::{
+        HydratedAssistantMessageData, HydratedConversationItem, HydratedConversationItemContent,
+    };
+
+    fn item(id: &str, text: &str) -> HydratedConversationItem {
+        HydratedConversationItem {
+            id: id.to_string(),
+            content: HydratedConversationItemContent::Assistant(HydratedAssistantMessageData {
+                text: text.to_string(),
+                agent_nickname: None,
+                agent_role: None,
+                phase: None,
+            }),
+            source_turn_id: None,
+            source_turn_index: None,
+            timestamp: None,
+            is_from_user_turn_boundary: false,
+        }
+    }
+
+    /// The id index must agree with the linear scan it replaced, for every
+    /// mutation shape the store performs.
+    fn assert_index_matches_scan(items: &ThreadItems) {
+        for (position, entry) in items.iter().enumerate() {
+            let expected = items
+                .iter()
+                .position(|candidate| candidate.id == entry.id)
+                .expect("scan finds the item it just yielded");
+            assert_eq!(
+                items.index_of(&entry.id),
+                Some(expected),
+                "index disagrees with scan at position {position} for id {}",
+                entry.id
+            );
+            assert!(items.contains_id(&entry.id));
+        }
+        assert_eq!(items.index_of("missing-id"), None);
+        assert!(!items.contains_id("missing-id"));
+    }
+
+    #[test]
+    fn index_tracks_push_insert_replace_retain_and_extend() {
+        let mut items = ThreadItems::new();
+        items.push(item("a", "1"));
+        items.push(item("b", "2"));
+        items.push(item("c", "3"));
+        assert_index_matches_scan(&items);
+        assert_eq!(items.index_of("b"), Some(1));
+
+        items.insert(0, item("z", "0"));
+        assert_index_matches_scan(&items);
+        assert_eq!(items.index_of("z"), Some(0));
+        assert_eq!(items.index_of("b"), Some(2));
+
+        // Replacement that keeps the id must keep the same slot.
+        items.replace_at(2, item("b", "2-updated"));
+        assert_index_matches_scan(&items);
+        assert_eq!(items.index_of("b"), Some(2));
+
+        // Replacement that changes the id must retire the old one.
+        items.replace_at(2, item("b2", "2-renamed"));
+        assert_index_matches_scan(&items);
+        assert_eq!(items.index_of("b"), None);
+        assert_eq!(items.index_of("b2"), Some(2));
+
+        items.retain(|entry| entry.id != "z");
+        assert_index_matches_scan(&items);
+        assert_eq!(items.index_of("a"), Some(0));
+
+        items.extend(vec![item("d", "4"), item("e", "5")]);
+        assert_index_matches_scan(&items);
+        assert_eq!(items.index_of("e"), Some(items.len() - 1));
+
+        items.clear();
+        assert_index_matches_scan(&items);
+        assert!(items.is_empty());
+    }
+
+    /// `iter().position()` / `iter().find()` resolve to the *first* match;
+    /// the index must do the same when duplicate ids sneak in.
+    #[test]
+    fn index_resolves_duplicate_ids_to_the_first_occurrence() {
+        let mut items = ThreadItems::new();
+        items.push(item("dup", "first"));
+        items.push(item("other", "x"));
+        items.push(item("dup", "second"));
+        assert_eq!(items.index_of("dup"), Some(0));
+        assert_eq!(items.get_by_id("dup").map(|entry| entry.id.as_str()), Some("dup"));
+
+        items.retain(|entry| entry.id != "other");
+        assert_eq!(items.index_of("dup"), Some(0));
+        assert_eq!(items.len(), 2);
+
+        let from_vec = ThreadItems::from(vec![item("dup", "a"), item("dup", "b")]);
+        assert_eq!(from_vec.index_of("dup"), Some(0));
+    }
+
+    #[test]
+    fn revisions_are_unique_and_change_on_every_mutation() {
+        let mut items = ThreadItems::new();
+        let mut seen = vec![items.revision()];
+
+        items.push(item("a", "1"));
+        seen.push(items.revision());
+        items.get_mut_by_id("a").expect("item a").source_turn_index = Some(1);
+        seen.push(items.revision());
+        items.get_mut(0).expect("item 0").timestamp = Some(1.0);
+        seen.push(items.revision());
+        items.replace_at(0, item("a", "2"));
+        seen.push(items.revision());
+        items.insert(0, item("b", "0"));
+        seen.push(items.revision());
+        items.extend(vec![item("c", "3")]);
+        seen.push(items.revision());
+        items.retain(|_| true);
+        seen.push(items.revision());
+        items.clear();
+        seen.push(items.revision());
+
+        // A wholesale replacement must not be able to reuse a revision a
+        // derived cache has already seen.
+        seen.push(ThreadItems::from(vec![item("a", "1")]).revision());
+        seen.push(next_items_revision());
+
+        let unique = seen.iter().copied().collect::<std::collections::HashSet<_>>();
+        assert_eq!(unique.len(), seen.len(), "revisions repeated: {seen:?}");
+    }
+
+    #[test]
+    fn clone_preserves_revision_and_index() {
+        let mut items = ThreadItems::new();
+        items.push(item("a", "1"));
+        items.push(item("b", "2"));
+        let cloned = items.clone();
+        assert_eq!(cloned.revision(), items.revision());
+        assert_eq!(cloned.index_of("b"), Some(1));
+    }
 }

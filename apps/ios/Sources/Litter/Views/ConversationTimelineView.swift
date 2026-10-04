@@ -2,25 +2,6 @@ import SwiftUI
 import HairballUI
 import UIKit
 
-enum ConversationLiveDetailRetentionPolicy {
-    static func retainedRichDetailItemIDs(for items: [ConversationItem]) -> Set<String> {
-        var retained = Set<String>()
-
-        if let active = items.last(where: { $0.liveDetailStatus == .inProgress }) {
-            retained.insert(active.id)
-        }
-
-        if let latestCompleted = items.reversed().first(where: { item in
-            guard let status = item.liveDetailStatus else { return false }
-            return status != .inProgress
-        }) {
-            retained.insert(latestCompleted.id)
-        }
-
-        return retained
-    }
-}
-
 struct ConversationTurnTimeline: View {
     @AppStorage(ConversationDisplayPreferenceKey.reasoning) private var reasoningDisplayModeRaw = ConversationDetailDisplayMode.collapsed.rawValue
     @AppStorage(ConversationDisplayPreferenceKey.commands) private var commandDisplayModeRaw = ConversationDetailDisplayMode.collapsed.rawValue
@@ -32,9 +13,9 @@ struct ConversationTurnTimeline: View {
     let originThreadId: String?
     let agentDirectoryVersion: UInt64
     let messageActionsDisabled: Bool
-    let onStreamingSnapshotRendered: (() -> Void)?
-    let onLiveContentLayoutChanged: (() -> Void)?
     let resolveTargetLabel: (String) -> String?
+    let resolveThreadKey: (String) -> ThreadKey?
+    let resolveLiveStatus: (ThreadKey) -> AppSubagentStatus?
     let onWidgetPrompt: (String) -> Void
     let onEditUserItem: (ConversationItem) -> Void
     let onForkFromUserItem: (ConversationItem) -> Void
@@ -46,49 +27,46 @@ struct ConversationTurnTimeline: View {
 
     private var timelineContent: some View {
         let rows = rowDescriptors
-        let retainedRichDetailItemIDs = ConversationLiveDetailRetentionPolicy.retainedRichDetailItemIDs(for: items)
-        let commandDisplayMode = ConversationDetailDisplayMode.resolve(commandDisplayModeRaw)
-        let latestCommandExecutionItemId = rows.reversed().compactMap { row -> String? in
-            guard case .item(let item) = row,
-                  case .commandExecution(let data) = item.content,
-                  !data.isPureExploration else { return nil }
-            return item.id
-        }.first
+        // Hoisted: this used to be a computed property doing an O(n)
+        // `items.last(where:)` scan, and `rowView` read it twice per row —
+        // O(n²) across the live turn on every body evaluation.
+        let streamingItemId = streamingAssistantItemId
 
-        return VStack(alignment: .leading, spacing: 10) {
+        return LazyVStack(alignment: .leading, spacing: 10) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                rowView(
-                    row,
+                ConversationTimelineRow(
+                    isLive: isLive,
+                    serverId: serverId,
+                    originThreadId: originThreadId,
+                    agentDirectoryVersion: agentDirectoryVersion,
+                    messageActionsDisabled: messageActionsDisabled,
+                    resolveTargetLabel: resolveTargetLabel,
+                    resolveThreadKey: resolveThreadKey,
+                    resolveLiveStatus: resolveLiveStatus,
+                    onWidgetPrompt: onWidgetPrompt,
+                    onEditUserItem: onEditUserItem,
+                    onForkFromUserItem: onForkFromUserItem,
+                    onOpenConversation: onOpenConversation,
+                    row: row,
                     isLastRow: index == rows.indices.last,
-                    isPreferredExpandedCommandRow: row.preferredExpandedCommandRow(
-                        latestCommandExecutionItemId: latestCommandExecutionItemId,
-                        commandDisplayMode: commandDisplayMode
-                    ),
-                    retainedRichDetailItemIDs: retainedRichDetailItemIDs
+                    streamingAssistantItemId: streamingItemId,
+                    reasoningDisplayMode: reasoningDisplayMode,
+                    commandDisplayMode: commandDisplayMode,
+                    toolDisplayMode: toolDisplayMode
                 )
                     .id(row.id)
                     .modifier(RowEntranceModifier(isAssistantRow: row.isAssistantRow))
-                    .onGeometryChange(for: CGFloat.self) { geometry in
-                        geometry.size.height
-                    } action: { oldHeight, newHeight in
-                        guard isLive, abs(newHeight - oldHeight) > 0.5 else { return }
-                        onLiveContentLayoutChanged?()
-                    }
             }
         }
     }
 
     private var rowDescriptors: [ConversationTimelineRowDescriptor] {
-        ConversationTimelineRowDescriptor.mergeConsecutiveExplorationRows(
-            ConversationTimelineRowDescriptor.build(from: items)
+        ConversationTimelineRowCache.shared.rows(
+            for: items,
+            reasoningDisplayMode: reasoningDisplayMode,
+            commandDisplayMode: commandDisplayMode,
+            toolDisplayMode: toolDisplayMode
         )
-        .filter {
-            $0.isVisible(
-                reasoningDisplayMode: reasoningDisplayMode,
-                commandDisplayMode: commandDisplayMode,
-                toolDisplayMode: toolDisplayMode
-            )
-        }
     }
 
     private var streamingAssistantItemId: String? {
@@ -108,17 +86,49 @@ struct ConversationTurnTimeline: View {
         ConversationDetailDisplayMode.resolve(toolDisplayModeRaw)
     }
 
+}
+
+struct ConversationTimelineRow: View, Equatable {
+    let isLive: Bool
+    let serverId: String
+    let originThreadId: String?
+    let agentDirectoryVersion: UInt64
+    let messageActionsDisabled: Bool
+    let resolveTargetLabel: (String) -> String?
+    let resolveThreadKey: (String) -> ThreadKey?
+    let resolveLiveStatus: (ThreadKey) -> AppSubagentStatus?
+    let onWidgetPrompt: (String) -> Void
+    let onEditUserItem: (ConversationItem) -> Void
+    let onForkFromUserItem: (ConversationItem) -> Void
+    var onOpenConversation: ((ThreadKey) -> Void)? = nil
+
+    let row: ConversationTimelineRowDescriptor
+    let isLastRow: Bool
+    let streamingAssistantItemId: String?
+    let reasoningDisplayMode: ConversationDetailDisplayMode
+    let commandDisplayMode: ConversationDetailDisplayMode
+    let toolDisplayMode: ConversationDetailDisplayMode
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.row == rhs.row &&
+            lhs.isLive == rhs.isLive &&
+            lhs.isLastRow == rhs.isLastRow &&
+            (lhs.row.id == lhs.streamingAssistantItemId) == (rhs.row.id == rhs.streamingAssistantItemId) &&
+            lhs.serverId == rhs.serverId &&
+            lhs.originThreadId == rhs.originThreadId &&
+            lhs.agentDirectoryVersion == rhs.agentDirectoryVersion &&
+            lhs.messageActionsDisabled == rhs.messageActionsDisabled &&
+            lhs.reasoningDisplayMode == rhs.reasoningDisplayMode &&
+            lhs.commandDisplayMode == rhs.commandDisplayMode &&
+            lhs.toolDisplayMode == rhs.toolDisplayMode
+    }
+
     // Returns AnyView rather than `some View` with @ViewBuilder so the result
     // type doesn't fan out to Group<_ConditionalContent<_ConditionalContent<…>, …>>.
     // Time Profiler showed 44% of main-thread CPU in `outlined destroy` of that
     // nested union; AnyView's per-node diff overhead is cheaper than destroying
     // the union every SwiftUI pass.
-    private func rowView(
-        _ row: ConversationTimelineRowDescriptor,
-        isLastRow: Bool,
-        isPreferredExpandedCommandRow: Bool,
-        retainedRichDetailItemIDs: Set<String>
-    ) -> AnyView {
+    var body: AnyView {
         switch row {
         case .item(let item):
             return AnyView(
@@ -127,17 +137,15 @@ struct ConversationTurnTimeline: View {
                     serverId: serverId,
                     originThreadId: originThreadId,
                     agentDirectoryVersion: agentDirectoryVersion,
-                    isPreferredExpandedCommandRow: isPreferredExpandedCommandRow,
                     isLiveTurn: isLive,
                     isStreamingMessage: item.id == streamingAssistantItemId,
-                    shouldPreserveRichDetail: retainedRichDetailItemIDs.contains(item.id),
                     reasoningDisplayMode: reasoningDisplayMode,
                     commandDisplayMode: commandDisplayMode,
                     toolDisplayMode: toolDisplayMode,
                     messageActionsDisabled: messageActionsDisabled,
-                    onStreamingSnapshotRendered: item.id == streamingAssistantItemId ? onStreamingSnapshotRendered : nil,
-                    onLiveContentLayoutChanged: onLiveContentLayoutChanged,
                     resolveTargetLabel: resolveTargetLabel,
+                    resolveThreadKey: resolveThreadKey,
+                    resolveLiveStatus: resolveLiveStatus,
                     onWidgetPrompt: onWidgetPrompt,
                     onEditUserItem: onEditUserItem,
                     onForkFromUserItem: onForkFromUserItem,
@@ -153,19 +161,23 @@ struct ConversationTurnTimeline: View {
                     showsCollapsedPreview: isLastRow,
                     displayMode: commandDisplayMode
                 )
+                .equatable()
             )
         case .subagentGroup(_, let merged, _):
             return AnyView(
                 SubagentCardView(
                     data: merged,
-                    serverId: serverId
+                    serverId: serverId,
+                    resolveTargetLabel: resolveTargetLabel,
+                    resolveThreadKey: resolveThreadKey,
+                    resolveLiveStatus: resolveLiveStatus
                 )
             )
         }
     }
 }
 
-private enum ConversationTimelineRowDescriptor: Identifiable, Equatable {
+enum ConversationTimelineRowDescriptor: Identifiable, Equatable {
     case item(ConversationItem)
     case exploration(id: String, items: [ConversationItem])
     case subagentGroup(id: String, merged: ConversationMultiAgentActionData, sourceItems: [ConversationItem])
@@ -184,21 +196,6 @@ private enum ConversationTimelineRowDescriptor: Identifiable, Equatable {
     var isAssistantRow: Bool {
         guard case .item(let item) = self else { return false }
         return item.isAssistantItem
-    }
-
-    func preferredExpandedCommandRow(
-        latestCommandExecutionItemId: String?,
-        commandDisplayMode: ConversationDetailDisplayMode
-    ) -> Bool {
-        guard commandDisplayMode == .collapsed else {
-            return commandDisplayMode == .expanded
-        }
-        guard case .item(let item) = self,
-              case .commandExecution(let data) = item.content,
-              !data.isPureExploration else {
-            return false
-        }
-        return item.id == latestCommandExecutionItemId
     }
 
     func isVisible(
@@ -350,6 +347,100 @@ private enum ConversationTimelineRowDescriptor: Identifiable, Equatable {
     }
 }
 
+/// Memoizes `build` → `mergeConsecutiveExplorationRows` → `filter`.
+///
+/// Those three chained passes each allocated a fresh array and ran on every
+/// body evaluation of every turn timeline — including body evaluations driven
+/// by layout, viewport, or display-mode churn rather than by item changes.
+/// The key is a digest over item identity + `renderDigest`, so a cache hit is
+/// exact: any content change produces a different key.
+@MainActor
+final class ConversationTimelineRowCache {
+    static let shared = ConversationTimelineRowCache()
+
+    private struct Key: Hashable {
+        let itemsDigest: Int
+        let itemCount: Int
+        let reasoningDisplayMode: ConversationDetailDisplayMode
+        let commandDisplayMode: ConversationDetailDisplayMode
+        let toolDisplayMode: ConversationDetailDisplayMode
+    }
+
+    private let maxEntries = 32
+    private let trimTarget = 24
+
+    private var entries: [Key: [ConversationTimelineRowDescriptor]] = [:]
+    private var accessStamps: [Key: UInt64] = [:]
+    private var accessCounter: UInt64 = 0
+
+    func rows(
+        for items: [ConversationItem],
+        reasoningDisplayMode: ConversationDetailDisplayMode,
+        commandDisplayMode: ConversationDetailDisplayMode,
+        toolDisplayMode: ConversationDetailDisplayMode
+    ) -> [ConversationTimelineRowDescriptor] {
+        let key = Key(
+            itemsDigest: Self.digest(of: items),
+            itemCount: items.count,
+            reasoningDisplayMode: reasoningDisplayMode,
+            commandDisplayMode: commandDisplayMode,
+            toolDisplayMode: toolDisplayMode
+        )
+
+        if let cached = entries[key] {
+            touch(key)
+            return cached
+        }
+
+        let rows = ConversationTimelineRowDescriptor.mergeConsecutiveExplorationRows(
+            ConversationTimelineRowDescriptor.build(from: items)
+        )
+        .filter {
+            $0.isVisible(
+                reasoningDisplayMode: reasoningDisplayMode,
+                commandDisplayMode: commandDisplayMode,
+                toolDisplayMode: toolDisplayMode
+            )
+        }
+
+        entries[key] = rows
+        touch(key)
+        trimIfNeeded()
+        return rows
+    }
+
+    func reset() {
+        entries.removeAll(keepingCapacity: false)
+        accessStamps.removeAll(keepingCapacity: false)
+        accessCounter = 0
+    }
+
+    private static func digest(of items: [ConversationItem]) -> Int {
+        var hasher = Hasher()
+        hasher.combine(items.count)
+        for item in items {
+            hasher.combine(item.id)
+            hasher.combine(item.renderDigest)
+        }
+        return hasher.finalize()
+    }
+
+    private func touch(_ key: Key) {
+        accessCounter &+= 1
+        accessStamps[key] = accessCounter
+    }
+
+    private func trimIfNeeded() {
+        guard entries.count > maxEntries else { return }
+        let removeCount = entries.count - trimTarget
+        guard removeCount > 0 else { return }
+        for (key, _) in accessStamps.sorted(by: { $0.value < $1.value }).prefix(removeCount) {
+            entries.removeValue(forKey: key)
+            accessStamps.removeValue(forKey: key)
+        }
+    }
+}
+
 private struct RowEntranceModifier: ViewModifier {
     let isAssistantRow: Bool
 
@@ -420,24 +511,19 @@ extension AnyTransition {
 }
 
 private struct ConversationTimelineItemRow: View, Equatable {
-    private let renderCache = MessageRenderCache.shared
-    @Environment(ThemeManager.self) private var themeManager
-
     let item: ConversationItem
     let serverId: String
     let originThreadId: String?
     let agentDirectoryVersion: UInt64
-    let isPreferredExpandedCommandRow: Bool
     let isLiveTurn: Bool
     let isStreamingMessage: Bool
-    let shouldPreserveRichDetail: Bool
     let reasoningDisplayMode: ConversationDetailDisplayMode
     let commandDisplayMode: ConversationDetailDisplayMode
     let toolDisplayMode: ConversationDetailDisplayMode
     let messageActionsDisabled: Bool
-    let onStreamingSnapshotRendered: (() -> Void)?
-    let onLiveContentLayoutChanged: (() -> Void)?
     let resolveTargetLabel: (String) -> String?
+    let resolveThreadKey: (String) -> ThreadKey?
+    let resolveLiveStatus: (ThreadKey) -> AppSubagentStatus?
     let onWidgetPrompt: (String) -> Void
     let onEditUserItem: (ConversationItem) -> Void
     let onForkFromUserItem: (ConversationItem) -> Void
@@ -453,12 +539,10 @@ private struct ConversationTimelineItemRow: View, Equatable {
         // StreamingMarkdownContentView and replay the token reveal.
         let result = lhs.item.id == rhs.item.id &&
             (isAssistant || lhs.item.renderDigest == rhs.item.renderDigest) &&
-            (isAssistant || lhs.shouldPreserveRichDetail == rhs.shouldPreserveRichDetail) &&
             (isAssistant || lhs.isStreamingMessage == rhs.isStreamingMessage) &&
             lhs.serverId == rhs.serverId &&
             lhs.originThreadId == rhs.originThreadId &&
             lhs.agentDirectoryVersion == rhs.agentDirectoryVersion &&
-            lhs.isPreferredExpandedCommandRow == rhs.isPreferredExpandedCommandRow &&
             lhs.isLiveTurn == rhs.isLiveTurn &&
             lhs.reasoningDisplayMode == rhs.reasoningDisplayMode &&
             lhs.commandDisplayMode == rhs.commandDisplayMode &&
@@ -502,7 +586,10 @@ private struct ConversationTimelineItemRow: View, Equatable {
                     ComputerUseToolCallView(
                         data: data,
                         view: view,
-                        externalExpanded: toolDefaultExpanded(isFailed: data.status == .failed)
+                        externalExpanded: toolDefaultExpanded(
+                            isFailed: data.status == .failed,
+                            isInProgress: data.status == .inProgress
+                        )
                     )
                 )
             } else {
@@ -520,7 +607,10 @@ private struct ConversationTimelineItemRow: View, Equatable {
             return AnyView(
                 SubagentCardView(
                     data: data,
-                    serverId: serverId
+                    serverId: serverId,
+                    resolveTargetLabel: resolveTargetLabel,
+                    resolveThreadKey: resolveThreadKey,
+                    resolveLiveStatus: resolveLiveStatus
                 )
             )
         case .webSearch(let data):
@@ -534,7 +624,10 @@ private struct ConversationTimelineItemRow: View, Equatable {
             return AnyView(
                 ImageGenerationToolCallView(
                     data: data,
-                    externalExpanded: toolDefaultExpanded(isFailed: data.status == .failed)
+                    externalExpanded: toolDefaultExpanded(
+                        isFailed: data.status == .failed,
+                        isInProgress: data.status == .inProgress
+                    )
                 )
             )
         case .widget(let data):
@@ -574,7 +667,7 @@ private struct ConversationTimelineItemRow: View, Equatable {
     private func commandExecutionRow(_ data: ConversationCommandExecutionData) -> some View {
         ConversationCommandExecutionRow(
             data: data,
-            isPreferredExpanded: commandDefaultExpanded(data),
+            isInitiallyExpanded: commandDefaultExpanded(data),
             displayMode: commandDisplayMode
         )
     }
@@ -584,17 +677,20 @@ private struct ConversationTimelineItemRow: View, Equatable {
         ToolCallCardView(
             model: model,
             serverId: serverId,
-            externalExpanded: toolDefaultExpanded(isFailed: model.status == .failed)
+            externalExpanded: toolDefaultExpanded(
+                isFailed: model.status == .failed,
+                isInProgress: model.status == .inProgress
+            )
         )
     }
 
-    private func toolDefaultExpanded(isFailed: Bool) -> Bool {
-        if toolDisplayMode == .collapsed,
-           !isLiveTurn,
-           shouldPreserveRichDetail {
-            return true
-        }
-        return toolDisplayMode.defaultExpanded(isFailed: isFailed)
+    /// Mirrors `commandDefaultExpanded`: a running tool call stays open so its
+    /// result streams in, rather than staying collapsed until the turn ends.
+    /// Takes flags rather than a status because callers hand in two different
+    /// enums — `ToolCallStatus` for card models, `AppOperationStatus` for the
+    /// MCP/image-generation rows.
+    private func toolDefaultExpanded(isFailed: Bool, isInProgress: Bool) -> Bool {
+        toolDisplayMode.defaultExpanded(isFailed: isFailed, isInProgress: isInProgress)
     }
 
     private func commandDefaultExpanded(_ data: ConversationCommandExecutionData) -> Bool {
@@ -642,9 +738,7 @@ private struct ConversationTimelineItemRow: View, Equatable {
             itemId: item.id,
             text: data.text,
             isStreaming: isStreamingMessage,
-            label: assistantLabel,
-            themeVersion: themeManager.themeVersion,
-            onSnapshotRendered: isStreamingMessage ? onStreamingSnapshotRendered : nil
+            label: assistantLabel
         )
     }
 
@@ -877,7 +971,7 @@ private struct ConversationTimelineItemRow: View, Equatable {
     }
 }
 
-private struct ConversationExplorationGroupRow: View {
+private struct ConversationExplorationGroupRow: View, Equatable {
     @Environment(\.textScale) private var textScale
 
     let id: String
@@ -886,6 +980,15 @@ private struct ConversationExplorationGroupRow: View {
     let displayMode: ConversationDetailDisplayMode
 
     @State private var expanded = false
+
+    /// `ConversationItem.==` is now id + renderDigest, so the item comparison
+    /// is a cheap integer walk rather than a deep content compare.
+    static func == (lhs: ConversationExplorationGroupRow, rhs: ConversationExplorationGroupRow) -> Bool {
+        lhs.id == rhs.id &&
+            lhs.showsCollapsedPreview == rhs.showsCollapsedPreview &&
+            lhs.displayMode == rhs.displayMode &&
+            lhs.items == rhs.items
+    }
 
     var body: some View {
         let entries = explorationEntries
@@ -1161,46 +1264,54 @@ private struct ConversationReasoningRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: expanded ? 8 : 0) {
+        VStack(alignment: .leading, spacing: expanded ? LitterSpace.xs : 0) {
             Button(action: toggleExpanded) {
-                HStack(spacing: 8) {
-                    Image(systemName: "brain.head.profile")
-                        .litterFont(size: 12, weight: .semibold)
-                        .foregroundColor(LitterTheme.textSecondary)
-                    Text("Thinking")
-                        .litterFont(.caption, weight: .semibold)
-                        .foregroundColor(LitterTheme.textSecondary)
-                    if !expanded {
-                        Text(collapsedSummary)
+                HStack(spacing: 6) {
+                    Text("Thought")
+                        .litterMeta()
+                    if !expanded, let preview = collapsedPreview {
+                        Text(verbatim: preview)
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textMuted)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
-                    Spacer(minLength: 8)
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .litterFont(size: 11, weight: .medium)
-                        .foregroundColor(LitterTheme.textMuted)
+                    Image(systemName: "chevron.right")
+                        .litterFont(size: 10, weight: .semibold)
+                        .foregroundColor(LitterTheme.meta)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                    Spacer(minLength: 0)
                 }
+                .frame(minHeight: 32, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             if expanded {
+                // Subdued body text: reasoning is context, not the answer.
                 Text(reasoningText)
                     .litterFont(.footnote)
-                    .italic()
-                    .foregroundColor(LitterTheme.textSecondary)
+                    .foregroundColor(LitterTheme.textMuted)
+                    .lineSpacing(3)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .transition(.sectionReveal)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .animation(.spring(duration: 0.32, bounce: 0.12), value: expanded)
         .onChange(of: displayMode) { _, newValue in
             expanded = newValue.defaultExpanded()
         }
+    }
+
+    /// First line of the first note, so a collapsed thought still says what
+    /// it was about.
+    private var collapsedPreview: String? {
+        guard let first = (data.summary + data.content).first(where: {
+            !ConversationItem.isBlank($0)
+        }) else { return nil }
+        let line = first.split(whereSeparator: \.isNewline).first.map(String.init) ?? first
+        let cleaned = line.replacingOccurrences(of: "**", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return cleaned.isEmpty ? nil : cleaned
     }
 
     private var reasoningText: String {
@@ -1209,17 +1320,8 @@ private struct ConversationReasoningRow: View {
             .joined(separator: "\n\n")
     }
 
-    private var collapsedSummary: String {
-        let itemCount = (data.summary + data.content).filter {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }.count
-        return itemCount == 1 ? "Internal reasoning" : "\(itemCount) reasoning notes"
-    }
-
     private func toggleExpanded() {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            expanded.toggle()
-        }
+        expanded.toggle()
     }
 }
 
@@ -1408,20 +1510,20 @@ private struct ConversationTurnDiffRow: View {
 
 private struct ConversationCommandExecutionRow: View {
     let data: ConversationCommandExecutionData
-    let isPreferredExpanded: Bool
+    let isInitiallyExpanded: Bool
     let displayMode: ConversationDetailDisplayMode
 
     @State private var expanded: Bool
 
     init(
         data: ConversationCommandExecutionData,
-        isPreferredExpanded: Bool,
+        isInitiallyExpanded: Bool,
         displayMode: ConversationDetailDisplayMode
     ) {
         self.data = data
-        self.isPreferredExpanded = isPreferredExpanded
+        self.isInitiallyExpanded = isInitiallyExpanded
         self.displayMode = displayMode
-        _expanded = State(initialValue: isPreferredExpanded)
+        _expanded = State(initialValue: isInitiallyExpanded)
     }
 
     var body: some View {
@@ -1439,16 +1541,9 @@ private struct ConversationCommandExecutionRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(LitterTheme.surface)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(LitterTheme.border, lineWidth: 0.5)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.vertical, LitterSpace.xs)
         .animation(.spring(duration: 0.35, bounce: 0.15), value: expanded)
-        .onChange(of: isPreferredExpanded) { _, newValue in
+        .onChange(of: isInitiallyExpanded) { _, newValue in
             expanded = newValue
         }
         .onChange(of: displayMode) { _, newValue in
@@ -1457,14 +1552,17 @@ private struct ConversationCommandExecutionRow: View {
     }
 
     private var shellHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        // One mono line: "$ command  2.1s ›". Status appears as a word only
+        // when the command is running or failed.
+        HStack(alignment: .firstTextBaseline, spacing: LitterSpace.s) {
             Text("$")
-                .litterMonoFont(size: 12, weight: .semibold)
-                .foregroundColor(LitterTheme.warning)
+                .litterMonoFont(size: 13, weight: .semibold)
+                .foregroundColor(LitterTheme.meta)
+                .accessibilityHidden(true)
 
             Text(expanded ? displayedCommand : collapsedCommand)
-                .litterMonoFont(size: 12)
-                .foregroundColor(LitterTheme.textSystem)
+                .litterMonoFont(size: 13)
+                .foregroundColor(LitterTheme.textSecondary)
                 .textSelection(.enabled)
                 .lineLimit(expanded ? nil : 1)
                 .truncationMode(.tail)
@@ -1472,25 +1570,23 @@ private struct ConversationCommandExecutionRow: View {
 
             if let durationText = formatDuration(data.durationMs), !durationText.isEmpty {
                 Text(durationText)
-                    .litterFont(.caption2)
-                    .foregroundColor(statusColor)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(statusColor.opacity(0.10))
-                    )
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(statusColor.opacity(0.22), lineWidth: 0.5)
-                    )
+                    .litterMeta()
                     .accessibilityLabel(durationAccessibilityLabel(durationText))
             }
+            switch data.status.toolCallStatus {
+            case .inProgress:
+                Text("running").litterMeta()
+            case .failed:
+                Text("failed").litterMeta(LitterTheme.danger)
+            case .completed, .unknown:
+                EmptyView()
+            }
 
-            Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                .litterFont(size: 11, weight: .medium)
-                .foregroundColor(LitterTheme.textMuted)
+            Text(expanded ? "⌄" : "›")
+                .litterMeta()
+                .accessibilityHidden(true)
         }
+        .frame(minHeight: 32)
         .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.2)) {
@@ -1586,8 +1682,8 @@ private struct ConversationCommandOutputViewport: View {
                     .padding(.bottom, 12)
                 }
                 .frame(height: viewportHeight)
-                .background(LitterTheme.codeBackground.opacity(0.78))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(LitterTheme.raised)
+                .clipShape(RoundedRectangle(cornerRadius: LitterRadius.raised, style: .continuous))
                 .overlay(alignment: .top) {
                     LinearGradient(
                         colors: [LitterTheme.codeBackground.opacity(0.96), LitterTheme.codeBackground.opacity(0)],
@@ -1595,15 +1691,14 @@ private struct ConversationCommandOutputViewport: View {
                         endPoint: .bottom
                     )
                     .frame(height: 18)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: LitterRadius.raised, style: .continuous))
                     .allowsHitTesting(false)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if let durationText, !durationText.isEmpty {
                         Text(durationText)
-                            .foregroundColor(statusColor)
+                            .litterMeta(statusColor)
                             .accessibilityLabel(durationAccessibilityLabel(durationText))
-                            .litterFont(.caption2)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(alignment: .bottom) {
@@ -1615,10 +1710,6 @@ private struct ConversationCommandOutputViewport: View {
                             }
                         }
                     }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(LitterTheme.border.opacity(0.35), lineWidth: 1)
-                }
                 .onAppear {
                     scrollToBottom(proxy)
                 }
@@ -1705,13 +1796,9 @@ private struct ConversationUserInputResponseRow: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(data.questions.enumerated()), id: \.element.id) { _, question in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .litterFont(size: 10, weight: .semibold)
-                        .foregroundColor(LitterTheme.accent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(question.header ?? question.question)
-                            .litterFont(.caption, weight: .semibold)
-                            .foregroundColor(LitterTheme.textSecondary)
+                        Text((question.header ?? question.question).lowercased())
+                            .litterMeta()
                         Text(question.answer)
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.textPrimary)
@@ -1720,8 +1807,7 @@ private struct ConversationUserInputResponseRow: View {
                 }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, LitterSpace.xs)
     }
 }
 
@@ -1729,50 +1815,24 @@ private struct ConversationDividerRow: View {
     let kind: ConversationDividerKind
     let isLiveTurn: Bool
 
+    /// An in-turn event ("context compacted", "worked for 2m") is a single
+    /// mono line. No rules or icons; an in-flight compaction keeps its
+    /// spinner so progress stays visible.
     var body: some View {
-        HStack(spacing: 10) {
-            Capsule()
-                .fill(LitterTheme.border)
-                .frame(minWidth: 16, maxHeight: 1)
-            dividerContent
-                .layoutPriority(1)
-            Capsule()
-                .fill(LitterTheme.border)
-                .frame(minWidth: 16, maxHeight: 1)
+        HStack(spacing: LitterSpace.s) {
+            if case .contextCompaction = kind, !effectiveContextCompactionComplete {
+                ProgressView()
+                    .controlSize(.mini)
+                    .tint(LitterTheme.meta)
+            }
+            Text(title.lowercased())
+                .litterMeta()
+                .lineLimit(1)
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, LitterSpace.xs)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-    }
-
-    @ViewBuilder
-    private var dividerContent: some View {
-        switch kind {
-        case .contextCompaction:
-            HStack(spacing: 6) {
-                if effectiveContextCompactionComplete {
-                    Image(systemName: "checkmark.circle.fill")
-                        .litterFont(size: 10, weight: .semibold)
-                        .foregroundColor(LitterTheme.success)
-                } else {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(LitterTheme.warning)
-                }
-
-                Text(title)
-                    .litterFont(.caption2, weight: .semibold)
-                    .foregroundColor(
-                        effectiveContextCompactionComplete ? LitterTheme.textMuted : LitterTheme.warning
-                    )
-                    .lineLimit(1)
-            }
-        default:
-            Text(title)
-                .litterFont(.caption2, weight: .semibold)
-                .foregroundColor(LitterTheme.textMuted)
-                .lineLimit(1)
-        }
     }
 
     private var title: String {
@@ -1938,9 +1998,6 @@ struct ConversationPinnedContextStrip: View {
 
     init(items: [ConversationItem]) {
         self.items = items
-        _cachedCombinedPinnedDiff = State(
-            initialValue: Self.buildCombinedPinnedDiff(from: items)
-        )
     }
 
     var body: some View {
@@ -1972,7 +2029,10 @@ struct ConversationPinnedContextStrip: View {
                 sections: presentedDiff.sections
             )
         }
-        .onChange(of: pinnedDiffTaskKey, initial: false) { _, _ in
+        // Built only when the pinned items change. Building it in `init`
+        // ran on every parent re-render, although SwiftUI keeps only the
+        // first `@State` initial value.
+        .onChange(of: pinnedDiffTaskKey, initial: true) { _, _ in
             cachedCombinedPinnedDiff = Self.buildCombinedPinnedDiff(from: items)
         }
     }
@@ -2220,39 +2280,10 @@ private struct DiffIndicatorLabel: View {
     }
 }
 
-private struct DiffLine: Identifiable {
-    enum Kind {
-        case addition, deletion, hunk, context
-
-        var foregroundColor: Color {
-            switch self {
-            case .addition: LitterTheme.success
-            case .deletion: LitterTheme.danger
-            case .hunk: LitterTheme.accentStrong
-            case .context: LitterTheme.textBody
-            }
-        }
-
-        var backgroundColor: Color {
-            switch self {
-            case .addition: LitterTheme.success.opacity(0.12)
-            case .deletion: LitterTheme.danger.opacity(0.12)
-            case .hunk: LitterTheme.accentStrong.opacity(0.12)
-            case .context: LitterTheme.codeBackground.opacity(0.72)
-            }
-        }
-    }
-
-    let id: Int
-    let text: String
-    let kind: Kind
-}
-
 private struct ConversationDiffDetailSheet: View {
     let title: String
     let stats: DiffStats
     let sections: [PresentedDiffSectionModel]
-    @Environment(ThemeManager.self) private var themeManager
     @Environment(\.dismiss) private var dismiss
     @State private var collapsedSectionIDs: Set<String> = []
     private let fullDiffFontSize = LitterFont.conversationDiffPointSize
@@ -2327,7 +2358,6 @@ private struct ConversationDiffDetailSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
-        .id(themeManager.themeVersion)
     }
 
     private var usesStickyHeaders: Bool {
@@ -2344,7 +2374,6 @@ private struct ConversationDiffDetailSheet: View {
                 ScrollView(.horizontal, showsIndicators: true) {
                     SyntaxHighlightedDiffText(
                         diff: section.diff,
-                        titleHint: section.title.isEmpty ? nil : section.title,
                         fontSize: fullDiffFontSize
                     )
                         .padding(.horizontal, 8)
@@ -2504,39 +2533,357 @@ private func formatDuration(_ durationMs: Int?) -> String? {
 }
 
 private extension ToolCallStatus {
+    /// Healthy and in-flight states stay gray; only a failure is colored.
     var themeColor: Color {
         switch self {
-        case .completed:
-            return LitterTheme.success
-        case .inProgress:
-            return LitterTheme.warning
+        case .completed, .inProgress, .unknown:
+            return LitterTheme.meta
         case .failed:
             return LitterTheme.danger
-        case .unknown:
-            return LitterTheme.textSecondary
         }
     }
 }
 
-private extension ConversationItem {
-    var liveDetailStatus: ToolCallStatus? {
-        switch content {
-        case .commandExecution(let data):
-            return data.status.toolCallStatus
-        case .fileChange(let data):
-            return data.status.toolCallStatus
-        case .mcpToolCall(let data):
-            return data.status.toolCallStatus
-        case .dynamicToolCall(let data):
-            return data.status.toolCallStatus
-        case .webSearch(let data):
-            return data.isInProgress ? .inProgress : .completed
-        case .imageView:
-            return .completed
-        case .imageGeneration(let data):
-            return data.status.toolCallStatus
-        default:
-            return nil
+/// Flat scroll targets let the outer lazy stack virtualize individual messages,
+/// including very long agent turns. Only changed turns rebuild their row models.
+///
+/// Inside a turn, each run of "work" rows (reasoning, commands, tool calls,
+/// subagents, intermediate assistant updates) collapses behind one
+/// `.work` summary entry. A collapsed run emits no row entries at all, so its
+/// children are never built. The final assistant answer always stays visible.
+struct ConversationTranscriptProjection {
+    struct Entry: Identifiable {
+        enum Content {
+            case row(ConversationTimelineRowDescriptor, isLast: Bool, streamingItemID: String?)
+            case work(ConversationWorkGroupSummary, isExpanded: Bool)
+            case collapsed
+            case footer
+        }
+        let turn: TranscriptTurn
+        let content: Content
+        /// First entry of a turn that follows another turn. Drives the turn
+        /// divider; presentation only.
+        var startsTurn = false
+        /// Row sits inside an expanded work group (drawn with a leading rule).
+        var isWorkMember = false
+
+        var id: String {
+            switch content {
+            case .row(let row, _, _): "row/\(row.id)"
+            case .work(let summary, _): summary.id
+            case .collapsed: "\(turn.id)/summary"
+            case .footer: "\(turn.id)/footer"
+            }
+        }
+    }
+
+    private enum Segment {
+        case row(Int)
+        case work(ConversationWorkGroupSummary, Range<Int>)
+    }
+
+    private struct CachedRows {
+        let digest: Int
+        let rows: [ConversationTimelineRowDescriptor]
+        let segments: [Segment]
+    }
+
+    private(set) var entries: [Entry] = []
+    private(set) var turnIDByEntryID: [String: String] = [:]
+    private var cachedRows: [String: CachedRows] = [:]
+    private var displayModes: [ConversationDetailDisplayMode] = []
+
+    @MainActor
+    mutating func update(
+        turns: [TranscriptTurn],
+        expandedTurnIDs: Set<String>,
+        workExpansion: [String: Bool] = [:],
+        reasoning: ConversationDetailDisplayMode,
+        commands: ConversationDetailDisplayMode,
+        tools: ConversationDetailDisplayMode
+    ) {
+        let modes = [reasoning, commands, tools]
+        if modes != displayModes {
+            cachedRows.removeAll()
+            displayModes = modes
+        }
+        let turnIDs = Set(turns.map(\.id))
+        cachedRows = cachedRows.filter { turnIDs.contains($0.key) }
+        var result: [Entry] = []
+        for turn in turns {
+            let turnStartIndex = result.count
+            defer {
+                if turnStartIndex > 0, turnStartIndex < result.count {
+                    result[turnStartIndex].startsTurn = true
+                }
+            }
+            if !turn.isLive && turn.isCollapsedByDefault && !expandedTurnIDs.contains(turn.id) {
+                result.append(Entry(turn: turn, content: .collapsed))
+                continue
+            }
+            let cached: CachedRows
+            if let hit = cachedRows[turn.id], hit.digest == turn.renderDigest {
+                cached = hit
+            } else {
+                let rows = ConversationTimelineRowCache.shared.rows(
+                    for: turn.items,
+                    reasoningDisplayMode: reasoning,
+                    commandDisplayMode: commands,
+                    toolDisplayMode: tools
+                )
+                cached = CachedRows(
+                    digest: turn.renderDigest,
+                    rows: rows,
+                    segments: Self.segments(for: rows)
+                )
+                cachedRows[turn.id] = cached
+            }
+            let rows = cached.rows
+            let streamingItemID = turn.isLive ? turn.items.last(where: \.isAssistantItem)?.id : nil
+            // Work stays open while the turn streams and folds away once it
+            // finishes, unless the user toggled that group explicitly.
+            let expandedByDefault = turn.isLive || reasoning == .expanded
+            for segment in cached.segments {
+                switch segment {
+                case .row(let index):
+                    result.append(Entry(turn: turn, content: .row(
+                        rows[index], isLast: index == rows.count - 1, streamingItemID: streamingItemID
+                    )))
+                case .work(let summary, let range):
+                    let isExpanded = workExpansion[summary.id] ?? expandedByDefault
+                    result.append(Entry(turn: turn, content: .work(summary, isExpanded: isExpanded)))
+                    guard isExpanded else { continue }
+                    for index in range {
+                        var entry = Entry(turn: turn, content: .row(
+                            rows[index], isLast: index == rows.count - 1, streamingItemID: streamingItemID
+                        ))
+                        entry.isWorkMember = true
+                        result.append(entry)
+                    }
+                }
+            }
+            if turn.isLive || turn.isCollapsedByDefault {
+                result.append(Entry(turn: turn, content: .footer))
+            }
+        }
+        entries = result
+        turnIDByEntryID = Dictionary(uniqueKeysWithValues: result.map { ($0.id, $0.turn.id) })
+    }
+
+    /// Splits a turn's rows into plain rows and runs of work rows. A run only
+    /// becomes a group when it holds real work, not just assistant text.
+    private static func segments(for rows: [ConversationTimelineRowDescriptor]) -> [Segment] {
+        let finalAssistantIndex = rows.lastIndex(where: \.isAssistantRow)
+        func isWork(_ index: Int) -> Bool {
+            if rows[index].isAssistantRow { return index != finalAssistantIndex }
+            return rows[index].isWorkRow
+        }
+        var segments: [Segment] = []
+        var index = 0
+        while index < rows.count {
+            guard isWork(index) else {
+                segments.append(.row(index))
+                index += 1
+                continue
+            }
+            var end = index
+            while end < rows.count, isWork(end) { end += 1 }
+            let range = index..<end
+            let run = rows[range]
+            if run.contains(where: { !$0.isAssistantRow }) {
+                segments.append(.work(ConversationWorkGroupSummary(rows: run), range))
+            } else {
+                segments.append(contentsOf: range.map(Segment.row))
+            }
+            index = end
+        }
+        return segments
+    }
+}
+
+extension ConversationTimelineRowDescriptor {
+    /// Rows that belong in a turn's collapsible work section.
+    var isWorkRow: Bool {
+        switch self {
+        case .exploration, .subagentGroup:
+            return true
+        case .item(let item):
+            switch item.content {
+            case .reasoning, .commandExecution, .fileChange, .mcpToolCall,
+                 .dynamicToolCall, .multiAgentAction, .webSearch, .imageView:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+}
+
+/// One-line description of a run of work rows, e.g.
+/// "Thought · ran 3 commands · read 2 files".
+struct ConversationWorkGroupSummary: Equatable {
+    let id: String
+    let text: String
+    let isActive: Bool
+    /// Latest action, shown under a collapsed group while it is running.
+    let latestActivity: String?
+
+    init<C: Collection>(rows: C) where C.Element == ConversationTimelineRowDescriptor {
+        var thoughts = 0, commands = 0, reads = 0, searches = 0, listings = 0
+        var edits = 0, tools = 0, webSearches = 0, agents = 0
+        var active = false
+        var latest: String?
+
+        for row in rows {
+            switch row {
+            case .exploration(_, let items):
+                for item in items {
+                    guard case .commandExecution(let data) = item.content else { continue }
+                    active = active || data.isInProgress
+                    if data.actions.isEmpty { commands += 1 }
+                    for action in data.actions {
+                        switch action.kind {
+                        case .read: reads += 1
+                        case .search: searches += 1
+                        case .listFiles: listings += 1
+                        case .unknown: commands += 1
+                        }
+                    }
+                    latest = Self.firstLine(data.command)
+                }
+            case .subagentGroup(_, let merged, _):
+                agents += max(1, merged.targets.count)
+                active = active || merged.isInProgress
+                latest = "Agents"
+            case .item(let item):
+                switch item.content {
+                case .reasoning(let data):
+                    thoughts += 1
+                    latest = (data.summary.last).flatMap(Self.firstLine) ?? "Thinking"
+                case .commandExecution(let data):
+                    commands += 1
+                    active = active || data.isInProgress
+                    latest = Self.firstLine(data.command)
+                case .fileChange(let data):
+                    edits += max(1, data.changes.count)
+                    active = active || data.status == .pending || data.status == .inProgress
+                    latest = data.changes.last.map { "Edit \(($0.path as NSString).lastPathComponent)" }
+                case .mcpToolCall(let data):
+                    tools += 1
+                    active = active || data.isInProgress
+                    latest = data.tool
+                case .dynamicToolCall:
+                    tools += 1
+                    latest = "Tool call"
+                case .multiAgentAction(let data):
+                    agents += max(1, data.targets.count)
+                    active = active || data.isInProgress
+                    latest = "Agents"
+                case .webSearch(let data):
+                    webSearches += 1
+                    active = active || data.isInProgress
+                    latest = Self.firstLine(data.query)
+                case .imageView:
+                    reads += 1
+                default:
+                    break
+                }
+            }
+        }
+
+        func plural(_ count: Int, _ one: String, _ many: String) -> String {
+            count == 1 ? "\(count) \(one)" : "\(count) \(many)"
+        }
+        var parts: [String] = []
+        if thoughts > 0 { parts.append("thought") }
+        if commands > 0 { parts.append("ran \(plural(commands, "command", "commands"))") }
+        if reads > 0 { parts.append("read \(plural(reads, "file", "files"))") }
+        if searches > 0 { parts.append("searched \(plural(searches, "time", "times"))") }
+        if listings > 0 { parts.append("listed \(plural(listings, "folder", "folders"))") }
+        if edits > 0 { parts.append("edited \(plural(edits, "file", "files"))") }
+        if tools > 0 { parts.append(plural(tools, "tool call", "tool calls")) }
+        if webSearches > 0 { parts.append(plural(webSearches, "web search", "web searches")) }
+        if agents > 0 { parts.append(plural(agents, "agent", "agents")) }
+        if parts.isEmpty { parts.append("worked") }
+        let joined = parts.joined(separator: " · ")
+
+        self.id = "work/\(rows.first?.id ?? "empty")"
+        self.text = joined.prefix(1).uppercased() + joined.dropFirst()
+        self.isActive = active
+        self.latestActivity = latest
+    }
+
+    private static func firstLine(_ text: String) -> String? {
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init)?
+            .trimmingCharacters(in: .whitespaces)
+        guard let line, !line.isEmpty else { return nil }
+        return line.count > 120 ? String(line.prefix(120)) + "…" : line
+    }
+}
+
+/// Disclosure row for a turn's work section. Collapsed it is one line; the
+/// grouped rows are separate lazy entries, built only while expanded.
+struct ConversationWorkGroupHeader: View, Equatable {
+    let summary: ConversationWorkGroupSummary
+    let isExpanded: Bool
+    let onToggle: () -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.summary == rhs.summary && lhs.isExpanded == rhs.isExpanded
+    }
+
+    var body: some View {
+        Button(action: onToggle) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    if summary.isActive {
+                        Circle()
+                            .fill(LitterTheme.warning)
+                            .frame(width: 6, height: 6)
+                    }
+                    Text(verbatim: summary.text)
+                        .litterMeta()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Image(systemName: "chevron.right")
+                        .litterFont(size: 10, weight: .semibold)
+                        .foregroundColor(LitterTheme.meta)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    Spacer(minLength: 0)
+                }
+                if !isExpanded, summary.isActive, let latest = summary.latestActivity {
+                    Text(verbatim: latest)
+                        .litterFont(.caption)
+                        .foregroundColor(LitterTheme.textMuted)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: LitterSpace.hitTarget, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(summary.text)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+        .accessibilityHint(isExpanded ? "Hides this turn's work" : "Shows this turn's reasoning and tool calls")
+    }
+}
+
+/// Leading 1pt rule marking rows that belong to an expanded work group.
+struct ConversationWorkMemberModifier: ViewModifier {
+    let isMember: Bool
+
+    func body(content: Content) -> some View {
+        if isMember {
+            content
+                .padding(.leading, LitterSpace.m)
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(LitterTheme.turnDivider)
+                        .frame(width: 1)
+                }
+        } else {
+            content
         }
     }
 }

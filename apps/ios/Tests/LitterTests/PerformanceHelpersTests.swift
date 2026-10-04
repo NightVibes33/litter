@@ -3,6 +3,150 @@ import XCTest
 
 @MainActor
 final class PerformanceHelpersTests: XCTestCase {
+    func testLargeConversationRespectsCollapsePreference() {
+        for count in [1, 199, 200, 2_500] {
+            XCTAssertEqual(ConversationTurnCollapsePolicy.expandedRecentTurnCount(
+                preferenceEnabled: false, itemCount: count
+            ), .max)
+            XCTAssertEqual(ConversationTurnCollapsePolicy.expandedRecentTurnCount(
+                preferenceEnabled: true, itemCount: count
+            ), 1)
+        }
+    }
+
+    func testFollowUpPreservesExistingExpandedTurns() {
+        let now = Date()
+        let items = [
+            makeUserItem(text: "First", turnId: "a", turnIndex: 0, timestamp: now),
+            makeAssistantItem(text: "Answer", turnId: "a", turnIndex: 0, timestamp: now)
+        ]
+        let initial = TranscriptTurn.build(from: items, threadStatus: .ready, expandedRecentTurnCount: 1)
+        let next = TranscriptTurn.build(from: items + [
+            makeUserItem(text: "Follow up", turnId: "b", turnIndex: 1, timestamp: now)
+        ], threadStatus: .thinking, expandedRecentTurnCount: 1)
+        let preserved = TranscriptTurn.preservingCollapseState(in: next, from: initial)
+        XCTAssertEqual(preserved.count, 2)
+        XCTAssertFalse(preserved[0].isCollapsedByDefault)
+        XCTAssertFalse(preserved[1].isCollapsedByDefault)
+        XCTAssertEqual(preserved[0].items, initial[0].items)
+    }
+
+    func testAcknowledgementPreservesCollapseStateAndExpansionAlias() {
+        let now = Date()
+        let old = TranscriptTurn.build(from: [
+            makeUserItem(id: "optimistic", text: "Prompt", turnId: "a", turnIndex: 0, timestamp: now)
+        ], threadStatus: .ready, expandedRecentTurnCount: 1)
+        let next = TranscriptTurn.build(from: [
+            makeUserItem(id: "acknowledged", text: "Prompt", turnId: "a", turnIndex: 0, timestamp: now),
+            makeUserItem(text: "Follow up", turnId: "b", turnIndex: 1, timestamp: now)
+        ], threadStatus: .thinking, expandedRecentTurnCount: 1)
+        XCTAssertFalse(TranscriptTurn.preservingCollapseState(in: next, from: old)[0].isCollapsedByDefault)
+        XCTAssertEqual(TranscriptTurn.previousTurnIDs(in: next, from: old)[next[0].id], old[0].id)
+    }
+
+    func testTurnIdentitySurvivesLateServerProvenance() {
+        var user = makeUserItem(text: "Prompt", turnId: nil, turnIndex: nil, timestamp: Date())
+        let before = TranscriptTurn.build(from: [user], threadStatus: .thinking)
+        user.sourceTurnId = "server-turn"
+        user.sourceTurnIndex = 0
+        let after = TranscriptTurn.build(from: [user], threadStatus: .thinking)
+        XCTAssertEqual(before[0].id, after[0].id)
+    }
+
+    func testAcknowledgedUserIdentityDoesNotReplaceAssistantScrollTarget() {
+        let now = Date()
+        let assistant = makeAssistantItem(text: "Reply", turnId: "a", turnIndex: 0, timestamp: now)
+        var projection = ConversationTranscriptProjection()
+        func update(userID: String) {
+            let turns = TranscriptTurn.build(from: [
+                makeUserItem(id: userID, text: "Prompt", turnId: "a", turnIndex: 0, timestamp: now),
+                assistant
+            ], threadStatus: .thinking, expandedRecentTurnCount: .max)
+            projection.update(turns: turns, expandedTurnIDs: [], reasoning: .collapsed,
+                              commands: .collapsed, tools: .collapsed)
+        }
+        update(userID: "optimistic")
+        let assistantTarget = projection.entries[1].id
+        update(userID: "acknowledged")
+        XCTAssertEqual(projection.entries[1].id, assistantTarget)
+    }
+
+    func testStreamingDoesNotMergeDifferentAuthoritativeTurns() {
+        let now = Date()
+        let items = [
+            makeUserItem(text: "Prompt", turnId: "a", turnIndex: 0, timestamp: now),
+            makeAssistantItem(text: "Old response", turnId: "a", turnIndex: 0, timestamp: now),
+            makeAssistantItem(text: "New turn without a user echo", turnId: "b", turnIndex: 1, timestamp: now)
+        ]
+        let turns = TranscriptTurn.build(from: items, threadStatus: .thinking, expandedRecentTurnCount: .max)
+        XCTAssertEqual(turns.count, 2)
+        XCTAssertFalse(turns[0].isLive)
+        XCTAssertTrue(turns[1].isLive)
+        XCTAssertEqual(turns.flatMap(\.items), items)
+    }
+
+    func testResumedLiveTurnAlwaysRendersItsMessages() {
+        let turn = TranscriptTurn.build(from: [
+            makeUserItem(text: "Resume", turnId: "a", turnIndex: 0, timestamp: Date())
+        ], threadStatus: .thinking)[0].withCollapsedByDefault(true)
+        var projection = ConversationTranscriptProjection()
+        projection.update(turns: [turn], expandedTurnIDs: [], reasoning: .collapsed,
+                          commands: .collapsed, tools: .collapsed)
+        XCTAssertEqual(projection.entries.count, 2)
+        guard case .row = projection.entries[0].content else {
+            return XCTFail("A resumed live turn must not be hidden behind a summary")
+        }
+    }
+
+    func testLongTurnProjectsIndividualStableScrollTargets() {
+        let now = Date()
+        var items = [makeUserItem(text: "Prompt", turnId: "a", turnIndex: 0, timestamp: now)]
+        items += (0..<500).map { index in
+            makeAssistantItem(text: "Message \(index)", turnId: "a", turnIndex: 0, timestamp: now)
+        }
+        var projection = ConversationTranscriptProjection()
+        func update(_ turns: [TranscriptTurn], expanded: Set<String> = []) {
+            projection.update(turns: turns, expandedTurnIDs: expanded,
+                              reasoning: .collapsed, commands: .collapsed, tools: .collapsed)
+        }
+        let initial = TranscriptTurn.build(from: items, threadStatus: .ready, expandedRecentTurnCount: .max)
+        update(initial)
+        let previousIDs = projection.entries.map(\.id)
+        XCTAssertEqual(previousIDs.count, 501)
+        XCTAssertEqual(Set(previousIDs).count, 501)
+        XCTAssertEqual(Set(projection.turnIDByEntryID.values), [initial[0].id])
+
+        items.append(makeUserItem(text: "Follow up", turnId: "b", turnIndex: 1, timestamp: now))
+        let next = TranscriptTurn.build(from: items, threadStatus: .thinking, expandedRecentTurnCount: 1)
+        let preserved = TranscriptTurn.preservingCollapseState(in: next, from: initial)
+        update(preserved)
+        XCTAssertEqual(Array(projection.entries.prefix(previousIDs.count).map(\.id)), previousIDs)
+        XCTAssertEqual(projection.entries.count, 503) // Prior rows, follow-up, typing footer.
+
+        // An explicit expansion of a restored collapsed turn also survives updates.
+        update(next, expanded: [next[0].id])
+        XCTAssertEqual(Array(projection.entries.prefix(previousIDs.count).map(\.id)), previousIDs)
+    }
+
+    func testInfiniteScrollPrefetchesBeforeTheVisibleCacheEdge() {
+        let orderedIDs = (0..<20).map { "turn-\($0)" }
+
+        XCTAssertEqual(
+            ConversationInfiniteScrollPolicy.earliestVisibleIndex(
+                visibleIDs: ["turn-8", "turn-9", "turn-10"],
+                orderedIDs: orderedIDs
+            ),
+            8
+        )
+        XCTAssertEqual(
+            ConversationInfiniteScrollPolicy.earliestVisibleIndex(
+                visibleIDs: ["turn-4", "turn-5", "turn-6"],
+                orderedIDs: orderedIDs
+            ),
+            4
+        )
+    }
+
     func testTranscriptTurnBuilderCollapsesPreviousTurnOnceANewLiveTurnStarts() {
         let baseTime = Date(timeIntervalSince1970: 100)
         let turns = TranscriptTurn.build(
@@ -84,7 +228,7 @@ final class PerformanceHelpersTests: XCTestCase {
         XCTAssertEqual(turns[0].preview.durationText, "840ms")
     }
 
-    func testRenderMergeIgnoresEmptyAssistantBetweenExplorationTurns() {
+    func testRenderingFiltersEmptyTurnsWithoutMergingAuthoritativeTurns() {
         let baseTime = Date(timeIntervalSince1970: 300)
         let firstTurn = TranscriptTurn.build(
             from: [
@@ -128,15 +272,17 @@ final class PerformanceHelpersTests: XCTestCase {
             expandedRecentTurnCount: 1
         )[0].withCollapsedByDefault(true)
 
-        let merged = TranscriptTurn.mergeConsecutiveExplorationTurnsForRendering([
+        let merged = TranscriptTurn.renderableTurns([
             firstTurn,
             emptyAssistantTurn,
             secondTurn,
         ])
 
-        XCTAssertEqual(merged.count, 1)
-        XCTAssertEqual(merged[0].items.count, 2)
-        XCTAssertEqual(merged[0].preview.toolCallCount, 2)
+        XCTAssertEqual(merged.count, 2)
+        XCTAssertEqual(merged[0].items.count, 1)
+        XCTAssertEqual(merged[1].items.count, 1)
+        XCTAssertEqual(merged.map(\.id), [firstTurn.id, secondTurn.id])
+        XCTAssertEqual(merged[0].preview.toolCallCount, 1)
         XCTAssertEqual(merged[0].preview.primaryText, "Read reducer.rs")
         XCTAssertTrue(merged[0].isCollapsedByDefault)
     }
@@ -185,7 +331,7 @@ final class PerformanceHelpersTests: XCTestCase {
             expandedRecentTurnCount: 1
         )[0]
 
-        let merged = TranscriptTurn.mergeConsecutiveExplorationTurnsForRendering([
+        let merged = TranscriptTurn.renderableTurns([
             firstTurn,
             visibleAssistantTurn,
             secondTurn,
@@ -195,6 +341,59 @@ final class PerformanceHelpersTests: XCTestCase {
         XCTAssertEqual(merged[0].items.count, 1)
         XCTAssertEqual(merged[1].items.count, 1)
         XCTAssertEqual(merged[2].items.count, 1)
+    }
+
+    func testExplorationMergeKeepsItsIdentityWhenOlderTurnsArePrepended() {
+        let baseTime = Date(timeIntervalSince1970: 500)
+        let olderTurn = TranscriptTurn.build(
+            from: [makeExplorationItem(
+                command: "pwd",
+                actionKind: .read,
+                path: "/tmp",
+                turnId: "turn-0",
+                turnIndex: 0,
+                timestamp: baseTime
+            )],
+            threadStatus: .ready,
+            expandedRecentTurnCount: 1
+        )[0]
+        let firstLoadedTurn = TranscriptTurn.build(
+            from: [makeExplorationItem(
+                command: "cat reducer.rs",
+                actionKind: .read,
+                path: "/tmp/reducer.rs",
+                turnId: "turn-1",
+                turnIndex: 1,
+                timestamp: baseTime.addingTimeInterval(1)
+            )],
+            threadStatus: .ready,
+            expandedRecentTurnCount: 1
+        )[0]
+        let newestTurn = TranscriptTurn.build(
+            from: [makeExplorationItem(
+                command: "rg pendingSteers",
+                actionKind: .search,
+                path: "/tmp/reducer.rs",
+                query: "pendingSteers",
+                turnId: "turn-2",
+                turnIndex: 2,
+                timestamp: baseTime.addingTimeInterval(2)
+            )],
+            threadStatus: .ready,
+            expandedRecentTurnCount: 1
+        )[0]
+
+        let beforePrepend = TranscriptTurn.renderableTurns([
+            firstLoadedTurn,
+            newestTurn,
+        ])
+        let afterPrepend = TranscriptTurn.renderableTurns([
+            olderTurn,
+            firstLoadedTurn,
+            newestTurn,
+        ])
+
+        XCTAssertEqual(beforePrepend.map(\.id), Array(afterPrepend.dropFirst().map(\.id)))
     }
 
     func testMessageRenderCacheReusesStableAssistantRevisionKey() {

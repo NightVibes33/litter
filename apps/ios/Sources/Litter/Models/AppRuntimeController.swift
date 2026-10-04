@@ -17,10 +17,18 @@ final class AppRuntimeController {
     func bind(appModel: AppModel, voiceRuntime: VoiceRuntimeController) {
         self.appModel = appModel
         self.voiceRuntime = voiceRuntime
-        lifecycle.requestNotificationPermissionIfNeeded()
+        // Notification permission is requested contextually, after the
+        // user's first turn starts (see `requestNotificationPermissionIfNeeded`).
         reachability.bind(appModel: appModel)
         reachability.start()
         loadAndPushAlleycatSecretKey(client: appModel.client)
+    }
+
+    /// Ask for notification permission at a contextual moment (the first
+    /// turn the user sends) rather than at launch, so the system prompt
+    /// never covers first-run onboarding. No-op after the first call.
+    func requestNotificationPermissionIfNeeded() {
+        lifecycle.requestNotificationPermissionIfNeeded()
     }
 
     /// Load the persisted iroh device secret key from the keychain (if
@@ -78,9 +86,14 @@ final class AppRuntimeController {
         await lifecycle.reconnectSavedServers(appModel: appModel)
     }
 
-    func reconnectServer(serverId: String) async {
+    func reconnectServer(serverId: String) async -> String? {
+        guard let appModel else { return nil }
+        return await lifecycle.reconnectServer(serverId: serverId, appModel: appModel)
+    }
+
+    func replaceSshHostKey(serverId: String, fingerprint: String) async {
         guard let appModel else { return }
-        await lifecycle.reconnectServer(serverId: serverId, appModel: appModel)
+        await lifecycle.replaceSshHostKey(serverId: serverId, fingerprint: fingerprint, appModel: appModel)
     }
 
     func restoreMissingLocalAuthStateIfNeeded() async {
@@ -117,6 +130,18 @@ final class AppRuntimeController {
     }
 
     func handleSnapshot(_ snapshot: AppSnapshotRecord?) {
+        syncLiveActivitiesIfNeeded(snapshot: snapshot)
+    }
+
+    /// Called from `.onChange(of: appModel.snapshotRevision)` so the
+    /// top-level view body never reads `appModel.snapshot` directly (which
+    /// would re-render the whole shell per streaming token). The revision
+    /// change is the same signal; we just fetch the snapshot here instead.
+    func handleSnapshotRevisionChange() {
+        syncLiveActivitiesIfNeeded(snapshot: appModel?.snapshot)
+    }
+
+    private func syncLiveActivitiesIfNeeded(snapshot: AppSnapshotRecord?) {
         let now = CFAbsoluteTimeGetCurrent()
         let elapsed = now - lastLiveActivitySyncTime
         if elapsed >= 3.0 {

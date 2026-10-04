@@ -1,12 +1,8 @@
 [workspace]
 members = [
-    "codex-bridge",
-    "codex-debug-cli",
-    "codex-ipc",
     "codex-slingshot",
     "codex-mobile-client",
     "uniffi-bindgen",
-    "codex-tui",
 ]
 resolver = "3"
 
@@ -16,7 +12,6 @@ codex-app-server-client = { path = "../third_party/codex/codex-rs/app-server-cli
 codex-app-server-protocol = { path = "../third_party/codex/codex-rs/app-server-protocol" }
 codex-rollout = { path = "../third_party/codex/codex-rs/rollout" }
 codex-protocol = { path = "../third_party/codex/codex-rs/protocol" }
-codex-utils-cli = { path = "../third_party/codex/codex-rs/utils/cli" }
 codex-core = { path = "../third_party/codex/codex-rs/core" }
 codex-exec-server = { path = "../third_party/codex/codex-rs/exec-server" }
 codex-login = { path = "../third_party/codex/codex-rs/login" }
@@ -24,14 +19,19 @@ codex-shell-command = { path = "../third_party/codex/codex-rs/shell-command" }
 codex-apply-patch = { path = "../third_party/codex/codex-rs/apply-patch" }
 codex-arg0 = { path = "../third_party/codex/codex-rs/arg0" }
 codex-feedback = { path = "../third_party/codex/codex-rs/feedback" }
+codex-cloud-config = { path = "../third_party/codex/codex-rs/cloud-config" }
 codex-config = { path = "../third_party/codex/codex-rs/config" }
 codex-utils-absolute-path = { path = "../third_party/codex/codex-rs/utils/absolute-path" }
 codex-utils-path-uri = { path = "../third_party/codex/codex-rs/utils/path-uri" }
 codex-git-utils = { path = "../third_party/codex/codex-rs/git-utils" }
-alleycat-bridge-core = { git = "https://github.com/dnakov/alleycat.git", branch = "main" }
-alleycat-pi-bridge = { git = "https://github.com/dnakov/alleycat.git", branch = "main" }
-alleycat-claude-bridge = { git = "https://github.com/dnakov/alleycat.git", branch = "main" }
-alleycat-opencode-bridge = { git = "https://github.com/dnakov/alleycat.git", branch = "main" }
+# Pinned to the same immutable commit as the kittylitter daemon so the phone
+# and host share one immutable Alleycat release revision. All crates come from
+# the same source so the `Bridge` trait identity is consistent; forked until
+# the production-lineage OpenCode and Amp fixes land in the upstream release.
+alleycat-bridge-core = { git = "https://github.com/0xSero/alleycat.git", rev = "dcda34d17d5d13d9e3c9949fdf9cb4d570652539" }
+alleycat-pi-bridge = { git = "https://github.com/0xSero/alleycat.git", rev = "dcda34d17d5d13d9e3c9949fdf9cb4d570652539" }
+alleycat-claude-bridge = { git = "https://github.com/0xSero/alleycat.git", rev = "dcda34d17d5d13d9e3c9949fdf9cb4d570652539" }
+alleycat-opencode-bridge = { git = "https://github.com/0xSero/alleycat.git", rev = "dcda34d17d5d13d9e3c9949fdf9cb4d570652539" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util"] }
@@ -47,14 +47,18 @@ bytes = "1.10.1"
 sha2 = "0.10"
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
-russh = "0.60.1"
-russh-keys = "0.49.2"
+russh = "0.62.6"
 futures = "0.3"
 url = "2.5"
 uuid = { version = "1", features = ["v4", "serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["http2", "json", "rustls-tls", "stream"] }
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
 shlex = "1"
+
+# Host dev builds (cargo check/test, rust-analyzer): line tables only. Full
+# per-variable DWARF made target/debug the largest thing on disk.
+[profile.dev]
+debug = "line-tables-only"
 
 [profile.release]
 strip = true
@@ -70,6 +74,11 @@ panic = "abort"
 # and a correspondingly faster Swift link step.
 [profile.ios-dev]
 inherits = "dev"
+# opt-level 2 instead of the dev default (0): the staticlib is still small
+# (debug = 1 keeps line tables only) but the interpreter-side hot loops —
+# streaming snapshot assembly, conversation projection, JSON parsing — run
+# roughly an order of magnitude faster, which is what the mobile UI feels.
+opt-level = 2
 debug = 1
 codegen-units = 256
 
@@ -90,13 +99,14 @@ codegen-units = 16
 [patch.crates-io]
 rquickjs-sys = { path = "vendor/rquickjs-sys-0.9.0" }
 iroh-base = { path = "vendor/iroh-base-0.98.0" }
-starlark = { path = "vendor/starlark-0.14.2" }
 pagable = { path = "vendor/pagable-0.4.1" }
 rama-http = { path = "vendor/rama-http-0.3.0-alpha.4" }
 pqcrypto-internals = { path = "vendor/pqcrypto-internals-0.2.6-ios-safe" }
-tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "132f5b39c862e3a970f731d709608b3e6276d5f6" }
-tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "9200079d3b54a1ff51072e24d81fd354f085156f" }
-crossterm = { git = "https://github.com/nornagon/crossterm", branch = "nornagon/color-query" }
+# Upstream fix for Starlark's exact blake3 pin, which conflicts with iroh.
+starlark = { git = "https://github.com/facebook/starlark-rust", rev = "3bed1c40f93da22b8e251dd520dfb8d35bfe1fb7" }
+
+tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "0e5b2d73aa18dd9f0a50ee9ff199d5aef7594186" }
+tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "4fffad30fe373adbdcffab9545e9e9bf4f2fc19f" }
 
 [patch."ssh://git@github.com/openai-oss-forks/tungstenite-rs.git"]
-tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "9200079d3b54a1ff51072e24d81fd354f085156f" }
+tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "4fffad30fe373adbdcffab9545e9e9bf4f2fc19f" }

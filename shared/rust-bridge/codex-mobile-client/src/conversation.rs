@@ -59,6 +59,16 @@ pub fn hydrate_turns(turns: &[Turn], opts: &HydrationOptions) -> Vec<HydratedCon
                 items.push(conv);
             }
         }
+        if let Some(error) = &turn.error {
+            let message = error.message.trim();
+            if !message.is_empty() {
+                items.push(make_error_item(
+                    format!("turn-error-{}", turn.id),
+                    message.to_string(),
+                    None,
+                ));
+            }
+        }
     }
     items
 }
@@ -297,7 +307,7 @@ fn convert_thread_item(
             (
                 HydratedConversationItemContent::CommandExecution(HydratedCommandExecutionData {
                     command: truncate_command_display_text(&display_command(command)),
-                    cwd: truncate_command_action_field(&cwd.render_for_ui()),
+                    cwd: truncate_command_action_field(&cwd.to_string()),
                     status: convert_command_status(status),
                     output: aggregated_output
                         .as_deref()
@@ -411,6 +421,9 @@ fn convert_thread_item(
                         DynamicToolCallOutputContentItem::InputImage { image_url } => {
                             format!("[image: {}]", image_url)
                         }
+                        DynamicToolCallOutputContentItem::InputAudio { .. } => {
+                            "[Audio attachment]".to_string()
+                        }
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -466,13 +479,15 @@ fn convert_thread_item(
                 false,
             )
         }
-        ThreadItem::WebSearch(item) => {
-            let action_json = item.action
+        ThreadItem::WebSearch(search) => {
+            let query = &search.query;
+            let action = &search.action;
+            let action_json = action
                 .as_ref()
                 .and_then(|a| serde_json::to_value(a).ok().and_then(|v| pretty_json(&v)));
             (
                 HydratedConversationItemContent::WebSearch(HydratedWebSearchData {
-                    query: item.query.clone(),
+                    query: query.clone(),
                     action_json,
                     is_in_progress: false,
                 }),
@@ -481,24 +496,28 @@ fn convert_thread_item(
         }
         ThreadItem::ImageView { path, .. } => (
             HydratedConversationItemContent::ImageView(HydratedImageViewData {
-                path: path.render_for_ui(),
+                path: path.to_string(),
             }),
             false,
         ),
-        ThreadItem::ImageGeneration(item) => {
-            let image_png = decode_image_generation_result(&item.result);
-            let saved_path_string = item.saved_path
+        ThreadItem::ImageGeneration(image) => {
+            let status = &image.status;
+            let revised_prompt = &image.revised_prompt;
+            let result = &image.result;
+            let saved_path = &image.saved_path;
+            let image_png = decode_image_generation_result(result);
+            let saved_path_string = saved_path
                 .as_ref()
                 .map(|p| p.to_string_lossy().into_owned());
             let normalized_status = convert_image_generation_status(
-                &item.status,
+                status,
                 image_png.is_some(),
                 saved_path_string.as_deref(),
             );
             (
                 HydratedConversationItemContent::ImageGeneration(HydratedImageGenerationData {
                     status: normalized_status,
-                    revised_prompt: item.revised_prompt.clone(),
+                    revised_prompt: revised_prompt.clone(),
                     image_png,
                     saved_path: saved_path_string,
                 }),
@@ -523,7 +542,85 @@ fn convert_thread_item(
             }),
             false,
         ),
-        ThreadItem::Sleep { .. } | ThreadItem::SubAgentActivity { .. } | ThreadItem::HookPrompt { .. } => return None,
+        ThreadItem::FunctionCallOutput {
+            name,
+            namespace,
+            output,
+            ..
+        } => {
+            let body = match output {
+                codex_protocol::models::FunctionCallOutputBody::Text(text) => text.clone(),
+                codex_protocol::models::FunctionCallOutputBody::ContentItems(items) => items
+                    .iter()
+                    .map(|item| match item {
+                        codex_protocol::models::FunctionCallOutputContentItem::InputText {
+                            text,
+                        } => text.clone(),
+                        codex_protocol::models::FunctionCallOutputContentItem::InputImage {
+                            ..
+                        } => "[Image attachment]".to_string(),
+                        codex_protocol::models::FunctionCallOutputContentItem::InputAudio {
+                            ..
+                        } => "[Audio attachment]".to_string(),
+                        codex_protocol::models::FunctionCallOutputContentItem::EncryptedContent { .. } => "[Encrypted content]".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            };
+            (
+                HydratedConversationItemContent::Note(HydratedNoteData {
+                    title: namespace
+                        .as_ref()
+                        .map(|namespace| format!("{namespace}.{name}"))
+                        .unwrap_or_else(|| name.clone()),
+                    body: truncate_command_output_text(&body),
+                }),
+                false,
+            )
+        }
+        ThreadItem::SubAgentActivity {
+            kind,
+            agent_thread_id,
+            agent_path,
+            ..
+        } => {
+            let (status, agent_status) = match kind {
+                codex_app_server_protocol::SubAgentActivityKind::Started
+                | codex_app_server_protocol::SubAgentActivityKind::Interacted => {
+                    (AppOperationStatus::InProgress, AppSubagentStatus::Running)
+                }
+                codex_app_server_protocol::SubAgentActivityKind::Interrupted => (
+                    AppOperationStatus::Interrupted,
+                    AppSubagentStatus::Interrupted,
+                ),
+                codex_app_server_protocol::SubAgentActivityKind::Completed => {
+                    (AppOperationStatus::Completed, AppSubagentStatus::Completed)
+                }
+            };
+            (
+                HydratedConversationItemContent::MultiAgentAction(HydratedMultiAgentActionData {
+                    tool: "agentActivity".to_string(),
+                    status,
+                    prompt: Some(agent_path.clone()),
+                    targets: vec![agent_thread_id.clone()],
+                    receiver_thread_ids: vec![agent_thread_id.clone()],
+                    agent_states: vec![HydratedMultiAgentStateData {
+                        target_id: agent_thread_id.clone(),
+                        status: agent_status,
+                        message: None,
+                    }],
+                }),
+                false,
+            )
+        }
+        ThreadItem::Sleep(sleep) => (
+            HydratedConversationItemContent::Note(HydratedNoteData {
+                title: "Waiting".to_string(),
+                body: format!("{} ms", sleep.duration_ms),
+            }),
+            false,
+        ),
+        ThreadItem::HookPrompt { .. } => return None,
     };
 
     Some(HydratedConversationItem {
@@ -686,6 +783,10 @@ fn convert_collab_tool(tool: &CollabAgentTool) -> String {
         CollabAgentTool::ResumeAgent => "resumeAgent".to_string(),
         CollabAgentTool::Wait => "wait".to_string(),
         CollabAgentTool::CloseAgent => "closeAgent".to_string(),
+        CollabAgentTool::SendMessage => "sendMessage".to_string(),
+        CollabAgentTool::FollowupTask => "followupTask".to_string(),
+        CollabAgentTool::InterruptAgent => "interruptAgent".to_string(),
+        CollabAgentTool::ListAgents => "listAgents".to_string(),
     }
 }
 
@@ -694,6 +795,7 @@ fn convert_collab_status(status: &CollabAgentToolCallStatus) -> AppOperationStat
         CollabAgentToolCallStatus::InProgress => AppOperationStatus::InProgress,
         CollabAgentToolCallStatus::Completed => AppOperationStatus::Completed,
         CollabAgentToolCallStatus::Failed => AppOperationStatus::Failed,
+        CollabAgentToolCallStatus::Interrupted => AppOperationStatus::Interrupted,
     }
 }
 
@@ -719,7 +821,7 @@ fn convert_command_action(action: &CommandAction) -> HydratedCommandActionData {
             kind: HydratedCommandActionKind::Read,
             command: truncate_command_action_field(command),
             name: Some(truncate_command_action_field(name)),
-            path: Some(truncate_command_action_field(&path.display().to_string())),
+            path: Some(truncate_command_action_field(&path.to_string())),
             query: None,
         },
         CommandAction::Search {
@@ -1171,7 +1273,7 @@ fn diff_stats(diff: &str) -> (u32, u32) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn render_user_input(inputs: &[UserInput]) -> (String, Vec<String>) {
+pub(crate) fn render_user_input(inputs: &[UserInput]) -> (String, Vec<String>) {
     let mut text_parts = Vec::new();
     let mut images = Vec::new();
     for input in inputs {
@@ -1187,6 +1289,10 @@ fn render_user_input(inputs: &[UserInput]) -> (String, Vec<String>) {
             }
             UserInput::LocalImage { path, .. } => {
                 images.push(format!("file://{}", path.display()));
+            }
+            UserInput::Audio { .. } => text_parts.push("[Audio attachment]".to_string()),
+            UserInput::LocalAudio { path } => {
+                text_parts.push(format!("[Audio attachment] {}", path.display()))
             }
             UserInput::Skill { name, path } => {
                 if !name.is_empty() && path != &PathBuf::new() {
@@ -1269,7 +1375,8 @@ fn widget_data_from_dynamic_tool_call(
             content_items.and_then(|items| {
                 items.iter().find_map(|item| match item {
                     DynamicToolCallOutputContentItem::InputText { text } => Some(text.clone()),
-                    DynamicToolCallOutputContentItem::InputImage { .. } => None,
+                    DynamicToolCallOutputContentItem::InputImage { .. }
+                    | DynamicToolCallOutputContentItem::InputAudio { .. } => None,
                 })
             })
         })?;
@@ -1362,61 +1469,6 @@ pub(crate) fn streaming_widget_data_from_partial_arguments(
         is_finalized: false,
         app_id,
     })
-}
-
-/// Synthesize a valid `show_widget` arguments JSON object from a
-/// partially-streamed buffer. Unlike
-/// `streaming_widget_data_from_partial_arguments` (which produces the
-/// hydrated boundary type directly), this returns a `serde_json::Value`
-/// suitable for round-tripping through the upstream
-/// `ThreadItem::DynamicToolCall { arguments, .. }` → hydration path.
-///
-/// Policy: if the raw buffer parses as JSON, pass it through unchanged.
-/// Otherwise, run the streaming extractor and build a fresh object from
-/// whatever fields were pulled. Returns `None` when we don't yet have
-/// enough to render — specifically, when `widget_code` hasn't been
-/// opened yet.
-pub(crate) fn synthesize_streaming_show_widget_arguments(
-    partial: &str,
-) -> Option<serde_json::Value> {
-    if let Ok(value) = serde_json::from_str::<serde_json::Value>(partial) {
-        return Some(value);
-    }
-
-    let widget_html = extract_streaming_string_field(partial, &["widget_code", "widgetCode"])?;
-    if widget_html.is_empty() {
-        return None;
-    }
-    let title =
-        extract_streaming_string_field(partial, &["title"]).unwrap_or_else(|| "Widget".to_string());
-    let app_id = extract_streaming_string_field(partial, &["app_id", "appId"])
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let width = extract_streaming_number_field(partial, &["width"]).unwrap_or(800.0);
-    let height = extract_streaming_number_field(partial, &["height"]).unwrap_or(600.0);
-
-    let mut obj = serde_json::Map::new();
-    obj.insert("title".to_string(), serde_json::Value::String(title));
-    obj.insert(
-        "widget_code".to_string(),
-        serde_json::Value::String(widget_html),
-    );
-    obj.insert(
-        "width".to_string(),
-        serde_json::Number::from_f64(width)
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-    );
-    obj.insert(
-        "height".to_string(),
-        serde_json::Number::from_f64(height)
-            .map(serde_json::Value::Number)
-            .unwrap_or(serde_json::Value::Null),
-    );
-    if let Some(slug) = app_id {
-        obj.insert("app_id".to_string(), serde_json::Value::String(slug));
-    }
-    Some(serde_json::Value::Object(obj))
 }
 
 /// Scan `buffer` for `"<key>"\s*:\s*"<value-prefix>` and return the
@@ -1711,12 +1763,11 @@ fn build_computer_use_view(
                     if screenshot_png.is_some() {
                         continue;
                     }
-                    if let Some(data) = obj.get("data").and_then(|v| v.as_str()) {
-                        if let Ok(bytes) = engine.decode(data) {
-                            if !bytes.is_empty() {
-                                screenshot_png = Some(bytes);
-                            }
-                        }
+                    if let Some(data) = obj.get("data").and_then(|v| v.as_str())
+                        && let Ok(bytes) = engine.decode(data)
+                        && !bytes.is_empty()
+                    {
+                        screenshot_png = Some(bytes);
                     }
                 }
                 Some("text") => {
@@ -1908,6 +1959,7 @@ mod tests {
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::UserMessage {
+                client_id: None,
                 id: "u1".into(),
                 content: vec![UserInput::Text {
                     text: "  Hello world  ".into(),
@@ -1929,10 +1981,33 @@ mod tests {
     }
 
     #[test]
+    fn test_failed_turn_surfaces_error_message() {
+        let mut turn = make_turn("failed-turn", Vec::new());
+        turn.status = TurnStatus::Failed;
+        turn.error = Some(codex_app_server_protocol::TurnError {
+            misalignment: None,
+            message: "Model is not running".into(),
+            codex_error_info: None,
+            additional_details: None,
+        });
+
+        let items = hydrate_turns(&[turn], &HydrationOptions::default());
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id, "turn-error-failed-turn");
+        match &items[0].content {
+            HydratedConversationItemContent::Error(data) => {
+                assert_eq!(data.message, "Model is not running");
+            }
+            _ => panic!("expected Error content"),
+        }
+    }
+
+    #[test]
     fn test_empty_user_message_skipped() {
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::UserMessage {
+                client_id: None,
                 id: "u1".into(),
                 content: vec![UserInput::Text {
                     text: "   ".into(),
@@ -1949,6 +2024,8 @@ mod tests {
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::AgentMessage {
+                delivery: None,
+                questions: None,
                 id: "a1".into(),
                 text: " Response text ".into(),
                 phase: None,
@@ -1978,6 +2055,8 @@ mod tests {
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::AgentMessage {
+                delivery: None,
+                questions: None,
                 id: "a1".into(),
                 text: serde_json::json!({
                     "findings": [
@@ -2038,6 +2117,8 @@ diff --git a/parser.rs b/parser.rs\n\
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::AgentMessage {
+                delivery: None,
+                questions: None,
                 id: "a1".into(),
                 text: "Here is a regular markdown answer.".into(),
                 phase: Some(codex_protocol::models::MessagePhase::FinalAnswer),
@@ -2059,16 +2140,18 @@ diff --git a/parser.rs b/parser.rs\n\
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::CommandExecution {
+                plugin_id: None,
+                script_path: None,
                 id: "c1".into(),
                 command: "ls -la".into(),
-                cwd: test_abs_path("/tmp"),
+                cwd: test_abs_path("/tmp").into(),
                 process_id: Some("p1".into()),
                 source: Default::default(),
                 status: CommandExecutionStatus::Completed,
                 command_actions: vec![CommandAction::Read {
                     command: "cat foo.rs".into(),
                     name: "foo.rs".into(),
-                    path: test_abs_path("/src/foo.rs"),
+                    path: test_abs_path("/src/foo.rs").into(),
                 }],
                 aggregated_output: Some("file contents".into()),
                 exit_code: Some(0),
@@ -2115,9 +2198,11 @@ diff --git a/parser.rs b/parser.rs\n\
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::CommandExecution {
+                plugin_id: None,
+                script_path: None,
                 id: "c1".into(),
                 command: "/bin/zsh -lc 'npm test'".into(),
-                cwd: test_abs_path("/tmp"),
+                cwd: test_abs_path("/tmp").into(),
                 process_id: None,
                 source: Default::default(),
                 status: CommandExecutionStatus::InProgress,
@@ -2191,6 +2276,7 @@ diff --git a/parser.rs b/parser.rs\n\
             make_turn(
                 "t1",
                 vec![ThreadItem::UserMessage {
+                    client_id: None,
                     id: "u1".into(),
                     content: vec![UserInput::Text {
                         text: "Hello".into(),
@@ -2201,6 +2287,8 @@ diff --git a/parser.rs b/parser.rs\n\
             make_turn(
                 "t2",
                 vec![ThreadItem::AgentMessage {
+                    delivery: None,
+                    questions: None,
                     id: "a1".into(),
                     text: "World".into(),
                     phase: None,
@@ -2231,6 +2319,9 @@ diff --git a/parser.rs b/parser.rs\n\
             "t-tools",
             vec![
                 ThreadItem::McpToolCall {
+                    app_context: None,
+                    plugin_id: None,
+                    read_only_hint: None,
                     id: "mcp-1".into(),
                     server: "filesystem".into(),
                     tool: "read_file".into(),
@@ -2273,14 +2364,15 @@ diff --git a/parser.rs b/parser.rs\n\
                     reasoning_effort: None,
                     agents_states: agent_states,
                 },
-                ThreadItem::WebSearch(WebSearchItem {
+                ThreadItem::WebSearch(codex_app_server_protocol::WebSearchItem {
+                    results: None,
                     id: "web-1".into(),
                     query: "swiftui subagent cards".into(),
                     action: None,
                 }),
                 ThreadItem::ImageView {
                     id: "img-1".into(),
-                    path: test_abs_path("/tmp/screenshot.png"),
+                    path: test_abs_path("/tmp/screenshot.png").into(),
                 },
             ],
         )];
@@ -2390,6 +2482,9 @@ diff --git a/parser.rs b/parser.rs\n\
             "t-computer-use",
             vec![
                 ThreadItem::McpToolCall {
+                    app_context: None,
+                    plugin_id: None,
+                    read_only_hint: None,
                     id: "cu-1".into(),
                     server: "computer-use".into(),
                     tool: "click".into(),
@@ -2419,6 +2514,9 @@ diff --git a/parser.rs b/parser.rs\n\
                 },
                 // Non-computer-use MCP should not populate the typed view.
                 ThreadItem::McpToolCall {
+                    app_context: None,
+                    plugin_id: None,
+                    read_only_hint: None,
                     id: "other-1".into(),
                     server: "filesystem".into(),
                     tool: "read_file".into(),
@@ -2466,6 +2564,34 @@ diff --git a/parser.rs b/parser.rs\n\
     }
 
     #[test]
+    fn legacy_web_search_wire_and_audio_inputs_remain_visible() {
+        let item: ThreadItem = serde_json::from_value(serde_json::json!({
+            "type": "webSearch", "id": "search", "query": "current models", "action": null
+        }))
+        .unwrap();
+        let items = hydrate_turns(
+            &[make_turn("search-turn", vec![item])],
+            &HydrationOptions::default(),
+        );
+        let HydratedConversationItemContent::WebSearch(search) = &items[0].content else {
+            panic!("web search");
+        };
+        assert_eq!(search.query, "current models");
+        let (text, images) = render_user_input(&[
+            UserInput::Audio {
+                url: "data:audio/wav;base64,c2FtcGxl".into(),
+            },
+            UserInput::LocalAudio {
+                path: "/tmp/voice.wav".into(),
+            },
+        ]);
+        assert!(text.contains("[Audio attachment]"));
+        assert!(text.contains("voice.wav"));
+        assert!(images.is_empty());
+        assert!(!text.contains("base64"));
+    }
+
+    #[test]
     fn test_image_generation_hydrates_typed_variant() {
         // A 1x1 transparent PNG (89 50 4E 47 ...) as base64, used here to
         // exercise the decode path end-to-end.
@@ -2473,7 +2599,11 @@ diff --git a/parser.rs b/parser.rs\n\
         let turns = vec![make_turn(
             "t-imagegen",
             vec![
-                ThreadItem::ImageGeneration(ImageGenerationItem {
+                ThreadItem::ImageGeneration(codex_app_server_protocol::ImageGenerationItem {
+                    transparent_background: None,
+                    failure: None,
+                    imagegen_request_id: None,
+                    generation_id: None,
                     id: "ig-1".into(),
                     status: "completed".into(),
                     revised_prompt: Some("a grumpy pirate kitty".into()),
@@ -2481,7 +2611,11 @@ diff --git a/parser.rs b/parser.rs\n\
                     saved_path: Some(test_abs_path("/tmp/ig-1.png")),
                 }),
                 // A still-streaming item should stay InProgress with no bytes.
-                ThreadItem::ImageGeneration(ImageGenerationItem {
+                ThreadItem::ImageGeneration(codex_app_server_protocol::ImageGenerationItem {
+                    transparent_background: None,
+                    failure: None,
+                    imagegen_request_id: None,
+                    generation_id: None,
                     id: "ig-2".into(),
                     status: String::new(),
                     revised_prompt: None,
@@ -2491,7 +2625,11 @@ diff --git a/parser.rs b/parser.rs\n\
                 // Codex Desktop has been observed to emit status="generating"
                 // even on the final end event. Presence of bytes or a saved
                 // path should mark the item as Completed regardless.
-                ThreadItem::ImageGeneration(ImageGenerationItem {
+                ThreadItem::ImageGeneration(codex_app_server_protocol::ImageGenerationItem {
+                    transparent_background: None,
+                    failure: None,
+                    imagegen_request_id: None,
+                    generation_id: None,
                     id: "ig-3".into(),
                     status: "generating".into(),
                     revised_prompt: None,
@@ -2538,9 +2676,11 @@ diff --git a/parser.rs b/parser.rs\n\
         let turns = vec![make_turn(
             "t-command-truncate",
             vec![ThreadItem::CommandExecution {
+                plugin_id: None,
+                script_path: None,
                 id: "cmd-1".into(),
                 command: long_command,
-                cwd: test_abs_path("/tmp"),
+                cwd: test_abs_path("/tmp").into(),
                 source: Default::default(),
                 status: CommandExecutionStatus::Completed,
                 command_actions: vec![CommandAction::Search {

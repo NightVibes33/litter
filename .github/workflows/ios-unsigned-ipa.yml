@@ -3,6 +3,11 @@ name: Build Unsigned iOS IPA
 on:
   workflow_dispatch:
     inputs:
+      build_only:
+        description: "Validate the build without publishing or uploading to TestFlight"
+        required: false
+        default: false
+        type: boolean
       build_mode:
         description: "Build mode"
         required: true
@@ -1598,7 +1603,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish unsigned IPA release asset
-        if: success()
+        if: ${{ success() && !inputs.build_only }}
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           BUILD_MODE: ${{ env.LITTER_IOS_BUILD_MODE }}

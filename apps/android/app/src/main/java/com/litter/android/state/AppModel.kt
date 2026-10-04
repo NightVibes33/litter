@@ -14,12 +14,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.util.concurrent.atomic.AtomicLong
+import uniffi.codex_mobile_client.decodeSshHostKeyChallenge
 import uniffi.codex_mobile_client.AppClient
 import uniffi.codex_mobile_client.AppMinigameRequest
 import uniffi.codex_mobile_client.AppMinigameResult
 import com.litter.android.ui.common.AgentRuntimeKind
 import uniffi.codex_mobile_client.AppSessionSummary
+import uniffi.codex_mobile_client.AppServerSnapshot
 import uniffi.codex_mobile_client.AppSnapshotRecord
 import uniffi.codex_mobile_client.AppSortDirection
 import uniffi.codex_mobile_client.AppStore
@@ -29,7 +34,6 @@ import uniffi.codex_mobile_client.AppThreadSortKey
 import uniffi.codex_mobile_client.AppThreadSourceKind
 import uniffi.codex_mobile_client.ThreadStreamingDeltaKind
 import uniffi.codex_mobile_client.AppStoreUpdateRecord
-import uniffi.codex_mobile_client.DiscoveryBridge
 import uniffi.codex_mobile_client.HydratedConversationItem
 import uniffi.codex_mobile_client.HydratedConversationItemContent
 import uniffi.codex_mobile_client.HandoffManager
@@ -38,6 +42,7 @@ import uniffi.codex_mobile_client.ReconnectController
 import uniffi.codex_mobile_client.ServerBridge
 import uniffi.codex_mobile_client.SshBridge
 import uniffi.codex_mobile_client.ThreadKey
+import uniffi.codex_mobile_client.TerminalSshTrustStore
 import uniffi.codex_mobile_client.AppListThreadsRequest
 import uniffi.codex_mobile_client.AppLoginAccountRequest
 import uniffi.codex_mobile_client.AppRefreshModelsRequest
@@ -57,6 +62,10 @@ class LocalAccountLoginRequiredException(val serverId: String) :
  * via the Rust subscription stream.
  */
 class AppModel private constructor(context: android.content.Context) {
+    data class SshHostKeyChangeChallenge(
+        val serverId: String,
+        val fingerprint: String,
+    )
 
     data class ComposerPrefillRequest(
         val requestId: Long,
@@ -102,14 +111,12 @@ class AppModel private constructor(context: android.content.Context) {
          */
         const val INITIAL_TURN_PAGE_LIMIT: UInt = 5u
         const val OLDER_TURN_PAGE_LIMIT: UInt = 5u
-        private const val SESSION_LIST_PAGE_LIMIT: UInt = 80u
     }
 
     // --- Rust bridges (singletons behind the scenes) -------------------------
 
     val store: AppStore
     val client: AppClient
-    val discovery: DiscoveryBridge
     val serverBridge: ServerBridge
     val ssh: SshBridge
     val sshSessionStore: SshSessionStore
@@ -121,6 +128,8 @@ class AppModel private constructor(context: android.content.Context) {
     /** Persists the iroh device secret key across cold launches. */
     val alleycatCredentials: AlleycatCredentialStore
     val appContext: android.content.Context = context
+    var sshHostKeyChangeChallenge by mutableStateOf<SshHostKeyChangeChallenge?>(null)
+        private set
     init {
         UniffiInit.ensure(context)
         Thread({
@@ -134,12 +143,15 @@ class AppModel private constructor(context: android.content.Context) {
         // directory. Without setting it at launch the hook is a silent no-op.
         client.setSavedAppsDirectory(SavedAppsDirectory.path(context))
         client.setSlingshotCredentialsDirectory(MobilePreferencesDirectory.path(context))
-        discovery = DiscoveryBridge()
+        client.setMobilePreferencesDirectory(MobilePreferencesDirectory.path(context))
         serverBridge = ServerBridge()
         ssh = SshBridge()
         sshSessionStore = SshSessionStore(ssh)
         parser = MessageParser()
         reconnectController = ReconnectController()
+        val sshTrustStore = TerminalSshTrustStore(SshTrustStore(context))
+        serverBridge.setSshTrustStore(sshTrustStore)
+        reconnectController.setSshTrustStore(sshTrustStore)
         reconnectController.setCredentialProvider(
             KotlinSshCredentialProvider(SshCredentialStore(context))
         )
@@ -158,6 +170,17 @@ class AppModel private constructor(context: android.content.Context) {
         runCatching { alleycatCredentials.loadDeviceSecretKey() }
             .getOrNull()
             ?.let { client.setAlleycatSecretKey(it) }
+    }
+
+    fun recordSshHostKeyChange(serverId: String, errorMessage: String?) {
+        val challenge = decodeSshHostKeyChallenge(errorMessage ?: return) ?: return
+        if (challenge.isChanged) {
+            sshHostKeyChangeChallenge = SshHostKeyChangeChallenge(serverId, challenge.fingerprint)
+        }
+    }
+
+    fun clearSshHostKeyChange() {
+        sshHostKeyChangeChallenge = null
     }
 
     /**
@@ -180,9 +203,9 @@ class AppModel private constructor(context: android.content.Context) {
 
     private val _lastError = MutableStateFlow<String?>(null)
     val lastError: StateFlow<String?> = _lastError.asStateFlow()
-    private val loadingModelServerIds = mutableSetOf<String>()
+    private val loadingModelServerIds = mutableMapOf<String, Int>()
+    private val modelCatalogErrorsByServer = mutableMapOf<String, String>()
     private val loadingRateLimitServerIds = mutableSetOf<String>()
-    private val recentConversationMetadataLoads = mutableMapOf<String, Long>()
     private val cachedThreadSnapshots = mutableMapOf<ThreadKey, AppThreadSnapshot>()
     private val sessionListMutex = Mutex()
     private var pendingActiveThreadHydrationKey: ThreadKey? = null
@@ -224,14 +247,6 @@ class AppModel private constructor(context: android.content.Context) {
                 current + (threadKey to draft)
             }
         }
-    }
-
-    fun updateComposerDraft(threadKey: ThreadKey, transform: (ComposerDraft) -> ComposerDraft) {
-        setComposerDraft(threadKey, transform(composerDraft(threadKey)))
-    }
-
-    fun clearComposerDraft(threadKey: ThreadKey) {
-        setComposerDraft(threadKey, ComposerDraft.EMPTY)
     }
 
     // --- Thinking-indicator minigame -----------------------------------------
@@ -466,7 +481,7 @@ class AppModel private constructor(context: android.content.Context) {
                         serverId,
                         AppListThreadsRequest(
                             cursor = null,
-                            limit = SESSION_LIST_PAGE_LIMIT,
+                            limit = null,
                             sortKey = AppThreadSortKey.UPDATED_AT,
                             sortDirection = AppSortDirection.DESC,
                             archived = null,
@@ -514,7 +529,7 @@ class AppModel private constructor(context: android.content.Context) {
                         serverId,
                         AppListThreadsRequest(
                             cursor = null,
-                            limit = 80u,
+                            limit = null,
                             sortKey = AppThreadSortKey.UPDATED_AT,
                             sortDirection = AppSortDirection.DESC,
                             modelProviders = null,
@@ -540,27 +555,33 @@ class AppModel private constructor(context: android.content.Context) {
     }
 
     suspend fun loadConversationMetadataIfNeeded(serverId: String) {
-        if (hasFreshConversationMetadata(serverId)) return
         loadAvailableModelsIfNeeded(serverId)
         loadRateLimitsIfNeeded(serverId)
-        recentConversationMetadataLoads[serverId] = System.currentTimeMillis()
     }
 
-    suspend fun loadAvailableModelsIfNeeded(serverId: String) {
+    fun modelCatalogError(serverId: String): String? = modelCatalogErrorsByServer[serverId]
+
+    suspend fun loadAvailableModelsIfNeeded(serverId: String, force: Boolean = false) {
         val server = snapshot.value?.servers?.firstOrNull { it.serverId == serverId } ?: return
         if (!server.isConnected) return
-        if (server.availableModels != null) return
-        if (!loadingModelServerIds.add(serverId)) return
+        if (!force && !client.modelsNeedRefresh(serverId)) return
+        if (!force && loadingModelServerIds.getOrDefault(serverId, 0) > 0) return
+        loadingModelServerIds[serverId] = loadingModelServerIds.getOrDefault(serverId, 0) + 1
+        modelCatalogErrorsByServer.remove(serverId)
         try {
             client.refreshModels(
                 serverId,
                 AppRefreshModelsRequest(cursor = null, limit = null, includeHidden = false),
             )
+            modelCatalogErrorsByServer.remove(serverId)
             refreshSnapshot()
         } catch (e: Exception) {
-            _lastError.value = e.message
+            modelCatalogErrorsByServer[serverId] = e.message ?: "Models could not be loaded."
+            refreshSnapshot()
         } finally {
-            loadingModelServerIds.remove(serverId)
+            val remaining = loadingModelServerIds.getOrDefault(serverId, 1) - 1
+            if (remaining == 0) loadingModelServerIds.remove(serverId)
+            else loadingModelServerIds[serverId] = remaining
         }
     }
 
@@ -759,6 +780,10 @@ class AppModel private constructor(context: android.content.Context) {
         key: ThreadKey,
         payload: AppComposerPayload,
     ) {
+        // Closed by the first assistant delta for this thread, or by the
+        // turn-finished branch of `handleUpdate` when the turn streams no
+        // assistant text.
+        PerfTrace.beginInterval("SendMessage", PerfTrace.intervalKey(key))
         restoreStoredLocalAuthIfNeeded(key.serverId, reason = "startTurn")
 
         try {
@@ -979,7 +1004,7 @@ class AppModel private constructor(context: android.content.Context) {
                         currentKey.serverId,
                         AppListThreadsRequest(
                             cursor = null,
-                            limit = SESSION_LIST_PAGE_LIMIT,
+                            limit = null,
                             sortKey = AppThreadSortKey.UPDATED_AT,
                             sortDirection = AppSortDirection.DESC,
                             archived = null,
@@ -1036,7 +1061,17 @@ class AppModel private constructor(context: android.content.Context) {
             is AppStoreUpdateRecord.ThreadUpserted ->
                 applyThreadUpsert(update.thread, update.sessionSummary, update.agentDirectoryVersion)
             is AppStoreUpdateRecord.ThreadMetadataChanged ->
-                applyThreadStateUpdated(update.state, update.sessionSummary, update.agentDirectoryVersion)
+                run {
+                    // Fallback close for the send interval. Only a finished
+                    // turn clears `activeTurnId`, so a metadata update for any
+                    // other reason (a status change mid-turn, a queued
+                    // follow-up edit) must not close an interval that is still
+                    // open.
+                    if (update.state.activeTurnId == null) {
+                        PerfTrace.endInterval("SendMessage", PerfTrace.intervalKey(update.state.key))
+                    }
+                    applyThreadStateUpdated(update.state, update.sessionSummary, update.agentDirectoryVersion)
+                }
             is AppStoreUpdateRecord.ThreadItemChanged -> {
                 if (!applyThreadItemChanged(update.key, update.item)) {
                     recoverThreadDeltaApplication(update.key)
@@ -1049,6 +1084,12 @@ class AppModel private constructor(context: android.content.Context) {
                 applySessionSummary(update.sessionSummary)
             }
             is AppStoreUpdateRecord.ThreadStreamingDelta -> {
+                // First assistant token for this thread closes the interval
+                // opened by `startTurn`. A no-op when no interval is pending
+                // (deltas can arrive for a turn this device did not start).
+                if (update.kind == ThreadStreamingDeltaKind.ASSISTANT_TEXT) {
+                    PerfTrace.endInterval("SendMessage", PerfTrace.intervalKey(update.key))
+                }
                 if (!applyThreadStreamingDelta(update.key, update.itemId, update.kind, update.text)) {
                     recoverThreadDeltaApplication(update.key)
                 }
@@ -1564,16 +1605,6 @@ class AppModel private constructor(context: android.content.Context) {
 
     fun threadSnapshot(key: ThreadKey): AppThreadSnapshot? =
         _snapshot.value?.threads?.firstOrNull { it.key == key } ?: cachedThreadSnapshots[key]
-
-    private fun hasFreshConversationMetadata(serverId: String): Boolean {
-        val server = snapshot.value?.servers?.firstOrNull { it.serverId == serverId } ?: return false
-        val hasModels = server.availableModels != null
-        val hasRateLimits = server.account == null || server.rateLimits != null
-        if (hasModels && hasRateLimits) return true
-
-        val lastLoad = recentConversationMetadataLoads[serverId] ?: return false
-        return System.currentTimeMillis() - lastLoad < 10_000L
-    }
 
     private fun restoreCachedThreadSnapshotIfNeeded(key: ThreadKey?) {
         if (key == null) return

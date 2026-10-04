@@ -22,6 +22,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ import com.litter.android.ui.common.matchesModelSelection
 import com.litter.android.ui.common.modelPickerDisplayName
 import com.litter.android.ui.conversation.HeaderOverrides
 import com.litter.android.ui.scaled
+import kotlinx.coroutines.launch
 import uniffi.codex_mobile_client.ModelInfo
 
 /**
@@ -51,33 +53,122 @@ fun HomeModelChip(
     serverId: String?,
     disabled: Boolean,
     onSheetStateChange: (Boolean) -> Unit = {},
+    asPill: Boolean = false,
 ) {
     val appModel = LocalAppModel.current
     val snapshot by appModel.snapshot.collectAsState()
     val launchState by appModel.launchState.snapshot.collectAsState()
+    val scope = rememberCoroutineScope()
 
     val server = remember(snapshot, serverId) {
         snapshot?.servers?.firstOrNull { it.serverId == serverId }
     }
     val availableModels: List<ModelInfo> = server?.availableModels.orEmpty()
+    val selectedModelMatches = availableModels.any {
+        it.matchesModelSelection(
+            launchState.selectedModel,
+            launchState.selectedAgentRuntimeKind,
+        )
+    }
+    val usesServerConfiguredDefault = usesServerConfiguredModelDefault(
+        availableModels.map { it.agentRuntimeKind },
+    )
 
     val selectedId = launchState.selectedModel
-        .takeIf { it.isNotBlank() }
-        ?: availableModels.firstOrNull { it.isDefault }?.id
-        ?: availableModels.firstOrNull()?.id
+        .takeIf { it.isNotBlank() && selectedModelMatches }
+        ?: if (usesServerConfiguredDefault) {
+            ""
+        } else {
+            availableModels.firstOrNull { it.isDefault }?.id
+                ?: availableModels.firstOrNull()?.id
+        }
         ?: ""
     val selectedRuntime = launchState.selectedAgentRuntimeKind
         ?: availableModels.firstOrNull { it.id == selectedId || it.model == selectedId }?.agentRuntimeKind
 
     val selectedLabel = remember(selectedId, selectedRuntime, availableModels) {
         availableModels.firstOrNull { it.matchesModelSelection(selectedId, selectedRuntime) }?.modelPickerDisplayName()?.ifBlank { selectedId }
-            ?: selectedId.ifBlank { "model" }
+            ?: selectedId.ifBlank {
+                if (usesServerConfiguredDefault) "server default" else "model"
+            }
     }
 
-    LaunchedEffect(serverId) {
-        if (!serverId.isNullOrBlank()) {
-            runCatching { appModel.loadConversationMetadataIfNeeded(serverId) }
+    var autoSelectedModelKey by remember { mutableStateOf<String?>(null) }
+    val availableRuntimeKinds = server?.agentRuntimes
+        ?.filter { it.available }
+        ?.map { it.kind }
+        ?.sorted()
+        .orEmpty()
+
+    LaunchedEffect(serverId, availableRuntimeKinds) {
+        if (serverId.isNullOrBlank()) return@LaunchedEffect
+        val before = appModel.launchState.snapshot.value
+        val wasAutoSelected =
+            autoSelectedModelKey == "${before.selectedAgentRuntimeKind.orEmpty()}:${before.selectedModel}"
+        runCatching { appModel.loadConversationMetadataIfNeeded(serverId) }
+        val loadedModels = appModel.snapshot.value?.servers
+            ?.firstOrNull { it.serverId == serverId }
+            ?.availableModels
+            .orEmpty()
+        val current = appModel.launchState.snapshot.value
+        // Judge the persisted pick against the *loaded* catalog. Checking
+        // before the load (empty list) replaced a valid last-used model
+        // with the server default on every launch / server switch.
+        val currentMatches = loadedModels.any {
+            it.matchesModelSelection(current.selectedModel, current.selectedAgentRuntimeKind)
         }
+        if (currentMatches && !wasAutoSelected) return@LaunchedEffect
+        if (loadedModels.isEmpty()) return@LaunchedEffect
+        val remembered = appModel.launchState.rememberedServerModel(serverId)
+        val rememberedModel = remembered?.let { r ->
+            loadedModels.firstOrNull { it.matchesModelSelection(r.model, r.agentRuntimeKind) }
+        }
+        if (remembered != null && rememberedModel != null) {
+            appModel.launchState.updateSelectedModel(
+                rememberedModel.id,
+                agentRuntimeKind = rememberedModel.agentRuntimeKind,
+            )
+            appModel.launchState.updateReasoningEffort(remembered.reasoningEffort)
+            autoSelectedModelKey = null
+        } else if (usesServerConfiguredModelDefault(loadedModels.map { it.agentRuntimeKind })) {
+            appModel.launchState.updateSelectedModel(null)
+            appModel.launchState.updateReasoningEffort(null)
+            autoSelectedModelKey = null
+        } else {
+            val fallbackModel = loadedModels.firstOrNull {
+                it.agentRuntimeKind == "codex" && it.isDefault
+            } ?: loadedModels.firstOrNull { it.isDefault }
+                ?: loadedModels.first()
+            appModel.launchState.updateSelectedModel(
+                fallbackModel.id,
+                agentRuntimeKind = fallbackModel.agentRuntimeKind,
+            )
+            appModel.launchState.updateReasoningEffort(null)
+            autoSelectedModelKey = "${fallbackModel.agentRuntimeKind}:${fallbackModel.id}"
+        }
+    }
+
+    // Remember the user's explicit pick per server (auto fallbacks excluded)
+    // so switching servers and back restores it.
+    LaunchedEffect(
+        serverId,
+        launchState.selectedModel,
+        launchState.selectedAgentRuntimeKind,
+        launchState.reasoningEffort,
+        selectedModelMatches,
+    ) {
+        val sid = serverId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val model = launchState.selectedModel
+        if (model.isBlank() || !selectedModelMatches) return@LaunchedEffect
+        if (autoSelectedModelKey == "${launchState.selectedAgentRuntimeKind.orEmpty()}:$model") {
+            return@LaunchedEffect
+        }
+        appModel.launchState.rememberServerModel(
+            sid,
+            model,
+            launchState.selectedAgentRuntimeKind,
+            launchState.reasoningEffort,
+        )
     }
 
     var showSheet by remember { mutableStateOf(false) }
@@ -87,7 +178,12 @@ fun HomeModelChip(
         onSheetStateChange(showSheet)
     }
 
-    Row(
+    if (asPill) {
+        com.litter.android.ui.conversation.ComposerModelPill(
+            label = selectedLabel,
+            onClick = if (disabled) null else ({ showSheet = true }),
+        )
+    } else Row(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .background(LitterTheme.surface.copy(alpha = 0.9f))
@@ -131,6 +227,9 @@ fun HomeModelChip(
     }
 
     if (showSheet) {
+        LaunchedEffect(serverId) {
+            serverId?.let { appModel.loadAvailableModelsIfNeeded(it) }
+        }
         ModalBottomSheet(
             onDismissRequest = { showSheet = false },
             sheetState = sheetState,
@@ -142,6 +241,13 @@ fun HomeModelChip(
             ModelSelectorPanel(
                 thread = null,
                 availableModels = availableModels,
+                catalogLoaded = server?.availableModels != null,
+                catalogError = serverId?.let(appModel::modelCatalogError),
+                onRetryModels = {
+                    serverId?.let {
+                        scope.launch { appModel.loadAvailableModelsIfNeeded(it, force = true) }
+                    }
+                },
                 onToggleMode = null,
                 fastMode = HeaderOverrides.pendingFastMode,
                 onFastModeChange = { HeaderOverrides.pendingFastMode = it },
@@ -149,3 +255,6 @@ fun HomeModelChip(
         }
     }
 }
+
+internal fun usesServerConfiguredModelDefault(runtimeKinds: List<String>): Boolean =
+    runtimeKinds.isNotEmpty() && runtimeKinds.all { it == "local-studio" }

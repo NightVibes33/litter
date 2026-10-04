@@ -53,14 +53,8 @@ struct PiPContentView: View {
     }
 
     @MainActor
-    private func activeSession() -> HomeDashboardRecentSession? {
-        guard let snapshot = AppModel.shared.snapshot else { return nil }
-        // Prefer the explicit pin from the home-card menu over whatever
-        // thread is currently active in the app.
-        guard let activeKey =
-                StreamingPiPController.shared.pinnedThreadKey
-                ?? snapshot.activeThread
-        else { return nil }
+    private func computeActiveSession(activeKey: ThreadKey?) -> HomeDashboardRecentSession? {
+        guard let snapshot = AppModel.shared.snapshot, let activeKey = activeKey else { return nil }
         let servers = HomeDashboardSupport.sortedConnectedServers(
             from: snapshot.servers,
             savedServers: [],
@@ -85,6 +79,47 @@ struct PiPContentView: View {
             agentRuntimeKindString: liveRuntime
         )
     }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.black
+            if let session = activeSession() {
+                SessionCanvasLine(
+                    session: session,
+                    isOpening: false,
+                    isHydrating: false,
+                    isCancelling: false
+                )
+                .padding(.top, 12)
+                .frame(width: Self.canvasWidth, alignment: .topLeading)
+            } else {
+                Text("no active thread")
+                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.45))
+                    .frame(
+                        width: Self.canvasWidth,
+                        height: Self.minHeight,
+                        alignment: .center
+                    )
+            }
+        }
+        .environment(\.colorScheme, .dark)
+        .frame(width: Self.canvasWidth)
+        .frame(minHeight: Self.minHeight, maxHeight: Self.maxHeight, alignment: .topLeading)
+        .background(Color.black)
+        .clipped()
+    }
+}
+
+/// File-scoped cache for the PiP card's derived session. `StreamingPiPController`
+/// reassigns `renderer.content = PiPContentView()` on every render tick, so a
+/// per-instance cache never survives between body evaluations. Keyed by
+/// (snapshot revision, resolved active thread key) — see `activeSession()`.
+@MainActor
+private enum ActiveSessionCache {
+    static var revision: UInt64?
+    static var activeKey: ThreadKey?
+    static var session: HomeDashboardRecentSession?
 }
 
 private extension HomeDashboardRecentSession {

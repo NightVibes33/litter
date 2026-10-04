@@ -12,7 +12,6 @@ struct WallpaperAdjustView: View {
     var stagedVideoURL: URL?
     var onDone: (() -> Void)?
 
-    private var isServerOnly: Bool { threadKey == nil }
     private var resolvedServerId: String? { threadKey?.serverId ?? serverId }
 
     @State private var isBlurred: Bool = false

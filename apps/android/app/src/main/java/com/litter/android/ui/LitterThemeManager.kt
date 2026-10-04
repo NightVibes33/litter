@@ -18,6 +18,7 @@ private const val SELECTED_DARK_THEME_KEY = "selected_dark_theme"
 private const val APPEARANCE_MODE_KEY = "appearance_mode"
 private const val DARK_MODE_KEY = "dark_mode_enabled"
 private const val FONT_MONO_KEY = "font_family_mono"
+private const val FONT_FAMILY_KEY = "font_family"
 
 enum class LitterAppearanceMode(
     val storageValue: String,
@@ -38,6 +39,21 @@ enum class LitterAppearanceMode(
             LIGHT -> false
             DARK -> true
         }
+}
+
+enum class LitterFontFamilyOption(
+    val storageValue: String,
+    val displayName: String,
+) {
+    BERKELEY_MONO("mono", "Berkeley Mono"),
+    CHATGPT("system", "ChatGPT (System)"),
+    SYSTEM_MONO("system-mono", "System Mono"),
+    SERIF("serif", "Reader Serif");
+
+    companion object {
+        fun fromStorageValue(value: String?): LitterFontFamilyOption? =
+            entries.firstOrNull { it.storageValue.equals(value, ignoreCase = true) }
+    }
 }
 
 enum class LitterColorThemeType {
@@ -129,35 +145,35 @@ data class LitterResolvedTheme(
         ): LitterResolvedTheme {
             val colors = definition.colors
             val background =
-                colorFromHex(
+                tokenColorFromHex(
                     colors["editor.background"],
                     fallback = if (definition.type == LitterColorThemeType.DARK) Color(0xFF111111) else Color.White,
                 )
             val foreground =
-                colorFromHex(
+                tokenColorFromHex(
                     colors["editor.foreground"],
                     fallback = if (definition.type == LitterColorThemeType.DARK) Color(0xFFFCFCFC) else Color(0xFF0D0D0D),
                 )
             val surface =
-                colors["sideBar.background"]?.let(::colorFromHex)
+                colors["sideBar.background"]?.let(::tokenColorFromHex)
                     ?: adjustBrightness(background, if (definition.type == LitterColorThemeType.DARK) 0.03f else -0.02f)
             val surfaceLight =
-                colors["activityBar.background"]?.let(::colorFromHex)
+                colors["activityBar.background"]?.let(::tokenColorFromHex)
                     ?: adjustBrightness(surface, if (definition.type == LitterColorThemeType.DARK) 0.04f else -0.03f)
             val accent =
-                colors["textLink.foreground"]?.let(::colorFromHex)
-                    ?: colors["button.background"]?.let(::colorFromHex)
+                colors["textLink.foreground"]?.let(::tokenColorFromHex)
+                    ?: colors["button.background"]?.let(::tokenColorFromHex)
                     ?: if (definition.type == LitterColorThemeType.DARK) Color(0xFFB0B0B0) else Color(0xFF4A4A4A)
             val accentStrong =
-                colors["button.background"]?.let(::colorFromHex)
-                    ?: colors["textLink.foreground"]?.let(::colorFromHex)
+                colors["button.background"]?.let(::tokenColorFromHex)
+                    ?: colors["textLink.foreground"]?.let(::tokenColorFromHex)
                     ?: accent
             val border =
-                colors["editorGroup.border"]?.let(::colorFromHex)
-                    ?: colors["sideBar.border"]?.let(::colorFromHex)
+                colors["editorGroup.border"]?.let(::tokenColorFromHex)
+                    ?: colors["sideBar.border"]?.let(::tokenColorFromHex)
                     ?: adjustBrightness(surface, if (definition.type == LitterColorThemeType.DARK) 0.05f else -0.05f)
             val separator =
-                colors["panel.border"]?.let(::colorFromHex)
+                colors["panel.border"]?.let(::tokenColorFromHex)
                     ?: adjustBrightness(background, if (definition.type == LitterColorThemeType.DARK) 0.04f else -0.04f)
 
             return LitterResolvedTheme(
@@ -168,8 +184,8 @@ data class LitterResolvedTheme(
                 surface = surface,
                 surfaceLight = surfaceLight,
                 textPrimary = foreground,
-                textSecondary = colors["sideBar.foreground"]?.let(::colorFromHex) ?: dimColor(foreground, 0.55f),
-                textMuted = colors["editorLineNumber.foreground"]?.let(::colorFromHex) ?: dimColor(foreground, 0.35f),
+                textSecondary = colors["sideBar.foreground"]?.let(::tokenColorFromHex) ?: dimColor(foreground, 0.55f),
+                textMuted = colors["editorLineNumber.foreground"]?.let(::tokenColorFromHex) ?: dimColor(foreground, 0.35f),
                 textBody = dimColor(foreground, 0.88f),
                 textSystem = dimColor(foreground, 0.7f),
                 accent = accent,
@@ -223,9 +239,40 @@ data class LitterResolvedTheme(
 internal fun colorFromHex(
     hex: String?,
     fallback: Color = Color.Transparent,
-): Color {
-    val normalized = hex?.trim()?.takeIf { it.isNotEmpty() } ?: return fallback
-    return runCatching { Color(android.graphics.Color.parseColor(normalized)) }.getOrElse { fallback }
+): Color = parseColorFromHex(hex) ?: fallback
+
+/// Parses theme tokens as opaque colors: CSS hex may carry alpha, but app
+/// theme tokens must stay solid so they match iOS and the generated Material
+/// schemes, which both drop alpha when a theme loads.
+internal fun tokenColorFromHex(
+    hex: String?,
+    fallback: Color = Color.Transparent,
+): Color = parseColorFromHex(hex)?.copy(alpha = 1f) ?: fallback
+
+private fun parseColorFromHex(hex: String?): Color? {
+    val normalized = hex?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    // Theme JSON uses CSS/VS Code hex with alpha last: #RGB, #RGBA,
+    // #RRGGBB, #RRGGBBAA. Android's Color(Long) is ARGB (alpha first),
+    // so an alpha byte must be moved to the front, not dropped.
+    var digits = normalized.removePrefix("#").lowercase().toList()
+    if (digits.any { it !in '0'..'9' && it !in 'a'..'f' }) {
+        return null
+    }
+    if (digits.size == 3 || digits.size == 4) {
+        digits = digits.flatMap { listOf(it, it) }
+    }
+    val value =
+        when (digits.size) {
+            6, 8 -> digits.joinToString("").toLongOrNull(16) ?: return null
+            else -> return null
+        }
+    return Color(
+        if (digits.size == 8) {
+            ((value and 0xFF) shl 24) or (value ushr 8)
+        } else {
+            0xFF000000L or value
+        },
+    )
 }
 
 object LitterThemeManager {
@@ -238,7 +285,7 @@ object LitterThemeManager {
     var appearanceMode by mutableStateOf(LitterAppearanceMode.SYSTEM)
         private set
 
-    var monoFontEnabled by mutableStateOf(true)
+    var selectedFontFamily by mutableStateOf(LitterFontFamilyOption.CHATGPT)
         private set
 
     var lightTheme by mutableStateOf(LitterResolvedTheme.defaultLight)
@@ -263,10 +310,10 @@ object LitterThemeManager {
         get() = themeIndex.filter { it.type == LitterColorThemeType.DARK }
 
     val selectedLightSlug: String
-        get() = preferences?.getString(SELECTED_LIGHT_THEME_KEY, null) ?: "kitty-litter-light"
+        get() = preferences?.getString(SELECTED_LIGHT_THEME_KEY, null) ?: "codex-light"
 
     val selectedDarkSlug: String
-        get() = preferences?.getString(SELECTED_DARK_THEME_KEY, null) ?: "kitty-litter-dark"
+        get() = preferences?.getString(SELECTED_DARK_THEME_KEY, null) ?: "chatgpt-dark"
 
     private val preferences
         get() = appContext?.getSharedPreferences(UI_PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -285,7 +332,7 @@ object LitterThemeManager {
             systemIsDark = systemIsDarkMode
             appearanceMode = loadAppearanceMode()
             activeTheme = themeForMode(appearanceMode)
-            monoFontEnabled = preferences?.getBoolean(FONT_MONO_KEY, true) ?: true
+            selectedFontFamily = loadFontFamily()
             initialized = true
         }
     }
@@ -293,10 +340,6 @@ object LitterThemeManager {
     fun applySystemTheme(isDark: Boolean) {
         systemIsDark = isDark
         applyActiveTheme()
-    }
-
-    fun applyDarkMode(enabled: Boolean) {
-        applyAppearanceMode(if (enabled) LitterAppearanceMode.DARK else LitterAppearanceMode.LIGHT)
     }
 
     fun applyAppearanceMode(mode: LitterAppearanceMode) {
@@ -308,9 +351,12 @@ object LitterThemeManager {
         applyActiveTheme()
     }
 
-    fun applyFont(isMono: Boolean) {
-        preferences?.edit()?.putBoolean(FONT_MONO_KEY, isMono)?.apply()
-        monoFontEnabled = isMono
+    fun applyFont(fontFamily: LitterFontFamilyOption) {
+        preferences?.edit()
+            ?.putString(FONT_FAMILY_KEY, fontFamily.storageValue)
+            ?.remove(FONT_MONO_KEY)
+            ?.apply()
+        selectedFontFamily = fontFamily
     }
 
     fun selectLightTheme(slug: String) {
@@ -345,6 +391,14 @@ object LitterThemeManager {
         } else {
             LitterAppearanceMode.SYSTEM
         }
+    }
+
+    private fun loadFontFamily(): LitterFontFamilyOption {
+        val prefs = preferences ?: return LitterFontFamilyOption.CHATGPT
+        LitterFontFamilyOption.fromStorageValue(prefs.getString(FONT_FAMILY_KEY, null))?.let {
+            return it
+        }
+        return LitterFontFamilyOption.CHATGPT
     }
 
     private fun usesDarkTheme(mode: LitterAppearanceMode = appearanceMode): Boolean =

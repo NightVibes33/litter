@@ -313,9 +313,3 @@ struct MountedFoldersView: View {
         return "Remove mount?"
     }
 }
-
-#if DEBUG
-#Preview {
-    MountedFoldersView()
-}
-#endif

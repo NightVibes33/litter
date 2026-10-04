@@ -9,6 +9,11 @@ struct ConversationDisplayUITestHarnessView: View {
     @AppStorage(ConversationDisplayPreferenceKey.commands) private var commandDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
     @AppStorage(ConversationDisplayPreferenceKey.tools) private var toolDisplayMode = ConversationDetailDisplayMode.collapsed.rawValue
     @State private var showSettings = false
+    @State private var composerText = ""
+    @State private var composerFocused = false
+    @State private var composerSelection = NSRange(location: 0, length: 0)
+    @State private var showAttachMenu = false
+    @State private var voiceManager = VoiceTranscriptionManager()
 
     static var isEnabled: Bool {
         ProcessInfo.processInfo.arguments.contains("--ui-test-conversation-display")
@@ -19,6 +24,14 @@ struct ConversationDisplayUITestHarnessView: View {
     }
 
     var body: some View {
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-multiturn") {
+            ConversationMultiTurnUITestHarnessView()
+        } else {
+            displayHarness
+        }
+    }
+
+    private var displayHarness: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -37,6 +50,25 @@ struct ConversationDisplayUITestHarnessView: View {
                     .foregroundColor(LitterTheme.textPrimary)
                     .accessibilityIdentifier("conversationDisplayHarness.title")
 
+                    ConversationComposerEntryRowView(
+                        showAttachMenu: $showAttachMenu,
+                        inputText: $composerText,
+                        isComposerFocused: $composerFocused,
+                        composerSelectionRange: $composerSelection,
+                        voiceManager: voiceManager,
+                        isTurnActive: false,
+                        hasAttachment: false,
+                        modelLabel: ProcessInfo.processInfo.environment["CODEXIOS_UI_TEST_MODEL_LABEL"] ?? "GPT-5",
+                        reasoningLabel: "high",
+                        collaborationMode: .default,
+                        showModeChip: true,
+                        onPasteImage: { _ in },
+                        onSendText: {},
+                        onStopRecording: {},
+                        onStartRecording: {},
+                        onInterrupt: {}
+                    )
+
                     ConversationTurnTimeline(
                         items: Self.seedItems,
                         isLive: false,
@@ -44,9 +76,9 @@ struct ConversationDisplayUITestHarnessView: View {
                         originThreadId: nil,
                         agentDirectoryVersion: 0,
                         messageActionsDisabled: true,
-                        onStreamingSnapshotRendered: nil,
-                        onLiveContentLayoutChanged: nil,
                         resolveTargetLabel: { _ in nil },
+                        resolveThreadKey: { _ in nil },
+                        resolveLiveStatus: { _ in nil },
                         onWidgetPrompt: { _ in },
                         onEditUserItem: { _ in },
                         onForkFromUserItem: { _ in }
@@ -83,7 +115,6 @@ struct ConversationDisplayUITestHarnessView: View {
                     showSettings = true
                 }
             }
-            (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
         }
     }
 
@@ -114,6 +145,15 @@ struct ConversationDisplayUITestHarnessView: View {
             id: "ui-test-assistant",
             content: .assistant(ConversationAssistantMessageData(
                 text: "UITEST_ASSISTANT_MESSAGE",
+                agentNickname: nil,
+                agentRole: nil,
+                phase: nil
+            ))
+        ),
+        ConversationItem(
+            id: "ui-test-assistant-link",
+            content: .assistant(ConversationAssistantMessageData(
+                text: "Deployed the preview build. Check it at https://example.com/releases/latest and the docs at https://docs.example.com/setup",
                 agentNickname: nil,
                 agentRole: nil,
                 phase: nil
@@ -169,5 +209,156 @@ struct ConversationDisplayUITestHarnessView: View {
             ))
         )
     ]
+}
+/// Exercises the shipping message list without network or account setup.
+private struct ConversationMultiTurnUITestHarnessView: View {
+    @State private var items = Self.seedItems
+    @State private var status: ConversationStatus = .ready
+    @State private var revision = 0
+    @State private var textSize = 0
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Multi-turn transcript")
+                Spacer()
+                Button("Follow up") {
+                    revision += 1
+                    let turnID = "followup-\(revision)"
+                    items.append(Self.item(id: turnID, text: "FOLLOWUP_\(revision)", user: true, turnID: turnID))
+                    items.append(Self.item(id: "followup-answer-\(revision)", text: "FOLLOWUP_ANSWER_\(revision)", user: false, turnID: turnID))
+                    status = .thinking
+                }
+                .accessibilityIdentifier("multiturn.followup")
+                Button("Finish") { status = .ready }
+            }
+            .padding()
+            ConversationMessageList(
+                items: items,
+                threadStatus: status,
+                threadHasServerData: true,
+                transcriptRenderDigest: revision,
+                sendScrollToken: revision,
+                activeThreadKey: ThreadKey(serverId: "ui-test", threadId: "multi-turn"),
+                agentDirectoryVersion: 0,
+                olderTurnsCursor: nil,
+                initialTurnsLoaded: true,
+                textSizeStep: $textSize,
+                resolveTargetLabel: { _ in nil },
+                resolveThreadKey: { _ in nil },
+                resolveLiveStatus: { _ in nil },
+                onWidgetPrompt: { _ in },
+                onEditUserItem: { _ in },
+                onForkFromUserItem: { _ in },
+                onLoadOlderTurns: { _ in false }
+            )
+            .clipped()
+        }
+        // The app's debug harness host fills the safe area; keep controls clear
+        // of the status bar so XCTest exercises an actual user tap.
+        .padding(.top, 70)
+        .padding(.bottom, 24)
+        .background(LitterTheme.backgroundGradient)
+    }
+
+    private static func item(id: String, text: String, user: Bool, turnID: String) -> ConversationItem {
+        ConversationItem(
+            id: id,
+            content: user ? .user(ConversationUserMessageData(text: text, images: [])) :
+                .assistant(ConversationAssistantMessageData(text: text, agentNickname: nil, agentRole: nil)),
+            sourceTurnId: turnID,
+            timestamp: Date(timeIntervalSince1970: 1),
+            isFromUserTurnBoundary: user
+        )
+    }
+
+    private static var seedItems: [ConversationItem] {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-test-prose") {
+            // Wrapped paragraphs make column width and gutters visible.
+            let answer = "DDPM samples by reversing a noisy Markov chain one small step at a time. DDIM keeps the same training objective but skips steps deterministically, so fifty steps can match a thousand."
+            return [
+                item(id: "prose-user", text: "What is the difference between DDPM and DDIM, and when would I pick one over the other?", user: true, turnID: "prose"),
+                item(id: "prose-answer-0", text: answer, user: false, turnID: "prose"),
+                item(id: "prose-answer-1", text: answer, user: false, turnID: "prose"),
+            ]
+        }
+        if arguments.contains("--ui-test-rich") {
+            return richSeedItems
+        }
+        let count = arguments.contains("--ui-test-long-turn") ? 500 : 3
+        return [item(id: "initial-user", text: "INITIAL_PROMPT", user: true, turnID: "initial")] +
+            (0..<count).map { item(id: "answer-\($0)", text: "HISTORY_MESSAGE_\($0)", user: false, turnID: "initial") }
+    }
+
+    /// Wide content (long code lines, a table, a diff, tool cards) that must
+    /// stay inside the reading column on a phone.
+    private static var richSeedItems: [ConversationItem] {
+        let answer = """
+        ## A Simple Swift Counter
+
+        This example defines a small counter type with a value that can be read externally but changed only through its methods. A computed property provides a readable description.
+
+        - Uses a value type.
+        - Starts at zero.
+        - Restricts direct changes.
+
+        ```swift
+        struct Counter {
+            private(set) var value = 0
+            mutating func increment() { value += 1 }
+            var description: String { "Count: \\(value) — a deliberately long line that must scroll inside its own box" }
+        }
+        ```
+
+        | Sampler | Steps | Deterministic | Typical use case |
+        |---|---|---|---|
+        | DDPM | 1000 | No | Highest quality baseline sampling |
+        | DDIM | 50 | Yes | Fast previews and interpolation |
+
+        Run `swift run counter --verbose --output /tmp/a/really/long/path/that/keeps/going/and/going.txt` to check it.
+        """
+        let diff = """
+        --- a/Sources/Counter.swift
+        +++ b/Sources/Counter.swift
+        @@ -1,4 +1,4 @@
+         struct Counter {
+        -    var value = 0
+        +    private(set) var value = 0 // only mutate through increment() and reset(), never directly from callers
+         }
+        """
+        return [
+            item(id: "rich-user", text: "Write a markdown answer with a heading, a bullet list, a Swift code block, and a table.", user: true, turnID: "rich"),
+            ConversationItem(
+                id: "rich-reasoning",
+                content: .reasoning(ConversationReasoningData(summary: ["Planning the counter example"], content: [])),
+                sourceTurnId: "rich", timestamp: Date(timeIntervalSince1970: 1)
+            ),
+            ConversationItem(
+                id: "rich-command",
+                content: .commandExecution(ConversationCommandExecutionData(
+                    command: "rg -n 'class CutlassW4A16|clamp_limit|swiglu_limit|SM90' deepseek-v4.1/research-20260930/flashinfer/cutlass.py | head -75",
+                    cwd: "/tmp",
+                    status: .completed,
+                    output: "cutlass.py:10: error for operation on deepseek-v4.1/research-20260930/flashinfer/cutlass.py: No such file or directory (os error 2)",
+                    exitCode: 0,
+                    durationMs: 25,
+                    processId: nil,
+                    actions: []
+                )),
+                sourceTurnId: "rich", timestamp: Date(timeIntervalSince1970: 1)
+            ),
+            ConversationItem(
+                id: "rich-file-change",
+                content: .fileChange(ConversationFileChangeData(
+                    status: .completed,
+                    changes: [ConversationFileChangeEntry(path: "Sources/Counter.swift", kind: "update", diff: diff, additions: 1, deletions: 1)],
+                    outputDelta: nil
+                )),
+                sourceTurnId: "rich", timestamp: Date(timeIntervalSince1970: 1)
+            ),
+            item(id: "rich-answer", text: answer, user: false, turnID: "rich"),
+        ]
+    }
 }
 #endif

@@ -12,10 +12,16 @@ use crate::session::connection::{InProcessConfig, ServerConfig};
 use crate::store::ServerHealthSnapshot;
 use crate::store::snapshot::AppLifecyclePhaseSnapshot;
 use codex_app_server_protocol as upstream;
+use futures::StreamExt;
 use std::sync::{Arc, RwLock};
 use tokio::runtime::Runtime;
 use tokio::task::JoinSet;
 use tracing::{info, warn};
+
+/// Max concurrent account probes when the app becomes active.
+const ACCOUNT_PROBE_CONCURRENCY: usize = 4;
+/// Deadline for a single account probe.
+const ACCOUNT_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn normalized_local_display_name(value: &str) -> Option<String> {
     let trimmed = value.trim();
@@ -47,8 +53,8 @@ fn resolved_local_display_name(
             saved_servers
                 .iter()
                 .find(|server| {
-                    (server.id == server_id || server.id == "local")
-                        && (server.source == "local" || server.id == "local")
+                    server.id == "local"
+                        || (server.id == server_id && server.source == "local")
                 })
                 .and_then(|server| normalized_local_display_name(&server.name))
         })
@@ -59,6 +65,13 @@ fn server_counts_as_connected_for_reconnect(
     server: &crate::store::snapshot::ServerSnapshot,
 ) -> bool {
     matches!(server.health, ServerHealthSnapshot::Connected)
+}
+
+fn server_supports_account_probe(server: &crate::store::snapshot::ServerSnapshot) -> bool {
+    !matches!(
+        server.agent_runtimes.as_slice(),
+        [runtime] if runtime.kind == "local-studio"
+    )
 }
 
 #[derive(uniffi::Object)]
@@ -103,6 +116,35 @@ impl ReconnectController {
                 *cp.lock().await = Some(provider);
             });
         }
+    }
+
+    pub fn set_ssh_trust_store(&self, store: Arc<crate::terminal::TerminalSshTrustStore>) {
+        self.inner.set_ssh_trust_store(store);
+    }
+
+    /// Replace a server's pinned SSH identity after an explicit user confirmation.
+    pub async fn replace_ssh_host_key(&self, server_id: String, fingerprint: String) -> bool {
+        let Some(server) = self
+            .saved_servers
+            .read()
+            .ok()
+            .and_then(|servers| servers.iter().find(|server| server.id == server_id).cloned())
+        else {
+            return false;
+        };
+        let store = self
+            .inner
+            .ssh_trust_store
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        let Some(store) = store else { return false };
+        store.pin(
+            crate::terminal::normalize_host(&server.hostname),
+            crate::reconnect::resolved_ssh_port(&server),
+            fingerprint,
+        );
+        true
     }
 
     pub fn set_slingshot_credential_provider(
@@ -186,7 +228,7 @@ impl ReconnectController {
         // websocket connect path does not execute on Swift's smaller stack.
         self.rt
             .spawn(async move {
-                let result = reconnect_server_inner(
+                reconnect_server_inner(
                     Arc::clone(&inner),
                     saved_servers,
                     credential_provider,
@@ -194,8 +236,7 @@ impl ReconnectController {
                     multi_clanker_and_quic_enabled,
                     server_id,
                 )
-                .await;
-                result
+                .await
             })
             .await
             .unwrap_or_else(|error| ReconnectResult {
@@ -215,40 +256,7 @@ impl ReconnectController {
         // foreign async executor.
         let _ = self
             .rt
-            .spawn(async move {
-                let snapshot = inner.app_snapshot();
-                let remote_connected: Vec<String> = snapshot
-                    .servers
-                    .values()
-                    .filter(|s| !s.is_local && s.health == ServerHealthSnapshot::Connected)
-                    .map(|s| s.server_id.clone())
-                    .collect();
-
-                for server_id in &remote_connected {
-                    let request = upstream::ClientRequest::GetAccount {
-                        request_id: upstream::RequestId::Integer(next_request_id()),
-                        params: upstream::GetAccountParams {
-                            refresh_token: false,
-                        },
-                    };
-                    match inner
-                        .request_typed_for_server::<upstream::GetAccountResponse>(
-                            server_id, request,
-                        )
-                        .await
-                    {
-                        Ok(response) => {
-                            inner.apply_account_response(server_id, &response);
-                        }
-                        Err(e) => {
-                            warn!(
-                                "ReconnectController: probe failed server_id={} error={}",
-                                server_id, e
-                            );
-                        }
-                    }
-                }
-            })
+            .spawn(probe_active_remote_servers_inner(inner))
             .await
             .inspect_err(|error| {
                 warn!("ReconnectController: probe_active_remote_servers task failed: {error}");
@@ -264,7 +272,10 @@ impl ReconnectController {
         // run for transports that can't recover on their own.
         self.notify_network_change().await;
         let results = self.reconnect_saved_servers().await;
-        self.probe_active_remote_servers().await;
+        // Account probes only refresh account state; they must not hold up
+        // the reconnect result the UI waits on.
+        let inner = Arc::clone(&self.inner);
+        self.rt.spawn(probe_active_remote_servers_inner(inner));
         results
     }
 
@@ -337,6 +348,53 @@ impl ReconnectController {
     }
 }
 
+/// Refresh account state on every connected remote. Each probe has a
+/// deadline because `account/read` has none on the wire, and one hung
+/// remote would otherwise hold a probe slot forever.
+async fn probe_active_remote_servers_inner(inner: Arc<MobileClient>) {
+    let snapshot = inner.app_snapshot();
+    let remote_connected: Vec<String> = snapshot
+        .servers
+        .values()
+        .filter(|s| {
+            !s.is_local
+                && s.health == ServerHealthSnapshot::Connected
+                && server_supports_account_probe(s)
+        })
+        .map(|s| s.server_id.clone())
+        .collect();
+
+    futures::stream::iter(remote_connected)
+        .map(|server_id| {
+            let inner = Arc::clone(&inner);
+            async move {
+                let request = upstream::ClientRequest::GetAccount {
+                    request_id: upstream::RequestId::Integer(next_request_id()),
+                    params: upstream::GetAccountParams {
+                        refresh_token: false,
+                    },
+                };
+                let probe = inner.request_typed_for_server::<upstream::GetAccountResponse>(
+                    &server_id, request,
+                );
+                match tokio::time::timeout(ACCOUNT_PROBE_TIMEOUT, probe).await {
+                    Ok(Ok(response)) => inner.apply_account_response(&server_id, &response),
+                    Ok(Err(e)) => warn!(
+                        "ReconnectController: probe failed server_id={} error={}",
+                        server_id, e
+                    ),
+                    Err(_) => warn!(
+                        "ReconnectController: probe timed out server_id={}",
+                        server_id
+                    ),
+                }
+            }
+        })
+        .buffer_unordered(ACCOUNT_PROBE_CONCURRENCY)
+        .collect::<Vec<()>>()
+        .await;
+}
+
 async fn reconnect_saved_servers_inner(
     inner: Arc<MobileClient>,
     saved_servers: Arc<RwLock<Vec<SavedServerRecord>>>,
@@ -347,11 +405,16 @@ async fn reconnect_saved_servers_inner(
     multi_clanker_and_quic_enabled: bool,
     reconnect_guard: Arc<tokio::sync::Mutex<()>>,
 ) -> Vec<ReconnectResult> {
+    // Launch fires several triggers at once (first task, scene phase,
+    // reachability). Wait for an in-flight pass instead of returning an
+    // empty result: an empty result made callers clear their "connecting"
+    // state while the first pass was still dialing. The follow-up pass is
+    // cheap because it skips servers that are already connected.
     let guard = match reconnect_guard.try_lock() {
         Ok(guard) => guard,
         Err(_) => {
-            info!("ReconnectController: reconnect already in progress; skipping");
-            return Vec::new();
+            info!("ReconnectController: reconnect already in progress; waiting for it");
+            reconnect_guard.lock().await
         }
     };
 
@@ -374,35 +437,41 @@ async fn reconnect_saved_servers_inner(
         .servers
         .values()
         .any(|server| server.is_local && server_counts_as_connected_for_reconnect(server));
-    let mut local_result: Option<ReconnectResult> = None;
-    if !has_local {
-        info!("ReconnectController: ensuring local server connected");
-        let config = ServerConfig {
-            server_id: "local".to_string(),
-            display_name: local_display_name,
-            host: "127.0.0.1".to_string(),
-            port: 0,
-            websocket_url: None,
-            is_local: true,
-            tls: false,
-        };
-        match inner
-            .connect_local(config, InProcessConfig::default())
-            .await
-        {
-            Ok(_) => {
-                local_result = Some(ReconnectResult {
+    // Connect the local server concurrently with remote reconnects so
+    // remotes never wait on local startup.
+    let local_connect = {
+        let inner = Arc::clone(&inner);
+        async move {
+            if has_local {
+                return None;
+            }
+            info!("ReconnectController: ensuring local server connected");
+            let config = ServerConfig {
+                server_id: "local".to_string(),
+                display_name: local_display_name,
+                host: "127.0.0.1".to_string(),
+                port: 0,
+                websocket_url: None,
+                is_local: true,
+                tls: false,
+            };
+            match inner
+                .connect_local(config, InProcessConfig::default())
+                .await
+            {
+                Ok(_) => Some(ReconnectResult {
                     server_id: "local".to_string(),
                     success: true,
                     needs_local_auth_restore: true,
                     error_message: None,
-                });
-            }
-            Err(e) => {
-                warn!("ReconnectController: local server connect failed: {}", e);
+                }),
+                Err(e) => {
+                    warn!("ReconnectController: local server connect failed: {}", e);
+                    None
+                }
             }
         }
-    }
+    };
 
     let credential_provider = credential_provider.lock().await;
     let slingshot_credential_provider = slingshot_credential_provider.lock().await;
@@ -439,16 +508,19 @@ async fn reconnect_saved_servers_inner(
         join_set.spawn(async move { execute_reconnect_plan(&plan, &client).await });
     }
 
-    let mut results = Vec::new();
-    if let Some(lr) = local_result {
-        results.push(lr);
-    }
-    while let Some(result) = join_set.join_next().await {
-        match result {
-            Ok(r) => results.push(r),
-            Err(e) => warn!("ReconnectController: join error: {}", e),
+    let remote_results = async {
+        let mut results = Vec::new();
+        while let Some(result) = join_set.join_next().await {
+            match result {
+                Ok(r) => results.push(r),
+                Err(e) => warn!("ReconnectController: join error: {}", e),
+            }
         }
-    }
+        results
+    };
+    let (local_result, remote_results) = tokio::join!(local_connect, remote_results);
+    let mut results: Vec<ReconnectResult> = local_result.into_iter().collect();
+    results.extend(remote_results);
 
     drop(guard);
     results
@@ -484,7 +556,7 @@ async fn reconnect_server_inner(
             server_id: server_id.clone(),
             display_name: resolved_local_display_name(
                 &snapshot,
-                saved_server.as_ref().map_or(&[], std::slice::from_ref),
+                saved_server.as_slice(),
                 &server_id,
             ),
             host: "127.0.0.1".to_string(),
@@ -575,12 +647,18 @@ async fn reconnect_server_inner(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolved_local_display_name, server_counts_as_connected_for_reconnect};
+    use super::{
+        ReconnectController, resolved_local_display_name,
+        server_counts_as_connected_for_reconnect, server_supports_account_probe, shared_runtime,
+    };
     use crate::reconnect::SavedServerRecord;
+    use crate::terminal::{TerminalSshTrustBackend, TerminalSshTrustStore};
+    use std::sync::{Arc, RwLock};
     use crate::store::snapshot::{
         AppSnapshot, AppVoiceSessionSnapshot, ServerHealthSnapshot, ServerSnapshot,
         ServerTransportDiagnostics,
     };
+    use crate::types::AgentRuntimeInfo;
     use std::collections::HashMap;
 
     fn empty_snapshot() -> AppSnapshot {
@@ -595,6 +673,7 @@ mod tests {
             voice_session: AppVoiceSessionSnapshot::default(),
             terminal_sessions: Vec::new(),
             active_terminal_id: None,
+            cached_session_summaries: Vec::new(),
         }
     }
 
@@ -615,8 +694,7 @@ mod tests {
             agent_runtimes: Vec::new(),
             connection_progress: None,
             transport: ServerTransportDiagnostics::default(),
-            codex_version: None,
-            supports_turn_pagination: true,
+            turn_pagination_by_runtime: std::collections::HashMap::new(),
         }
     }
 
@@ -634,6 +712,27 @@ mod tests {
         assert!(!server_counts_as_connected_for_reconnect(
             &server_with_health(ServerHealthSnapshot::Unresponsive)
         ));
+    }
+
+    #[test]
+    fn account_probe_skips_local_studio_only_runtime() {
+        let mut local_studio = server_with_health(ServerHealthSnapshot::Connected);
+        local_studio.agent_runtimes = vec![AgentRuntimeInfo {
+            kind: "local-studio".to_string(),
+            name: "local-studio".to_string(),
+            display_name: "Local Studio".to_string(),
+            available: true,
+        }];
+        assert!(!server_supports_account_probe(&local_studio));
+
+        local_studio.agent_runtimes[0].kind = "codex".to_string();
+        assert!(server_supports_account_probe(&local_studio));
+
+        local_studio.agent_runtimes[0].kind = "pi".to_string();
+        assert!(server_supports_account_probe(&local_studio));
+        assert!(server_supports_account_probe(&server_with_health(
+            ServerHealthSnapshot::Connected
+        )));
     }
 
     #[test]
@@ -657,9 +756,9 @@ mod tests {
                 agent_runtimes: Vec::new(),
                 connection_progress: None,
                 transport: ServerTransportDiagnostics::default(),
-                codex_version: None,
-                supports_turn_pagination: true,
-            });
+                turn_pagination_by_runtime: std::collections::HashMap::new(),
+            },
+        );
 
         assert_eq!(
             resolved_local_display_name(&snapshot, &[], "local"),
@@ -684,6 +783,7 @@ mod tests {
             ssh_port_forwarding_enabled: None,
             websocket_url: None,
             remembered_by_user: true,
+            detached_transport: false,
             alleycat_host: None,
             alleycat_udp_port: None,
             alleycat_node_id: None,
@@ -720,9 +820,9 @@ mod tests {
                 agent_runtimes: Vec::new(),
                 connection_progress: None,
                 transport: ServerTransportDiagnostics::default(),
-                codex_version: None,
-                supports_turn_pagination: true,
-            });
+                turn_pagination_by_runtime: std::collections::HashMap::new(),
+            },
+        );
 
         let saved = SavedServerRecord {
             id: "local".to_string(),
@@ -739,6 +839,7 @@ mod tests {
             ssh_port_forwarding_enabled: None,
             websocket_url: None,
             remembered_by_user: true,
+            detached_transport: false,
             alleycat_host: None,
             alleycat_udp_port: None,
             alleycat_node_id: None,
@@ -752,5 +853,165 @@ mod tests {
             resolved_local_display_name(&snapshot, &[saved], "local"),
             "Desk Mac"
         );
+    }
+
+    #[derive(Default, Clone)]
+    struct MapTrustBackend {
+        pins: Arc<std::sync::Mutex<HashMap<(String, u16), String>>>,
+    }
+
+    impl TerminalSshTrustBackend for MapTrustBackend {
+        fn read(&self, host: String, port: u16) -> Option<String> {
+            self.pins.lock().unwrap().get(&(host, port)).cloned()
+        }
+
+        fn write(&self, host: String, port: u16, fingerprint: String) {
+            self.pins.lock().unwrap().insert((host, port), fingerprint);
+        }
+
+        fn remove(&self, host: String, port: u16) {
+            self.pins.lock().unwrap().remove(&(host, port));
+        }
+    }
+
+    fn ssh_record(id: &str, hostname: &str) -> SavedServerRecord {
+        SavedServerRecord {
+            id: id.to_string(),
+            name: id.to_string(),
+            hostname: hostname.to_string(),
+            port: 0,
+            codex_ports: Vec::new(),
+            ssh_port: None,
+            source: "ssh".to_string(),
+            has_codex_server: false,
+            wake_mac: None,
+            preferred_connection_mode: None,
+            preferred_codex_port: None,
+            ssh_port_forwarding_enabled: None,
+            websocket_url: None,
+            remembered_by_user: true,
+            detached_transport: false,
+            alleycat_host: None,
+            alleycat_udp_port: None,
+            alleycat_node_id: None,
+            alleycat_token: None,
+            alleycat_relay: None,
+            alleycat_agent_name: None,
+            alleycat_agent_wire: None,
+        }
+    }
+
+    /// Builds a controller over its own (non-shared) MobileClient so parallel
+    /// tests never race on the shared singleton's trust-store slot. Returns
+    /// the backend handle so tests can assert on the raw pin map.
+    fn replace_controller(
+        servers: Vec<SavedServerRecord>,
+    ) -> (
+        ReconnectController,
+        Arc<TerminalSshTrustStore>,
+        MapTrustBackend,
+    ) {
+        let controller = ReconnectController {
+            inner: Arc::new(super::MobileClient::new()),
+            rt: shared_runtime(),
+            saved_servers: Arc::new(RwLock::new(servers)),
+            credential_provider: Arc::new(tokio::sync::Mutex::new(None)),
+            slingshot_credential_provider: Arc::new(tokio::sync::Mutex::new(None)),
+            multi_clanker_and_quic_enabled: Arc::new(std::sync::Mutex::new(false)),
+            reconnect_guard: Arc::new(tokio::sync::Mutex::new(())),
+        };
+        let backend = MapTrustBackend::default();
+        let store = Arc::new(TerminalSshTrustStore::new(Box::new(backend.clone())));
+        controller.set_ssh_trust_store(Arc::clone(&store));
+        (controller, store, backend)
+    }
+
+    #[test]
+    fn replace_ssh_host_key_rewrites_the_pin_for_a_known_server() {
+        let mut record = ssh_record("srv-1", "LabMac.local");
+        record.ssh_port = Some(2222);
+        let (controller, store, backend) = replace_controller(vec![record]);
+
+        store.pin("labmac.local".to_string(), 2222, "AA:OLD".to_string());
+        assert_eq!(
+            store.pinned("labmac.local".to_string(), 2222),
+            Some("AA:OLD".to_string())
+        );
+
+        let replaced = controller.rt.block_on(
+            controller.replace_ssh_host_key("srv-1".to_string(), "BB:NEW".to_string()),
+        );
+        assert!(replaced);
+        assert_eq!(
+            store.pinned("labmac.local".to_string(), 2222),
+            Some("BB:NEW".to_string())
+        );
+        // Exactly the one pin was rewritten — nothing else appeared.
+        assert_eq!(backend.pins.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn replace_ssh_host_key_uses_the_server_resolved_ssh_port() {
+        let mut direct = ssh_record("direct", "BoxA.local");
+        direct.port = 2200;
+        let mut codex = ssh_record("codex", "BoxB.local");
+        codex.port = 8080;
+        codex.has_codex_server = true;
+        let (controller, store, backend) = replace_controller(vec![direct, codex]);
+
+        assert!(
+            controller
+                .rt
+                .block_on(controller.replace_ssh_host_key("direct".to_string(), "FP-A".to_string()))
+        );
+        assert!(
+            controller
+                .rt
+                .block_on(controller.replace_ssh_host_key("codex".to_string(), "FP-B".to_string()))
+        );
+
+        // Direct-port server: ssh_port unset, has_codex_server false -> its port.
+        assert_eq!(
+            store.pinned("boxa.local".to_string(), 2200),
+            Some("FP-A".to_string())
+        );
+        // Codex-carrying server: falls back to the SSH default of 22.
+        assert_eq!(
+            store.pinned("boxb.local".to_string(), 22),
+            Some("FP-B".to_string())
+        );
+        assert_eq!(backend.pins.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn replace_ssh_host_key_reports_unknown_servers_without_writing() {
+        let (controller, store, backend) = replace_controller(vec![ssh_record("srv-1", "Box.local")]);
+
+        let replaced = controller
+            .rt
+            .block_on(controller.replace_ssh_host_key("missing".to_string(), "FP".to_string()));
+
+        assert!(!replaced);
+        assert_eq!(store.pinned("box.local".to_string(), 22), None);
+        assert!(backend.pins.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn replace_ssh_host_key_fails_closed_without_a_trust_store() {
+        let controller = ReconnectController {
+            inner: Arc::new(super::MobileClient::new()),
+            rt: shared_runtime(),
+            saved_servers: Arc::new(RwLock::new(vec![ssh_record("srv-1", "Box.local")])),
+            credential_provider: Arc::new(tokio::sync::Mutex::new(None)),
+            slingshot_credential_provider: Arc::new(tokio::sync::Mutex::new(None)),
+            multi_clanker_and_quic_enabled: Arc::new(std::sync::Mutex::new(false)),
+            reconnect_guard: Arc::new(tokio::sync::Mutex::new(())),
+        };
+
+        let replaced = controller
+            .rt
+            .block_on(controller.replace_ssh_host_key("srv-1".to_string(), "FP".to_string()));
+
+        assert!(!replaced);
     }
 }

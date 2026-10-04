@@ -27,6 +27,11 @@ validate_fastlane_metadata "$FASTLANE_METADATA_DIR"
 
 APP_STORE_APP_ID="$(resolve_app_store_app_id "$APP_STORE_APP_ID" "$APP_BUNDLE_ID")"
 
+if [[ "${CANCEL_IN_FLIGHT:-0}" == "1" ]]; then
+    echo "==> Clearing the in-flight App Store version slot for $MARKETING_VERSION"
+    clear_in_flight_version "$APP_STORE_APP_ID" "$MARKETING_VERSION"
+fi
+
 if [[ -n "$BUILD_NUMBER" ]]; then
     echo "==> Looking up build $MARKETING_VERSION ($BUILD_NUMBER)"
     BUILD_ID="$(find_build_id "$APP_STORE_APP_ID" "$MARKETING_VERSION" "$BUILD_NUMBER" 50)"
@@ -55,15 +60,13 @@ echo "==> Using build $BUILD_ID (version $MARKETING_VERSION, build $BUILD_NUMBER
 VERSION_ID="$(resolve_app_store_version_id "$APP_STORE_APP_ID" "$MARKETING_VERSION")"
 if [[ -z "$VERSION_ID" ]]; then
     echo "==> Creating App Store version $MARKETING_VERSION"
-    VERSION_ID="$(
-        asc versions create \
-            --app "$APP_STORE_APP_ID" \
-            --version "$MARKETING_VERSION" \
-            --platform IOS \
-            --release-type AFTER_APPROVAL \
-            --output json |
-            jq -r '.data.id // empty'
-    )"
+    asc versions create \
+        --app "$APP_STORE_APP_ID" \
+        --version "$MARKETING_VERSION" \
+        --platform IOS \
+        --release-type AFTER_APPROVAL \
+        --output json >"$BUILD_DIR/version_created.json"
+    VERSION_ID="$(resolve_app_store_version_id "$APP_STORE_APP_ID" "$MARKETING_VERSION")"
 else
     echo "==> Reusing App Store version $MARKETING_VERSION ($VERSION_ID)"
     asc versions update \
@@ -114,7 +117,14 @@ fi
 echo "==> Attaching build $BUILD_ID to version $VERSION_ID"
 asc versions attach-build \
     --version-id "$VERSION_ID" \
-    --build "$BUILD_ID" \
+    --build-id "$BUILD_ID" \
+    --output json >/dev/null
+
+echo "==> Completing current App Store age-rating fields"
+asc age-rating edit \
+    --version-id "$VERSION_ID" \
+    --social-media false \
+    --social-media-age-restricted false \
     --output json >/dev/null
 
 echo "==> Validating App Store submission readiness"

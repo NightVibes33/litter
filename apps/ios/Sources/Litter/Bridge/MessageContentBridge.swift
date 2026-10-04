@@ -5,6 +5,7 @@ enum MessageContentBridge {
         case markdown(String)
         case codeBlock(language: String?, code: String)
         case inlineImage(Data)
+        case localImage(path: String)
     }
 
     enum AssistantContentSegment {
@@ -48,10 +49,6 @@ enum MessageContentBridge {
         store.parseToolCallsTyped(text: text).compactMap { $0.toToolCallCardModel() }
     }
 
-    static func parseCodeReview(text: String) -> ConversationCodeReviewData? {
-        store.parseCodeReviewTyped(text: text)?.toConversationCodeReviewData()
-    }
-
     private static let store = MessageParser()
 
     private static func assistantRenderBlocks(from rustBlocks: [AppMessageRenderBlock]) -> [AssistantRenderBlock] {
@@ -63,6 +60,8 @@ enum MessageContentBridge {
                 return .codeBlock(language: language, code: code)
             case .inlineImage(data: let data, mimeType: _):
                 return .inlineImage(data)
+            case .localImage(path: let path):
+                return .localImage(path: path)
             }
         }
     }
@@ -79,6 +78,8 @@ enum MessageContentBridge {
                 segments.append(.markdown(fencedMarkdown(code: code, language: language)))
             case .inlineImage(let data):
                 segments.append(.inlineImage(data))
+            case .localImage:
+                break
             }
         }
 
@@ -128,44 +129,6 @@ private extension AppToolCallKind {
         case .widget: return .widget
         case .unknown: return nil
         }
-    }
-}
-
-private extension AppCodeReviewPayload {
-    func toConversationCodeReviewData() -> ConversationCodeReviewData {
-        ConversationCodeReviewData(
-            findings: findings.map { $0.toConversationCodeReviewFinding() },
-            overallCorrectness: overallCorrectness,
-            overallExplanation: overallExplanation,
-            overallConfidenceScore: overallConfidenceScore
-        )
-    }
-}
-
-private extension AppCodeReviewFinding {
-    func toConversationCodeReviewFinding() -> ConversationCodeReviewFinding {
-        ConversationCodeReviewFinding(
-            title: title,
-            body: body,
-            confidenceScore: confidenceScore,
-            priority: priority.map(Int.init),
-            codeLocation: codeLocation?.toConversationCodeReviewLocation()
-        )
-    }
-}
-
-private extension AppCodeReviewCodeLocation {
-    func toConversationCodeReviewLocation() -> ConversationCodeReviewLocation {
-        ConversationCodeReviewLocation(
-            absoluteFilePath: absoluteFilePath,
-            lineRange: lineRange?.toConversationCodeReviewLineRange()
-        )
-    }
-}
-
-private extension AppCodeReviewLineRange {
-    func toConversationCodeReviewLineRange() -> ConversationCodeReviewLineRange {
-        ConversationCodeReviewLineRange(start: Int(start), end: Int(end))
     }
 }
 

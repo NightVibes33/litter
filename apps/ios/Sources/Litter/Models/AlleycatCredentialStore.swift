@@ -25,9 +25,24 @@ final class AlleycatCredentialStore {
 
     private init() {}
 
+    /// Tokens are read on every reconnect for every Kittylitter computer;
+    /// keep them in memory after the first Keychain hit.
+    private let cacheLock = NSLock()
+    private var tokenCache: [String: String] = [:]
+
     func loadToken(nodeId: String) throws -> String? {
+        let key = normalizedNodeId(nodeId)
+        cacheLock.lock()
+        let cached = tokenCache[key]
+        cacheLock.unlock()
+        if let cached { return cached }
+
+        // Match device-only and iCloud items: a pre-release build could move
+        // tokens to iCloud Keychain, and those must still be found.
         let query = baseQuery(nodeId: nodeId).merging([
+            kSecAttrSynchronizable as String: kSecAttrSynchronizableAny,
             kSecReturnData as String: true,
+            kSecReturnAttributes as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]) { _, new in new }
 
@@ -35,10 +50,17 @@ final class AlleycatCredentialStore {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         switch status {
         case errSecSuccess:
-            guard let data = item as? Data else { throw AlleycatCredentialStoreError.decodingFailed }
-            guard let token = String(data: data, encoding: .utf8), !token.isEmpty else {
+            guard let attributes = item as? [String: Any],
+                  let data = attributes[kSecValueData as String] as? Data,
+                  let token = String(data: data, encoding: .utf8), !token.isEmpty else {
                 throw AlleycatCredentialStoreError.decodingFailed
             }
+            if (attributes[kSecAttrSynchronizable as String] as? Bool) == true {
+                moveToDeviceOnly(token, nodeId: nodeId)
+            }
+            cacheLock.lock()
+            tokenCache[key] = token
+            cacheLock.unlock()
             return token
         case errSecItemNotFound:
             return nil
@@ -47,37 +69,66 @@ final class AlleycatCredentialStore {
         }
     }
 
+    /// Tokens are device-only: `AfterFirstUnlockThisDeviceOnly`, never
+    /// synchronizable. Adds the item, or updates it in place if it exists,
+    /// so a failed write never removes a working token.
     func saveToken(_ token: String, nodeId: String) throws {
         guard let data = token.data(using: .utf8) else {
             throw AlleycatCredentialStoreError.encodingFailed
         }
 
-        let query = baseQuery(nodeId: nodeId)
+        let query = baseQuery(nodeId: nodeId).merging([
+            kSecAttrSynchronizable as String: false
+        ]) { _, new in new }
         let attributes = query.merging([
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
             kSecValueData as String: data
         ]) { _, new in new }
 
-        let status = SecItemAdd(attributes as CFDictionary, nil)
+        var status = SecItemAdd(attributes as CFDictionary, nil)
         if status == errSecDuplicateItem {
             let updates: [String: Any] = [
                 kSecValueData as String: data,
-                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             ]
-            let updateStatus = SecItemUpdate(query as CFDictionary, updates as CFDictionary)
-            guard updateStatus == errSecSuccess else {
-                throw AlleycatCredentialStoreError.keychain(updateStatus)
-            }
-            return
+            status = SecItemUpdate(query as CFDictionary, updates as CFDictionary)
         }
-
         guard status == errSecSuccess else {
             throw AlleycatCredentialStoreError.keychain(status)
+        }
+        cacheLock.lock()
+        tokenCache[normalizedNodeId(nodeId)] = token
+        cacheLock.unlock()
+    }
+
+    /// Moves a token that a pre-release build put in iCloud Keychain back to
+    /// device-only. Writes the device-only copy first and deletes the iCloud
+    /// copy only once that succeeded, so the token is never lost.
+    private func moveToDeviceOnly(_ token: String, nodeId: String) {
+        do {
+            try saveToken(token, nodeId: nodeId)
+        } catch {
+            LLog.error("alleycat", "moving token to device-only keychain failed", error: error)
+            return
+        }
+        let synced = baseQuery(nodeId: nodeId).merging([
+            kSecAttrSynchronizable as String: true
+        ]) { _, new in new }
+        let status = SecItemDelete(synced as CFDictionary)
+        if status != errSecSuccess && status != errSecItemNotFound {
+            LLog.error("alleycat", "deleting iCloud keychain token failed", error: AlleycatCredentialStoreError.keychain(status))
         }
     }
 
     func deleteToken(nodeId: String) throws {
-        let status = SecItemDelete(baseQuery(nodeId: nodeId) as CFDictionary)
+        cacheLock.lock()
+        tokenCache[normalizedNodeId(nodeId)] = nil
+        cacheLock.unlock()
+        // Both the device-only item and any iCloud copy.
+        let query = baseQuery(nodeId: nodeId).merging([
+            kSecAttrSynchronizable as String: kSecAttrSynchronizableAny
+        ]) { _, new in new }
+        let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw AlleycatCredentialStoreError.keychain(status)
         }

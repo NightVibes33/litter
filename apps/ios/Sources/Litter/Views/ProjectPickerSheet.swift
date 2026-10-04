@@ -3,10 +3,13 @@ import SwiftUI
 struct ProjectPickerSheet: View {
     let projects: [AppProject]
     let serverNamesById: [String: String]
+    /// Precomputed set of local server IDs so rows don't each read
+    /// `appModel.snapshot` (which would create N observation edges and
+    /// re-render every row per streaming token).
+    let localServerIds: Set<String>
     let onSelect: (AppProject) -> Void
     let onCreateNew: () -> Void
     @Environment(\.dismiss) private var dismiss
-    @Environment(AppModel.self) private var appModel
     @State private var query = ""
 
     private var filtered: [AppProject] {
@@ -41,7 +44,7 @@ struct ProjectPickerSheet: View {
                         onCreateNew()
                     } label: {
                         Label("New Project", systemImage: "plus")
-                            .foregroundStyle(LitterTheme.accent)
+                            .foregroundStyle(LitterTheme.textPrimary)
                     }
                 }
             }
@@ -55,7 +58,7 @@ struct ProjectPickerSheet: View {
             TextField("Search projects", text: $query)
                 .litterFont(.body)
                 .foregroundStyle(LitterTheme.textPrimary)
-                .tint(LitterTheme.accent)
+                .tint(LitterTheme.textPrimary)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
             if !query.isEmpty {
@@ -66,8 +69,8 @@ struct ProjectPickerSheet: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, LitterSpace.margin)
+        .padding(.vertical, LitterSpace.m)
     }
 
     @ViewBuilder
@@ -79,7 +82,6 @@ struct ProjectPickerSheet: View {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(filtered, id: \.id) { project in
                         row(for: project)
-                        Divider().opacity(0.15)
                     }
                 }
             }
@@ -92,33 +94,27 @@ struct ProjectPickerSheet: View {
             dismiss()
         } label: {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "folder")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(LitterTheme.textSecondary)
-                    .frame(width: 22, alignment: .center)
-                    .padding(.top, 2)
-
                 VStack(alignment: .leading, spacing: 2) {
                     Text(projectDefaultLabel(cwd: project.cwd))
-                        .litterFont(.body, weight: .semibold)
+                        .litterFont(.body)
                         .foregroundStyle(LitterTheme.textPrimary)
                         .lineLimit(1)
-                    HStack(spacing: 6) {
+                    HStack(spacing: 0) {
                         if let serverName = serverNamesById[project.serverId] {
-                            Text(serverName)
-                                .foregroundStyle(LitterTheme.accent.opacity(0.75))
+                            Text("\(serverName) · ")
                         }
-                        Text(PathDisplay.display(project.cwd, isLocal: appModel.isLocalServer(serverId: project.serverId)))
-                            .foregroundStyle(LitterTheme.textMuted)
+                        Text(PathDisplay.display(project.cwd, isLocal: localServerIds.contains(project.serverId)))
+                            .truncationMode(.middle)
                     }
-                    .litterMonoFont(size: 11, weight: .regular)
+                    .litterMeta()
                     .lineLimit(1)
                 }
 
                 Spacer(minLength: 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, LitterSpace.margin)
+            .padding(.vertical, LitterSpace.m)
+            .frame(minHeight: 62, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -144,8 +140,9 @@ struct ProjectPickerSheet: View {
                     .litterFont(.footnote, weight: .semibold)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
-                    .background(Capsule().fill(LitterTheme.accent.opacity(0.15)))
-                    .foregroundStyle(LitterTheme.accent)
+                    .frame(minHeight: LitterSpace.hitTarget)
+                    .background(Capsule().fill(LitterTheme.textPrimary))
+                    .foregroundStyle(LitterTheme.surface)
             }
             .buttonStyle(.plain)
             .padding(.top, 4)

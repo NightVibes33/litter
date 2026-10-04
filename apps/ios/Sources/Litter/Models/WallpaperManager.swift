@@ -85,11 +85,14 @@ enum GranularityKind: String, CaseIterable, Identifiable {
 
 struct TypingEffectConfig: Codable, Equatable, Hashable {
     var effects: [String] = []
-    var revealDuration: Double = 0.5
-    var granularity: String = "Character"
-    var revealMode: String = "Continuous"
+    var revealDuration: Double = 0.03
+    var granularity: String = "Block"
+    var revealMode: String = "Linear"
 
-    static let `default` = TypingEffectConfig(effects: ["Fade Edge"], revealDuration: 0.5, granularity: "Character", revealMode: "Continuous")
+    /// Preserve the cadence delivered by the model. Decorative per-character
+    /// reveal made a fast SSE stream look delayed and choppy, especially when
+    /// reasoning and tool rows were interleaved with assistant text.
+    static let `default` = TypingEffectConfig()
 
     var activeEffect: StreamingEffectKind? {
         effects.first.flatMap { StreamingEffectKind(rawValue: $0) }
@@ -207,13 +210,6 @@ final class WallpaperManager {
         return nil
     }
 
-    func resolveConfigForServer(_ serverId: String) -> WallpaperConfig? {
-        if let cfg = prefs.servers[serverId], cfg.type != .none {
-            return cfg
-        }
-        return nil
-    }
-
     func setWallpaper(_ config: WallpaperConfig, scope: WallpaperScope) {
         switch scope {
         case .thread(let key):
@@ -310,12 +306,6 @@ final class WallpaperManager {
         }
         savePrefs()
         version += 1
-    }
-
-    func setActiveThreadKey(_ key: ThreadKey?) {
-        guard activeThreadKey != key else { return }
-        activeThreadKey = key
-        refreshResolved()
     }
 
     func cleanup(knownServerIds: Set<String>, knownThreadKeys: Set<String>) {
@@ -510,13 +500,9 @@ final class WallpaperManager {
         version += 1
         resolvedConfig = resolveConfig(for: activeThreadKey)
         // Image resolution is deferred to view layer which has themeManager access
-        if resolvedConfig == nil || resolvedConfig?.type == .none {
+        if resolvedConfig == nil || resolvedConfig?.type == WallpaperType.none {
             resolvedWallpaperImage = nil
         }
-    }
-
-    func updateResolvedImage(_ image: UIImage?) {
-        resolvedWallpaperImage = image
     }
 
     func videoFileURL(for scope: WallpaperScope) -> URL {

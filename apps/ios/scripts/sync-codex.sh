@@ -6,10 +6,22 @@ IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$IOS_DIR/../.." && pwd)"
 SUBMODULE_DIR="$REPO_DIR/shared/third_party/codex"
 PATCH_FILES=(
-    # Refreshed aggregate patch for NightVibes33 codex base with GPT-6-Astra backport.
-    # Older per-feature patches are kept for history but no longer apply cleanly
-    # after the Astra Codex bridge bump.
-    "$REPO_DIR/patches/codex/mobile-bridge-codex-astra.patch"
+    "$REPO_DIR/patches/codex/mobile-crypto-compat.patch"
+    "$REPO_DIR/patches/codex/ios-exec-hook.patch"
+    "$REPO_DIR/patches/codex/thread-read-permissions.patch"
+    "$REPO_DIR/patches/codex/thread-list-fork-lineage.patch"
+    "$REPO_DIR/patches/codex/mobile-shell-snapshot-timeout.patch"
+    "$REPO_DIR/patches/codex/remote-app-server-websocket-cap.patch"
+    "$REPO_DIR/patches/codex/absolute-path-cross-platform.patch"
+    "$REPO_DIR/patches/codex/android-installation-id-lock.patch"
+    "$REPO_DIR/patches/codex/dynamic-tool-call-arguments-delta.patch"
+    "$REPO_DIR/patches/codex/approval-timestamps-serde-default.patch"
+    "$REPO_DIR/patches/codex/realtime-webrtc-env-apikey.patch"
+    # Realtime multi-server orchestrator (split from old client-controlled-handoff.patch).
+    # Apply order: server-hint adds the realtime_v2_session_tools helper consumed by dynamic-tools.
+    "$REPO_DIR/patches/codex/realtime-handoff-server-hint.patch"
+    "$REPO_DIR/patches/codex/realtime-dynamic-tools.patch"
+    "$REPO_DIR/patches/codex/realtime-client-controlled-handoff.patch"
 )
 
 patch_already_upstreamed() {
@@ -27,7 +39,10 @@ case "$SYNC_MODE" in
 esac
 
 echo "==> Syncing codex submodule..."
-if ! git -C "$SUBMODULE_DIR" rev-parse --verify HEAD >/dev/null 2>&1; then
+# An uninitialized submodule is an empty directory without its own .git file.
+# `git -C` alone is not sufficient here: Git walks up to the parent worktree
+# and can incorrectly report the superproject's HEAD as the submodule HEAD.
+if [ ! -e "$SUBMODULE_DIR/.git" ] || ! git -C "$SUBMODULE_DIR" rev-parse --verify HEAD >/dev/null 2>&1; then
     git -C "$REPO_DIR" submodule update --init --recursive shared/third_party/codex
 elif [ "$SYNC_MODE" = "--recorded-gitlink" ]; then
     git -C "$REPO_DIR" submodule update --init --recursive shared/third_party/codex
@@ -70,13 +85,10 @@ for PATCH_FILE in "${PATCH_FILES[@]}"; do
         # style hunks. Some hand-crafted patches omit the `diff --git` line
         # for their first file; without the `--- a/` fallback those files
         # get dropped from the content-check and cause false negatives.
-        patch_target_list="$(mktemp)"
-        { grep '^diff --git' "$PATCH_FILE" | sed 's|.*b/||'; \
-          grep '^--- a/' "$PATCH_FILE" | sed 's|^--- a/||'; } | sort -u > "$patch_target_list"
         while IFS= read -r pf; do
             [ -f "$SUBMODULE_DIR/$pf" ] && patch_targets+=("$SUBMODULE_DIR/$pf")
-        done < "$patch_target_list"
-        rm -f "$patch_target_list"
+        done < <({ grep '^diff --git' "$PATCH_FILE" | sed 's|.*b/||'; \
+                    grep '^--- a/' "$PATCH_FILE" | sed 's|^--- a/||'; } | sort -u)
         added_lines=$(grep -m 5 '^+[^+]' "$PATCH_FILE" | sed 's/^+//')
         all_present=true
         if [ "${#patch_targets[@]}" -eq 0 ]; then

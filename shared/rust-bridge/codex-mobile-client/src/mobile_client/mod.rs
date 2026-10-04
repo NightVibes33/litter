@@ -2,7 +2,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex, RwLock};
+use std::sync::{Arc, Mutex as StdMutex, RwLock, Weak};
 use tokio::sync::{Mutex, broadcast};
 use tracing::{debug, info, trace, warn};
 use url::Url;
@@ -11,7 +11,6 @@ use crate::alleycat::{
     AgentInfo as AlleycatAgentInfo, AgentWire as AlleycatAgentWire, AlleycatReconnectTransport,
     ParsedPairPayload as ParsedAlleycatPairPayload,
 };
-use crate::discovery::{DiscoveredServer, DiscoveryConfig, DiscoveryService, MdnsSeed};
 use crate::session::connection::InProcessConfig;
 use crate::session::connection::{
     RemoteSessionExtras, RuntimeRemoteSessionResource, ServerConfig, ServerEvent, ServerSession,
@@ -25,6 +24,7 @@ use crate::store::snapshot::ServerMutatingCommandKind;
 use crate::store::{
     AppConnectionProgressSnapshot, AppQueuedFollowUpKind, AppQueuedFollowUpPreview, AppSnapshot,
     AppStoreReducer, AppStoreUpdateRecord, ServerHealthSnapshot, ThreadSnapshot,
+    TurnPaginationSupport,
 };
 use crate::transport::{RpcError, TransportError};
 use crate::types::{
@@ -38,6 +38,7 @@ use codex_app_server_protocol as upstream;
 mod dynamic_tools;
 mod event_loop;
 pub(crate) mod minigame;
+mod model_catalog;
 mod store_listener;
 #[cfg(test)]
 mod tests;
@@ -54,18 +55,16 @@ pub use self::thread_projection::{
 /// Top-level entry point for platform code (iOS / Android).
 ///
 /// Ties together server sessions, thread management, event processing,
-/// discovery, auth, caching, and voice handoff into a single facade.
+/// auth, caching, and voice handoff into a single facade.
 /// All methods are safe to call from any thread (`Send + Sync`).
 pub struct MobileClient {
     pub(crate) sessions: Arc<RwLock<HashMap<String, Arc<ServerSession>>>>,
     pub(crate) event_processor: Arc<EventProcessor>,
     pub app_store: Arc<AppStoreReducer>,
     pub agent_metadata: Arc<crate::store::AgentMetadataStore>,
-    pub(crate) discovery: RwLock<DiscoveryService>,
     oauth_callback_tunnels: Arc<Mutex<HashMap<String, OAuthCallbackTunnel>>>,
     slingshot_apis: Arc<StdMutex<HashMap<String, codex_slingshot::SlingshotApi>>>,
     pub(crate) recorder: Arc<crate::recorder::MessageRecorder>,
-    pub(crate) ambient_cache: crate::ambient_suggestions::AmbientCache,
     /// One-shot hooks that fulfill when the next `show_widget` dynamic tool
     /// call finalizes on a specific thread. Keyed by `thread_id`.
     /// Used by `AppClient::update_saved_app`.
@@ -81,8 +80,15 @@ pub struct MobileClient {
     /// session token so cold launches can reconnect without another browser
     /// step-up while the token remains valid.
     pub(crate) slingshot_credentials_directory: Arc<StdMutex<Option<String>>>,
+    /// Directory where small local app preferences live. Used by Rust-only
+    /// helpers that need process-restart persistence without expanding the
+    /// public preferences record.
+    pub(crate) mobile_preferences_directory: Arc<StdMutex<Option<String>>>,
     direct_resumed_threads: Arc<StdMutex<HashSet<ThreadKey>>>,
+    resume_locks: Arc<StdMutex<HashMap<ThreadKey, Weak<tokio::sync::Mutex<()>>>>>,
     thread_runtime_routes: Arc<StdMutex<HashMap<ThreadKey, AgentRuntimeKind>>>,
+    model_catalog_refreshes: StdMutex<HashMap<String, model_catalog::ModelCatalogRefresh>>,
+    model_catalog_locks: StdMutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
     /// Single shared iroh `Endpoint` for all alleycat operations. iroh is
     /// designed for one-per-app reuse: `Endpoint::connect(&self, ...)`
     /// takes `&self` so it can be called many times to open new
@@ -114,6 +120,8 @@ pub struct MobileClient {
     /// the underlying PTY / SSH channel alive while renderers come and go.
     pub(crate) terminal_sessions:
         Arc<StdMutex<HashMap<String, Arc<crate::terminal::TerminalSession>>>>,
+    /// Platform-owned SSH host-key pins shared by server and terminal flows.
+    pub(crate) ssh_trust_store: Arc<StdMutex<Option<Arc<crate::terminal::TerminalSshTrustStore>>>>,
 }
 
 /// State for a single in-flight guided SSH connect.
@@ -166,8 +174,12 @@ const MCP_URL_FINISHED_LABEL: &str = "I finished";
 const SLINGSHOT_CREDENTIALS_DIR_NAME: &str = "slingshot";
 const SLINGSHOT_CREDENTIALS_VERSION: u32 = 1;
 const SLINGSHOT_TOKEN_REFRESH_SKEW_SECS: i64 = 30;
-const SLINGSHOT_INITIALIZE_TIMEOUT_RETRY_ATTEMPTS: usize = 3;
-const SLINGSHOT_INITIALIZE_TIMEOUT_RETRY_DELAY_SECS: u64 = 5;
+const SLINGSHOT_INITIALIZE_TIMEOUT_RETRY_ATTEMPTS: usize = 2;
+const SLINGSHOT_INITIALIZE_TIMEOUT_RETRY_DELAY_SECS: u64 = 0;
+const ALLEYCAT_AGENT_INVENTORY_REFRESH_DELAYS_MS: [u64; 3] = [500, 1_000, 1_500];
+const ALLEYCAT_AGENT_DIAL_RETRY_DELAYS_MS: [u64; 2] = [500, 1_000];
+const ALLEYCAT_CONTROLLER_AGENT_DIAL_RETRY_DELAYS_MS: [u64; 6] =
+    [250, 500, 750, 1_000, 1_500, 2_000];
 
 pub(crate) fn slingshot_user_agent() -> String {
     let arch = slingshot_user_agent_arch();
@@ -279,6 +291,18 @@ fn should_fallback_to_thread_metadata_after_resume_error(error: &str) -> bool {
     let lower = error.to_ascii_lowercase();
     lower.contains("no rollout found for thread id")
         || lower.contains("remote app-server worker channel is closed")
+}
+
+/// Runtime errors that mean "this thread exists but its history cannot be
+/// replayed", mapped to the sentence shown in place of the transcript.
+fn history_unavailable_reason(error: &str) -> Option<&'static str> {
+    let lower = error.to_ascii_lowercase();
+    if lower.contains("stored session working directory does not exist") {
+        return Some(
+            "This session's working directory no longer exists on the host, so the agent cannot reopen it. Restore the directory to see its history.",
+        );
+    }
+    None
 }
 
 fn should_try_next_runtime_after_thread_lookup_error(error: &str) -> bool {
@@ -398,6 +422,14 @@ fn mcp_elicitation_response_json(
             RpcError::Deserialization(format!("deserialize MCP elicitation params: {error}"))
         })?;
     let response = match &params.request {
+        upstream::McpServerElicitationRequest::UserVerification { .. }
+        | upstream::McpServerElicitationRequest::OpenAiElicitationForm { .. } => {
+            upstream::McpServerElicitationRequestResponse {
+                action: upstream::McpServerElicitationAction::Cancel,
+                content: None,
+                meta: None,
+            }
+        }
         upstream::McpServerElicitationRequest::Form {
             requested_schema, ..
         } if requested_schema.properties.is_empty() => {
@@ -678,11 +710,31 @@ fn missing_runtime_kinds(
         .collect::<HashSet<_>>();
     let mut missing = requested_runtime_kinds
         .iter()
+        .filter(|&kind| !existing.contains(kind))
         .cloned()
-        .filter(|kind| !existing.contains(kind))
         .collect::<Vec<_>>();
     missing.sort();
     missing
+}
+
+/// A first `thread/turns/list` page that is exactly full and carries no
+/// cursor is ambiguous: either history ends there, or the runtime cut the
+/// list to `limit` without being able to page (the Claude and Pi bridges
+/// truncate this way). Callers resolve it with one unbounded read.
+fn page_may_be_truncated_without_cursor(
+    limit: Option<u32>,
+    returned_turns: usize,
+    has_next_cursor: bool,
+) -> bool {
+    !has_next_cursor && limit.is_some_and(|limit| limit > 0 && returned_turns >= limit as usize)
+}
+
+fn can_reuse_waited_resume(
+    waited: bool,
+    force_authoritative: bool,
+    has_direct_resume_marker: bool,
+) -> bool {
+    waited && !force_authoritative && has_direct_resume_marker
 }
 
 fn alleycat_requested_runtime_kinds(
@@ -694,6 +746,59 @@ fn alleycat_requested_runtime_kinds(
         .collect()
 }
 
+fn is_local_studio_controller(server_id: &str) -> bool {
+    server_id.starts_with("alleycat:local-studio:")
+}
+
+fn alleycat_agent_is_requested(
+    local_studio_controller: bool,
+    selected_agent_names: &HashSet<String>,
+    agent_name: &str,
+) -> bool {
+    if local_studio_controller {
+        return agent_name == "local-studio";
+    }
+    selected_agent_names.is_empty() || selected_agent_names.contains(agent_name)
+}
+
+fn merge_alleycat_agent_inventory(
+    inventory: &mut Vec<AlleycatAgentInfo>,
+    refreshed: Vec<AlleycatAgentInfo>,
+) {
+    for agent in refreshed {
+        if let Some(existing) = inventory
+            .iter_mut()
+            .find(|existing| existing.name == agent.name)
+        {
+            *existing = agent;
+        } else {
+            inventory.push(agent);
+        }
+    }
+}
+
+fn alleycat_controller_inventory_ready(inventory: &[AlleycatAgentInfo]) -> bool {
+    inventory
+        .iter()
+        .any(|agent| agent.available && agent.name == "local-studio")
+}
+
+fn alleycat_inventory_refresh_delays(wait_for_registration: bool) -> &'static [u64] {
+    if wait_for_registration {
+        &ALLEYCAT_AGENT_INVENTORY_REFRESH_DELAYS_MS
+    } else {
+        &[]
+    }
+}
+
+fn alleycat_dial_retry_delays(use_all_controller_agents: bool) -> &'static [u64] {
+    if use_all_controller_agents {
+        &ALLEYCAT_CONTROLLER_AGENT_DIAL_RETRY_DELAYS_MS
+    } else {
+        &ALLEYCAT_AGENT_DIAL_RETRY_DELAYS_MS
+    }
+}
+
 impl MobileClient {
     /// Create a new `MobileClient`.
     pub fn new() -> Self {
@@ -701,31 +806,43 @@ impl MobileClient {
         let event_processor = Arc::new(EventProcessor::new());
         let app_store = Arc::new(AppStoreReducer::new());
         let sessions = Arc::new(RwLock::new(HashMap::new()));
+        let mobile_preferences_directory = Arc::new(StdMutex::new(None));
         spawn_store_listener(
             Arc::clone(&app_store),
             Arc::clone(&sessions),
+            Arc::clone(&mobile_preferences_directory),
             event_processor.subscribe(),
         );
         Self {
             sessions,
             event_processor,
             app_store,
-            agent_metadata: crate::store::AgentMetadataStore::new(),
-            discovery: RwLock::new(DiscoveryService::new(DiscoveryConfig::default())),
+            agent_metadata: crate::store::AgentMetadataStore::with_builtin_catalog(),
             oauth_callback_tunnels: Arc::new(Mutex::new(HashMap::new())),
             slingshot_apis: Arc::new(StdMutex::new(HashMap::new())),
             recorder: Arc::new(crate::recorder::MessageRecorder::new()),
-            ambient_cache: crate::ambient_suggestions::new_ambient_cache(),
             widget_waiters: Arc::new(StdMutex::new(HashMap::new())),
             saved_apps_directory: Arc::new(StdMutex::new(None)),
+            mobile_preferences_directory,
             slingshot_credentials_directory: Arc::new(StdMutex::new(None)),
             direct_resumed_threads: Arc::new(StdMutex::new(HashSet::new())),
+            resume_locks: Arc::new(StdMutex::new(HashMap::new())),
             thread_runtime_routes: Arc::new(StdMutex::new(HashMap::new())),
+            model_catalog_refreshes: StdMutex::new(HashMap::new()),
+            model_catalog_locks: StdMutex::new(HashMap::new()),
             alleycat_endpoint: Arc::new(tokio::sync::OnceCell::new()),
             alleycat_secret_key: Arc::new(StdMutex::new(None)),
             ssh_bootstrap_flows: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             alleycat_restart_targets: Arc::new(StdMutex::new(HashMap::new())),
             terminal_sessions: Arc::new(StdMutex::new(HashMap::new())),
+            ssh_trust_store: Arc::new(StdMutex::new(None)),
+        }
+    }
+
+    pub fn set_ssh_trust_store(&self, store: Arc<crate::terminal::TerminalSshTrustStore>) {
+        match self.ssh_trust_store.lock() {
+            Ok(mut guard) => *guard = Some(store),
+            Err(error) => *error.into_inner() = Some(store),
         }
     }
 
@@ -914,6 +1031,71 @@ impl MobileClient {
         }
     }
 
+    pub(crate) fn set_mobile_preferences_directory(&self, directory: String) {
+        let mut guard = self
+            .mobile_preferences_directory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let first_directory = guard.is_none() && !directory.is_empty();
+        *guard = if directory.is_empty() {
+            None
+        } else {
+            Some(directory.clone())
+        };
+        drop(guard);
+        // Seed the home launch cache once, before servers reconnect, so the
+        // first snapshot already lists recent sessions.
+        if first_directory {
+            crate::alleycat::set_direct_addr_cache_directory(&directory);
+            self.app_store
+                .seed_cached_session_summaries(crate::home_cache::load(&directory));
+        }
+    }
+
+    pub(crate) fn mobile_preferences_directory(&self) -> Option<String> {
+        self.mobile_preferences_directory
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn persisted_thread_collaboration_mode(&self, key: &ThreadKey) -> Option<AppModeKind> {
+        let directory = self.mobile_preferences_directory()?;
+        crate::thread_modes::read_mode(&directory, key)
+    }
+
+    fn persist_thread_collaboration_mode(&self, key: &ThreadKey, mode: AppModeKind) {
+        let Some(directory) = self.mobile_preferences_directory() else {
+            return;
+        };
+        crate::thread_modes::set_mode(&directory, key, mode);
+    }
+
+    pub(crate) fn apply_persisted_thread_collaboration_mode(&self, thread: &mut ThreadSnapshot) {
+        if let Some(mode) = self.persisted_thread_collaboration_mode(&thread.key) {
+            thread.collaboration_mode = mode;
+        }
+    }
+
+    pub(crate) fn apply_persisted_thread_modes_to_infos(
+        &self,
+        server_id: &str,
+        threads: &[ThreadInfo],
+    ) {
+        if self.mobile_preferences_directory().is_none() {
+            return;
+        }
+        for info in threads {
+            let key = ThreadKey {
+                server_id: server_id.to_string(),
+                thread_id: info.id.clone(),
+            };
+            if let Some(mode) = self.persisted_thread_collaboration_mode(&key) {
+                self.app_store.set_thread_collaboration_mode(&key, mode);
+            }
+        }
+    }
+
     fn direct_resumed_threads(&self) -> std::sync::MutexGuard<'_, HashSet<ThreadKey>> {
         match self.direct_resumed_threads.lock() {
             Ok(guard) => guard,
@@ -922,6 +1104,20 @@ impl MobileClient {
                 error.into_inner()
             }
         }
+    }
+
+    fn resume_lock(&self, key: &ThreadKey) -> Arc<tokio::sync::Mutex<()>> {
+        let mut locks = self.resume_locks.lock().unwrap_or_else(|error| {
+            warn!("MobileClient: recovering poisoned resume lock map");
+            error.into_inner()
+        });
+        locks.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = locks.get(key).and_then(Weak::upgrade) {
+            return lock;
+        }
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        locks.insert(key.clone(), Arc::downgrade(&lock));
+        lock
     }
 
     fn thread_runtime_routes(
@@ -979,6 +1175,18 @@ impl MobileClient {
             if let Some(runtime_kind) = runtime_for_model_hint(model) {
                 return runtime_kind;
             }
+        }
+
+        if self
+            .app_store
+            .snapshot()
+            .servers
+            .get(server_id)
+            .is_some_and(|server| {
+                server.agent_runtimes.len() == 1 && server.agent_runtimes[0].kind == "local-studio"
+            })
+        {
+            return "local-studio".to_string();
         }
 
         "codex".to_string()
@@ -1061,8 +1269,24 @@ impl MobileClient {
         runtime_kind: AgentRuntimeKind,
         request: &mut upstream::ClientRequest,
     ) {
+        if runtime_kind == "codex" {
+            let config = match request {
+                upstream::ClientRequest::ThreadStart { params, .. } => Some(&mut params.config),
+                upstream::ClientRequest::ThreadResume { params, .. } => Some(&mut params.config),
+                upstream::ClientRequest::ThreadFork { params, .. } => Some(&mut params.config),
+                _ => None,
+            };
+            if let Some(config) = config {
+                // Background mobile work must not execute desktop login hooks,
+                // either for each tool command or while capturing a shell snapshot.
+                let config = config.get_or_insert_with(Default::default);
+                config.insert("allow_login_shell".into(), serde_json::json!(false));
+                config.insert("features.shell_snapshot".into(), serde_json::json!(false));
+            }
+        }
         let supports_permission_overrides =
             self.runtime_supports_thread_permission_overrides(&runtime_kind);
+        let defaults_to_full_access = runtime_kind == "pi" || runtime_kind == "local-studio";
         match request {
             upstream::ClientRequest::ThreadStart { params, .. } => {
                 self.normalize_thread_model_for_runtime(
@@ -1070,7 +1294,10 @@ impl MobileClient {
                     runtime_kind.clone(),
                     &mut params.model,
                 );
-                if !supports_permission_overrides {
+                if defaults_to_full_access {
+                    params.approval_policy = Some(upstream::AskForApproval::Never);
+                    params.sandbox = Some(upstream::SandboxMode::DangerFullAccess);
+                } else if !supports_permission_overrides {
                     params.approval_policy = None;
                     params.sandbox = None;
                 }
@@ -1081,7 +1308,10 @@ impl MobileClient {
                     runtime_kind.clone(),
                     &mut params.model,
                 );
-                if !supports_permission_overrides {
+                if defaults_to_full_access {
+                    params.approval_policy = Some(upstream::AskForApproval::Never);
+                    params.sandbox = Some(upstream::SandboxMode::DangerFullAccess);
+                } else if !supports_permission_overrides {
                     params.approval_policy = None;
                     params.sandbox = None;
                 }
@@ -1092,7 +1322,10 @@ impl MobileClient {
                     runtime_kind.clone(),
                     &mut params.model,
                 );
-                if !supports_permission_overrides {
+                if defaults_to_full_access {
+                    params.approval_policy = Some(upstream::AskForApproval::Never);
+                    params.sandbox = Some(upstream::SandboxMode::DangerFullAccess);
+                } else if !supports_permission_overrides {
                     params.approval_policy = None;
                     params.sandbox = None;
                 }
@@ -1104,7 +1337,10 @@ impl MobileClient {
                 {
                     params.model = Some(resolved);
                 }
-                if !supports_permission_overrides {
+                if defaults_to_full_access {
+                    params.approval_policy = Some(upstream::AskForApproval::Never);
+                    params.sandbox_policy = Some(upstream::SandboxPolicy::DangerFullAccess);
+                } else if !supports_permission_overrides {
                     params.approval_policy = None;
                     params.sandbox_policy = None;
                 }
@@ -1127,7 +1363,7 @@ impl MobileClient {
                 .runtime_for_selected_model(&key.server_id, model)
                 .or_else(|| runtime_for_model_hint(model));
             if let Some(runtime_kind) = runtime_kind
-                && runtime_kind != "codex".to_string()
+                && runtime_kind != "codex"
             {
                 return Some(runtime_kind);
             }
@@ -1138,7 +1374,7 @@ impl MobileClient {
             .model_provider
             .as_deref()
             .and_then(runtime_for_model_hint)
-            .filter(|runtime_kind| *runtime_kind != "codex".to_string())
+            .filter(|runtime_kind| runtime_kind != "codex")
         {
             return Some(runtime_kind);
         }
@@ -1205,47 +1441,6 @@ impl MobileClient {
         .map_err(RpcClientError::Rpc)
     }
 
-    #[allow(dead_code)]
-    pub(crate) async fn server_thread_list(
-        &self,
-        server_id: &str,
-        params: upstream::ThreadListParams,
-    ) -> Result<upstream::ThreadListResponse, crate::RpcClientError> {
-        use crate::{RpcClientError, next_request_id};
-        let runtime_kinds = self
-            .get_session(server_id)
-            .map_err(|error| RpcClientError::Rpc(error.to_string()))?
-            .runtime_kinds();
-        let mut merged = upstream::ThreadListResponse {
-            data: Vec::new(),
-            next_cursor: None,
-            backwards_cursor: None,
-        };
-
-        for runtime_kind in runtime_kinds {
-            let response: upstream::ThreadListResponse = self
-                .request_typed_for_server_runtime(
-                    server_id,
-                    runtime_kind,
-                    upstream::ClientRequest::ThreadList {
-                        request_id: upstream::RequestId::Integer(next_request_id()),
-                        params: params.clone(),
-                    },
-                )
-                .await
-                .map_err(RpcClientError::Rpc)?;
-            merged.data.extend(response.data);
-            if merged.next_cursor.is_none() {
-                merged.next_cursor = response.next_cursor;
-            }
-            if merged.backwards_cursor.is_none() {
-                merged.backwards_cursor = response.backwards_cursor;
-            }
-        }
-
-        Ok(merged)
-    }
-
     pub(crate) async fn server_collaboration_mode_list(
         &self,
         server_id: &str,
@@ -1267,26 +1462,6 @@ impl MobileClient {
             .into_iter()
             .filter_map(|mask| AppCollaborationModePreset::try_from(mask).ok())
             .collect())
-    }
-
-    fn discovery_write(&self) -> std::sync::RwLockWriteGuard<'_, DiscoveryService> {
-        match self.discovery.write() {
-            Ok(guard) => guard,
-            Err(error) => {
-                warn!("MobileClient: recovering poisoned discovery write lock");
-                error.into_inner()
-            }
-        }
-    }
-
-    fn discovery_read(&self) -> std::sync::RwLockReadGuard<'_, DiscoveryService> {
-        match self.discovery.read() {
-            Ok(guard) => guard,
-            Err(error) => {
-                warn!("MobileClient: recovering poisoned discovery read lock");
-                error.into_inner()
-            }
-        }
     }
 
     async fn clear_oauth_callback_tunnel(&self, server_id: &str) {
@@ -1673,27 +1848,53 @@ impl MobileClient {
     pub async fn list_alleycat_agents(
         &self,
         params: ParsedAlleycatPairPayload,
+        wait_for_registration: bool,
     ) -> Result<Vec<AlleycatAgentInfo>, TransportError> {
         let endpoint = self
             .alleycat_endpoint()
             .await
             .map_err(|error| TransportError::ConnectionFailed(error.to_string()))?;
-        let agents = crate::alleycat::list_agents(&endpoint, params)
+        let mut agents = crate::alleycat::list_agents(&endpoint, params.clone())
             .await
             .map_err(|error| TransportError::ConnectionFailed(error.to_string()))?;
+        for delay_ms in alleycat_inventory_refresh_delays(wait_for_registration) {
+            // The refresh loop only exists to wait for a Local Studio
+            // controller to register its `local-studio` agent. Once it is
+            // listed as available there is nothing left to wait for; polling
+            // anyway added a fixed ~3s to every controller pair and connect.
+            if alleycat_controller_inventory_ready(&agents) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(*delay_ms)).await;
+            match crate::alleycat::list_agents(&endpoint, params.clone()).await {
+                Ok(refreshed) => merge_alleycat_agent_inventory(&mut agents, refreshed),
+                Err(error) => warn!(
+                    "MobileClient: Alleycat inventory refresh failed node_id={} delay_ms={} error={}",
+                    params.node_id, delay_ms, error
+                ),
+            }
+        }
         // Cache metadata so platforms can render labels/icons/capability
         // flags from anywhere in the app, not just at probe time.
-        self.agent_metadata
-            .upsert_all(agents.iter().map(|agent| crate::store::AppAgentMetadata {
+        // Reconciled against the built-in catalog first so a host can't
+        // erase what litter already knows, and so `supports_ssh_bridge`
+        // keeps meaning "litter can launch this over SSH" rather than
+        // "the alleycat host could".
+        self.agent_metadata.upsert_all(agents.iter().map(|agent| {
+            crate::store::agent_catalog::reconcile_probe_metadata(crate::store::AppAgentMetadata {
                 name: agent.name.clone(),
                 display_name: agent.display_name.clone(),
                 presentation: agent.presentation.clone().map(Into::into),
                 capabilities: agent.capabilities.clone().map(Into::into),
-            }));
+            })
+        }));
         Ok(agents)
     }
 
     fn runtime_supports_thread_permission_overrides(&self, runtime_kind: &str) -> bool {
+        if matches!(runtime_kind, "pi" | "local-studio") {
+            return false;
+        }
         self.agent_metadata
             .get(runtime_kind)
             .and_then(|metadata| metadata.capabilities)
@@ -1717,18 +1918,79 @@ impl MobileClient {
             "MobileClient: connect_remote_over_alleycat start server_id={} node_id={} agent={} selected_agents={:?} wire={:?}",
             server_id, params.node_id, agent_name, selected_agent_names, wire
         );
+        let local_studio_controller = is_local_studio_controller(&server_id);
         let selected_agent_names = selected_agent_names
             .into_iter()
             .map(|name| name.trim().to_string())
             .filter(|name| !name.is_empty())
+            .collect::<Vec<_>>();
+        let selected_agent_intent = if local_studio_controller {
+            "local-studio".to_string()
+        } else {
+            selected_agent_names.join(",")
+        };
+        let selected_agent_names = selected_agent_names
+            .into_iter()
             .collect::<std::collections::HashSet<_>>();
+        // Publish "connecting" before the inventory probe. Listing agents
+        // binds the iroh endpoint and makes a network round trip (plus, for a
+        // Local Studio controller, waits for the controller to register);
+        // before this the server stayed invisible or "offline" for that whole
+        // window. A healthy existing session is left alone so the
+        // short-circuit below never flickers it to connecting.
+        let early_visible_server_id = format!("alleycat:{}", params.node_id);
+        let early_server_id = if server_id.starts_with(&early_visible_server_id) {
+            early_visible_server_id
+        } else {
+            server_id.clone()
+        };
+        let has_healthy_session = self
+            .sessions_read()
+            .get(early_server_id.as_str())
+            .is_some_and(|session| {
+                matches!(
+                    *session.health().borrow(),
+                    crate::session::connection::ConnectionHealth::Connected
+                )
+            });
+        if !has_healthy_session {
+            self.app_store.upsert_server(
+                &ServerConfig {
+                    server_id: early_server_id.clone(),
+                    display_name: display_name.clone(),
+                    host: params.node_id.clone(),
+                    port: 0,
+                    websocket_url: Some(format!("ws://alleycat/{}", params.node_id)),
+                    is_local: false,
+                    tls: false,
+                },
+                ServerHealthSnapshot::Connecting,
+            );
+        }
+        let agent_inventory = match self
+            .list_alleycat_agents(params.clone(), local_studio_controller)
+            .await
+        {
+            Ok(agents) => agents,
+            Err(error) => {
+                if !has_healthy_session {
+                    self.app_store.update_server_health(
+                        early_server_id.as_str(),
+                        ServerHealthSnapshot::Disconnected,
+                    );
+                }
+                return Err(error);
+            }
+        };
         let mut seen_runtime_kinds = std::collections::HashSet::new();
-        let requested_agents = self
-            .list_alleycat_agents(params.clone())
-            .await?
+        let requested_agents = agent_inventory
             .into_iter()
             .filter_map(|agent| {
-                if !selected_agent_names.is_empty() && !selected_agent_names.contains(&agent.name) {
+                if !alleycat_agent_is_requested(
+                    local_studio_controller,
+                    &selected_agent_names,
+                    &agent.name,
+                ) {
                     return None;
                 }
                 let runtime_kind =
@@ -1740,18 +2002,29 @@ impl MobileClient {
             })
             .collect::<Vec<_>>();
         let runtime_agents = if requested_agents.is_empty() {
-            if !selected_agent_names.is_empty() && !selected_agent_names.contains(&agent_name) {
+            let fallback_agent_name = if local_studio_controller {
+                "local-studio".to_string()
+            } else {
+                agent_name.clone()
+            };
+            if !alleycat_agent_is_requested(
+                local_studio_controller,
+                &selected_agent_names,
+                &fallback_agent_name,
+            ) {
                 self.app_store
                     .update_server_health(server_id.as_str(), ServerHealthSnapshot::Disconnected);
                 return Err(TransportError::ConnectionFailed(
                     "no selected Alleycat runtime streams are available".to_string(),
                 ));
             }
+            let runtime_kind =
+                crate::alleycat::agent_runtime_kind(&fallback_agent_name, &fallback_agent_name)
+                    .unwrap_or("codex".to_string());
             vec![(
-                crate::alleycat::agent_runtime_kind(&agent_name, &agent_name)
-                    .unwrap_or("codex".to_string()),
+                runtime_kind,
                 AlleycatAgentInfo {
-                    name: agent_name.clone(),
+                    name: fallback_agent_name,
                     display_name: display_name.clone(),
                     wire,
                     available: true,
@@ -1764,6 +2037,11 @@ impl MobileClient {
         };
         let requested_runtime_kinds = alleycat_requested_runtime_kinds(&runtime_agents);
         let requested_agent_names = alleycat_runtime_agent_names(&runtime_agents);
+        let persisted_agent_names = if selected_agent_intent.is_empty() {
+            requested_agent_names.clone()
+        } else {
+            selected_agent_intent
+        };
         let visible_server_id = format!("alleycat:{}", params.node_id);
         let server_id = if server_id.starts_with(&visible_server_id) {
             visible_server_id
@@ -1796,7 +2074,7 @@ impl MobileClient {
                     return Ok(AlleycatConnectOutcome {
                         server_id,
                         node_id: params.node_id.clone(),
-                        agent_name: requested_agent_names,
+                        agent_name: persisted_agent_names,
                     });
                 }
                 info!(
@@ -1842,26 +2120,47 @@ impl MobileClient {
             }
         };
 
-        let mut runtime_resources = Vec::new();
-        let mut runtime_infos = Vec::new();
-        for (runtime_kind, agent) in runtime_agents {
+        let dial_retry_delays = alleycat_dial_retry_delays(local_studio_controller);
+        let dial_tasks = runtime_agents.into_iter().map(|(runtime_kind, agent)| {
             let reconnect_transport = AlleycatReconnectTransport::new(
                 params.clone(),
                 agent.name.clone(),
                 agent.wire,
                 endpoint.clone(),
             );
-            let (remote_client, alleycat_session) =
-                match reconnect_transport.connect_initial().await {
-                    Ok(result) => result,
-                    Err(error) => {
-                        warn!(
-                            "MobileClient: alleycat connect failed server_id={} agent={} error={}",
-                            server_id, agent.name, error
-                        );
-                        continue;
-                    }
-                };
+            async move {
+                let mut dialed = reconnect_transport.connect_initial().await;
+                for (attempt, delay_ms) in dial_retry_delays.iter().copied().enumerate() {
+                    let Err(crate::alleycat::AlleycatError::Transport(error)) = &dialed else {
+                        break;
+                    };
+                    warn!(
+                        "MobileClient: retrying Alleycat agent={} attempt={} error={}",
+                        agent.name,
+                        attempt + 1,
+                        error
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    dialed = reconnect_transport.connect_initial().await;
+                }
+                (runtime_kind, agent, reconnect_transport, dialed)
+            }
+        });
+        let mut runtime_resources = Vec::new();
+        let mut runtime_infos = Vec::new();
+        for (runtime_kind, agent, reconnect_transport, dialed) in
+            futures::future::join_all(dial_tasks).await
+        {
+            let (remote_client, alleycat_session) = match dialed {
+                Ok(result) => result,
+                Err(error) => {
+                    warn!(
+                        "MobileClient: alleycat connect failed server_id={} agent={} error={}",
+                        server_id, agent.name, error
+                    );
+                    continue;
+                }
+            };
             // Register the freshly-built session with the transport so
             // `close_current_connection()` can target this Connection
             // before the worker has had to call `reconnect()`.
@@ -1891,6 +2190,25 @@ impl MobileClient {
             return Err(TransportError::ConnectionFailed(
                 "no available Alleycat runtime streams connected".to_string(),
             ));
+        }
+        if local_studio_controller {
+            let connected_runtime_kinds = runtime_resources
+                .iter()
+                .map(|resource| resource.runtime_kind.clone())
+                .collect::<Vec<_>>();
+            let missing = missing_runtime_kinds(&connected_runtime_kinds, &requested_runtime_kinds);
+            if !missing.is_empty() {
+                warn!(
+                    "MobileClient: refusing incomplete Local Studio session server_id={} missing_runtimes={:?}",
+                    server_id, missing
+                );
+                self.app_store
+                    .update_server_health(server_id.as_str(), ServerHealthSnapshot::Disconnected);
+                return Err(TransportError::ConnectionFailed(format!(
+                    "Local Studio did not connect its advertised runtime: {}",
+                    missing.join(", ")
+                )));
+            }
         }
 
         info!(
@@ -1935,8 +2253,8 @@ impl MobileClient {
         // silently shrink to the survivors. Falls back to the connected
         // set if the user didn't explicitly select anything (legacy
         // single-agent callers).
-        let persisted_agents = if !requested_agent_names.is_empty() {
-            requested_agent_names
+        let persisted_agents = if !persisted_agent_names.is_empty() {
+            persisted_agent_names
         } else {
             runtime_infos
                 .iter()
@@ -2074,14 +2392,55 @@ impl MobileClient {
         // so resume can rebuild the full SSH transport.
         self.replace_existing_session(server_id.as_str()).await;
 
+        let normalized_host = crate::terminal::normalize_host(&ssh_credentials.host);
+        let trust_store = self
+            .ssh_trust_store
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        let pinned_fingerprint = trust_store
+            .as_ref()
+            .and_then(|store| store.pinned(normalized_host.clone(), ssh_credentials.port));
+        let policy_pin = pinned_fingerprint.clone();
+        let observed_fingerprint = Arc::new(tokio::sync::Mutex::new(None::<String>));
+        let callback_observed = Arc::clone(&observed_fingerprint);
         let ssh_client = Arc::new(
             SshClient::connect(
                 ssh_credentials.clone(),
-                Box::new(move |_fingerprint| Box::pin(async move { accept_unknown_host })),
+                Box::new(move |fingerprint| {
+                    let expected = policy_pin.clone();
+                    let observed = Arc::clone(&callback_observed);
+                    let fingerprint = fingerprint.to_string();
+                    Box::pin(async move {
+                        *observed.lock().await = Some(fingerprint.clone());
+                        match expected {
+                            Some(expected) => expected == fingerprint,
+                            None => accept_unknown_host,
+                        }
+                    })
+                }),
             )
             .await
-            .map_err(map_ssh_transport_error)?,
+            .map_err(|error| match error {
+                crate::ssh::SshError::HostKeyVerification { fingerprint } => {
+                    let marker = if pinned_fingerprint.is_some() {
+                        "host-key-changed"
+                    } else {
+                        "unknown-host"
+                    };
+                    TransportError::ConnectionFailed(format!("{marker}:{fingerprint}"))
+                }
+                other => map_ssh_transport_error(other),
+            })?,
         );
+        if let (Some(store), None, true) = (
+            trust_store.as_ref(),
+            pinned_fingerprint.as_ref(),
+            accept_unknown_host,
+        ) && let Some(fingerprint) = observed_fingerprint.lock().await.clone()
+        {
+            store.pin(normalized_host.clone(), ssh_credentials.port, fingerprint);
+        }
         info!(
             "MobileClient: SSH transport established server_id={} host={} ssh_port={}",
             config.server_id,
@@ -2090,10 +2449,33 @@ impl MobileClient {
         );
 
         let use_ipv6 = config.host.contains(':');
-        let bootstrap = match ssh_client
+        // Seed codex path/shell/capabilities from the per-server cache so a
+        // reconnect skips the detection probes. No cache entry (first-ever
+        // connect) leaves the bootstrap exactly as before.
+        let observed = observed_fingerprint.lock().await.clone();
+        let mut detect_cache = crate::ssh_detect_cache::DetectionCacheSession::begin(
+            self.mobile_preferences_directory(),
+            crate::ssh_detect_cache::CacheKey::new(
+                &server_id,
+                &ssh_credentials.host,
+                ssh_credentials.port,
+                &ssh_credentials.username,
+                observed.as_deref(),
+            ),
+            &ssh_client,
+        );
+        let mut bootstrap_result = ssh_client
             .bootstrap_codex_server(working_dir.as_deref(), use_ipv6)
-            .await
+            .await;
+        if bootstrap_result.is_err()
+            && let Some(cache) = detect_cache.as_mut()
+            && cache.on_failure(&ssh_client)
         {
+            bootstrap_result = ssh_client
+                .bootstrap_codex_server(working_dir.as_deref(), use_ipv6)
+                .await;
+        }
+        let bootstrap = match bootstrap_result {
             Ok(result) => result,
             Err(error) => {
                 warn!(
@@ -2123,6 +2505,7 @@ impl MobileClient {
             bootstrap.pid
         );
 
+        let cache_client = Arc::clone(&ssh_client);
         let result = self
             .finish_connect_remote_over_ssh(
                 config,
@@ -2133,6 +2516,11 @@ impl MobileClient {
                 working_dir,
             )
             .await;
+        if result.is_ok()
+            && let Some(cache) = detect_cache
+        {
+            cache.on_success(cache_client);
+        }
         match &result {
             Ok(_) => {
                 self.app_store
@@ -2397,49 +2785,6 @@ impl MobileClient {
         Ok(())
     }
 
-    /// Return the configs of all currently connected servers.
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn connected_servers(&self) -> Vec<ServerConfig> {
-        self.sessions_read()
-            .values()
-            .map(|s| s.config().clone())
-            .collect()
-    }
-
-    // ── Threads ───────────────────────────────────────────────────────
-
-    /// List threads from a specific server.
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) async fn list_threads(&self, server_id: &str) -> Result<Vec<ThreadInfo>, RpcError> {
-        self.get_session(server_id)?;
-        let response = self
-            .server_thread_list(server_id, upstream::ThreadListParams {
-                limit: None,
-                cursor: None,
-                sort_key: None,
-                sort_direction: None,
-                model_providers: None,
-                source_kinds: None,
-                archived: None,
-                cwd: None,
-                search_term: None,
-                use_state_db_only: false,
-                parent_thread_id: None,
-                ancestor_thread_id: None,
-            })
-            .await
-            .map_err(map_rpc_client_error)?;
-        let threads = response
-            .data
-            .into_iter()
-            .filter_map(thread_info_from_upstream_thread)
-            .collect::<Vec<_>>();
-        self.app_store.sync_thread_list(server_id, &threads);
-        Ok(threads)
-    }
-
     pub async fn sync_server_account(&self, server_id: &str) -> Result<(), RpcError> {
         self.get_session(server_id)?;
         let response = self
@@ -2538,7 +2883,15 @@ impl MobileClient {
         thread_id: &str,
         host_id: Option<String>,
     ) -> Result<(), RpcError> {
-        self.external_resume_thread_inner(server_id, thread_id, host_id, false)
+        let key = ThreadKey {
+            server_id: server_id.to_string(),
+            thread_id: thread_id.to_string(),
+        };
+        let reconcile_active_items = self.app_store.thread_snapshot(&key).is_some_and(|thread| {
+            thread.active_turn_id.is_some()
+                || matches!(thread.info.status, ThreadSummaryStatus::Active)
+        });
+        self.external_resume_thread_inner(server_id, thread_id, host_id, reconcile_active_items)
             .await
     }
 
@@ -2557,9 +2910,6 @@ impl MobileClient {
     /// embedded turn list (`exclude_turns: false`), since there is no
     /// other way to learn turn status there.
     ///
-    /// Use after a long resume / push wake — the in-flight turn the
-    /// client believes is still running may have completed during the
-    /// background window with no `TurnCompleted` event delivered.
     pub async fn force_refresh_thread_authoritative(
         &self,
         server_id: &str,
@@ -2587,6 +2937,19 @@ impl MobileClient {
             server_id: server_id.to_string(),
             thread_id: thread_id.to_string(),
         };
+        let resume_lock = self.resume_lock(&key);
+        let (waited, _resume_guard) = match resume_lock.try_lock() {
+            Ok(guard) => (false, guard),
+            Err(_) => (true, resume_lock.lock().await),
+        };
+        if can_reuse_waited_resume(
+            waited,
+            force_authoritative,
+            self.has_direct_resume_marker(&key),
+        ) {
+            self.app_store.mark_thread_resumed(&key, true);
+            return Ok(());
+        }
 
         // Force path skips both short-circuits — caller has out-of-band
         // knowledge that the locally-cached snapshot may have missed
@@ -2609,8 +2972,9 @@ impl MobileClient {
                     .app_store
                     .thread_snapshot(&key)
                     .is_some_and(|thread| !thread.items.is_empty() || thread.initial_turns_loaded);
-                let pagination_supported =
-                    self.app_store.server_supports_turn_pagination(server_id);
+                let pagination_supported = self
+                    .app_store
+                    .runtime_supports_turn_pagination(server_id, &self.runtime_for_thread(&key));
                 if thread_has_loaded_turns || pagination_supported {
                     debug!(
                         "external_resume_thread: skipping RPC for server={} thread={} — direct listener already attached for current session (loaded={} pagination={})",
@@ -2630,19 +2994,23 @@ impl MobileClient {
                 server_id, thread_id
             );
         }
-        let mut runtime_candidates = vec![self.runtime_for_thread(&key)];
-        for runtime_kind in session.runtime_kinds() {
+        let available_runtimes = session.runtime_kinds();
+        let mut runtime_candidates = Vec::new();
+        let preferred_runtime = self.runtime_for_thread(&key);
+        if available_runtimes.contains(&preferred_runtime) {
+            runtime_candidates.push(preferred_runtime);
+        }
+        for runtime_kind in available_runtimes {
             if !runtime_candidates.contains(&runtime_kind) {
                 runtime_candidates.push(runtime_kind);
             }
         }
-        if !runtime_candidates.contains(&"codex".to_string()) {
-            runtime_candidates.push("codex".to_string());
-        }
 
         let mut lookup_errors = Vec::new();
         for runtime_kind in runtime_candidates.iter().cloned() {
-            let supports_pagination = self.app_store.server_supports_turn_pagination(server_id);
+            let supports_pagination = self
+                .app_store
+                .runtime_supports_turn_pagination(server_id, &runtime_kind);
             // Paginated servers always exclude turns from the resume
             // response; we never want to pull the full embedded archive,
             // even on the authoritative refresh path — for huge threads
@@ -2667,7 +3035,12 @@ impl MobileClient {
             {
                 Ok(()) => {
                     self.note_thread_runtime(key.clone(), runtime_kind.clone());
-                    if force_authoritative && supports_pagination {
+                    let post_resume_active =
+                        self.app_store.thread_snapshot(&key).is_some_and(|thread| {
+                            thread.active_turn_id.is_some()
+                                || matches!(thread.info.status, ThreadSummaryStatus::Active)
+                        });
+                    if supports_pagination && (force_authoritative || post_resume_active) {
                         self.reconcile_active_turn_via_turn_list_probe(
                             server_id,
                             thread_id,
@@ -2701,6 +3074,30 @@ impl MobileClient {
                             "{error}; metadata fallback failed: {fallback_error}"
                         ))
                     })?;
+                    self.note_thread_runtime(key.clone(), runtime_kind);
+                    return Ok(());
+                }
+                Err(error) if history_unavailable_reason(&error).is_some() => {
+                    // The runtime knows the thread but cannot replay it (for
+                    // example Pi refuses sessions whose cwd was deleted).
+                    // Open it with metadata and say why history is missing
+                    // instead of failing the whole open.
+                    warn!(
+                        "external_resume_thread: history unavailable runtime={:?} server={} thread={} error={}",
+                        runtime_kind, server_id, thread_id, error
+                    );
+                    self.read_thread_metadata_only_for_runtime(
+                        server_id,
+                        thread_id,
+                        runtime_kind.clone(),
+                    )
+                    .await
+                    .map_err(|fallback_error| {
+                        RpcError::Deserialization(format!(
+                            "{error}; metadata fallback failed: {fallback_error}"
+                        ))
+                    })?;
+                    self.note_thread_history_unavailable(&key, &error);
                     self.note_thread_runtime(key.clone(), runtime_kind);
                     return Ok(());
                 }
@@ -2794,13 +3191,17 @@ impl MobileClient {
         );
         let turns = response.thread.turns.clone();
         let server_honored_exclude_turns = exclude_turns && turns.is_empty();
-        // Legacy v0.124 remotes ignore `exclude_turns` and return the
-        // full embedded turn history. Flip the capability flag so
-        // future code paths (load_thread_turns_page) short-circuit
-        // and the UI keeps relying on embedded turns.
+        // Legacy v0.124 remotes (and some bridges) ignore `exclude_turns`
+        // and return the full embedded turn history. Record that for this
+        // runtime only so future code paths (load_thread_turns_page)
+        // short-circuit and keep relying on embedded turns, without
+        // changing how the host's other runtimes load history.
         if exclude_turns && !server_honored_exclude_turns {
-            self.app_store
-                .set_server_supports_turn_pagination(server_id, false);
+            self.app_store.set_runtime_turn_pagination(
+                server_id,
+                &runtime_kind,
+                TurnPaginationSupport::Unsupported,
+            );
         }
         let mut snapshot = thread_snapshot_from_upstream_thread_with_overrides(
             server_id,
@@ -2831,6 +3232,7 @@ impl MobileClient {
         }
         reconcile_active_turn(existing.as_ref(), &mut snapshot, &turns);
         snapshot.is_resumed = true;
+        self.apply_persisted_thread_collaboration_mode(&mut snapshot);
         self.app_store.upsert_thread_snapshot(snapshot);
         self.mark_direct_resumed_thread(key.clone());
         Ok(())
@@ -2839,11 +3241,12 @@ impl MobileClient {
     /// On the authoritative refresh path (`force_refresh_thread_authoritative`)
     /// for paginated remotes, run a small `thread/turns/list` query that
     /// returns turn skeletons only (no item bodies). The result is fed into
-    /// `reconcile_active_turn` so a locally-cached `active_turn_id` whose
-    /// underlying turn has already completed server-side gets cleared, even
-    /// though we asked the resume to skip the embedded turn list. Failures
-    /// here are logged and ignored — the worst case is a transient stale
-    /// active-turn indicator until the next streamed event arrives.
+    /// `reconcile_active_turn`, then a bounded full page repairs item bodies
+    /// for a turn that was active before the disconnect. That second read is
+    /// necessary even when the turn is still running: tool-start and output
+    /// events may have crossed the transport while iOS was suspended.
+    /// Failures here are logged and ignored — the next streamed event or
+    /// foreground refresh gets another chance to reconcile.
     async fn reconcile_active_turn_via_turn_list_probe(
         &self,
         server_id: &str,
@@ -2873,14 +3276,15 @@ impl MobileClient {
             Ok(response) => response,
             Err(error) => {
                 if is_method_not_found(&error) {
-                    // Some non-Codex runtimes can resume a thread but do not
-                    // implement the lightweight turn-list probe. Fall back to
-                    // one embedded-turn resume so reconcile_active_turn can
+                    // Some runtimes can resume a thread but do not implement
+                    // the lightweight turn-list probe. Fall back to one
+                    // embedded-turn resume so reconcile_active_turn can
                     // still clear a stale active turn after mobile reconnects.
-                    if runtime_kind == "codex" {
-                        self.app_store
-                            .set_server_supports_turn_pagination(server_id, false);
-                    }
+                    self.app_store.set_runtime_turn_pagination(
+                        server_id,
+                        &runtime_kind,
+                        TurnPaginationSupport::Unsupported,
+                    );
                     if let Err(fallback_error) = self
                         .resume_thread_for_runtime(
                             server_id,
@@ -2908,25 +3312,27 @@ impl MobileClient {
         let Some(existing) = self.app_store.thread_snapshot(key) else {
             return;
         };
-        let was_active = existing.active_turn_id.is_some();
+        let was_active = existing.active_turn_id.is_some()
+            || matches!(existing.info.status, ThreadSummaryStatus::Active);
         let mut target = existing.clone();
         // Clear the field on the target so reconcile_active_turn can decide
         // whether to restore it from `existing` based on the turn list.
         target.active_turn_id = None;
         reconcile_active_turn(Some(&existing), &mut target, &response.data);
-        let active_turn_cleared = was_active && target.active_turn_id.is_none();
+        let is_active = target.active_turn_id.is_some()
+            || matches!(target.info.status, ThreadSummaryStatus::Active);
         if target.active_turn_id != existing.active_turn_id
             || target.info.status != existing.info.status
         {
             self.app_store.upsert_thread_snapshot(target);
         }
-        if active_turn_cleared
+        if (was_active || is_active)
             && let Err(error) = self
                 .load_thread_turns_page(server_id, thread_id, None, Some(PROBE_LIMIT))
                 .await
         {
             warn!(
-                "force_authoritative: completed-turn repair page failed server={} thread={}: {}",
+                "force_authoritative: active-turn repair page failed server={} thread={}: {}",
                 server_id, thread_id, error
             );
         }
@@ -2935,13 +3341,20 @@ impl MobileClient {
     /// Composite action: page a thread's older turns via `thread/turns/list`
     /// and merge them into the canonical store.
     ///
-    /// - When the server is known to not support pagination
-    ///   (`supports_turn_pagination == false`), refreshes an empty/unloaded
+    /// Capability is tracked per (server, runtime): one Kittylitter host
+    /// serves codex next to bridged runtimes whose paging differs.
+    ///
+    /// - When the thread's runtime is known not to page
+    ///   (`TurnPaginationSupport::Unsupported`), refreshes an empty/unloaded
     ///   thread with an embedded-turn resume. Already-loaded threads still
     ///   short-circuit because their embedded turns are already in the store.
     /// - When the RPC comes back as JSON-RPC -32601 (method not found),
-    ///   flips `supports_turn_pagination = false` on the server snapshot
-    ///   and returns the same short-circuit result.
+    ///   marks that runtime unsupported and loads embedded turns instead.
+    /// - When a first page is full but carries no cursor and the runtime has
+    ///   never returned one, the page may have been cut to `limit` by a
+    ///   bridge that cannot page (Claude and Pi bridges do this). The full
+    ///   list is fetched once to find out; if it is longer, the runtime is
+    ///   marked unsupported and the full history is kept.
     /// - On success, invokes the `apply_thread_turns_page` reducer.
     pub async fn load_thread_turns_page(
         &self,
@@ -2954,13 +3367,16 @@ impl MobileClient {
             server_id: server_id.to_string(),
             thread_id: thread_id.to_string(),
         };
-        if !self.app_store.server_supports_turn_pagination(server_id) {
+        let runtime_kind = self.runtime_for_thread(&key);
+        if !self
+            .app_store
+            .runtime_supports_turn_pagination(server_id, &runtime_kind)
+        {
             let needs_embedded_resume = self
                 .app_store
                 .thread_snapshot(&key)
                 .is_none_or(|thread| thread.items.is_empty() && !thread.initial_turns_loaded);
             if needs_embedded_resume {
-                let runtime_kind = self.runtime_for_thread(&key);
                 self.resume_thread_for_runtime(server_id, thread_id, &key, runtime_kind, false)
                     .await
                     .map_err(RpcError::Deserialization)?;
@@ -2974,28 +3390,33 @@ impl MobileClient {
                 has_more: false,
             });
         }
-        let params = upstream::ThreadTurnsListParams {
-            thread_id: thread_id.to_string(),
-            cursor,
-            limit,
-            sort_direction: Some(upstream::SortDirection::Desc),
-            items_view: None,
-        };
-        let request = upstream::ClientRequest::ThreadTurnsList {
-            request_id: upstream::RequestId::Integer(crate::next_request_id()),
-            params,
-        };
-        let runtime_kind = self.runtime_for_thread(&key);
+        let is_first_page = cursor.is_none();
         match self
-            .request_typed_for_server_runtime::<upstream::ThreadTurnsListResponse>(
-                server_id,
-                runtime_kind.clone(),
-                request,
-            )
+            .request_thread_turns_page(server_id, thread_id, runtime_kind.clone(), cursor, limit)
             .await
         {
             Ok(response) => {
-                let has_more = response.next_cursor.is_some();
+                if response.next_cursor.is_some() {
+                    self.app_store.set_runtime_turn_pagination(
+                        server_id,
+                        &runtime_kind,
+                        TurnPaginationSupport::Confirmed,
+                    );
+                }
+                let confirmed = self.app_store.runtime_turn_pagination(server_id, &runtime_kind)
+                    == Some(TurnPaginationSupport::Confirmed);
+                let maybe_truncated = is_first_page
+                    && !confirmed
+                    && page_may_be_truncated_without_cursor(
+                        limit,
+                        response.data.len(),
+                        response.next_cursor.is_some(),
+                    );
+                let page_turns = response.data.len();
+                let mut has_more = response.next_cursor.is_some();
+                // Show the page right away; on a non-paging bridge the full
+                // history can take a long time to arrive (a 100 MB Claude
+                // transcript takes minutes on the host).
                 let page: crate::types::AppListThreadTurnsResponse = response.into();
                 self.apply_thread_turns_page(
                     server_id,
@@ -3004,16 +3425,58 @@ impl MobileClient {
                     crate::types::AppTurnsSortDirection::Descending,
                 )
                 .map_err(RpcError::Deserialization)?;
+                if maybe_truncated {
+                    match self
+                        .request_thread_turns_page(
+                            server_id,
+                            thread_id,
+                            runtime_kind.clone(),
+                            None,
+                            None,
+                        )
+                        .await
+                    {
+                        Ok(full) if full.data.len() > page_turns => {
+                            info!(
+                                "load_thread_turns_page: runtime {:?} on server={} cut a {}-turn page without a cursor (thread has {} turns); loading full history for this runtime",
+                                runtime_kind,
+                                server_id,
+                                page_turns,
+                                full.data.len()
+                            );
+                            self.app_store.set_runtime_turn_pagination(
+                                server_id,
+                                &runtime_kind,
+                                TurnPaginationSupport::Unsupported,
+                            );
+                            has_more = full.next_cursor.is_some();
+                            let full: crate::types::AppListThreadTurnsResponse = full.into();
+                            self.apply_thread_turns_page(
+                                server_id,
+                                thread_id,
+                                &full,
+                                crate::types::AppTurnsSortDirection::Descending,
+                            )
+                            .map_err(RpcError::Deserialization)?;
+                        }
+                        Ok(_) => {}
+                        Err(error) => warn!(
+                            "load_thread_turns_page: full-history check failed server={} thread={} runtime={:?}: {}",
+                            server_id, thread_id, runtime_kind, error
+                        ),
+                    }
+                }
                 Ok(crate::types::AppLoadThreadTurnsOutcome {
                     loaded: true,
                     has_more,
                 })
             }
             Err(error) if is_method_not_found(&error) => {
-                if runtime_kind == "codex".to_string() {
-                    self.app_store
-                        .set_server_supports_turn_pagination(server_id, false);
-                }
+                self.app_store.set_runtime_turn_pagination(
+                    server_id,
+                    &runtime_kind,
+                    TurnPaginationSupport::Unsupported,
+                );
                 self.resume_thread_for_runtime(server_id, thread_id, &key, runtime_kind, false)
                     .await
                     .map_err(RpcError::Deserialization)?;
@@ -3024,6 +3487,60 @@ impl MobileClient {
             }
             Err(error) => Err(RpcError::Deserialization(error)),
         }
+    }
+
+    async fn request_thread_turns_page(
+        &self,
+        server_id: &str,
+        thread_id: &str,
+        runtime_kind: AgentRuntimeKind,
+        cursor: Option<String>,
+        limit: Option<u32>,
+    ) -> Result<upstream::ThreadTurnsListResponse, String> {
+        let request = upstream::ClientRequest::ThreadTurnsList {
+            request_id: upstream::RequestId::Integer(crate::next_request_id()),
+            params: upstream::ThreadTurnsListParams {
+                thread_id: thread_id.to_string(),
+                cursor,
+                limit,
+                sort_direction: Some(upstream::SortDirection::Desc),
+                items_view: None,
+            },
+        };
+        self.request_typed_for_server_runtime::<upstream::ThreadTurnsListResponse>(
+            server_id,
+            runtime_kind,
+            request,
+        )
+        .await
+    }
+
+    /// Replace an empty transcript with one error row explaining why the
+    /// runtime could not replay the thread, and mark the initial load done so
+    /// neither platform waits on a page that cannot come.
+    fn note_thread_history_unavailable(&self, key: &ThreadKey, error: &str) {
+        let Some(mut thread) = self.app_store.thread_snapshot(key) else {
+            return;
+        };
+        if thread.items.is_empty() {
+            let reason = history_unavailable_reason(error)
+                .unwrap_or("The agent could not load this session's history.");
+            let mut item = crate::conversation::make_error_item(
+                format!("history-unavailable:{}", key.thread_id),
+                reason.to_string(),
+                None,
+            );
+            if let crate::conversation_uniffi::HydratedConversationItemContent::Error(data) =
+                &mut item.content
+            {
+                data.title = "History unavailable".to_string();
+                data.details = Some(error.to_string());
+            }
+            thread.items = vec![item].into();
+        }
+        thread.initial_turns_loaded = true;
+        thread.older_turns_cursor = None;
+        self.app_store.upsert_thread_snapshot(thread);
     }
 
     async fn read_thread_metadata_only_for_runtime(
@@ -3046,7 +3563,12 @@ impl MobileClient {
             )
             .await
             .map_err(RpcError::Deserialization)?;
-        upsert_thread_snapshot_from_app_server_read_response(&self.app_store, server_id, response)
+        upsert_thread_snapshot_from_app_server_read_response(
+            &self.app_store,
+            server_id,
+            response,
+            false,
+        )
     }
 
     pub async fn thread_unsubscribe(
@@ -3091,7 +3613,15 @@ impl MobileClient {
         };
         self.app_store
             .dismiss_plan_implementation_prompt(&thread_key);
-        let thread_snapshot = self.snapshot_thread(&thread_key).ok();
+        let mut thread_snapshot = self.snapshot_thread(&thread_key).ok();
+        if let Some(thread) = thread_snapshot.as_mut()
+            && thread.collaboration_mode != AppModeKind::Plan
+            && self.persisted_thread_collaboration_mode(&thread_key) == Some(AppModeKind::Plan)
+        {
+            thread.collaboration_mode = AppModeKind::Plan;
+            self.app_store
+                .set_thread_collaboration_mode(&thread_key, AppModeKind::Plan);
+        }
         if let Some(thread) = thread_snapshot.as_ref()
             && thread.collaboration_mode == AppModeKind::Plan
             && params.collaboration_mode.is_none()
@@ -3166,6 +3696,7 @@ impl MobileClient {
                             responsesapi_client_metadata: None,
                             additional_context: None,
                             expected_turn_id: active_turn_id,
+                            ..Default::default()
                         },
                     },
                 )
@@ -3191,7 +3722,7 @@ impl MobileClient {
             },
             &params.thread_id,
         );
-        let response = self
+        let response_result = self
             .request_typed_for_server::<upstream::TurnStartResponse>(
                 server_id,
                 upstream::ClientRequest::TurnStart {
@@ -3199,8 +3730,12 @@ impl MobileClient {
                     params: direct_params,
                 },
             )
-            .await
-            .map_err(|error| {
+            .await;
+        let response = match response_result {
+            Ok(response) => response,
+            Err(error) => {
+                self.app_store
+                    .finish_server_mutating_command_failure(server_id, &direct_command_id);
                 if let Some(overlay_id) = optimistic_overlay_id.as_ref() {
                     self.app_store
                         .remove_local_overlay_item(&thread_key, overlay_id);
@@ -3209,8 +3744,9 @@ impl MobileClient {
                     self.app_store
                         .remove_thread_follow_up_draft(&thread_key, &draft.preview.id);
                 }
-                RpcError::Deserialization(error)
-            })?;
+                return Err(RpcError::Deserialization(error));
+            }
+        };
         self.app_store
             .finish_server_mutating_command_success(server_id, &direct_command_id);
         if let Some(overlay_id) = optimistic_overlay_id.as_ref() {
@@ -3260,22 +3796,26 @@ impl MobileClient {
             ServerMutatingCommandKind::SteerQueuedFollowUp,
             &key.thread_id,
         );
-        self.request_typed_for_server::<upstream::TurnSteerResponse>(
-            &key.server_id,
-            upstream::ClientRequest::TurnSteer {
-                request_id: upstream::RequestId::Integer(crate::next_request_id()),
-                params: upstream::TurnSteerParams {
-                    thread_id: key.thread_id.clone(),
-                    client_user_message_id: None,
-                    input: draft.inputs,
-                    responsesapi_client_metadata: None,
-                    additional_context: None,
-                    expected_turn_id: active_turn_id,
+        if let Err(error) = self
+            .request_typed_for_server::<upstream::TurnSteerResponse>(
+                &key.server_id,
+                upstream::ClientRequest::TurnSteer {
+                    request_id: upstream::RequestId::Integer(crate::next_request_id()),
+                    params: upstream::TurnSteerParams {
+                        thread_id: key.thread_id.clone(),
+                        input: draft.inputs,
+                        responsesapi_client_metadata: None,
+                        expected_turn_id: active_turn_id,
+                        ..Default::default()
+                    },
                 },
-            },
-        )
-        .await
-        .map_err(RpcError::Deserialization)?;
+            )
+            .await
+        {
+            self.app_store
+                .finish_server_mutating_command_failure(&key.server_id, &direct_command_id);
+            return Err(RpcError::Deserialization(error));
+        }
         self.app_store
             .finish_server_mutating_command_success(&key.server_id, &direct_command_id);
         // Keep draft visible as PendingSteer; TurnCompleted will clean it up.
@@ -3339,6 +3879,7 @@ impl MobileClient {
             .map_err(RpcError::Deserialization)?;
             copy_thread_runtime_fields(&current, &mut snapshot);
             reconcile_active_turn(Some(&current), &mut snapshot, &turns);
+            self.apply_persisted_thread_collaboration_mode(&mut snapshot);
             self.app_store.upsert_thread_snapshot(snapshot);
         }
 
@@ -3423,6 +3964,7 @@ impl MobileClient {
             .map_err(RpcError::Deserialization)?;
         }
 
+        self.apply_persisted_thread_collaboration_mode(&mut snapshot);
         self.app_store.upsert_thread_snapshot(snapshot);
         self.set_active_thread(Some(next_key.clone()));
         Ok(next_key)
@@ -3438,11 +3980,6 @@ impl MobileClient {
             .app_store
             .pending_approval_seed(&approval.server_id, &approval.id);
         let session = self.get_session(&approval.server_id)?;
-        let direct_command_id = self.app_store.begin_server_mutating_command(
-            &approval.server_id,
-            ServerMutatingCommandKind::ApprovalResponse,
-            approval.thread_id.as_deref().unwrap_or(""),
-        );
         let response_json = approval_response_json(&approval, approval_seed.as_ref(), decision)?;
         let response_request_id =
             server_request_id_json(approval_request_id(&approval, approval_seed.as_ref()));
@@ -3456,9 +3993,19 @@ impl MobileClient {
                 })
             })
             .unwrap_or_else(|| "codex".to_string());
-        session
+        let direct_command_id = self.app_store.begin_server_mutating_command(
+            &approval.server_id,
+            ServerMutatingCommandKind::ApprovalResponse,
+            approval.thread_id.as_deref().unwrap_or(""),
+        );
+        if let Err(error) = session
             .respond_for_runtime(runtime_kind, response_request_id, response_json)
-            .await?;
+            .await
+        {
+            self.app_store
+                .finish_server_mutating_command_failure(&approval.server_id, &direct_command_id);
+            return Err(error);
+        }
         self.app_store
             .finish_server_mutating_command_success(&approval.server_id, &direct_command_id);
         debug!(
@@ -3487,20 +4034,25 @@ impl MobileClient {
                 PendingUserInputResponseKind::McpServerElicitation
             )
         {
-            let direct_command_id = self.app_store.begin_server_mutating_command(
-                &request.server_id,
-                ServerMutatingCommandKind::UserInputResponse,
-                &request.thread_id,
-            );
             let response_json = mcp_elicitation_response_json(seed, &answers)?;
             let response_request_id = server_request_id_json(seed.request_id.clone());
             let runtime_kind = self.runtime_for_thread(&ThreadKey {
                 server_id: request.server_id.clone(),
                 thread_id: request.thread_id.clone(),
             });
-            session
+            let direct_command_id = self.app_store.begin_server_mutating_command(
+                &request.server_id,
+                ServerMutatingCommandKind::UserInputResponse,
+                &request.thread_id,
+            );
+            if let Err(error) = session
                 .respond_for_runtime(runtime_kind, response_request_id, response_json)
-                .await?;
+                .await
+            {
+                self.app_store
+                    .finish_server_mutating_command_failure(&request.server_id, &direct_command_id);
+                return Err(error);
+            }
             self.app_store
                 .finish_server_mutating_command_success(&request.server_id, &direct_command_id);
             debug!(
@@ -3516,11 +4068,6 @@ impl MobileClient {
             );
             return Ok(());
         }
-        let direct_command_id = self.app_store.begin_server_mutating_command(
-            &request.server_id,
-            ServerMutatingCommandKind::UserInputResponse,
-            &request.thread_id,
-        );
         let response = upstream::ToolRequestUserInputResponse {
             answers: normalized_answers
                 .into_iter()
@@ -3549,9 +4096,19 @@ impl MobileClient {
             server_id: request.server_id.clone(),
             thread_id: request.thread_id.clone(),
         });
-        session
+        let direct_command_id = self.app_store.begin_server_mutating_command(
+            &request.server_id,
+            ServerMutatingCommandKind::UserInputResponse,
+            &request.thread_id,
+        );
+        if let Err(error) = session
             .respond_for_runtime(runtime_kind, response_request_id, response_json)
-            .await?;
+            .await
+        {
+            self.app_store
+                .finish_server_mutating_command_failure(&request.server_id, &direct_command_id);
+            return Err(error);
+        }
         self.app_store
             .finish_server_mutating_command_success(&request.server_id, &direct_command_id);
         debug!(
@@ -3583,7 +4140,7 @@ impl MobileClient {
                 {
                     Ok(response) => {
                         if let Err(error) = upsert_thread_snapshot_from_app_server_read_response(
-                            &app_store, &server_id, response,
+                            &app_store, &server_id, response, true,
                         ) {
                             warn!(
                                 "MobileClient: failed to reconcile thread after user input for server={} thread={}: {}",
@@ -3617,6 +4174,26 @@ impl MobileClient {
 
     pub fn snapshot(&self) -> AppSnapshot {
         self.app_store.snapshot()
+    }
+
+    /// Optimistically end `turn_id` after the host acknowledged
+    /// `turn/interrupt`. Applied to the store synchronously so an immediate
+    /// send starts a fresh turn instead of being queued behind a turn that no
+    /// longer exists, then broadcast so the store listener flushes any
+    /// follow-ups queued while the turn was running.
+    pub fn mark_turn_interrupted_locally(&self, server_id: &str, thread_id: &str, turn_id: &str) {
+        let key = ThreadKey {
+            server_id: server_id.to_string(),
+            thread_id: thread_id.to_string(),
+        };
+        let event = UiEvent::TurnCompleted {
+            key: key.clone(),
+            turn_id: turn_id.to_string(),
+            error: None,
+        };
+        self.app_store.apply_ui_event(&event);
+        self.event_processor
+            .emit_local_turn_interrupted(key, turn_id.to_string());
     }
 
     pub fn subscribe_updates(&self) -> broadcast::Receiver<AppStoreUpdateRecord> {
@@ -3720,7 +4297,7 @@ impl MobileClient {
         &self,
         bytes: Vec<u8>,
     ) -> Result<bool, crate::terminal::TerminalError> {
-        let active_id = self.app_store.snapshot().active_terminal_id.clone();
+        let active_id = self.app_store.active_terminal_id();
         let Some(id) = active_id else {
             return Ok(false);
         };
@@ -3742,6 +4319,7 @@ impl MobileClient {
     ) -> Result<(), RpcError> {
         self.get_session(&key.server_id)?;
         self.app_store.set_thread_collaboration_mode(key, mode);
+        self.persist_thread_collaboration_mode(key, mode);
         Ok(())
     }
 
@@ -3754,73 +4332,41 @@ impl MobileClient {
         let thread = self.snapshot_thread(key).ok();
         self.app_store
             .set_thread_collaboration_mode(key, AppModeKind::Default);
+        self.persist_thread_collaboration_mode(key, AppModeKind::Default);
         let collaboration_mode = thread
             .as_ref()
             .and_then(|t| collaboration_mode_from_thread(t, AppModeKind::Default, None, None));
-        self.start_turn(&key.server_id, upstream::TurnStartParams {
-            thread_id: key.thread_id.clone(),
-            client_user_message_id: None,
-            input: vec![upstream::UserInput::Text {
-                text: "Implement the plan.".to_string(),
-                text_elements: Vec::new(),
-            }],
-            responsesapi_client_metadata: None,
-            additional_context: None,
-            cwd: None,
-            runtime_workspace_roots: None,
-            approval_policy: None,
-            approvals_reviewer: None,
-            sandbox_policy: None,
-            environments: None,
-            permissions: None,
-            model: None,
-            service_tier: None,
-            effort: None,
-            summary: None,
-            personality: None,
-            output_schema: None,
-            collaboration_mode,
-            multi_agent_mode: None,
-        })
+        self.start_turn(
+            &key.server_id,
+            upstream::TurnStartParams {
+                thread_id: key.thread_id.clone(),
+                input: vec![upstream::UserInput::Text {
+                    text: "Implement the plan.".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                responsesapi_client_metadata: None,
+                cwd: None,
+                runtime_workspace_roots: None,
+                approval_policy: None,
+                approvals_reviewer: None,
+                sandbox_policy: None,
+                environments: None,
+                permissions: None,
+                model: None,
+                service_tier: None,
+                effort: None,
+                summary: None,
+                personality: None,
+                output_schema: None,
+                collaboration_mode,
+                ..Default::default()
+            },
+        )
         .await
     }
 
     pub fn set_voice_handoff_thread(&self, key: Option<ThreadKey>) {
         self.app_store.set_voice_handoff_thread(key);
-    }
-
-    pub async fn scan_servers_with_mdns_context(
-        &self,
-        mdns_results: Vec<MdnsSeed>,
-        local_ipv4: Option<String>,
-    ) -> Vec<DiscoveredServer> {
-        let discovery = self.discovery_write();
-        discovery
-            .scan_once_with_context(&mdns_results, local_ipv4.as_deref())
-            .await
-    }
-
-    pub fn subscribe_scan_servers_with_mdns_context(
-        &self,
-        mdns_results: Vec<MdnsSeed>,
-        local_ipv4: Option<String>,
-    ) -> broadcast::Receiver<crate::discovery::ProgressiveDiscoveryUpdate> {
-        let (tx, rx) = broadcast::channel(32);
-        let discovery = self.discovery_read().clone_for_one_shot();
-
-        Self::spawn_detached(async move {
-            let _ = discovery
-                .scan_once_progressive_with_context(&mdns_results, local_ipv4.as_deref(), &tx)
-                .await;
-        });
-
-        rx
-    }
-
-    /// Invalidate the in-memory ambient suggestions cache for a server.
-    /// If `project_root` is `None`, all entries for the server are cleared.
-    pub fn invalidate_ambient_suggestions(&self, server_id: &str, project_root: Option<&str>) {
-        crate::ambient_suggestions::invalidate_cache(&self.ambient_cache, server_id, project_root);
     }
 }
 
@@ -3888,28 +4434,6 @@ pub(super) fn runtime_kinds_support_account_sync(runtime_kinds: &[AgentRuntimeKi
         .any(|runtime_kind| runtime_kind == "codex")
 }
 
-/// Re-establish per-thread subscriptions on the server after a remote
-/// transport reconnect.
-///
-/// Upstream codex routes per-turn events (`TurnStarted`, `Item*`,
-/// `TurnCompleted`) only to the connections currently in each thread's
-/// subscription set. When `AlleycatReconnectTransport::reconnect()` swaps
-/// in a fresh `AppServerClient`, the server sees a brand-new
-/// `ConnectionId` that isn't subscribed to anything; the old one was
-/// already unregistered when its connection dropped. The mobile client's
-/// `external_resume_thread` short-circuits via the `direct_resumed_threads`
-/// marker set during the previous (now-dead) connection, so without
-/// intervention the new connection never re-subscribes — and turn-stream
-/// events go missing until the user manually navigates.
-///
-/// On a Disconnected→Connected transition we therefore:
-///   1. Clear the direct-resume markers for this server (they're stale —
-///      the live `ConnectionId` has changed).
-///   2. Re-issue `external_resume_thread` for the active thread plus every
-///      thread on this server that already had loaded turns. Each call
-///      ends up routing through `thread/resume`, which calls
-///      `try_add_connection_to_thread` server-side and replays any
-///      in-flight requests for the new connection.
 pub(super) fn run_post_reconnect_resubscribe(app_store: Arc<AppStoreReducer>, server_id: String) {
     MobileClient::spawn_detached(async move {
         let Some(client) = crate::ffi::shared::shared_mobile_client_if_initialized() else {
@@ -3931,7 +4455,7 @@ pub(super) fn run_post_reconnect_resubscribe(app_store: Arc<AppStoreReducer>, se
             if keys_to_resume.iter().any(|k| k == key) {
                 continue;
             }
-            if !thread.items.is_empty() || thread.initial_turns_loaded {
+            if thread.active_turn_id.is_some() || !thread.queued_follow_ups.is_empty() {
                 keys_to_resume.push(key.clone());
             }
         }
@@ -3951,12 +4475,6 @@ pub(super) fn run_post_reconnect_resubscribe(app_store: Arc<AppStoreReducer>, se
         );
 
         for key in keys_to_resume {
-            // Force-authoritative so the response carries the embedded
-            // turn list. Without it `thread/resume` short-circuits via the
-            // direct-resume marker (or returns an empty turn list under
-            // `exclude_turns: true`), and `reconcile_active_turn` keeps
-            // any stale `active_turn_id` whose turn has already completed
-            // server-side.
             match client
                 .force_refresh_thread_authoritative(&key.server_id, &key.thread_id)
                 .await

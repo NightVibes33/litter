@@ -1,1 +1,6 @@
-Internal testing build with latest Android parity updates and stability fixes.
+Clearer and complete.
+
+- Full session history for Claude Code, Pi and other harnesses.
+- A new model picker: harness first, then models by provider, with search.
+- Simpler Settings and cleaner session titles.
+- Faster reconnects.

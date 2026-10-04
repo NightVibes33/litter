@@ -21,7 +21,7 @@ use crate::types::AgentRuntimeKind;
 
 pub const ALLEYCAT_PROTOCOL_VERSION: u32 = 1;
 pub const ALLEYCAT_ALPN: &[u8] = b"alleycat/1";
-const MAX_FRAME_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_FRAME_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedPairPayload {
@@ -85,6 +85,7 @@ pub fn agent_runtime_kind(name: &str, display_name: &str) -> Option<AgentRuntime
     let canonical = match candidate {
         "codex" => Some("codex"),
         "pi" | "pi.dev" | "pidev" => Some("pi"),
+        "omp" | "oh-my-pi" | "oh_my_pi" | "oh my pi" => Some("omp"),
         "amp" | "ampcode" | "amp-code" | "amp_code" => Some("amp"),
         "opencode" | "open-code" | "open_code" => Some("opencode"),
         "claude" | "claude-code" | "claude_code" => Some("claude"),
@@ -92,6 +93,7 @@ pub fn agent_runtime_kind(name: &str, display_name: &str) -> Option<AgentRuntime
         "hermes" => Some("hermes"),
         _ if display_name == "codex" => Some("codex"),
         _ if display_name == "pi" || display_name == "pi.dev" => Some("pi"),
+        _ if display_name == "omp" || display_name == "oh my pi" => Some("omp"),
         _ if display_name == "amp" || display_name == "amp code" => Some("amp"),
         _ if display_name == "opencode" || display_name == "open code" => Some("opencode"),
         _ if display_name == "claude" || display_name == "claude code" => Some("claude"),
@@ -231,7 +233,7 @@ impl RemoteTransport for AlleycatReconnectTransport {
                 "alleycat close_current_connection: abandoning Connection node_id={}",
                 self.params.node_id
             );
-            session.close();
+            session.force_close();
         } else {
             debug!("alleycat close_current_connection: no current session");
         }
@@ -245,7 +247,7 @@ impl RemoteTransport for AlleycatReconnectTransport {
 /// `close().await` first for a graceful shutdown that sends a
 /// CONNECTION_CLOSE frame to the host.
 pub struct AlleycatSession {
-    connection: Connection,
+    lease: ConnectionLease,
     pub params: ParsedPairPayload,
     pub agent: String,
     pub wire: AgentWire,
@@ -256,11 +258,17 @@ impl AlleycatSession {
     /// (`close_reason`, `rtt`) or for spawning per-connection liveness
     /// probes that race a `Connection::closed()` future.
     pub fn connection(&self) -> Connection {
-        self.connection.clone()
+        self.lease.connection().clone()
     }
 
     pub(crate) fn close(&self) {
         <Self as SessionKeepalive>::close(self);
+    }
+
+    /// Abandon the host connection for every agent sharing it (the network
+    /// path is known dead, e.g. after a long background suspension).
+    pub(crate) fn force_close(&self) {
+        self.lease.force_close();
     }
 }
 
@@ -269,12 +277,13 @@ impl SessionKeepalive for AlleycatSession {
         // iroh's `Connection::close` is sync (queues the CLOSE frame); the
         // actual flush happens on the endpoint's IO loop. Calling it on an
         // already-closed connection is a no-op.
+        // Releases this agent's hold on the shared host connection; the
+        // CONNECTION_CLOSE is sent only when no other agent is using it.
         debug!(
-            "alleycat session close: sending CONNECTION_CLOSE node_id={}",
-            self.params.node_id
+            "alleycat session close: releasing connection node_id={} agent={}",
+            self.params.node_id, self.agent
         );
-        self.connection
-            .close(VarInt::from_u32(0), b"client disconnect");
+        self.lease.release(b"client disconnect");
     }
 }
 
@@ -284,6 +293,8 @@ pub enum AlleycatError {
     InvalidPayload(String),
     #[error("protocol version mismatch: payload={payload} client={client}")]
     ProtocolMismatch { payload: u32, client: u32 },
+    #[error("host rejected request: {0}")]
+    Rejected(String),
     #[error("transport error: {0}")]
     Transport(String),
 }
@@ -448,18 +459,42 @@ pub fn parse_pair_payload(json: &str) -> Result<ParsedPairPayload, AlleycatError
     if wire.token.trim().is_empty() {
         return Err(AlleycatError::InvalidPayload("empty token".into()));
     }
-    if let Some(relay) = wire.relay.as_deref() {
-        RelayUrl::from_str(relay).map_err(|error| {
-            AlleycatError::InvalidPayload(format!("invalid relay URL: {error}"))
-        })?;
-    }
+    let relay = wire.relay.as_deref().map(normalize_relay_url).transpose()?;
     Ok(ParsedPairPayload {
         version: wire.v,
         node_id: wire.node_id,
         token: wire.token,
-        relay: wire.relay,
+        relay,
         host_name: normalize_optional_host_name(wire.host_name),
     })
+}
+
+fn normalize_relay_url(relay: &str) -> Result<String, AlleycatError> {
+    let mut parsed = url::Url::parse(relay)
+        .map_err(|error| AlleycatError::InvalidPayload(format!("invalid relay URL: {error}")))?;
+    match parsed.host() {
+        Some(url::Host::Domain(host)) if host.trim_end_matches('.').is_empty() => {
+            return Err(AlleycatError::InvalidPayload(
+                "relay URL has an empty host".into(),
+            ));
+        }
+        // Iroh discovery uses fully qualified names. An undotted alias is a
+        // different RelayUrl and opens a second connection to the same relay,
+        // which evicts the first connection for this endpoint identity.
+        Some(url::Host::Domain(host)) if !host.ends_with('.') => {
+            let host = format!("{host}.");
+            parsed.set_host(Some(&host)).map_err(|error| {
+                AlleycatError::InvalidPayload(format!("invalid relay URL host: {error}"))
+            })?;
+        }
+        None => {
+            return Err(AlleycatError::InvalidPayload(
+                "relay URL has no host".into(),
+            ));
+        }
+        _ => {}
+    }
+    Ok(parsed.to_string())
 }
 
 fn normalize_optional_host_name(host_name: Option<String>) -> Option<String> {
@@ -472,17 +507,21 @@ pub async fn list_agents(
     endpoint: &Endpoint,
     params: ParsedPairPayload,
 ) -> Result<Vec<AgentInfo>, AlleycatError> {
-    let (conn, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
-    write_json_frame(&mut send, &Request::ListAgents {
-        v: ALLEYCAT_PROTOCOL_VERSION,
-        token: params.token.clone(),
-    })
+    let (lease, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
+    write_json_frame(
+        &mut send,
+        &Request::ListAgents {
+            v: ALLEYCAT_PROTOCOL_VERSION,
+            token: params.token.clone(),
+        },
+    )
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
     validate_response(&response)?;
-    // The probe connection is one-shot — close it gracefully so the host
-    // doesn't have to wait on its idle timeout to drop the entry.
-    conn.close(VarInt::from_u32(0), b"list_agents complete");
+    // One-shot probe stream: finish it and release the shared connection
+    // (closed only if no agent session is using it).
+    let _ = send.finish();
+    lease.release(b"list_agents complete");
     Ok(response
         .agents
         .into_iter()
@@ -502,16 +541,20 @@ pub async fn restart_agent(
     params: ParsedPairPayload,
     agent: String,
 ) -> Result<(), AlleycatError> {
-    let (conn, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
-    write_json_frame(&mut send, &Request::RestartAgent {
-        v: ALLEYCAT_PROTOCOL_VERSION,
-        token: params.token.clone(),
-        agent,
-    })
+    let (lease, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
+    write_json_frame(
+        &mut send,
+        &Request::RestartAgent {
+            v: ALLEYCAT_PROTOCOL_VERSION,
+            token: params.token.clone(),
+            agent,
+        },
+    )
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
     validate_response(&response)?;
-    conn.close(VarInt::from_u32(0), b"restart_agent complete");
+    let _ = send.finish();
+    lease.release(b"restart_agent complete");
     Ok(())
 }
 
@@ -523,13 +566,16 @@ pub async fn connect_app_server_client(
     seq_tracker: Option<Arc<AtomicU64>>,
     resume_from: Option<u64>,
 ) -> Result<(AppServerClient, Arc<AlleycatSession>), AlleycatError> {
-    let (connection, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
-    write_json_frame(&mut send, &Request::Connect {
-        v: ALLEYCAT_PROTOCOL_VERSION,
-        token: params.token.clone(),
-        agent: agent.clone(),
-        resume: resume_from.map(|last_seq| Resume { last_seq }),
-    })
+    let (lease, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
+    write_json_frame(
+        &mut send,
+        &Request::Connect {
+            v: ALLEYCAT_PROTOCOL_VERSION,
+            token: params.token.clone(),
+            agent: agent.clone(),
+            resume: resume_from.map(|last_seq| Resume { last_seq }),
+        },
+    )
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
     validate_response(&response)?;
@@ -561,7 +607,7 @@ pub async fn connect_app_server_client(
         }
     };
     let session = Arc::new(AlleycatSession {
-        connection,
+        lease,
         params,
         agent,
         wire,
@@ -574,18 +620,21 @@ pub(crate) async fn connect_jsonl_agent_stream(
     params: ParsedPairPayload,
     agent: String,
 ) -> Result<(AlleycatStream, Arc<AlleycatSession>), AlleycatError> {
-    let (connection, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
-    write_json_frame(&mut send, &Request::Connect {
-        v: ALLEYCAT_PROTOCOL_VERSION,
-        token: params.token.clone(),
-        agent: agent.clone(),
-        resume: None,
-    })
+    let (lease, mut send, mut recv) = open_stream_on(endpoint, &params).await?;
+    write_json_frame(
+        &mut send,
+        &Request::Connect {
+            v: ALLEYCAT_PROTOCOL_VERSION,
+            token: params.token.clone(),
+            agent: agent.clone(),
+            resume: None,
+        },
+    )
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
     validate_response(&response)?;
     let session = Arc::new(AlleycatSession {
-        connection,
+        lease,
         params,
         agent,
         wire: AgentWire::Jsonl,
@@ -645,7 +694,7 @@ pub async fn bind_alleycat_endpoint(
         .dns_resolver(iroh::dns::DnsResolver::with_nameserver(
             std::net::SocketAddr::from(([8, 8, 8, 8], 53)),
         ))
-        .ca_roots_config(iroh::tls::CaRootsConfig::embedded());
+        .ca_tls_config(iroh::tls::CaTlsConfig::embedded());
     info!("alleycat: binding shared iroh endpoint");
     endpoint_builder
         .bind()
@@ -653,31 +702,296 @@ pub async fn bind_alleycat_endpoint(
         .map_err(|error| AlleycatError::Transport(format!("binding iroh endpoint: {error}")))
 }
 
-/// Open a fresh QUIC connection + bidirectional stream to the alleycat
-/// peer described by `params`, on the supplied (shared) endpoint.
-async fn open_stream_on(
-    endpoint: &Endpoint,
-    params: &ParsedPairPayload,
-) -> Result<(Connection, SendStream, RecvStream), AlleycatError> {
+/// One QUIC connection per paired host, shared by every agent on it.
+///
+/// Each agent used to dial its own connection, so a host with a dozen agents
+/// cost a dozen handshakes, keepalive timers and relay paths, and a network
+/// change made all of them reconnect independently. The host already accepts
+/// any number of bidirectional streams per connection, so agents now open a
+/// stream on the shared connection. A lease counts users; the connection is
+/// closed when the last lease is released (or force-closed when the path is
+/// known dead).
+pub(crate) struct PooledConnection {
+    connection: Connection,
+    users: std::sync::atomic::AtomicUsize,
+}
+
+impl PooledConnection {
+    fn is_usable(&self) -> bool {
+        self.connection.close_reason().is_none()
+    }
+}
+
+/// A user's hold on a pooled connection. Releasing it (explicitly or on
+/// drop) closes the connection once no other agent is using it.
+pub(crate) struct ConnectionLease {
+    node_id: String,
+    pooled: Arc<PooledConnection>,
+    released: std::sync::atomic::AtomicBool,
+}
+
+impl ConnectionLease {
+    pub(crate) fn connection(&self) -> &Connection {
+        &self.pooled.connection
+    }
+
+    pub(crate) fn release(&self, reason: &'static [u8]) {
+        if self.released.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        if self.pooled.users.fetch_sub(1, Ordering::AcqRel) == 1 {
+            forget_pooled(&self.node_id, &self.pooled);
+            self.pooled.connection.close(VarInt::from_u32(0), reason);
+        }
+    }
+
+    /// Close the shared connection for every agent (the path is dead).
+    pub(crate) fn force_close(&self) {
+        forget_pooled(&self.node_id, &self.pooled);
+        self.pooled
+            .connection
+            .close(VarInt::from_u32(0), b"client abandoned dead path");
+        self.release(b"client abandoned dead path");
+    }
+}
+
+impl Drop for ConnectionLease {
+    fn drop(&mut self) {
+        self.release(b"client disconnect");
+    }
+}
+
+type ConnectionPool = std::collections::HashMap<String, Arc<PooledConnection>>;
+
+fn connection_pool() -> &'static std::sync::Mutex<ConnectionPool> {
+    static POOL: std::sync::OnceLock<std::sync::Mutex<ConnectionPool>> =
+        std::sync::OnceLock::new();
+    POOL.get_or_init(Default::default)
+}
+
+/// One in-flight dial per host, so a dozen agents starting together share a
+/// single handshake instead of racing twelve.
+fn dial_lock(node_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    static LOCKS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    > = std::sync::OnceLock::new();
+    let mut locks = LOCKS.get_or_init(Default::default).lock().unwrap();
+    Arc::clone(locks.entry(node_id.to_string()).or_default())
+}
+
+fn forget_pooled(node_id: &str, pooled: &Arc<PooledConnection>) {
+    let mut pool = connection_pool().lock().unwrap();
+    if pool
+        .get(node_id)
+        .is_some_and(|current| Arc::ptr_eq(current, pooled))
+    {
+        pool.remove(node_id);
+    }
+}
+
+fn lease_pooled(node_id: &str) -> Option<ConnectionLease> {
+    let mut pool = connection_pool().lock().unwrap();
+    let pooled = pool.get(node_id)?;
+    if !pooled.is_usable() {
+        pool.remove(node_id);
+        return None;
+    }
+    pooled.users.fetch_add(1, Ordering::AcqRel);
+    Some(ConnectionLease {
+        node_id: node_id.to_string(),
+        pooled: Arc::clone(pooled),
+        released: std::sync::atomic::AtomicBool::new(false),
+    })
+}
+
+async fn dial(endpoint: &Endpoint, params: &ParsedPairPayload) -> Result<Connection, AlleycatError> {
     let id = EndpointId::from_str(&params.node_id)
         .map_err(|error| AlleycatError::InvalidPayload(format!("invalid node_id: {error}")))?;
     let mut addr = EndpointAddr::new(id);
     if let Some(relay) = params.relay.as_deref() {
-        let relay = RelayUrl::from_str(relay).map_err(|error| {
+        // Normalize here as well: saved pairings may predate URL normalization.
+        let relay = RelayUrl::from_str(&normalize_relay_url(relay)?).map_err(|error| {
             AlleycatError::InvalidPayload(format!("invalid relay URL: {error}"))
         })?;
         addr = addr.with_relay_url(relay);
     }
-    info!("alleycat: connecting node_id={}", params.node_id);
-    let conn = endpoint
+    let cached = direct_addr_cache::addresses(&params.node_id);
+    for sock in &cached {
+        addr = addr.with_ip_addr(*sock);
+    }
+    info!(
+        "alleycat: connecting node_id={} cached_direct_addrs={}",
+        params.node_id,
+        cached.len()
+    );
+    endpoint
         .connect(addr, ALLEYCAT_ALPN)
         .await
-        .map_err(|error| AlleycatError::Transport(format!("connecting iroh endpoint: {error}")))?;
-    let (send, recv) = conn
-        .open_bi()
-        .await
-        .map_err(|error| AlleycatError::Transport(format!("opening iroh stream: {error}")))?;
-    Ok((conn, send, recv))
+        .map_err(|error| AlleycatError::Transport(format!("connecting iroh endpoint: {error}")))
+}
+
+async fn lease_connection(
+    endpoint: &Endpoint,
+    params: &ParsedPairPayload,
+) -> Result<ConnectionLease, AlleycatError> {
+    if let Some(lease) = lease_pooled(&params.node_id) {
+        return Ok(lease);
+    }
+    let lock = dial_lock(&params.node_id);
+    let _guard = lock.lock().await;
+    // Another agent may have finished dialing while we waited.
+    if let Some(lease) = lease_pooled(&params.node_id) {
+        return Ok(lease);
+    }
+    let connection = dial(endpoint, params).await?;
+    spawn_path_logger(connection.clone(), params.node_id.clone());
+    let pooled = Arc::new(PooledConnection {
+        connection,
+        users: std::sync::atomic::AtomicUsize::new(1),
+    });
+    connection_pool()
+        .lock()
+        .unwrap()
+        .insert(params.node_id.clone(), Arc::clone(&pooled));
+    Ok(ConnectionLease {
+        node_id: params.node_id.clone(),
+        pooled,
+        released: std::sync::atomic::AtomicBool::new(false),
+    })
+}
+
+/// Last known direct (IP) addresses per host, persisted so the first dial
+/// after a relaunch can go direct instead of spending its first round trips
+/// on the relay while hole punching completes. Stale addresses are harmless:
+/// iroh races them against the relay.
+mod direct_addr_cache {
+    use std::collections::HashMap;
+    use std::net::SocketAddr;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
+
+    const FILE: &str = "alleycat-direct-addrs.json";
+    const MAX_PER_HOST: usize = 4;
+
+    struct Cache {
+        path: Option<PathBuf>,
+        hosts: HashMap<String, Vec<SocketAddr>>,
+    }
+
+    fn cache() -> &'static Mutex<Cache> {
+        static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+        CACHE.get_or_init(|| {
+            Mutex::new(Cache {
+                path: None,
+                hosts: HashMap::new(),
+            })
+        })
+    }
+
+    /// Point the cache at the app's preferences directory and load it.
+    pub(crate) fn set_directory(directory: &str) {
+        let path = PathBuf::from(directory).join(FILE);
+        let hosts = std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<HashMap<String, Vec<SocketAddr>>>(&bytes).ok())
+            .unwrap_or_default();
+        let mut cache = cache().lock().unwrap();
+        cache.path = Some(path);
+        cache.hosts = hosts;
+    }
+
+    pub(crate) fn addresses(node_id: &str) -> Vec<SocketAddr> {
+        cache().lock().unwrap().hosts.get(node_id).cloned().unwrap_or_default()
+    }
+
+    /// Remember a working direct address (most recent first) and persist.
+    pub(crate) fn record(node_id: &str, addr: SocketAddr) {
+        let (path, bytes) = {
+            let mut cache = cache().lock().unwrap();
+            let entry = cache.hosts.entry(node_id.to_string()).or_default();
+            if entry.first() == Some(&addr) {
+                return;
+            }
+            entry.retain(|existing| *existing != addr);
+            entry.insert(0, addr);
+            entry.truncate(MAX_PER_HOST);
+            let Some(path) = cache.path.clone() else { return };
+            let Ok(bytes) = serde_json::to_vec(&cache.hosts) else { return };
+            (path, bytes)
+        };
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, bytes).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+}
+
+pub(crate) use direct_addr_cache::set_directory as set_direct_addr_cache_directory;
+
+/// Log the host connection's selected path (direct vs relay, RTT) whenever
+/// it changes, so slow sessions can be attributed to a relayed path.
+fn spawn_path_logger(connection: Connection, node_id: String) {
+    tokio::spawn(async move {
+        use futures::StreamExt;
+        let mut stream = connection.paths_stream();
+        let mut last: Option<String> = None;
+        while let Some(list) = stream.next().await {
+            let Some(path) = list.iter().find(|path| path.is_selected()) else {
+                continue;
+            };
+            let addr = path.remote_addr();
+            let kind = if addr.is_ip() { "direct" } else if addr.is_relay() { "relay" } else { "custom" };
+            let remote = match addr {
+                iroh::TransportAddr::Ip(sock) => sock.to_string(),
+                iroh::TransportAddr::Relay(url) => url.to_string(),
+                other => format!("{other:?}"),
+            };
+            if let iroh::TransportAddr::Ip(sock) = addr {
+                direct_addr_cache::record(&node_id, *sock);
+            }
+            let key = format!("{kind} {remote}");
+            if last.as_deref() == Some(key.as_str()) {
+                continue;
+            }
+            info!(
+                "alleycat path node_id={} path={} remote={} rtt_ms={} open_paths={}",
+                node_id,
+                kind,
+                remote,
+                path.rtt().as_millis(),
+                list.iter().count()
+            );
+            last = Some(key);
+        }
+    });
+}
+
+/// Open a bidirectional stream to the alleycat peer described by `params`
+/// on its shared connection, dialing it first if needed. A stale pooled
+/// connection that fails to open a stream is dropped and redialed once.
+async fn open_stream_on(
+    endpoint: &Endpoint,
+    params: &ParsedPairPayload,
+) -> Result<(ConnectionLease, SendStream, RecvStream), AlleycatError> {
+    for attempt in 0..2 {
+        let lease = lease_connection(endpoint, params).await?;
+        match lease.connection().open_bi().await {
+            Ok((send, recv)) => return Ok((lease, send, recv)),
+            Err(error) if attempt == 0 => {
+                debug!(
+                    "alleycat: pooled connection unusable node_id={} error={error}; redialing",
+                    params.node_id
+                );
+                lease.force_close();
+            }
+            Err(error) => {
+                return Err(AlleycatError::Transport(format!(
+                    "opening iroh stream: {error}"
+                )));
+            }
+        }
+    }
+    unreachable!("open_stream_on returns within two attempts")
 }
 
 async fn read_json_frame<T, R>(reader: &mut R) -> Result<T, AlleycatError>
@@ -777,7 +1091,7 @@ fn validate_response(response: &Response) -> Result<(), AlleycatError> {
         });
     }
     if !response.ok {
-        return Err(AlleycatError::Transport(
+        return Err(AlleycatError::Rejected(
             response
                 .error
                 .clone()
@@ -936,7 +1250,7 @@ mod tests {
         assert_eq!(parsed.version, 1);
         assert_eq!(parsed.node_id, key.public().to_string());
         assert_eq!(parsed.token, "deadbeef");
-        assert_eq!(parsed.relay.as_deref(), Some("https://relay.example.com"));
+        assert_eq!(parsed.relay.as_deref(), Some("https://relay.example.com./"));
         assert_eq!(parsed.host_name.as_deref(), Some("studio.local"));
     }
 
@@ -949,6 +1263,47 @@ mod tests {
         );
         let parsed = parse_pair_payload(&json).expect("parse");
         assert_eq!(parsed.host_name.as_deref(), Some("studio"));
+    }
+
+    #[test]
+    fn parse_pair_payload_preserves_discovered_relay_identity() {
+        let key = iroh::SecretKey::generate();
+        let json = format!(
+            r#"{{"v":1,"node_id":"{}","token":"deadbeef","relay":"https://relay.example.com./"}}"#,
+            key.public()
+        );
+        let parsed = parse_pair_payload(&json).expect("parse");
+        assert_eq!(parsed.relay.as_deref(), Some("https://relay.example.com./"));
+    }
+
+    #[test]
+    fn saved_relay_aliases_match_iroh_discovery() {
+        for host in [
+            "euc1-1.relay.n0.iroh.link",
+            "euc1-1.relay.n0.iroh-canary.iroh.link",
+        ] {
+            let discovered = RelayUrl::from_str(&format!("https://{host}./")).unwrap();
+            for saved in [
+                format!("https://{host}"),
+                format!("https://{host}/"),
+                discovered.to_string(),
+            ] {
+                let normalized = normalize_relay_url(&saved).unwrap();
+                assert_eq!(RelayUrl::from_str(&normalized).unwrap(), discovered);
+            }
+        }
+    }
+
+    #[test]
+    fn relay_normalization_preserves_ip_addresses_and_ports() {
+        for relay in ["https://127.0.0.1:3340/", "https://[::1]:3340/"] {
+            assert_eq!(normalize_relay_url(relay).unwrap(), relay);
+        }
+        assert_eq!(
+            normalize_relay_url("https://relay.example.com:3340/path").unwrap(),
+            "https://relay.example.com.:3340/path"
+        );
+        assert!(normalize_relay_url("file:///relay").is_err());
     }
 
     #[test]
@@ -966,6 +1321,10 @@ mod tests {
             Some("codex".to_string())
         );
         assert_eq!(agent_runtime_kind("pi.dev", "Pi"), Some("pi".to_string()));
+        assert_eq!(
+            agent_runtime_kind("oh-my-pi", "Oh My Pi"),
+            Some("omp".to_string())
+        );
         assert_eq!(agent_runtime_kind("amp", "Amp"), Some("amp".to_string()));
         assert_eq!(
             agent_runtime_kind("open-code", "opencode"),

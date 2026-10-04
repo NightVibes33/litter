@@ -903,7 +903,11 @@ if [[ "$ASSIGN_BETA_GROUP" == "1" && -n "$build_id" ]]; then
             submit_log="$BUILD_DIR/beta-review-submit.log"
             rm -f "$submit_log"
             for attempt in 1 2 3; do
-                if asc testflight review submit --build-id "$build_id" --confirm --output json >"$submit_log" 2>&1; then
+                if curl -fsS -X POST \
+                    -H "Authorization: Bearer $(app_store_connect_jwt)" \
+                    -H 'Content-Type: application/json' \
+                    --data "$(jq -nc --arg id "$build_id" '{data:{type:"betaAppReviewSubmissions",relationships:{build:{data:{type:"builds",id:$id}}}}}')" \
+                    https://api.appstoreconnect.apple.com/v1/betaAppReviewSubmissions >"$submit_log" 2>&1; then
                     beta_review_submit_succeeded=1
                     break
                 fi

@@ -3,8 +3,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
@@ -20,12 +18,6 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.App.Starting">
-        <meta-data
-            android:name="com.litter.android.runtime.STARTUP_MODE"
-            android:value="${runtimeStartupMode}" />
-        <meta-data
-            android:name="com.litter.android.runtime.ENABLE_ON_DEVICE_BRIDGE"
-            android:value="${enableOnDeviceBridge}" />
         <activity
             android:name="com.litter.android.MainActivity"
             android:exported="true"

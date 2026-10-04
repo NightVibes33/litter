@@ -37,11 +37,17 @@ struct ConversationComposerSnapshot: Equatable {
     var threadPreview: String
     var threadModel: String
     var threadReasoningEffort: String?
+    /// Captured here so the composer's model pill never reads
+    /// `appModel.threadSnapshot(for:)` in its body (a per-snapshot edge that
+    /// re-rendered the whole composer during streaming while typing).
+    var threadAgentRuntimeKind: AgentRuntimeKind?
     var modelContextWindow: Int64?
     var contextTokensUsed: Int64?
     var rateLimits: RateLimitSnapshot?
     var availableModels: [ModelInfo]
     var isConnected: Bool
+    var supportsTurnPagination: Bool
+    var hasFixedFullAccess: Bool
 
     static let empty = ConversationComposerSnapshot(
         threadKey: ThreadKey(serverId: "", threadId: ""),
@@ -58,11 +64,14 @@ struct ConversationComposerSnapshot: Equatable {
         threadPreview: "",
         threadModel: "",
         threadReasoningEffort: nil,
+        threadAgentRuntimeKind: nil,
         modelContextWindow: nil,
         contextTokensUsed: nil,
         rateLimits: nil,
         availableModels: [],
-        isConnected: false
+        isConnected: false,
+        supportsTurnPagination: false,
+        hasFixedFullAccess: false
     )
 }
 
@@ -92,15 +101,38 @@ final class ConversationScreenModel {
     private(set) var transcript: ConversationTranscriptSnapshot = .empty
     private(set) var pinnedContextItems: [ConversationItem] = []
     private(set) var composer: ConversationComposerSnapshot = .empty
-    private(set) var followScrollToken = 0
     private(set) var minigameOverlay: MinigameOverlayState = .idle
-    /// Live composer draft. Lifted out of `ConversationInputBar` so it
-    /// survives view teardown when `ConversationDestinationScreen` flips
-    /// through its `if let conversationThread` branch during foreground
-    /// refresh — otherwise typed-but-unsent text and pasted attachments
-    /// vanish on app switch.
-    var composerInputText: String = ""
-    var composerAttachedImage: UIImage?
+    /// Precomputed server snapshot for the current thread's server. Read by
+    /// ConversationToolbarControls via param instead of
+    /// `appModel.snapshot` in body (which would create a per-token edge).
+    private(set) var serverSnapshot: AppServerSnapshot?
+    /// Live composer draft. Owned here so it survives view teardown when
+    /// `ConversationDestinationScreen` flips through its
+    /// `if let conversationThread` branch during foreground refresh —
+    /// otherwise typed-but-unsent text and pasted attachments vanish on app
+    /// switch. A separate object, passed down by reference, so only the
+    /// composer observes keystrokes: a binding to a property here made every
+    /// keystroke re-render the whole conversation screen and transcript.
+    let composerDraft = ConversationComposerDraft()
+
+    /// Precomputed closure that resolves agent target labels from a captured
+    /// snapshot of `sessionSummaries`. Reading `appModel.snapshot` inside a
+    /// view body (the old `resolveTargetLabel` private func on
+    /// `ConversationView`) created a per-token observation edge. By
+    /// precomputing the closure here (in `refreshState`, a non-body context)
+    /// the closure captures stale-free data without registering an observation.
+    @ObservationIgnored private(set) var resolveTargetLabel: (String) -> String? = { _ in nil }
+    /// Precomputed closure that resolves a receiver thread id to a `ThreadKey`
+    /// from a captured snapshot of `sessionSummaries`. Mirrors
+    /// `resolveTargetLabel` so `SubagentCardView` can resolve thread keys
+    /// without reading `appModel.snapshot` in its body (per-row, during
+    /// streaming).
+    @ObservationIgnored private(set) var resolveThreadKey: (String) -> ThreadKey? = { _ in nil }
+    /// Precomputed closure that returns the live subagent status for a
+    /// `ThreadKey` from a captured snapshot of `sessionSummaries`. Returns
+    /// `nil` when no summary is known or the status is unknown, leaving the
+    /// caller to fall back to the row's static status.
+    @ObservationIgnored private(set) var resolveLiveStatus: (ThreadKey) -> AppSubagentStatus? = { _ in nil }
 
     @ObservationIgnored private var thread: AppThreadSnapshot?
     @ObservationIgnored private var appModel: AppModel?
@@ -109,6 +141,7 @@ final class ConversationScreenModel {
     @ObservationIgnored private var cachedHydratedConversationItems: [HydratedConversationItem] = []
     @ObservationIgnored private var cachedProjectedConversationItems: [ConversationItem] = []
     @ObservationIgnored private var transcriptRevision: Int = 0
+    @ObservationIgnored private var projectedRevision: UInt64?
     @ObservationIgnored private var minigameTask: Task<Void, Never>?
 
     func bind(
@@ -125,27 +158,31 @@ final class ConversationScreenModel {
         self.agentDirectoryVersion = agentDirectoryVersion
 
         if threadChanged {
-            followScrollToken = 0
             cachedHydratedConversationItems = []
             cachedConversationItemProjections = [:]
             cachedProjectedConversationItems = []
             transcriptRevision = 0
+            projectedRevision = nil
             minigameTask?.cancel()
             minigameTask = nil
             minigameOverlay = .idle
-            composerInputText = ""
-            composerAttachedImage = nil
+            composerDraft.text = ""
+            composerDraft.attachedImages = []
         }
 
         refreshState()
     }
 
     private func refreshState() {
+        PerfTracker.event("ConversationScreenModel.refreshState")
         guard let thread, let appModel else {
             transcript = .empty
             pinnedContextItems = []
             composer = .empty
-            followScrollToken = 0
+            resolveTargetLabel = { _ in nil }
+            resolveThreadKey = { _ in nil }
+            resolveLiveStatus = { _ in nil }
+            serverSnapshot = nil
             return
         }
 
@@ -169,6 +206,60 @@ final class ConversationScreenModel {
         let composerPrefillRequest = appModel.composerPrefillRequest.flatMap { request in
             request.threadKey == thread.key ? request : nil
         }
+
+        // Precompute server-derived properties here (non-body context) so
+        // ConversationView/ConversationInputBar never read
+        // `appModel.snapshot` in their body. Each read of
+        // `appModel.snapshot` in `body` registers an observation edge that
+        // re-renders the view on every coalesced snapshot mutation (~8 fps
+        // during streaming).
+        let serverSnap = appModel.snapshot?.serverSnapshot(for: thread.key.serverId)
+        serverSnapshot = serverSnap
+        let supportsTurnPagination = serverSnap?.capabilities.supportsTurnPagination ?? false
+        let hasFixedFullAccess = String.hasFixedFullAccess(thread.agentRuntimeKind)
+
+        // Precompute the resolveTargetLabel closure from a captured copy of
+        // sessionSummaries. This avoids reading `appModel.snapshot` inside
+        // ConversationView.body (the old private func created an observation
+        // edge that re-rendered the entire conversation on every snapshot bump).
+        let capturedSummaries = appModel.snapshot?.sessionSummaries ?? []
+        let serverId = thread.key.serverId
+        resolveTargetLabel = { target in
+            if AgentLabelFormatter.looksLikeDisplayLabel(target) {
+                return AgentLabelFormatter.sanitized(target)
+            }
+            guard let normalized = AgentLabelFormatter.sanitized(target) else { return nil }
+            if let summary = capturedSummaries.first(where: {
+                $0.key.serverId == serverId && $0.key.threadId == normalized
+            }) {
+                return summary.agentDisplayLabel ?? AgentLabelFormatter.sanitized(target)
+            }
+            return nil
+        }
+        // Mirror `AppSnapshotRecord.resolvedThreadKey(for:serverId:)` against
+        // the captured summaries so SubagentCardView never reads
+        // `appModel.snapshot` in its body.
+        resolveThreadKey = { receiverId in
+            guard let normalized = AgentLabelFormatter.sanitized(receiverId) else { return nil }
+            if let summary = capturedSummaries.first(where: {
+                $0.key.serverId == serverId && $0.key.threadId == normalized
+            }) {
+                return summary.key
+            }
+            return ThreadKey(serverId: serverId, threadId: normalized)
+        }
+        // Mirror the session-summary lookup used by
+        // `SubagentCardView.liveStatus(for:)` so it can derive a running /
+        // completed / errored status without a body-path snapshot read.
+        resolveLiveStatus = { key in
+            guard let summary = capturedSummaries.first(where: { $0.key == key }) else { return nil }
+            if summary.hasActiveTurn { return .running }
+            if summary.agentStatus != .unknown {
+                return summary.agentStatus
+            }
+            return nil
+        }
+
         let composerSnapshot = ConversationComposerSnapshot(
             threadKey: thread.key,
             collaborationMode: thread.collaborationMode,
@@ -184,6 +275,7 @@ final class ConversationScreenModel {
             threadPreview: thread.resolvedPreview,
             threadModel: thread.resolvedModel,
             threadReasoningEffort: thread.reasoningEffort,
+            threadAgentRuntimeKind: thread.agentRuntimeKind,
             modelContextWindow: thread.modelContextWindow.map(Int64.init),
             contextTokensUsed: thread.contextTokensUsed.map(Int64.init),
             rateLimits: appModel.rateLimits(
@@ -191,7 +283,9 @@ final class ConversationScreenModel {
                 runtime: thread.agentRuntimeKind
             ),
             availableModels: appModel.availableModels(for: thread.key.serverId),
-            isConnected: appModel.snapshot?.serverSnapshot(for: thread.key.serverId)?.isConnected ?? false
+            isConnected: serverSnap?.isConnected ?? false,
+            supportsTurnPagination: supportsTurnPagination,
+            hasFixedFullAccess: hasFixedFullAccess
         )
 
         let transcriptChanged =
@@ -215,20 +309,12 @@ final class ConversationScreenModel {
             agentDirectoryVersion: agentDirectoryVersion,
             renderDigest: transcriptChanged ? transcriptRevision : currentTranscript.renderDigest
         )
-        var nextFollowScrollToken = followScrollToken
-        if hasTurnInFlight,
-           projection.didChange {
-            nextFollowScrollToken &+= 1
-        }
         if transcript != nextTranscript {
             transcript = nextTranscript
             pinnedContextItems = items
         }
         if composer != composerSnapshot {
             composer = composerSnapshot
-        }
-        if followScrollToken != nextFollowScrollToken {
-            followScrollToken = nextFollowScrollToken
         }
     }
 }
@@ -303,7 +389,30 @@ private struct ProjectedConversationItemsResult {
 private extension ConversationScreenModel {
     func projectConversationItems(from hydratedItems: [HydratedConversationItem]) -> ProjectedConversationItemsResult {
         let previousHydratedItems = cachedHydratedConversationItems
+        let revision = appModel?.snapshotRevision
+
+        // Cheap change signals first — the deep equality walk over the whole
+        // hydrated array is the most expensive part of `refreshState`, and it
+        // re-ran on every coalesced snapshot bump (~8 fps while streaming)
+        // plus on duplicate binds (the revision and composerPrefillRequest
+        // onChange handlers both call `bindScreenModel`).
+        //
+        // 1. Same snapshot revision as the last projection: the snapshot only
+        //    changes when the revision bumps, so the arrays are identical.
+        // 2. Item count / last item id: appends and truncations are detected
+        //    in O(1). Only when all cheap signals agree do we fall back to
+        //    deep equality.
+        if let revision, revision == projectedRevision,
+           previousHydratedItems.count == hydratedItems.count,
+           previousHydratedItems.last?.id == hydratedItems.last?.id {
+            return ProjectedConversationItemsResult(
+                items: cachedProjectedConversationItems,
+                didChange: false
+            )
+        }
+
         if previousHydratedItems == hydratedItems {
+            projectedRevision = revision
             return ProjectedConversationItemsResult(
                 items: cachedProjectedConversationItems,
                 didChange: false
@@ -375,6 +484,7 @@ private extension ConversationScreenModel {
         cachedHydratedConversationItems = hydratedItems
         cachedConversationItemProjections = nextCache
         cachedProjectedConversationItems = projectedItems
+        projectedRevision = revision
         return ProjectedConversationItemsResult(items: projectedItems, didChange: true)
     }
 
@@ -464,3 +574,11 @@ extension ConversationScreenModel {
     }
 }
 #endif
+
+/// The conversation composer's unsent text and attachments.
+@MainActor
+@Observable
+final class ConversationComposerDraft {
+    var text: String = ""
+    var attachedImages: [UIImage] = []
+}

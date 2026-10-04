@@ -33,6 +33,7 @@ pub struct SavedServerRecord {
     pub ssh_port_forwarding_enabled: Option<bool>,
     pub websocket_url: Option<String>,
     pub remembered_by_user: bool,
+    pub detached_transport: bool,
     /// Legacy Alleycat marker. Unsupported after the iroh-backed host migration;
     /// records with only these fields require a new pairing scan.
     pub alleycat_host: Option<String>,
@@ -231,11 +232,10 @@ fn resolved_preferred_codex_port(server: &SavedServerRecord) -> Option<u16> {
         return None;
     }
     let ports = available_direct_codex_ports(server);
-    if let Some(pref) = server.preferred_codex_port {
-        if ports.contains(&pref) {
+    if let Some(pref) = server.preferred_codex_port
+        && ports.contains(&pref) {
             return Some(pref);
         }
-    }
     None
 }
 
@@ -297,8 +297,8 @@ pub(crate) fn compute_reconnect_plan_with_slingshot(
     }
 
     // 2. Stable Alleycat pairing wins before legacy tunnel/direct transports.
-    if multi_clanker_and_quic_enabled {
-        if let (Some(node_id), Some(token), Some(agent_name)) = (
+    if multi_clanker_and_quic_enabled
+        && let (Some(node_id), Some(token), Some(agent_name)) = (
             server.alleycat_node_id.as_ref(),
             server.alleycat_token.as_ref(),
             server.alleycat_agent_name.as_ref(),
@@ -321,7 +321,6 @@ pub(crate) fn compute_reconnect_plan_with_slingshot(
                 wire,
             });
         }
-    }
 
     // 3. SSH bridge records need to reconnect as the multiplexed in-process
     // bridge group. Falling through to the legacy SSH plan would only
@@ -393,8 +392,8 @@ pub(crate) fn compute_reconnect_plan_with_slingshot(
     }
 
     // 7. No explicit mode, but credential available → SSH (legacy fallback)
-    if mode.is_none() {
-        if let Some(cred) = credential {
+    if mode.is_none()
+        && let Some(cred) = credential {
             return Some(ReconnectPlan::Ssh {
                 server_id: server.id.clone(),
                 display_name: server.name.clone(),
@@ -403,7 +402,6 @@ pub(crate) fn compute_reconnect_plan_with_slingshot(
                 credential: cred.clone(),
             });
         }
-    }
 
     // 8. Local source → Local
     if server.source == "local" {
@@ -513,28 +511,82 @@ pub(crate) async fn execute_reconnect_plan(
                 auth,
                 unlock_macos_keychain: credential.unlock_macos_keychain,
             };
+            let normalized_host = crate::terminal::normalize_host(host);
+            let trust_store = client
+                .ssh_trust_store
+                .lock()
+                .ok()
+                .and_then(|guard| guard.clone());
+            let pinned_fingerprint = trust_store
+                .as_ref()
+                .and_then(|store| store.pinned(normalized_host.clone(), *ssh_port));
+            let policy_pin = pinned_fingerprint.clone();
+            let observed_fingerprint = Arc::new(tokio::sync::Mutex::new(None::<String>));
+            let callback_observed = Arc::clone(&observed_fingerprint);
             let ssh_client = match SshClient::connect(
                 ssh_creds,
-                Box::new(move |_fingerprint| Box::pin(async move { true })),
+                Box::new(move |fingerprint| {
+                    let expected = policy_pin.clone();
+                    let observed = Arc::clone(&callback_observed);
+                    let fingerprint = fingerprint.to_string();
+                    Box::pin(async move {
+                        *observed.lock().await = Some(fingerprint.clone());
+                        match expected {
+                            Some(expected) => expected == fingerprint,
+                            None => true,
+                        }
+                    })
+                }),
             )
             .await
             {
-                Ok(client) => Arc::new(client),
+                Ok(client) => {
+                    if let Some(store) = trust_store.as_ref()
+                        && pinned_fingerprint.as_ref().is_none()
+                        && let Some(fingerprint) = observed_fingerprint.lock().await.clone()
+                    {
+                        store.pin(normalized_host, *ssh_port, fingerprint);
+                    }
+                    Arc::new(client)
+                }
                 Err(e) => {
+                    let message = match e {
+                        crate::ssh::SshError::HostKeyVerification { fingerprint } => {
+                            let marker = if pinned_fingerprint.is_some() {
+                                "host-key-changed"
+                            } else {
+                                "unknown-host"
+                            };
+                            format!("{marker}:{fingerprint}")
+                        }
+                        other => other.to_string(),
+                    };
                     warn!(
                         "reconnect: SSH bridge plan failed to connect server_id={} error={}",
-                        server_id, e
+                        server_id, message
                     );
                     return ReconnectResult {
                         server_id: server_id.clone(),
                         success: false,
                         needs_local_auth_restore: false,
-                        error_message: Some(e.to_string()),
+                        error_message: Some(message),
                     };
                 }
             };
-            let selected =
-                resolve_ssh_bridge_runtime_kinds(Arc::clone(&ssh_client), runtime_kinds).await;
+            // Seed detection (shell, agent availability, CLI paths, ...) from
+            // the per-server cache so a reconnect skips the remote probes.
+            let observed = observed_fingerprint.lock().await.clone();
+            let mut detect_cache = crate::ssh_detect_cache::DetectionCacheSession::begin(
+                client.mobile_preferences_directory(),
+                crate::ssh_detect_cache::CacheKey::new(
+                    server_id,
+                    host,
+                    *ssh_port,
+                    &credential.username,
+                    observed.as_deref(),
+                ),
+                &ssh_client,
+            );
             let state_root = match ssh_bridge_state_root(host) {
                 Ok(path) => path,
                 Err(error) => {
@@ -546,18 +598,39 @@ pub(crate) async fn execute_reconnect_plan(
                     };
                 }
             };
-            match client
-                .connect_remote_over_ssh_bridges(
-                    ssh_client,
-                    server_id.clone(),
-                    display_name.clone(),
-                    host.clone(),
-                    state_root,
-                    selected,
-                    crate::ssh_bridge::SshBridgeTransport::Ephemeral,
-                )
-                .await
+            let mut outcome = connect_ssh_bridge_once(
+                client,
+                &ssh_client,
+                server_id,
+                display_name,
+                host,
+                &state_root,
+                runtime_kinds,
+            )
+            .await;
+            // A connect that relied on cached detection failed: the cached
+            // paths may be stale. Invalidate and re-probe exactly once.
+            if outcome.is_err()
+                && let Some(cache) = detect_cache.as_mut()
+                && cache.on_failure(&ssh_client)
             {
+                outcome = connect_ssh_bridge_once(
+                    client,
+                    &ssh_client,
+                    server_id,
+                    display_name,
+                    host,
+                    &state_root,
+                    runtime_kinds,
+                )
+                .await;
+            }
+            if outcome.is_ok()
+                && let Some(cache) = detect_cache
+            {
+                cache.on_success(Arc::clone(&ssh_client));
+            }
+            match outcome {
                 Ok(_) => ReconnectResult {
                     server_id: server_id.clone(),
                     success: true,
@@ -792,23 +865,52 @@ fn is_ssh_bridge_record(server: &SavedServerRecord) -> bool {
             .is_some_and(|url| url.starts_with("ssh-bridge://"))
 }
 
+/// Normalize the comma-separated runtime list persisted on a saved
+/// SSH-bridge server.
+///
+/// This used to be a five-arm `match`, which meant any runtime outside
+/// that literal list was silently dropped on reconnect — a saved server
+/// could never come back with an agent the list had not been updated
+/// for. It now normalizes through the built-in catalog (so aliases like
+/// `claude-code` / `pi.dev` resolve) and keeps every kind litter can
+/// actually bootstrap over SSH. Pairing-only kinds are still dropped:
+/// the SSH path genuinely cannot start them.
 fn parse_ssh_bridge_runtime_kinds(value: Option<&str>) -> Vec<AgentRuntimeKind> {
     value
         .unwrap_or_default()
         .split(',')
-        .filter_map(|part| match part.trim().to_ascii_lowercase().as_str() {
-            "codex" => Some("codex".to_string()),
-            "claude" => Some("claude".to_string()),
-            "pi" => Some("pi".to_string()),
-            "opencode" | "open-code" | "open_code" => Some("opencode".to_string()),
-            _ => None,
-        })
+        .filter_map(|part| crate::store::agent_catalog::entry(part))
+        .filter(|entry| entry.reach.supports_ssh_bridge())
+        .map(|entry| entry.name.to_string())
         .fold(Vec::new(), |mut acc, kind| {
             if !acc.contains(&kind) {
                 acc.push(kind);
             }
             acc
         })
+}
+
+async fn connect_ssh_bridge_once(
+    client: &MobileClient,
+    ssh_client: &Arc<SshClient>,
+    server_id: &str,
+    display_name: &str,
+    host: &str,
+    state_root: &str,
+    runtime_kinds: &[AgentRuntimeKind],
+) -> Result<crate::AlleycatConnectOutcome, crate::transport::TransportError> {
+    let selected = resolve_ssh_bridge_runtime_kinds(Arc::clone(ssh_client), runtime_kinds).await;
+    client
+        .connect_remote_over_ssh_bridges(
+            Arc::clone(ssh_client),
+            server_id.to_string(),
+            display_name.to_string(),
+            host.to_string(),
+            state_root.to_string(),
+            selected,
+            crate::ssh_bridge::SshBridgeTransport::Ephemeral,
+        )
+        .await
 }
 
 async fn resolve_ssh_bridge_runtime_kinds(
@@ -831,12 +933,10 @@ async fn resolve_ssh_bridge_runtime_kinds(
     };
 
     let candidates = if requested.is_empty() {
-        vec![
-            "claude".to_string(),
-            "pi".to_string(),
-            "opencode".to_string(),
-            "codex".to_string(),
-        ]
+        crate::store::agent_catalog::SSH_BRIDGE_RECONNECT_ORDER
+            .iter()
+            .map(|kind| (*kind).to_string())
+            .collect::<Vec<_>>()
     } else {
         requested.to_vec()
     };
@@ -916,6 +1016,7 @@ mod tests {
             ssh_port_forwarding_enabled: None,
             websocket_url: None,
             remembered_by_user: true,
+            detached_transport: false,
             alleycat_host: None,
             alleycat_udp_port: None,
             alleycat_node_id: None,
@@ -1328,5 +1429,67 @@ mod tests {
         let plan = compute_reconnect_plan(&s, Some(&cred), false, false);
 
         assert!(matches!(plan, Some(ReconnectPlan::Ssh { .. })));
+    }
+
+    // -- parse_ssh_bridge_runtime_kinds --
+
+    #[test]
+    fn saved_runtime_kinds_keep_every_ssh_bridgeable_agent() {
+        assert_eq!(
+            parse_ssh_bridge_runtime_kinds(Some("claude,pi,opencode,codex,local-studio")),
+            vec![
+                "claude".to_string(),
+                "pi".to_string(),
+                "opencode".to_string(),
+                "codex".to_string(),
+                "local-studio".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn saved_runtime_kinds_normalize_aliases_and_whitespace() {
+        assert_eq!(
+            parse_ssh_bridge_runtime_kinds(Some(
+                " Claude-Code , pi.dev ,open_code, local_studio "
+            )),
+            vec![
+                "claude".to_string(),
+                "pi".to_string(),
+                "opencode".to_string(),
+                "local-studio".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn saved_runtime_kinds_dedupe_across_spellings() {
+        assert_eq!(
+            parse_ssh_bridge_runtime_kinds(Some("claude,claude-code,CLAUDE")),
+            vec!["claude".to_string()]
+        );
+    }
+
+    /// Litter cannot start these over SSH, so a saved record that names
+    /// them must not resurrect a runtime the reconnect will fail on.
+    #[test]
+    fn saved_runtime_kinds_drop_pairing_only_agents() {
+        assert_eq!(
+            parse_ssh_bridge_runtime_kinds(Some("droid,devin,amp,hermes,grok,shell,mystery")),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            parse_ssh_bridge_runtime_kinds(Some("droid,claude")),
+            vec!["claude".to_string()]
+        );
+    }
+
+    #[test]
+    fn saved_runtime_kinds_tolerate_empty_input() {
+        assert_eq!(parse_ssh_bridge_runtime_kinds(None), Vec::<String>::new());
+        assert_eq!(
+            parse_ssh_bridge_runtime_kinds(Some("  , ,")),
+            Vec::<String>::new()
+        );
     }
 }

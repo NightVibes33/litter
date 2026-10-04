@@ -1,19 +1,15 @@
 Summary
 
-- Added a file/dir mount picker for local iPhone runtime mounts: press and hold the server pill to mount.
-- Added Real Time voice API-key fallback when OAuth realtime auth is unavailable.
-- Fixed active-turn composer text entry so Send is available while a turn is running.
-- Fixed a CarPlay voice crash when reopening or resuming an active voice session.
-- Improved Real Time voice error reporting for unexpected session closes.
-- Fixed OpenCode/Pi model catalog loading through Alleycat.
-- Fixed Pi/alleycat remote project browsing when directory-picker commands were rejected.
+- Typing no longer freezes after a reply: each keystroke used to redraw the whole conversation.
+- Full history for Claude Code, Pi and other harnesses (it was cut to the newest few turns).
+- Session titles no longer show raw Claude Code markup.
+- New model picker: choose a harness, then a model grouped by provider; search across everything; modes kept separate.
+- Conversations stay in a centered column; code and tables scroll inside their own box.
+- Simpler Settings in three groups.
+- Faster reconnects; pairing uses Kittylitter 0.3.11.
 
 What to test
 
-- Local iPhone mounts: connect to the local iPhone runtime, press and hold the server pill, pick a file or directory, and confirm it mounts.
-- Real Time auth fallback: configure OAuth and an API key, start voice, and confirm fallback auth can connect.
-- Active-turn composer: type while a turn is running, confirm Send appears, then clear text and confirm Cancel returns.
-- CarPlay voice: start or resume CarPlay voice and confirm Now Playing opens without crashing.
-- Real Time errors: confirm an unexpected session close shows a specific error.
-- OpenCode/Pi models: connect to an Alleycat host, open the model picker, and confirm models load.
-- Remote project picker: connect to a Pi/alleycat host, open the new-project directory picker, and confirm folders load.
+- Open a Claude Code session and scroll up: older turns should load.
+- Send a message, wait for the reply, then type a long follow-up: it should keep up.
+- Open the model picker and search for a model.

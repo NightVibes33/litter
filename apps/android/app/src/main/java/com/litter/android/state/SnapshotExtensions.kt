@@ -90,13 +90,11 @@ val AppServerSnapshot.connectionProgressLabel: String?
         null -> null
     }
 
-val AppServerSnapshot.connectionProgressDetail: String?
-    get() = currentConnectionStep?.detail ?: connectionProgress?.terminalMessage
-
 val AppServerSnapshot.statusLabel: String
     get() = when {
         connectionProgressLabel != null -> connectionProgressLabel!!
-        transportState == AppServerTransportState.CONNECTED && !isLocal && account == null -> "Sign in required"
+        transportState == AppServerTransportState.CONNECTED && requiresOpenaiAuth && account == null ->
+            "Sign in required"
         else -> transportState.displayLabel
     }
 
@@ -105,7 +103,8 @@ val AppServerSnapshot.statusColor: Color
         currentConnectionStep?.state == AppConnectionStepState.FAILED -> Color(0xFFFF6B6B)
         currentConnectionStep?.state == AppConnectionStepState.AWAITING_USER_INPUT -> WarningOrange
         connectionProgressLabel != null -> AccentGreen
-        transportState == AppServerTransportState.CONNECTED && !isLocal && account == null -> WarningOrange
+        transportState == AppServerTransportState.CONNECTED && requiresOpenaiAuth && account == null ->
+            WarningOrange
         else -> transportState.accentColor
     }
 
@@ -121,7 +120,7 @@ val AppServerSnapshot.statusDotState: com.litter.android.ui.common.StatusDotStat
             com.litter.android.ui.common.StatusDotState.PENDING
         connectionProgressLabel != null ->
             com.litter.android.ui.common.StatusDotState.PENDING
-        transportState == AppServerTransportState.CONNECTED && !isLocal && account == null ->
+        transportState == AppServerTransportState.CONNECTED && requiresOpenaiAuth && account == null ->
             com.litter.android.ui.common.StatusDotState.PENDING
         transportState == AppServerTransportState.CONNECTED ->
             com.litter.android.ui.common.StatusDotState.OK
@@ -207,8 +206,8 @@ val AppThreadSnapshot.resolvedPreview: String
     get() = displayTitle
 
 val AppSessionSummary.displayTitle: String
-    get() = preview?.takeIf { it.isNotBlank() }
-        ?: title?.takeIf { it.isNotBlank() }
+    get() = title?.takeIf { it.isNotBlank() }
+        ?: preview?.takeIf { it.isNotBlank() }
         ?: "Untitled session"
 
 val AppThreadSnapshot.contextPercent: Int
@@ -238,3 +237,6 @@ val AppThreadSnapshot.latestAssistantSnippet: String?
         }
         return null
     }
+
+internal val uniffi.codex_mobile_client.ModelInfo.supportedDefaultReasoningEffort: uniffi.codex_mobile_client.ReasoningEffort?
+    get() = defaultReasoningEffort.takeIf { effort -> supportedReasoningEfforts.any { it.reasoningEffort == effort } }
