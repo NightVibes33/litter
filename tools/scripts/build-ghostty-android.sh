@@ -77,7 +77,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
     fi
 fi
 
-for abi in $ANDROID_ABIS; do
+for abi in ${ANDROID_ABIS//,/ }; do
     target="$(target_for_abi "$abi")"
     prefix="$STAGING_DIR/$abi"
     env_args=()
