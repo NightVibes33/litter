@@ -533,7 +533,7 @@ struct ContentView: View {
         .onChange(of: colorScheme) { _, nextColorScheme in
             // iOS toggles `colorScheme` while capturing light+dark
             // app-switcher snapshots on background. Reacting to that
-            // bumps `themeManager.themeVersion`, which the navigation
+            // updates the observable theme store, which the navigation
             // root uses as `.id(...)` and would tear down every
             // in-flight @State (composer text, focus, scroll) every
             // time the user switches apps. Only react when the scene
@@ -594,7 +594,6 @@ struct ContentView: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: [.top, .bottom])
-        .id(themeManager.themeVersion)
         .onAppear {
             if !splashDismissed {
                 splashDismissed = true

@@ -1858,8 +1858,7 @@ private struct MarkdownMatchedTitleFont: ViewModifier {
     @Environment(\.textScale) private var textScale
     func body(content: Content) -> some View {
         content
-            .font(.custom(
-                LitterFont.markdownFontName,
+            .font(LitterFont.markdownBodyFont(
                 size: LitterFont.conversationBodyPointSize * textScale
             ))
             .fontWeight(.medium)

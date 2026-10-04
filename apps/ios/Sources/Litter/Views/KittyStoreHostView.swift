@@ -14,7 +14,9 @@ struct KittyStoreHostView: UIViewControllerRepresentable {
 
     @MainActor
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
-        _ = themeManager.themeVersion
+        _ = themeManager.lightTheme
+        _ = themeManager.darkTheme
+        _ = themeManager.appearanceMode
         KittyStoreEmbeddedBridge.applyCurrentTheme(to: uiViewController)
         KittyStoreEmbeddedBridge.startTransportIfPossible()
     }

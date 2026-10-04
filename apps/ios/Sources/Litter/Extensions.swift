@@ -277,8 +277,8 @@ enum LitterFont {
     private static let berkeleyBold = "BerkeleyMono-Bold"
 
     static var storedFamily: FontFamilyOption {
-        let raw = UserDefaults.standard.string(forKey: "fontFamily") ?? FontFamilyOption.system.rawValue
-        return FontFamilyOption(rawValue: raw) ?? .system
+        let raw = UserDefaults.standard.string(forKey: "fontFamily") ?? FontFamilyOption.mono.rawValue
+        return FontFamilyOption(rawValue: raw) ?? .mono
     }
 
     static var codeFontName: String {
