@@ -4,7 +4,7 @@ struct AppearanceSettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
     @State private var activeThemePicker: ThemePickerKind?
     @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.tiny.rawValue
-    @AppStorage("fontFamily") private var fontFamily = FontFamilyOption.system.rawValue
+    @AppStorage("fontFamily") private var fontFamily = FontFamilyOption.mono.rawValue
 
     var body: some View {
         ZStack {

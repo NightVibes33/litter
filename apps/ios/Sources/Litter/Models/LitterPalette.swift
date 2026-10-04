@@ -71,7 +71,7 @@ enum LitterPalette {
 
     /// Font design matching the user's font preference.
     static var fontDesign: Font.Design {
-        switch shared?.string(forKey: "fontFamily") ?? "system" {
+        switch shared?.string(forKey: "fontFamily") ?? "mono" {
         case "mono", "system-mono":
             return .monospaced
         case "serif":

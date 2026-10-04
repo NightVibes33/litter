@@ -533,11 +533,9 @@ struct ContentView: View {
         .onChange(of: colorScheme) { _, nextColorScheme in
             // iOS toggles `colorScheme` while capturing light+dark
             // app-switcher snapshots on background. Reacting to that
-            // updates the observable theme store, which the navigation
-            // root uses as `.id(...)` and would tear down every
-            // in-flight @State (composer text, focus, scroll) every
-            // time the user switches apps. Only react when the scene
-            // is actually active — i.e., a real user theme toggle.
+            // can update the observable theme store. Only react while
+            // the scene is active so background snapshots do not change
+            // the appearance of the active navigation tree.
             guard scenePhase == .active else { return }
             themeManager.syncSystemColorScheme(nextColorScheme)
         }
