@@ -21,6 +21,8 @@ class AppleFake:
             if path.startswith('/v1/buildBetaDetails/'):
                 self.states['autoNotifyEnabled'] = True
             return {}
+        if path.startswith('/v1/builds?'):
+            return {'data': []}
         if path.endswith('/app'):
             return {'data': {'id': 'app', 'attributes': {'name': 'Alley Cat', 'bundleId': self.bundle}}}
         if path.endswith('/buildBetaDetail'):

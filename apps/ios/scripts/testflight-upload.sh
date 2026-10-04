@@ -789,39 +789,53 @@ fi
 
 ensure_beta_review_details() {
     local app_id="$1"
-    local review_id
+    local review_id token body_file
 
     if [[ -z "$REVIEW_CONTACT_EMAIL" && -z "$REVIEW_CONTACT_FIRST_NAME" && -z "$REVIEW_CONTACT_LAST_NAME" && -z "$REVIEW_CONTACT_PHONE" && -z "$REVIEW_NOTES" ]]; then
         return 0
     fi
 
-    review_id="$(
-        asc testflight review view --app "$app_id" --output json |
-            jq -r '.data[0].id // .data.id // empty'
-    )"
+    # Use Apple's API directly: ASC CLI versions rename review get/view and update/edit.
+    token="$(app_store_connect_jwt)"
+    review_id="$(curl -fsS -G \
+        -H "Authorization: Bearer $token" \
+        --data-urlencode "filter[app]=$app_id" \
+        https://api.appstoreconnect.apple.com/v1/betaAppReviewDetails | jq -r '.data[0].id // empty')"
     if [[ -z "$review_id" ]]; then
-        echo "WARNING: Could not find TestFlight beta review details record for app $app_id." >&2
+        echo "Missing TestFlight beta review details record for app $app_id." >&2
         return 1
     fi
 
+    body_file="$(mktemp "${TMPDIR:-/tmp}/beta-review-details.XXXXXX.json")"
+    REVIEW_ID="$review_id" \
+    REVIEW_CONTACT_EMAIL="$REVIEW_CONTACT_EMAIL" \
+    REVIEW_CONTACT_FIRST_NAME="$REVIEW_CONTACT_FIRST_NAME" \
+    REVIEW_CONTACT_LAST_NAME="$REVIEW_CONTACT_LAST_NAME" \
+    REVIEW_CONTACT_PHONE="$REVIEW_CONTACT_PHONE" \
+    REVIEW_NOTES="$REVIEW_NOTES" \
+    python3 - <<'REVIEW_PY' >"$body_file"
+import json
+import os
+attrs = {}
+for env_name, api_name in (
+    ("REVIEW_CONTACT_EMAIL", "contactEmail"),
+    ("REVIEW_CONTACT_FIRST_NAME", "contactFirstName"),
+    ("REVIEW_CONTACT_LAST_NAME", "contactLastName"),
+    ("REVIEW_CONTACT_PHONE", "contactPhone"),
+    ("REVIEW_NOTES", "notes"),
+):
+    value = os.environ[env_name].strip()
+    if value:
+        attrs[api_name] = value
+print(json.dumps({"data": {"type": "betaAppReviewDetails", "id": os.environ["REVIEW_ID"], "attributes": attrs}}))
+REVIEW_PY
     echo "==> Updating TestFlight beta review contact details"
-    cmd=(asc testflight review edit --id "$review_id" --output json)
-    if [[ -n "$REVIEW_CONTACT_EMAIL" ]]; then
-        cmd+=(--contact-email "$REVIEW_CONTACT_EMAIL")
-    fi
-    if [[ -n "$REVIEW_CONTACT_FIRST_NAME" ]]; then
-        cmd+=(--contact-first-name "$REVIEW_CONTACT_FIRST_NAME")
-    fi
-    if [[ -n "$REVIEW_CONTACT_LAST_NAME" ]]; then
-        cmd+=(--contact-last-name "$REVIEW_CONTACT_LAST_NAME")
-    fi
-    if [[ -n "$REVIEW_CONTACT_PHONE" ]]; then
-        cmd+=(--contact-phone "$REVIEW_CONTACT_PHONE")
-    fi
-    if [[ -n "$REVIEW_NOTES" ]]; then
-        cmd+=(--notes "$REVIEW_NOTES")
-    fi
-    "${cmd[@]}" >/dev/null
+    curl -fsS -X PATCH \
+        -H "Authorization: Bearer $token" \
+        -H 'Content-Type: application/json' \
+        --data-binary "@$body_file" \
+        "https://api.appstoreconnect.apple.com/v1/betaAppReviewDetails/$review_id" >/dev/null
+    rm -f "$body_file"
 }
 
 if [[ "$ASSIGN_BETA_GROUP" == "1" && -n "$build_id" ]]; then

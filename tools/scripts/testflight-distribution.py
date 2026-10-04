@@ -74,7 +74,7 @@ def inspect(apple, build_id, bundle_id, group_names, repair=False):
     attrs = build['attributes']
     print(f"App: {app['attributes']['name']} ({bundle_id})")
     print(f"Build: {attrs['version']}; processing={attrs['processingState']}; expired={attrs['expired']}")
-    recent = apple.collection(f"/v1/builds?filter[app]={app['id']}&sort=-uploadedDate&limit=5")
+    recent = apple.request(f"/v1/builds?filter[app]={app['id']}&sort=-uploadedDate&limit=5")['data']
     print('Latest Apple builds: ' + json.dumps([{k: b['attributes'].get(k) for k in ('version', 'uploadedDate', 'processingState', 'expired')} for b in recent[:5]]))
     beta = apple.request(f'/v1/builds/{build_id}/buildBetaDetail')['data']
     print('Apple testing states: ' + json.dumps(beta['attributes'], sort_keys=True))
