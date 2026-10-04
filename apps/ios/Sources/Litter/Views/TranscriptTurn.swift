@@ -164,6 +164,49 @@ struct TranscriptTurn: Identifiable, Equatable {
         }
     }
 
+    static func mergeConsecutiveExplorationTurnsForRendering(
+        _ turns: [TranscriptTurn]
+    ) -> [TranscriptTurn] {
+        var merged: [TranscriptTurn] = []
+        var explorationBuffer: [TranscriptTurn] = []
+
+        func flushExplorationBuffer() {
+            guard !explorationBuffer.isEmpty else { return }
+            if explorationBuffer.count == 1, let single = explorationBuffer.first {
+                merged.append(single)
+            } else if let mergedTurn = mergedExplorationTurn(from: explorationBuffer) {
+                merged.append(mergedTurn)
+            }
+            explorationBuffer.removeAll(keepingCapacity: true)
+        }
+
+        for turn in turns {
+            guard let renderableTurn = renderableTurn(from: turn) else { continue }
+            if renderableTurn.items.allSatisfy(\.isExplorationCommandItem) {
+                explorationBuffer.append(renderableTurn)
+            } else {
+                flushExplorationBuffer()
+                merged.append(renderableTurn)
+            }
+        }
+
+        flushExplorationBuffer()
+        return merged
+    }
+
+    private static func mergedExplorationTurn(from turns: [TranscriptTurn]) -> TranscriptTurn? {
+        guard let first = turns.first else { return nil }
+        let items = turns.flatMap(\.items)
+        let isLive = turns.contains(where: \.isLive)
+        return TranscriptTurn(
+            id: "exploration-turn-\(first.id)",
+            items: items,
+            isLive: isLive,
+            isCollapsedByDefault: turns.allSatisfy(\.isCollapsedByDefault),
+            renderDigest: makeRenderDigest(from: items, isLive: isLive)
+        )
+    }
+
     private static func group(_ items: [ConversationItem]) -> [[ConversationItem]] {
         var groups: [[ConversationItem]] = []
         var current: [ConversationItem] = []

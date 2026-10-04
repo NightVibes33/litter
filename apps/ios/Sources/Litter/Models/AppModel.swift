@@ -2272,7 +2272,6 @@ final class AppModel {
         await loadAvailableModelsIfNeeded(serverId: serverId, force: true)
         await loadRateLimits(serverId: serverId, forceRefresh: true)
         await refreshSnapshot()
-        recentConversationMetadataLoads[serverId] = Date()
     }
 
     func loadAvailableModelsIfNeeded(serverId: String, force: Bool = false) async {
