@@ -10,6 +10,10 @@ on:
         description: "Build an installable debug APK without store signing or publishing"
         type: boolean
         default: false
+      bindings_run_id:
+        description: "Reuse shared-prep from a prior run with unchanged binding sources"
+        type: string
+        default: ""
       abis:
         description: "CPU architectures (ARM64 phones/TVs, x86-64 emulators/PCs)"
         type: choice
@@ -22,6 +26,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   detect-android-changes:
@@ -84,6 +89,41 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Validate reusable binding sources
+        if: inputs.bindings_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BINDINGS_RUN_ID: ${{ inputs.bindings_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$BINDINGS_RUN_ID" =~ ^[0-9]+$ ]]
+          source_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BINDINGS_RUN_ID" --jq '.head_sha')"
+          git diff --exit-code "$source_sha" "$GITHUB_SHA" -- \
+            shared/rust-bridge shared/third_party/codex
+          while IFS= read -r patch; do
+            case "$patch" in
+              patches/codex/android-armv7-file-mode.patch) ;;
+              *) echo "Binding-affecting patch changed: $patch"; exit 1 ;;
+            esac
+          done < <(git diff --name-only "$source_sha" "$GITHUB_SHA" -- patches/codex)
+
+      - name: Download reusable shared bindings
+        if: inputs.bindings_run_id != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: shared-prep
+          path: .ci-reused-bindings
+          run-id: ${{ inputs.bindings_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Restore reusable shared bindings
+        if: inputs.bindings_run_id != ''
+        run: |
+          set -euo pipefail
+          archive="$(find .ci-reused-bindings -name generated-mobile-sources.tgz -print -quit)"
+          test -n "$archive"
+          tar -xzf "$archive" -C .
+
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -130,7 +170,7 @@ jobs:
           key: mobile-bindings-kotlin-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/generate-bindings.sh', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/uniffi-bindgen/**', 'patches/codex/**', 'shared/third_party/codex/codex-rs/app-server-protocol/src/protocol/**', 'shared/third_party/codex/codex-rs/protocol/src/**') }}
 
       - name: Generate shared mobile bindings
-        if: steps.mobile-bindings-cache.outputs.cache-hit != 'true'
+        if: inputs.bindings_run_id == '' && steps.mobile-bindings-cache.outputs.cache-hit != 'true'
         env:
           CARGO_INCREMENTAL: "0"
         run: |
