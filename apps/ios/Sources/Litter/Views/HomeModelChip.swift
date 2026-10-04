@@ -177,64 +177,8 @@ struct HomeModelChip: View {
     }
 
     var body: some View {
-        Button {
-            selectedDetent = .large
-            showSheet = true
-        } label: {
-            HStack(spacing: 6) {
-                if fastMode {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(LitterTheme.warning)
-                }
-                Image(systemName: "cpu")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(disabled ? LitterTheme.textMuted : LitterTheme.accent)
-                Text(selectedModelLabel)
-                    .litterMonoFont(size: 12, weight: .semibold)
-                    .foregroundStyle(disabled ? LitterTheme.textSecondary : LitterTheme.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .minimumScaleFactor(0.82)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
-                if !reasoningLabel.isEmpty {
-                    Text(reasoningLabel)
-                        .litterMonoFont(size: 11, weight: .regular)
-                        .foregroundStyle(LitterTheme.textSecondary.opacity(0.85))
-                        .lineLimit(1)
-                }
-                if isPlanMode {
-                    Text("plan")
-                        .litterMonoFont(size: 10, weight: .bold)
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(LitterTheme.accent, in: Capsule())
-                }
-                if isFullAccess {
-                    Image(systemName: "lock.open.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(LitterTheme.danger)
-                }
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(LitterTheme.textMuted)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .modifier(GlassCapsuleModifier(interactive: true))
-        .overlay(
-            Capsule(style: .continuous)
-                .stroke(LitterTheme.textMuted.opacity(0.55), lineWidth: 0.8)
-                .allowsHitTesting(false)
-        )
-        .disabled(disabled)
-        .opacity(disabled ? 0.5 : 1)
-        .sheet(isPresented: $showSheet) {
+        chipLabel
+        .sheet(isPresented: sheetBinding) {
             ConversationOptionsSheet(
                 models: availableModels,
                 catalogLoaded: server?.availableModels != nil,
@@ -246,7 +190,6 @@ struct HomeModelChip: View {
                 selectedModel: selectedModelBinding,
                 selectedAgentRuntimeKind: selectedAgentRuntimeKindBinding,
                 reasoningEffort: reasoningEffortBinding,
-                serverId: serverId,
                 threadKey: nil
             )
             .environment(appModel)

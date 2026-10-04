@@ -93,7 +93,7 @@ struct SavedAppUpdateOverlay: View {
         }
         .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(LitterTheme.surface)
         )
         .shadow(color: Color.black.opacity(0.35), radius: 20, y: 6)
@@ -110,7 +110,7 @@ struct SavedAppUpdateOverlay: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 14)
                 .fill(LitterTheme.surface.opacity(0.95))
         )
         .shadow(color: Color.black.opacity(0.3), radius: 16, y: 4)

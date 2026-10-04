@@ -3,12 +3,12 @@ import SwiftUI
 struct AppearanceSettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
     @State private var activeThemePicker: ThemePickerKind?
-    @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.tiny.rawValue
-    @AppStorage("fontFamily") private var fontFamily = FontFamilyOption.mono.rawValue
+    @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.medium.rawValue
+    @AppStorage("fontFamily") private var fontFamily = FontFamilyOption.system.rawValue
 
     var body: some View {
         ZStack {
-            AlleyBackdrop().ignoresSafeArea()
+            LitterTheme.backgroundGradient.ignoresSafeArea()
             Form {
                 appearanceModeSection
                 lightThemeSection
@@ -50,11 +50,12 @@ struct AppearanceSettingsView: View {
             }
             .pickerStyle(.segmented)
             .tint(LitterTheme.accent)
-            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .settingsRowBackground()
         } header: {
             SettingsSectionHeader("Mode")
         } footer: {
-            Text("Match the device setting, or keep Alley Cãt fixed in light or dark mode.")
+            Text("Match the device setting, or keep Litter fixed in light or dark mode.")
+                .litterFont(.footnote)
                 .foregroundColor(LitterTheme.textMuted)
         }
     }
@@ -116,7 +117,7 @@ struct AppearanceSettingsView: View {
                 }
             }
             .padding(.vertical, 4)
-            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .settingsRowBackground()
         } header: {
             SettingsSectionHeader("Text")
         } footer: {
@@ -208,7 +209,7 @@ struct AppearanceSettingsView: View {
             ThemePickerRow(entry: selected, trailingAccessory: .chevron)
         }
         .buttonStyle(.plain)
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .settingsRowBackground()
     }
 
     private func themes(for pickerKind: ThemePickerKind) -> [ThemeIndexEntry] {
@@ -321,7 +322,7 @@ private struct ThemePickerSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AlleyBackdrop().ignoresSafeArea()
+                LitterTheme.backgroundGradient.ignoresSafeArea()
 
                 VStack(spacing: 12) {
                     searchField

@@ -39,7 +39,7 @@ enum LitterPalette {
         let dark: String
     }
 
-    static let appGroupSuite = "group.com.sigkitten.litter.39A8Q3T3TR"
+    static let appGroupSuite = "group.com.sigkitten.litter"
     private static let shared = UserDefaults(suiteName: appGroupSuite)
 
     private static func pair(_ key: String, lightFallback: String, darkFallback: String) -> Pair {
@@ -49,7 +49,6 @@ enum LitterPalette {
         )
     }
 
-    static var background: Pair    { pair("background", lightFallback: "#FFFFFF", darkFallback: "#1C1C1E") }
     static var accent: Pair        { pair("accent", lightFallback: "#4A4A4A", darkFallback: "#B0B0B0") }
     static var accentStrong: Pair   { pair("accentStrong", lightFallback: "#00995D", darkFallback: "#00FF9C") }
     static var textPrimary: Pair    { pair("textPrimary", lightFallback: "#1A1A1A", darkFallback: "#FFFFFF") }
@@ -71,7 +70,7 @@ enum LitterPalette {
 
     /// Font design matching the user's font preference.
     static var fontDesign: Font.Design {
-        switch shared?.string(forKey: "fontFamily") ?? "mono" {
+        switch shared?.string(forKey: "fontFamily") ?? "system" {
         case "mono", "system-mono":
             return .monospaced
         case "serif":

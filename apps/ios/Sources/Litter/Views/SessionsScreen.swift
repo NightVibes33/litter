@@ -245,7 +245,6 @@ struct SessionsScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
-        .background(AlleyBackdrop().ignoresSafeArea())
         .accessibilityIdentifier("sessions.container")
     }
 

@@ -77,7 +77,7 @@ struct KittyStoreRouteView: View {
             Spacer(minLength: 0)
 
             Button {
-                requestedSettingsRoute = SettingsRoute.signing.rawValue
+                requestedSettingsRoute = "signing"
                 appState.showSettings = true
             } label: {
                 Image(systemName: "link.badge.plus")

@@ -50,7 +50,7 @@ struct MinigameOverlayView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(LitterTheme.accent.opacity(0.32), lineWidth: AlleyVisual.hairline)
+                .stroke(LitterTheme.textSecondary.opacity(0.15), lineWidth: 0.5)
         )
         .shadow(color: Color.black.opacity(0.18), radius: 12, x: 0, y: -4)
     }

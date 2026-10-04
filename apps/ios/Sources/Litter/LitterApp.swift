@@ -346,7 +346,11 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 @main
 struct LitterApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #if targetEnvironment(macCatalyst)
     @State private var appModel = AppModel.shared
+    #else
+    @State private var appModel: AppModel?
+    #endif
     @State private var voiceRuntime = VoiceRuntimeController.shared
     @State private var appRuntime = AppRuntimeController.shared
     @State private var themeManager = ThemeManager.shared
@@ -372,31 +376,27 @@ struct LitterApp: App {
 
     private var mainWindowGroup: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(appModel)
-                .environment(appRuntime)
-                .environment(voiceRuntime)
-                .environment(themeManager)
-                .environment(wallpaperManager)
-                .task {
-                    appModel.start()
-                    voiceRuntime.bind(appModel: appModel)
-                    appRuntime.bind(appModel: appModel, voiceRuntime: voiceRuntime)
-                    appDelegate.appRuntime = appRuntime
-                    appRuntime.appDidBecomeActive()
-                    appModel.ensureLocalServerConnectedIfNeeded(reason: "launch")
-                    #if targetEnvironment(macCatalyst)
-                    LocalCodexBootstrap.shared.startIfNeeded(appModel: appModel)
-                    #endif
-                    // Pair host (BLE advertiser, ultrasonic emitter,
-                    // Bonjour publish, WS listener) and the iPhone client
-                    // (BLE scanner, ultrasonic reader, NISession) are
-                    // strictly opt-in: they only start when the user
-                    // opens the Pair screen in Settings → Experimental,
-                    // and stop on disappear. The screen itself is gated
-                    // behind `#if DEBUG`, so neither stack is reachable
-                    // in Release builds.
-                }
+            #if targetEnvironment(macCatalyst)
+            appContent(appModel)
+            #else
+            if let appModel {
+                appContent(appModel)
+            } else {
+                // Launch surface matches Home's background and holds until
+                // the first store snapshot (with Rust's cached session
+                // summaries) is in, so Home's first frame is its final
+                // layout instead of empty → cached → live.
+                LaunchMarkView()
+                    .task {
+                        await Task.detached(priority: .userInitiated) {
+                            AppModel.prewarmRustBridges()
+                        }.value
+                        let model = AppModel.shared
+                        await model.refreshSnapshot()
+                        appModel = model
+                    }
+            }
+            #endif
         }
         .onChange(of: scenePhase) { _, newPhase in
             LLog.info("lifecycle", "scenePhase changed", fields: ["phase": newPhase.debugName])
@@ -411,6 +411,35 @@ struct LitterApp: App {
                 break
             }
         }
+    }
+
+    private func appContent(_ appModel: AppModel) -> some View {
+        ContentView()
+            .environment(appModel)
+            .environment(appRuntime)
+            .environment(voiceRuntime)
+            .environment(themeManager)
+            .environment(wallpaperManager)
+            .task {
+                appModel.start()
+                voiceRuntime.bind(appModel: appModel)
+                appRuntime.bind(appModel: appModel, voiceRuntime: voiceRuntime)
+                appDelegate.appRuntime = appRuntime
+                if scenePhase == .active {
+                    appRuntime.appDidBecomeActive()
+                }
+                #if targetEnvironment(macCatalyst)
+                LocalCodexBootstrap.shared.startIfNeeded(appModel: appModel)
+                #endif
+                // Pair host (BLE advertiser, ultrasonic emitter,
+                // Bonjour publish, WS listener) and the iPhone client
+                // (BLE scanner, ultrasonic reader, NISession) are
+                // strictly opt-in: they only start when the user
+                // opens the Pair screen in Settings → Experimental,
+                // and stop on disappear. The screen itself is gated
+                // behind `#if DEBUG`, so neither stack is reachable
+                // in Release builds.
+            }
     }
 }
 
@@ -450,13 +479,13 @@ struct ContentView: View {
     @Environment(ThemeManager.self) private var themeManager
     @State private var appState = AppState()
     @State private var stableSafeAreaInsets = StableSafeAreaInsets()
-    @State private var conversationWarmup = ConversationWarmupCoordinator()
     @State private var petOverlay = PetOverlayController.shared
+    @State private var overlayProjection = OverlayProjectionModel()
     @State private var composerBottomInset: CGFloat = 0
-    @State private var splashDismissed = false
+    @State private var lastObservedActiveThread: ThreadKey?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.tiny.rawValue
+    @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.medium.rawValue
 
     private var textScale: CGFloat {
         ConversationTextSize.clamped(rawValue: textSizeStep).scale
@@ -467,7 +496,7 @@ struct ContentView: View {
 
         GeometryReader { geometry in
             ZStack {
-                AlleyBackdrop().ignoresSafeArea()
+                LitterTheme.backgroundGradient.ignoresSafeArea()
 
                 #if DEBUG
                 if ConversationDisplayUITestHarnessView.isEnabled {
@@ -497,6 +526,7 @@ struct ContentView: View {
             }
             .ignoresSafeArea(.container)
             .task {
+                overlayProjection.bind(appModel: appModel, petOverlay: petOverlay)
                 if composerBottomInset <= 0, geometry.safeAreaInsets.bottom > 0 {
                     composerBottomInset = geometry.safeAreaInsets.bottom
                 }
@@ -510,7 +540,6 @@ struct ContentView: View {
             }
         }
         .environment(appState)
-        .environment(conversationWarmup)
         .environment(\.textScale, textScale)
         .preferredColorScheme(themeManager.appearanceMode.preferredColorScheme)
         .background {
@@ -524,18 +553,13 @@ struct ContentView: View {
         #endif
         .onAppear {
             themeManager.syncSystemColorScheme(colorScheme)
-            let forceDiscoveryForUITest =
-                ProcessInfo.processInfo.environment["CODEXIOS_UI_TEST_FORCE_DISCOVERY"] == "1"
-            if forceDiscoveryForUITest {
-                appState.showServerPicker = true
-            }
         }
         .onChange(of: colorScheme) { _, nextColorScheme in
             // iOS toggles `colorScheme` while capturing light+dark
             // app-switcher snapshots on background. Reacting to that
-            // can update the observable theme store. Only react while
-            // the scene is active so background snapshots do not change
-            // the appearance of the active navigation tree.
+            // recolors views through the @Observable ThemeStore every
+            // time the user switches apps. Only react when the scene
+            // is actually active — i.e., a real user theme toggle.
             guard scenePhase == .active else { return }
             themeManager.syncSystemColorScheme(nextColorScheme)
         }
@@ -548,14 +572,19 @@ struct ContentView: View {
                 themeManager.syncSystemColorScheme(colorScheme)
             }
         }
-        .onChange(of: appModel.snapshot?.activeThread) { _, _ in
-            appState.selectedModel = ""
-            appState.selectedAgentRuntimeKind = nil
-            appState.reasoningEffort = ""
-            appState.showModelSelector = false
-        }
-        .onChange(of: appModel.snapshot) { _, nextSnapshot in
-            appRuntime.handleSnapshot(nextSnapshot)
+        .onChange(of: appModel.snapshotRevision) { _, _ in
+            // Active-thread changes reset the composer selection. Reading
+            // snapshot inside the closure (not in body) avoids a per-token
+            // observation edge on the whole snapshot.
+            let activeThread = appModel.snapshot?.activeThread
+            if activeThread != lastObservedActiveThread {
+                lastObservedActiveThread = activeThread
+                appState.selectedModel = ""
+                appState.selectedAgentRuntimeKind = nil
+                appState.reasoningEffort = ""
+                appState.showModelSelector = false
+            }
+            appRuntime.handleSnapshotRevisionChange()
         }
         .sheet(isPresented: $bindableAppState.showServerPicker) {
             NavigationStack {
@@ -567,7 +596,7 @@ struct ContentView: View {
             .environment(appState)
             .environment(\.textScale, textScale)
         }
-        .sheet(isPresented: $bindableAppState.showSettings) {
+        .fullScreenCover(isPresented: $bindableAppState.showSettings) {
             SettingsView()
                 .environment(appModel)
                 .environment(appState)
@@ -592,12 +621,6 @@ struct ContentView: View {
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: [.top, .bottom])
-        .onAppear {
-            if !splashDismissed {
-                splashDismissed = true
-                (UIApplication.shared.delegate as? AppDelegate)?.signalContentReady()
-            }
-        }
     }
 
     @ViewBuilder
@@ -605,16 +628,14 @@ struct ContentView: View {
         if petOverlay.visible, let pet = petOverlay.selectedPet {
             PetOverlayView(
                 pet: pet,
-                state: petOverlay.avatarState(snapshot: appModel.snapshot),
-                message: petOverlay.avatarMessage(snapshot: appModel.snapshot),
+                state: overlayProjection.petAvatarState,
+                message: overlayProjection.petAvatarMessage,
                 reduceMotion: UIAccessibility.isReduceMotionEnabled
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
 
-        if let approval = appModel.snapshot?.pendingApprovals.first(where: {
-            $0.kind != .mcpElicitation
-        }) {
+        if let approval = overlayProjection.pendingApproval {
             ApprovalPromptView(approval: approval) { decision in
                 Task {
                     try? await appModel.store.respondToApproval(
@@ -627,12 +648,6 @@ struct ContentView: View {
             }
         }
 
-        if let warmupID = conversationWarmup.activeWarmupID {
-            ConversationWarmupView(warmupID: warmupID) {
-                conversationWarmup.finishWarmup()
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        }
     }
 }
 
@@ -691,21 +706,13 @@ private struct HomeNavigationView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(VoiceRuntimeController.self) private var voiceRuntime
     @Environment(AppState.self) private var appState
-    @Environment(ConversationWarmupCoordinator.self) private var conversationWarmup
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @AppStorage("workDir") private var workDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "/"
-    @AppStorage(LitterOnboardingState.completedVersionKey) private var onboardingCompletedVersion = 0
-    @AppStorage(LitterOnboardingState.replayRequestedKey) private var onboardingReplayRequested = false
-    @AppStorage(LitterOnboardingState.fileWorkspaceInitialDirectoryKey) private var fileWorkspaceInitialDirectory = HomeAnchor.path
-    @AppStorage("litterSettingsRequestedRoute") private var requestedSettingsRoute = ""
-    @AppStorage("litterPendingMainRoute") private var pendingMainRoute = ""
-    @AppStorage("litterTerminalInitialDirectory") private var terminalInitialDirectory = HomeAnchor.path
-    @AppStorage("developerToolsEnabled") private var developerToolsEnabled = false
     @State private var experimentalFeatures = ExperimentalFeatures.shared
     @State private var homeDashboardModel = HomeDashboardModel()
     @State private var savedAppsStore = SavedAppsStore.shared
-    @State private var proStore = ProAccessStore.shared
     @State private var navigationPath: [HomeNavigationRoute] = []
+    @State private var homeActivationTask: Task<Void, Never>?
     @State private var directoryPickerSheet: SessionLaunchSupport.DirectoryPickerSheetModel?
     @State private var showProjectPicker = false
     @State private var openingRecentSessionKey: ThreadKey?
@@ -718,16 +725,11 @@ private struct HomeNavigationView: View {
     @State private var hasSeededInitialConversationRoute = false
     @State private var pendingWallpaperConfig: WallpaperConfig?
     @State private var pendingWallpaperImage: UIImage?
-    @State private var pendingWallpaperVideoURL: URL?
-    @State private var showOnboarding = false
-    @State private var pendingProFeature: ProFeature?
-    @State private var pendingProTerminalNodeId: String?
-    @State private var onboardingPresentationMode: LitterOnboardingPresentationMode = .firstRun
     let topInset: CGFloat
     let bottomInset: CGFloat
 
     private enum HomeNavigationRoute: Hashable {
-        case sessions(serverId: String, title: String)
+        case sessions(serverId: String?, title: String)
         case conversation(ThreadKey)
         case realtimeVoice(ThreadKey)
         case conversationInfo(ThreadKey)
@@ -742,12 +744,6 @@ private struct HomeNavigationView: View {
         /// with `.conversation(key)` so the bottom composer visually
         /// inherits the hero composer's position.
         case newThread
-        /// KittyLitter-branded sideload/update source.
-        case kittyStore
-        /// EmexDE on-device development environment.
-        case emexDE
-        /// Real local iSH file workspace.
-        case filesWorkspace
         /// Saved apps list — always-visible.
         case appsList
         /// Saved-app detail, pushed when the user taps a home-screen thread
@@ -776,26 +772,14 @@ private struct HomeNavigationView: View {
         return nil
         #else
         guard experimentalFeatures.isEnabled(.terminal) else { return nil }
-        return { requestTerminalAccess(preferredAlleycatNodeId: nil) }
+        return { navigationPath.append(.terminal(preferredAlleycatNodeId: nil)) }
         #endif
     }
 
+    /// Debounced projection from HomeDashboardModel — no `appModel.snapshot`
+    /// read in body, so this no longer re-evaluates per streaming token.
     private var pinnedThreadHydrationSignature: String {
-        let pins = homeDashboardModel.pinnedKeys
-            .map { "\($0.serverId)/\($0.threadId)" }
-            .joined(separator: "|")
-        let pinnedSet = Set(homeDashboardModel.pinnedKeys)
-        let servers = appModel.snapshot?.servers
-            .map { "\($0.serverId)=\(String(describing: $0.transportState)):\($0.port)" }
-            .joined(separator: "|") ?? ""
-        let sessions = appModel.snapshot?.sessionSummaries
-            .compactMap { summary -> String? in
-                guard pinnedSet.contains(PinnedThreadKey(threadKey: summary.key)) else { return nil }
-                return "\(homeHydrationId(summary.key)):\(summary.isResumed)"
-            }
-            .joined(separator: "|")
-            ?? ""
-        return "\(pins)|\(servers)|\(sessions)"
+        homeDashboardModel.pinnedThreadHydrationSignature
     }
 
     @ViewBuilder
@@ -810,9 +794,13 @@ private struct HomeNavigationView: View {
     private var splitRoot: some View {
         NavigationSplitView {
             sidebarDashboard
-                // Apply the Alley surface explicitly to the sidebar
-                // so iPadOS and Catalyst share the same navigation identity.
-                .containerBackground(LitterTheme.surface.opacity(0.94), for: .navigation)
+                // Apply Liquid Glass material explicitly to the sidebar
+                // column. Catalyst 26 doesn't automatically paint the
+                // sidebar with glass the way iPadOS does, so the column
+                // comes through flat unless we install the material
+                // ourselves. `.ultraThinMaterial` gives the proper
+                // sidebar frosted-glass look with subtle vibrancy.
+                .containerBackground(.ultraThinMaterial, for: .navigation)
         } detail: {
             primaryNavigationStack
         }
@@ -828,19 +816,22 @@ private struct HomeNavigationView: View {
 
     private var primaryNavigationStack: some View {
         NavigationStack(path: $navigationPath) {
+            // Keep the root mounted while routes are pushed. Swapping it in
+            // only when the path empties forced a full Home rebuild in the
+            // same frame as the pop, delaying the back animation and showing
+            // a blank gradient during edge-swipe.
             Group {
-                if isHomeRouteActive {
-                    if isEmbeddedInSplit {
-                        splitDetailRoot
-                    } else {
-                        homeDashboard
-                    }
+                if isEmbeddedInSplit {
+                    splitDetailRoot
                 } else {
-                    AlleyBackdrop().ignoresSafeArea()
+                    homeDashboard
                 }
             }
             .overlay(alignment: .bottomLeading) {
+                // The phone home composer has its own mic; the floating
+                // voice orb only belongs to the split (sidebar) layout.
                 if isHomeRouteActive,
+                   isEmbeddedInSplit,
                    experimentalFeatures.isEnabled(.realtimeVoice),
                    homeInputMode == .collapsed {
                     homeVoiceLauncher
@@ -851,16 +842,19 @@ private struct HomeNavigationView: View {
                 case let .sessions(serverId, title):
                     SessionsScreen(
                         onOpenConversation: { key in
+                            homeDashboardModel.pinThread(key)
                             openConversation(key)
                         },
-                        onInfo: {
-                            navigationPath.append(.serverInfo(serverId: serverId))
-                        }
+                        onInfo: serverId.map { id in
+                            { navigationPath.append(.serverInfo(serverId: id)) }
+                        },
+                        onPin: pinThread,
+                        onUnpin: unpinThread
                     )
                         .navigationTitle(title)
                         .navigationBarTitleDisplayMode(.inline)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(AlleyBackdrop().ignoresSafeArea())
+                        .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                         .onAppear {
                             appState.sessionsSelectedServerFilterId = serverId
                             appState.sessionsShowOnlyForks = false
@@ -869,6 +863,7 @@ private struct HomeNavigationView: View {
                     ConversationDestinationScreen(
                         threadKey: threadKey,
                         bottomInset: bottomInset,
+                        onBack: { popCurrentRoute() },
                         onResumeSessions: { showSessions(for: $0) },
                         onOpenConversation: { replaceTopConversation(with: $0) },
                         onInfo: { navigationPath.append(.conversationInfo(threadKey)) }
@@ -878,6 +873,7 @@ private struct HomeNavigationView: View {
                         project: homeDashboardModel.selectedProject,
                         connectedServers: homeDashboardModel.connectedServers,
                         selectedServerId: homeDashboardModel.selectedServerId,
+                        serverSnapshotsById: homeDashboardModel.serverSnapshotsById,
                         onSelectServer: { serverId in
                             homeDashboardModel.selectedServerId = serverId
                         },
@@ -909,7 +905,7 @@ private struct HomeNavigationView: View {
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(AlleyBackdrop().ignoresSafeArea())
+                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                 case let .conversationInfo(threadKey):
                     ConversationInfoView(
                         threadKey: threadKey,
@@ -920,10 +916,9 @@ private struct HomeNavigationView: View {
                 case let .wallpaperSelection(threadKey):
                     WallpaperSelectionView(
                         threadKey: threadKey,
-                        onSelectWallpaper: { config, image, videoURL in
+                        onSelectWallpaper: { config, image in
                             pendingWallpaperConfig = config
                             pendingWallpaperImage = image
-                            pendingWallpaperVideoURL = videoURL
                             navigationPath.append(.wallpaperAdjust(threadKey))
                         },
                         onClose: {
@@ -932,20 +927,19 @@ private struct HomeNavigationView: View {
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(AlleyBackdrop().ignoresSafeArea())
+                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                 case let .wallpaperAdjust(threadKey):
                     WallpaperAdjustView(
                         threadKey: threadKey,
                         initialConfig: pendingWallpaperConfig ?? WallpaperConfig(),
                         customImage: pendingWallpaperImage,
-                        stagedVideoURL: pendingWallpaperVideoURL,
                         onDone: {
                             // Pop back to conversation info
                             popToConversationInfo()
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(AlleyBackdrop().ignoresSafeArea())
+                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                 case let .serverInfo(serverId):
                     ConversationInfoView(
                         threadKey: nil,
@@ -957,10 +951,9 @@ private struct HomeNavigationView: View {
                     WallpaperSelectionView(
                         threadKey: nil,
                         serverId: serverId,
-                        onSelectWallpaper: { config, image, videoURL in
+                        onSelectWallpaper: { config, image in
                             pendingWallpaperConfig = config
                             pendingWallpaperImage = image
-                            pendingWallpaperVideoURL = videoURL
                             navigationPath.append(.serverWallpaperAdjust(serverId: serverId))
                         },
                         onClose: {
@@ -968,52 +961,29 @@ private struct HomeNavigationView: View {
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(AlleyBackdrop().ignoresSafeArea())
+                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                 case let .serverWallpaperAdjust(serverId):
                     WallpaperAdjustView(
                         threadKey: nil,
                         serverId: serverId,
                         initialConfig: pendingWallpaperConfig ?? WallpaperConfig(),
                         customImage: pendingWallpaperImage,
-                        stagedVideoURL: pendingWallpaperVideoURL,
                         onDone: {
                             popToServerInfo()
                         }
                     )
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(AlleyBackdrop().ignoresSafeArea())
-                case .kittyStore:
-                    if AppDistributionCapabilities.includesKittyStore {
-                        KittyStoreRouteView()
-                    } else {
-                        AlleyBackdrop().ignoresSafeArea()
-                    }
-                case .emexDE:
-                    if AppDistributionCapabilities.includesEmexDE {
-                        EmexDERouteView()
-                    } else {
-                        AlleyBackdrop().ignoresSafeArea()
-                    }
-                case .filesWorkspace:
-                    if proStore.hasProAccess {
-                        LocalFileWorkspaceView()
-                    } else {
-                        ProPaywallView(feature: .fileBrowser)
-                    }
+                    .background(LitterTheme.backgroundGradient.ignoresSafeArea())
                 case .appsList:
                     AppsListView()
                 case .savedApp(let appId):
                     SavedAppDetailView(appId: appId)
                 case let .terminal(preferredAlleycatNodeId):
-                    if proStore.hasProAccess {
-                        TerminalScreen(
-                            cwd: preferredTerminalWorkingDirectory(),
-                            preferredAlleycatNodeId: preferredAlleycatNodeId
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        ProPaywallView(feature: .terminal)
-                    }
+                    TerminalScreen(
+                        cwd: preferredTerminalWorkingDirectory(),
+                        preferredAlleycatNodeId: preferredAlleycatNodeId
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -1021,34 +991,38 @@ private struct HomeNavigationView: View {
 
     var body: some View {
         rootNavigationContent
-        .task {
+        // Bind and activate in onAppear, not .task: .task runs after the
+        // first frame, so Home used to render once with no servers and no
+        // sessions (flashing the empty-state cat) before the model filled.
+        .onAppear {
             homeDashboardModel.bind(appModel: appModel)
-            updateHomeDashboardActivity()
-            hydratePinnedThreadsIfNeeded()
-            seedInitialConversationIfNeeded(activeKey: appModel.snapshot?.activeThread)
-            presentFirstRunOnboardingIfNeeded()
-            await proStore.loadProducts()
+            updateHomeDashboardActivity(deferActivation: false)
         }
-        .onChange(of: appModel.snapshot?.activeThread) { _, newKey in
+        .task {
+            seedInitialConversationIfNeeded(activeKey: appModel.snapshot?.activeThread)
+        }
+        .onChange(of: homeDashboardModel.activeThread) { _, newKey in
             seedInitialConversationIfNeeded(activeKey: newKey)
+        }
+        .onChange(of: navigationPath) { old, new in
+            // Back/edge-swipe pop: freeze the leaving conversation and drop
+            // the keyboard at once, before the transition runs.
+            guard new.count < old.count, case let .conversation(key)? = old.last else { return }
+            PerfTracker.event("ConversationPop.start", ["uptimeMs": ProcessInfo.processInfo.systemUptime * 1000])
+            appState.leavingConversationKey = key
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder),
+                to: nil, from: nil, for: nil
+            )
         }
         .onChange(of: navigationPath.count) { _, _ in
             updateHomeDashboardActivity()
-        }
-        .onAppear { consumePendingMainRoute() }
-        .onChange(of: pendingMainRoute) { _, _ in consumePendingMainRoute() }
-        .onChange(of: pinnedThreadHydrationSignature) { _, _ in
-            hydratePinnedThreadsIfNeeded()
         }
         .onChange(of: appState.pendingThreadNavigation) { _, newKey in
             if let newKey {
                 appState.pendingThreadNavigation = nil
                 replaceTopConversation(with: newKey)
             }
-        }
-        .onChange(of: onboardingReplayRequested) { _, requested in
-            guard requested else { return }
-            presentOnboardingReplay()
         }
         .onChange(of: SavedAppsNavigation.shared.pendingConversationThreadId) { _, newThreadId in
             guard let newThreadId else { return }
@@ -1096,6 +1070,8 @@ private struct HomeNavigationView: View {
                             directoryPickerSheet = sheet
                         }
                     ),
+                    localServerIds: homeDashboardModel.localServerIds,
+                    browseableServerIds: homeDashboardModel.browseableServerIds,
                     onServerChanged: { nextServerId in
                         guard var sheet = directoryPickerSheet else { return }
                         sheet.selectedServerId = nextServerId
@@ -1116,6 +1092,7 @@ private struct HomeNavigationView: View {
             ProjectPickerSheet(
                 projects: homeDashboardModel.projects,
                 serverNamesById: Dictionary(uniqueKeysWithValues: homeDashboardModel.connectedServers.map { ($0.id, $0.displayName) }),
+                localServerIds: Set(homeDashboardModel.connectedServers.filter(\.isLocal).map(\.id)),
                 onSelect: { project in
                     homeDashboardModel.selectedServerId = project.serverId
                     homeDashboardModel.selectedProject = project
@@ -1140,36 +1117,6 @@ private struct HomeNavigationView: View {
         } message: {
             Text(actionErrorMessage ?? "Unknown error")
         }
-        .sheet(item: $pendingProFeature) { feature in
-            NavigationStack {
-                ProPaywallView(feature: feature) {
-                    completePendingProUnlock(for: feature)
-                }
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") {
-                            pendingProFeature = nil
-                            pendingProTerminalNodeId = nil
-                        }
-                        .foregroundStyle(LitterTheme.accent)
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showOnboarding, onDismiss: {
-            onboardingReplayRequested = false
-        }) {
-            OnboardingView(
-                mode: onboardingPresentationMode,
-                onFinish: completeOnboarding,
-                onOpenFiles: openOnboardingFiles,
-                onOpenTerminal: openOnboardingTerminal,
-                onOpenServerPicker: openOnboardingServerPicker,
-                onOpenSettingsRoute: openOnboardingSettingsRoute
-            )
-            .environment(appModel)
-            .environment(appState)
-        }
         .alert("SSH Host Identity Changed", isPresented: Binding(
             get: { appModel.sshHostKeyChangeChallenge != nil },
             set: { if !$0 { appModel.clearSshHostKeyChange() } }
@@ -1187,55 +1134,6 @@ private struct HomeNavigationView: View {
         } message: {
             Text("The SSH identity for this server changed. This can happen after a server is recreated, but may also indicate a man-in-the-middle attack. New fingerprint: \(appModel.sshHostKeyChangeChallenge?.fingerprint ?? "unknown")")
         }
-    }
-
-    private func presentFirstRunOnboardingIfNeeded() {
-        guard onboardingCompletedVersion < LitterOnboardingState.currentVersion,
-              !showOnboarding,
-              !onboardingReplayRequested else { return }
-        onboardingPresentationMode = .firstRun
-        showOnboarding = true
-    }
-
-    private func presentOnboardingReplay() {
-        onboardingPresentationMode = .replay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            showOnboarding = true
-        }
-    }
-
-    private func completeOnboarding() {
-        onboardingCompletedVersion = max(onboardingCompletedVersion, LitterOnboardingState.currentVersion)
-        onboardingReplayRequested = false
-        showOnboarding = false
-    }
-
-    private func openOnboardingFiles(path: String) {
-        fileWorkspaceInitialDirectory = path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? HomeAnchor.path : path
-        requestFilesWorkspace()
-    }
-
-    private func openOnboardingTerminal(path: String) {
-        terminalInitialDirectory = path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? HomeAnchor.path : path
-        requestTerminalAccess(preferredAlleycatNodeId: nil)
-    }
-
-    private func openOnboardingServerPicker() {
-        appState.showServerPicker = true
-    }
-
-    private func openOnboardingSettingsRoute(_ route: String) {
-        if route == SettingsRoute.buildKit.rawValue || route == "emexDE" {
-            guard AppDistributionCapabilities.includesEmexDE else { return }
-            developerToolsEnabled = true
-            openEmexDE()
-            return
-        }
-        if let settingsRoute = SettingsRoute(rawValue: route) {
-            guard settingsRoute.isAvailableInCurrentBuild else { return }
-        }
-        requestedSettingsRoute = route
-        appState.showSettings = true
     }
 
     private func defaultNewSessionServerId(preferredServerId: String? = nil) -> String? {
@@ -1349,7 +1247,7 @@ private struct HomeNavigationView: View {
             return nil
         }
         return {
-            requestTerminalAccess(preferredAlleycatNodeId: nodeId)
+            navigationPath.append(.terminal(preferredAlleycatNodeId: nodeId))
         }
     }
 
@@ -1368,32 +1266,29 @@ private struct HomeNavigationView: View {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private func openServerSessions(_ server: HomeDashboardServer) {
-        appState.sessionsSelectedServerFilterId = server.id
-        appState.sessionsShowOnlyForks = false
-        hasSeededInitialConversationRoute = true
-        navigationPath.append(.sessions(serverId: server.id, title: server.displayName))
-    }
-
     private func openSessionAtIndex(_ summary: AppSessionSummary) async {
         guard openingRecentSessionKey == nil else { return }
         openingRecentSessionKey = summary.key
         actionErrorMessage = nil
-        defer { openingRecentSessionKey = nil }
 
-        await conversationWarmup.prewarmIfNeeded()
         workDir = summary.cwd
         appState.currentCwd = summary.cwd
+        let resumeKey = await appModel.hydrateThreadPermissions(for: summary.key, appState: appState)
+            ?? summary.key
+        appModel.activateThread(resumeKey)
+        openingRecentSessionKey = nil
+        replaceTopConversation(with: resumeKey)
+
         do {
-            let resumeKey = await appModel.hydrateThreadPermissions(for: summary.key, appState: appState)
-                ?? summary.key
             let nextKey = try await appModel.resumeThread(
                 key: resumeKey,
                 launchConfig: launchConfig(for: resumeKey),
                 cwdOverride: summary.cwd
             )
-            appModel.activateThread(nextKey)
-            replaceTopConversation(with: nextKey)
+            if nextKey != resumeKey {
+                appModel.activateThread(nextKey)
+                replaceTopConversation(with: nextKey)
+            }
         } catch {
             actionErrorMessage = error.localizedDescription
         }
@@ -1404,31 +1299,28 @@ private struct HomeNavigationView: View {
 
         openingRecentSessionKey = thread.key
         actionErrorMessage = nil
-        defer { openingRecentSessionKey = nil }
 
-        await conversationWarmup.prewarmIfNeeded()
         workDir = thread.cwd
         appState.currentCwd = thread.cwd
-        let openedKey: ThreadKey?
+        let resumeKey = await appModel.hydrateThreadPermissions(for: thread.key, appState: appState)
+            ?? thread.key
+        appModel.activateThread(resumeKey)
+        openingRecentSessionKey = nil
+        openConversation(resumeKey)
+
         do {
-            let resumeKey = await appModel.hydrateThreadPermissions(for: thread.key, appState: appState)
-                ?? thread.key
             let nextKey = try await appModel.resumeThread(
                 key: resumeKey,
                 launchConfig: launchConfig(for: resumeKey),
                 cwdOverride: thread.cwd
             )
-            appModel.activateThread(nextKey)
-            openedKey = nextKey
+            if nextKey != resumeKey {
+                appModel.activateThread(nextKey)
+                openConversation(nextKey)
+            }
         } catch {
             actionErrorMessage = error.localizedDescription
-            openedKey = nil
         }
-        guard let openedKey else {
-            actionErrorMessage = actionErrorMessage ?? "Failed to open conversation."
-            return
-        }
-        openConversation(openedKey)
     }
 
     private func startNewSession(serverId: String, cwd: String) async {
@@ -1454,7 +1346,6 @@ private struct HomeNavigationView: View {
             guard try await appModel.ensureLocalAuthForThreadStart(serverId: serverId) else {
                 return
             }
-            await conversationWarmup.prewarmIfNeeded()
             workDir = cwd
             appState.currentCwd = cwd
             let key = try await appModel.client.startThread(
@@ -1474,12 +1365,7 @@ private struct HomeNavigationView: View {
             return
         }
 
-        guard let resolvedKey = await appModel.ensureThreadLoaded(key: startedKey)
-            ?? appModel.snapshot?.threadSnapshot(for: startedKey)?.key else {
-            actionErrorMessage = appModel.lastError ?? "Failed to load the new session."
-            return
-        }
-
+        let resolvedKey = appModel.snapshot?.threadSnapshot(for: startedKey)?.key ?? startedKey
         openConversation(resolvedKey)
     }
 
@@ -1490,7 +1376,6 @@ private struct HomeNavigationView: View {
               let activeKey else { return }
 
         Task { @MainActor in
-            await conversationWarmup.prewarmIfNeeded()
             guard !hasSeededInitialConversationRoute,
                   !isStartingVoice,
                   navigationPath.isEmpty,
@@ -1542,6 +1427,8 @@ private struct HomeNavigationView: View {
         hasSeededInitialConversationRoute = true
         appState.showModelSelector = false
         guard navigationPath.last != .conversation(key) else { return }
+        // Opened here, closed by `ConversationView` on its first render.
+        PerfTracker.beginInterval("OpenThread", key: PerfTracker.intervalKey(key))
         navigationPath.append(.conversation(key))
     }
 
@@ -1585,6 +1472,7 @@ private struct HomeNavigationView: View {
             project: homeDashboardModel.selectedProject,
             connectedServers: homeDashboardModel.connectedServers,
             selectedServerId: homeDashboardModel.selectedServerId,
+            serverSnapshotsById: homeDashboardModel.serverSnapshotsById,
             onSelectServer: { serverId in
                 homeDashboardModel.selectedServerId = serverId
             },
@@ -1614,126 +1502,6 @@ private struct HomeNavigationView: View {
             navigationPath.removeLast()
         }
         navigationPath.append(.newThread)
-    }
-
-    private func requestFilesWorkspace() {
-        guard proStore.hasProAccess else {
-            pendingProFeature = .fileBrowser
-            return
-        }
-        openFilesWorkspace()
-    }
-
-    private func requestTerminalAccess(preferredAlleycatNodeId nodeId: String?) {
-        guard proStore.hasProAccess else {
-            pendingProTerminalNodeId = nodeId
-            pendingProFeature = .terminal
-            return
-        }
-        openTerminalRoute(preferredAlleycatNodeId: nodeId)
-    }
-
-    private func completePendingProUnlock(for feature: ProFeature) {
-        guard proStore.hasProAccess else { return }
-        let pendingNodeId = pendingProTerminalNodeId
-        pendingProFeature = nil
-        pendingProTerminalNodeId = nil
-        switch feature {
-        case .fileBrowser:
-            openFilesWorkspace()
-        case .terminal:
-            openTerminalRoute(preferredAlleycatNodeId: pendingNodeId)
-        case .appearance, .all:
-            break
-        }
-    }
-
-    private func openTerminalRoute(preferredAlleycatNodeId nodeId: String?) {
-        appState.showModelSelector = false
-        appState.showSettings = false
-        showProjectPicker = false
-        directoryPickerSheet = nil
-        navigationPath.append(.terminal(preferredAlleycatNodeId: nodeId))
-    }
-
-    /// Opens the real local iSH file workspace from the dashboard toolbar.
-    /// Keep this route single-instance; duplicate pushes can render as a
-    /// blank nested navigation surface on compact devices.
-    private func openFilesWorkspace() {
-        appState.showModelSelector = false
-        appState.showSettings = false
-        showProjectPicker = false
-        directoryPickerSheet = nil
-
-        if navigationPath.contains(where: { route in
-            if case .filesWorkspace = route { return true }
-            return false
-        }) {
-            while let last = navigationPath.last {
-                if case .filesWorkspace = last { break }
-                navigationPath.removeLast()
-            }
-            return
-        }
-
-        navigationPath.append(.filesWorkspace)
-    }
-
-    /// Opens the KittyLitter-branded sideload source and update store.
-    private func openKittyStore() {
-        guard AppDistributionCapabilities.includesKittyStore else { return }
-        appState.showModelSelector = false
-        appState.showSettings = false
-        showProjectPicker = false
-        directoryPickerSheet = nil
-
-        if navigationPath.contains(where: { route in
-            if case .kittyStore = route { return true }
-            return false
-        }) {
-            while let last = navigationPath.last {
-                if case .kittyStore = last { break }
-                navigationPath.removeLast()
-            }
-            return
-        }
-
-        navigationPath.append(.kittyStore)
-    }
-
-    private func openEmexDE() {
-        guard AppDistributionCapabilities.includesEmexDE else { return }
-        appState.showModelSelector = false
-        appState.showSettings = false
-        showProjectPicker = false
-        directoryPickerSheet = nil
-
-        if navigationPath.contains(where: { route in
-            if case .emexDE = route { return true }
-            return false
-        }) {
-            while let last = navigationPath.last {
-                if case .emexDE = last { break }
-                navigationPath.removeLast()
-            }
-            return
-        }
-
-        navigationPath.append(.emexDE)
-    }
-
-    private func consumePendingMainRoute() {
-        let raw = pendingMainRoute.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else { return }
-        pendingMainRoute = ""
-        switch raw {
-        case "emexDE":
-            openEmexDE()
-        case "kittyStore":
-            openKittyStore()
-        default:
-            break
-        }
     }
 
     /// Swap the hero composer out for the freshly-created conversation in
@@ -1768,23 +1536,33 @@ private struct HomeNavigationView: View {
             selectedServerId: homeDashboardModel.selectedServerId,
             selectedProject: homeDashboardModel.selectedProject,
             openingRecentSessionKey: openingRecentSessionKey,
+            visibleHydrationSignature: homeDashboardModel.visibleHydrationSignature,
+            visibleActivitySignature: homeDashboardModel.visibleActivitySignature,
+            serverSnapshotsById: homeDashboardModel.serverSnapshotsById,
             onOpenRecentSession: openRecentSession,
             onSelectServer: handleSelectServer,
             onAddServer: { appState.showServerPicker = true },
             onOpenProjectPicker: { showProjectPicker = true },
-            onThreadCreated: { key in homeDashboardModel.pinThread(key) },
+            onThreadCreated: { key in
+                homeDashboardModel.pinThread(key)
+                // The phone home is a composer, not a list: sending opens
+                // the new chat (ChatGPT pattern) instead of leaving the user
+                // on an empty screen.
+                if !isEmbeddedInSplit { openConversation(key) }
+            },
             onShowSettings: { appState.showSettings = true },
-            onShowStore: AppDistributionCapabilities.includesKittyStore ? openKittyStore : nil,
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
-            onShowFiles: requestFilesWorkspace,
             onShowTerminal: terminalLauncher,
+            onBrowseSessions: { showSessions(for: homeDashboardModel.selectedServerId) },
             onPinThread: pinThread,
             onUnpinThread: unpinThread,
             onHideThread: hideThread,
             onNewThread: { openNewThread() },
-            onHydrateThread: { key, loadInitialTurns in
-                await hydrateThread(key, loadInitialTurns: loadInitialTurns)
+            onHydrateThread: { key, _ in
+                await hydratePinnedHomeThread(key)
             },
+            hydrationRetrySignature: pinnedThreadHydrationSignature,
+            isSessionListSettled: homeDashboardModel.isSessionListSettled,
             onDeleteThread: deleteThread,
             onReconnectServer: reconnectServer,
             onRestartAppServer: restartAppServer,
@@ -1813,22 +1591,26 @@ private struct HomeNavigationView: View {
             selectedServerId: homeDashboardModel.selectedServerId,
             selectedProject: homeDashboardModel.selectedProject,
             openingRecentSessionKey: openingRecentSessionKey,
+            visibleHydrationSignature: homeDashboardModel.visibleHydrationSignature,
+            visibleActivitySignature: homeDashboardModel.visibleActivitySignature,
+            serverSnapshotsById: homeDashboardModel.serverSnapshotsById,
             onOpenRecentSession: openRecentSession,
             onSelectServer: handleSelectServer,
             onAddServer: { appState.showServerPicker = true },
             onOpenProjectPicker: { showProjectPicker = true },
-            onThreadCreated: { key in homeDashboardModel.pinThread(key) },
+            onThreadCreated: { key in homeDashboardModel.pinThread(key); openConversation(key) },
             onShowSettings: { appState.showSettings = true },
-            onShowStore: AppDistributionCapabilities.includesKittyStore ? openKittyStore : nil,
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
-            onShowFiles: requestFilesWorkspace,
             onShowTerminal: terminalLauncher,
+            onBrowseSessions: { showSessions(for: homeDashboardModel.selectedServerId) },
             onPinThread: pinThread,
             onUnpinThread: unpinThread,
             onHideThread: hideThread,
-            onHydrateThread: { key, loadInitialTurns in
-                await hydrateThread(key, loadInitialTurns: loadInitialTurns)
+            onHydrateThread: { key, _ in
+                await hydratePinnedHomeThread(key)
             },
+            hydrationRetrySignature: pinnedThreadHydrationSignature,
+            isSessionListSettled: homeDashboardModel.isSessionListSettled,
             onDeleteThread: deleteThread,
             onReconnectServer: reconnectServer,
             onRestartAppServer: restartAppServer,
@@ -1903,42 +1685,27 @@ private struct HomeNavigationView: View {
         "\(key.serverId)/\(key.threadId)"
     }
 
-    private func hydratePinnedThreadsIfNeeded() {
-        let connectedServerIds = Set(
-            (appModel.snapshot?.servers ?? [])
-                .filter(\.isConnected)
-                .map(\.serverId)
+    /// Hydrates one pinned Home row. Called by the Home list's viewport
+    /// hydrator only for rows that are on screen (or within the prefetch
+    /// distance), at most `SessionListRules.maxConcurrentHydrations` at a
+    /// time. Previously every pin was resumed at once on launch.
+    private func hydratePinnedHomeThread(_ key: ThreadKey) async {
+        let isConnected = appModel.snapshot?.servers
+            .contains { $0.serverId == key.serverId && $0.isConnected } ?? false
+        guard isConnected else { return }
+        if appModel.snapshot?.sessionSummary(for: key)?.isResumed == true { return }
+        let id = homeHydrationId(key)
+        guard !hydratingPinnedHomeThreadIds.contains(id) else { return }
+        hydratingPinnedHomeThreadIds.insert(id)
+        defer { hydratingPinnedHomeThreadIds.remove(id) }
+        LLog.info(
+            "home",
+            "hydrating pinned thread",
+            fields: ["serverId": key.serverId, "threadId": key.threadId]
         )
-        guard !connectedServerIds.isEmpty else { return }
-
-        for pin in homeDashboardModel.pinnedKeys {
-            let key = pin.threadKey
-            guard connectedServerIds.contains(key.serverId) else { continue }
-            let id = homeHydrationId(key)
-            if appModel.snapshot?.sessionSummary(for: key)?.isResumed == true { continue }
-            guard !hydratingPinnedHomeThreadIds.contains(id) else { continue }
-            hydratingPinnedHomeThreadIds.insert(id)
-
-            Task {
-                LLog.info(
-                    "home",
-                    "hydrating pinned thread",
-                    fields: ["serverId": key.serverId, "threadId": key.threadId]
-                )
-                if !(await hydrateThread(key, loadInitialTurns: true)) {
-                    let refreshed = await refreshPinnedThreadListing(serverId: key.serverId)
-                    guard refreshed else {
-                        await MainActor.run {
-                            _ = hydratingPinnedHomeThreadIds.remove(id)
-                        }
-                        return
-                    }
-                    _ = await hydrateThread(key, loadInitialTurns: true)
-                }
-                await MainActor.run {
-                    _ = hydratingPinnedHomeThreadIds.remove(id)
-                }
-            }
+        if !(await hydrateThread(key, loadInitialTurns: true)) {
+            guard await refreshPinnedThreadListing(serverId: key.serverId) else { return }
+            _ = await hydrateThread(key, loadInitialTurns: true)
         }
     }
 
@@ -1973,14 +1740,14 @@ private struct HomeNavigationView: View {
                 LLog.info(
                     "home",
                     "repairing pinned thread listing",
-                    fields: ["serverId": serverId, "limit": 80]
+                    fields: ["serverId": serverId]
                 )
                 do {
                     try await appModel.client.listThreads(
                         serverId: serverId,
                         params: AppListThreadsRequest(
                             cursor: nil,
-                            limit: 80,
+                            limit: nil,
                             sortKey: .updatedAt,
                             sortDirection: .desc,
                             modelProviders: nil,
@@ -2176,7 +1943,7 @@ private struct HomeNavigationView: View {
                         serverId: serverId,
                         params: AppListThreadsRequest(
                             cursor: nil,
-                            limit: 80,
+                            limit: nil,
                             sortKey: .updatedAt,
                             sortDirection: .desc,
                             modelProviders: nil,
@@ -2193,15 +1960,28 @@ private struct HomeNavigationView: View {
         }
     }
 
-    private func updateHomeDashboardActivity() {
-        if isHomeRouteActive {
-            homeDashboardModel.activate()
-        } else {
+    private func updateHomeDashboardActivity(deferActivation: Bool = true) {
+        homeActivationTask?.cancel()
+        homeActivationTask = nil
+        guard isHomeRouteActive else {
             homeDashboardModel.deactivate()
+            return
+        }
+        guard deferActivation else {
+            homeDashboardModel.activate()
+            return
+        }
+        // Returning to Home: refreshState() runs synchronously on main
+        // (preferences reload, sort, project derivation) and republishes
+        // every row. Defer it past the pop transition so Back is instant.
+        homeActivationTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled, isHomeRouteActive else { return }
+            homeDashboardModel.activate()
         }
     }
 
-    private func showSessions(for serverId: String) {
+    private func showSessions(for serverId: String?) {
         appState.sessionsSelectedServerFilterId = serverId
         appState.sessionsShowOnlyForks = false
         appState.showModelSelector = false
@@ -2220,7 +2000,8 @@ private struct HomeNavigationView: View {
         } else if case .realtimeVoice = navigationPath.last {
             navigationPath.removeLast()
         }
-        navigationPath.append(.sessions(serverId: serverId, title: serverTitle(for: serverId)))
+        let title = serverId.map(serverTitle(for:)) ?? "All Sessions"
+        navigationPath.append(.sessions(serverId: serverId, title: title))
     }
 
     private func serverTitle(for serverId: String) -> String {
@@ -2239,8 +2020,14 @@ private struct ConversationDestinationScreen: View {
     @Environment(AppState.self) private var appState
     @AppStorage("workDir") private var workDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "/"
     @State private var screenModel = ConversationScreenModel()
+    /// Set when Back is tapped. The pop transition runs ~350ms while
+    /// `snapshotRevision` keeps ticking (~8 fps during a live turn); each tick
+    /// re-bound the screen model and re-projected the whole transcript for a
+    /// screen that is already leaving. Freeze it instead.
+    @State private var isLeaving = false
     let threadKey: ThreadKey
     let bottomInset: CGFloat
+    let onBack: () -> Void
     let onResumeSessions: (String) -> Void
     let onOpenConversation: (ThreadKey) -> Void
     var onInfo: (() -> Void)?
@@ -2251,18 +2038,6 @@ private struct ConversationDestinationScreen: View {
 
     private var resolvedThreadKey: ThreadKey {
         conversationThread?.key ?? threadKey
-    }
-
-    private var pendingUserInputsForThread: [PendingUserInputRequest] {
-        guard let snapshot = appModel.snapshot else { return [] }
-        let key = resolvedThreadKey
-        return snapshot.pendingUserInputs.filter {
-            $0.isRelevant(to: key)
-        }
-    }
-
-    private var relevantServerSnapshot: AppServerSnapshot? {
-        appModel.snapshot?.serverSnapshot(for: resolvedThreadKey.serverId)
     }
 
     private func bindScreenModel(for thread: AppThreadSnapshot) {
@@ -2280,30 +2055,18 @@ private struct ConversationDestinationScreen: View {
     var body: some View {
         Group {
             if let conversationThread {
-                @Bindable var composerDraft = screenModel.composerDraft
                 ConversationView(
                     thread: conversationThread,
                     activeThreadKey: resolvedThreadKey,
                     transcript: screenModel.transcript,
-                    followScrollToken: screenModel.transcript.renderDigest,
                     pinnedContextItems: screenModel.pinnedContextItems,
                     composer: screenModel.composer,
-                    composerInputText: $composerDraft.text,
-                    composerAttachedImage: Binding(
-                        get: { composerDraft.attachedImages.first },
-                        set: { image in
-                            if let image {
-                                if composerDraft.attachedImages.isEmpty {
-                                    composerDraft.attachedImages.append(image)
-                                } else {
-                                    composerDraft.attachedImages[0] = image
-                                }
-                            } else if !composerDraft.attachedImages.isEmpty {
-                                composerDraft.attachedImages.removeFirst()
-                            }
-                        }
-                    ),
-                    topInset: 0,
+                    supportsTurnPagination: screenModel.composer.supportsTurnPagination,
+                    resolveTargetLabel: screenModel.resolveTargetLabel,
+                    resolveThreadKey: screenModel.resolveThreadKey,
+                    resolveLiveStatus: screenModel.resolveLiveStatus,
+                    composerDraft: screenModel.composerDraft,
+                    topInset: 4,
                     bottomInset: bottomInset,
                     onOpenConversation: onOpenConversation,
                     onResumeSessions: onResumeSessions,
@@ -2316,21 +2079,24 @@ private struct ConversationDestinationScreen: View {
                     }
                 )
                 .onAppear {
+                    isLeaving = false
+                    if appState.leavingConversationKey == threadKey {
+                        appState.leavingConversationKey = nil
+                    }
                     bindScreenModel(for: conversationThread)
                 }
-                .onChange(of: conversationThread) { _, updatedThread in
-                    bindScreenModel(for: updatedThread)
-                }
+                // Single coalesced bind signal. `snapshotRevision` bumps at
+                // ~8 fps (Fix B) instead of per token, and the other
+                // signals (conversationThread, pendingUserInputs,
+                // relevantServerSnapshot) all change in lockstep with it.
+                // Collapsing five onChanges into one eliminates the
+                // redundant triple-per-token re-binds.
                 .onChange(of: appModel.snapshotRevision) { _, _ in
-                    bindScreenModel(for: conversationThread)
-                }
-                .onChange(of: pendingUserInputsForThread) { _, _ in
-                    bindScreenModel(for: conversationThread)
-                }
-                .onChange(of: relevantServerSnapshot) { _, _ in
+                    guard !isLeaving, appState.leavingConversationKey != threadKey else { return }
                     bindScreenModel(for: conversationThread)
                 }
                 .onChange(of: appModel.composerPrefillRequest) { _, _ in
+                    guard !isLeaving, appState.leavingConversationKey != threadKey else { return }
                     bindScreenModel(for: conversationThread)
                 }
             } else {
@@ -2344,27 +2110,32 @@ private struct ConversationDestinationScreen: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(AlleyBackdrop().ignoresSafeArea())
+                .background(LitterTheme.backgroundGradient.ignoresSafeArea())
             }
         }
+        // Native navigation bar: system back button (keeps the edge-swipe
+        // pop gesture and its fast transition), an inline title, and the
+        // reload/info actions as standard toolbar items. The old floating
+        // glass overlay hid the bar, which disabled swipe-back and let the
+        // transcript scroll underneath the buttons.
+        .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if let conversationThread {
-                ToolbarItem(placement: .principal) {
-                    HeaderView(thread: conversationThread)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     ConversationToolbarControls(
                         thread: conversationThread,
-                        control: .reload
+                        control: .reload,
+                        server: screenModel.serverSnapshot,
+                        inToolbar: true
                     )
-                }
-                if onInfo != nil {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    if onInfo != nil {
                         ConversationToolbarControls(
                             thread: conversationThread,
                             control: .info,
-                            onInfo: onInfo
+                            onInfo: onInfo,
+                            server: screenModel.serverSnapshot,
+                            inToolbar: true
                         )
                     }
                 }
@@ -2412,29 +2183,17 @@ private struct ReplayDestinationScreen: View {
     var body: some View {
         Group {
             if let thread = conversationThread, let key = replayThreadKey {
-                @Bindable var composerDraft = screenModel.composerDraft
                 ConversationView(
                     thread: thread,
                     activeThreadKey: key,
                     transcript: screenModel.transcript,
-                    followScrollToken: screenModel.transcript.renderDigest,
                     pinnedContextItems: screenModel.pinnedContextItems,
                     composer: screenModel.composer,
-                    composerInputText: $composerDraft.text,
-                    composerAttachedImage: Binding(
-                        get: { composerDraft.attachedImages.first },
-                        set: { image in
-                            if let image {
-                                if composerDraft.attachedImages.isEmpty {
-                                    composerDraft.attachedImages.append(image)
-                                } else {
-                                    composerDraft.attachedImages[0] = image
-                                }
-                            } else if !composerDraft.attachedImages.isEmpty {
-                                composerDraft.attachedImages.removeFirst()
-                            }
-                        }
-                    ),
+                    supportsTurnPagination: screenModel.composer.supportsTurnPagination,
+                    resolveTargetLabel: screenModel.resolveTargetLabel,
+                    resolveThreadKey: screenModel.resolveThreadKey,
+                    resolveLiveStatus: screenModel.resolveLiveStatus,
+                    composerDraft: screenModel.composerDraft,
                     topInset: 0,
                     bottomInset: bottomInset,
                     onOpenConversation: nil,
@@ -2456,7 +2215,7 @@ private struct ReplayDestinationScreen: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(AlleyBackdrop().ignoresSafeArea())
+                .background(LitterTheme.backgroundGradient.ignoresSafeArea())
             }
         }
         .navigationTitle("Replay")
@@ -2607,19 +2366,5 @@ private struct ApprovalPromptView: View {
             .padding(.horizontal, 16)
         }
         .transition(.opacity)
-    }
-}
-
-struct LaunchView: View {
-    var body: some View {
-        ZStack {
-            AlleyBackdrop().ignoresSafeArea()
-            VStack(spacing: 24) {
-                BrandLogo(size: 132)
-                Text("AI coding agent on iOS")
-                    .litterFont(.body)
-                    .foregroundColor(LitterTheme.textMuted)
-            }
-        }
     }
 }

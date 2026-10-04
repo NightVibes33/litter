@@ -57,7 +57,7 @@ struct NewThreadHeroView: View {
 
     var body: some View {
         ZStack {
-            AlleyBackdrop().ignoresSafeArea()
+            LitterTheme.backgroundGradient.ignoresSafeArea()
 
             VStack(spacing: 24) {
                 Spacer(minLength: 0)

@@ -560,29 +560,3 @@ private struct ToolCallImagePreview: View {
         }
     }
 }
-
-private enum ToolCallImageError: LocalizedError {
-    case invalidImageData
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidImageData:
-            return "Could not decode the image."
-        }
-    }
-
-    static func message(for error: Error) -> String {
-        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
-        return message.isEmpty ? "Image unavailable" : message
-    }
-}
-
-#if DEBUG
-#Preview("Tool Call Card") {
-    ZStack {
-        AlleyBackdrop().ignoresSafeArea()
-        ToolCallCardView(model: LitterPreviewData.sampleToolCallModel)
-            .padding(20)
-    }
-}
-#endif

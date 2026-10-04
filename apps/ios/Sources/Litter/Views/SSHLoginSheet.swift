@@ -45,7 +45,7 @@ struct SSHLoginSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AlleyBackdrop().ignoresSafeArea()
+                LitterTheme.backgroundGradient.ignoresSafeArea()
                 Form {
                     Section {
                         HStack(spacing: 12) {
@@ -61,7 +61,7 @@ struct SSHLoginSheet: View {
                             }
                         }
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                     Section {
                         TextField("username", text: $username)
@@ -73,7 +73,7 @@ struct SSHLoginSheet: View {
                         Text("Username")
                             .foregroundColor(LitterTheme.textSecondary)
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                     Section {
                         Picker("Method", selection: $useKey) {
@@ -81,7 +81,7 @@ struct SSHLoginSheet: View {
                             Text("SSH Key").tag(true)
                         }
                         .pickerStyle(.segmented)
-                        .listRowBackground(LitterTheme.surface.opacity(0.88))
+                        .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                         if useKey {
                             TextEditor(text: $privateKey)
@@ -122,7 +122,7 @@ struct SSHLoginSheet: View {
                         Text("Authentication")
                             .foregroundColor(LitterTheme.textSecondary)
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                     Section {
                         Toggle(isOn: $rememberCredentials) {
@@ -144,7 +144,7 @@ struct SSHLoginSheet: View {
                         Text("Saved Credentials")
                             .foregroundColor(LitterTheme.textSecondary)
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                     Section {
                         Button {
@@ -161,7 +161,7 @@ struct SSHLoginSheet: View {
                         }
                         .disabled(isConnecting || username.isEmpty || (!useKey && password.isEmpty) || (useKey && privateKey.isEmpty))
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                     if let err = errorMessage {
                         Section {
@@ -169,7 +169,7 @@ struct SSHLoginSheet: View {
                                 .foregroundColor(.red)
                                 .litterFont(.caption)
                         }
-                        .listRowBackground(LitterTheme.surface.opacity(0.88))
+                        .listRowBackground(LitterTheme.surface.opacity(0.6))
                     }
                 }
                 .scrollContentBackground(.hidden)

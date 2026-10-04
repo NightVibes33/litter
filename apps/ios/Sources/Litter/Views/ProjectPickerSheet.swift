@@ -31,7 +31,7 @@ struct ProjectPickerSheet: View {
                 Divider().opacity(0.3)
                 list
             }
-            .background(AlleyBackdrop().ignoresSafeArea())
+            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
             .navigationTitle("Projects")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

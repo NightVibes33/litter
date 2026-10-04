@@ -95,7 +95,7 @@ struct ConversationInfoView: View {
                 .padding(.bottom, 40)
             }
         }
-        .background(AlleyBackdrop())
+        .background(LitterTheme.backgroundGradient)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {

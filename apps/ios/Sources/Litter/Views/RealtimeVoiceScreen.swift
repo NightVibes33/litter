@@ -365,7 +365,7 @@ struct RealtimeVoiceScreen: View {
                 .font(LitterFont.styled(.headline, weight: .semibold))
                 .foregroundColor(primaryTextColor)
 
-            Text("Enter your OpenAI API key for this device. Alley Cãt will store it in the local Codex environment as OPENAI_API_KEY.")
+            Text("Enter your OpenAI API key for this device. Litter will store it in the local Codex environment as OPENAI_API_KEY.")
                 .font(LitterFont.styled(.caption))
                 .foregroundColor(secondaryTextColor)
                 .fixedSize(horizontal: false, vertical: true)
@@ -397,10 +397,10 @@ struct RealtimeVoiceScreen: View {
         .frame(maxWidth: 420)
         .background(promptFillColor)
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 24)
                 .stroke(promptStrokeColor, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
     }
 
     private func saveApiKeyAndRetry() {

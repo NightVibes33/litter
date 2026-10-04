@@ -35,20 +35,10 @@ struct ConversationDisplayUITestHarnessView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 10) {
-                        AlleyCatMark(size: 34)
-                            .accessibilityIdentifier("conversationDisplayHarness.alleyMark")
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("ALLEY C\u{00C3}T")
-                                .litterFont(.title3, weight: .bold)
-                            Text("CONVERSATION SYSTEM")
-                                .litterFont(size: 9, weight: .bold)
-                                .tracking(1.4)
-                                .foregroundStyle(LitterTheme.accent)
-                        }
-                    }
-                    .foregroundColor(LitterTheme.textPrimary)
-                    .accessibilityIdentifier("conversationDisplayHarness.title")
+                    Text("Conversation Display Test")
+                        .litterFont(.title3, weight: .semibold)
+                        .foregroundColor(LitterTheme.textPrimary)
+                        .accessibilityIdentifier("conversationDisplayHarness.title")
 
                     ConversationComposerEntryRowView(
                         showAttachMenu: $showAttachMenu,
@@ -87,7 +77,7 @@ struct ConversationDisplayUITestHarnessView: View {
                 }
                 .padding(16)
             }
-            .background(AlleyBackdrop().ignoresSafeArea())
+            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
             .navigationTitle("Display Harness")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

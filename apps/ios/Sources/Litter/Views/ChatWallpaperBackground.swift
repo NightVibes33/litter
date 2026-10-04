@@ -17,22 +17,13 @@ struct ChatWallpaperBackground: View {
                 .opacity(config.brightness)
                 .ignoresSafeArea()
         } else {
-            AlleyBackdrop().ignoresSafeArea()
+            LitterTheme.backgroundGradient.ignoresSafeArea()
         }
     }
 
     @ViewBuilder
     private func wallpaperContent(for config: WallpaperConfig) -> some View {
         switch config.type {
-        case .preset:
-            if let slug = config.presetSlug,
-               let image = wallpaperManager.generatePresetWallpaper(presetSlug: slug) {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                LitterTheme.backgroundGradient
-            }
         case .theme:
             if let slug = config.themeSlug,
                let image = wallpaperManager.generateWallpaper(themeSlug: slug, themeManager: themeManager) {
@@ -45,7 +36,9 @@ struct ChatWallpaperBackground: View {
         case .customImage:
             if let scope = wallpaperScope,
                let image = wallpaperManager.wallpaperImage(for: config, scope: scope, themeManager: themeManager) {
-                FittedWallpaperImage(image: image)
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
             } else {
                 LitterTheme.backgroundGradient
             }
@@ -69,22 +62,5 @@ struct ChatWallpaperBackground: View {
 
     private var wallpaperScope: WallpaperScope? {
         wallpaperManager.resolveScope(for: threadKey)
-    }
-}
-
-struct FittedWallpaperImage: View {
-    let image: UIImage
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                LitterTheme.backgroundGradient
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
-        }
     }
 }

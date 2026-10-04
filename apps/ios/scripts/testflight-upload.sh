@@ -797,10 +797,9 @@ ensure_beta_review_details() {
 
     # Use Apple's API directly: ASC CLI versions rename review get/view and update/edit.
     token="$(app_store_connect_jwt)"
-    review_id="$(curl -fsS -G \
+    review_id="$(curl -fsS \
         -H "Authorization: Bearer $token" \
-        --data-urlencode "filter[app]=$app_id" \
-        https://api.appstoreconnect.apple.com/v1/betaAppReviewDetails | jq -r '.data[0].id // empty')"
+        "https://api.appstoreconnect.apple.com/v1/apps/$app_id/betaAppReviewDetail" | jq -r '.data.id // empty')"
     if [[ -z "$review_id" ]]; then
         echo "Missing TestFlight beta review details record for app $app_id." >&2
         return 1

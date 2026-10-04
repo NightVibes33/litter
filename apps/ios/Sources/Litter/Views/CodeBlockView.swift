@@ -28,24 +28,3 @@ struct CodeBlockView: View {
         .modifier(GlassRectModifier(cornerRadius: 8))
     }
 }
-
-#if DEBUG
-#Preview("Code Block") {
-    ZStack {
-        AlleyBackdrop().ignoresSafeArea()
-        CodeBlockView(
-            language: "swift",
-            code: """
-            struct SchedulerGate {
-                let repoJobs = 100_000
-
-                func canEnqueue(_ pending: Int) -> Bool {
-                    pending < repoJobs
-                }
-            }
-            """
-        )
-        .padding(20)
-    }
-}
-#endif

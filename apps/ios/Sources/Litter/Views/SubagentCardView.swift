@@ -385,7 +385,7 @@ private struct SubagentDetailSheet: View {
                     .frame(maxWidth: .infinity)
                 }
             }
-            .background(AlleyBackdrop().ignoresSafeArea())
+            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -476,43 +476,3 @@ private struct AgentRowData {
     let statusMessage: String?
     let prompt: String?
 }
-
-#if DEBUG
-#Preview("Subagent Card") {
-    ZStack {
-        AlleyBackdrop().ignoresSafeArea()
-        VStack(spacing: 20) {
-            SubagentCardView(
-                data: ConversationMultiAgentActionData(
-                    tool: "spawnAgent",
-                    status: .inProgress,
-                    prompt: "Explore /Users/sigkitten/dev/codex-app with a repo-orientation focus. Scan the top-level directories and identify the main modules.",
-                    targets: ["Locke [explorer]", "Dalton [explorer]"],
-                    receiverThreadIds: ["thread-abc-123", "thread-def-456"],
-                    agentStates: [
-                        ConversationMultiAgentState(targetId: "thread-abc-123", status: .running, message: nil),
-                        ConversationMultiAgentState(targetId: "thread-def-456", status: .running, message: nil)
-                    ]
-                ),
-                serverId: "preview-server"
-            )
-
-            SubagentCardView(
-                data: ConversationMultiAgentActionData(
-                    tool: "wait",
-                    status: .completed,
-                    prompt: nil,
-                    targets: ["Locke [explorer]", "Dalton [explorer]"],
-                    receiverThreadIds: ["thread-abc-123", "thread-def-456"],
-                    agentStates: [
-                        ConversationMultiAgentState(targetId: "thread-abc-123", status: .completed, message: nil),
-                        ConversationMultiAgentState(targetId: "thread-def-456", status: .errored, message: "context limit")
-                    ]
-                ),
-                serverId: "preview-server"
-            )
-        }
-        .padding(16)
-    }
-}
-#endif

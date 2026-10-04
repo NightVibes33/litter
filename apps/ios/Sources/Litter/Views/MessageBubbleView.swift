@@ -53,17 +53,15 @@ struct LitterMarkdownView: View {
     @Environment(\.fontPreferenceObserver) private var fontPreferenceObserver
 
     var body: some View {
-        Group {
-            if debugSettings.enabled && debugSettings.disableMarkdown {
-                Text(markdown)
-                    .font(.system(size: bodySize, design: .monospaced))
-                    .foregroundColor(style == .system ? LitterTheme.textSecondary : LitterTheme.textPrimary)
-                    .textSelection(.enabled)
-            } else {
-                renderedMarkdown(selectionEnabled: selectionEnabled)
-            }
+        if debugSettings.enabled && debugSettings.disableMarkdown {
+            Text(markdown)
+                .font(LitterFont.markdownBodyFont(size: bodySize))
+                .foregroundColor(style == .system ? LitterTheme.textSecondary : LitterTheme.textPrimary)
+                .textSelection(.enabled)
+        } else {
+            renderedMarkdown(selectionEnabled: selectionEnabled)
+                .id(fontPreferenceObserver.revision)
         }
-        .modifier(LocalMarkdownFileLinkModifier())
     }
 
     @ViewBuilder
@@ -84,175 +82,6 @@ struct LitterMarkdownView: View {
             .environment(\.openURL, .externalBrowser)
         }
     }
-}
-
-private struct LocalMarkdownFileLinkModifier: ViewModifier {
-    @State private var sharePayload: LocalMarkdownFileSharePayload?
-    @State private var alertMessage: String?
-    @State private var preparingPath: String?
-
-    func body(content: Content) -> some View {
-        content
-            .environment(\.openURL, OpenURLAction { url in
-                guard let path = LocalMarkdownFileLink.path(from: url) else {
-                    return .systemAction
-                }
-                open(path: path)
-                return .handled
-            })
-            .sheet(item: $sharePayload) { payload in
-                LocalMarkdownFileActivitySheet(urls: payload.urls)
-            }
-            .alert("File Link", isPresented: Binding(get: { alertMessage != nil }, set: { if !$0 { alertMessage = nil } })) {
-                Button("OK", role: .cancel) { alertMessage = nil }
-            } message: {
-                Text(alertMessage ?? "")
-            }
-            .overlay(alignment: .bottomLeading) {
-                if let preparingPath {
-                    Label("Preparing \(URL(fileURLWithPath: preparingPath).lastPathComponent)", systemImage: "doc")
-                        .litterFont(.caption, weight: .semibold)
-                        .foregroundStyle(LitterTheme.textPrimary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .background(LitterTheme.surface.opacity(0.94), in: Capsule())
-                        .overlay(Capsule().stroke(LitterTheme.border.opacity(0.55), lineWidth: 0.8))
-                        .padding(.top, 8)
-                }
-            }
-    }
-
-    private func open(path: String) {
-        preparingPath = path
-        Task {
-            do {
-                let payload = try await LocalMarkdownFileLinkExporter.export(path: path)
-                await MainActor.run {
-                    preparingPath = nil
-                    sharePayload = payload
-                }
-            } catch {
-                await MainActor.run {
-                    preparingPath = nil
-                    alertMessage = error.localizedDescription
-                }
-            }
-        }
-    }
-}
-
-private enum LocalMarkdownFileLink {
-    static func path(from url: URL) -> String? {
-        let scheme = url.scheme?.lowercased()
-        if let scheme, scheme != "file", scheme != "litter-file", scheme != "ish-file" {
-            return nil
-        }
-
-        let rawPath: String
-        if scheme == "litter-file" || scheme == "ish-file" {
-            rawPath = pathForCustomScheme(url)
-        } else if scheme == "file" {
-            rawPath = url.path
-        } else {
-            rawPath = url.absoluteString
-        }
-
-        return normalize(rawPath.removingPercentEncoding ?? rawPath)
-    }
-
-    private static func pathForCustomScheme(_ url: URL) -> String {
-        let path = url.path
-        guard let host = url.host, !host.isEmpty else { return path }
-        if path.isEmpty || path == "/" { return "/\(host)" }
-        return "/\(host)\(path)"
-    }
-
-    private static func normalize(_ raw: String) -> String? {
-        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.hasPrefix("file://") {
-            value = URL(string: value)?.path ?? value
-        }
-        if value == "~" {
-            value = HomeAnchor.path
-        } else if value.hasPrefix("~/") {
-            value = HomeAnchor.path + String(value.dropFirst())
-        }
-        guard value.hasPrefix("/") else { return nil }
-        return URL(fileURLWithPath: value).standardizedFileURL.path
-    }
-}
-
-private enum LocalMarkdownFileLinkExporter {
-    static func export(path: String) async throws -> LocalMarkdownFileSharePayload {
-        if let hostFile = hostFileURLIfAvailable(path: path) {
-            return LocalMarkdownFileSharePayload(urls: [hostFile])
-        }
-
-        let kind = try await fakefsKind(path: path)
-        if kind == "directory" {
-            let archivePath = "/tmp/litter-chat-link-\(UUID().uuidString).tar.gz"
-            let result = await IshFS.compress(path: path, destination: archivePath)
-            guard result.exitCode == 0 else {
-                throw NSError(domain: "LocalMarkdownFileLink", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not prepare \(path) for sharing: \(result.output)"])
-            }
-            defer { Task { _ = await IshFS.run("rm -f \(IshFS.shellQuote(archivePath))") } }
-            let name = URL(fileURLWithPath: path).lastPathComponent
-            let url = try await IshFS.copyFileToTemporaryURL(path: archivePath, suggestedFileName: "\(name.isEmpty ? "folder" : name).tar.gz")
-            return LocalMarkdownFileSharePayload(urls: [url])
-        }
-
-        guard kind == "file" else {
-            throw NSError(domain: "LocalMarkdownFileLink", code: 3, userInfo: [NSLocalizedDescriptionKey: "Only regular files and folders can be shared from chat."])
-        }
-
-        let url = try await IshFS.copyFileToTemporaryURL(
-            path: path,
-            suggestedFileName: URL(fileURLWithPath: path).lastPathComponent
-        )
-        return LocalMarkdownFileSharePayload(urls: [url])
-    }
-
-    private static func hostFileURLIfAvailable(path: String) -> URL? {
-        var isDirectory = ObjCBool(false)
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
-            return nil
-        }
-        return URL(fileURLWithPath: path)
-    }
-
-    private static func fakefsKind(path: String) async throws -> String {
-        let result = await IshFS.run("""
-        p=\(IshFS.shellQuote(path))
-        if [ -d "$p" ]; then
-          printf directory
-        elif [ -f "$p" ]; then
-          printf file
-        elif [ -e "$p" ]; then
-          printf special
-        else
-          exit 2
-        fi
-        """)
-        guard result.exitCode == 0 else {
-            throw NSError(domain: "LocalMarkdownFileLink", code: 1, userInfo: [NSLocalizedDescriptionKey: "No file exists at \(path)."])
-        }
-        return result.output.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-private struct LocalMarkdownFileSharePayload: Identifiable {
-    let id = UUID()
-    let urls: [URL]
-}
-
-private struct LocalMarkdownFileActivitySheet: UIViewControllerRepresentable {
-    let urls: [URL]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: urls.map { $0 as Any }, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 struct InlineSelectableMarkdownMessage<Content: View>: View {
@@ -647,7 +476,6 @@ struct StreamingAssistantBubble: View {
                             selectionEnabled: !isStreaming
                         )
                         .transaction { $0.animation = nil }
-                        .modifier(LocalMarkdownFileLinkModifier())
                 } else {
                     LitterMarkdownView(
                         markdown: text,
@@ -743,19 +571,26 @@ private final class StreamingMathDetectionCache {
             remaining -= 1
             if remaining == 0 { break }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .contextMenu {
-            if canCopyMessageText {
-                Button("Copy Message") {
-                    UIPasteboard.general.string = message.text
-                }
-            }
+        return false
+    }
+
+    private func touch(_ itemId: String) {
+        accessCounter &+= 1
+        accessStamps[itemId] = accessCounter
+    }
+
+    private func trimIfNeeded() {
+        guard entries.count > maxEntries else { return }
+        let removeCount = entries.count - trimTarget
+        guard removeCount > 0 else { return }
+        for (key, _) in accessStamps.sorted(by: { $0.value < $1.value }).prefix(removeCount) {
+            entries.removeValue(forKey: key)
+            accessStamps.removeValue(forKey: key)
         }
     }
 }
 
-// MARK: - Alley Cãt Markdown Themes
+// MARK: - Litter Markdown Themes
 
 /// Memoizes the two `MarkdownTheme` builders.
 ///
@@ -1294,7 +1129,7 @@ private final class CachedHighlightrCodeSyntaxHighlighter: CodeSyntaxHighlighter
 /// Shared highlighter instance — theme is switched at runtime via `setTheme(_:)`.
 private let sharedHighlighter = CachedHighlightrCodeSyntaxHighlighter(theme: "atom-one-dark")
 
-/// Maps an Alley Cãt theme slug to the closest Highlightr theme name.
+/// Maps a Litter theme slug to the closest Highlightr theme name.
 /// Direct matches are checked first, then known family prefixes, then light/dark fallback.
 private let highlightrDirectMap: [String: String] = [
     "codex-dark": "atom-one-dark",
@@ -1379,13 +1214,13 @@ private func highlightrThemeName(for slug: String, type: ThemeDefinition.ThemeTy
     return type == .dark ? "atom-one-dark" : "atom-one-light"
 }
 
-/// Returns the current Highlightr theme name based on the active Alley Cãt theme.
+/// Returns the current Highlightr theme name based on the active Litter theme.
 private func currentHighlightrTheme(for colorScheme: ColorScheme) -> String {
     let resolved = colorScheme == .dark ? ThemeStore.shared.dark : ThemeStore.shared.light
     return highlightrThemeName(for: resolved.slug, type: resolved.type)
 }
 
-/// Syncs the shared highlighter to match the current Alley Cãt theme.
+/// Syncs the shared highlighter to match the current Litter theme.
 private func syncHighlighterTheme(for colorScheme: ColorScheme) {
     let desired = currentHighlightrTheme(for: colorScheme)
     if sharedHighlighter.themeName != desired {

@@ -16,42 +16,13 @@ struct PiPContentView: View {
     static let minHeight: CGFloat = 160
     static let maxHeight: CGFloat = 720
 
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            Color(hex: "#1F2937")
-            LinearGradient(
-                colors: [Color(hex: "#F59E0B").opacity(0.10), .clear],
-                startPoint: .topTrailing,
-                endPoint: .center
-            )
-            if let session = activeSession() {
-                SessionCanvasLine(
-                    session: session,
-                    isOpening: false,
-                    isHydrating: false,
-                    isCancelling: false,
-                    zoomLevel: 4
-                )
-                .padding(.top, 12)
-                .frame(width: Self.canvasWidth, alignment: .topLeading)
-            } else {
-                Text("No active thread")
-                    .font(.system(size: 13, weight: .regular, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.45))
-                    .frame(
-                        width: Self.canvasWidth,
-                        height: Self.minHeight,
-                        alignment: .center
-                    )
-            }
-        }
-        .environment(\.colorScheme, .dark)
-        .frame(width: Self.canvasWidth)
-        .frame(minHeight: Self.minHeight, maxHeight: Self.maxHeight, alignment: .topLeading)
-        .background(Color(hex: "#1F2937"))
-        .clipped()
-    }
-
+    /// Cached derivation of the active session, keyed off
+    /// `AppModel.snapshotRevision` (~8 fps while streaming) and the resolved
+    /// active thread key. `body` re-evaluates on every ImageRenderer tick
+    /// (up to 30 fps), and the derivation re-sorts, rebuilds dictionaries and
+    /// scans threads — far too expensive to repeat per tick. With the cache,
+    /// the derivation only re-runs when the snapshot actually moved or the
+    /// pin/active thread changed; `body` otherwise reads the derived result.
     @MainActor
     private func activeSession() -> HomeDashboardRecentSession? {
         let revision = AppModel.shared.snapshotRevision
@@ -95,8 +66,42 @@ struct PiPContentView: View {
             agentRuntimeKindString: liveRuntime
         )
     }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            Color.black
+            if let session = activeSession() {
+                SessionCanvasLine(
+                    session: session,
+                    isOpening: false,
+                    isHydrating: false,
+                    isCancelling: false
+                )
+                .padding(.top, 12)
+                .frame(width: Self.canvasWidth, alignment: .topLeading)
+            } else {
+                Text("no active thread")
+                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.45))
+                    .frame(
+                        width: Self.canvasWidth,
+                        height: Self.minHeight,
+                        alignment: .center
+                    )
+            }
+        }
+        .environment(\.colorScheme, .dark)
+        .frame(width: Self.canvasWidth)
+        .frame(minHeight: Self.minHeight, maxHeight: Self.maxHeight, alignment: .topLeading)
+        .background(Color.black)
+        .clipped()
+    }
 }
 
+/// File-scoped cache for the PiP card's derived session. `StreamingPiPController`
+/// reassigns `renderer.content = PiPContentView()` on every render tick, so a
+/// per-instance cache never survives between body evaluations. Keyed by
+/// (snapshot revision, resolved active thread key) — see `activeSession()`.
 @MainActor
 private enum ActiveSessionCache {
     static var revision: UInt64?

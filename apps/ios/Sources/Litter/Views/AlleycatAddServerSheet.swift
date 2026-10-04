@@ -79,7 +79,7 @@ struct AlleycatAddServerSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AlleyBackdrop().ignoresSafeArea()
+                LitterTheme.backgroundGradient.ignoresSafeArea()
                 Form {
                     pairingSection
                     if let params = parsedParams {
@@ -180,7 +180,7 @@ struct AlleycatAddServerSheet: View {
             Text("Pairing")
                 .litterSectionLabel()
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     @ViewBuilder
@@ -275,7 +275,7 @@ struct AlleycatAddServerSheet: View {
             Text("Scanned Host")
                 .litterSectionLabel()
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     private var agentSection: some View {
@@ -348,7 +348,7 @@ struct AlleycatAddServerSheet: View {
             }
                 .foregroundColor(LitterTheme.textSecondary)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     private func previewRow(label: String, value: String) -> some View {
@@ -381,7 +381,7 @@ struct AlleycatAddServerSheet: View {
             }
             .disabled(!canConnect)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     private func errorSection(_ message: String, color: Color) -> some View {
@@ -390,7 +390,7 @@ struct AlleycatAddServerSheet: View {
                 .litterFont(.footnote)
                 .foregroundColor(color)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     private var availableAgents: [AppAlleycatAgentInfo] {

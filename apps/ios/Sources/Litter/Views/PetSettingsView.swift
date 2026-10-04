@@ -30,7 +30,7 @@ struct PetSettingsView: View {
                     }
                 }
                 .tint(LitterTheme.accent)
-                .listRowBackground(LitterTheme.surface.opacity(0.88))
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
             } header: {
                 Text("Wake")
                     .foregroundColor(LitterTheme.textSecondary)
@@ -141,7 +141,7 @@ struct PetSettingsView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(AlleyBackdrop().ignoresSafeArea())
+        .background(LitterTheme.backgroundGradient.ignoresSafeArea())
         .navigationTitle("Pet")
         .navigationBarTitleDisplayMode(.inline)
         .task {

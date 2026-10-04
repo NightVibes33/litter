@@ -210,12 +210,10 @@ struct ConversationComposerPopupOverlayView: View {
         .frame(maxWidth: .infinity)
         .background(LitterTheme.surface.opacity(0.95))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8)
                 .stroke(LitterTheme.border, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.horizontal, 12)
-        .padding(.bottom, 4)
-        .padding(.bottom, 56)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 10)
     }
 }
