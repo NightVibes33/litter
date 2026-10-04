@@ -56,6 +56,7 @@ mkdir -p "$ZIG_CACHE_DIR/global" "$ZIG_CACHE_DIR/local"
 target_for_abi() {
     case "$1" in
         arm64-v8a) echo "aarch64-linux-android.26" ;;
+        armeabi-v7a) echo "arm-linux-androideabi.26" ;;
         x86_64) echo "x86_64-linux-android.26" ;;
         *)
             echo "error: unsupported Android ABI: $1" >&2

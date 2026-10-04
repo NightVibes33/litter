@@ -4,7 +4,7 @@ One APK supports Android phones, tablets, and Android TV (Android 8.0/API 26 or 
 
 ## Build
 
-Run the **Android APK Release** GitHub Actions workflow on the integration branch with `build_only=true`. Choose `arm64-v8a` for ARM64 devices, `x86_64` for Intel/AMD emulators, or both for a universal APK. Download the `alleycat-android-*` artifact. Debug builds are signed with the runner's debug key, require no Play credentials, and are for development. A subsequent runner may generate a different debug key, requiring uninstall/reinstall; use a stable release key for persistent installations.
+Run the **Android APK Release** GitHub Actions workflow on the integration branch with `build_only=true`. Choose `arm64-v8a` for ARM64 devices, `x86_64` for Intel/AMD emulators, or both for a universal APK. Choose `armeabi-v7a` for a separate 32-bit APK. Download the `alleycat-android-*` artifact. Debug builds are signed with the runner's debug key, require no Play credentials, and are for development. A subsequent runner may generate a different debug key, requiring uninstall/reinstall; use a stable release key for persistent installations.
 
 Local build with Java 21, Android SDK 36, NDK 30.0.14904198, Rust, cargo-ndk, Zig 0.15.2, and the repository's native prerequisites:
 
@@ -14,7 +14,7 @@ adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.sigkitten.litter.android/com.litter.android.MainActivity
 ```
 
-The current Rust/Ghostty build supports ARM64 and x86-64. ARMv7-only/32-bit TV devices are not supported. KittyStore signing and Nyxian iOS toolchains remain iOS-specific; Android uses upstream's Android runtime.
+ARMv7 (`armeabi-v7a`) is now available as a separate CI build selection for 32-bit Android systems, including Chromecast with Google TV. Native compilation and device acceptance for this new target are pending; a configured target is not yet a verified working APK. KittyStore signing and Nyxian iOS toolchains remain iOS-specific; Android uses upstream's Android runtime.
 
 ## Device acceptance
 

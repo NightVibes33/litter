@@ -70,12 +70,16 @@ for abi in "${REQUESTED_ABIS[@]}"; do
       ABI_NAME="arm64-v8a"
       RUST_TARGET="aarch64-linux-android"
       ;;
+    armeabi-v7a|armv7-linux-androideabi)
+      ABI_NAME="armeabi-v7a"
+      RUST_TARGET="armv7-linux-androideabi"
+      ;;
     x86_64|x86-64|x86_64-linux-android)
       ABI_NAME="x86_64"
       RUST_TARGET="x86_64-linux-android"
       ;;
     *)
-      echo "error: unsupported Android ABI '$abi' (supported: arm64-v8a, x86_64)" >&2
+      echo "error: unsupported Android ABI '$abi' (supported: arm64-v8a, armeabi-v7a, x86_64)" >&2
       exit 1
       ;;
   esac
@@ -100,7 +104,7 @@ rustup target add "${RUST_TARGETS[@]}"
 
 mkdir -p "$OUT_DIR"
 
-for abi_dir in arm64-v8a x86_64; do
+for abi_dir in arm64-v8a armeabi-v7a x86_64; do
   if [[ " $SELECTED_ABIS " != *" $abi_dir "* ]]; then
     rm -rf "${OUT_DIR:?}/$abi_dir"
   fi

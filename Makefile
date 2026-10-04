@@ -991,9 +991,9 @@ prune-ios-sim-only:
 
 clean-android:
 	@echo "==> Cleaning Android artifacts..."
-	@rm -rf $(ANDROID_JNI)/arm64-v8a $(ANDROID_JNI)/x86_64 $(ANDROID_DIR)/core/bridge/src/main/cpp/include/ghostty.h
+	@rm -rf $(ANDROID_JNI)/arm64-v8a $(ANDROID_JNI)/armeabi-v7a $(ANDROID_JNI)/x86_64 $(ANDROID_DIR)/core/bridge/src/main/cpp/include/ghostty.h
 	@rm -f $(ANDROID_DIR)/app/src/main/assets/alpine-fs.tar.gz $(ANDROID_DIR)/app/src/main/assets/alpine-fs.tgz $(ANDROID_DIR)/app/src/main/assets/alpine-fs.version
-	@rm -f $(ANDROID_APP_JNI)/arm64-v8a/libproot.so $(ANDROID_APP_JNI)/arm64-v8a/libproot_loader.so $(ANDROID_APP_JNI)/x86_64/libproot.so $(ANDROID_APP_JNI)/x86_64/libproot_loader.so
+	@rm -f $(ANDROID_APP_JNI)/arm64-v8a/libproot.so $(ANDROID_APP_JNI)/arm64-v8a/libproot_loader.so $(ANDROID_APP_JNI)/armeabi-v7a/libproot.so $(ANDROID_APP_JNI)/armeabi-v7a/libproot_loader.so $(ANDROID_APP_JNI)/x86_64/libproot.so $(ANDROID_APP_JNI)/x86_64/libproot_loader.so
 	@rm -f $(ANDROID_DIR)/app/src/main/assets/licenses/proot-COPYING.txt $(ANDROID_DIR)/app/src/main/assets/licenses/talloc-COPYING.txt $(ANDROID_DIR)/app/src/main/assets/proot.version
 	@rm -f $(STAMP_BINDINGS_K) $(STAMPS)/rust-android-* $(STAMPS)/ghostty-android-* $(STAMPS)/android-alpine-fs-* $(STAMPS)/proot-android-*
 	@cd $(ANDROID_DIR) && ./gradlew clean 2>/dev/null || true
