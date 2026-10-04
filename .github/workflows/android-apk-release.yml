@@ -5,6 +5,19 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      build_only:
+        description: "Build an installable debug APK without store signing or publishing"
+        type: boolean
+        default: false
+      abis:
+        description: "CPU architectures (ARM64 phones/TVs, x86-64 emulators/PCs)"
+        type: choice
+        default: arm64-v8a
+        options:
+          - arm64-v8a
+          - x86_64
+          - arm64-v8a,x86_64
 
 permissions:
   contents: write
@@ -52,7 +65,7 @@ jobs:
     needs: detect-android-changes
     if: needs.detect-android-changes.outputs.run_release == 'true'
     runs-on: macos-26-intel
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       SCCACHE_BUCKET: rust-cache
@@ -145,9 +158,10 @@ jobs:
     needs: [detect-android-changes, shared-prep]
     if: needs.detect-android-changes.outputs.run_release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     environment: release
     env:
+      ANDROID_ABIS: ${{ inputs.abis || 'arm64-v8a' }}
       SCCACHE_BUCKET: rust-cache
       SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
       SCCACHE_REGION: auto
@@ -248,7 +262,25 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
 
+      - name: Prepare local runtime assets
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/30.0.14904198
+        run: make android-alpine-fs proot-android
+
+      - name: Build and test installable debug APK
+        if: inputs.build_only
+        run: apps/android/gradlew -p apps/android :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
+
+      - name: Upload device and TV build
+        if: inputs.build_only
+        uses: actions/upload-artifact@v6
+        with:
+          name: alleycat-android-${{ inputs.abis }}
+          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
       - name: Decode upload keystore
+        if: ${{ !inputs.build_only }}
         env:
           ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
         run: |
@@ -262,6 +294,7 @@ jobs:
           ls -lh "$store_file"
 
       - name: Build signed release APK
+        if: ${{ !inputs.build_only }}
         env:
           LITTER_UPLOAD_STORE_FILE: ${{ env.LITTER_UPLOAD_STORE_FILE }}
           LITTER_UPLOAD_STORE_PASSWORD: ${{ secrets.LITTER_UPLOAD_STORE_PASSWORD }}
@@ -270,12 +303,13 @@ jobs:
         run: apps/android/gradlew -p apps/android :app:assembleRelease
 
       - name: Generate checksums
+        if: ${{ !inputs.build_only }}
         run: |
           APK_PATH="apps/android/app/build/outputs/apk/release/app-release.apk"
           sha256sum "$APK_PATH" > "${APK_PATH}.sha256"
 
       - name: Upload build artifact (manual runs)
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && !inputs.build_only
         uses: actions/upload-artifact@v6
         with:
           name: app-release

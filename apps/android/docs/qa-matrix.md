@@ -357,3 +357,7 @@ Both platforms render the composer model picker from the same Rust fields (`Mode
 | Host execution | Discovery and settings launch headless processes without terminal windows or Dock helpers |
 
 Validation for the 2.1.2 candidate: shared Rust library tests passed (823 passed, 3 existing manual/live tests ignored). The final `a5aaa9f6` Android library built successfully; all 58 unit tests and six settings/navigation instrumentation tests passed on Android 17. These cover unset strings/booleans/enums, managed policy, and MainActivity Settings → Harnesses navigation. Logo/splash animation state stays in draw/layer scopes using the standard Compose infinite-animation clock. The focused iOS harness settings UI test also passed against the ABI-compatible simulator library, including authoritative fixture readback and read-only controls. Final iOS artifact/input validation and store release remain pending.
+
+## Android TV
+
+TV launcher and remote-first home are implemented. Phone/tablet home is retained. Build and device acceptance are pending; see [Android TV build and QA](android-tv.md). Full D-pad coverage of shared conversation/settings screens is not yet verified.

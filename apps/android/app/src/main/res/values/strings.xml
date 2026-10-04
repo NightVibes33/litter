@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">Alley Cãt</string>
     <string name="widget_description">Shows active Codex turn progress</string>
     <string name="widget_loading_label">Codex</string>
 </resources>

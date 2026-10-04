@@ -1,6 +1,10 @@
 package com.litter.android.ui
 
 import android.provider.Settings
+import android.app.UiModeManager
+import android.content.Context
+import android.content.res.Configuration
+import com.litter.android.ui.tv.TvHomeScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -92,6 +96,10 @@ fun LitterApp(
     openPetSettingsRequest: Int = 0,
 ) {
     val context = LocalContext.current
+    val isTelevision = remember(context) {
+        (context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)
+            ?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+    }
 
     // Initialize text size preference
     LaunchedEffect(Unit) {
@@ -327,7 +335,15 @@ fun LitterApp(
         Box(modifier = rootModifier) {
             when (val route = currentRoute) {
                 is Route.Home -> {
-                    HomeDashboardScreen(
+                    if (isTelevision) {
+                        TvHomeScreen(
+                            snapshot = snapshot,
+                            onOpenConversation = navigateToConversation,
+                            onShowDiscovery = { showDiscovery = true },
+                            onShowSettings = { showSettings = true },
+                            onShowApps = { navigate(Route.Apps) },
+                        )
+                    } else HomeDashboardScreen(
                         onOpenConversation = navigateToConversation,
                         onShowDiscovery = { showDiscovery = true },
                         discoveryVisible = showDiscovery,
