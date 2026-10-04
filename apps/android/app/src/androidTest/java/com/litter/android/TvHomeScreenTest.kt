@@ -1,6 +1,7 @@
 package com.litter.android
 
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -19,6 +20,7 @@ class TvHomeScreenTest {
     @get:Rule
     val compose = createComposeRule()
 
+    @OptIn(ExperimentalTestApi::class)
     @Test
     fun remoteCanMoveFromInitialActionAndActivateSettings() {
         var settingsOpened = 0
