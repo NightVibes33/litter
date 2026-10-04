@@ -116,8 +116,11 @@ pub struct MobileClient {
         Arc<tokio::sync::Mutex<HashMap<String, ManagedSshBootstrapFlow>>>,
     alleycat_restart_targets: Arc<StdMutex<HashMap<String, AlleycatRestartTarget>>>,
     /// Live terminal session handles keyed by session id. The store
-    /// holds the FFI-visible snapshot; these strong references keep
-    /// the underlying PTY / SSH channel alive while renderers come and go.
+    /// holds the FFI-visible snapshot
+    /// (`AppSnapshot.terminal_sessions`); these are the strong
+    /// references that keep the underlying PTY / SSH channel alive while
+    /// view-scoped renderers come and go. Cleared per-id when the
+    /// session exits or the caller explicitly closes it.
     pub(crate) terminal_sessions:
         Arc<StdMutex<HashMap<String, Arc<crate::terminal::TerminalSession>>>>,
     /// Platform-owned SSH host-key pins shared by server and terminal flows.
@@ -423,6 +426,7 @@ fn mcp_elicitation_response_json(
         })?;
     let response = match &params.request {
         upstream::McpServerElicitationRequest::UserVerification { .. }
+        | upstream::McpServerElicitationRequest::OpenAiForm { .. }
         | upstream::McpServerElicitationRequest::OpenAiElicitationForm { .. } => {
             upstream::McpServerElicitationRequestResponse {
                 action: upstream::McpServerElicitationAction::Cancel,
@@ -453,14 +457,6 @@ fn mcp_elicitation_response_json(
                 action: upstream::McpServerElicitationAction::Accept,
                 content: Some(serde_json::Value::Object(content)),
                 meta: None,
-            }
-        }
-        upstream::McpServerElicitationRequest::OpenAiForm { .. } => {
-            let (action, meta) = mcp_approval_action_response(answers);
-            upstream::McpServerElicitationRequestResponse {
-                action,
-                content: None,
-                meta,
             }
         }
         upstream::McpServerElicitationRequest::Url { .. } => {
@@ -1405,10 +1401,13 @@ impl MobileClient {
         params: upstream::GetAccountParams,
     ) -> Result<upstream::GetAccountResponse, crate::RpcClientError> {
         use crate::{RpcClientError, next_request_id};
-        self.request_typed_for_server(server_id, upstream::ClientRequest::GetAccount {
-            request_id: upstream::RequestId::Integer(next_request_id()),
-            params,
-        })
+        self.request_typed_for_server(
+            server_id,
+            upstream::ClientRequest::GetAccount {
+                request_id: upstream::RequestId::Integer(next_request_id()),
+                params,
+            },
+        )
         .await
         .map_err(RpcClientError::Rpc)
     }
@@ -1419,10 +1418,13 @@ impl MobileClient {
         params: upstream::ThreadForkParams,
     ) -> Result<upstream::ThreadForkResponse, crate::RpcClientError> {
         use crate::{RpcClientError, next_request_id};
-        self.request_typed_for_server(server_id, upstream::ClientRequest::ThreadFork {
-            request_id: upstream::RequestId::Integer(next_request_id()),
-            params,
-        })
+        self.request_typed_for_server(
+            server_id,
+            upstream::ClientRequest::ThreadFork {
+                request_id: upstream::RequestId::Integer(next_request_id()),
+                params,
+            },
+        )
         .await
         .map_err(RpcClientError::Rpc)
     }
@@ -1433,10 +1435,13 @@ impl MobileClient {
         params: upstream::ThreadRollbackParams,
     ) -> Result<upstream::ThreadRollbackResponse, crate::RpcClientError> {
         use crate::{RpcClientError, next_request_id};
-        self.request_typed_for_server(server_id, upstream::ClientRequest::ThreadRollback {
-            request_id: upstream::RequestId::Integer(next_request_id()),
-            params,
-        })
+        self.request_typed_for_server(
+            server_id,
+            upstream::ClientRequest::ThreadRollback {
+                request_id: upstream::RequestId::Integer(next_request_id()),
+                params,
+            },
+        )
         .await
         .map_err(RpcClientError::Rpc)
     }
@@ -1486,10 +1491,13 @@ impl MobileClient {
     ) {
         self.clear_oauth_callback_tunnel(server_id).await;
         let mut tunnels = self.oauth_callback_tunnels.lock().await;
-        tunnels.insert(server_id.to_string(), OAuthCallbackTunnel {
-            login_id: login_id.to_string(),
-            local_port,
-        });
+        tunnels.insert(
+            server_id.to_string(),
+            OAuthCallbackTunnel {
+                login_id: login_id.to_string(),
+                local_port,
+            },
+        );
     }
 
     fn existing_active_session(&self, server_id: &str) -> Option<Arc<ServerSession>> {
@@ -2095,16 +2103,20 @@ impl MobileClient {
         };
         match self.alleycat_restart_targets.lock() {
             Ok(mut guard) => {
-                guard.insert(server_id.clone(), AlleycatRestartTarget {
-                    params: params.clone(),
-                });
+                guard.insert(
+                    server_id.clone(),
+                    AlleycatRestartTarget {
+                        params: params.clone(),
+                    },
+                );
             }
             Err(error) => {
-                error
-                    .into_inner()
-                    .insert(server_id.clone(), AlleycatRestartTarget {
+                error.into_inner().insert(
+                    server_id.clone(),
+                    AlleycatRestartTarget {
                         params: params.clone(),
-                    });
+                    },
+                );
             }
         }
         self.app_store
@@ -2788,9 +2800,12 @@ impl MobileClient {
     pub async fn sync_server_account(&self, server_id: &str) -> Result<(), RpcError> {
         self.get_session(server_id)?;
         let response = self
-            .server_get_account(server_id, upstream::GetAccountParams {
-                refresh_token: false,
-            })
+            .server_get_account(
+                server_id,
+                upstream::GetAccountParams {
+                    refresh_token: false,
+                },
+            )
             .await
             .map_err(map_rpc_client_error)?;
         self.apply_account_response(server_id, &response);
@@ -3578,12 +3593,15 @@ impl MobileClient {
     ) -> Result<(), RpcError> {
         self.get_session(server_id)?;
         let _: upstream::ThreadUnsubscribeResponse = self
-            .request_typed_for_server(server_id, upstream::ClientRequest::ThreadUnsubscribe {
-                request_id: upstream::RequestId::Integer(crate::next_request_id()),
-                params: upstream::ThreadUnsubscribeParams {
-                    thread_id: thread_id.to_string(),
+            .request_typed_for_server(
+                server_id,
+                upstream::ClientRequest::ThreadUnsubscribe {
+                    request_id: upstream::RequestId::Integer(crate::next_request_id()),
+                    params: upstream::ThreadUnsubscribeParams {
+                        thread_id: thread_id.to_string(),
+                    },
                 },
-            })
+            )
             .await
             .map_err(RpcError::Deserialization)?;
         self.direct_resumed_threads().remove(&ThreadKey {
@@ -3691,10 +3709,8 @@ impl MobileClient {
                         request_id: upstream::RequestId::Integer(crate::next_request_id()),
                         params: upstream::TurnSteerParams {
                             thread_id: params.thread_id.clone(),
-                            client_user_message_id: None,
                             input: direct_params.input.clone(),
                             responsesapi_client_metadata: None,
-                            additional_context: None,
                             expected_turn_id: active_turn_id,
                             ..Default::default()
                         },
@@ -3861,10 +3877,13 @@ impl MobileClient {
 
         if rollback_depth > 0 {
             let response = self
-                .server_thread_rollback(&key.server_id, upstream::ThreadRollbackParams {
-                    thread_id: key.thread_id.clone(),
-                    num_turns: rollback_depth,
-                })
+                .server_thread_rollback(
+                    &key.server_id,
+                    upstream::ThreadRollbackParams {
+                        thread_id: key.thread_id.clone(),
+                        num_turns: rollback_depth,
+                    },
+                )
                 .await
                 .map_err(|e| RpcError::Deserialization(e.to_string()))?;
             let turns = response.thread.turns.clone();
@@ -3947,10 +3966,13 @@ impl MobileClient {
 
         if rollback_depth > 0 {
             let rollback_response = self
-                .server_thread_rollback(&key.server_id, upstream::ThreadRollbackParams {
-                    thread_id: next_key.thread_id.clone(),
-                    num_turns: rollback_depth,
-                })
+                .server_thread_rollback(
+                    &key.server_id,
+                    upstream::ThreadRollbackParams {
+                        thread_id: next_key.thread_id.clone(),
+                        num_turns: rollback_depth,
+                    },
+                )
                 .await
                 .map_err(|e| RpcError::Deserialization(e.to_string()))?;
             snapshot = thread_snapshot_from_upstream_thread_with_overrides(
@@ -4072,9 +4094,12 @@ impl MobileClient {
             answers: normalized_answers
                 .into_iter()
                 .map(|answer| {
-                    (answer.question_id, upstream::ToolRequestUserInputAnswer {
-                        answers: answer.answers,
-                    })
+                    (
+                        answer.question_id,
+                        upstream::ToolRequestUserInputAnswer {
+                            answers: answer.answers,
+                        },
+                    )
                 })
                 .collect::<HashMap<_, _>>(),
         };

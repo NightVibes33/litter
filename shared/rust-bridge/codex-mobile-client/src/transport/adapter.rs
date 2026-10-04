@@ -45,9 +45,9 @@ impl AppServerAdapter {
             client_name,
             client_version,
             experimental_api,
-            mcp_server_openai_form_elicitation: true,
             opt_out_notification_methods: Vec::new(),
-                channel_capacity,
+            mcp_server_openai_form_elicitation: false,
+            channel_capacity,
         };
 
         let client = RemoteAppServerClient::connect(args)

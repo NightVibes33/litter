@@ -253,7 +253,6 @@ pub(crate) async fn run_minigame(
     let start_params = upstream::ThreadStartParams {
         model: Some(MINIGAME_MODEL.to_string()),
         model_provider: None,
-        allow_provider_model_fallback: false,
         // ThreadStartParams.service_tier is Option<Option<ServiceTier>> (double-option wire format)
         service_tier: Some(Some(service_tier_into_upstream_string(ServiceTier::Fast))),
         cwd: None,
@@ -267,14 +266,11 @@ pub(crate) async fn run_minigame(
         base_instructions: None,
         developer_instructions: Some(developer_instructions),
         personality: None,
-        multi_agent_mode: None,
         ephemeral: Some(true),
-        history_mode: None,
         session_start_source: None,
         thread_source: None,
         environments: None,
         dynamic_tools: Some(dynamic_tools),
-        selected_capability_roots: None,
         mock_experimental_field: None,
         experimental_raw_events: false,
         ..Default::default()
@@ -313,13 +309,11 @@ pub(crate) async fn run_minigame(
     // 3. Run one turn
     let turn_params = upstream::TurnStartParams {
         thread_id: ephemeral_thread_id.clone(),
-        client_user_message_id: None,
         input: vec![upstream::UserInput::Text {
             text: "Generate the minigame now.".to_string(),
             text_elements: Vec::new(),
         }],
         responsesapi_client_metadata: None,
-        additional_context: None,
         cwd: None,
         runtime_workspace_roots: None,
         approval_policy: None,

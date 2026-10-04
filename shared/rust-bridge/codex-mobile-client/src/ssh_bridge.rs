@@ -748,8 +748,8 @@ async fn connect_bridge_stream(
         client_name: "Litter".to_string(),
         client_version: "1.0".to_string(),
         experimental_api: true,
-        mcp_server_openai_form_elicitation: true,
         opt_out_notification_methods: Vec::new(),
+        mcp_server_openai_form_elicitation: false,
         channel_capacity: 256,
     };
     let remote = codex_slingshot::json_line_wire::connect_json_line_stream(client_io, args, label)
@@ -778,8 +778,8 @@ async fn connect_codex_via_ssh(
         client_name: "Litter".to_string(),
         client_version: "1.0".to_string(),
         experimental_api: true,
-        mcp_server_openai_form_elicitation: true,
         opt_out_notification_methods: Vec::new(),
+        mcp_server_openai_form_elicitation: false,
         channel_capacity: 256,
     };
     let client_result = match bootstrap.transport {

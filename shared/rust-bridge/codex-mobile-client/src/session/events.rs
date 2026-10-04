@@ -443,6 +443,15 @@ impl EventProcessor {
                     delta: n.delta.clone(),
                 });
             }
+            ServerNotification::DynamicToolCallArgumentsDelta(n) => {
+                let key = Self::make_key(server_id, &n.thread_id);
+                self.emit(UiEvent::DynamicToolCallArgumentsDelta {
+                    key,
+                    item_id: n.item_id.clone(),
+                    call_id: n.call_id.clone(),
+                    delta: n.delta.clone(),
+                });
+            }
             ServerNotification::FileChangeOutputDelta(n) => {
                 let key = Self::make_key(server_id, &n.thread_id);
                 self.emit(UiEvent::CommandOutputDelta {
@@ -888,6 +897,7 @@ fn mcp_elicitation_questions(
 ) -> Vec<PendingUserInputQuestion> {
     match &params.request {
         codex_app_server_protocol::McpServerElicitationRequest::UserVerification { .. }
+        | codex_app_server_protocol::McpServerElicitationRequest::OpenAiForm { .. }
         | codex_app_server_protocol::McpServerElicitationRequest::OpenAiElicitationForm {
             ..
         } => {
@@ -935,13 +945,6 @@ fn mcp_elicitation_questions(
                 }
             }
             questions
-        }
-        codex_app_server_protocol::McpServerElicitationRequest::OpenAiForm { meta, message, .. } => {
-            vec![mcp_approval_action_question(
-                message,
-                meta.as_ref(),
-                &params.server_name,
-            )]
         }
         codex_app_server_protocol::McpServerElicitationRequest::Url { message, url, .. } => {
             let prompt = if message.trim().is_empty() {

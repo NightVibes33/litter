@@ -132,7 +132,6 @@ final class AppLifecycleController {
         hasActiveVoiceSession: Bool,
         liveActivities: TurnLiveActivityController
     ) {
-        if AppDistributionCapabilities.isAppStoreSafe { return }
         let signpostID = OSSignpostID(log: appLifecycleSignpostLog)
         os_signpost(.begin, log: appLifecycleSignpostLog, name: "AppDidEnterBackground", signpostID: signpostID)
         defer { os_signpost(.end, log: appLifecycleSignpostLog, name: "AppDidEnterBackground", signpostID: signpostID) }
@@ -180,7 +179,6 @@ final class AppLifecycleController {
         hasActiveVoiceSession: Bool,
         liveActivities: TurnLiveActivityController
     ) {
-        if AppDistributionCapabilities.isAppStoreSafe { return }
         let signpostID = OSSignpostID(log: appLifecycleSignpostLog)
         os_signpost(.begin, log: appLifecycleSignpostLog, name: "AppDidBecomeActive", signpostID: signpostID)
         defer { os_signpost(.end, log: appLifecycleSignpostLog, name: "AppDidBecomeActive", signpostID: signpostID) }
@@ -335,7 +333,6 @@ final class AppLifecycleController {
     }
 
     func requestNotificationPermissionIfNeeded() {
-        guard !AppDistributionCapabilities.isAppStoreSafe else { return }
         guard !notificationPermissionRequested else { return }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-test-conversation-display") {

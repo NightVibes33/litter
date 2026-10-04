@@ -391,9 +391,9 @@ impl AppStoreReducer {
                     HashMap::new(),
                 )
             };
-            snapshot
-                .servers
-                .insert(config.server_id.clone(), ServerSnapshot {
+            snapshot.servers.insert(
+                config.server_id.clone(),
+                ServerSnapshot {
                     server_id: config.server_id.clone(),
                     display_name: config.display_name.clone(),
                     host: config.host.clone(),
@@ -936,11 +936,14 @@ impl AppStoreReducer {
         key: &ThreadKey,
         preview: AppQueuedFollowUpPreview,
     ) {
-        self.enqueue_thread_follow_up_draft(key, QueuedFollowUpDraft {
-            preview,
-            inputs: Vec::new(),
-            source_message_json: None,
-        });
+        self.enqueue_thread_follow_up_draft(
+            key,
+            QueuedFollowUpDraft {
+                preview,
+                inputs: Vec::new(),
+                source_message_json: None,
+            },
+        );
     }
 
     pub(crate) fn enqueue_thread_follow_up_draft(
@@ -2950,9 +2953,6 @@ impl AppStoreReducer {
             AppStoreUpdateRecord::SavedAppsChanged => {
                 tracing::debug!(target: "store", "emit SavedAppsChanged")
             }
-            AppStoreUpdateRecord::TerminalSessionsChanged => {
-                tracing::debug!(target: "store", "emit TerminalSessionsChanged")
-            }
             AppStoreUpdateRecord::DynamicWidgetStreaming {
                 key,
                 item_id,
@@ -2968,6 +2968,9 @@ impl AppStoreReducer {
                     html_len = widget.widget_html.len(),
                     "emit DynamicWidgetStreaming"
                 )
+            }
+            AppStoreUpdateRecord::TerminalSessionsChanged => {
+                tracing::debug!(target: "store", "emit TerminalSessionsChanged")
             }
         }
         let _ = self.updates_tx.send(update);
@@ -2996,6 +2999,7 @@ impl AppStoreReducer {
             !(existing_key == thread_key && buffer.item_id == item_id)
         });
     }
+
     /// Insert a new terminal session into the snapshot in
     /// [`AppTerminalSessionPhase::Running`] phase with an empty output
     /// tail. Caller is responsible for placing the live
@@ -3637,9 +3641,6 @@ fn preserve_thread_runtime_state(source: &ThreadSnapshot, target: &mut ThreadSna
     }
     if target.reasoning_effort.is_none() {
         target.reasoning_effort = source.reasoning_effort.clone();
-    }
-    if target.goal.is_none() {
-        target.goal = source.goal.clone();
     }
     if target.active_plan_progress.is_none() {
         target.active_plan_progress = source.active_plan_progress.clone();
@@ -4292,8 +4293,11 @@ mod tests {
         let config = make_server_config("srv");
         reducer.upsert_server(&config, ServerHealthSnapshot::Connected);
 
-        reducer
-            .sync_thread_list_for_runtime("srv", "pi".to_string(), &[make_thread_info("thread-1")]);
+        reducer.sync_thread_list_for_runtime(
+            "srv",
+            "pi".to_string(),
+            &[make_thread_info("thread-1")],
+        );
 
         let key = ThreadKey {
             server_id: "srv".to_string(),
@@ -4369,12 +4373,15 @@ mod tests {
         let config = make_server_config("srv");
         reducer.upsert_server(&config, ServerHealthSnapshot::Connected);
 
-        reducer.update_server_agent_runtimes("srv", vec![AgentRuntimeInfo {
-            kind: "opencode".to_string(),
-            name: "opencode".to_string(),
-            display_name: "opencode".to_string(),
-            available: true,
-        }]);
+        reducer.update_server_agent_runtimes(
+            "srv",
+            vec![AgentRuntimeInfo {
+                kind: "opencode".to_string(),
+                name: "opencode".to_string(),
+                display_name: "opencode".to_string(),
+                available: true,
+            }],
+        );
 
         let snapshot = reducer.snapshot();
         let server = snapshot.servers.get("srv").unwrap();
@@ -4836,9 +4843,10 @@ mod tests {
         let mcp_item = thread.items.iter().find(|item| item.id == "mcp-1").unwrap();
         match &mcp_item.content {
             HydratedConversationItemContent::McpToolCall(data) => {
-                assert_eq!(data.progress_messages, vec![
-                    "Fetched 3 results".to_string()
-                ]);
+                assert_eq!(
+                    data.progress_messages,
+                    vec!["Fetched 3 results".to_string()]
+                );
             }
             other => panic!("expected mcp tool item, got {other:?}"),
         }
@@ -4996,27 +5004,32 @@ mod tests {
         let mut receiver = reducer.subscribe();
         assert!(drain_updates(&mut receiver).is_empty());
 
-        reducer.apply_item_update(&parent_key, HydratedConversationItem {
-            id: "collab-1".to_string(),
-            content: HydratedConversationItemContent::MultiAgentAction(
-                crate::conversation_uniffi::HydratedMultiAgentActionData {
-                    tool: "spawnAgent".to_string(),
-                    status: AppOperationStatus::Completed,
-                    prompt: Some("Inspect".to_string()),
-                    targets: vec!["child-thread".to_string()],
-                    receiver_thread_ids: vec!["child-thread".to_string()],
-                    agent_states: vec![crate::conversation_uniffi::HydratedMultiAgentStateData {
-                        target_id: "child-thread".to_string(),
-                        status: crate::types::AppSubagentStatus::Running,
-                        message: Some("Working".to_string()),
-                    }],
-                },
-            ),
-            source_turn_id: Some("turn-1".to_string()),
-            source_turn_index: None,
-            timestamp: None,
-            is_from_user_turn_boundary: false,
-        });
+        reducer.apply_item_update(
+            &parent_key,
+            HydratedConversationItem {
+                id: "collab-1".to_string(),
+                content: HydratedConversationItemContent::MultiAgentAction(
+                    crate::conversation_uniffi::HydratedMultiAgentActionData {
+                        tool: "spawnAgent".to_string(),
+                        status: AppOperationStatus::Completed,
+                        prompt: Some("Inspect".to_string()),
+                        targets: vec!["child-thread".to_string()],
+                        receiver_thread_ids: vec!["child-thread".to_string()],
+                        agent_states: vec![
+                            crate::conversation_uniffi::HydratedMultiAgentStateData {
+                                target_id: "child-thread".to_string(),
+                                status: crate::types::AppSubagentStatus::Running,
+                                message: Some("Working".to_string()),
+                            },
+                        ],
+                    },
+                ),
+                source_turn_id: Some("turn-1".to_string()),
+                source_turn_index: None,
+                timestamp: None,
+                is_from_user_turn_boundary: false,
+            },
+        );
 
         let updates = drain_updates(&mut receiver);
         let update_item = updates
@@ -5136,9 +5149,10 @@ mod tests {
         let item = thread.items.iter().find(|item| item.id == "mcp-1").unwrap();
         match &item.content {
             HydratedConversationItemContent::McpToolCall(data) => {
-                assert_eq!(data.progress_messages, vec![
-                    "Fetched 3 results".to_string()
-                ]);
+                assert_eq!(
+                    data.progress_messages,
+                    vec!["Fetched 3 results".to_string()]
+                );
                 assert_eq!(data.status, AppOperationStatus::InProgress);
             }
             other => panic!("expected mcp tool item, got {other:?}"),
@@ -5217,10 +5231,13 @@ mod tests {
             requester_agent_role: None,
         }]);
 
-        reducer.resolve_pending_user_input_with_response("req-1", vec![PendingUserInputAnswer {
-            question_id: "q-1".to_string(),
-            answers: vec!["A".to_string()],
-        }]);
+        reducer.resolve_pending_user_input_with_response(
+            "req-1",
+            vec![PendingUserInputAnswer {
+                question_id: "q-1".to_string(),
+                answers: vec!["A".to_string()],
+            }],
+        );
 
         let snapshot = reducer.snapshot();
         let thread = snapshot.threads.get(&key).expect("thread exists");
@@ -5334,13 +5351,16 @@ mod tests {
             requester_agent_role: None,
         }]);
 
-        reducer.resolve_pending_user_input_with_response("req-1", vec![PendingUserInputAnswer {
-            question_id: "q-1".to_string(),
-            answers: vec![
-                "None of the above".to_string(),
-                "user_note: Custom answer".to_string(),
-            ],
-        }]);
+        reducer.resolve_pending_user_input_with_response(
+            "req-1",
+            vec![PendingUserInputAnswer {
+                question_id: "q-1".to_string(),
+                answers: vec![
+                    "None of the above".to_string(),
+                    "user_note: Custom answer".to_string(),
+                ],
+            }],
+        );
 
         let snapshot = reducer.snapshot();
         let thread = snapshot.threads.get(&key).expect("thread exists");
@@ -5425,10 +5445,13 @@ mod tests {
             .upsert_thread_snapshot(ThreadSnapshot::from_info("srv", make_thread_info("thread")));
 
         let overlay_id = reducer
-            .stage_local_user_message_overlay(&key, &[upstream::UserInput::Text {
-                text: "hello from composer".to_string(),
-                text_elements: Vec::new(),
-            }])
+            .stage_local_user_message_overlay(
+                &key,
+                &[upstream::UserInput::Text {
+                    text: "hello from composer".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            )
             .expect("overlay id");
 
         let snapshot = reducer.snapshot();
@@ -5462,26 +5485,32 @@ mod tests {
         assert!(drain_updates(&mut receiver).is_empty());
 
         let overlay_id = reducer
-            .stage_local_user_message_overlay(&key, &[upstream::UserInput::Text {
-                text: "hello from composer".to_string(),
-                text_elements: Vec::new(),
-            }])
+            .stage_local_user_message_overlay(
+                &key,
+                &[upstream::UserInput::Text {
+                    text: "hello from composer".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            )
             .expect("overlay id");
         reducer.bind_local_user_message_overlay_to_turn(&key, &overlay_id, "turn-1");
 
-        reducer.apply_item_update(&key, HydratedConversationItem {
-            id: "server-user-item".to_string(),
-            content: HydratedConversationItemContent::User(
-                crate::conversation_uniffi::HydratedUserMessageData {
-                    text: "hello from composer".to_string(),
-                    image_data_uris: Vec::new(),
-                },
-            ),
-            source_turn_id: Some("turn-1".to_string()),
-            source_turn_index: None,
-            timestamp: None,
-            is_from_user_turn_boundary: true,
-        });
+        reducer.apply_item_update(
+            &key,
+            HydratedConversationItem {
+                id: "server-user-item".to_string(),
+                content: HydratedConversationItemContent::User(
+                    crate::conversation_uniffi::HydratedUserMessageData {
+                        text: "hello from composer".to_string(),
+                        image_data_uris: Vec::new(),
+                    },
+                ),
+                source_turn_id: Some("turn-1".to_string()),
+                source_turn_index: None,
+                timestamp: None,
+                is_from_user_turn_boundary: true,
+            },
+        );
 
         let updates = drain_updates(&mut receiver);
         assert!(updates.iter().any(|update| matches!(
@@ -5510,25 +5539,31 @@ mod tests {
         assert!(drain_updates(&mut receiver).is_empty());
 
         let overlay_id = reducer
-            .stage_local_user_message_overlay(&key, &[upstream::UserInput::Text {
-                text: "hello from composer".to_string(),
-                text_elements: Vec::new(),
-            }])
+            .stage_local_user_message_overlay(
+                &key,
+                &[upstream::UserInput::Text {
+                    text: "hello from composer".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            )
             .expect("overlay id");
 
-        reducer.apply_item_update(&key, HydratedConversationItem {
-            id: "server-user-item".to_string(),
-            content: HydratedConversationItemContent::User(
-                crate::conversation_uniffi::HydratedUserMessageData {
-                    text: "hello from composer".to_string(),
-                    image_data_uris: Vec::new(),
-                },
-            ),
-            source_turn_id: Some("turn-1".to_string()),
-            source_turn_index: None,
-            timestamp: None,
-            is_from_user_turn_boundary: true,
-        });
+        reducer.apply_item_update(
+            &key,
+            HydratedConversationItem {
+                id: "server-user-item".to_string(),
+                content: HydratedConversationItemContent::User(
+                    crate::conversation_uniffi::HydratedUserMessageData {
+                        text: "hello from composer".to_string(),
+                        image_data_uris: Vec::new(),
+                    },
+                ),
+                source_turn_id: Some("turn-1".to_string()),
+                source_turn_index: None,
+                timestamp: None,
+                is_from_user_turn_boundary: true,
+            },
+        );
 
         reducer.bind_local_user_message_overlay_to_turn(&key, &overlay_id, "turn-1");
 
@@ -5557,25 +5592,31 @@ mod tests {
             .upsert_thread_snapshot(ThreadSnapshot::from_info("srv", make_thread_info("thread")));
 
         reducer
-            .stage_local_user_message_overlay(&key, &[upstream::UserInput::Text {
-                text: "hello from composer".to_string(),
-                text_elements: Vec::new(),
-            }])
+            .stage_local_user_message_overlay(
+                &key,
+                &[upstream::UserInput::Text {
+                    text: "hello from composer".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            )
             .expect("overlay id");
 
-        reducer.apply_item_update(&key, HydratedConversationItem {
-            id: "server-user-item".to_string(),
-            content: HydratedConversationItemContent::User(
-                crate::conversation_uniffi::HydratedUserMessageData {
-                    text: "hello from composer".to_string(),
-                    image_data_uris: Vec::new(),
-                },
-            ),
-            source_turn_id: Some("turn-1".to_string()),
-            source_turn_index: None,
-            timestamp: None,
-            is_from_user_turn_boundary: true,
-        });
+        reducer.apply_item_update(
+            &key,
+            HydratedConversationItem {
+                id: "server-user-item".to_string(),
+                content: HydratedConversationItemContent::User(
+                    crate::conversation_uniffi::HydratedUserMessageData {
+                        text: "hello from composer".to_string(),
+                        image_data_uris: Vec::new(),
+                    },
+                ),
+                source_turn_id: Some("turn-1".to_string()),
+                source_turn_index: None,
+                timestamp: None,
+                is_from_user_turn_boundary: true,
+            },
+        );
 
         let snapshot = reducer.snapshot();
         let thread = snapshot.threads.get(&key).expect("thread exists");
@@ -5908,10 +5949,13 @@ mod tests {
         reducer
             .upsert_thread_snapshot(ThreadSnapshot::from_info("srv", make_thread_info("thread")));
         let overlay_id = reducer
-            .stage_local_user_message_overlay(&key, &[upstream::UserInput::Text {
-                text: "hello from composer".to_string(),
-                text_elements: Vec::new(),
-            }])
+            .stage_local_user_message_overlay(
+                &key,
+                &[upstream::UserInput::Text {
+                    text: "hello from composer".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            )
             .expect("overlay staged");
 
         let mut incoming = ThreadSnapshot::from_info("srv", make_thread_info("thread"));
@@ -5958,10 +6002,13 @@ mod tests {
         reducer
             .upsert_thread_snapshot(ThreadSnapshot::from_info("srv", make_thread_info("thread")));
         reducer
-            .stage_local_user_message_overlay(&key, &[upstream::UserInput::Text {
-                text: "hello from composer".to_string(),
-                text_elements: Vec::new(),
-            }])
+            .stage_local_user_message_overlay(
+                &key,
+                &[upstream::UserInput::Text {
+                    text: "hello from composer".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            )
             .expect("overlay staged");
 
         let mut incoming = ThreadSnapshot::from_info("srv", make_thread_info("thread"));
@@ -5997,16 +6044,22 @@ mod tests {
         };
         reducer
             .upsert_thread_snapshot(ThreadSnapshot::from_info("srv", make_thread_info("thread")));
-        reducer.enqueue_thread_follow_up_preview(&key, AppQueuedFollowUpPreview {
-            id: "queued-1".to_string(),
-            kind: crate::store::snapshot::AppQueuedFollowUpKind::Message,
-            text: "first".to_string(),
-        });
-        reducer.enqueue_thread_follow_up_preview(&key, AppQueuedFollowUpPreview {
-            id: "queued-2".to_string(),
-            kind: crate::store::snapshot::AppQueuedFollowUpKind::Message,
-            text: "second".to_string(),
-        });
+        reducer.enqueue_thread_follow_up_preview(
+            &key,
+            AppQueuedFollowUpPreview {
+                id: "queued-1".to_string(),
+                kind: crate::store::snapshot::AppQueuedFollowUpKind::Message,
+                text: "first".to_string(),
+            },
+        );
+        reducer.enqueue_thread_follow_up_preview(
+            &key,
+            AppQueuedFollowUpPreview {
+                id: "queued-2".to_string(),
+                kind: crate::store::snapshot::AppQueuedFollowUpKind::Message,
+                text: "second".to_string(),
+            },
+        );
 
         let claimed = reducer
             .claim_first_queued_follow_up_draft(&key)
@@ -6159,10 +6212,13 @@ mod tests {
         reducer
             .upsert_thread_snapshot(ThreadSnapshot::from_info("srv", make_thread_info("thread")));
         let overlay_id = reducer
-            .stage_local_user_message_overlay(&key, &[upstream::UserInput::Text {
-                text: "hello from composer".to_string(),
-                text_elements: Vec::new(),
-            }])
+            .stage_local_user_message_overlay(
+                &key,
+                &[upstream::UserInput::Text {
+                    text: "hello from composer".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            )
             .expect("overlay id");
 
         reducer.apply_ui_event(&UiEvent::TurnStarted {
@@ -6205,10 +6261,13 @@ mod tests {
             });
         reducer.upsert_thread_snapshot(thread);
         let overlay_id = reducer
-            .stage_local_user_message_overlay(&key, &[upstream::UserInput::Text {
-                text: "prompt".to_string(),
-                text_elements: Vec::new(),
-            }])
+            .stage_local_user_message_overlay(
+                &key,
+                &[upstream::UserInput::Text {
+                    text: "prompt".to_string(),
+                    text_elements: Vec::new(),
+                }],
+            )
             .expect("overlay id");
 
         let mut receiver = reducer.subscribe();

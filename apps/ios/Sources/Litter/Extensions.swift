@@ -46,7 +46,6 @@ enum LitterTheme {
 
     static var accent: Color        { adaptive(light: light.accent, dark: dark.accent) }
     static var accentStrong: Color   { adaptive(light: light.accentStrong, dark: dark.accentStrong) }
-    static var background: Color     { adaptive(light: light.background, dark: dark.background) }
     static var linkColor: Color {
         adaptive(
             light: chromaticHex(light.accent, fallback: "#0A66C2"),
@@ -143,55 +142,6 @@ enum LitterTheme {
     static var headerScrim: [Color] {
         let bgColor = adaptive(light: light.background, dark: dark.background)
         return [bgColor.opacity(0.7), bgColor.opacity(0.3), .clear]
-    }
-}
-
-enum AlleyVisual {
-    static let panelRadius: CGFloat = 16
-    static let controlRadius: CGFloat = 12
-    static let hairline: CGFloat = 0.75
-}
-
-struct AlleyBackdrop: View {
-    var body: some View {
-        ZStack {
-            LitterTheme.backgroundGradient
-            RadialGradient(
-                colors: [LitterTheme.accent.opacity(0.10), .clear],
-                center: .topLeading,
-                startRadius: 0,
-                endRadius: 520
-            )
-            LinearGradient(
-                colors: [.clear, LitterTheme.surface.opacity(0.18)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-struct AlleyPanelModifier: ViewModifier {
-    var tint: Color?
-    var cornerRadius: CGFloat = AlleyVisual.panelRadius
-
-    func body(content: Content) -> some View {
-        let edge = tint ?? LitterTheme.border
-        content
-            .background(LitterTheme.surface.opacity(0.88))
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(edge.opacity(tint == nil ? 0.34 : 0.48), lineWidth: AlleyVisual.hairline)
-            }
-            .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 5)
-    }
-}
-
-extension View {
-    func alleyPanel(tint: Color? = nil, cornerRadius: CGFloat = AlleyVisual.panelRadius) -> some View {
-        modifier(AlleyPanelModifier(tint: tint, cornerRadius: cornerRadius))
     }
 }
 
@@ -476,7 +426,7 @@ enum ConversationTextSize: Int, CaseIterable {
 
     static func clamped(rawValue: Int) -> ConversationTextSize {
         let bounded = min(max(rawValue, tiny.rawValue), huge.rawValue)
-        return ConversationTextSize(rawValue: bounded) ?? .tiny
+        return ConversationTextSize(rawValue: bounded) ?? .medium
     }
 }
 
@@ -622,7 +572,21 @@ struct GlassRectModifier: ViewModifier {
     var tint: Color?
 
     func body(content: Content) -> some View {
-        content.alleyPanel(tint: tint, cornerRadius: min(cornerRadius, 12))
+        if #available(iOS 26.0, *) {
+            if let tint {
+                content.glassEffect(.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
+            } else {
+                content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            }
+        } else {
+            content
+                .background(LitterTheme.surfaceLight.opacity(0.9))
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke((tint ?? LitterTheme.border).opacity(0.4), lineWidth: 1)
+                )
+        }
     }
 }
 
@@ -630,7 +594,13 @@ struct GlassRoundedRectModifier: ViewModifier {
     var cornerRadius: CGFloat = 16
 
     func body(content: Content) -> some View {
-        content.alleyPanel(cornerRadius: min(cornerRadius, 12))
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            content
+                .background(LitterTheme.surfaceLight)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
     }
 }
 
@@ -638,10 +608,17 @@ struct GlassCapsuleModifier: ViewModifier {
     var interactive: Bool = false
 
     func body(content: Content) -> some View {
-        content.alleyPanel(
-            tint: interactive ? LitterTheme.accent : LitterTheme.border,
-            cornerRadius: 9
-        )
+        if #available(iOS 26.0, *) {
+            if interactive {
+                content.glassEffect(.regular.interactive(), in: .capsule)
+            } else {
+                content.glassEffect(.regular, in: .capsule)
+            }
+        } else {
+            content
+                .background(LitterTheme.surfaceLight)
+                .clipShape(Capsule())
+        }
     }
 }
 
@@ -670,12 +647,13 @@ extension ToolbarContent {
 
 struct GlassCircleModifier: ViewModifier {
     func body(content: Content) -> some View {
-        content
-            .background(LitterTheme.surface.opacity(0.96))
-            .clipShape(Circle())
-            .overlay {
-                Circle().stroke(LitterTheme.border.opacity(0.62), lineWidth: AlleyVisual.hairline)
-            }
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: .circle)
+        } else {
+            content
+                .background(LitterTheme.surfaceLight)
+                .clipShape(Circle())
+        }
     }
 }
 
@@ -784,22 +762,57 @@ extension LitterSpace {
     static let composerInset: CGFloat = 14
 }
 
-func serverIconName(for server: DiscoveredServer) -> String {
-    if server.source == .local { return "iphone" }
 
-    if let os = server.os?.lowercased() {
-        if os.contains("windows") { return "pc" }
-        if os.contains("raspbian") { return "cpu" }
-        if os.contains("ubuntu") || os.contains("debian")
-            || os.contains("fedora") || os.contains("red hat")
-            || os.contains("freebsd") || os.contains("linux") { return "server.rack" }
-    }
+// Styling used only by Alley Cãt tool screens.
+enum AlleyVisual {
+    static let panelRadius: CGFloat = 16
+    static let controlRadius: CGFloat = 12
+    static let hairline: CGFloat = 0.75
+}
 
-    switch server.source {
-    case .local: return "iphone"
-    case .bonjour: return "macbook"
-    case .ssh: return "terminal"
-    case .tailscale: return "network"
-    case .manual: return "server.rack"
+struct AlleyBackdrop: View {
+    var body: some View {
+        ZStack {
+            LitterTheme.backgroundGradient
+            RadialGradient(
+                colors: [LitterTheme.accent.opacity(0.10), .clear],
+                center: .topLeading,
+                startRadius: 0,
+                endRadius: 520
+            )
+            LinearGradient(
+                colors: [.clear, LitterTheme.surface.opacity(0.18)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .accessibilityHidden(true)
     }
+}
+
+struct AlleyPanelModifier: ViewModifier {
+    var tint: Color?
+    var cornerRadius: CGFloat = AlleyVisual.panelRadius
+
+    func body(content: Content) -> some View {
+        let edge = tint ?? LitterTheme.border
+        content
+            .background(LitterTheme.surface.opacity(0.88))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(edge.opacity(tint == nil ? 0.34 : 0.48), lineWidth: AlleyVisual.hairline)
+            }
+            .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 5)
+    }
+}
+
+extension View {
+    func alleyPanel(tint: Color? = nil, cornerRadius: CGFloat = AlleyVisual.panelRadius) -> some View {
+        modifier(AlleyPanelModifier(tint: tint, cornerRadius: cornerRadius))
+    }
+}
+
+extension LitterTheme {
+    static var background: Color { adaptive(light: light.background, dark: dark.background) }
 }

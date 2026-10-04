@@ -589,8 +589,8 @@ pub async fn connect_app_server_client(
         client_name: "Litter".to_string(),
         client_version: "1.0".to_string(),
         experimental_api: true,
-        mcp_server_openai_form_elicitation: true,
         opt_out_notification_methods: Vec::new(),
+        mcp_server_openai_form_elicitation: false,
         channel_capacity: 256,
     };
     let stream = AlleycatStream::new(send, recv, seq_tracker);
@@ -633,6 +633,7 @@ pub(crate) async fn connect_jsonl_agent_stream(
     .await?;
     let response: Response = read_json_frame(&mut recv).await?;
     validate_response(&response)?;
+    log_session_info(&params, &agent, response.session.as_ref(), None);
     let session = Arc::new(AlleycatSession {
         lease,
         params,

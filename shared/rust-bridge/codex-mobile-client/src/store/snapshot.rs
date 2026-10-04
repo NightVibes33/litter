@@ -566,7 +566,9 @@ pub struct TerminalSessionSnapshot {
     /// activity (output byte or write). Stored as `u64` so the value
     /// crosses the UniFFI boundary without precision loss.
     pub last_activity_ts_ms: u64,
-    /// Tail of the output byte stream, capped at 64 KiB.
+    /// Tail of the output byte stream, capped at 64 KiB (older bytes
+    /// dropped as new ones arrive). Used to repaint scrollback when a
+    /// renderer re-attaches after view teardown.
     pub output_tail: Vec<u8>,
     /// Exit code if the session has exited. `None` otherwise.
     pub exit_code: Option<i32>,
