@@ -361,6 +361,7 @@ targets:
           - LiveShim.docc/**
     dependencies:
       - target: HWHook
+        link: true
 
   MobileDevelopmentKit:
     type: framework
