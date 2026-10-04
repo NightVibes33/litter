@@ -8,11 +8,19 @@ Outputs:
   - Downloaded iOS crash logs when ASC exposes them
   - A Markdown summary describing what was fetched and what was unavailable
 
+Notes:
+  - Android private testing feedback is not exposed via the public Google Play
+    APIs used here. This script fetches Play reviews plus Play Developer
+    Reporting crash issues/reports.
+  - Google Play Developer Reporting time windows are hour-aligned UTC. The
+    script expands the API interval to whole hours, then filters the payload
+    back down to the exact requested window client-side.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import json
 import os
@@ -20,6 +28,7 @@ import pathlib
 import shlex
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -28,8 +37,13 @@ from typing import Any
 
 UTC = dt.timezone.utc
 
-DEFAULT_IOS_BUNDLE_ID = "com.sigkitten.litter"
+DEFAULT_IOS_BUNDLE_ID = "com.sigkitten.litter.39A8Q3T3TR"
+DEFAULT_ANDROID_PACKAGE = "com.sigkitten.litter.android"
 DEFAULT_OUTPUT_BASE = pathlib.Path("/tmp/mobile-store-artifacts")
+DEFAULT_PLAY_ENV_FILE = pathlib.Path.home() / ".config/litter/play-upload.env"
+
+PLAY_REPORTING_SCOPE = "https://www.googleapis.com/auth/playdeveloperreporting"
+PLAY_PUBLISHER_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
 
 
 class ScriptError(RuntimeError):
@@ -45,6 +59,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--output-dir", help="Directory for fetched artifacts.")
     parser.add_argument("--ios-bundle-id", default=DEFAULT_IOS_BUNDLE_ID)
+    parser.add_argument("--android-package", default=DEFAULT_ANDROID_PACKAGE)
     parser.add_argument("--ios-version", help="Optional iOS pre-release version filter, e.g. 1.0.4.")
     parser.add_argument("--asc-bin", help="Path to the asc CLI.")
     parser.add_argument("--play-service-account-json", help="Path to a Google Play service account JSON.")
@@ -55,6 +70,7 @@ def parse_args() -> argparse.Namespace:
         help="Verify Google Play Publisher API access and exit without fetching artifacts.",
     )
     parser.add_argument("--skip-ios", action="store_true")
+    parser.add_argument("--skip-android", action="store_true")
     parser.add_argument("--no-download-ios-screenshots", action="store_true")
     return parser.parse_args()
 
@@ -638,6 +654,7 @@ def render_summary(
     requested_since: dt.datetime,
     requested_until: dt.datetime,
     ios_result: dict[str, Any] | None,
+    android_result: dict[str, Any] | None,
 ) -> str:
     def md_link(label: str, target: pathlib.Path | str | None) -> str:
         if not target:
@@ -738,6 +755,56 @@ def render_summary(
                 elif row.get("crashLogError"):
                     lines.append(f"  crash log: unavailable ({row['crashLogError']})")
             lines.append("")
+    if android_result is not None:
+        lines.extend(
+            [
+                "## Android Play",
+                "",
+                f"- Package: {code(android_result['packageName'])}",
+                f"- Reviews in window: {code(android_result['reviewCount'])}",
+                f"- Crash issues in window: {code(android_result['crashIssueCount'])}",
+                f"- Raw crash reports in window: {code(android_result['crashReportCount'])}",
+                f"- Reviews JSON: {rel_json('android/reviews.json')}",
+                f"- Crash issues JSON: {rel_json('android/error-issues.json')}",
+                f"- Crash reports JSON: {rel_json('android/error-reports.json')}",
+                f"- Metadata JSON: {rel_json('android/metadata.json')}",
+                "- Private testing feedback screenshots are not available via the public Google Play APIs used here.",
+                "",
+            ]
+        )
+        if android_result["reviews"]:
+            lines.extend(["### Android Reviews", ""])
+            for review in android_result["reviews"]:
+                review_id = review.get("reviewId", "unknown")
+                modified = review.get("normalizedLastModified", "unknown")
+                comment_text = ""
+                comments = review.get("comments") or []
+                for comment in reversed(comments):
+                    user_comment = comment.get("userComment") or {}
+                    text = (user_comment.get("text") or "").strip()
+                    if text:
+                        comment_text = text
+                        break
+                lines.append(f"- {code(modified)} {code(review_id)}")
+                if comment_text:
+                    lines.append(f"  comment: {comment_text}")
+            lines.append("")
+        if android_result["summarizedIssues"]:
+            lines.extend(["### Android Crash Issues", ""])
+            for issue in android_result["summarizedIssues"]:
+                lines.append(
+                    f"- {code(issue.get('lastErrorReportTime', 'unknown'))} {code(issue.get('issueId', 'unknown'))} {issue.get('cause', 'unknown cause')}"
+                )
+                lines.append(
+                    f"  location: {issue.get('location', 'unknown')} | reports: {code(issue.get('errorReportCount', 0))} | raw reports: {code(issue.get('rawReportCount', 0))}"
+                )
+                if issue.get("sampleDevices"):
+                    lines.append(f"  devices: {', '.join(issue['sampleDevices'])}")
+                if issue.get("sampleReportFirstLine"):
+                    lines.append(f"  sample: {issue['sampleReportFirstLine']}")
+                if issue.get("issueUri"):
+                    lines.append(f"  play console: {md_link('issue', issue['issueUri'])}")
+            lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -770,6 +837,7 @@ def main() -> int:
         "generatedAtUtc": iso_now(),
         "outputDir": str(output_dir),
         "ios": None,
+        "android": None,
     }
 
     ios_result = None
@@ -791,12 +859,32 @@ def main() -> int:
             "crashCount": ios_result["crashCount"],
         }
 
+    android_result = None
+    if not args.skip_android:
+        service_account_path = load_service_account_path(
+            args.play_service_account_json,
+            pathlib.Path(args.play_env_file).expanduser(),
+        )
+        android_result = fetch_android(
+            package_name=args.android_package,
+            service_account_path=service_account_path,
+            output_dir=output_dir,
+            since=since,
+            until=until,
+        )
+        metadata["android"] = {
+            "packageName": android_result["packageName"],
+            "reviewCount": android_result["reviewCount"],
+            "crashIssueCount": android_result["crashIssueCount"],
+            "crashReportCount": android_result["crashReportCount"],
+        }
 
     summary = render_summary(
         output_dir=output_dir,
         requested_since=since,
         requested_until=until,
         ios_result=ios_result,
+        android_result=android_result,
     )
     (output_dir / "summary.md").write_text(summary)
     to_json_file(output_dir / "metadata.json", metadata)

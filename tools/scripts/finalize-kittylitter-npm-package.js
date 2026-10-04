@@ -175,16 +175,6 @@ function readInstallerSource(packagePath) {
 function verifyFinalizedPackage(packagePath, manifestPath, checksumPath) {
   const packageName = path.basename(packagePath);
   const digest = sha256File(packagePath);
-  const source = readInstallerSource(packagePath);
-  if (!source.includes(PATCH_MARKER)) {
-    throw new Error(
-      `${packageName} does not contain the Windows extraction fix`,
-    );
-  }
-  if (!source.includes("missing expected binaries")) {
-    throw new Error(`${packageName} does not verify its installed binaries`);
-  }
-
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   const manifestDigest = findArtifact(manifest, packageName).checksums.sha256;
   if (manifestDigest !== digest) {
@@ -203,6 +193,17 @@ function verifyFinalizedPackage(packagePath, manifestPath, checksumPath) {
       `${packageName} unified checksum does not match final bytes`,
     );
   }
+  const source = readInstallerSource(packagePath);
+  if (!source.includes(PATCH_MARKER)) {
+    throw new Error(
+      `${packageName} does not contain the Windows extraction fix`,
+    );
+  }
+  if (!source.includes("missing expected binaries")) {
+    throw new Error(`${packageName} does not verify its installed binaries`);
+  }
+
+
   return digest;
 }
 
