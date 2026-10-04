@@ -92,6 +92,11 @@ for abi in ${ANDROID_ABIS//,/ }; do
         ZIG_LOCAL_CACHE_DIR="$ZIG_CACHE_DIR/local"
     )
 
+    if [ "$abi" = "armeabi-v7a" ]; then
+        env "${env_args[@]}" python3 "$REPO_DIR/tools/scripts/patch-ghostty-armv7.py" \
+            "$GHOSTTY_DIR" "$ZIG_BIN"
+    fi
+
     echo "==> Building Ghostty Android renderer for $abi ($target)..."
     (
         cd "$GHOSTTY_DIR"
