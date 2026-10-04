@@ -796,7 +796,7 @@ ensure_beta_review_details() {
     fi
 
     review_id="$(
-        asc testflight review get --app "$app_id" --output json |
+        asc testflight review view --app "$app_id" --output json |
             jq -r '.data[0].id // .data.id // empty'
     )"
     if [[ -z "$review_id" ]]; then
@@ -805,7 +805,7 @@ ensure_beta_review_details() {
     fi
 
     echo "==> Updating TestFlight beta review contact details"
-    cmd=(asc testflight review update --id "$review_id" --output json)
+    cmd=(asc testflight review edit --id "$review_id" --output json)
     if [[ -n "$REVIEW_CONTACT_EMAIL" ]]; then
         cmd+=(--contact-email "$REVIEW_CONTACT_EMAIL")
     fi
@@ -882,7 +882,7 @@ if [[ "$ASSIGN_BETA_GROUP" == "1" && -n "$build_id" ]]; then
         fi
 
         if [[ "$SUBMIT_BETA_REVIEW" == "1" && "$external_group_requested" -eq 1 ]]; then
-            ensure_beta_review_details "$APP_STORE_APP_ID" || true
+            ensure_beta_review_details "$APP_STORE_APP_ID"
             echo "==> Submitting build $build_id for Beta App Review"
             beta_review_submit_attempted=1
             beta_review_submit_succeeded=0
@@ -899,9 +899,9 @@ if [[ "$ASSIGN_BETA_GROUP" == "1" && -n "$build_id" ]]; then
                 fi
             done
             if [[ "$beta_review_submit_succeeded" -ne 1 ]]; then
-                echo "WARNING: Beta App Review submit failed after upload and group assignment." >&2
-                echo "         App Store Connect accepted build $build_id; leaving CI green so the build is not lost." >&2
-                sed 's/^/         /' "$submit_log" >&2 || true
+                echo "Beta App Review submit failed after upload and group assignment." >&2
+                cat "$submit_log" >&2
+                exit 1
             fi
         fi
     fi
@@ -911,15 +911,15 @@ if [[ -n "$build_id" ]]; then
     echo "==> Validating TestFlight readiness"
     validate_log="$BUILD_DIR/testflight-validate.log"
     if ! asc validate testflight --app "$APP_STORE_APP_ID" --build "$build_id" --strict --output json >"$validate_log" 2>&1; then
-        if [[ "${beta_review_submit_attempted:-0}" == "1" && "${beta_review_submit_succeeded:-0}" != "1" ]]; then
-            echo "WARNING: strict TestFlight validation failed after Beta App Review submit failed." >&2
-            echo "         Build $build_id is uploaded and assigned; ASC may need manual/retry review submission." >&2
-            sed 's/^/         /' "$validate_log" >&2 || true
-        else
-            cat "$validate_log" >&2
-            exit 1
-        fi
+        cat "$validate_log" >&2
+        exit 1
     fi
+fi
+
+if [[ -n "$build_id" && "$ASSIGN_BETA_GROUP" == "1" ]]; then
+    ASC_PRIVATE_KEY_PATH="$AUTH_KEY_PATH" ASC_KEY_ID="$AUTH_KEY_ID" ASC_ISSUER_ID="$AUTH_ISSUER_ID" \
+        python3 "$ROOT_DIR/tools/scripts/testflight-distribution.py" \
+            --build-id "$build_id" --bundle-id "$APP_BUNDLE_ID" --groups "$BETA_GROUP_NAMES" --repair
 fi
 
 if [[ "$PROJECT_VERSION_BUMP_REQUIRED" == "1" ]]; then

@@ -3,6 +3,11 @@ name: iOS TestFlight Release
 on:
   workflow_dispatch:
     inputs:
+      existing_build_id:
+        description: "Repair distribution of an uploaded build without rebuilding"
+        required: false
+        default: ""
+        type: string
       beta_group_names:
         description: "Comma-separated TestFlight beta groups"
         required: false
@@ -45,7 +50,7 @@ env:
 
 jobs:
   testflight-preflight:
-    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip mobile-release]') }}
+    if: ${{ inputs.existing_build_id == '' && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip mobile-release]')) }}
     runs-on: macos-26-intel
     timeout-minutes: 10
     steps:
@@ -775,3 +780,26 @@ jobs:
             echo "WARNING: TestFlight version bump commit could not be pushed to ${GITHUB_REF_NAME}." >&2
             echo "         The build upload already completed; push the version bump manually if needed." >&2
           fi
+
+  repair-testflight-distribution:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.existing_build_id != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair and verify existing TestFlight distribution
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY_P8_B64: ${{ secrets.ASC_PRIVATE_KEY_P8_B64 }}
+          EXISTING_BUILD_ID: ${{ inputs.existing_build_id }}
+          BETA_GROUP_NAMES: ${{ inputs.beta_group_names }}
+        run: |
+          set -euo pipefail
+          ASC_PRIVATE_KEY_PATH="$RUNNER_TEMP/asc-key.p8"
+          export ASC_PRIVATE_KEY_PATH
+          trap 'rm -f "$ASC_PRIVATE_KEY_PATH"' EXIT
+          printf '%s' "$ASC_PRIVATE_KEY_P8_B64" | base64 --decode > "$ASC_PRIVATE_KEY_PATH"
+          chmod 600 "$ASC_PRIVATE_KEY_PATH"
+          python3 tools/scripts/testflight-distribution.py --build-id "$EXISTING_BUILD_ID" --groups "$BETA_GROUP_NAMES" --repair
