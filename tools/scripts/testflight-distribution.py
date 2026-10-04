@@ -74,11 +74,12 @@ def inspect(apple, build_id, bundle_id, group_names, repair=False):
     attrs = build['attributes']
     print(f"App: {app['attributes']['name']} ({bundle_id})")
     print(f"Build: {attrs['version']}; processing={attrs['processingState']}; expired={attrs['expired']}")
+    recent = apple.collection(f"/v1/builds?filter[app]={app['id']}&sort=-uploadedDate&limit=5")
+    print('Latest Apple builds: ' + json.dumps([{k: b['attributes'].get(k) for k in ('version', 'uploadedDate', 'processingState', 'expired')} for b in recent[:5]]))
     beta = apple.request(f'/v1/builds/{build_id}/buildBetaDetail')['data']
     print('Apple testing states: ' + json.dumps(beta['attributes'], sort_keys=True))
     if attrs['expired'] or attrs['processingState'] != 'VALID':
         raise RuntimeError('Build is expired or not processed successfully; it cannot be distributed')
-    assigned = {g['id'] for g in apple.collection(f'/v1/builds/{build_id}/betaGroups?limit=200')}
     groups = apple.collection(f"/v1/apps/{app['id']}/betaGroups?limit=200")
     problems = []
     external = False
@@ -90,11 +91,12 @@ def inspect(apple, build_id, bundle_id, group_names, repair=False):
         group = matches[0]
         internal = group['attributes']['isInternalGroup']
         external |= not internal
+        assigned = {b['id'] for b in apple.collection(f"/v1/betaGroups/{group['id']}/builds?limit=200")}
         testers = apple.collection(f"/v1/betaGroups/{group['id']}/betaTesters?limit=200")
-        print(f"Group {name}: internal={internal}; testers={len(testers)}; assigned={group['id'] in assigned}")
+        print(f"Group {name}: internal={internal}; testers={len(testers)}; assigned={build_id in assigned}")
         if not testers:
             problems.append(f'{name} has no testers; add the intended testers in App Store Connect')
-        if group['id'] not in assigned:
+        if build_id not in assigned:
             if repair:
                 apple.request(f"/v1/betaGroups/{group['id']}/relationships/builds", 'POST', {'data': [{'type': 'builds', 'id': build_id}]})
                 print(f'Assigned build to {name}')
