@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
@@ -14,6 +14,10 @@ use codex_exec_server::FileSystemResult;
 use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::ReadDirectoryEntry;
 use codex_exec_server::RemoveOptions;
+use codex_exec_server::{
+    GetMetadataOptions, ReadFileOptions, WalkEntry, WalkEntryKind, WalkError, WalkOptions,
+    WalkOutcome, WriteFileOptions,
+};
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 
@@ -207,27 +211,36 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
     ) -> codex_exec_server::ExecutorFileSystemFuture<'a, PathUri> {
         Box::pin(async move {
             accept_fakefs_sandbox_context(sandbox)?;
-            Ok(path.clone())
+            let output = run_ish_fs_command(
+                "canonicalize",
+                &format!("readlink -f {}", posix_quote(&path_string(path))),
+            )?;
+            let resolved = String::from_utf8(output)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            PathUri::from_host_native_path(resolved.trim_end_matches('\n'))
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
         })
     }
 
     fn read_file<'a>(
         &'a self,
         path: &'a PathUri,
+        options: ReadFileOptions,
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> codex_exec_server::ExecutorFileSystemFuture<'a, Vec<u8>> {
         Box::pin(async move {
-        accept_fakefs_sandbox_context(sandbox)?;
-        let path = path_string(path);
-        let command = format!("base64 < {}", posix_quote(&path));
-        let output = run_ish_fs_command("read_file", &command)?;
-        let encoded = String::from_utf8_lossy(&output)
-            .chars()
-            .filter(|ch| !ch.is_ascii_whitespace())
-            .collect::<String>();
-        BASE64_STANDARD
-            .decode(encoded.as_bytes())
-            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+            accept_fakefs_sandbox_context(sandbox)?;
+            require_fakefs_follow_symlinks(options.follow_symlinks)?;
+            let path = path_string(path);
+            let command = format!("base64 < {}", posix_quote(&path));
+            let output = run_ish_fs_command("read_file", &command)?;
+            let encoded = String::from_utf8_lossy(&output)
+                .chars()
+                .filter(|ch| !ch.is_ascii_whitespace())
+                .collect::<String>();
+            BASE64_STANDARD
+                .decode(encoded.as_bytes())
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
         })
     }
 
@@ -237,10 +250,12 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> codex_exec_server::ExecutorFileSystemFuture<'a, FileSystemReadStream> {
         Box::pin(async move {
-            let bytes = self.read_file(path, sandbox).await?;
-            Ok(FileSystemReadStream::new(futures::stream::once(async move {
-                Ok(bytes::Bytes::from(bytes))
-            })))
+            let bytes = self
+                .read_file(path, ReadFileOptions::default(), sandbox)
+                .await?;
+            Ok(FileSystemReadStream::new(futures::stream::once(
+                async move { Ok(bytes::Bytes::from(bytes)) },
+            )))
         })
     }
 
@@ -248,18 +263,20 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         &'a self,
         path: &'a PathUri,
         contents: Vec<u8>,
+        options: WriteFileOptions,
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> codex_exec_server::ExecutorFileSystemFuture<'a, ()> {
         Box::pin(async move {
-        accept_fakefs_sandbox_context(sandbox)?;
-        let path = path_string(path);
-        let encoded = BASE64_STANDARD.encode(contents);
-        let command = format!(
-            "base64 -d > {} <<'LITTER_APPLY_PATCH_B64'\n{}\nLITTER_APPLY_PATCH_B64\n",
-            posix_quote(&path),
-            encoded
-        );
-        run_ish_fs_command("write_file", &command).map(|_| ())
+            accept_fakefs_sandbox_context(sandbox)?;
+            require_fakefs_follow_symlinks(options.follow_symlinks)?;
+            let path = path_string(path);
+            let encoded = BASE64_STANDARD.encode(contents);
+            let command = format!(
+                "base64 -d > {} <<'LITTER_APPLY_PATCH_B64'\n{}\nLITTER_APPLY_PATCH_B64\n",
+                posix_quote(&path),
+                encoded
+            );
+            run_ish_fs_command("write_file", &command).map(|_| ())
         })
     }
 
@@ -270,56 +287,58 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> codex_exec_server::ExecutorFileSystemFuture<'a, ()> {
         Box::pin(async move {
-        accept_fakefs_sandbox_context(sandbox)?;
-        let path = path_string(path);
-        let command = if options.recursive {
-            format!("mkdir -p {}", posix_quote(&path))
-        } else {
-            format!("mkdir {}", posix_quote(&path))
-        };
-        run_ish_fs_command("create_directory", &command).map(|_| ())
+            accept_fakefs_sandbox_context(sandbox)?;
+            let path = path_string(path);
+            let command = if options.recursive {
+                format!("mkdir -p {}", posix_quote(&path))
+            } else {
+                format!("mkdir {}", posix_quote(&path))
+            };
+            run_ish_fs_command("create_directory", &command).map(|_| ())
         })
     }
 
     fn get_metadata<'a>(
         &'a self,
         path: &'a PathUri,
+        options: GetMetadataOptions,
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> codex_exec_server::ExecutorFileSystemFuture<'a, FileMetadata> {
         Box::pin(async move {
-        accept_fakefs_sandbox_context(sandbox)?;
-        let path = path_string(path);
-        let command = format!(
-            "p={}; if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then exit 2; fi; \
+            accept_fakefs_sandbox_context(sandbox)?;
+            require_fakefs_follow_symlinks(options.follow_symlinks)?;
+            let path = path_string(path);
+            let command = format!(
+                "p={}; if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then exit 2; fi; \
              if [ -d \"$p\" ]; then echo is_directory=1; else echo is_directory=0; fi; \
              if [ -f \"$p\" ]; then echo is_file=1; else echo is_file=0; fi; \
              if [ -L \"$p\" ]; then echo is_symlink=1; else echo is_symlink=0; fi; \
-             modified=$(stat -c %Y \"$p\" 2>/dev/null || echo 0); \
-             size=$(stat -c %s \"$p\" 2>/dev/null || echo 0); \
+             modified=$(stat -L -c %Y \"$p\" 2>/dev/null || echo 0); \
+             size=$(stat -L -c %s \"$p\" 2>/dev/null || echo 0); \
              case \"$modified\" in ''|*[!0-9]*) modified=0;; esac; \
              case \"$size\" in ''|*[!0-9]*) size=0;; esac; \
              echo created_at_ms=0; echo modified_at_ms=$((modified * 1000)); echo size=$size",
-            posix_quote(&path)
-        );
-        let output = run_ish_fs_command("get_metadata", &command)?;
-        let fields = parse_key_value_output(&output);
-        Ok(FileMetadata {
-            is_directory: fields.get("is_directory").is_some_and(|value| value == "1"),
-            is_file: fields.get("is_file").is_some_and(|value| value == "1"),
-            is_symlink: fields.get("is_symlink").is_some_and(|value| value == "1"),
-            created_at_ms: fields
-                .get("created_at_ms")
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0),
-            modified_at_ms: fields
-                .get("modified_at_ms")
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0),
-            size: fields
-                .get("size")
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(0),
-        })
+                posix_quote(&path)
+            );
+            let output = run_ish_fs_command("get_metadata", &command)?;
+            let fields = parse_key_value_output(&output);
+            Ok(FileMetadata {
+                is_directory: fields.get("is_directory").is_some_and(|value| value == "1"),
+                is_file: fields.get("is_file").is_some_and(|value| value == "1"),
+                is_symlink: fields.get("is_symlink").is_some_and(|value| value == "1"),
+                created_at_ms: fields
+                    .get("created_at_ms")
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0),
+                modified_at_ms: fields
+                    .get("modified_at_ms")
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0),
+                size: fields
+                    .get("size")
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0),
+            })
         })
     }
 
@@ -329,35 +348,220 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> codex_exec_server::ExecutorFileSystemFuture<'a, Vec<ReadDirectoryEntry>> {
         Box::pin(async move {
-        accept_fakefs_sandbox_context(sandbox)?;
-        let path = path_string(path);
-        let command = format!(
-            "p={}; [ -d \"$p\" ] || exit 2; \
+            accept_fakefs_sandbox_context(sandbox)?;
+            let path = path_string(path);
+            let command = format!(
+                "p={}; [ -d \"$p\" ] || exit 2; \
              for child in \"$p\"/* \"$p\"/.[!.]* \"$p\"/..?*; do \
                [ -e \"$child\" ] || [ -L \"$child\" ] || continue; \
                name=${{child##*/}}; d=0; f=0; \
                [ -d \"$child\" ] && d=1; [ -f \"$child\" ] && f=1; \
                printf '%s\t%s\t%s\n' \"$(printf '%s' \"$name\" | base64 | tr -d '\n')\" \"$d\" \"$f\"; \
              done",
-            posix_quote(&path)
-        );
-        let output = run_ish_fs_command("read_directory", &command)?;
-        let mut entries = Vec::new();
-        for line in String::from_utf8_lossy(&output).lines() {
-            let mut parts = line.split('\t');
-            let Some(name_b64) = parts.next() else { continue };
-            let Some(is_directory) = parts.next() else { continue };
-            let Some(is_file) = parts.next() else { continue };
-            let Ok(name_bytes) = BASE64_STANDARD.decode(name_b64.as_bytes()) else {
-                continue;
+                posix_quote(&path)
+            );
+            let output = run_ish_fs_command("read_directory", &command)?;
+            let mut entries = Vec::new();
+            for line in String::from_utf8_lossy(&output).lines() {
+                let mut parts = line.split('\t');
+                let Some(name_b64) = parts.next() else {
+                    continue;
+                };
+                let Some(is_directory) = parts.next() else {
+                    continue;
+                };
+                let Some(is_file) = parts.next() else {
+                    continue;
+                };
+                let Ok(name_bytes) = BASE64_STANDARD.decode(name_b64.as_bytes()) else {
+                    continue;
+                };
+                entries.push(ReadDirectoryEntry {
+                    file_name: String::from_utf8_lossy(&name_bytes).into_owned(),
+                    is_directory: is_directory == "1",
+                    is_file: is_file == "1",
+                });
+            }
+            Ok(entries)
+        })
+    }
+
+    fn walk<'a>(
+        &'a self,
+        path: &'a PathUri,
+        options: WalkOptions,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> codex_exec_server::ExecutorFileSystemFuture<'a, WalkOutcome> {
+        Box::pin(async move {
+            accept_fakefs_sandbox_context(sandbox)?;
+            let root = path;
+            if options.max_directories == 0 || options.max_entries == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "filesystem walk limits must be greater than zero",
+                ));
+            }
+            if options.max_depth > MAX_WALK_DEPTH
+                || options.max_directories > MAX_WALK_DIRECTORIES
+                || options.max_entries > MAX_WALK_ENTRIES
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "filesystem walk limits exceed maximums: depth={MAX_WALK_DEPTH}, directories={MAX_WALK_DIRECTORIES}, entries={MAX_WALK_ENTRIES}"
+                    ),
+                ));
+            }
+
+            let root_metadata = self
+                .get_metadata(root, GetMetadataOptions::default(), sandbox)
+                .await?;
+            let root_is_symlink = root_metadata.is_symlink;
+            if !root_metadata.is_directory
+                || (root_is_symlink && !options.follow_directory_symlinks)
+            {
+                return Ok(WalkOutcome::default());
+            }
+
+            let root_identity = if options.follow_directory_symlinks {
+                self.canonicalize(root, sandbox).await?
+            } else {
+                root.clone()
             };
-            entries.push(ReadDirectoryEntry {
-                file_name: String::from_utf8_lossy(&name_bytes).into_owned(),
-                is_directory: is_directory == "1",
-                is_file: is_file == "1",
-            });
-        }
-        Ok(entries)
+            let mut outcome = WalkOutcome::default();
+            let mut queue = VecDeque::from([(root.clone(), 0usize)]);
+            let mut visited_directories = HashSet::from([root_identity]);
+            let mut directory_count = 1usize;
+            let mut entry_count = 0usize;
+            let mut response_bytes = 0usize;
+
+            while let Some((directory, depth)) = queue.pop_front() {
+                let entries = self
+                    .read_directory(&directory, sandbox)
+                    .await
+                    .map(|entries| {
+                        entries
+                            .into_iter()
+                            .map(|entry| entry.file_name)
+                            .collect::<Vec<_>>()
+                    });
+                let mut entries = match entries {
+                    Ok(entries) => entries,
+                    Err(error) => {
+                        if !push_walk_error(
+                            &mut outcome,
+                            &mut response_bytes,
+                            directory,
+                            error.to_string(),
+                        ) {
+                            return Ok(outcome);
+                        }
+                        continue;
+                    }
+                };
+                entries.sort();
+
+                for file_name in entries {
+                    if entry_count == options.max_entries {
+                        outcome.truncated = true;
+                        return Ok(outcome);
+                    }
+                    entry_count += 1;
+
+                    let path = match directory.join(&file_name) {
+                        Ok(path) => path,
+                        Err(error) => {
+                            if !push_walk_error(
+                                &mut outcome,
+                                &mut response_bytes,
+                                directory.clone(),
+                                error.to_string(),
+                            ) {
+                                return Ok(outcome);
+                            }
+                            continue;
+                        }
+                    };
+                    let (metadata, is_symlink) = match self
+                        .get_metadata(&path, GetMetadataOptions::default(), sandbox)
+                        .await
+                        .map(|metadata| {
+                            let is_symlink = metadata.is_symlink;
+                            (metadata, is_symlink)
+                        }) {
+                        Ok(metadata) => metadata,
+                        Err(error) => {
+                            if !push_walk_error(
+                                &mut outcome,
+                                &mut response_bytes,
+                                path,
+                                error.to_string(),
+                            ) {
+                                return Ok(outcome);
+                            }
+                            continue;
+                        }
+                    };
+                    if is_symlink && (!options.follow_directory_symlinks || !metadata.is_directory)
+                    {
+                        continue;
+                    }
+
+                    let kind = if metadata.is_directory {
+                        WalkEntryKind::Directory
+                    } else if metadata.is_file {
+                        WalkEntryKind::File
+                    } else {
+                        continue;
+                    };
+                    if !reserve_walk_response_bytes(
+                        &mut outcome,
+                        &mut response_bytes,
+                        path.to_string().len(),
+                    ) {
+                        return Ok(outcome);
+                    }
+                    outcome.entries.push(WalkEntry {
+                        path: path.clone(),
+                        kind,
+                    });
+
+                    if kind == WalkEntryKind::Directory && depth < options.max_depth {
+                        if options.prune_hidden_directories && file_name.starts_with('.') {
+                            continue;
+                        }
+                        let directory_identity = if options.follow_directory_symlinks {
+                            match self.canonicalize(&path, sandbox).await {
+                                Ok(path) => path,
+                                Err(error) => {
+                                    if !push_walk_error(
+                                        &mut outcome,
+                                        &mut response_bytes,
+                                        path,
+                                        error.to_string(),
+                                    ) {
+                                        return Ok(outcome);
+                                    }
+                                    continue;
+                                }
+                            }
+                        } else {
+                            path.clone()
+                        };
+                        if !visited_directories.insert(directory_identity) {
+                            continue;
+                        }
+                        if directory_count == options.max_directories {
+                            outcome.truncated = true;
+                        } else {
+                            directory_count += 1;
+                            queue.push_back((path, depth + 1));
+                        }
+                    }
+                }
+            }
+
+            Ok(outcome)
         })
     }
 
@@ -368,23 +572,23 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> codex_exec_server::ExecutorFileSystemFuture<'a, ()> {
         Box::pin(async move {
-        accept_fakefs_sandbox_context(sandbox)?;
-        let path = path_string(path);
-        let missing_branch = if options.force { "exit 0" } else { "exit 2" };
-        let command = if options.recursive {
-            format!(
-                "p={}; if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then {}; fi; rm -rf \"$p\"",
-                posix_quote(&path),
-                missing_branch
-            )
-        } else {
-            format!(
-                "p={}; if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then {}; fi; if [ -d \"$p\" ] && [ ! -L \"$p\" ]; then rmdir \"$p\"; else rm \"$p\"; fi",
-                posix_quote(&path),
-                missing_branch
-            )
-        };
-        run_ish_fs_command("remove", &command).map(|_| ())
+            accept_fakefs_sandbox_context(sandbox)?;
+            let path = path_string(path);
+            let missing_branch = if options.force { "exit 0" } else { "exit 2" };
+            let command = if options.recursive {
+                format!(
+                    "p={}; if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then {}; fi; rm -rf \"$p\"",
+                    posix_quote(&path),
+                    missing_branch
+                )
+            } else {
+                format!(
+                    "p={}; if [ ! -e \"$p\" ] && [ ! -L \"$p\" ]; then {}; fi; if [ -d \"$p\" ] && [ ! -L \"$p\" ]; then rmdir \"$p\"; else rm \"$p\"; fi",
+                    posix_quote(&path),
+                    missing_branch
+                )
+            };
+            run_ish_fs_command("remove", &command).map(|_| ())
         })
     }
 
@@ -396,23 +600,23 @@ impl ExecutorFileSystem for IshFakefsFileSystem {
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> codex_exec_server::ExecutorFileSystemFuture<'a, ()> {
         Box::pin(async move {
-        accept_fakefs_sandbox_context(sandbox)?;
-        let source_path = path_string(source_path);
-        let destination_path = path_string(destination_path);
-        let command = if options.recursive {
-            format!(
-                "cp -R {} {}",
-                posix_quote(&source_path),
-                posix_quote(&destination_path)
-            )
-        } else {
-            format!(
-                "cp {} {}",
-                posix_quote(&source_path),
-                posix_quote(&destination_path)
-            )
-        };
-        run_ish_fs_command("copy", &command).map(|_| ())
+            accept_fakefs_sandbox_context(sandbox)?;
+            let source_path = path_string(source_path);
+            let destination_path = path_string(destination_path);
+            let command = if options.recursive {
+                format!(
+                    "cp -R {} {}",
+                    posix_quote(&source_path),
+                    posix_quote(&destination_path)
+                )
+            } else {
+                format!(
+                    "cp {} {}",
+                    posix_quote(&source_path),
+                    posix_quote(&destination_path)
+                )
+            };
+            run_ish_fs_command("copy", &command).map(|_| ())
         })
     }
 }
@@ -464,4 +668,54 @@ fn parse_key_value_output(output: &[u8]) -> HashMap<String, String> {
             Some((key.to_string(), value.to_string()))
         })
         .collect()
+}
+
+// Match upstream bounded-walk limits without depending on host filesystem access.
+const MAX_WALK_DEPTH: usize = 64;
+const MAX_WALK_DIRECTORIES: usize = 10_000;
+const MAX_WALK_ENTRIES: usize = 50_000;
+const MAX_WALK_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+const WALK_RESPONSE_ITEM_OVERHEAD_BYTES: usize = 64;
+
+fn require_fakefs_follow_symlinks(follow_symlinks: bool) -> io::Result<()> {
+    if !follow_symlinks {
+        // Shell redirections cannot guarantee atomic no-follow semantics. Fail closed.
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "iSH fakefs does not support atomic no-follow file operations",
+        ));
+    }
+    Ok(())
+}
+
+fn push_walk_error(
+    outcome: &mut WalkOutcome,
+    response_bytes: &mut usize,
+    path: PathUri,
+    message: String,
+) -> bool {
+    let item_bytes = path.to_string().len().saturating_add(message.len());
+    if !reserve_walk_response_bytes(outcome, response_bytes, item_bytes) {
+        return false;
+    }
+    outcome.errors.push(WalkError { path, message });
+    true
+}
+
+fn reserve_walk_response_bytes(
+    outcome: &mut WalkOutcome,
+    response_bytes: &mut usize,
+    content_bytes: usize,
+) -> bool {
+    let item_bytes = content_bytes.saturating_add(WALK_RESPONSE_ITEM_OVERHEAD_BYTES);
+    let Some(total_bytes) = response_bytes.checked_add(item_bytes) else {
+        outcome.truncated = true;
+        return false;
+    };
+    if total_bytes > MAX_WALK_RESPONSE_BYTES {
+        outcome.truncated = true;
+        return false;
+    }
+    *response_bytes = total_bytes;
+    true
 }

@@ -68,7 +68,7 @@ jobs:
   build-unsigned-ipa:
     name: Build unsigned sideload IPA
     runs-on: macos-26-intel
-    timeout-minutes: 180
+    timeout-minutes: 360
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       HOMEBREW_NO_AUTO_UPDATE: "1"
