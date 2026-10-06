@@ -1,0 +1,67 @@
+name: Build pinned Nyxian compiler toolchain
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compiler:
+    runs-on: macos-26
+    timeout-minutes: 360
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '26.3'
+      - name: Resolve pinned source and host revisions
+        id: source
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          echo "nyxian=$(git -C ThirdParty/EmexDE/Source rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "llvm=$(git -C ThirdParty/EmexDE/Source/LLVM-On-iOS rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "xcode=$(xcodebuild -version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - name: Restore complete toolchain cache
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/nyxian-toolchain
+          key: nyxian-upstream-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.source.outputs.nyxian }}-${{ steps.source.outputs.llvm }}-${{ steps.source.outputs.xcode }}-${{ hashFiles('tools/scripts/build-matched-nyxian-toolchain.sh', 'tools/scripts/nyxian-toolchain-provenance.py') }}
+      - name: Validate restored toolchain
+        id: prebuilt
+        run: |
+          if python3 tools/scripts/nyxian-toolchain-provenance.py verify build/nyxian-toolchain; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            rm -rf build/nyxian-toolchain
+          fi
+      - name: Install upstream build dependencies
+        if: steps.prebuilt.outputs.available != 'true'
+        run: brew install cmake ninja pkgconf ldid dpkg libarchive openssl
+      - name: Build complete pinned upstream compiler
+        if: steps.prebuilt.outputs.available != 'true'
+        run: tools/scripts/build-matched-nyxian-toolchain.sh
+      - name: Verify produced artifacts
+        run: python3 tools/scripts/nyxian-toolchain-provenance.py verify build/nyxian-toolchain
+      - name: Save complete toolchain cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/nyxian-toolchain
+          key: ${{ steps.cache.outputs.cache-primary-key }}
+      - name: Upload matching compiler and runtime artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nyxian-compiler-support
+          path: build/nyxian-toolchain/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

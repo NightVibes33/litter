@@ -235,8 +235,8 @@ require_grep "emexDE CI patches LiveProcess plist executable" '<string>$(EXECUTA
 require_grep "emexDE CI patches LiveProcess plist package type" "<string>XPC!</string>" "tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py"
 require_grep "emexDE unsigned IPA workflow validates LiveProcess bundle id" "IPA LiveProcess.appex has invalid CFBundleIdentifier" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "emexDE private LiveProcess workflow bundle id is Litter-prefixed" 'PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.39A8Q3T3TR.liveprocess"' ".github/workflows/ios-unsigned-ipa.yml"
-require_grep "emexDE CoreCompiler artifact preparation" "prepare-emexde-corecompiler-artifacts.sh" ".github/workflows/ios-unsigned-ipa.yml"
-require_grep "emexDE LLVM artifact preparation" "LLVM.xcframework.tar.xz" "tools/scripts/prepare-emexde-corecompiler-artifacts.sh"
+require_grep "emexDE matched artifact installation" "install-nyxian-toolchain-artifacts.sh" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "emexDE upstream toolchain build" "make -C" "tools/scripts/build-matched-nyxian-toolchain.sh"
 require_grep "iOS unsigned IPA uses Intel macOS 26 runner" "runs-on: macos-26-intel" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "iOS TestFlight uses Intel macOS 26 runner" "runs-on: macos-26-intel" ".github/workflows/ios-testflight.yml"
 require_grep "Feather signing stores upstream options key" "signing_options" "apps/ios/Sources/Litter/Models/FeatherSigningMaterialStore.swift"
@@ -462,9 +462,13 @@ require_grep "Native container mounted folders action" "Mount App Container" "ap
 require_grep "Native container file browser shortcut" "App Container" "apps/ios/Sources/Litter/Views/LocalFileWorkspaceView.swift"
 require_grep "Native container file browser path" "IshFS.nativeContainerMountPath" "apps/ios/Sources/Litter/Views/LocalFileWorkspaceView.swift"
 
-if grep -R "^[[:space:]]*runs-on: macos-26$" "$ROOT_DIR/.github/workflows" >/dev/null 2>&1; then
-  fail "macOS 26 workflows must use the Intel runner label macos-26-intel"
-fi
+# App builds retain Intel runners; the upstream Swift preset requires ARM64.
+for workflow in "$ROOT_DIR"/.github/workflows/*.yml; do
+  if [ "$(basename "$workflow")" != "nyxian-toolchain.yml" ] && grep -q "^[[:space:]]*runs-on: macos-26$" "$workflow"; then
+    fail "macOS 26 app workflows must use the Intel runner label macos-26-intel"
+  fi
+done
+require_grep "Nyxian upstream toolchain uses Apple Silicon" "runs-on: macos-26" ".github/workflows/nyxian-toolchain.yml"
 
 if [ "$missing" -ne 0 ]; then
   exit 1
