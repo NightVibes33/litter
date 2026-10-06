@@ -679,7 +679,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs
-          key: ios-emexde-corecompiler-artifacts-v2-${{ runner.os }}-${{ steps.emexde_swift_revision.outputs.llvm_on_ios_sha }}-${{ steps.emexde_swift_revision.outputs.swift_branch }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.swift') }}
+          key: ios-emexde-corecompiler-artifacts-v2-${{ runner.os }}-${{ steps.emexde_swift_revision.outputs.llvm_on_ios_sha }}-${{ steps.emexde_swift_revision.outputs.swift_branch }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'tools/scripts/patch-emexde-llvm-header-compatibility.py', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.swift') }}
 
       - name: Check emexDE CoreCompiler artifact cache
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
@@ -712,6 +712,11 @@ jobs:
           require_nonempty "$swift_header_root/swift/Config.h"
           require_nonempty "$swift_header_root/clang/Basic/PathRemapper.h"
           require_nonempty "$swift_header_root/clang/CAS/CASOptions.h"
+          require_nonempty "$swift_header_root/llvm/CAS/CASConfiguration.h"
+          if ! grep -q "#define LLVM_ABI " "$swift_header_root/llvm/Support/Compiler.h" || ! grep -q "enum class CASBackendMode" "$swift_header_root/llvm/MC/MCTargetOptions.h"; then
+            echo "Cached LLVM headers lack Swift compatibility declarations."
+            missing=1
+          fi
           require_nonempty "$swift_header_root/llvm/CAS/ActionCache.h"
           require_nonempty "$swift_header_root/llvm/Support/VirtualOutputBackend.h"
           require_nonempty "$swift_header_root/swift/Option/Options.inc"
