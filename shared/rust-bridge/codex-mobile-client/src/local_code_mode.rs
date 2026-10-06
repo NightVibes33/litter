@@ -11,10 +11,6 @@ use codex_code_mode_runtime::{
 pub(crate) struct MobileCodeModeProvider;
 
 impl CodeModeSessionProvider for MobileCodeModeProvider {
-    fn availability(&self) -> Result<(), String> {
-        initialize_v8(V8JitMode::Disabled)
-    }
-
     fn create_session<'a>(
         &'a self,
         delegate: Arc<dyn CodeModeSessionDelegate>,
@@ -33,7 +29,9 @@ impl CodeModeSessionProvider for MobileCodeModeProvider {
             if limits.max_heap_size_bytes.is_some() {
                 return Err("the mobile code-mode runtime does not support heap limits".into());
             }
-            self.availability()?;
+            // Availability queries happen even for direct-tool threads. Keep
+            // native initialization lazy until a code-mode cell needs a session.
+            initialize_v8(V8JitMode::Disabled)?;
             Ok(Arc::new(InProcessCodeModeSession::with_delegate_and_limits(
                 delegate, limits,
             )) as Arc<dyn CodeModeSession>)
