@@ -23,10 +23,7 @@ fi
 # Makefile's STAMP_SYNC_GHOSTTY dep chain.
 "$REPO_DIR/apps/ios/scripts/sync-ghostty.sh" --preserve-current
 
-if ! command -v zig >/dev/null 2>&1; then
-    echo "error: zig is required to build Ghostty (brew install zig)" >&2
-    exit 1
-fi
+ZIG_BIN="$("$REPO_DIR/tools/scripts/resolve-ghostty-zig.sh")"
 
 if ! grep -q 'ghostty_surface_write' "$GHOSTTY_DIR/include/ghostty.h"; then
     echo "error: Ghostty header shape changed; expected external PTY ghostty_surface_write in include/ghostty.h" >&2
@@ -59,6 +56,7 @@ mkdir -p "$ZIG_CACHE_DIR/global" "$ZIG_CACHE_DIR/local"
 target_for_abi() {
     case "$1" in
         arm64-v8a) echo "aarch64-linux-android.26" ;;
+        armeabi-v7a) echo "arm-linux-androideabi.26" ;;
         x86_64) echo "x86_64-linux-android.26" ;;
         *)
             echo "error: unsupported Android ABI: $1" >&2
@@ -79,7 +77,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
     fi
 fi
 
-for abi in $ANDROID_ABIS; do
+for abi in ${ANDROID_ABIS//,/ }; do
     target="$(target_for_abi "$abi")"
     prefix="$STAGING_DIR/$abi"
     env_args=()
@@ -94,10 +92,15 @@ for abi in $ANDROID_ABIS; do
         ZIG_LOCAL_CACHE_DIR="$ZIG_CACHE_DIR/local"
     )
 
+    if [ "$abi" = "armeabi-v7a" ]; then
+        env "${env_args[@]}" python3 "$REPO_DIR/tools/scripts/patch-ghostty-armv7.py" \
+            "$GHOSTTY_DIR" "$ZIG_BIN"
+    fi
+
     echo "==> Building Ghostty Android renderer for $abi ($target)..."
     (
         cd "$GHOSTTY_DIR"
-        env "${env_args[@]}" zig build \
+        env "${env_args[@]}" "$ZIG_BIN" build \
             -Dapp-runtime=none \
             -Drenderer=opengl \
             -Dfont-backend=freetype \

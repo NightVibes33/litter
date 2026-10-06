@@ -9,6 +9,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import com.litter.android.ui.LitterComposer
+import com.litter.android.ui.LitterType
+import com.litter.android.ui.conversation.ComposerCircleButton
+import com.litter.android.ui.conversation.ComposerPlaceholder
+import com.litter.android.ui.conversation.ComposerSendButton
+import com.litter.android.ui.conversation.composerCardSurface
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Arrangement
@@ -103,6 +109,8 @@ fun HomeComposerBar(
     onThreadCreated: (ThreadKey) -> Unit,
     onLoginRequired: (String) -> Unit = {},
     onActiveChange: ((Boolean) -> Unit)? = null,
+    /** Optional model pill rendered in the composer's bottom row (e.g. a [ComposerModelPill]). */
+    modelPill: (@Composable () -> Unit)? = null,
 ) {
     val appModel = LocalAppModel.current
     val context = LocalContext.current
@@ -341,49 +349,28 @@ fun HomeComposerBar(
             }
         }
 
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .composerCardSurface()
+                .padding(12.dp),
         ) {
-            if (!isRecording && !isTranscribing && !isSubmitting) {
-                IconButton(
-                    onClick = { showAttachMenu = true },
-                    modifier = Modifier.size(36.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = "Attach",
-                        tint = LitterTheme.textPrimary,
-                    )
-                }
-            }
-
             Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 36.dp, max = 120.dp)
-                    .background(LitterTheme.codeBackground, RoundedCornerShape(18.dp))
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp, max = 160.dp)
+                    .padding(start = 8.dp, end = 2.dp, top = 6.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(modifier = Modifier.weight(1f)) {
                     if (text.isEmpty()) {
-                        Text(
-                            text = "Message\u2026",
-                            color = LitterTheme.textMuted,
-                            fontSize = LitterTextStyle.body.scaled,
-                        )
+                        ComposerPlaceholder()
                     }
                     BasicTextField(
                         value = textFieldValue,
                         onValueChange = { textFieldValue = it },
-                        textStyle = TextStyle(
-                            color = LitterTheme.textPrimary,
-                            fontSize = LitterTextStyle.body.scaled,
-                            fontFamily = LitterTheme.monoFont,
-                        ),
+                        textStyle = LitterType.body,
                         cursorBrush = SolidColor(LitterTheme.accent),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -410,15 +397,33 @@ fun HomeComposerBar(
                         }
                     }
                 }
-
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (!isRecording && !isTranscribing && !isSubmitting) {
+                    ComposerCircleButton(
+                        icon = Icons.Default.Add,
+                        contentDescription = "Attach",
+                        onClick = { showAttachMenu = true },
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                if (modelPill != null) {
+                    Box(modifier = Modifier.weight(1f, fill = false)) { modelPill() }
+                }
+                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
                 when {
-                    isRecording -> {
-                        Spacer(Modifier.width(8.dp))
-                        IconButton(
+                    isRecording -> ComposerCircleButton(
+                        icon = Icons.Default.Stop,
+                        contentDescription = "Stop recording",
+                        tint = LitterTheme.accentStrong,
                             onClick = {
                                 val currentProject = project ?: run {
                                     transcriptionManager.cancelRecording()
-                                    return@IconButton
+                                    return@ComposerCircleButton
                                 }
                                 scope.launch {
                                     val auth = runCatching {
@@ -439,18 +444,12 @@ fun HomeComposerBar(
                                     }
                                 }
                             },
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Stop,
-                                contentDescription = "Stop recording",
-                                tint = LitterTheme.accentStrong,
-                            )
-                        }
-                    }
+                    )
 
-                    isTranscribing || isSubmitting -> {
-                        Spacer(Modifier.width(8.dp))
+                    isTranscribing || isSubmitting -> Box(
+                        modifier = Modifier.size(LitterComposer.control),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         CircularProgressIndicator(
                             strokeWidth = 2.dp,
                             color = LitterTheme.accent,
@@ -458,49 +457,19 @@ fun HomeComposerBar(
                         )
                     }
 
-                    else -> {
-                        Spacer(Modifier.width(8.dp))
-                        IconButton(
-                            onClick = {
-                                micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                            },
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Mic,
-                                contentDescription = "Record",
-                                tint = LitterTheme.textSecondary,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (hasSendContent) {
-                Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = sendCurrent,
-                    enabled = canSend && !isRecording && !isTranscribing,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (canSend && !isRecording && !isTranscribing) {
-                                LitterTheme.accent
-                            } else {
-                                LitterTheme.accent.copy(alpha = 0.45f)
-                            },
-                            CircleShape,
-                        ),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        tint = Color.Black,
-                        modifier = Modifier.size(17.dp),
+                    else -> ComposerCircleButton(
+                        icon = Icons.Default.Mic,
+                        contentDescription = "Record",
+                        onClick = {
+                            micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                        },
                     )
                 }
+                Spacer(Modifier.width(10.dp))
+                ComposerSendButton(
+                    enabled = canSend && !isRecording && !isTranscribing,
+                    onClick = sendCurrent,
+                )
             }
         }
 
@@ -668,16 +637,8 @@ private fun homeComposerInsertionText(insertion: String, text: String, start: In
 }
 
 private fun reasoningEffortFromServerValue(value: String): ReasoningEffort? =
-    when (value.trim().lowercase()) {
-        "none" -> ReasoningEffort.NONE
-        "minimal" -> ReasoningEffort.MINIMAL
-        "low" -> ReasoningEffort.LOW
-        "medium" -> ReasoningEffort.MEDIUM
-        "high" -> ReasoningEffort.HIGH
-        "xhigh" -> ReasoningEffort.X_HIGH
-        "max" -> ReasoningEffort.MAX
-        else -> null
-    }
+    uniffi.codex_mobile_client.reasoningEffortFromWireValue(value)
+
 
 private sealed interface PickedComposerAttachment {
     data class Image(val attachment: ComposerImageAttachment) : PickedComposerAttachment

@@ -32,7 +32,7 @@ final class TipJarStore {
     private(set) var purchaseState: PurchaseState = .idle
     private(set) var isLoading = true
     private(set) var selectedHeaderTierIDs: Set<String>?
-    private nonisolated(unsafe) var updatesTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var updatesTask: Task<Void, Never>?
 
     static let shared = TipJarStore()
     private static let selectedHeaderTierIDsKey = "tipJar.selectedHeaderTierIDs"
@@ -44,11 +44,6 @@ final class TipJarStore {
 
     var purchasedTiers: [TipTier] {
         tiers.filter(\.isPurchased)
-    }
-
-    var selectedHeaderTiers: [TipTier] {
-        guard let selectedHeaderTierIDs else { return purchasedTiers }
-        return purchasedTiers.filter { selectedHeaderTierIDs.contains($0.id) }
     }
 
     init() {

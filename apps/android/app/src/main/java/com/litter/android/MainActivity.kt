@@ -1,10 +1,15 @@
 package com.litter.android
 
+import android.content.res.Configuration
+import com.litter.android.util.EdgeToEdge
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
@@ -18,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
@@ -41,20 +45,31 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_NOTIFICATION_SERVER_ID = "litter.notification.serverId"
         const val EXTRA_NOTIFICATION_THREAD_ID = "litter.notification.threadId"
         const val EXTRA_OPEN_PET_SETTINGS = "litter.openPetSettings"
+        const val NOTIFICATION_PERMISSION_REQUESTED_KEY = "notification_permission_requested"
     }
 
     private var appModel: AppModel? = null
     private val lifecycleController = AppLifecycleController()
     private var openPetSettingsRequest by mutableStateOf(0)
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            LLog.i(
+                "MainActivity",
+                if (granted) "Notification permission granted" else "Notification permission not granted",
+            )
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Must be called before super.onCreate to hand off the system splash
         // (Theme.App.Starting) to the Compose AnimatedSplashScreen without a
         // theme-background flash between them.
         installSplashScreen()
-        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+        EdgeToEdge.apply(
+            this,
+            darkBars = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES,
+        )
         OpenAIApiKeyStore(applicationContext).applyToEnvironment()
         ExperimentalFeatures.initialize(applicationContext)
         PetOverlayController.initialize(applicationContext)
@@ -70,7 +85,6 @@ class MainActivity : ComponentActivity() {
 
         var showSplash by mutableStateOf(true)
         var contentReady by mutableStateOf(false)
-        var minTimeElapsed by mutableStateOf(false)
 
         setContent {
             LitterAppTheme {
@@ -88,22 +102,16 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    // Signal content ready when LitterApp composes
+                    // Signal content ready once the first real frame (LitterApp
+                    // or the startup-failure message) has composed. No fixed
+                    // minimum display time: hide the splash as soon as ready.
                     LaunchedEffect(model) {
-                        if (model != null) {
-                            contentReady = true
-                        }
+                        contentReady = true
                     }
 
-                    // Minimum display time
-                    LaunchedEffect(Unit) {
-                        delay(800)
-                        minTimeElapsed = true
-                    }
-
-                    // Dismiss when both ready and min time elapsed (or hard max 3s)
-                    LaunchedEffect(contentReady, minTimeElapsed) {
-                        if (contentReady && minTimeElapsed) showSplash = false
+                    // Dismiss when ready (or hard max 3s as a safety net)
+                    LaunchedEffect(contentReady) {
+                        if (contentReady) showSplash = false
                     }
                     LaunchedEffect(Unit) {
                         delay(3000)
@@ -211,6 +219,7 @@ class MainActivity : ComponentActivity() {
             LLog.i("MainActivity", "Firebase is not configured; skipping FCM token fetch: ${e.message}")
             return
         }
+        requestNotificationPermissionIfNeeded()
 
         messaging.token
             .addOnSuccessListener { token ->
@@ -226,4 +235,29 @@ class MainActivity : ComponentActivity() {
                 LLog.e("MainActivity", "Failed to fetch FCM token", error)
             }
     }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        val preferences = getSharedPreferences("litter_push", MODE_PRIVATE)
+        if (!shouldRequestNotificationPermission(
+                sdkInt = Build.VERSION.SDK_INT,
+                isGranted = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED,
+                wasAlreadyRequested = preferences.getBoolean(NOTIFICATION_PERMISSION_REQUESTED_KEY, false),
+            )
+        ) {
+            return
+        }
+
+        // Persist before launching so a system-dialog dismissal cannot produce a
+        // permission prompt on every future app launch.
+        preferences.edit().putBoolean(NOTIFICATION_PERMISSION_REQUESTED_KEY, true).apply()
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
 }
+
+internal fun shouldRequestNotificationPermission(
+    sdkInt: Int,
+    isGranted: Boolean,
+    wasAlreadyRequested: Boolean,
+): Boolean =
+    sdkInt >= Build.VERSION_CODES.TIRAMISU && !isGranted && !wasAlreadyRequested

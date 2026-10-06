@@ -14,7 +14,9 @@ struct KittyStoreHostView: UIViewControllerRepresentable {
 
     @MainActor
     func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
-        _ = themeManager.themeVersion
+        _ = themeManager.lightTheme
+        _ = themeManager.darkTheme
+        _ = themeManager.appearanceMode
         KittyStoreEmbeddedBridge.applyCurrentTheme(to: uiViewController)
         KittyStoreEmbeddedBridge.startTransportIfPossible()
     }
@@ -75,7 +77,7 @@ struct KittyStoreRouteView: View {
             Spacer(minLength: 0)
 
             Button {
-                requestedSettingsRoute = SettingsRoute.signing.rawValue
+                requestedSettingsRoute = "signing"
                 appState.showSettings = true
             } label: {
                 Image(systemName: "link.badge.plus")

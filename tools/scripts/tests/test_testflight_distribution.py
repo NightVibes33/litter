@@ -54,6 +54,22 @@ class DistributionTests(unittest.TestCase):
             self.inspect(apple)
         self.assertFalse(apple.mutations)
 
+    def test_empty_group_names_rejected_without_mutations(self):
+        for names in ([], [' ', '']):
+            apple = AppleFake()
+            with self.assertRaisesRegex(ValueError, 'At least one beta group'):
+                m.inspect(apple, 'build', 'expected', names, True)
+            self.assertFalse(apple.mutations)
+
+    def test_external_only_does_not_require_internal_testing(self):
+        apple = AppleFake(internal='MISSING_EXPORT_COMPLIANCE')
+        m.inspect(apple, 'build', 'expected', ['Beta Testers'], False)
+        self.assertFalse(apple.mutations)
+
+    def test_internal_only_does_not_require_external_testing(self):
+        m.inspect(AppleFake(external='MISSING_EXPORT_COMPLIANCE'),
+                  'build', 'expected', ['Internal Testers'], False)
+
     def test_empty_groups_fail(self):
         with self.assertRaisesRegex(RuntimeError, 'no testers'):
             self.inspect(AppleFake(testers=False))

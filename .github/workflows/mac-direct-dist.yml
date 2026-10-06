@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
@@ -63,7 +63,7 @@ jobs:
           version: 0.15.2
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Prepare Mac Catalyst release assets
         env:
@@ -74,7 +74,8 @@ jobs:
         run: |
           set -euo pipefail
           ./apps/ios/scripts/build-rust.sh --preserve-current --macabi-only
-          make alpine-fs xcgen
+          make alpine-fs
+          ./apps/ios/scripts/regenerate-project.sh
 
       - name: Package Mac release prep artifact
         run: |
@@ -86,7 +87,7 @@ jobs:
             apps/ios/Sources/Litter/Bridge/UniFFICodexClient.generated.swift
 
       - name: Upload Mac release prep artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mac-release-prep-direct
           path: .ci-prep/mac
@@ -102,7 +103,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
@@ -144,7 +145,7 @@ jobs:
           xcodebuild -version
 
       - name: Download Mac release prep artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: mac-release-prep-direct
           path: .ci-prep/mac
@@ -241,7 +242,7 @@ jobs:
           shasum -a 256 "$DMG_PATH"
 
       - name: Upload DMG as workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ steps.locate.outputs.dmg_name }}
           path: |

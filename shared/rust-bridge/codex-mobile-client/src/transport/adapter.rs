@@ -12,7 +12,7 @@ use codex_app_server_client::{
     RemoteAppServerEndpoint,
 };
 use codex_app_server_protocol::{
-    ClientNotification, ClientRequest, JSONRPCErrorError, RequestId, Result as JsonRpcResult,
+    ClientRequest, JSONRPCErrorError, RequestId, Result as JsonRpcResult,
 };
 
 /// Adapter wrapping the upstream `AppServerClient` (both in-process and remote variants).
@@ -45,8 +45,8 @@ impl AppServerAdapter {
             client_name,
             client_version,
             experimental_api,
-            mcp_server_openai_form_elicitation: true,
             opt_out_notification_methods: Vec::new(),
+            mcp_server_openai_form_elicitation: false,
             channel_capacity,
         };
 
@@ -99,23 +99,6 @@ impl AppServerAdapter {
         }
     }
 
-    /// Send a typed `ClientNotification` (fire-and-forget).
-    pub async fn send_notification(&self, json: &[u8]) -> Result<(), RpcError> {
-        let json_str = std::str::from_utf8(json)
-            .map_err(|e| RpcError::Deserialization(format!("invalid UTF-8: {e}")))?;
-
-        let value: serde_json::Value = serde_json::from_str(json_str)
-            .map_err(|e| RpcError::Deserialization(format!("invalid JSON: {e}")))?;
-
-        let notification: ClientNotification = serde_json::from_value(value)
-            .map_err(|e| RpcError::Deserialization(format!("failed to parse notification: {e}")))?;
-
-        self.client
-            .notify(notification)
-            .await
-            .map_err(|e| RpcError::Transport(TransportError::SendFailed(e.to_string())))
-    }
-
     /// Respond to a server-initiated request.
     pub async fn send_response(&self, json: &[u8]) -> Result<(), RpcError> {
         let json_str = std::str::from_utf8(json)
@@ -124,15 +107,8 @@ impl AppServerAdapter {
         let value: serde_json::Value = serde_json::from_str(json_str)
             .map_err(|e| RpcError::Deserialization(format!("invalid JSON: {e}")))?;
 
-        let id = match &value["id"] {
-            serde_json::Value::Number(n) => RequestId::Integer(n.as_i64().unwrap_or(0)),
-            serde_json::Value::String(s) => RequestId::String(s.clone()),
-            _ => {
-                return Err(RpcError::Deserialization(
-                    "invalid or missing 'id' field".to_string(),
-                ));
-            }
-        };
+        let id: RequestId = serde_json::from_value(value["id"].clone())
+            .map_err(|error| RpcError::Deserialization(format!("invalid request id: {error}")))?;
 
         let has_result = value.get("result").is_some();
         let has_error = value.get("error").is_some();
@@ -161,35 +137,6 @@ impl AppServerAdapter {
                 "response must have 'result' or 'error' field".to_string(),
             ))
         }
-    }
-
-    /// Send a typed `ClientRequest` and return the parsed result value.
-    ///
-    /// This is the higher-level convenience method used by `ServerSession::request`.
-    pub async fn request_typed(
-        &self,
-        request: ClientRequest,
-    ) -> Result<serde_json::Value, RpcError> {
-        match self.client.request(request).await {
-            Ok(result) => match result {
-                Ok(value) => Ok(value),
-                Err(error) => Err(RpcError::Server {
-                    code: error.code,
-                    message: error.message,
-                }),
-            },
-            Err(e) => Err(RpcError::Transport(TransportError::SendFailed(
-                e.to_string(),
-            ))),
-        }
-    }
-
-    /// Send a typed `ClientNotification`.
-    pub async fn notify_typed(&self, notification: ClientNotification) -> Result<(), RpcError> {
-        self.client
-            .notify(notification)
-            .await
-            .map_err(|e| RpcError::Transport(TransportError::SendFailed(e.to_string())))
     }
 
     /// Resolve a server request with a typed result.

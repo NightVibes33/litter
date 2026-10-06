@@ -124,6 +124,7 @@ install_swift_llvm_header_overlay() {
     clang/CAS/CASOptions.h
     llvm/Support/TrailingObjects.h
     llvm/Transforms/Utils/Instrumentation.h
+    llvm/CAS/CASConfiguration.h
     llvm/CAS/ActionCache.h
     llvm/CAS/CASID.h
     llvm/CAS/CASReference.h
@@ -304,6 +305,7 @@ fi
 install_swift_headers
 install_swift_llvm_header_overlay
 install_trailing_objects_compatibility
+python3 "$ROOT/tools/scripts/patch-emexde-llvm-header-compatibility.py" "$LLVM_HEADERS"
 generate_swift_build_headers
 install_swift_header_compatibility
 if [ ! -f "$LLVM_HEADERS/swift/Basic/InitializeSwiftModules.h" ]; then

@@ -34,8 +34,30 @@ final class AppModel {
         var upsertItem: HydratedConversationItem?
     }
 
+    /// Accumulated streaming-text deltas keyed by `(threadKey, itemId, kind)`.
+    /// Each batch entry holds the running concatenation of text for that item
+    /// so we can flush all accumulated tokens in a single `snapshot`
+    /// mutation (~8 fps) instead of reassigning `snapshot` per token.
+    private struct PendingStreamingDelta: Sendable {
+        var text: String = ""
+    }
+
+    /// Dictionary key for streaming-delta batches. Bundles the identifying
+    /// tuple so flush logic never has to re-parse a concatenated string.
+    private struct StreamingDeltaBatchKey: Hashable, Sendable {
+        let key: ThreadKey
+        let itemId: String
+        let kind: ThreadStreamingDeltaKind
+    }
+
     private static let liveItemMutationCoalescingNanoseconds: UInt64 = 120_000_000 // ~8fps commands
     private static let liveThreadStateCoalescingNanoseconds: UInt64 = 150_000_000  // ~6fps metadata
+    private static let streamingDeltaCoalescingNanoseconds: UInt64 = 120_000_000   // ~8fps streamed text
+    /// Default coalescing window for full-snapshot refreshes.
+    private static let snapshotRefreshDebounceNanoseconds: UInt64 = 75_000_000
+    /// Shorter window for updates the user is waiting on (approval prompts,
+    /// user-input requests) so they still surface effectively immediately.
+    private static let urgentSnapshotRefreshDebounceNanoseconds: UInt64 = 50_000_000
     private static let localAuthRestoreRetryDelays: [Duration] = [
         .seconds(1),
         .seconds(2),
@@ -48,7 +70,6 @@ final class AppModel {
     private struct RustBridges: @unchecked Sendable {
         let store: AppStore
         let client: AppClient
-        let discovery: DiscoveryBridge
         let serverBridge: ServerBridge
         let ssh: SshBridge
         let reconnectController: ReconnectController
@@ -73,7 +94,6 @@ final class AppModel {
         return RustBridges(
             store: AppStore(),
             client: AppClient(),
-            discovery: DiscoveryBridge(),
             serverBridge: ServerBridge(),
             ssh: SshBridge(),
             reconnectController: rc
@@ -88,16 +108,28 @@ final class AppModel {
         let text: String
     }
 
+    struct SshHostKeyChangeChallenge: Equatable {
+        let serverId: String
+        let fingerprint: String
+    }
+
     let store: AppStore
     let client: AppClient
-    let discovery: DiscoveryBridge
     let serverBridge: ServerBridge
     let ssh: SshBridge
     let reconnectController: ReconnectController
 
     private(set) var snapshot: AppSnapshotRecord? {
         didSet {
-            guard oldValue != snapshot else { return }
+            // Deliberately no `oldValue != snapshot` guard here.
+            // `AppSnapshotRecord` is a deep value tree (servers + threads,
+            // each thread carrying every hydrated conversation item), so an
+            // equality check walked the entire conversation history on the
+            // main actor at each of the ~20 assignment sites. Every site
+            // either only assigns when it actually mutated something or
+            // guards cheaply on its own (see `applySessionSummary` /
+            // `updateActiveThread`).
+            threadIndexCache = nil
             snapshotRevision &+= 1
         }
     }
@@ -105,29 +137,60 @@ final class AppModel {
     private(set) var lastError: String?
     private(set) var composerPrefillRequest: ComposerPrefillRequest?
     private(set) var isRecoveringLocalServer = false
+    private(set) var sshHostKeyChangeChallenge: SshHostKeyChangeChallenge?
 
     @ObservationIgnored private var subscription: AppStoreSubscription?
     @ObservationIgnored private var updateTask: Task<Void, Never>?
-    @ObservationIgnored private var loadingModelServerIds: Set<String> = []
+    @ObservationIgnored private var loadingModelServerIds: [String: Int] = [:]
+    @ObservationIgnored private var modelCatalogErrorsByServer: [String: String] = [:]
     @ObservationIgnored private var loadingRateLimitServerIds: Set<String> = []
-    @ObservationIgnored private var recentConversationMetadataLoads: [String: Date] = [:]
     @ObservationIgnored private var pendingThreadRefreshKeys: Set<ThreadKey> = []
     @ObservationIgnored private var pendingThreadRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var pendingActiveThreadHydrationKey: ThreadKey?
     @ObservationIgnored private var pendingActiveThreadHydrationTask: Task<Void, Never>?
     @ObservationIgnored private var pendingSnapshotRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingSnapshotRefreshDeadline: DispatchTime?
+    /// `ThreadKey -> index into snapshot.threads`, rebuilt lazily on first
+    /// lookup after `snapshot` changes. Invalidated in `snapshot.didSet`,
+    /// which is the only way `snapshot` can change (`private(set)`, and every
+    /// mutation site copies-then-assigns), so it cannot go stale.
+    @ObservationIgnored private var threadIndexCache: [ThreadKey: Int]?
     @ObservationIgnored private var pendingThreadStateEvents: [ThreadKey: PendingThreadStateEvent] = [:]
     @ObservationIgnored private var pendingThreadStateTask: Task<Void, Never>?
     @ObservationIgnored private var pendingCommandRowMutations: [String: PendingCommandRowMutation] = [:]
     @ObservationIgnored private var pendingCommandRowMutationTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingStreamingDeltas: [StreamingDeltaBatchKey: PendingStreamingDelta] = [:]
+    @ObservationIgnored private var pendingStreamingDeltaTask: Task<Void, Never>?
     @ObservationIgnored private var cachedThreadSnapshots: [ThreadKey: AppThreadSnapshot] = [:]
     @ObservationIgnored private var loadingTurnPageThreadKeys: Set<ThreadKey> = []
     @ObservationIgnored private var localServerRecoveryTask: Task<Void, Never>?
+    private(set) var pendingHandoffTurnErrors: [ThreadKey: String] = [:]
+
+    func reportHandoffTurnError(key: ThreadKey, message: String) {
+        pendingHandoffTurnErrors[key] = message
+    }
+
+    func clearHandoffTurnError(for key: ThreadKey) {
+        pendingHandoffTurnErrors.removeValue(forKey: key)
+    }
+
+    func recordSshHostKeyChange(serverId: String, errorMessage: String?) {
+        guard let errorMessage,
+              let challenge = decodeSshHostKeyChallenge(message: errorMessage),
+              challenge.isChanged else { return }
+        sshHostKeyChangeChallenge = SshHostKeyChangeChallenge(
+            serverId: serverId,
+            fingerprint: challenge.fingerprint
+        )
+    }
+
+    func clearSshHostKeyChange() {
+        sshHostKeyChangeChallenge = nil
+    }
 
     init(
         store: AppStore? = nil,
         client: AppClient? = nil,
-        discovery: DiscoveryBridge? = nil,
         serverBridge: ServerBridge? = nil,
         ssh: SshBridge? = nil,
         reconnectController: ReconnectController? = nil
@@ -135,16 +198,20 @@ final class AppModel {
         let bridges = Self._prewarmResult
         self.store = store ?? bridges.store
         self.client = client ?? bridges.client
-        self.discovery = discovery ?? bridges.discovery
         self.serverBridge = serverBridge ?? bridges.serverBridge
         self.ssh = ssh ?? bridges.ssh
         self.reconnectController = reconnectController ?? bridges.reconnectController
+
+        let sshTrustStore = TerminalSshTrustStore(backend: SwiftSshTrustBackend.shared)
+        self.serverBridge.setSshTrustStore(store: sshTrustStore)
+        self.reconnectController.setSshTrustStore(store: sshTrustStore)
 
         // Register the saved-apps directory with the Rust client so the
         // dynamic-tool finalize hook can auto-upsert on `show_widget` calls.
         // Without this, auto-save silently no-ops.
         self.client.setSavedAppsDirectory(directory: SavedAppsDirectory.path)
         self.client.setSlingshotCredentialsDirectory(directory: MobilePreferencesDirectory.path)
+        self.client.setMobilePreferencesDirectory(directory: MobilePreferencesDirectory.path)
 
         // Route Swift presentation lookups through the Rust-owned
         // `AgentMetadataStore`. Any view rendering an agent label /
@@ -168,6 +235,7 @@ final class AppModel {
         pendingThreadStateTask?.cancel()
         pendingCommandRowMutationTask?.cancel()
         localServerRecoveryTask?.cancel()
+        pendingStreamingDeltaTask?.cancel()
     }
 
     func start() {
@@ -203,6 +271,7 @@ final class AppModel {
         pendingActiveThreadHydrationKey = nil
         pendingSnapshotRefreshTask?.cancel()
         pendingSnapshotRefreshTask = nil
+        pendingSnapshotRefreshDeadline = nil
         pendingThreadStateTask?.cancel()
         pendingThreadStateTask = nil
         pendingThreadStateEvents.removeAll()
@@ -211,12 +280,16 @@ final class AppModel {
         pendingCommandRowMutations.removeAll()
         localServerRecoveryTask?.cancel()
         localServerRecoveryTask = nil
+        pendingStreamingDeltaTask?.cancel()
+        pendingStreamingDeltaTask = nil
+        pendingStreamingDeltas.removeAll()
         subscription = nil
     }
 
     func refreshSnapshot() async {
         pendingSnapshotRefreshTask?.cancel()
         pendingSnapshotRefreshTask = nil
+        pendingSnapshotRefreshDeadline = nil
         await performSnapshotRefresh()
     }
 
@@ -232,16 +305,37 @@ final class AppModel {
         lastError = error.localizedDescription
     }
 
-    private func scheduleSnapshotRefreshDebounced() {
-        guard pendingSnapshotRefreshTask == nil else { return }
+    /// Coalesce full-snapshot refreshes. `refreshSnapshot()` rebuilds the
+    /// entire `AppSnapshotRecord` from Rust and is the single most expensive
+    /// main-actor operation in the app, so every store update that needs one
+    /// funnels through here instead of awaiting it inline.
+    ///
+    /// The armed task always performs a trailing refresh: it reads the whole
+    /// store, so any updates that arrived during the window are picked up.
+    /// Callers that need lower latency (user-visible approvals / input
+    /// requests) pass a shorter window; a shorter request re-arms an
+    /// already-pending longer one, and a longer request never pushes an
+    /// earlier deadline out.
+    private func scheduleSnapshotRefreshDebounced(
+        within nanoseconds: UInt64 = AppModel.snapshotRefreshDebounceNanoseconds
+    ) {
+        let deadline = DispatchTime.now() + .nanoseconds(Int(nanoseconds))
+        if pendingSnapshotRefreshTask != nil,
+           let existing = pendingSnapshotRefreshDeadline,
+           existing <= deadline {
+            return
+        }
+        pendingSnapshotRefreshTask?.cancel()
+        pendingSnapshotRefreshDeadline = deadline
         pendingSnapshotRefreshTask = Task { [weak self] in
             do {
-                try await Task.sleep(nanoseconds: 75_000_000)
+                try await Task.sleep(nanoseconds: nanoseconds)
             } catch {
                 return
             }
             guard let self else { return }
             self.pendingSnapshotRefreshTask = nil
+            self.pendingSnapshotRefreshDeadline = nil
             await self.performSnapshotRefresh()
         }
     }
@@ -321,18 +415,14 @@ final class AppModel {
 
     /// Force a fresh resume so the store reconciles `active_turn_id`
     /// against the server's authoritative view. Use after a long resume /
-    /// push wake — the in-flight turn the local snapshot shows as running
-    /// may have completed during the background window with no
-    /// `TurnCompleted` event delivered.
+    /// push wake — the in-flight turn may have advanced or completed during
+    /// the background window with item or terminal events not delivered.
     ///
     /// On v0.125+ remotes this runs `thread/resume` with
-    /// `excludeTurns: true` and then a tiny `thread/turns/list` probe
-    /// (`limit: 5`, `itemsView: notLoaded`) — turn skeletons only — to feed
-    /// `reconcile_active_turn`. Pulling the full embedded turn list here
-    /// would OOM on long threads. Legacy remotes that don't implement
-    /// `thread/turns/list` still get the embedded turn list via
-    /// `excludeTurns: false`, since there is no other way to learn turn
-    /// status there.
+    /// `excludeTurns: true`, then a tiny skeleton probe and a bounded full
+    /// repair page when the local turn was active. Legacy remotes that don't
+    /// implement `thread/turns/list` still get the embedded turn list via
+    /// `excludeTurns: false`.
     func forceRefreshThreadAuthoritative(key: ThreadKey) async throws {
         try await store.forceRefreshThreadAuthoritative(key: key)
     }
@@ -952,13 +1042,15 @@ final class AppModel {
     }
 
     func applySnapshot(_ snapshot: AppSnapshotRecord?) {
-        let normalizedSnapshot = snapshot.map(normalizingLocalServerDisplayNames)
-        let mergedSnapshot = normalizedSnapshot.map(mergingCachedThreadSnapshots)
-        self.snapshot = mergedSnapshot
-        if let mergedSnapshot {
-            persistWakeMACs(from: mergedSnapshot.servers)
-            mergedSnapshot.threads.forEach(cacheThreadSnapshot)
-            lastError = nil
+        PerfTracker.time("applySnapshot") {
+            let normalizedSnapshot = snapshot.map(normalizingLocalServerDisplayNames)
+            let mergedSnapshot = normalizedSnapshot.map(mergingCachedThreadSnapshots)
+            self.snapshot = mergedSnapshot
+            if let mergedSnapshot {
+                persistWakeMACs(from: mergedSnapshot.servers)
+                mergedSnapshot.threads.forEach(cacheThreadSnapshot)
+                lastError = nil
+            }
         }
     }
 
@@ -985,7 +1077,45 @@ final class AppModel {
         return snapshot
     }
 
+    /// Stable discriminant label for a store update.
+    ///
+    /// Never interpolate `AppStoreUpdateRecord` itself: it has no
+    /// `CustomStringConvertible`, so `"\(update)"` falls back to a
+    /// `Mirror`-based reflective walk of the whole payload — for
+    /// `.threadUpserted` that is every hydrated conversation item in the
+    /// thread, on the main actor, once per store update.
+    private static func updateLabel(_ update: AppStoreUpdateRecord) -> String {
+        switch update {
+        case .threadUpserted: return "threadUpserted"
+        case .threadMetadataChanged: return "threadMetadataChanged"
+        case .threadItemChanged: return "threadItemChanged"
+        case .threadStreamingDelta: return "threadStreamingDelta"
+        case .threadRemoved: return "threadRemoved"
+        case .activeThreadChanged: return "activeThreadChanged"
+        case .pendingApprovalsChanged: return "pendingApprovalsChanged"
+        case .pendingUserInputsChanged: return "pendingUserInputsChanged"
+        case .serverChanged: return "serverChanged"
+        case .serverRemoved: return "serverRemoved"
+        case .fullResync: return "fullResync"
+        case .voiceSessionChanged: return "voiceSessionChanged"
+        case .realtimeTranscriptUpdated: return "realtimeTranscriptUpdated"
+        case .realtimeHandoffRequested: return "realtimeHandoffRequested"
+        case .realtimeSpeechStarted: return "realtimeSpeechStarted"
+        case .realtimeStarted: return "realtimeStarted"
+        case .realtimeSdp: return "realtimeSdp"
+        case .realtimeOutputAudioDelta: return "realtimeOutputAudioDelta"
+        case .realtimeError: return "realtimeError"
+        case .realtimeClosed: return "realtimeClosed"
+        case .savedAppsChanged: return "savedAppsChanged"
+        case .dynamicWidgetStreaming: return "dynamicWidgetStreaming"
+        case .terminalSessionsChanged: return "terminalSessionsChanged"
+        }
+    }
+
     private func handleStoreUpdate(_ update: AppStoreUpdateRecord) async {
+        // Argument is an `@autoclosure`: nothing below is evaluated outside
+        // DEBUG, and even in DEBUG it only reads the case discriminant.
+        PerfTracker.event("storeUpdate", ["type": Self.updateLabel(update)])
         switch update {
         case .threadUpserted(let thread, let sessionSummary, let agentDirectoryVersion):
             applyThreadUpsert(
@@ -994,6 +1124,17 @@ final class AppModel {
                 agentDirectoryVersion: agentDirectoryVersion
             )
         case .threadMetadataChanged(let state, let sessionSummary, let agentDirectoryVersion):
+            // A turn finishing arrives as a metadata update. Flush any
+            // pending streamed text for this thread first so the final
+            // token is never lost behind the coalescer window.
+            flushPendingStreamingDeltas(for: state.key)
+            // Fallback close for the send interval. Only a finished turn
+            // clears `activeTurnId`, so a metadata update for any other
+            // reason (a status change mid-turn, a queued follow-up edit)
+            // must not close an interval that is still open.
+            if state.activeTurnId == nil {
+                PerfTracker.endInterval("SendMessage", key: PerfTracker.intervalKey(state.key))
+            }
             if shouldBatchLiveThreadStateUpdate(for: state.key) {
                 enqueueThreadStateUpdate(
                     state,
@@ -1008,6 +1149,9 @@ final class AppModel {
                 )
             }
         case .threadItemChanged(let key, let item, let sessionSummary):
+            // The finalized assistant/command item supersedes the streamed
+            // placeholder; flush any pending deltas for this thread first.
+            flushPendingStreamingDeltas(for: key)
             let isBatched = shouldBatchCommandRowMutation(for: key, item: item)
             if isBatched {
                 enqueueCommandRowUpsert(key: key, item: item)
@@ -1020,18 +1164,21 @@ final class AppModel {
             // stream without waiting for a full snapshot rebuild.
             applySessionSummary(sessionSummary)
         case .threadStreamingDelta(let key, let itemId, let kind, let text):
-            switch kind {
-            case .assistantText:
-                if !applyThreadStreamingDelta(key: key, itemId: itemId, kind: kind, text: text) {
-                    scheduleThreadSnapshotRefresh(for: key)
-                }
+            // Feed the live transcript renderer immediately so the streaming
+            // bubble stays smooth at the token rate. The snapshot mutation
+            // is coalesced below so the rest of the UI (home, overlays,
+            // composer) only re-renders ~8 fps instead of per token.
+            if kind == .assistantText {
+                // First streamed token for this thread closes the send
+                // interval opened by `startTurn`. `endInterval` is a no-op
+                // when no interval is pending (deltas can arrive for a
+                // turn this device did not start).
+                PerfTracker.endInterval("SendMessage", key: PerfTracker.intervalKey(key))
                 StreamingRendererCoordinator.shared.appendDelta(text, for: itemId)
-            default:
-                if !applyThreadStreamingDelta(key: key, itemId: itemId, kind: kind, text: text) {
-                    scheduleThreadSnapshotRefresh(for: key)
-                }
             }
+            enqueueStreamingDelta(key: key, itemId: itemId, kind: kind, text: text)
         case .threadRemoved(let key, let agentDirectoryVersion):
+            flushPendingStreamingDeltas(for: key)
             removeThreadSnapshot(for: key, agentDirectoryVersion: agentDirectoryVersion)
         case .activeThreadChanged(let key):
             updateActiveThread(key)
@@ -1040,17 +1187,24 @@ final class AppModel {
             }
             scheduleDeferredActiveThreadHydrationIfNeeded(for: key)
         case .pendingApprovalsChanged:
-            await refreshSnapshot()
+            // User-visible and blocking — short window, but still coalesced
+            // so a burst of approvals costs one snapshot rebuild.
+            scheduleSnapshotRefreshDebounced(
+                within: Self.urgentSnapshotRefreshDebounceNanoseconds
+            )
         case .pendingUserInputsChanged:
-            await refreshSnapshot()
+            scheduleSnapshotRefreshDebounced(
+                within: Self.urgentSnapshotRefreshDebounceNanoseconds
+            )
         case .serverChanged:
             scheduleSnapshotRefreshDebounced()
         case .serverRemoved:
-            await refreshSnapshot()
+            scheduleSnapshotRefreshDebounced()
         case .fullResync:
-            await refreshSnapshot()
+            flushPendingStreamingDeltas()
+            scheduleSnapshotRefreshDebounced()
         case .voiceSessionChanged:
-            await refreshSnapshot()
+            scheduleSnapshotRefreshDebounced()
         case .realtimeTranscriptUpdated:
             break
         case .realtimeHandoffRequested:
@@ -1058,21 +1212,21 @@ final class AppModel {
         case .realtimeSpeechStarted:
             break
         case .realtimeStarted:
-            await refreshSnapshot()
+            scheduleSnapshotRefreshDebounced()
         case .realtimeSdp:
             break
         case .realtimeOutputAudioDelta:
             break
         case .realtimeError:
-            await refreshSnapshot()
+            scheduleSnapshotRefreshDebounced()
         case .realtimeClosed:
-            await refreshSnapshot()
+            scheduleSnapshotRefreshDebounced()
         case .savedAppsChanged:
             SavedAppsStore.shared.reload()
         case .dynamicWidgetStreaming(let key, let itemId, _, let widget):
             applyStreamingWidget(key: key, itemId: itemId, widget: widget)
         case .terminalSessionsChanged:
-            await refreshSnapshot()
+            scheduleSnapshotRefreshDebounced()
         }
     }
 
@@ -1123,44 +1277,6 @@ final class AppModel {
         cacheThreadSnapshot(thread)
     }
 
-    private func applyThreadStreamingDelta(
-        key: ThreadKey,
-        itemId: String,
-        kind: ThreadStreamingDeltaKind,
-        text: String
-    ) -> Bool {
-        guard var snapshot else { return false }
-        guard let threadIndex = snapshot.threads.firstIndex(where: { $0.key == key }) else {
-            return false
-        }
-
-        var thread = snapshot.threads[threadIndex]
-        guard let itemIndex = thread.hydratedConversationItems.firstIndex(where: { $0.id == itemId }) else {
-            return false
-        }
-
-        var item = thread.hydratedConversationItems[itemIndex]
-        guard let updatedContent = applyingStreamingDelta(
-            kind: kind,
-            text: text,
-            to: item.content
-        ) else {
-            return false
-        }
-
-        item.content = updatedContent
-        guard thread.hydratedConversationItems[itemIndex] != item else {
-            return true
-        }
-
-        thread.hydratedConversationItems[itemIndex] = item
-        snapshot.threads[threadIndex] = thread
-        self.snapshot = snapshot
-        cacheThreadSnapshot(thread)
-        lastError = nil
-        return true
-    }
-
     private func applyingStreamingDelta(
         kind: ThreadStreamingDeltaKind,
         text: String,
@@ -1190,6 +1306,153 @@ final class AppModel {
             return .mcpToolCall(data)
         default:
             return nil
+        }
+    }
+
+    /// Queue a streaming-text delta for coalesced application. The delta is
+    /// accumulated per `(thread, item, kind)` and flushed at ~8 fps, so
+    /// `snapshot` (and therefore every observing view) bumps once per window
+    /// instead of once per token. If the thread/item is not yet hydrated, we
+    /// fall back to the existing debounced snapshot refresh.
+    private func enqueueStreamingDelta(
+        key: ThreadKey,
+        itemId: String,
+        kind: ThreadStreamingDeltaKind,
+        text: String
+    ) {
+        // If the target item is not yet in the snapshot, batching would just
+        // accumulate text against a missing row; fall back to the debounced
+        // full-thread refresh so the item appears and then streams.
+        // Clear any previously accumulated deltas for this thread so the
+        // refresh's full item text isn't duplicated by a later flush.
+        guard canApplyStreamingDelta(key: key, itemId: itemId) else {
+            pendingStreamingDeltas = pendingStreamingDeltas.filter { $0.key.key != key }
+            scheduleThreadSnapshotRefresh(for: key)
+            return
+        }
+
+        let batchKey = StreamingDeltaBatchKey(key: key, itemId: itemId, kind: kind)
+        var pending = pendingStreamingDeltas[batchKey] ?? PendingStreamingDelta()
+        pending.text += text
+        pendingStreamingDeltas[batchKey] = pending
+
+        guard pendingStreamingDeltaTask == nil else { return }
+        pendingStreamingDeltaTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.streamingDeltaCoalescingNanoseconds)
+            guard let self else { return }
+            await self.flushPendingStreamingDeltas()
+        }
+    }
+
+    private func canApplyStreamingDelta(key: ThreadKey, itemId: String) -> Bool {
+        guard let snapshot else { return false }
+        guard let threadIndex = snapshot.threads.firstIndex(where: { $0.key == key }) else {
+            return false
+        }
+        return snapshot.threads[threadIndex]
+            .hydratedConversationItems
+            .contains(where: { $0.id == itemId })
+    }
+
+    /// Apply all accumulated streaming deltas in a single `snapshot`
+    /// mutation, bumping `snapshotRevision` once per flush instead of per
+    /// token. Passing a `ThreadKey` flushes only that thread's deltas
+    /// (used on turn completion); passing `nil` flushes everything.
+    private func flushPendingStreamingDeltas(for key: ThreadKey? = nil) {
+        PerfTracker.time("flushStreamingDeltas") {
+            flushPendingStreamingDeltasImpl(for: key)
+        }
+    }
+
+    private func flushPendingStreamingDeltasImpl(for key: ThreadKey? = nil) {
+        // Cancel any scheduled coalesced flush; we are flushing now.
+        pendingStreamingDeltaTask?.cancel()
+        pendingStreamingDeltaTask = nil
+
+        guard !pendingStreamingDeltas.isEmpty else { return }
+
+        var drained: [(batchKey: StreamingDeltaBatchKey, pending: PendingStreamingDelta)] = []
+        for (batchKey, pending) in pendingStreamingDeltas {
+            if let key, batchKey.key != key { continue }
+            drained.append((batchKey, pending))
+        }
+        for entry in drained {
+            pendingStreamingDeltas.removeValue(forKey: entry.batchKey)
+        }
+        guard !drained.isEmpty else { return }
+
+        guard var snapshot else {
+            pendingStreamingDeltas.removeAll()
+            return
+        }
+
+        var mutated = false
+        var touchedThreads: Set<Int> = []
+        var droppedThreadKeys: Set<ThreadKey> = []
+        // Resolve each thread index once per flush instead of a linear scan
+        // per drained batch.
+        var threadIndexByKey: [ThreadKey: Int] = [:]
+        for key in Set(drained.map(\.batchKey.key)) {
+            if let index = snapshot.threads.firstIndex(where: { $0.key == key }) {
+                threadIndexByKey[key] = index
+            }
+        }
+        for entry in drained {
+            guard let threadIndex = threadIndexByKey[entry.batchKey.key] else {
+                droppedThreadKeys.insert(entry.batchKey.key)
+                continue
+            }
+            guard let itemIndex = snapshot.threads[threadIndex].hydratedConversationItems
+                .firstIndex(where: { $0.id == entry.batchKey.itemId }) else {
+                droppedThreadKeys.insert(entry.batchKey.key)
+                continue
+            }
+            let currentItem = snapshot.threads[threadIndex].hydratedConversationItems[itemIndex]
+            var item = currentItem
+            guard let updatedContent = applyingStreamingDelta(
+                kind: entry.batchKey.kind,
+                text: entry.pending.text,
+                to: item.content
+            ) else {
+                droppedThreadKeys.insert(entry.batchKey.key)
+                continue
+            }
+            item.content = updatedContent
+            guard currentItem != item else { continue }
+            // Write in place through the nested subscripts: copying the
+            // thread out and writing it back forced a full copy of
+            // `hydratedConversationItems` for every drained batch.
+            snapshot.threads[threadIndex].hydratedConversationItems[itemIndex] = item
+            touchedThreads.insert(threadIndex)
+            mutated = true
+        }
+
+        // Fall back to a debounced full-thread refresh for any batch whose
+        // thread or item disappeared (e.g. the snapshot was replaced by a
+        // full resync between enqueue and flush). The old per-token code
+        // had this fallback via applyThreadStreamingDelta returning false.
+        for droppedKey in droppedThreadKeys {
+            scheduleThreadSnapshotRefresh(for: droppedKey)
+        }
+
+        if mutated {
+            self.snapshot = snapshot
+            for threadIndex in touchedThreads {
+                cacheThreadSnapshot(snapshot.threads[threadIndex])
+            }
+            lastError = nil
+        }
+
+        // Re-arm the coalesced timer if deltas remain for other threads
+        // (e.g. a targeted flush for one thread left another thread's
+        // pending text without a scheduled timer). Without this, concurrent
+        // streaming threads (subagents/handoff) can lose the tail of text.
+        if !pendingStreamingDeltas.isEmpty && pendingStreamingDeltaTask == nil {
+            pendingStreamingDeltaTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: Self.streamingDeltaCoalescingNanoseconds)
+                guard let self else { return }
+                await self.flushPendingStreamingDeltas()
+            }
         }
     }
 
@@ -1508,13 +1771,18 @@ final class AppModel {
                 effectiveSessionSummary.updatedAt = existingSummary.updatedAt
             }
             sessionSummaryChanged = existingSummary != effectiveSessionSummary
-            snapshot.sessionSummaries[index] = effectiveSessionSummary
+            if sessionSummaryChanged {
+                // Equivalent to the old "assign in place then full sort",
+                // minus the O(n log n).
+                Self.upsertSortedSessionSummary(
+                    effectiveSessionSummary,
+                    into: &snapshot.sessionSummaries,
+                    existingIndex: index
+                )
+            }
         } else {
             sessionSummaryChanged = true
-            snapshot.sessionSummaries.append(sessionSummary)
-        }
-        if sessionSummaryChanged {
-            snapshot.sessionSummaries.sort(by: Self.sessionSummarySort(lhs:rhs:))
+            Self.upsertSortedSessionSummary(sessionSummary, into: &snapshot.sessionSummaries)
         }
         let agentDirectoryChanged = snapshot.agentDirectoryVersion != agentDirectoryVersion
         if isVisibleActiveLiveThread && !threadChanged && !agentDirectoryChanged {
@@ -1621,6 +1889,7 @@ final class AppModel {
     }
 
     private func shouldAttemptDeferredHydration(for thread: AppThreadSnapshot) -> Bool {
+        guard thread.agentRuntimeKind.reportsEffectiveThreadPermissions else { return false }
         guard thread.hydratedConversationItems.isEmpty else { return false }
         let preview = thread.info.preview?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let title = thread.info.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -1687,12 +1956,10 @@ final class AppModel {
             snapshot.threads.append(thread)
         }
 
-        if let index = snapshot.sessionSummaries.firstIndex(where: { $0.key == sessionSummary.key }) {
-            snapshot.sessionSummaries[index] = sessionSummary
-        } else {
-            snapshot.sessionSummaries.append(sessionSummary)
-        }
-        snapshot.sessionSummaries.sort(by: Self.sessionSummarySort(lhs:rhs:))
+        // Only one summary changed, so place it directly instead of
+        // re-sorting the whole array on every ThreadUpserted event (during a
+        // Local Studio connect there is one event per thread).
+        Self.upsertSortedSessionSummary(sessionSummary, into: &snapshot.sessionSummaries)
         snapshot.agentDirectoryVersion = agentDirectoryVersion
         self.snapshot = snapshot
         cacheThreadSnapshot(thread)
@@ -1753,46 +2020,15 @@ final class AppModel {
     private func applySessionSummary(_ summary: AppSessionSummary) {
         guard var snapshot else { return }
         if let idx = snapshot.sessionSummaries.firstIndex(where: { $0.key == summary.key }) {
+            // Cheap single-summary guard (replaces the whole-snapshot deep
+            // compare that used to live in `snapshot.didSet`). This runs on
+            // every `.threadItemChanged`, i.e. per streamed item.
+            guard snapshot.sessionSummaries[idx] != summary else { return }
             snapshot.sessionSummaries[idx] = summary
         } else {
             snapshot.sessionSummaries.append(summary)
         }
         self.snapshot = snapshot
-    }
-
-    private func applyThreadCommandExecutionUpdated(
-        key: ThreadKey,
-        itemId: String,
-        status: AppOperationStatus,
-        exitCode: Int32?,
-        durationMs: Int64?,
-        processId: String?
-    ) -> Bool {
-        guard var snapshot else { return false }
-        guard let threadIndex = snapshot.threads.firstIndex(where: { $0.key == key }) else {
-            return false
-        }
-        guard let itemIndex = snapshot.threads[threadIndex].hydratedConversationItems.firstIndex(where: { $0.id == itemId }) else {
-            return false
-        }
-
-        var item = snapshot.threads[threadIndex].hydratedConversationItems[itemIndex]
-        guard case .commandExecution(var data) = item.content else {
-            return false
-        }
-        data.status = status
-        data.exitCode = exitCode
-        data.durationMs = durationMs
-        data.processId = processId
-        item.content = .commandExecution(data)
-        guard snapshot.threads[threadIndex].hydratedConversationItems[itemIndex] != item else {
-            return true
-        }
-        snapshot.threads[threadIndex].hydratedConversationItems[itemIndex] = item
-        self.snapshot = snapshot
-        cacheThreadSnapshot(snapshot.threads[threadIndex])
-        lastError = nil
-        return true
     }
 
     private func removeThreadSnapshot(
@@ -1817,6 +2053,9 @@ final class AppModel {
 
     private func updateActiveThread(_ key: ThreadKey?) {
         guard var snapshot else { return }
+        // Cheap guard (two string compares) in place of the whole-snapshot
+        // deep compare that used to sit in `snapshot.didSet`.
+        guard snapshot.activeThread != key else { return }
         snapshot.activeThread = key
         self.snapshot = snapshot
     }
@@ -1887,6 +2126,66 @@ final class AppModel {
         return lhs.key.threadId < rhs.key.threadId
     }
 
+    /// True when `summaries` is already in `sessionSummarySort` order.
+    /// O(n) cheap comparisons (Int64 first, strings only on ties).
+    private static func sessionSummariesAreSorted(_ summaries: [AppSessionSummary]) -> Bool {
+        guard summaries.count > 1 else { return true }
+        for index in 1..<summaries.count {
+            if sessionSummarySort(lhs: summaries[index], rhs: summaries[index - 1]) {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// Binary search for the insertion point of `summary` in a
+    /// `sessionSummarySort`-ordered array.
+    private static func sortedSessionSummaryInsertionIndex(
+        for summary: AppSessionSummary,
+        in summaries: [AppSessionSummary]
+    ) -> Int {
+        var low = 0
+        var high = summaries.count
+        while low < high {
+            let mid = low + (high - low) / 2
+            if sessionSummarySort(lhs: summaries[mid], rhs: summary) {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
+    }
+
+    /// Replace-or-insert `summary` while keeping `summaries` in
+    /// `sessionSummarySort` order.
+    ///
+    /// Replaces the old "mutate in place, then `sort()` the whole array"
+    /// pattern, which cost O(n log n) comparisons plus a full permutation on
+    /// *every* thread event. `sessionSummaries` is not guaranteed sorted on
+    /// entry (`applySessionSummary` appends without sorting, and a full
+    /// snapshot arrives in whatever order Rust produced), so the sorted fast
+    /// path is gated on an O(n) sortedness check and otherwise falls back to
+    /// the full sort. Since the comparator is a total order over unique
+    /// `key`s, both paths produce the identical array.
+    private static func upsertSortedSessionSummary(
+        _ summary: AppSessionSummary,
+        into summaries: inout [AppSessionSummary],
+        existingIndex: Int? = nil
+    ) {
+        let index = existingIndex ?? summaries.firstIndex(where: { $0.key == summary.key })
+        if let index {
+            summaries.remove(at: index)
+        }
+        if sessionSummariesAreSorted(summaries) {
+            let insertionIndex = sortedSessionSummaryInsertionIndex(for: summary, in: summaries)
+            summaries.insert(summary, at: insertionIndex)
+        } else {
+            summaries.append(summary)
+            summaries.sort(by: sessionSummarySort(lhs:rhs:))
+        }
+    }
+
     private static func insertionIndex(
         for item: HydratedConversationItem,
         in items: [HydratedConversationItem]
@@ -1944,6 +2243,10 @@ final class AppModel {
         return models
     }
 
+    func modelCatalogError(for serverId: String) -> String? {
+        modelCatalogErrorsByServer[serverId]
+    }
+
     func rateLimits(for serverId: String) -> RateLimitSnapshot? {
         snapshot?.serverSnapshot(for: serverId)?.rateLimits
     }
@@ -1961,39 +2264,39 @@ final class AppModel {
     }
 
     func loadConversationMetadataIfNeeded(serverId: String) async {
-        if hasFreshConversationMetadata(for: serverId) {
-            return
-        }
         await loadAvailableModelsIfNeeded(serverId: serverId)
         await loadRateLimitsIfNeeded(serverId: serverId)
-        recentConversationMetadataLoads[serverId] = Date()
     }
 
     func refreshConversationMetadata(serverId: String) async {
-        await loadAvailableModels(serverId: serverId, forceRefresh: true)
+        await loadAvailableModelsIfNeeded(serverId: serverId, force: true)
         await loadRateLimits(serverId: serverId, forceRefresh: true)
         await refreshSnapshot()
-        recentConversationMetadataLoads[serverId] = Date()
     }
 
-    func loadAvailableModelsIfNeeded(serverId: String) async {
-        await loadAvailableModels(serverId: serverId, forceRefresh: false)
-    }
-
-    private func loadAvailableModels(serverId: String, forceRefresh: Bool) async {
+    func loadAvailableModelsIfNeeded(serverId: String, force: Bool = false) async {
         guard let server = snapshot?.serverSnapshot(for: serverId), server.isConnected else { return }
-        guard forceRefresh || server.availableModels == nil else { return }
-        guard !loadingModelServerIds.contains(serverId) else { return }
-        loadingModelServerIds.insert(serverId)
-        defer { loadingModelServerIds.remove(serverId) }
+        guard force || client.modelsNeedRefresh(serverId: serverId) else { return }
+        guard force || loadingModelServerIds[serverId, default: 0] == 0 else { return }
+        loadingModelServerIds[serverId, default: 0] += 1
+        defer {
+            if loadingModelServerIds[serverId, default: 0] <= 1 {
+                loadingModelServerIds.removeValue(forKey: serverId)
+            } else {
+                loadingModelServerIds[serverId, default: 0] -= 1
+            }
+        }
+        modelCatalogErrorsByServer.removeValue(forKey: serverId)
         do {
             _ = try await client.refreshModels(
                 serverId: serverId,
                 params: AppRefreshModelsRequest(cursor: nil, limit: nil, includeHidden: false)
             )
+            modelCatalogErrorsByServer.removeValue(forKey: serverId)
             await refreshSnapshot()
         } catch {
-            lastError = error.localizedDescription
+            modelCatalogErrorsByServer[serverId] = error.localizedDescription
+            await refreshSnapshot()
         }
     }
 
@@ -2017,6 +2320,11 @@ final class AppModel {
 
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
         try await ensureLocalRuntimeIfNeeded(serverId: key.serverId)
+        let start = DispatchTime.now()
+        // Closed by the first assistant delta for this thread, or by the
+        // turn-finished branch of `handleStoreUpdate` when the turn
+        // produces no streamed text.
+        PerfTracker.beginInterval("SendMessage", key: PerfTracker.intervalKey(key))
         await restoreStoredLocalAuthIfNeeded(serverId: key.serverId, reason: "startTurn")
 
         do {
@@ -2028,6 +2336,10 @@ final class AppModel {
             lastError = error.localizedDescription
             throw error
         }
+        let elapsed = DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds
+        let ms = Double(elapsed) / 1_000_000
+        LLog.info("perf", "startTurn completed in \(String(format: "%.2f", ms))ms")
+        AppRuntimeController.shared.requestNotificationPermissionIfNeeded()
     }
 
     private func ensureLocalRuntimeIfNeeded(serverId: String) async throws {
@@ -2038,14 +2350,17 @@ final class AppModel {
     func hydrateThreadPermissions(for key: ThreadKey, appState: AppState) async -> ThreadKey? {
         if let existing = threadSnapshot(for: key) {
             appState.hydratePermissions(from: existing)
-            if !hasAuthoritativePermissions(existing) {
+            if existing.agentRuntimeKind.reportsEffectiveThreadPermissions,
+               !hasAuthoritativePermissions(existing) {
                 scheduleBackgroundThreadPermissionHydration(for: key, appState: appState)
             }
             return key
         }
 
-        if snapshot?.sessionSummary(for: key) != nil {
-            scheduleBackgroundThreadPermissionHydration(for: key, appState: appState)
+        if let summary = snapshot?.sessionSummary(for: key) {
+            if summary.agentRuntimeKind.reportsEffectiveThreadPermissions {
+                scheduleBackgroundThreadPermissionHydration(for: key, appState: appState)
+            }
             return key
         }
 
@@ -2106,7 +2421,7 @@ final class AppModel {
             return key
         }
 
-        var currentKey = key
+        let currentKey = key
         for attempt in 0..<maxAttempts {
             var readSucceeded = false
             do {
@@ -2124,13 +2439,13 @@ final class AppModel {
                 }
             }
 
-            if !readSucceeded {
+            if !readSucceeded && attempt == 0 {
                 do {
                     _ = try await client.listThreads(
                         serverId: currentKey.serverId,
                         params: AppListThreadsRequest(
                             cursor: nil,
-                            limit: 80,
+                            limit: nil,
                             sortKey: .updatedAt,
                             sortDirection: .desc,
                             archived: nil,
@@ -2164,14 +2479,18 @@ final class AppModel {
         return nil
     }
 
-    private static let initialTurnPageSize: UInt32 = 5
-    private static let olderTurnPageSize: UInt32 = 5
+    // A page of 5 meant tapping "Load earlier" dozens of times to get back
+    // through a real conversation (#306). Raising it is only safe now that
+    // c153d1e5 makes `include_turns=false` authoritative, so a metadata read
+    // can no longer smuggle in the full archive on top of the page.
+    private static let initialTurnPageSize: UInt32 = 20
+    private static let olderTurnPageSize: UInt32 = 20
 
     /// Fetch the first page of turns for a thread whose `initialTurnsLoaded`
     /// is still false. Called after a resume that sent `exclude_turns: true`
     /// against a v0.125+ server.
     func loadInitialTurns(threadId key: ThreadKey) async {
-        await loadTurnPage(key: key, cursor: nil, limit: Self.initialTurnPageSize)
+        _ = await loadTurnPage(key: key, cursor: nil, limit: Self.initialTurnPageSize)
     }
 
     func loadInitialTurnsIfNeeded(threadId key: ThreadKey) async {
@@ -2182,18 +2501,18 @@ final class AppModel {
     }
 
     /// Fetch the next older page of turns using the thread's current cursor.
-    /// No-op when no cursor is available (older-turns button should be hidden
-    /// in that case).
-    func loadOlderTurns(threadId key: ThreadKey) async {
+    /// No-op when the loaded history cache has reached the start of the
+    /// server-side session and no cursor remains.
+    func loadOlderTurns(threadId key: ThreadKey) async -> Bool {
         guard let cursor = threadSnapshot(for: key)?.olderTurnsCursor,
               !cursor.isEmpty else {
-            return
+            return false
         }
-        await loadTurnPage(key: key, cursor: cursor, limit: Self.olderTurnPageSize)
+        return await loadTurnPage(key: key, cursor: cursor, limit: Self.olderTurnPageSize)
     }
 
-    private func loadTurnPage(key: ThreadKey, cursor: String?, limit: UInt32) async {
-        if loadingTurnPageThreadKeys.contains(key) { return }
+    private func loadTurnPage(key: ThreadKey, cursor: String?, limit: UInt32) async -> Bool {
+        if loadingTurnPageThreadKeys.contains(key) { return false }
         loadingTurnPageThreadKeys.insert(key)
         defer { loadingTurnPageThreadKeys.remove(key) }
 
@@ -2203,8 +2522,10 @@ final class AppModel {
                 cursor: cursor,
                 limit: limit
             )
+            return true
         } catch {
             lastError = error.localizedDescription
+            return false
         }
     }
 
@@ -2222,7 +2543,34 @@ final class AppModel {
     }
 
     func threadSnapshot(for key: ThreadKey) -> AppThreadSnapshot? {
-        snapshot?.threadSnapshot(for: key) ?? cachedThreadSnapshots[key]
+        if let index = threadIndex(for: key) {
+            return snapshot?.threads[index]
+        }
+        return cachedThreadSnapshots[key]
+    }
+
+    /// O(1) replacement for `snapshot.threads.firstIndex(where:)` on the hot
+    /// lookup path (`shouldBatchLiveThreadStateUpdate` runs this per thread
+    /// metadata event, which was O(threads) per event, i.e. quadratic during
+    /// a Local Studio connect).
+    ///
+    /// The cache is dropped in `snapshot.didSet` and rebuilt on first use, so
+    /// it is always derived from the current `snapshot`. Duplicate keys
+    /// resolve to the first occurrence, matching `firstIndex(where:)`.
+    private func threadIndex(for key: ThreadKey) -> Int? {
+        guard let snapshot else { return nil }
+        if let threadIndexCache {
+            return threadIndexCache[key]
+        }
+        var cache = [ThreadKey: Int](minimumCapacity: snapshot.threads.count)
+        for index in snapshot.threads.indices {
+            let threadKey = snapshot.threads[index].key
+            if cache[threadKey] == nil {
+                cache[threadKey] = index
+            }
+        }
+        threadIndexCache = cache
+        return cache[key]
     }
 
     private func hasAuthoritativePermissions(_ thread: AppThreadSnapshot) -> Bool {
@@ -2230,18 +2578,6 @@ final class AppModel {
             approvalPolicy: thread.effectiveApprovalPolicy,
             sandboxPolicy: thread.effectiveSandboxPolicy
         )
-    }
-
-    private func hasFreshConversationMetadata(for serverId: String) -> Bool {
-        guard let server = snapshot?.serverSnapshot(for: serverId) else { return false }
-        let hasModels = server.availableModels != nil
-        let hasRateLimits = server.account == nil || server.rateLimits != nil
-        if hasModels && hasRateLimits {
-            return true
-        }
-
-        guard let lastLoad = recentConversationMetadataLoads[serverId] else { return false }
-        return Date().timeIntervalSince(lastLoad) < 10
     }
 
     private func restoreCachedThreadSnapshotIfNeeded(for key: ThreadKey?) {
@@ -2290,13 +2626,27 @@ final class AppModel {
             snapshot.threads[index] = mergedThreadSnapshotPreservingHydratedItems(thread)
         }
 
+        guard !cachedThreadSnapshots.isEmpty else { return snapshot }
+
+        // Hash the existing keys once instead of running two linear
+        // `contains(where:)` scans per cached thread (previously
+        // O(cached x (threads + summaries)) on every full snapshot apply).
+        var presentThreadKeys = Set<ThreadKey>(minimumCapacity: snapshot.threads.count)
+        for index in snapshot.threads.indices {
+            presentThreadKeys.insert(snapshot.threads[index].key)
+        }
+        var summaryKeys = Set<ThreadKey>(minimumCapacity: snapshot.sessionSummaries.count)
+        for index in snapshot.sessionSummaries.indices {
+            summaryKeys.insert(snapshot.sessionSummaries[index].key)
+        }
+
         for (key, cached) in cachedThreadSnapshots {
-            guard snapshot.threads.contains(where: { $0.key == key }) == false else { continue }
-            guard snapshot.activeThread == key ||
-                  snapshot.sessionSummaries.contains(where: { $0.key == key }) else {
+            guard !presentThreadKeys.contains(key) else { continue }
+            guard snapshot.activeThread == key || summaryKeys.contains(key) else {
                 continue
             }
             snapshot.threads.append(cached)
+            presentThreadKeys.insert(key)
         }
 
         return snapshot

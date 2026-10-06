@@ -5,10 +5,12 @@ import SwiftUI
 /// and by any caller in a thread context (existing conversation).
 struct ConversationOptionsSheet: View {
     let models: [ModelInfo]
+    let catalogLoaded: Bool
+    let catalogError: String?
+    let onRetryModels: () -> Void
     @Binding var selectedModel: String
     @Binding var selectedAgentRuntimeKind: AgentRuntimeKind?
     @Binding var reasoningEffort: String
-    var serverId: String? = nil
     var threadKey: ThreadKey?
     var collaborationMode: AppModeKind = .default
     var effectiveApprovalPolicy: AppAskForApproval?
@@ -23,10 +25,12 @@ struct ConversationOptionsSheet: View {
         // InlineModelSelectorView itself stays available via `onDismiss`.
         InlineModelSelectorView(
             models: models,
+            catalogLoaded: catalogLoaded,
+            catalogError: catalogError,
+            onRetryModels: onRetryModels,
             selectedModel: $selectedModel,
             selectedAgentRuntimeKind: $selectedAgentRuntimeKind,
             reasoningEffort: $reasoningEffort,
-            serverId: serverId,
             threadKey: threadKey,
             collaborationMode: collaborationMode,
             effectiveApprovalPolicy: effectiveApprovalPolicy,

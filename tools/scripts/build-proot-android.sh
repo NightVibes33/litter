@@ -88,8 +88,9 @@ extract_once() {
 target_for_abi() {
     case "$1" in
         arm64-v8a) echo "aarch64-linux-android" ;;
+        armeabi-v7a) echo "armv7a-linux-androideabi" ;;
         x86_64) echo "x86_64-linux-android" ;;
-        *) die "unsupported Android ABI '$1' (supported: arm64-v8a, x86_64)" ;;
+        *) die "unsupported Android ABI '$1' (supported: arm64-v8a, armeabi-v7a, x86_64)" ;;
     esac
 }
 
@@ -269,7 +270,7 @@ for abi in "${REQUESTED_ABIS[@]}"; do
     build_proot "$abi" "$target"
 done
 
-for stale in arm64-v8a x86_64; do
+for stale in arm64-v8a armeabi-v7a x86_64; do
     if [[ " $SELECTED_ABIS " != *" $stale "* ]]; then
         rm -f "$OUT_DIR/$stale/libproot.so" "$OUT_DIR/$stale/libproot_loader.so"
     fi

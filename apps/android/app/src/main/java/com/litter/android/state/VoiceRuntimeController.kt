@@ -519,16 +519,8 @@ class VoiceRuntimeController {
     }
 
     private fun reasoningEffortFromWireValue(value: String?): ReasoningEffort? =
-        when (value?.trim()?.lowercase()) {
-            "none" -> ReasoningEffort.NONE
-            "minimal" -> ReasoningEffort.MINIMAL
-            "low" -> ReasoningEffort.LOW
-            "medium" -> ReasoningEffort.MEDIUM
-            "high" -> ReasoningEffort.HIGH
-            "xhigh", "x-high" -> ReasoningEffort.X_HIGH
-            "max" -> ReasoningEffort.MAX
-            else -> null
-        }
+        uniffi.codex_mobile_client.reasoningEffortFromWireValue(value)
+
 
     private fun buildDynamicToolSpecs(): List<AppDynamicToolSpec> = listOf(
         AppDynamicToolSpec(

@@ -33,7 +33,6 @@ enum LitterPlatform {
     }()
 
     static let supportsLocalRuntime = !isCatalyst
-    static let supportsVoiceRuntime = !isCatalyst
 
     private enum LocalRuntimeBootstrapState {
         case idle
@@ -234,7 +233,14 @@ enum LitterPlatform {
 #endif
 
     static func isRegularSurface(horizontalSizeClass: UserInterfaceSizeClass?) -> Bool {
-        isCatalyst || horizontalSizeClass == .regular
+        // Some current iPhone simulator/device combinations report a regular
+        // horizontal size class while still rendering as a phone. Treating
+        // that as a split-view surface leaves the conversation in a narrow
+        // detail column beside a mostly empty sidebar. Phone navigation stays
+        // single-column in either orientation; split navigation is for iPad
+        // and Mac only.
+        if rendersAsMacApp { return true }
+        return UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
     }
 }
 

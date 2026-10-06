@@ -1,9 +1,17 @@
 import SwiftUI
 import UIKit
 
+/// Shared limits for composer attachments, so the home composer, the
+/// in-conversation composer and the photo pickers cannot drift apart.
+enum ComposerAttachmentLimits {
+    /// Maximum number of images that can ride along with a single turn.
+    static let maxImages = 10
+}
+
 struct ConversationComposerContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    let attachments: [ConversationAttachment]
+    let attachedImages: [UIImage]
+    let attachedFiles: [ComposerFileAttachment]
     let collaborationMode: AppModeKind
     let activePlanProgress: AppPlanProgressSnapshot?
     let pendingUserInputRequest: PendingUserInputRequest?
@@ -17,10 +25,14 @@ struct ConversationComposerContentView: View {
     let contextPercent: Int64?
     let isTurnActive: Bool
     let showModeChip: Bool
+    let modelLabel: String?
+    let reasoningLabel: String?
     let voiceManager: VoiceTranscriptionManager
     let allowsVoiceInput: Bool
     @Binding var showAttachMenu: Bool
-    let onRemoveAttachment: (ConversationAttachment.ID) -> Void
+    let onClearAttachment: () -> Void
+    let onRemoveImage: (Int) -> Void
+    let onRemoveFileAttachment: (ComposerFileAttachment) -> Void
     let onRespondToPendingUserInput: ([String: [String]]) -> Void
     let onDismissPendingUserInput: () -> Void
     let onImplementPlan: () -> Void
@@ -30,6 +42,7 @@ struct ConversationComposerContentView: View {
     let onRemovePluginMention: (PluginMentionSelection) -> Void
     let onPasteImage: (UIImage) -> Void
     let onOpenModePicker: () -> Void
+    let onOpenModelPicker: () -> Void
     let onSendText: () -> Void
     let onStopRecording: () -> Void
     let onStartRecording: () -> Void
@@ -39,7 +52,8 @@ struct ConversationComposerContentView: View {
     @Binding var composerSelectionRange: NSRange
 
     init(
-        attachments: [ConversationAttachment],
+        attachedImages: [UIImage] = [],
+        attachedFiles: [ComposerFileAttachment] = [],
         collaborationMode: AppModeKind,
         activePlanProgress: AppPlanProgressSnapshot?,
         pendingUserInputRequest: PendingUserInputRequest?,
@@ -53,10 +67,14 @@ struct ConversationComposerContentView: View {
         contextPercent: Int64?,
         isTurnActive: Bool,
         showModeChip: Bool = true,
+        modelLabel: String? = nil,
+        reasoningLabel: String? = nil,
         voiceManager: VoiceTranscriptionManager,
         allowsVoiceInput: Bool = true,
         showAttachMenu: Binding<Bool>,
-        onRemoveAttachment: @escaping (ConversationAttachment.ID) -> Void,
+        onClearAttachment: @escaping () -> Void,
+        onRemoveImage: @escaping (Int) -> Void = { _ in },
+        onRemoveFileAttachment: @escaping (ComposerFileAttachment) -> Void = { _ in },
         onRespondToPendingUserInput: @escaping ([String: [String]]) -> Void,
         onDismissPendingUserInput: @escaping () -> Void = {},
         onImplementPlan: @escaping () -> Void = {},
@@ -66,6 +84,7 @@ struct ConversationComposerContentView: View {
         onRemovePluginMention: @escaping (PluginMentionSelection) -> Void = { _ in },
         onPasteImage: @escaping (UIImage) -> Void,
         onOpenModePicker: @escaping () -> Void,
+        onOpenModelPicker: @escaping () -> Void = {},
         onSendText: @escaping () -> Void,
         onStopRecording: @escaping () -> Void,
         onStartRecording: @escaping () -> Void,
@@ -74,7 +93,8 @@ struct ConversationComposerContentView: View {
         isComposerFocused: Binding<Bool>,
         composerSelectionRange: Binding<NSRange> = .constant(NSRange(location: 0, length: 0))
     ) {
-        self.attachments = attachments
+        self.attachedImages = attachedImages
+        self.attachedFiles = attachedFiles
         self.collaborationMode = collaborationMode
         self.activePlanProgress = activePlanProgress
         self.pendingUserInputRequest = pendingUserInputRequest
@@ -88,10 +108,14 @@ struct ConversationComposerContentView: View {
         self.contextPercent = contextPercent
         self.isTurnActive = isTurnActive
         self.showModeChip = showModeChip
+        self.modelLabel = modelLabel
+        self.reasoningLabel = reasoningLabel
         self.voiceManager = voiceManager
         self.allowsVoiceInput = allowsVoiceInput
         _showAttachMenu = showAttachMenu
-        self.onRemoveAttachment = onRemoveAttachment
+        self.onClearAttachment = onClearAttachment
+        self.onRemoveImage = onRemoveImage
+        self.onRemoveFileAttachment = onRemoveFileAttachment
         self.onRespondToPendingUserInput = onRespondToPendingUserInput
         self.onDismissPendingUserInput = onDismissPendingUserInput
         self.onImplementPlan = onImplementPlan
@@ -101,6 +125,7 @@ struct ConversationComposerContentView: View {
         self.onRemovePluginMention = onRemovePluginMention
         self.onPasteImage = onPasteImage
         self.onOpenModePicker = onOpenModePicker
+        self.onOpenModelPicker = onOpenModelPicker
         self.onSendText = onSendText
         self.onStopRecording = onStopRecording
         self.onStartRecording = onStartRecording
@@ -112,14 +137,26 @@ struct ConversationComposerContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if !attachments.isEmpty {
+            if !attachedImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(attachments) { attachment in
-                            ConversationAttachmentPreviewChip(
-                                attachment: attachment,
-                                onRemove: { onRemoveAttachment(attachment.id) }
-                            )
+                    HStack(spacing: 8) {
+                        ForEach(attachedImages.indices, id: \.self) { index in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: attachedImages[index])
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 60, height: 60)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                                Button(action: { onRemoveImage(index) }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .litterFont(.body)
+                                        .foregroundColor(.white)
+                                        .background(Circle().fill(Color.black.opacity(0.6)))
+                                }
+                                .offset(x: 4, y: -4)
+                                .accessibilityLabel("Remove image \(index + 1)")
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -127,6 +164,14 @@ struct ConversationComposerContentView: View {
                 }
             }
 
+            if !attachedFiles.isEmpty {
+                ConversationComposerFileChipStrip(
+                    files: attachedFiles,
+                    onRemove: onRemoveFileAttachment
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, attachedImages.isEmpty ? 8 : 6)
+            }
 
             VStack(alignment: .trailing, spacing: 0) {
                 if let goal {
@@ -193,9 +238,15 @@ struct ConversationComposerContentView: View {
                     composerSelectionRange: $composerSelectionRange,
                     voiceManager: voiceManager,
                     isTurnActive: isTurnActive,
-                    hasAttachment: !attachments.isEmpty,
+                    hasAttachment: !attachedImages.isEmpty || !attachedFiles.isEmpty,
                     allowsVoiceInput: allowsVoiceInput,
+                    modelLabel: modelLabel,
+                    reasoningLabel: reasoningLabel,
+                    collaborationMode: collaborationMode,
+                    showModeChip: showModeChip,
                     onPasteImage: onPasteImage,
+                    onOpenModelPicker: onOpenModelPicker,
+                    onOpenModePicker: onOpenModePicker,
                     onSendText: onSendText,
                     onStopRecording: onStopRecording,
                     onStartRecording: onStartRecording,
@@ -213,53 +264,46 @@ struct ConversationComposerContentView: View {
     }
 }
 
-
-private struct ConversationAttachmentPreviewChip: View {
-    let attachment: ConversationAttachment
-    let onRemove: () -> Void
+private struct ConversationComposerFileChipStrip: View {
+    let files: [ComposerFileAttachment]
+    let onRemove: (ComposerFileAttachment) -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Group {
-                if let image = attachment.image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Image(systemName: attachment.kind.iconName)
-                        .font(LitterFont.styled(size: 18, weight: .semibold))
-                        .foregroundStyle(attachment.kind == .archive ? LitterTheme.warning : LitterTheme.accent)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(files) { file in
+                    HStack(spacing: LitterSpace.s) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(file.label)
+                                .litterFont(size: 15)
+                                .foregroundStyle(LitterTheme.textPrimary)
+                                .lineLimit(1)
+                            Text(file.path)
+                                .litterMeta()
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: 180, alignment: .leading)
+                        Button {
+                            onRemove(file)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .litterFont(size: 13, weight: .semibold)
+                                .foregroundStyle(LitterTheme.meta)
+                                .frame(width: 32, height: 32)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove file \(file.label)")
+                    }
+                    .padding(.leading, LitterSpace.m)
+                    .padding(.vertical, LitterSpace.xs)
+                    .background(
+                        RoundedRectangle(cornerRadius: LitterRadius.raised, style: .continuous)
+                            .fill(LitterTheme.raised)
+                    )
                 }
             }
-            .frame(width: 42, height: 42)
-            .background(LitterTheme.surface.opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(attachment.displayName)
-                    .litterFont(.caption, weight: .semibold)
-                    .foregroundStyle(LitterTheme.textPrimary)
-                    .lineLimit(1)
-                Text(attachment.fakefsPath ?? attachment.detail)
-                    .litterMonoFont(size: 10, weight: .regular)
-                    .foregroundStyle(LitterTheme.textMuted)
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: 190, alignment: .leading)
-
-            Button(action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(LitterFont.styled(size: 16, weight: .bold))
-                    .foregroundStyle(LitterTheme.textMuted)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Remove attachment")
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 6)
-        .padding(.vertical, 6)
-        .modifier(GlassRoundedRectModifier(cornerRadius: 18))
     }
 }
 
@@ -271,31 +315,27 @@ private struct ConversationComposerPluginChipStrip: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(plugins, id: \.path) { plugin in
-                    HStack(spacing: 4) {
-                        Image(systemName: "puzzlepiece.extension.fill")
-                            .litterFont(size: 10, weight: .semibold)
-                            .foregroundStyle(LitterTheme.accent)
+                    HStack(spacing: LitterSpace.xs) {
                         Text(plugin.displayTitle)
-                            .litterFont(.caption, weight: .semibold)
-                            .foregroundStyle(LitterTheme.accent)
+                            .litterFont(size: 15)
+                            .foregroundStyle(LitterTheme.textPrimary)
                             .lineLimit(1)
                         Button {
                             onRemove(plugin)
                         } label: {
                             Image(systemName: "xmark")
-                                .litterFont(size: 9, weight: .bold)
-                                .foregroundStyle(LitterTheme.accent)
-                                .padding(3)
-                                .background(Circle().fill(LitterTheme.accent.opacity(0.18)))
+                                .litterFont(size: 13, weight: .semibold)
+                                .foregroundStyle(LitterTheme.meta)
+                                .frame(width: 32, height: 32)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Remove plugin \(plugin.displayTitle)")
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.leading, LitterSpace.m)
                     .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(LitterTheme.accent.opacity(0.12))
+                        RoundedRectangle(cornerRadius: LitterRadius.raised, style: .continuous)
+                            .fill(LitterTheme.raised)
                     )
                 }
             }
@@ -316,28 +356,29 @@ struct ConversationComposerModeChip: View {
         }
     }
 
-    private var foreground: Color {
-        mode == .plan ? Color.black : LitterTheme.textPrimary
-    }
+    private var foreground: Color { LitterTheme.textPrimary }
 
-    private var background: Color {
-        mode == .plan ? LitterTheme.accent : LitterTheme.surfaceLight
-    }
+    private var background: Color { LitterTheme.composerControl }
 
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 6) {
-                Text(label)
-                    .litterFont(.caption, weight: .semibold)
+                Text(label.lowercased())
+                    .litterMonoFont(size: 13, weight: mode == .plan ? .semibold : .regular)
                 Image(systemName: "chevron.up.chevron.down")
-                    .litterFont(size: 10, weight: .semibold)
+                    .litterFont(size: 11, weight: .semibold)
+                    .foregroundStyle(LitterTheme.meta)
             }
             .foregroundStyle(foreground)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .padding(.horizontal, LitterSpace.m)
+            .frame(height: 30)
             .background(Capsule().fill(background))
+            .frame(minHeight: LitterSpace.hitTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .padding(.leading, LitterSpace.xs)
+        .accessibilityLabel("Mode: \(label)")
     }
 }
 
@@ -384,28 +425,21 @@ private struct ConversationComposerPlanProgressView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
+        .padding(LitterSpace.m)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(LitterTheme.codeBackground.opacity(0.92))
+            RoundedRectangle(cornerRadius: LitterRadius.raised, style: .continuous)
+                .fill(LitterTheme.raised)
         )
     }
 
     private var headerContent: some View {
         Group {
-            Image(systemName: "list.bullet.clipboard")
-                .litterFont(size: 12, weight: .semibold)
-                .foregroundStyle(LitterTheme.accent)
-            Text(isExpanded ? "Plan Progress" : "Plan")
-                .litterFont(.caption, weight: .semibold)
-                .foregroundStyle(LitterTheme.textPrimary)
-            Text("\(completedCount)/\(progress.plan.count)")
-                .litterMonoFont(size: 11, weight: .semibold)
-                .foregroundStyle(LitterTheme.textSecondary)
+            Text("plan · \(completedCount)/\(progress.plan.count)")
+                .litterMeta()
 
             if !isExpanded {
                 Text(currentStepText)
-                    .litterFont(.caption)
+                    .litterFont(size: 15)
                     .foregroundStyle(LitterTheme.textPrimary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -414,9 +448,9 @@ private struct ConversationComposerPlanProgressView: View {
                 Spacer(minLength: 0)
             }
 
-            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                .litterFont(size: 10, weight: .semibold)
-                .foregroundStyle(LitterTheme.textMuted)
+            Text(isExpanded ? "⌄" : "›")
+                .litterMeta()
+                .accessibilityHidden(true)
         }
     }
 
@@ -425,49 +459,34 @@ private struct ConversationComposerPlanProgressView: View {
         if let explanation = progress.explanation?.trimmingCharacters(in: .whitespacesAndNewlines),
            !explanation.isEmpty {
             Text(explanation)
-                .litterFont(.caption)
+                .litterFont(size: 15)
                 .foregroundStyle(LitterTheme.textSecondary)
         }
 
         VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(progress.plan.enumerated()), id: \.offset) { index, step in
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: iconName(for: step.status))
-                        .litterFont(size: 11, weight: .semibold)
-                        .foregroundStyle(iconColor(for: step.status))
-                        .padding(.top, 2)
+                HStack(alignment: .firstTextBaseline, spacing: LitterSpace.s) {
                     Text("\(index + 1).")
-                        .litterMonoFont(size: 11, weight: .semibold)
-                        .foregroundStyle(LitterTheme.textMuted)
-                        .padding(.top, 1)
+                        .litterMeta()
                     Text(step.step)
-                        .litterFont(.caption)
-                        .foregroundStyle(LitterTheme.textPrimary)
+                        .litterFont(size: 15)
+                        .foregroundStyle(step.status == .completed ? LitterTheme.textSecondary : LitterTheme.textPrimary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if let word = statusWord(for: step.status) {
+                        Text(word)
+                            .litterMeta()
+                    }
                 }
+                .accessibilityElement(children: .combine)
             }
         }
     }
 
-    private func iconName(for status: AppPlanStepStatus) -> String {
+    private func statusWord(for status: AppPlanStepStatus) -> String? {
         switch status {
-        case .completed:
-            return "checkmark.circle.fill"
-        case .inProgress:
-            return "circle.fill"
-        case .pending:
-            return "circle"
-        }
-    }
-
-    private func iconColor(for status: AppPlanStepStatus) -> Color {
-        switch status {
-        case .completed:
-            return LitterTheme.success
-        case .inProgress:
-            return LitterTheme.warning
-        case .pending:
-            return LitterTheme.textMuted
+        case .completed: return "done"
+        case .inProgress: return "working…"
+        case .pending: return nil
         }
     }
 }
@@ -497,10 +516,9 @@ private struct ConversationComposerGoalRowView: View {
     @State private var showClearConfirm = false
     @State private var draftObjective = ""
     @State private var draftBudget = ""
-    @State private var pulsing = false
     @State private var animatedProgress: Double = 0
 
-    private let cornerRadius: CGFloat = 12
+    private let cornerRadius: CGFloat = LitterRadius.raised
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -508,7 +526,7 @@ private struct ConversationComposerGoalRowView: View {
                 statusPill
 
                 Text(goal.objective)
-                    .litterFont(.caption)
+                    .litterFont(size: 15)
                     .foregroundColor(LitterTheme.textPrimary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -525,7 +543,6 @@ private struct ConversationComposerGoalRowView: View {
             if let progress = budgetProgress {
                 budgetGauge(progress: progress)
             }
-
 
             if hasUsageMetrics {
                 usageMetricsRow
@@ -566,41 +583,20 @@ private struct ConversationComposerGoalRowView: View {
         }
         .onAppear {
             animatedProgress = budgetProgress ?? 0
-            if goal.status == .active { pulsing = true }
         }
         .onChange(of: budgetProgress ?? 0) { _, new in
             withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
                 animatedProgress = new
             }
         }
-        .onChange(of: goal.status) { _, new in
-            pulsing = (new == .active)
-        }
     }
 
     private var statusPill: some View {
         Button(action: { if canTogglePause { actions.togglePause() } }) {
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(statusTint)
-                    .frame(width: 6, height: 6)
-                    .opacity(goal.status == .active ? (pulsing ? 0.35 : 1.0) : 1.0)
-                    .animation(
-                        goal.status == .active
-                            ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true)
-                            : .default,
-                        value: pulsing
-                    )
-
-                Text(statusLabel)
-                    .litterMonoFont(size: 10, weight: .semibold)
-                    .foregroundColor(statusTint)
-                    .textCase(.uppercase)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Capsule().fill(statusTint.opacity(0.14)))
-            .overlay(Capsule().stroke(statusTint.opacity(0.35), lineWidth: 0.5))
+            Text("goal · \(statusLabel)")
+                .litterMeta(statusTint)
+                .frame(minHeight: 32)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!canTogglePause)
@@ -648,9 +644,9 @@ private struct ConversationComposerGoalRowView: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .litterFont(size: 12, weight: .bold)
+                .litterFont(size: 15, weight: .semibold)
                 .foregroundColor(LitterTheme.textSecondary)
-                .frame(width: 24, height: 22)
+                .frame(width: 36, height: 32)
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("Goal actions")
@@ -662,14 +658,10 @@ private struct ConversationComposerGoalRowView: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(statusTint.opacity(0.10))
+                        .fill(LitterTheme.meta.opacity(0.18))
                     Capsule()
                         .fill(
-                            LinearGradient(
-                                colors: [progressTint.opacity(0.85), progressTint],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
+                            progressTint
                         )
                         .frame(width: max(geo.size.width * animatedProgress, animatedProgress > 0 ? 6 : 0))
                 }
@@ -680,12 +672,10 @@ private struct ConversationComposerGoalRowView: View {
             HStack(spacing: 4) {
                 if let budgetLabel {
                     Text(budgetLabel)
-                        .litterMonoFont(size: 10, weight: .semibold)
-                        .foregroundColor(LitterTheme.textSecondary)
+                        .litterMeta()
                 }
                 Text("\(percent)%")
-                    .litterMonoFont(size: 10, weight: .bold)
-                    .foregroundColor(progressTextTint)
+                    .litterMeta(progressTextTint)
             }
             .fixedSize()
         }
@@ -693,9 +683,8 @@ private struct ConversationComposerGoalRowView: View {
 
     private var canTogglePause: Bool {
         switch goal.status {
-        case .active, .paused, .budgetLimited: return true
+        case .active, .paused, .blocked, .usageLimited, .budgetLimited: return true
         case .complete: return false
-        default: return true
         }
     }
 
@@ -703,9 +692,10 @@ private struct ConversationComposerGoalRowView: View {
         switch goal.status {
         case .active: return "Pause goal"
         case .paused: return "Resume goal"
+        case .blocked: return "Resume goal (override block)"
+        case .usageLimited: return "Resume goal (override usage cap)"
         case .budgetLimited: return "Resume goal (override budget cap)"
         case .complete: return "Goal complete"
-        default: return "Resume goal"
         }
     }
 
@@ -713,19 +703,17 @@ private struct ConversationComposerGoalRowView: View {
         switch goal.status {
         case .active: return ("Pause Goal", "pause.circle")
         case .paused: return ("Resume Goal", "play.circle")
+        case .blocked: return ("Resume Goal (override block)", "play.circle")
+        case .usageLimited: return ("Resume Goal (override usage cap)", "play.circle")
         case .budgetLimited: return ("Resume Goal (override cap)", "play.circle")
         case .complete: return nil
-        default: return ("Resume Goal", "play.circle")
         }
     }
 
     private var statusTint: Color {
         switch goal.status {
-        case .active: return LitterTheme.accent
-        case .paused: return LitterTheme.textMuted
-        case .budgetLimited: return LitterTheme.warning
-        case .complete: return LitterTheme.success
-        default: return LitterTheme.warning
+        case .active, .paused, .complete: return LitterTheme.meta
+        case .blocked, .usageLimited, .budgetLimited: return LitterTheme.warning
         }
     }
 
@@ -733,9 +721,10 @@ private struct ConversationComposerGoalRowView: View {
         switch goal.status {
         case .active: return "active"
         case .paused: return "paused"
+        case .blocked: return "blocked"
+        case .usageLimited: return "usage limit"
         case .budgetLimited: return "limited"
         case .complete: return "complete"
-        default: return "limited"
         }
     }
 
@@ -758,10 +747,10 @@ private struct ConversationComposerGoalRowView: View {
     }
 
     private var progressTint: Color {
-        guard let progress = budgetProgress else { return statusTint }
+        guard let progress = budgetProgress else { return LitterTheme.textSecondary }
         if progress >= 1.0 { return LitterTheme.danger }
         if progress >= 0.85 { return LitterTheme.warning }
-        return statusTint
+        return LitterTheme.textSecondary
     }
 
     private func formatTokens(_ value: Int64) -> String {
@@ -774,38 +763,24 @@ private struct ConversationComposerGoalRowView: View {
         return "\(value)"
     }
 
-
     private var hasUsageMetrics: Bool {
         goal.tokensUsed > 0 || goal.timeUsedSeconds > 0
     }
 
     private var usageMetricsRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 0) {
             if goal.tokensUsed > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "circle.hexagongrid")
-                        .litterMonoFont(size: 9, weight: .semibold)
-                    RollingMetricText(formatTokens(goal.tokensUsed))
-                        .litterMonoFont(size: 10, weight: .semibold)
-                }
-                .foregroundColor(LitterTheme.textSecondary)
+                RollingMetricText(formatTokens(goal.tokensUsed))
             }
             if goal.tokensUsed > 0 && goal.timeUsedSeconds > 0 {
-                Text("·")
-                    .litterMonoFont(size: 10, weight: .semibold)
-                    .foregroundColor(LitterTheme.textMuted.opacity(0.6))
+                Text(" · ")
             }
             if goal.timeUsedSeconds > 0 {
-                HStack(spacing: 3) {
-                    Image(systemName: "clock")
-                        .litterMonoFont(size: 9, weight: .semibold)
-                    RollingMetricText(formatSeconds(goal.timeUsedSeconds))
-                        .litterMonoFont(size: 10, weight: .semibold)
-                }
-                .foregroundColor(LitterTheme.textSecondary)
+                RollingMetricText(formatSeconds(goal.timeUsedSeconds))
             }
             Spacer(minLength: 0)
         }
+        .litterMeta()
     }
 
     private func formatSeconds(_ seconds: Int64) -> String {
@@ -829,19 +804,17 @@ private struct GoalCardChromeModifier: ViewModifier {
     let statusTint: Color
     let cornerRadius: CGFloat
 
+    /// Raised surface, no tint wash or stroke. Glass stays on iOS 26 so the
+    /// card matches the composer it sits above.
     func body(content: Content) -> some View {
-        content
-            .background(
-                LinearGradient(
-                    colors: [
-                        LitterTheme.surface.opacity(0.96),
-                        statusTint.opacity(0.09)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .alleyPanel(tint: statusTint, cornerRadius: min(cornerRadius, 10))
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
+        } else {
+            content
+                .background(LitterTheme.raised)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
     }
 }
 
@@ -849,34 +822,28 @@ private struct ConversationComposerActiveTaskRowView: View {
     let summary: ConversationActiveTaskSummary
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "checklist")
-                .litterFont(size: 11, weight: .semibold)
-                .foregroundColor(LitterTheme.warning)
-
+        HStack(spacing: LitterSpace.m) {
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: LitterSpace.s) {
                     Text(summary.title)
-                        .litterFont(.caption, weight: .semibold)
+                        .litterFont(size: 15, weight: .semibold)
                         .foregroundColor(LitterTheme.textPrimary)
 
                     Text(summary.progressLabel)
-                        .litterMonoFont(size: 10, weight: .semibold)
-                        .foregroundColor(LitterTheme.warning)
+                        .litterMeta()
                 }
 
                 Text(summary.detail)
-                    .litterFont(.caption2)
-                    .foregroundColor(LitterTheme.textSecondary)
+                    .litterMeta(LitterTheme.textSecondary)
                     .lineLimit(1)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, LitterSpace.m)
+        .padding(.vertical, LitterSpace.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LitterTheme.surface.opacity(0.72))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(LitterTheme.raised)
+        .clipShape(RoundedRectangle(cornerRadius: LitterRadius.raised, style: .continuous))
     }
 }

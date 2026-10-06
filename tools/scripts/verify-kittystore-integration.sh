@@ -176,7 +176,7 @@ require_grep "RustBridge framework target" "RustBridge:" "apps/ios/project.yml"
 require_grep "Minimuxer framework target" "Minimuxer:" "apps/ios/project.yml"
 require_grep "Minimuxer target compiles upstream source" "../../ThirdParty/SideStore/Source/Dependencies/minimuxer/Sources" "apps/ios/project.yml"
 require_grep "RustBridge target compiles upstream bridge" "../../ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge" "apps/ios/project.yml"
-require_grep "SideStore host routes real source UI" "KittyStoreRouteView()" "apps/ios/Sources/Litter/LitterApp.swift"
+require_grep "Settings routes KittyStore to real source UI" "KittyStoreRouteView()" "apps/ios/Sources/Litter/Views/SettingsView.swift"
 require_absent "KittyStore route still opens handmade SwiftUI store" "KittyStoreView()" "apps/ios/Sources/Litter/LitterApp.swift"
 require_grep "KittyStore host loads imported storyboard" "UIStoryboard(name: \"Main\"" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift"
 require_grep "KittyStore host uses SideStore module bundle" "Bundle(for: AppDelegate.self)" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift"
@@ -192,10 +192,10 @@ require_absent "KittyStore logging settings does not rely on generated asset col
 require_grep "KittyStore Nuke 12 URL loader compatibility" "func loadImage(" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreNukeCompatibility.swift"
 require_grep "Settings route opens Feather signing" "FeatherSigningSettingsView()" "apps/ios/Sources/Litter/Views/SettingsView.swift"
 require_grep "Settings route enum includes signing" "case signing" "apps/ios/Sources/Litter/Views/SettingsView.swift"
-require_grep "Settings opens emexDE app" "litterPendingMainRoute" "apps/ios/Sources/Litter/Views/SettingsView.swift"
-require_grep "Settings gates emexDE entry on distribution capabilities" "showsEmexDESettingsEntry: Bool { AppDistributionCapabilities.includesEmexDE }" "apps/ios/Sources/Litter/Views/SettingsView.swift"
-require_grep "Main route consumes emexDE settings request" "case \"emexDE\"" "apps/ios/Sources/Litter/LitterApp.swift"
-require_grep "Main navigation opens emexDE route" "EmexDERouteView()" "apps/ios/Sources/Litter/LitterApp.swift"
+require_grep "Settings routes Nyxian to real source UI" "case .nyxian: EmexDERouteView()" "apps/ios/Sources/Litter/Views/SettingsView.swift"
+require_grep "Settings gates Nyxian and BuildKit entries on distribution capabilities" "if AppDistributionCapabilities.includesEmexDE {" "apps/ios/Sources/Litter/Views/SettingsView.swift"
+require_grep "Settings consumes legacy emexDE requests" 'requestedToolRoute == "emexDE"' "apps/ios/Sources/Litter/Views/SettingsView.swift"
+require_grep "Settings navigation opens Nyxian route" "EmexDERouteView()" "apps/ios/Sources/Litter/Views/SettingsView.swift"
 require_grep "emexDE route uses UIKit host" "EmexDEHostView()" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
 require_absent "emexDE host avoids Swift emexDE import bridge header failure" "import emexDE" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
 require_grep "emexDE host calls runtime embedded bridge" "EmexDEEmbeddedBridge.makeRootViewController()" "apps/ios/Sources/Litter/Views/EmexDEHostView.swift"
@@ -221,7 +221,8 @@ require_grep "emexDE target compiles upstream Nyxian" "../../ThirdParty/EmexDE/S
 require_grep "emexDE target excludes private framework stubs from bundle" "LindChain/Private/Frameworks/**" "apps/ios/project.yml"
 require_grep "emexDE runtime cleanup removes private framework stubs" "Removed nested emexDE private framework stub" "apps/ios/project.yml"
 require_grep "emexDE runtime cleanup covers FrontBoardServices" "FrontBoardServices.framework" "apps/ios/project.yml"
-require_grep "emexDE target uses upstream bridge" "SWIFT_OBJC_BRIDGING_HEADER: ../../ThirdParty/EmexDE/Source/Nyxian/NXBridge.h" "apps/ios/project.yml"
+require_grep "emexDE target uses framework module" "MODULEMAP_FILE: Sources/EmexDEEmbedded/emexDE.modulemap" "apps/ios/project.yml"
+require_grep "emexDE module exposes upstream bridge" "#import <NXBridge.h>" "apps/ios/Sources/EmexDEEmbedded/emexDE.h"
 require_grep "emexDE target embeds LiveProcess" "target: LiveProcess" "apps/ios/project.yml"
 require_grep "emexDE route boots upstream projects" "ContentViewController()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
 require_grep "emexDE route boots upstream settings" "SettingsViewController()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
@@ -234,8 +235,8 @@ require_grep "emexDE CI patches LiveProcess plist executable" '<string>$(EXECUTA
 require_grep "emexDE CI patches LiveProcess plist package type" "<string>XPC!</string>" "tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py"
 require_grep "emexDE unsigned IPA workflow validates LiveProcess bundle id" "IPA LiveProcess.appex has invalid CFBundleIdentifier" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "emexDE private LiveProcess workflow bundle id is Litter-prefixed" 'PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.39A8Q3T3TR.liveprocess"' ".github/workflows/ios-unsigned-ipa.yml"
-require_grep "emexDE CoreCompiler artifact preparation" "prepare-emexde-corecompiler-artifacts.sh" ".github/workflows/ios-unsigned-ipa.yml"
-require_grep "emexDE LLVM artifact preparation" "LLVM.xcframework.tar.xz" "tools/scripts/prepare-emexde-corecompiler-artifacts.sh"
+require_grep "emexDE matched artifact installation" "install-nyxian-toolchain-artifacts.sh" ".github/workflows/ios-unsigned-ipa.yml"
+require_grep "emexDE upstream toolchain build" "make CHECK_DEPS=0 all" "tools/scripts/build-matched-nyxian-toolchain.sh"
 require_grep "iOS unsigned IPA uses Intel macOS 26 runner" "runs-on: macos-26-intel" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "iOS TestFlight uses Intel macOS 26 runner" "runs-on: macos-26-intel" ".github/workflows/ios-testflight.yml"
 require_grep "Feather signing stores upstream options key" "signing_options" "apps/ios/Sources/Litter/Models/FeatherSigningMaterialStore.swift"
@@ -305,7 +306,7 @@ require_absent "KittyStore host avoids Swift SideStore import autolink" "import 
 require_grep "KittyStore host calls runtime embedded bridge" "KittyStoreEmbeddedBridge.makeRootViewController()" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 require_grep "KittyStore host starts transport on entry" "KittyStoreEmbeddedBridge.startTransportIfPossible()" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 require_grep "KittyStore theme bridge exports background token" '("background", lightTheme.background, darkTheme.background)' "apps/ios/Sources/Litter/Models/ThemeManager.swift"
-require_grep "KittyStore host reads Litter theme version" "themeManager.themeVersion" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
+require_grep "KittyStore host observes theme changes" "themeManager.lightTheme" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 require_grep "KittyStore host applies embedded theme refresh" "KittyStoreEmbeddedBridge.applyCurrentTheme(to:" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 require_grep "KittyStore AltStoreCore theme defaults bridge" "LitterSharedThemeColors" "ThirdParty/SideStore/Source/AltStoreCore/Extensions/UIColor+AltStore.swift"
 require_grep "KittyStore SideStore background uses Litter theme" "LitterSharedThemeColors.background" "ThirdParty/SideStore/Source/AltStore/Extensions/UIColor+AltStore.swift"
@@ -461,9 +462,13 @@ require_grep "Native container mounted folders action" "Mount App Container" "ap
 require_grep "Native container file browser shortcut" "App Container" "apps/ios/Sources/Litter/Views/LocalFileWorkspaceView.swift"
 require_grep "Native container file browser path" "IshFS.nativeContainerMountPath" "apps/ios/Sources/Litter/Views/LocalFileWorkspaceView.swift"
 
-if grep -R "^[[:space:]]*runs-on: macos-26$" "$ROOT_DIR/.github/workflows" >/dev/null 2>&1; then
-  fail "macOS 26 workflows must use the Intel runner label macos-26-intel"
-fi
+# App builds retain Intel runners; the upstream Swift preset requires ARM64.
+for workflow in "$ROOT_DIR"/.github/workflows/*.yml; do
+  if [ "$(basename "$workflow")" != "nyxian-toolchain.yml" ] && [ "$(basename "$workflow")" != "ios-code-mode-runtime.yml" ] && grep -q "^[[:space:]]*runs-on: macos-26$" "$workflow"; then
+    fail "macOS 26 app workflows must use the Intel runner label macos-26-intel"
+  fi
+done
+require_grep "Nyxian upstream toolchain uses Apple Silicon" "runs-on: macos-26" ".github/workflows/nyxian-toolchain.yml"
 
 if [ "$missing" -ne 0 ]; then
   exit 1

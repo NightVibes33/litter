@@ -16,14 +16,13 @@ GENERATED_DEVICE_DIR="$GENERATED_RUST_DIR/ios-device"
 GENERATED_SIM_DIR="$GENERATED_RUST_DIR/ios-sim"
 GENERATED_MACABI_DIR="$GENERATED_RUST_DIR/ios-macabi"
 BINDINGS_HASH_FILE="$GENERATED_RUST_DIR/.swift-bindings.hash"
+BINDINGS_HASH_SCRIPT="$REPO_DIR/tools/scripts/uniffi-bindings-input-hash.sh"
 IOS_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET:-18.0}"
 MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 SUBMODULE_DIR="$REPO_DIR/shared/third_party/codex"
 IOS_CLANGXX_WRAPPER="$SCRIPT_DIR/ios-clangxx-wrapper.sh"
 PATCH_FILES=(
   "$REPO_DIR/patches/codex/ios-exec-hook.patch"
-  "$REPO_DIR/patches/codex/client-controlled-handoff.patch"
-  "$REPO_DIR/patches/codex/mobile-code-mode-stub.patch"
   "$REPO_DIR/patches/codex/thread-read-permissions.patch"
 )
 
@@ -231,41 +230,36 @@ if [ -n "$IPHONESIM_SDK" ]; then
   export BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios_sim="--target=arm64-apple-ios${IOS_DEPLOYMENT_TARGET}-simulator -isysroot ${IPHONESIM_SDK}"
 fi
 
-bindings_inputs() {
-  cat <<EOF
-$RUST_BRIDGE_DIR/codex-mobile-client/src/lib.rs
-$RUST_BRIDGE_DIR/codex-mobile-client/src/conversation_uniffi.rs
-$RUST_BRIDGE_DIR/codex-mobile-client/src/discovery_uniffi.rs
-$RUST_BRIDGE_DIR/codex-mobile-client/src/uniffi_shared.rs
-$RUST_BRIDGE_DIR/codex-mobile-client/Cargo.toml
-$RUST_BRIDGE_DIR/Cargo.lock
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/app-server-protocol/src/protocol/common.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/app-server-protocol/src/protocol/v1.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/app-server-protocol/src/protocol/v2.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/account.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/config_types.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/models.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/openai_models.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/parse_command.rs
-$RUST_BRIDGE_DIR/../third_party/codex/codex-rs/protocol/src/protocol.rs
-EOF
-  find "$RUST_BRIDGE_DIR/codex-mobile-client/src" -type f -name '*.rs' | sort
+compute_bindings_hash() {
+  "$BINDINGS_HASH_SCRIPT"
 }
 
-compute_bindings_hash() {
-  local file
-  {
-    while IFS= read -r file; do
-      [ -f "$file" ] || continue
-      shasum -a 256 "$file"
-    done < <(bindings_inputs | sort)
-  } | shasum -a 256 | awk '{print $1}'
+copy_if_changed() {
+  local source="$1"
+  local destination="$2"
+  if [ -f "$destination" ]; then
+    local source_size destination_size source_mtime destination_mtime
+    source_size="$(stat -f '%z' "$source")"
+    destination_size="$(stat -f '%z' "$destination")"
+    source_mtime="$(stat -f '%m' "$source")"
+    destination_mtime="$(stat -f '%m' "$destination")"
+    if [ "$source_size" = "$destination_size" ] && [ "$source_mtime" = "$destination_mtime" ]; then
+      return
+    fi
+    # One-time migration for artifacts copied before timestamps were
+    # preserved. Subsequent no-op builds take the metadata fast path above.
+    if cmp -s "$source" "$destination"; then
+      touch -r "$source" "$destination"
+      return
+    fi
+  fi
+  cp -p "$source" "$destination"
 }
 
 sync_generated_headers() {
-  cp "$GENERATED_SWIFT_DIR/codex_mobile_clientFFI.h" "$GENERATED_HEADERS_DIR/codex_mobile_clientFFI.h"
-  cp "$GENERATED_SWIFT_DIR/codex_mobile_clientFFI.modulemap" "$GENERATED_HEADERS_DIR/codex_mobile_clientFFI.modulemap"
-  cp "$GENERATED_SWIFT_DIR/module.modulemap" "$GENERATED_HEADERS_DIR/module.modulemap"
+  copy_if_changed "$GENERATED_SWIFT_DIR/codex_mobile_clientFFI.h" "$GENERATED_HEADERS_DIR/codex_mobile_clientFFI.h"
+  copy_if_changed "$GENERATED_SWIFT_DIR/codex_mobile_clientFFI.modulemap" "$GENERATED_HEADERS_DIR/codex_mobile_clientFFI.modulemap"
+  copy_if_changed "$GENERATED_SWIFT_DIR/module.modulemap" "$GENERATED_HEADERS_DIR/module.modulemap"
 }
 
 maybe_generate_swift_bindings() {
@@ -294,19 +288,19 @@ maybe_generate_swift_bindings() {
   echo "==> Regenerating UniFFI Swift bindings -> $UNIFFI_OUT"
   cd "$RUST_BRIDGE_DIR"
   "$RUST_BRIDGE_DIR/generate-bindings.sh" --swift-only
-  cp "$GENERATED_SWIFT_DIR/codex_mobile_client.swift" "$UNIFFI_OUT"
+  copy_if_changed "$GENERATED_SWIFT_DIR/codex_mobile_client.swift" "$UNIFFI_OUT"
   sync_generated_headers
   printf '%s\n' "$current_hash" >"$BINDINGS_HASH_FILE"
 }
 
 copy_device_artifact() {
-  cp "$CARGO_TARGET_DIR_EFFECTIVE/aarch64-apple-ios/$PROFILE/libcodex_mobile_client.a" \
+  copy_if_changed "$CARGO_TARGET_DIR_EFFECTIVE/aarch64-apple-ios/$PROFILE/libcodex_mobile_client.a" \
     "$GENERATED_DEVICE_DIR/libcodex_mobile_client.a"
 }
 
 copy_sim_artifact() {
   local sim_lib="$1"
-  cp "$sim_lib" "$GENERATED_SIM_DIR/libcodex_mobile_client.a"
+  copy_if_changed "$sim_lib" "$GENERATED_SIM_DIR/libcodex_mobile_client.a"
 }
 
 copy_macabi_artifact() {
@@ -314,6 +308,15 @@ copy_macabi_artifact() {
   local x86_64_lib="$CARGO_TARGET_DIR_EFFECTIVE/x86_64-apple-ios-macabi/$PROFILE/libcodex_mobile_client.a"
   lipo -create "$arm64_lib" "$x86_64_lib" \
     -output "$GENERATED_MACABI_DIR/libcodex_mobile_client.a"
+}
+
+# Fail the build instead of shipping an app whose embedded iSH runtime has a
+# broken (empty-stub) ARM64 vdso. litter-ish silently degrades the vdso to an
+# empty placeholder when no lld-capable clang is available; at runtime that
+# makes the app SIGABRT as soon as a guest process hits a signal.
+check_ish_vdso_for() {
+  local triple="$1"
+  "$REPO_DIR/tools/scripts/check-ish-vdso.sh" "$CARGO_TARGET_DIR_EFFECTIVE" "$triple" "$PROFILE"
 }
 
 echo "==> Preparing codex submodule..."
@@ -340,19 +343,35 @@ fi
 # so the git-tracked dependency can move without breaking iOS/Catalyst builds.
 rustup target add i686-unknown-linux-musl aarch64-unknown-linux-musl
 
+ios_runtime_cargo() {
+  local runtime_target="$1"
+  shift
+  local runtime_dir="$REPO_DIR/build/ios-code-mode/$runtime_target"
+  if [ ! -s "$runtime_dir/librusty_v8.a.gz" ] || [ ! -s "$runtime_dir/src_binding.rs" ]; then
+    echo "error: build/download ios-code-mode-runtime before building the iOS device library" >&2
+    return 1
+  fi
+  (cd "$runtime_dir" && shasum -a 256 -c SHA256SUMS) || return 1
+  RUSTY_V8_ARCHIVE="$runtime_dir/librusty_v8.a.gz" \
+  RUSTY_V8_SRC_BINDING_PATH="$runtime_dir/src_binding.rs" cargo "$@"
+}
+
 if [ "$DEVICE_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios ($PROFILE)..."
-  cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios --crate-type staticlib $CARGO_FEATURES
+  ios_runtime_cargo aarch64-apple-ios rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios --crate-type staticlib $CARGO_FEATURES
+  check_ish_vdso_for aarch64-apple-ios
   copy_device_artifact
 elif [ "$SIM_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios-sim ($PROFILE)..."
-  cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios-sim --crate-type staticlib $CARGO_FEATURES
+  ios_runtime_cargo aarch64-apple-ios-sim rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios-sim --crate-type staticlib $CARGO_FEATURES
+  check_ish_vdso_for aarch64-apple-ios-sim
   copy_sim_artifact "$CARGO_TARGET_DIR_EFFECTIVE/aarch64-apple-ios-sim/$PROFILE/libcodex_mobile_client.a"
 elif [ "$MACABI_ONLY" -eq 1 ]; then
   if [ "$FAST_MACABI" -eq 1 ]; then
     echo "==> Building codex-mobile-client for $MACABI_HOST_TARGET ($PROFILE)..."
     cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target "$MACABI_HOST_TARGET" --crate-type staticlib $CARGO_FEATURES
-    cp "$CARGO_TARGET_DIR_EFFECTIVE/$MACABI_HOST_TARGET/$PROFILE/libcodex_mobile_client.a" \
+    check_ish_vdso_for "$MACABI_HOST_TARGET"
+    copy_if_changed "$CARGO_TARGET_DIR_EFFECTIVE/$MACABI_HOST_TARGET/$PROFILE/libcodex_mobile_client.a" \
       "$GENERATED_MACABI_DIR/libcodex_mobile_client.a"
   else
     echo "==> Building codex-mobile-client for Mac Catalyst macabi targets ($PROFILE) in parallel..."
@@ -381,6 +400,8 @@ elif [ "$MACABI_ONLY" -eq 1 ]; then
     fi
     [ "$FAILED" -eq 0 ] || exit 1
 
+    check_ish_vdso_for aarch64-apple-ios-macabi
+    check_ish_vdso_for x86_64-apple-ios-macabi
     copy_macabi_artifact
   fi
 else
@@ -388,11 +409,11 @@ else
   echo "==> Building codex-mobile-client for device, simulator, and Catalyst macabi targets ($PROFILE) in parallel..."
 
   build_device() {
-    cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios --crate-type staticlib $CARGO_FEATURES
+    ios_runtime_cargo aarch64-apple-ios rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios --crate-type staticlib $CARGO_FEATURES
   }
 
   build_sim() {
-    cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios-sim --crate-type staticlib $CARGO_FEATURES
+    ios_runtime_cargo aarch64-apple-ios-sim rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios-sim --crate-type staticlib $CARGO_FEATURES
   }
 
   build_macabi_arm64() {
@@ -430,6 +451,11 @@ else
     FAILED=1
   fi
   [ "$FAILED" -eq 0 ] || exit 1
+
+  check_ish_vdso_for aarch64-apple-ios
+  check_ish_vdso_for aarch64-apple-ios-sim
+  check_ish_vdso_for aarch64-apple-ios-macabi
+  check_ish_vdso_for x86_64-apple-ios-macabi
 
   copy_device_artifact
   copy_sim_artifact "$CARGO_TARGET_DIR_EFFECTIVE/aarch64-apple-ios-sim/$PROFILE/libcodex_mobile_client.a"

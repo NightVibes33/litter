@@ -3,6 +3,11 @@ name: Build Unsigned iOS IPA
 on:
   workflow_dispatch:
     inputs:
+      build_only:
+        description: "Validate the build without publishing or uploading to TestFlight"
+        required: false
+        default: false
+        type: boolean
       build_mode:
         description: "Build mode"
         required: true
@@ -20,6 +25,8 @@ on:
       - 'Makefile'
       - 'Package.swift'
       - 'apps/ios/**'
+      - 'tools/scripts/build-ios-code-mode-runtime.sh'
+      - '.github/workflows/ios-code-mode-runtime.yml'
       - 'patches/codex/**'
       - 'shared/third_party/ghostty'
       - 'patches/ghostty/**'
@@ -37,8 +44,10 @@ on:
       - 'tools/scripts/package-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
       - 'tools/scripts/build-sidestore-minimuxer.sh'
-      - 'tools/scripts/prepare-emexde-corecompiler-artifacts.sh'
-      - 'tools/scripts/patch-emexde-corecompiler-for-ios-ci.py'
+      - 'tools/scripts/build-matched-nyxian-toolchain.sh'
+      - 'tools/scripts/install-nyxian-toolchain-artifacts.sh'
+      - 'tools/scripts/nyxian-toolchain-provenance.py'
+      - 'tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py'
       - 'tools/scripts/patch-ios-fast-device-project.py'
       - 'tools/scripts/buildkit-native-source-fingerprint.sh'
       - 'tools/scripts/upload-buildkit-assets-release.sh'
@@ -49,6 +58,7 @@ on:
       - 'tools/scripts/build-nyxian-buildkit-assets.sh'
       - 'tools/scripts/verify-nyxian-buildkit-assets.sh'
       - '.github/workflows/ios-unsigned-ipa.yml'
+      - '.github/workflows/nyxian-toolchain.yml'
 
 permissions:
   contents: write
@@ -60,10 +70,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ios-code-mode-runtime:
+    uses: ./.github/workflows/ios-code-mode-runtime.yml
+
+  nyxian-toolchain:
+    if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private'
+    uses: ./.github/workflows/nyxian-toolchain.yml
+
   build-unsigned-ipa:
+    needs: [nyxian-toolchain, ios-code-mode-runtime]
+    if: ${{ !cancelled() && needs.ios-code-mode-runtime.result == 'success' && (needs.nyxian-toolchain.result == 'success' || needs.nyxian-toolchain.result == 'skipped') }}
     name: Build unsigned sideload IPA
     runs-on: macos-26-intel
-    timeout-minutes: 180
+    timeout-minutes: 360
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -87,6 +106,7 @@ jobs:
       LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
       LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
       LITTER_SKIP_ALLEYCAT_UPDATE: "1"
+      LITTER_USE_MATCHED_NYXIAN_TOOLCHAIN: "1"
 
     steps:
       - name: Checkout
@@ -94,6 +114,13 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+
+      - name: Download sandboxed iOS code-mode runtime
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ios-code-mode-runtime-*
+          merge-multiple: true
+          path: build/ios-code-mode
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -668,98 +695,25 @@ jobs:
             ~/.cargo/bin/bindgen
           key: ${{ steps.minimuxer_bridge_cache.outputs.cache-primary-key }}
 
-      - name: Restore emexDE CoreCompiler artifact cache
+      - name: Download matching upstream compiler artifacts
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
-        id: emexde_corecompiler_cache
-        uses: actions/cache/restore@v4
+        uses: actions/download-artifact@v4
         with:
-          path: ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs
-          key: ios-emexde-corecompiler-artifacts-v2-${{ runner.os }}-${{ steps.emexde_swift_revision.outputs.llvm_on_ios_sha }}-${{ steps.emexde_swift_revision.outputs.swift_branch }}-${{ hashFiles('tools/scripts/prepare-emexde-corecompiler-artifacts.sh', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.h', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.m', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.mm', 'ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/**/*.swift') }}
+          name: nyxian-compiler-support
+          path: build/nyxian-toolchain
 
-      - name: Check emexDE CoreCompiler artifact cache
+      - name: Install matching upstream compiler artifacts
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
-        id: emexde_corecompiler_prebuilt
         run: |
           set -euo pipefail
-          support_source="ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs"
-          expected_swift_branch="${{ steps.emexde_swift_revision.outputs.swift_branch }}"
-          if [ "${{ steps.emexde_corecompiler_cache.outputs.cache-hit }}" != "true" ]; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "No exact emexDE CoreCompiler artifact cache hit."
-            exit 0
-          fi
-          missing=0
-          require_nonempty() {
-            local path="$1"
-            if [ ! -s "$path" ]; then
-              echo "Missing cached CoreCompiler artifact: $path"
-              missing=1
-            else
-              ls -lh "$path"
-            fi
-          }
-          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/llvm.a"
-          require_nonempty "$support_source/LLVM.xcframework/ios-arm64/Headers/llvm/Support/Threading.h"
-          swift_header_root="$support_source/LLVM.xcframework/ios-arm64/Headers"
-          swift_header_marker="$swift_header_root/swift/.emexde-swift-header-branch"
-          require_nonempty "$swift_header_root/swift/Basic/InitializeSwiftModules.h"
-          require_nonempty "$swift_header_root/swift/FrontendTool/FrontendTool.h"
-          require_nonempty "$swift_header_root/swift/Config.h"
-          require_nonempty "$swift_header_root/clang/Basic/PathRemapper.h"
-          require_nonempty "$swift_header_root/clang/CAS/CASOptions.h"
-          require_nonempty "$swift_header_root/llvm/CAS/ActionCache.h"
-          require_nonempty "$swift_header_root/llvm/Support/VirtualOutputBackend.h"
-          require_nonempty "$swift_header_root/swift/Option/Options.inc"
-          require_nonempty "$swift_header_root/swift/Runtime/CMakeConfig.h"
-          require_nonempty "$swift_header_root/lld/Common/Version.inc"
-          require_nonempty "$swift_header_marker"
-          if [ -s "$swift_header_marker" ] && [ "$(cat "$swift_header_marker")" != "$expected_swift_branch" ]; then
-            echo "Cached Swift compiler header overlay is for $(cat "$swift_header_marker"), expected $expected_swift_branch."
-            missing=1
-          fi
-          if [ -f "$swift_header_root/module.modulemap" ]; then
-            echo "Cached Swift root module map conflicts with Xcode public header copy."
-            missing=1
-          fi
-          if ! find "$support_source" -maxdepth 1 -type f -name 'lib_Compiler*.dylib' -print -quit | grep -q .; then
-            echo "Cached CoreCompiler support dylibs are missing."
-            missing=1
-          fi
-          if [ "$missing" -eq 0 ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-            echo "Using cached emexDE CoreCompiler support artifacts."
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "Cached emexDE CoreCompiler artifacts are incomplete; rebuilding."
-          fi
-
-      - name: Prepare emexDE CoreCompiler artifacts
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
-        env:
-          EMEXDE_SWIFT_BRANCH: ${{ steps.emexde_swift_revision.outputs.swift_branch }}
-          EMEXDE_SWIFT_LLVM_BRANCH: ${{ steps.emexde_swift_revision.outputs.swift_branch }}
-        run: |
-          set -euo pipefail
-          time tools/scripts/prepare-emexde-corecompiler-artifacts.sh
-
-      - name: Save emexDE CoreCompiler artifact cache
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1' && steps.emexde_corecompiler_cache.outputs.cache-hit != 'true' && steps.emexde_corecompiler_prebuilt.outputs.available != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs
-          key: ${{ steps.emexde_corecompiler_cache.outputs.cache-primary-key }}
+          python3 tools/scripts/nyxian-toolchain-provenance.py verify build/nyxian-toolchain
+          tools/scripts/install-nyxian-toolchain-artifacts.sh build/nyxian-toolchain
 
       - name: Normalize emexDE generated Swift imports
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
-
-      - name: Patch emexDE CoreCompiler Swift frontend for unsigned CI
-        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
-        run: |
-          set -euo pipefail
-          python3 tools/scripts/patch-emexde-corecompiler-for-ios-ci.py
 
       - name: Patch fast unsigned device project
         if: env.LITTER_IOS_BUILD_MODE == 'fast-device' || env.LITTER_IOS_BUILD_MODE == 'release-device'
@@ -1146,6 +1100,26 @@ jobs:
           path: build/NyxianSourcePackages
           key: ${{ steps.nyxian_swiftpm_cache.outputs.cache-primary-key }}
 
+      - name: Build ChatGPT native compiler bridge against archived Nyxian
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
+          test -n "$APP_PATH"
+          FRAMEWORKS="$APP_PATH/Frameworks"
+          NYXIAN_ROOT="$PWD/ThirdParty/EmexDE/Source/Frameworks" \
+          CORECOMPILER_FRAMEWORK="$FRAMEWORKS/CoreCompiler.framework" \
+          MOBILEDEVELOPMENTKIT_FRAMEWORK="$FRAMEWORKS/MobileDevelopmentKit.framework" \
+          LITTER_BUILDKIT_NATIVE_MODE=inprocess \
+          LITTER_BUILDKIT_NATIVE_OUT_DIR="$FRAMEWORKS/LitterBuildKitNative.framework" \
+          LITTER_BUILDKIT_OPENSSL_FRAMEWORK="$FRAMEWORKS/OpenSSL.framework" \
+          tools/scripts/build-litter-buildkit-native.sh
+          DRIVER="$FRAMEWORKS/LitterBuildKitNative.framework/LitterBuildKitNative"
+          nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'
+          otool -L "$DRIVER" | grep -q 'CoreCompiler.framework/CoreCompiler'
+          otool -L "$DRIVER" | grep -q 'MobileDevelopmentKit.framework/MobileDevelopmentKit'
+          codesign --force --sign - --timestamp=none "$FRAMEWORKS/LitterBuildKitNative.framework"
+
       - name: Verify archived BuildKit asset payload
         if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
         run: |
@@ -1419,8 +1393,7 @@ jobs:
 
           forbidden=0
           for item in \
-            "$APP_PATH/LitterBuildKitAssets.zip" \
-            "$APP_PATH/Frameworks/LitterBuildKitNative.framework"
+            "$APP_PATH/LitterBuildKitAssets.zip"
           do
             if [ -e "$item" ]; then
               echo "::error::Sideload IPA must not embed private BuildKit SDK/toolchain payload: $item" >&2
@@ -1434,7 +1407,7 @@ jobs:
           fi
 
           if [ "$LITTER_NYXIAN_PRIVATE_BUILD" = "1" ]; then
-            for framework in CoreCompiler.framework MobileDevelopmentKit.framework emexDE.framework; do
+            for framework in CoreCompiler.framework MobileDevelopmentKit.framework emexDE.framework LitterBuildKitNative.framework; do
               if [ ! -d "$APP_PATH/Frameworks/$framework" ]; then
                 echo "::error::Full sideload IPA is missing embedded emexDE runtime framework: $framework" >&2
                 forbidden=1
@@ -1598,7 +1571,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish unsigned IPA release asset
-        if: success()
+        if: ${{ success() && !inputs.build_only }}
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN || github.token }}
           BUILD_MODE: ${{ env.LITTER_IOS_BUILD_MODE }}

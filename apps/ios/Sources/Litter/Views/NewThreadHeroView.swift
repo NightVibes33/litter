@@ -5,8 +5,8 @@ import SwiftUI
 ///
 /// Layout is intentionally simple — the composer lives in a flex VStack that
 /// pushes it toward the vertical center pre-send and toward the bottom
-/// post-send. Title, chips, and suggestions fade out on send so the eye
-/// follows the composer's motion.
+/// post-send. The title and chips fade out on send so the eye follows the
+/// composer's motion.
 ///
 /// On iOS 26 the composer's background is already a liquid-glass pill
 /// (courtesy of `ConversationComposerContentView`); when the layout
@@ -16,6 +16,7 @@ struct NewThreadHeroView: View {
     let project: AppProject?
     let connectedServers: [HomeDashboardServer]
     let selectedServerId: String?
+    var serverSnapshotsById: [String: AppServerSnapshot] = [:]
     let onSelectServer: (String) -> Void
     let onOpenProjectPicker: () -> Void
     let onThreadCreated: (ThreadKey) -> Void
@@ -28,6 +29,20 @@ struct NewThreadHeroView: View {
     var autoFocus: Bool = true
 
     @State private var isSending = false
+    @State private var isShowingModelPicker = false
+    @Environment(AppState.self) private var appState
+    @AppStorage("fastMode") private var fastMode = false
+
+    private var composerModelPill: HomeComposerModelPill? {
+        guard selectedLaunchableServer != nil else { return nil }
+        let serverId = project?.serverId ?? selectedServerId
+        let models = serverId.flatMap { serverSnapshotsById[$0] }?.availableModels ?? []
+        return HomeComposerModelPill(
+            label: HomeModelChip.modelLabel(appState: appState, models: models),
+            detail: HomeModelChip.modelDetail(appState: appState, fastMode: fastMode),
+            open: { isShowingModelPicker = true }
+        )
+    }
 
     /// Delay between the composer firing `onThreadCreated` and the parent
     /// replacing the route with `.conversation(key)`. Long enough for the
@@ -42,7 +57,7 @@ struct NewThreadHeroView: View {
 
     var body: some View {
         ZStack {
-            AlleyBackdrop().ignoresSafeArea()
+            LitterTheme.backgroundGradient.ignoresSafeArea()
 
             VStack(spacing: 24) {
                 Spacer(minLength: 0)
@@ -68,16 +83,14 @@ struct NewThreadHeroView: View {
                             onThreadCreated(key)
                         }
                     },
-                    autoFocus: autoFocus
+                    autoFocus: autoFocus,
+                    modelPill: composerModelPill
                 )
                 .frame(maxWidth: 760)
                 .padding(.horizontal, 20)
 
                 if !isSending {
                     chipRow
-                        .transition(.opacity)
-
-                    suggestionsList
                         .transition(.opacity)
 
                     Spacer(minLength: 0)
@@ -93,6 +106,22 @@ struct NewThreadHeroView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if let onCancel {
+                // The trailing "Cancel" was the only way out of this screen,
+                // and with an empty `navigationTitle` the system chevron is
+                // near-invisible against the themed background — so the new
+                // thread page read as a dead end (#305). Mirrors the
+                // conversation screen's leading chevron.
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onCancel) {
+                        Image(systemName: "chevron.left")
+                            .font(LitterFont.styled(size: 17, weight: .semibold))
+                            .foregroundColor(LitterTheme.textPrimary)
+                            .frame(width: 40, height: 40)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { onCancel() }
                         .foregroundStyle(LitterTheme.textSecondary)
@@ -111,9 +140,14 @@ struct NewThreadHeroView: View {
                 disabled: launchableServers.isEmpty,
                 onTap: onOpenProjectPicker
             )
+            // Invisible host for the model picker sheet + model sync; the
+            // model shows as a pill inside the composer.
             HomeModelChip(
                 serverId: project?.serverId ?? selectedServerId,
-                disabled: selectedLaunchableServer == nil
+                disabled: selectedLaunchableServer == nil,
+                server: (project?.serverId ?? selectedServerId).flatMap { serverSnapshotsById[$0] },
+                showsLabel: false,
+                presentation: $isShowingModelPicker
             )
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -164,40 +198,4 @@ struct NewThreadHeroView: View {
         return launchableServers.first { $0.id == activeServerId }
     }
 
-    // MARK: - Suggestions
-
-    /// Placeholder suggestion rows. Data source TBD — for now these are
-    /// static prompts so the layout can be dialed in. When the real source
-    /// is wired, swap the array contents and make tapping prefill the
-    /// composer with the row's text.
-    private static let placeholderSuggestions: [String] = [
-        "Make local iPhone command failures self-diagnosing",
-        "Fix the real home feed item cap",
-        "Fix subagent metadata across conversation rows",
-        "Connect your favorite apps to Codex"
-    ]
-
-    private var suggestionsList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(Self.placeholderSuggestions.enumerated()), id: \.offset) { idx, text in
-                if idx > 0 {
-                    Divider()
-                        .background(LitterTheme.textMuted.opacity(0.15))
-                }
-                HStack(spacing: 10) {
-                    Image(systemName: "bubble.left.and.text.bubble.right")
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(LitterTheme.textMuted)
-                    Text(text)
-                        .litterFont(size: 13)
-                        .foregroundStyle(LitterTheme.textSecondary)
-                    Spacer(minLength: 0)
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 4)
-            }
-        }
-        .frame(maxWidth: 760)
-        .padding(.horizontal, 24)
-    }
 }

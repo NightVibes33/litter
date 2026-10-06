@@ -21,6 +21,10 @@ struct TerminalScreen: View {
     @State private var ghosttyRenderer = GhosttyTerminalRenderer()
     @State private var nativeRendererHasOutput = false
     @State private var showConfigSheet = false
+    @State private var snapshotObserver = AppSnapshotObserver()
+    /// Identity of the server list the current `backendOptions` were built
+    /// from, so the observer only reconciles when servers actually change.
+    @State private var observedServerFingerprint: String?
     @AppStorage("litter.terminal.fontSize") private var storedFontSize: Double = 13.0
     @AppStorage("litter.terminal.themeId") private var storedThemeId: String = "litter-dark"
     @AppStorage("litter.terminal.cursorBlink") private var storedCursorBlink: Bool = true
@@ -49,8 +53,27 @@ struct TerminalScreen: View {
         .ignoresSafeArea(.container, edges: [.top, .bottom, .horizontal])
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbar(.hidden, for: .navigationBar)
+        .alert("SSH Host Identity Changed", isPresented: Binding(
+            get: { controller.sshTrustChallenge?.isChanged == true },
+            set: { if !$0 { controller.dismissSshTrustChallenge() } }
+        )) {
+            Button("Replace Stored Identity", role: .destructive) {
+                guard let challenge = controller.sshTrustChallenge else { return }
+                Task { await controller.trustUnknownSshHostAndRetry(challenge) }
+            }
+            Button("Cancel", role: .cancel) {
+                controller.dismissSshTrustChallenge()
+            }
+        } message: {
+            Text("The SSH identity for this server changed. This can happen after a server is recreated, but may also indicate a man-in-the-middle attack. New fingerprint: \(controller.sshTrustChallenge?.fingerprint ?? "unknown")")
+        }
         .task {
             attachOutputSink()
+            // Reconcile the backend chooser when the connected-server list
+            // changes. This used to be `.onChange(of: appSnapshotRevision)` in
+            // `body`, which re-rendered the whole terminal (Ghostty surface
+            // included) at the ~8 fps streaming snapshot cadence.
+            snapshotObserver.start(appModel: AppModel.shared) { reconcileBackendOptionsIfServersChanged() }
             guard !didStart else { return }
             didStart = true
             let options = refreshBackendOptions()
@@ -62,10 +85,8 @@ struct TerminalScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .litterSavedServersDidChange)) { _ in
             reconcileBackendOptions()
         }
-        .onChange(of: appSnapshotRevision) { _, _ in
-            reconcileBackendOptions()
-        }
         .onDisappear {
+            snapshotObserver.stop()
             // End any active first-responder hold so the keyboard tears
             // down and SwiftUI releases first responder. Without this the
             // keyboard can linger after navigating back, leaving the
@@ -139,10 +160,6 @@ struct TerminalScreen: View {
 
     private var selectedBackend: TerminalBackendOption? {
         backendOptions.first { $0.id == selectedBackendID } ?? backendOptions.first
-    }
-
-    private var appSnapshotRevision: UInt64 {
-        AppModel.shared.snapshotRevision
     }
 
     private func attachOutputSink() {
@@ -307,7 +324,7 @@ struct TerminalScreen: View {
                                 .textSelection(.enabled)
                             if let challenge = controller.sshTrustChallenge {
                                 Button {
-                                    Task { await controller.trustUnknownSshHostAndRetry() }
+                                    Task { await controller.trustUnknownSshHostAndRetry(challenge) }
                                 } label: {
                                     Label("Trust \(challenge.fingerprint)", systemImage: "key.fill")
                                         .font(.custom("SFMono-Regular", size: 12))
@@ -564,6 +581,18 @@ struct TerminalScreen: View {
         return options
     }
 
+    /// Observer-driven reconcile. `loadBackendOptions` reads the keychain for
+    /// every server, so gate it on the connected-server identity actually
+    /// changing rather than rebuilding on every snapshot revision.
+    private func reconcileBackendOptionsIfServersChanged() {
+        let fingerprint = (AppModel.shared.snapshot?.servers ?? [])
+            .map { "\($0.serverId)\u{1}\($0.displayName)" }
+            .joined(separator: "\u{2}")
+        guard observedServerFingerprint != fingerprint else { return }
+        observedServerFingerprint = fingerprint
+        reconcileBackendOptions()
+    }
+
     private func reconcileBackendOptions() {
         let options = refreshBackendOptions()
         guard let selectedBackendID,
@@ -647,7 +676,7 @@ private enum TerminalThemeChoice: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .litterDark: return "Alley Cãt Dark"
+        case .litterDark: return "Litter Dark"
         case .catppuccinFrappe: return "Catppuccin Frappé"
         case .catppuccinFrappeLight: return "Catppuccin Frappé Light"
         case .solarizedDark: return "Solarized Dark"
@@ -735,9 +764,6 @@ private struct TerminalConfigSheet: View {
                         .onChange(of: draftCursorBlink) { _, _ in applyDraft() }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(AlleyBackdrop().ignoresSafeArea())
-            .tint(LitterTheme.accent)
             .navigationTitle("Terminal")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -905,11 +931,3 @@ private struct TerminalGridSize: Equatable {
         rows = UInt16(max(4, min(120, computedRows)))
     }
 }
-
-#if DEBUG
-#Preview("Terminal") {
-    NavigationStack {
-        TerminalScreen(cwd: "/root")
-    }
-}
-#endif

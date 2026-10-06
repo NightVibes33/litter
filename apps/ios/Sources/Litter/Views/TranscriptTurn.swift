@@ -1,5 +1,29 @@
 import Foundation
 
+enum ConversationTurnCollapsePolicy {
+    static func expandedRecentTurnCount(
+        preferenceEnabled: Bool,
+        itemCount: Int
+    ) -> Int {
+        preferenceEnabled ? 1 : .max
+    }
+}
+
+enum ConversationInfiniteScrollPolicy {
+    static let olderPrefetchDistance = 6
+
+    static func earliestVisibleIndex(
+        visibleIDs: [String],
+        orderedIDs: [String]
+    ) -> Int? {
+        guard !visibleIDs.isEmpty else { return nil }
+        let indicesByID = Dictionary(
+            uniqueKeysWithValues: orderedIDs.enumerated().map { ($1, $0) }
+        )
+        return visibleIDs.compactMap { indicesByID[$0] }.min()
+    }
+}
+
 struct TranscriptTurn: Identifiable, Equatable {
     private static let collapsedExcerptLimit = 180
 
@@ -15,10 +39,36 @@ struct TranscriptTurn: Identifiable, Equatable {
 
     let id: String
     let items: [ConversationItem]
-    let preview: Preview
     let isLive: Bool
     let isCollapsedByDefault: Bool
     let renderDigest: Int
+
+    /// Derived on demand rather than stored.
+    ///
+    /// Previews are only rendered by `ConversationTurnRow.collapsedCard`, which
+    /// runs for turns above the collapse boundary. With the default
+    /// `collapseTurns == false` the boundary is 0, so *nothing* is ever
+    /// collapsed — yet `build` used to compute a preview (a full
+    /// `trimmingCharacters` copy plus `enumerateLines` of every message) for
+    /// every turn in the transcript on every coalesced streaming tick, then
+    /// throw all of it away.
+    ///
+    /// Callers that need more than one field should bind this to a local once;
+    /// each access re-derives.
+    var preview: Preview {
+        Self.makePreview(from: items)
+    }
+
+    /// Render equality. `renderDigest` already folds in `items.count` plus each
+    /// item's id and `renderDigest`, and `preview` is a pure function of
+    /// `items`, so this covers everything the synthesized `==` did without
+    /// deep-comparing item content.
+    static func == (lhs: TranscriptTurn, rhs: TranscriptTurn) -> Bool {
+        lhs.id == rhs.id &&
+            lhs.isLive == rhs.isLive &&
+            lhs.isCollapsedByDefault == rhs.isCollapsedByDefault &&
+            lhs.renderDigest == rhs.renderDigest
+    }
 
     static func build(
         from items: [ConversationItem],
@@ -31,7 +81,7 @@ struct TranscriptTurn: Identifiable, Equatable {
         } else {
             isStreaming = false
         }
-        let groupedItems = mergeTrailingStreamingGroups(in: group(items), isStreaming: isStreaming)
+        let groupedItems = group(items)
         guard !groupedItems.isEmpty else { return [] }
 
         let lastIndex = groupedItems.index(before: groupedItems.endIndex)
@@ -43,7 +93,6 @@ struct TranscriptTurn: Identifiable, Equatable {
             return TranscriptTurn(
                 id: turnIdentifier(for: turnItems, ordinal: index),
                 items: turnItems,
-                preview: makePreview(from: turnItems),
                 isLive: isLive,
                 isCollapsedByDefault: index < collapseBoundary,
                 renderDigest: makeRenderDigest(from: turnItems, isLive: isLive)
@@ -55,21 +104,9 @@ struct TranscriptTurn: Identifiable, Equatable {
         TranscriptTurn(
             id: id,
             items: items,
-            preview: preview,
             isLive: isLive,
             isCollapsedByDefault: isCollapsedByDefault,
             renderDigest: renderDigest
-        )
-    }
-
-    func replacingItems(_ items: [ConversationItem]) -> TranscriptTurn {
-        TranscriptTurn(
-            id: id,
-            items: items,
-            preview: Self.makePreview(from: items),
-            isLive: isLive,
-            isCollapsedByDefault: isCollapsedByDefault,
-            renderDigest: Self.makeRenderDigest(from: items, isLive: isLive)
         )
     }
 
@@ -77,41 +114,54 @@ struct TranscriptTurn: Identifiable, Equatable {
         TranscriptTurn(
             id: id,
             items: items,
-            preview: preview,
             isLive: isLive,
             isCollapsedByDefault: isCollapsedByDefault,
             renderDigest: Self.makeRenderDigest(from: items, isLive: isLive)
         )
     }
 
-    static func mergeConsecutiveExplorationTurnsForRendering(
+    static func renderableTurns(
         _ turns: [TranscriptTurn]
     ) -> [TranscriptTurn] {
-        var merged: [TranscriptTurn] = []
-        var explorationBuffer: [TranscriptTurn] = []
+        turns.compactMap(renderableTurn)
+    }
 
-        func flushExplorationBuffer() {
-            guard !explorationBuffer.isEmpty else { return }
-            if explorationBuffer.count == 1, let single = explorationBuffer.first {
-                merged.append(single)
-            } else if let mergedTurn = mergedExplorationTurn(from: explorationBuffer) {
-                merged.append(mergedTurn)
-            }
-            explorationBuffer.removeAll(keepingCapacity: true)
+    /// A server acknowledgement can replace an optimistic first item. Match
+    /// that turn by authoritative provenance only when the source is unique;
+    /// repeated source IDs across explicit user boundaries remain distinct.
+    static func previousTurnIDs(in nextTurns: [TranscriptTurn], from previousTurns: [TranscriptTurn]) -> [String: String] {
+        let previousIDs = Set(previousTurns.map(\.id))
+        func sourceID(_ turn: TranscriptTurn) -> String? {
+            turn.items.first(where: { $0.sourceTurnId != nil })?.sourceTurnId
         }
-
-        for turn in turns {
-            guard let renderableTurn = renderableTurn(from: turn) else { continue }
-            if renderableTurn.items.allSatisfy(\.isExplorationCommandItem) {
-                explorationBuffer.append(renderableTurn)
-            } else {
-                flushExplorationBuffer()
-                merged.append(renderableTurn)
+        let oldBySource = Dictionary(grouping: previousTurns.compactMap { turn in
+            sourceID(turn).map { ($0, turn.id) }
+        }, by: { $0.0 })
+        let newBySource = Dictionary(grouping: nextTurns.compactMap { turn in
+            sourceID(turn).map { ($0, turn.id) }
+        }, by: { $0.0 })
+        var matches: [String: String] = [:]
+        for turn in nextTurns {
+            if previousIDs.contains(turn.id) {
+                matches[turn.id] = turn.id
+            } else if let source = sourceID(turn),
+                      oldBySource[source]?.count == 1, newBySource[source]?.count == 1 {
+                matches[turn.id] = oldBySource[source]?.first?.1
             }
         }
+        return matches
+    }
 
-        flushExplorationBuffer()
-        return merged
+    static func preservingCollapseState(
+        in nextTurns: [TranscriptTurn],
+        from previousTurns: [TranscriptTurn]
+    ) -> [TranscriptTurn] {
+        let previous = Dictionary(uniqueKeysWithValues: previousTurns.map { ($0.id, $0.isCollapsedByDefault) })
+        let matches = previousTurnIDs(in: nextTurns, from: previousTurns)
+        return nextTurns.map { turn in
+            guard let oldID = matches[turn.id], let wasCollapsed = previous[oldID] else { return turn }
+            return turn.withCollapsedByDefault(wasCollapsed)
+        }
     }
 
     private static func group(_ items: [ConversationItem]) -> [[ConversationItem]] {
@@ -155,28 +205,6 @@ struct TranscriptTurn: Identifiable, Equatable {
         return groups
     }
 
-    private static func mergeTrailingStreamingGroups(
-        in groups: [[ConversationItem]],
-        isStreaming: Bool
-    ) -> [[ConversationItem]] {
-        guard isStreaming, groups.count > 1 else { return groups }
-        guard let liveTurnStartIndex = groups.lastIndex(where: containsLiveTurnBoundary) else {
-            return groups
-        }
-        guard liveTurnStartIndex < groups.index(before: groups.endIndex) else {
-            return groups
-        }
-
-        let mergedLiveTurn = groups[liveTurnStartIndex...].flatMap { $0 }
-        return Array(groups[..<liveTurnStartIndex]) + [mergedLiveTurn]
-    }
-
-    private static func containsLiveTurnBoundary(_ items: [ConversationItem]) -> Bool {
-        items.contains { item in
-            item.isFromUserTurnBoundary || item.isUserItem
-        }
-    }
-
     private static func renderableTurn(from turn: TranscriptTurn) -> TranscriptTurn? {
         let visibleItems = turn.items.filter { !$0.isVisuallyEmptyNeutralItem }
         guard !visibleItems.isEmpty else { return nil }
@@ -184,25 +212,8 @@ struct TranscriptTurn: Identifiable, Equatable {
         return turn.replacingRenderableItems(visibleItems)
     }
 
-    private static func mergedExplorationTurn(from turns: [TranscriptTurn]) -> TranscriptTurn? {
-        guard let first = turns.first else { return nil }
-        let items = turns.flatMap(\.items)
-        let isLive = turns.contains(where: \.isLive)
-        return TranscriptTurn(
-            id: "exploration-turn-\(first.id)",
-            items: items,
-            preview: makePreview(from: items),
-            isLive: isLive,
-            isCollapsedByDefault: turns.allSatisfy(\.isCollapsedByDefault),
-            renderDigest: makeRenderDigest(from: items, isLive: isLive)
-        )
-    }
-
     private static func turnIdentifier(for items: [ConversationItem], ordinal: Int) -> String {
         if let first = items.first {
-            if let sourceTurnId = items.first(where: { $0.sourceTurnId != nil })?.sourceTurnId {
-                return "turn-\(sourceTurnId)-\(first.id)"
-            }
             return "turn-\(first.id)"
         }
         return "turn-\(ordinal)"
@@ -350,25 +361,27 @@ struct TranscriptTurn: Identifiable, Equatable {
 
         switch item.content {
         case .user(let data):
-            let trimmed = data.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { return collapsedExcerpt(from: trimmed) }
+            // `collapsedExcerpt` trims each line itself, so the extra
+            // whole-string `trimmingCharacters` copy would be pure waste.
+            if !ConversationItem.isBlank(data.text) { return collapsedExcerpt(from: data.text) }
             if !data.images.isEmpty {
                 return data.images.count == 1 ? "Shared 1 image" : "Shared \(data.images.count) images"
             }
             return "Conversation turn"
         case .assistant(let data):
-            let trimmed = data.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "Assistant response" : collapsedExcerpt(from: trimmed)
+            return ConversationItem.isBlank(data.text)
+                ? "Assistant response"
+                : collapsedExcerpt(from: data.text)
         case .codeReview(let data):
             if let first = data.findings.first {
                 return "Review: \(collapsedExcerpt(from: first.title))"
             }
             return "Code review"
         case .reasoning(let data):
-            let body = (data.summary + data.content)
-                .joined(separator: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return body.isEmpty ? "Reasoning" : "Reasoning: \(collapsedExcerpt(from: body))"
+            let body = (data.summary + data.content).joined(separator: " ")
+            return ConversationItem.isBlank(body)
+                ? "Reasoning"
+                : "Reasoning: \(collapsedExcerpt(from: body))"
         case .todoList(let data):
             if data.steps.isEmpty {
                 return "To do list"
@@ -380,8 +393,9 @@ struct TranscriptTurn: Identifiable, Equatable {
             }
             return "To do list: \(completed) of \(total) done"
         case .proposedPlan(let data):
-            let trimmed = data.content.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "Plan" : "Plan: \(collapsedExcerpt(from: trimmed))"
+            return ConversationItem.isBlank(data.content)
+                ? "Plan"
+                : "Plan: \(collapsedExcerpt(from: data.content))"
         case .commandExecution(let data):
             if let action = data.actions.first {
                 switch action.kind {
@@ -484,11 +498,11 @@ struct TranscriptTurn: Identifiable, Equatable {
         }
 
         if interval < 10 {
-            let roundedTenths = (interval * 10).rounded() / 10
-            if roundedTenths.rounded() == roundedTenths {
-                return "\(Int(roundedTenths))s"
+            let totalTenths = Int((interval * 10).rounded())
+            if totalTenths.isMultiple(of: 10) {
+                return "\(totalTenths / 10)s"
             }
-            return "\(roundedTenths.formatted(.number.precision(.fractionLength(1))))s"
+            return "\(totalTenths / 10).\(totalTenths % 10)s"
         }
 
         if interval < 60 {

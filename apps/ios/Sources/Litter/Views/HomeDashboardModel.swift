@@ -2,18 +2,69 @@ import Foundation
 import Observation
 
 @MainActor
+struct HomeDashboardPersistence {
+    let rememberedServers: () -> [SavedServer]
+    let pinnedKeys: () -> [SavedThreadsStore.PinnedKey]
+    let hiddenKeys: () -> [SavedThreadsStore.PinnedKey]
+    let addPinned: (SavedThreadsStore.PinnedKey) -> Void
+    let removePinned: (SavedThreadsStore.PinnedKey) -> Void
+    let hide: (SavedThreadsStore.PinnedKey) -> Void
+    let unhide: (SavedThreadsStore.PinnedKey) -> Void
+    let selectedServerId: () -> String?
+    let setSelectedServerId: (String?) -> Void
+    let selectedProjectId: () -> String?
+    let setSelectedProjectId: (String?) -> Void
+
+    static let live = HomeDashboardPersistence(
+        rememberedServers: SavedServerStore.rememberedServers,
+        pinnedKeys: SavedThreadsStore.pinnedKeys,
+        hiddenKeys: SavedThreadsStore.hiddenKeys,
+        addPinned: SavedThreadsStore.add,
+        removePinned: SavedThreadsStore.remove,
+        hide: SavedThreadsStore.hide,
+        unhide: SavedThreadsStore.unhide,
+        selectedServerId: { SavedProjectStore.selectedServerId },
+        setSelectedServerId: { SavedProjectStore.selectedServerId = $0 },
+        selectedProjectId: { SavedProjectStore.selectedProjectId },
+        setSelectedProjectId: { SavedProjectStore.selectedProjectId = $0 }
+    )
+
+    static let empty = HomeDashboardPersistence(
+        rememberedServers: { [] },
+        pinnedKeys: { [] },
+        hiddenKeys: { [] },
+        addPinned: { _ in },
+        removePinned: { _ in },
+        hide: { _ in },
+        unhide: { _ in },
+        selectedServerId: { nil },
+        setSelectedServerId: { _ in },
+        selectedProjectId: { nil },
+        setSelectedProjectId: { _ in }
+    )
+}
+
+@MainActor
 @Observable
 final class HomeDashboardModel {
     private struct Snapshot {
         let connectedServers: [HomeDashboardServer]
         let recentSessions: [HomeDashboardRecentSession]
         let sessionSummaries: [AppSessionSummary]
+        let activeThread: ThreadKey?
+        let rawServers: [AppServerSnapshot]
+        let isSessionListSettled: Bool
     }
 
     private(set) var connectedServers: [HomeDashboardServer] = []
-    /// Home list source: pinned threads first (in pin order). If nothing is
-    /// pinned, show the 10 most-recent sessions. Hidden threads are always
-    /// excluded.
+    /// False while Home cannot yet tell "no sessions" from "not loaded":
+    /// no store snapshot yet, or remembered servers still reconnecting.
+    /// Home shows the empty state (cat + coachmarks) only once settled, so
+    /// it never flashes on launch.
+    private(set) var isSessionListSettled = false
+    /// Home list source: pinned threads first (in pin order). Local Studio
+    /// also keeps recent sessions visible after a pin so newly synced Pi
+    /// sessions remain discoverable. Hidden threads are always excluded.
     private(set) var recentSessions: [HomeDashboardRecentSession] = []
     /// Every session we know about across connected servers, newest first —
     /// used by the search view so the user can pick any thread.
@@ -21,11 +72,34 @@ final class HomeDashboardModel {
     private(set) var pinnedKeys: [SavedThreadsStore.PinnedKey] = []
     private(set) var hiddenKeys: [SavedThreadsStore.PinnedKey] = []
     private(set) var projects: [AppProject] = []
+    /// Debounced projection of the active thread key. Views observe this
+    /// instead of `appModel.snapshot?.activeThread` so they don't
+    /// re-render per streaming token.
+    private(set) var activeThread: ThreadKey?
+    /// Debounced signature driving `hydratePinnedThreadsIfNeeded`.
+    /// Computed in `refreshState` from snapshot-derived server/session
+    /// state so `HomeNavigationView.body` never reads `appModel.snapshot`.
+    private(set) var pinnedThreadHydrationSignature: String = ""
+    /// Precomputed hydration-id signature for the currently-visible sessions
+    /// (after server filter). Bound to `.onChange` in `HomeDashboardView`
+    /// so the body doesn't allocate + stringify the visible list per eval.
+    private(set) var visibleHydrationSignature: String = ""
+    /// Precomputed activity signature (`"<id>:<hasTurnActive>"` joined).
+    private(set) var visibleActivitySignature: String = ""
+    /// Precomputed sets of server IDs by capability, so DirectoryPickerView
+    /// rows and controls don't read `appModel.snapshot` in body.
+    private(set) var localServerIds: Set<String> = []
+    private(set) var browseableServerIds: Set<String> = []
+    /// Precomputed server snapshot lookup, so HomeModelChip and other home
+    /// views can access server info without reading `appModel.snapshot` in body.
+    private(set) var serverSnapshotsById: [String: AppServerSnapshot] = [:]
 
     var selectedServerId: String? {
         didSet {
             if oldValue != selectedServerId {
-                SavedProjectStore.selectedServerId = selectedServerId
+                if persistSelectionChanges {
+                    persistence.setSelectedServerId(selectedServerId)
+                }
                 if selectedServerId != nil {
                     userClearedSelection = false
                 }
@@ -37,14 +111,25 @@ final class HomeDashboardModel {
     /// In-memory selection. May be a project derived from sessions, or a
     /// synthetic `(server, cwd)` pair the user just picked via the directory
     /// picker (which hasn't produced a thread yet, so it's not in `projects`).
+    /// True while the selected server was chosen by the fallback above
+    /// rather than by the user.
+    private var serverSelectionIsAutomatic = false
+
     var selectedProject: AppProject? {
         didSet {
-            if oldValue?.id != selectedProject?.id {
-                SavedProjectStore.selectedProjectId = selectedProject?.id
+            if oldValue?.id != selectedProject?.id, persistSelectionChanges {
+                persistence.setSelectedProjectId(selectedProject?.id)
             }
         }
     }
 
+    @ObservationIgnored private let persistence: HomeDashboardPersistence
+    /// False while the reconciler (not the user) changes the selection, e.g.
+    /// clearing it because the last-used server has not reconnected yet at
+    /// launch. Persisting that would erase the user's last-used server and
+    /// project before the server ever came back.
+    @ObservationIgnored private var persistSelectionChanges = true
+    @ObservationIgnored private let observedRefreshDelayNanoseconds: UInt64
     @ObservationIgnored private weak var appModel: AppModel?
     @ObservationIgnored private(set) var rebuildCount = 0
     @ObservationIgnored private var isActive = false
@@ -60,10 +145,16 @@ final class HomeDashboardModel {
     @ObservationIgnored private var preferencesObserver: NSObjectProtocol?
     @ObservationIgnored private var savedServersObserver: NSObjectProtocol?
 
-    init() {
-        selectedServerId = SavedProjectStore.selectedServerId
-        pinnedKeys = SavedThreadsStore.pinnedKeys()
-        hiddenKeys = SavedThreadsStore.hiddenKeys()
+    init(
+        persistence: HomeDashboardPersistence? = nil,
+        observedRefreshDelayNanoseconds: UInt64 = 120_000_000
+    ) {
+        let persistence = persistence ?? .live
+        self.persistence = persistence
+        self.observedRefreshDelayNanoseconds = observedRefreshDelayNanoseconds
+        selectedServerId = persistence.selectedServerId()
+        pinnedKeys = persistence.pinnedKeys()
+        hiddenKeys = persistence.hiddenKeys()
         preferencesObserver = NotificationCenter.default.addObserver(
             forName: .litterThreadPreferencesDidChange,
             object: nil,
@@ -99,36 +190,29 @@ final class HomeDashboardModel {
     func pinThread(_ key: ThreadKey) {
         let pin = SavedThreadsStore.PinnedKey(threadKey: key)
         guard !pinnedKeys.contains(pin) else { return }
-        SavedThreadsStore.add(pin)
-        pinnedKeys = SavedThreadsStore.pinnedKeys()
+        persistence.addPinned(pin)
+        pinnedKeys = persistence.pinnedKeys()
         // Pinning cancels a prior hide.
         if hiddenKeys.contains(pin) {
-            SavedThreadsStore.unhide(pin)
-            hiddenKeys = SavedThreadsStore.hiddenKeys()
+            persistence.unhide(pin)
+            hiddenKeys = persistence.hiddenKeys()
         }
         refreshState()
     }
 
     func unpinThread(_ key: ThreadKey) {
         let pin = SavedThreadsStore.PinnedKey(threadKey: key)
-        SavedThreadsStore.remove(pin)
-        pinnedKeys = SavedThreadsStore.pinnedKeys()
+        persistence.removePinned(pin)
+        pinnedKeys = persistence.pinnedKeys()
         refreshState()
     }
 
     func hideThread(_ key: ThreadKey) {
         let pin = SavedThreadsStore.PinnedKey(threadKey: key)
-        SavedThreadsStore.hide(pin)
-        hiddenKeys = SavedThreadsStore.hiddenKeys()
+        persistence.hide(pin)
+        hiddenKeys = persistence.hiddenKeys()
         // Hide removes from pinned too (Rust enforces this); mirror here.
-        pinnedKeys = SavedThreadsStore.pinnedKeys()
-        refreshState()
-    }
-
-    func unhideThread(_ key: ThreadKey) {
-        let pin = SavedThreadsStore.PinnedKey(threadKey: key)
-        SavedThreadsStore.unhide(pin)
-        hiddenKeys = SavedThreadsStore.hiddenKeys()
+        pinnedKeys = persistence.pinnedKeys()
         refreshState()
     }
 
@@ -170,13 +254,17 @@ final class HomeDashboardModel {
     private func scheduleObservedRefresh() {
         debouncedRefreshTask?.cancel()
         debouncedRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 120_000_000)
-            guard let self, !Task.isCancelled, self.isActive else { return }
+            guard let self else { return }
+            if self.observedRefreshDelayNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: self.observedRefreshDelayNanoseconds)
+            }
+            guard !Task.isCancelled, self.isActive else { return }
             self.refreshState()
         }
     }
 
     private func refreshState() {
+        PerfTracker.event("HomeDashboardModel.refreshState")
         guard isActive, let appModel else {
             connectedServers = []
             recentSessions = []
@@ -189,22 +277,36 @@ final class HomeDashboardModel {
         let generation = observationGeneration
         let snapshot = withObservationTracking {
             let appSnapshot = appModel.snapshot
+            let rememberedServers = persistence.rememberedServers()
             let nextConnectedServers = HomeDashboardSupport.sortedConnectedServers(
                 from: appSnapshot?.servers ?? [],
-                savedServers: SavedServerStore.rememberedServers(),
+                savedServers: rememberedServers,
                 activeServerId: appSnapshot?.activeThread?.serverId
             )
+            let reconnectPending = SavedServerReconnectState.shared.isReconnectPending
+            let isSettled = appSnapshot != nil
+                && (!reconnectPending || !rememberedServers.contains(where: \.rememberedByUser))
+            // Live threads show only for servers that can launch sessions.
+            // Summary-only rows (Rust's launch cache, not yet backed by a live
+            // thread) show for any remembered server, so recent sessions
+            // appear before reconnect finishes.
+            let liveThreadKeys = Set((appSnapshot?.threads ?? []).map(\.key))
+            let launchableServerIds = Set(nextConnectedServers.filter(\.canLaunchSessions).map(\.id))
+            let visibleSummaries = (appSnapshot?.sessionSummaries ?? []).filter {
+                launchableServerIds.contains($0.key.serverId) || !liveThreadKeys.contains($0.key)
+            }
             let nextAllSessions = HomeDashboardSupport.recentConnectedSessions(
-                from: appSnapshot?.sessionSummaries ?? [],
-                serversById: Dictionary(uniqueKeysWithValues: nextConnectedServers
-                    .filter(\.canLaunchSessions)
-                    .map { ($0.id, $0) }),
+                from: visibleSummaries,
+                serversById: Dictionary(uniqueKeysWithValues: nextConnectedServers.map { ($0.id, $0) }),
                 limit: nil
             )
             return Snapshot(
                 connectedServers: nextConnectedServers,
                 recentSessions: nextAllSessions,
-                sessionSummaries: appSnapshot?.sessionSummaries ?? []
+                sessionSummaries: appSnapshot?.sessionSummaries ?? [],
+                activeThread: appSnapshot?.activeThread,
+                rawServers: appSnapshot?.servers ?? [],
+                isSessionListSettled: isSettled
             )
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
@@ -215,30 +317,104 @@ final class HomeDashboardModel {
 
         rebuildCount += 1
         connectedServers = snapshot.connectedServers
+        isSessionListSettled = snapshot.isSessionListSettled
         allSessions = snapshot.recentSessions
         recentSessions = Self.mergedHomeSessions(
             pinned: pinnedKeys,
             hidden: hiddenKeys,
-            connectedServers: snapshot.connectedServers,
-            allSessions: snapshot.recentSessions
+            allSessions: snapshot.recentSessions,
+            servers: snapshot.connectedServers
         )
         lastSessionSummaries = snapshot.sessionSummaries
         projects = deriveProjects(sessions: snapshot.sessionSummaries)
+        activeThread = snapshot.activeThread
+
+        // Precompute the pinned-thread hydration signature here (debounced)
+        // so HomeNavigationView.body never has to read appModel.snapshot.
+        let pins = pinnedKeys
+            .map { "\($0.serverId)/\($0.threadId)" }
+            .joined(separator: "|")
+        let pinnedSet = Set(pinnedKeys)
+        let serversSignature = snapshot.rawServers
+            .map { "\($0.serverId)=\(String(describing: $0.transportState)):\($0.port)" }
+            .joined(separator: "|")
+        let sessionsSignature = snapshot.sessionSummaries
+            .compactMap { summary -> String? in
+                guard pinnedSet.contains(PinnedThreadKey(threadKey: summary.key)) else { return nil }
+                return "\(summary.key.serverId)/\(summary.key.threadId):\(summary.isResumed)"
+            }
+            .joined(separator: "|")
+        pinnedThreadHydrationSignature = "\(pins)|\(serversSignature)|\(sessionsSignature)"
+
+        // Precompute visible-session signatures so HomeDashboardView.body
+        // doesn't allocate + stringify the visible list on every eval.
+        // Use the published merged `recentSessions` (pinned-first) to match
+        // exactly what the view filters on.
+        let trimmedSelectedServer = selectedServerId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let visibleSessions: [HomeDashboardRecentSession]
+        if trimmedSelectedServer.isEmpty {
+            visibleSessions = recentSessions
+        } else {
+            visibleSessions = recentSessions.filter { $0.serverId == trimmedSelectedServer }
+        }
+        visibleHydrationSignature = visibleSessions
+            .map { "\($0.key.serverId)/\($0.key.threadId)" }
+            .joined(separator: "|")
+        visibleActivitySignature = visibleSessions
+            .map { "\($0.key.serverId)/\($0.key.threadId):\($0.hasTurnActive)" }
+            .joined(separator: "|")
+
+        // Precompute server-capability sets so DirectoryPickerView doesn't
+        // read `appModel.snapshot` in its body for `isLocal` /
+        // `canBrowseDirectories` checks (which fire on every snapshot bump).
+        localServerIds = Set(snapshot.rawServers.filter(\.isLocal).map(\.serverId))
+        browseableServerIds = Set(snapshot.rawServers.filter(\.canBrowseDirectories).map(\.serverId))
+        serverSnapshotsById = Dictionary(uniqueKeysWithValues: snapshot.rawServers.map { ($0.serverId, $0) })
 
         // Keep selectedServerId valid: if the server it points at isn't in
         // the live/launchable list, clear the scope. Default is no filter —
         // we do not auto-select the first connected server.
-        if let current = selectedServerId,
-           !connectedServers.contains(where: { $0.id == current && $0.canLaunchSessions }) {
+        let isLaunchable: (String) -> Bool = { id in
+            self.connectedServers.contains(where: { $0.id == id && $0.canLaunchSessions })
+        }
+        if let current = selectedServerId, !isLaunchable(current) {
+            persistSelectionChanges = false
             selectedServerId = nil
+            persistSelectionChanges = true
+        }
+        // Restore the last-used server as soon as it is launchable again.
+        if selectedServerId == nil, !userClearedSelection,
+           let persisted = persistence.selectedServerId(), isLaunchable(persisted) {
+            selectedServerId = persisted
+        }
+        // Home is a composer: it needs somewhere to send. Prefer a connected
+        // remote computer over the in-app local server.
+        // An automatic pick of the in-app server upgrades to a remote
+        // computer as soon as one connects; an explicit pick never changes.
+        let launchable = connectedServers.filter(\.canLaunchSessions)
+        let remote = launchable.first(where: { !$0.isLocal })
+        if serverSelectionIsAutomatic,
+           let current = selectedServerId,
+           launchable.first(where: { $0.id == current })?.isLocal == true,
+           let remote {
+            persistSelectionChanges = false
+            selectedServerId = remote.id
+            persistSelectionChanges = true
+        }
+        if selectedServerId == nil, !userClearedSelection,
+           let fallback = remote ?? launchable.first {
+            persistSelectionChanges = false
+            selectedServerId = fallback.id
+            persistSelectionChanges = true
+            serverSelectionIsAutomatic = true
         }
 
         reconcileSelectedProject()
     }
 
     private func reloadThreadPreferences() {
-        pinnedKeys = SavedThreadsStore.pinnedKeys()
-        hiddenKeys = SavedThreadsStore.hiddenKeys()
+        pinnedKeys = persistence.pinnedKeys()
+        hiddenKeys = persistence.hiddenKeys()
     }
 
     private func reconcileSelectedProject() {
@@ -258,26 +434,44 @@ final class HomeDashboardModel {
             return
         }
 
-        if let persistedId = SavedProjectStore.selectedProjectId,
-           let match = serverProjects.first(where: { $0.id == persistedId }) {
-            selectedProject = match
-            return
+        if let persistedId = persistence.selectedProjectId() {
+            if let match = serverProjects.first(where: { $0.id == persistedId }) {
+                selectedProject = match
+                return
+            }
+            // Last-used project on this server that has no threads loaded
+            // (yet): keep it instead of silently switching to another one.
+            let prefix = "\(serverId)::"
+            if persistedId.hasPrefix(prefix) {
+                let cwd = String(persistedId.dropFirst(prefix.count))
+                if !cwd.isEmpty {
+                    selectedProject = AppProject(
+                        id: persistedId,
+                        serverId: serverId,
+                        cwd: cwd,
+                        lastUsedAtMs: nil
+                    )
+                    return
+                }
+            }
         }
 
         selectedProject = serverProjects.first
     }
 
     /// Merge rule:
-    /// - If the user has pinned anything, the home list is just their pins
-    ///   (in pin order, most-recent-pinned first). No auto-fill from recent.
+    /// - If the user has pinned anything, the home list starts with their pins
+    ///   (in pin order, most-recent-pinned first).
+    /// - Local Studio appends its unpinned recent sessions so a pin cannot hide
+    ///   newly synced Pi sessions. Other runtimes keep the pins-only rule.
     /// - If nothing is pinned, fill the list with up to 10 most-recent
     ///   sessions so the home screen isn't empty.
     /// - Hidden threads are always excluded.
     private static func mergedHomeSessions(
         pinned: [SavedThreadsStore.PinnedKey],
         hidden: [SavedThreadsStore.PinnedKey],
-        connectedServers: [HomeDashboardServer],
-        allSessions: [HomeDashboardRecentSession]
+        allSessions: [HomeDashboardRecentSession],
+        servers: [HomeDashboardServer]
     ) -> [HomeDashboardRecentSession] {
         let hiddenSet = Set(hidden)
         let candidates = allSessions.filter {
@@ -287,55 +481,25 @@ final class HomeDashboardModel {
             let byKey = Dictionary(uniqueKeysWithValues: candidates.map {
                 (SavedThreadsStore.PinnedKey(threadKey: $0.key), $0)
             })
-            let serversById = Dictionary(uniqueKeysWithValues: connectedServers.map { ($0.id, $0) })
-            return pinned.compactMap { pin in
-                if let existing = byKey[pin] {
-                    return existing
-                }
-                guard !hiddenSet.contains(pin), let server = serversById[pin.serverId] else {
-                    return nil
-                }
-                return placeholderPinnedSession(for: pin.threadKey, server: server)
+            let resolvedPins = pinned.compactMap { byKey[$0] }
+            guard !resolvedPins.isEmpty else {
+                return Array(candidates.prefix(10))
             }
+            let pinnedSet = Set(pinned)
+            let localStudioServerIds = Set(
+                servers.filter { server in
+                    usesServerConfiguredModelDefault(
+                        server.agentRuntimes.filter(\.available).map(\.kind)
+                    )
+                }.map(\.id)
+            )
+            let localStudioRecent = candidates.filter { session in
+                localStudioServerIds.contains(session.key.serverId) &&
+                    !pinnedSet.contains(SavedThreadsStore.PinnedKey(threadKey: session.key))
+            }
+            return resolvedPins + localStudioRecent
         }
         return Array(candidates.prefix(10))
-    }
-
-    private static func placeholderPinnedSession(
-        for key: ThreadKey,
-        server: HomeDashboardServer
-    ) -> HomeDashboardRecentSession {
-        HomeDashboardRecentSession(
-            key: key,
-            serverId: key.serverId,
-            serverDisplayName: server.displayName,
-            agentRuntimeKind: server.agentRuntimes.first(where: \.available)?.kind
-                ?? AgentRuntimeMetadataProvider.all?().first?.name
-                ?? "",
-            isLocal: server.isLocal,
-            sessionTitle: "Loading thread",
-            preview: "",
-            cwd: "",
-            model: "",
-            agentLabel: nil,
-            updatedAt: Date(timeIntervalSince1970: 0),
-            hasTurnActive: false,
-            isResumed: false,
-            isSubagent: false,
-            isFork: false,
-            forkedFromId: nil,
-            lineage: nil,
-            lastResponsePreview: nil,
-            lastResponseTurnId: nil,
-            lastUserMessage: nil,
-            lastToolLabel: nil,
-            stats: nil,
-            tokenUsage: nil,
-            goal: nil,
-            recentToolLog: [],
-            lastTurnStart: nil,
-            lastTurnEnd: nil
-        )
     }
 
     /// Called when the user picks a fresh directory via the "new project"
@@ -343,6 +507,7 @@ final class HomeDashboardModel {
     /// project locally and select it. It will appear in `projects` naturally
     /// once the first thread is created.
     func selectFreshProject(serverId: String, cwd: String) {
+        serverSelectionIsAutomatic = false
         selectedServerId = serverId
         let id = projectIdFor(serverId: serverId, cwd: cwd)
         if let existing = projects.first(where: { $0.id == id }) {

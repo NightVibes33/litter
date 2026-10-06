@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -70,7 +70,7 @@ fun InlineVoiceStatusStrip(
             Text(
                 text = "YOU",
                 color = if (isListening) LitterTheme.textPrimary else LitterTheme.textMuted,
-                fontSize = 10.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = LitterTheme.monoFont,
             )
@@ -97,7 +97,7 @@ fun InlineVoiceStatusStrip(
             Text(
                 text = "CODEX",
                 color = if (isSpeaking) LitterTheme.textPrimary else LitterTheme.textMuted,
-                fontSize = 10.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = LitterTheme.monoFont,
             )
@@ -112,7 +112,7 @@ fun InlineVoiceStatusStrip(
 
         // Speaker toggle
         Icon(
-            Icons.Default.VolumeUp,
+            Icons.AutoMirrored.Filled.VolumeUp,
             contentDescription = "Toggle speaker",
             tint = LitterTheme.textPrimary,
             modifier = Modifier
@@ -124,7 +124,7 @@ fun InlineVoiceStatusStrip(
         Text(
             text = phaseLabel(phase),
             color = phaseColor(phase),
-            fontSize = 10.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             fontFamily = LitterTheme.monoFont,
         )

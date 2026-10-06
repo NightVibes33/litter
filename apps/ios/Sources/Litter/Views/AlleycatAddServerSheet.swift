@@ -11,9 +11,37 @@ struct AlleycatConnectedTarget: Equatable {
     let agentWire: AppAlleycatAgentWire
 }
 
+enum AlleycatPairingMode: String, Equatable, Identifiable {
+    case kittylitter
+    case localStudio
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .kittylitter: "Add Remote Host"
+        case .localStudio: "Connect Local Studio"
+        }
+    }
+
+    var instructions: String {
+        switch self {
+        case .kittylitter:
+            "Run Kittylitter on the host you want to connect to, then scan its QR code or paste the JSON it prints. The scanner includes an installation command you can copy."
+        case .localStudio:
+            "In Local Studio, open Profile → Phone connection. Scan its QR code or paste Copy connection JSON."
+        }
+    }
+
+    func includesAgent(named name: String) -> Bool {
+        self != .localStudio || name == "local-studio"
+    }
+}
+
 struct AlleycatAddServerSheet: View {
     let appModel: AppModel
     let startScanningOnAppear: Bool
+    let pairingMode: AlleycatPairingMode
     let onConnected: (AlleycatConnectedTarget) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -39,17 +67,19 @@ struct AlleycatAddServerSheet: View {
     init(
         appModel: AppModel,
         startScanningOnAppear: Bool = false,
+        pairingMode: AlleycatPairingMode = .kittylitter,
         onConnected: @escaping (AlleycatConnectedTarget) -> Void
     ) {
         self.appModel = appModel
         self.startScanningOnAppear = startScanningOnAppear
+        self.pairingMode = pairingMode
         self.onConnected = onConnected
     }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                AlleyBackdrop().ignoresSafeArea()
+                LitterTheme.backgroundGradient.ignoresSafeArea()
                 Form {
                     pairingSection
                     if let params = parsedParams {
@@ -69,14 +99,27 @@ struct AlleycatAddServerSheet: View {
                 }
                 .scrollContentBackground(.hidden)
             }
-            .navigationTitle("Add Remote Host")
+            .navigationTitle(pairingMode.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                         .foregroundColor(LitterTheme.accent)
                 }
+                // Confirm action lives in the bar (Settings/Mail pattern) so
+                // the keyboard can never cover it after a paste.
+                ToolbarItem(placement: .confirmationAction) {
+                    if isConnecting {
+                        ProgressView()
+                    } else {
+                        Button("Connect") { connect() }
+                            .fontWeight(.semibold)
+                            .disabled(!canConnect)
+                            .accessibilityIdentifier("alleycat.pair.toolbarConnect")
+                    }
+                }
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .onAppear {
             requestInitialScanIfNeeded()
@@ -87,19 +130,11 @@ struct AlleycatAddServerSheet: View {
         // neither presentation ever fires.
         .fullScreenCover(isPresented: $showScanner) {
             QRScannerScreen(
+                isPresented: $showScanner,
+                pairingMode: pairingMode,
                 onScan: { scanned in
                     showScanner = false
                     handleScannedPayload(scanned)
-                },
-                onCancel: {
-                    showScanner = false
-                    if startScanningOnAppear, parsedParams == nil {
-                        dismiss()
-                    }
-                },
-                onPermissionDenied: {
-                    showScanner = false
-                    cameraDenied = true
                 }
             )
         }
@@ -108,10 +143,10 @@ struct AlleycatAddServerSheet: View {
             isPresented: $cameraDenied,
             actions: {
                 Button("Open Settings") { openAppSettings() }
-                Button("Cancel", role: .cancel) {}
+                Button("Paste JSON Instead", role: .cancel) {}
             },
             message: {
-                Text("Allow camera access in Settings to scan an Alleycat pairing QR code.")
+                Text("Allow camera access in Settings to scan the pairing QR code, or paste the pairing JSON.")
             }
         )
     }
@@ -128,6 +163,11 @@ struct AlleycatAddServerSheet: View {
 
     private var pairingSection: some View {
         Section {
+            Text(pairingMode.instructions)
+                .litterFont(.footnote)
+                .foregroundColor(LitterTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             // Mac (Catalyst + iOS-on-Mac) shows paste-JSON only; iOS shows
             // QR scanning first, with paste available as a production fallback
             // for users who already copied the pairing payload.
@@ -138,18 +178,13 @@ struct AlleycatAddServerSheet: View {
             }
         } header: {
             Text("Pairing")
-                .foregroundColor(LitterTheme.textSecondary)
+                .litterSectionLabel()
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     @ViewBuilder
     private var pasteJSONPairingControls: some View {
-        Text("Run \(Self.pairCommandLabel) on the host you want to connect to, then paste the JSON it prints below.")
-            .litterFont(.caption)
-            .foregroundColor(LitterTheme.textSecondary)
-            .fixedSize(horizontal: false, vertical: true)
-
         pasteJSONEntryControls(minHeight: 110)
     }
 
@@ -162,10 +197,11 @@ struct AlleycatAddServerSheet: View {
                 Image(systemName: "qrcode.viewfinder")
                     .foregroundColor(LitterTheme.accent)
                 Text(parsedParams == nil ? "Scan Pairing QR" : "Rescan QR")
-                    .litterFont(.subheadline)
+                    .litterFont(.body)
                     .foregroundColor(LitterTheme.accent)
             }
         }
+        .accessibilityIdentifier("alleycat.pair.scanButton")
 
         DisclosureGroup(
             isExpanded: $showPaste,
@@ -183,14 +219,15 @@ struct AlleycatAddServerSheet: View {
     @ViewBuilder
     private func pasteJSONEntryControls(minHeight: CGFloat) -> some View {
         TextEditor(text: $pasteJSON)
-            .litterFont(.caption)
+            .accessibilityIdentifier("alleycat.pair.jsonField")
+            .litterFont(.footnote)
             .foregroundColor(LitterTheme.textPrimary)
             .scrollContentBackground(.hidden)
             .frame(minHeight: minHeight)
             .overlay(alignment: .topLeading) {
                 if pasteJSON.isEmpty {
                     Text(#"{"v":1,"node_id":"...","token":"...","relay":"https://..."}"#)
-                        .litterFont(.caption)
+                        .litterFont(.footnote)
                         .foregroundColor(LitterTheme.textMuted)
                         .padding(.top, 8)
                         .padding(.leading, 4)
@@ -202,6 +239,7 @@ struct AlleycatAddServerSheet: View {
             Button("Paste from Clipboard") {
                 if let clipboard = UIPasteboard.general.string {
                     pasteJSON = clipboard
+                    handleScannedPayload(clipboard)
                 }
             }
             .litterFont(.footnote)
@@ -218,8 +256,6 @@ struct AlleycatAddServerSheet: View {
         }
     }
 
-    private static let pairCommandLabel = "npx kittylitter"
-
     private func previewSection(params: AppAlleycatPairPayload) -> some View {
         Section {
             previewRow(label: "node", value: shortNodeId(params.nodeId))
@@ -231,15 +267,15 @@ struct AlleycatAddServerSheet: View {
                 previewRow(label: "host", value: hostName)
             }
             TextField("display name (optional)", text: $displayName)
-                .litterFont(.caption)
+                .litterFont(.footnote)
                 .foregroundColor(LitterTheme.textPrimary)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
         } header: {
             Text("Scanned Host")
-                .foregroundColor(LitterTheme.textSecondary)
+                .litterSectionLabel()
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     private var agentSection: some View {
@@ -248,15 +284,15 @@ struct AlleycatAddServerSheet: View {
                 HStack {
                     ProgressView().tint(LitterTheme.accent)
                     Text("Loading agents")
-                        .litterFont(.caption)
+                        .litterFont(.footnote)
                         .foregroundColor(LitterTheme.textSecondary)
                 }
-            } else if agents.isEmpty {
+            } else if availableAgents.isEmpty {
                 Text("No agents are available on this host.")
-                    .litterFont(.caption)
+                    .litterFont(.footnote)
                     .foregroundColor(LitterTheme.textMuted)
             } else {
-                ForEach(agents, id: \.name) { agent in
+                ForEach(availableAgents, id: \.name) { agent in
                     Button {
                         guard agent.available else { return }
                         toggleAgentSelection(agent)
@@ -267,14 +303,14 @@ struct AlleycatAddServerSheet: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(agent.displayName)
-                                        .litterFont(.subheadline)
+                                        .litterFont(.body)
                                         .foregroundColor(agent.available ? LitterTheme.textPrimary : LitterTheme.textMuted)
                                     if AgentRuntimeKind.isBetaAgentName(agent.name, displayName: agent.displayName) {
                                         BetaBadge()
                                     }
                                 }
                                 Text(wireLabel(agent.wire))
-                                    .litterFont(.caption)
+                                    .litterFont(.footnote)
                                     .foregroundColor(LitterTheme.textSecondary)
                             }
                             Spacer()
@@ -283,7 +319,7 @@ struct AlleycatAddServerSheet: View {
                                     .foregroundColor(LitterTheme.accent)
                             } else if !agent.available {
                                 Text("Unavailable")
-                                    .litterFont(.caption)
+                                    .litterFont(.footnote)
                                     .foregroundColor(LitterTheme.textMuted)
                             } else {
                                 Image(systemName: "square")
@@ -312,17 +348,17 @@ struct AlleycatAddServerSheet: View {
             }
                 .foregroundColor(LitterTheme.textSecondary)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     private func previewRow(label: String, value: String) -> some View {
         HStack {
             Text(label)
-                .litterFont(.caption)
+                .litterFont(.footnote)
                 .foregroundColor(LitterTheme.textSecondary)
             Spacer()
             Text(value)
-                .litterFont(.caption)
+                .litterFont(.footnote)
                 .foregroundColor(LitterTheme.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -340,29 +376,29 @@ struct AlleycatAddServerSheet: View {
                     }
                     Text("Connect")
                         .foregroundColor(LitterTheme.accent)
-                        .litterFont(.subheadline)
+                        .litterFont(.body)
                 }
             }
             .disabled(!canConnect)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     private func errorSection(_ message: String, color: Color) -> some View {
         Section {
             Text(message)
-                .litterFont(.caption)
+                .litterFont(.footnote)
                 .foregroundColor(color)
         }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
+        .listRowBackground(LitterTheme.surface.opacity(0.6))
     }
 
     private var availableAgents: [AppAlleycatAgentInfo] {
-        agents.filter(\.available)
+        agents.filter { $0.available && pairingMode.includesAgent(named: $0.name) }
     }
 
     private var selectedAgents: [AppAlleycatAgentInfo] {
-        agents.filter { $0.available && selectedAgentNames.contains($0.name) }
+        availableAgents.filter { selectedAgentNames.contains($0.name) }
     }
 
     private var canConnect: Bool {
@@ -383,7 +419,7 @@ struct AlleycatAddServerSheet: View {
         do {
             let params = try alleycat.parsePairPayload(json: trimmed)
             parsedParams = params
-            displayName = suggestedDisplayName(for: params)
+            displayName = resolvedSuggestedDisplayName(for: params)
             parseError = nil
             connectError = nil
             agentError = nil
@@ -402,13 +438,16 @@ struct AlleycatAddServerSheet: View {
         isLoadingAgents = true
         Task {
             do {
-                let loaded = try await appModel.serverBridge.listAlleycatAgents(params: params)
+                let loaded = try await appModel.serverBridge.listAlleycatAgents(
+                    params: params,
+                    waitForRegistration: pairingMode == .localStudio
+                )
                 await MainActor.run {
                     guard parsedParams?.nodeId == params.nodeId else { return }
                     agents = loaded
                     selectedAgentNames = Set(
                         loaded
-                            .filter { $0.available && !AgentRuntimeKind.isBetaAgentName($0.name, displayName: $0.displayName) }
+                            .filter { $0.available && pairingMode.includesAgent(named: $0.name) }
                             .map(\.name)
                     )
                     isLoadingAgents = false
@@ -427,11 +466,14 @@ struct AlleycatAddServerSheet: View {
     }
 
     private func connect() {
-        guard let params = parsedParams, let fallbackAgent = selectedAgents.first else { return }
+        guard let params = parsedParams,
+              let fallbackAgent = selectedAgents.first else { return }
         let trimmedDisplay = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedName = trimmedDisplay.isEmpty ? suggestedDisplayName(for: params) : trimmedDisplay
+        let resolvedName = trimmedDisplay.isEmpty ? resolvedSuggestedDisplayName(for: params) : trimmedDisplay
         let selectedNames = selectedAgents.map(\.name)
-        let serverId = "alleycat:\(params.nodeId)"
+        let serverId = pairingMode == .localStudio
+            ? "alleycat:local-studio:\(params.nodeId)"
+            : "alleycat:\(params.nodeId)"
 
         isConnecting = true
         connectError = nil
@@ -446,10 +488,15 @@ struct AlleycatAddServerSheet: View {
                     selectedAgentNames: selectedNames,
                     wire: fallbackAgent.wire
                 )
+                // The RPC above already succeeded, so the host considers this
+                // device paired. A keychain write failure must not discard that
+                // pairing: swallow it here and let `onConnected` persist the
+                // saved-server record. Reconnect re-reads the token and surfaces
+                // a re-pair prompt if it is genuinely missing.
                 do {
                     try AlleycatCredentialStore.shared.saveToken(params.token, nodeId: params.nodeId)
                 } catch {
-                    NSLog("[ALLEYCAT_CREDENTIALS] keychain save failed: %@", error.localizedDescription)
+                    LLog.error("alleycat", "keychain save failed after successful pair", error: error)
                 }
                 // First successful alleycat pair triggers the iroh
                 // endpoint bind. Persist the freshly-generated device
@@ -479,6 +526,12 @@ struct AlleycatAddServerSheet: View {
                 }
             }
         }
+    }
+
+    private func resolvedSuggestedDisplayName(for params: AppAlleycatPairPayload) -> String {
+        let suggested = suggestedDisplayName(for: params)
+        guard pairingMode == .localStudio else { return suggested }
+        return suggested.lowercased().contains("local studio") ? suggested : "Local Studio · \(suggested)"
     }
 
     private func requestCameraAndScan() {
@@ -535,23 +588,21 @@ struct AlleycatAddServerSheet: View {
 // MARK: - QR Scanner
 
 private struct QRScannerScreen: View {
+    @Binding var isPresented: Bool
+    let pairingMode: AlleycatPairingMode
     let onScan: (String) -> Void
-    let onCancel: () -> Void
-    let onPermissionDenied: () -> Void
 
-    private static let pairCommand = "npx kittylitter"
+    private static let pairCommand = "npx --yes https://github.com/0xSero/litter/releases/download/v0.3.11/kittylitter-npm-package.tar.gz"
 
     @State private var copied = false
+    @State private var isFinishing = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            QRCaptureSheet(
-                onScan: onScan,
-                onCancel: onCancel,
-                onPermissionDenied: onPermissionDenied
-            )
+            QRCaptureSheet(onScan: onScan)
             .ignoresSafeArea()
+            .allowsHitTesting(false)
 
             LinearGradient(
                 colors: [Color.black.opacity(0.55), Color.black.opacity(0.0)],
@@ -578,28 +629,50 @@ private struct QRScannerScreen: View {
     private var topBar: some View {
         HStack {
             Spacer()
-            Button(action: onCancel) {
-                Text("Cancel")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.black.opacity(0.45), in: Capsule())
+            if pairingMode == .localStudio {
+                scannerButton(title: "Paste connection JSON", symbol: "doc.on.clipboard", action: pasteConnectionJSON)
+                    .accessibilityIdentifier("alleycat.scanner.pasteConnectionJSONButton")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("alleycat.scanner.cancelButton")
+            scannerButton(title: "Cancel", action: cancelScanner)
+                .accessibilityIdentifier("alleycat.scanner.cancelButton")
         }
+    }
+
+    private func scannerButton(
+        title: String,
+        symbol: String? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            if let symbol { Label(title, systemImage: symbol) } else { Text(title) }
+        }
+        .font(.system(size: 15, weight: .semibold))
+        .foregroundColor(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.black.opacity(0.55), in: Capsule())
+        .buttonStyle(.plain)
     }
 
     private var instructionsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Pair with kittylitter")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.white)
+            HStack(spacing: 10) {
+                if pairingMode == .localStudio {
+                    AgentIconView(kind: .localStudio, size: 28)
+                }
+                Text(pairingMode == .localStudio ? "Scan Local Studio Profile QR" : "Pair with kittylitter")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+            }
 
-            stepRow(number: "1", title: "On the host you want to connect to, run:")
-            commandRow
-            stepRow(number: "2", title: "Point this camera at the QR code it prints.")
+            if pairingMode == .localStudio {
+                stepRow(number: "1", title: "In Local Studio, open Profile → Phone connection.")
+                stepRow(number: "2", title: "Point this camera at the Profile QR code.")
+            } else {
+                stepRow(number: "1", title: "On the host you want to connect to, run:")
+                commandRow
+                stepRow(number: "2", title: "Point this camera at the QR code it prints.")
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -672,18 +745,30 @@ private struct QRScannerScreen: View {
             withAnimation(.easeOut(duration: 0.15)) { copied = false }
         }
     }
+
+    private func cancelScanner() {
+        guard !isFinishing else { return }
+        isFinishing = true
+        isPresented = false
+    }
+
+    private func pasteConnectionJSON() {
+        guard !isFinishing,
+              let payload = UIPasteboard.general.string?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !payload.isEmpty else { return }
+        isFinishing = true
+        isPresented = false
+        onScan(payload)
+    }
 }
 
 private struct QRCaptureSheet: UIViewControllerRepresentable {
     let onScan: (String) -> Void
-    let onCancel: () -> Void
-    let onPermissionDenied: () -> Void
 
     func makeUIViewController(context: Context) -> QRScannerViewController {
         let controller = QRScannerViewController()
         controller.onScan = onScan
-        controller.onCancel = onCancel
-        controller.onPermissionDenied = onPermissionDenied
         return controller
     }
 
@@ -692,8 +777,6 @@ private struct QRCaptureSheet: UIViewControllerRepresentable {
 
 private final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     var onScan: ((String) -> Void)?
-    var onCancel: (() -> Void)?
-    var onPermissionDenied: (() -> Void)?
 
     private let captureSession = AVCaptureSession()
     private var previewLayer: AVCaptureVideoPreviewLayer?
@@ -708,7 +791,7 @@ private final class QRScannerViewController: UIViewController, AVCaptureMetadata
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        guard !captureSession.isRunning else { return }
+        guard !captureSession.inputs.isEmpty, !captureSession.isRunning else { return }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             self?.captureSession.startRunning()
         }
@@ -716,8 +799,9 @@ private final class QRScannerViewController: UIViewController, AVCaptureMetadata
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if captureSession.isRunning {
-            captureSession.stopRunning()
+        metadataQueue.async { [weak self] in
+            guard let self, self.captureSession.isRunning else { return }
+            self.captureSession.stopRunning()
         }
     }
 
@@ -728,17 +812,14 @@ private final class QRScannerViewController: UIViewController, AVCaptureMetadata
 
     private func configureSession() {
         guard let device = AVCaptureDevice.default(for: .video) else {
-            onPermissionDenied?()
             return
         }
         guard let input = try? AVCaptureDeviceInput(device: device) else {
-            onPermissionDenied?()
             return
         }
         if captureSession.canAddInput(input) {
             captureSession.addInput(input)
         } else {
-            onPermissionDenied?()
             return
         }
 
@@ -750,7 +831,6 @@ private final class QRScannerViewController: UIViewController, AVCaptureMetadata
                 output.metadataObjectTypes = [.qr]
             }
         } else {
-            onPermissionDenied?()
             return
         }
 
@@ -772,8 +852,8 @@ private final class QRScannerViewController: UIViewController, AVCaptureMetadata
             .stringValue
         else { return }
         didReportScan = true
+        captureSession.stopRunning()
         DispatchQueue.main.async { [weak self] in
-            self?.captureSession.stopRunning()
             self?.onScan?(payload)
         }
     }

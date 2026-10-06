@@ -15,7 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -76,9 +76,8 @@ fun SubagentCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(LitterTheme.surface, RoundedCornerShape(8.dp))
             .animateContentSize()
-            .padding(8.dp),
+            .padding(vertical = 8.dp),
     ) {
         // Header
         Row(
@@ -92,14 +91,14 @@ fun SubagentCard(
             Text(
                 text = actionLabel,
                 color = LitterTheme.toolCallCollaboration,
-                fontSize = LitterTextStyle.caption.scaled,
+                fontSize = LitterTextStyle.footnote.scaled,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 text = agentCountLabel,
                 color = LitterTheme.textMuted,
-                fontSize = LitterTextStyle.caption2.scaled,
+                fontSize = LitterTextStyle.footnote.scaled,
             )
             Spacer(Modifier.width(4.dp))
             Icon(
@@ -117,7 +116,7 @@ fun SubagentCard(
                 Text(
                     text = prompt,
                     color = LitterTheme.textMuted,
-                    fontSize = LitterTextStyle.caption2.scaled,
+                    fontSize = LitterTextStyle.footnote.scaled,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp, start = 20.dp),
@@ -146,7 +145,7 @@ fun SubagentCard(
                         Text(
                             text = displayLabel,
                             color = LitterTheme.textPrimary,
-                            fontSize = LitterTextStyle.caption.scaled,
+                            fontSize = LitterTextStyle.footnote.scaled,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -154,7 +153,7 @@ fun SubagentCard(
                             Text(
                                 text = statusText,
                                 color = statusColor,
-                                fontSize = LitterTextStyle.caption2.scaled,
+                                fontSize = LitterTextStyle.footnote.scaled,
                             )
                         }
                     }
@@ -174,7 +173,7 @@ fun SubagentCard(
                             modifier = Modifier.size(28.dp),
                         ) {
                             Icon(
-                                Icons.Default.OpenInNew,
+                                Icons.AutoMirrored.Filled.OpenInNew,
                                 contentDescription = "Open",
                                 tint = LitterTheme.accent,
                                 modifier = Modifier.size(16.dp),

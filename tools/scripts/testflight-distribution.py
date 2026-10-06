@@ -67,6 +67,9 @@ class Apple:
 
 
 def inspect(apple, build_id, bundle_id, group_names, repair=False):
+    group_names = [name.strip() for name in group_names if name.strip()]
+    if not group_names:
+        raise ValueError('At least one beta group is required')
     build = apple.request(f'/v1/builds/{build_id}')['data']
     app = apple.request(f'/v1/builds/{build_id}/app')['data']
     if app['attributes']['bundleId'] != bundle_id:
@@ -83,6 +86,7 @@ def inspect(apple, build_id, bundle_id, group_names, repair=False):
     groups = apple.collection(f"/v1/apps/{app['id']}/betaGroups?limit=200")
     problems = []
     external = False
+    internal_requested = False
     for name in group_names:
         matches = [g for g in groups if g['attributes']['name'] == name]
         if len(matches) != 1:
@@ -91,6 +95,7 @@ def inspect(apple, build_id, bundle_id, group_names, repair=False):
         group = matches[0]
         internal = group['attributes']['isInternalGroup']
         external |= not internal
+        internal_requested |= internal
         assigned = {b['id'] for b in apple.collection(f"/v1/betaGroups/{group['id']}/builds?limit=200")}
         testers = apple.collection(f"/v1/betaGroups/{group['id']}/betaTesters?limit=200")
         print(f"Group {name}: internal={internal}; testers={len(testers)}; assigned={build_id in assigned}")
@@ -111,7 +116,7 @@ def inspect(apple, build_id, bundle_id, group_names, repair=False):
         print('Enabled automatic tester notification')
     beta = apple.request(f'/v1/builds/{build_id}/buildBetaDetail')['data']['attributes']
     print('Final Apple testing states: ' + json.dumps(beta, sort_keys=True))
-    if beta.get('internalBuildState') not in ('IN_BETA_TESTING', 'READY_FOR_BETA_TESTING'):
+    if internal_requested and beta.get('internalBuildState') not in ('IN_BETA_TESTING', 'READY_FOR_BETA_TESTING'):
         problems.append('Internal testing blocked: ' + str(beta.get('internalBuildState')))
     if external:
         state = beta.get('externalBuildState')

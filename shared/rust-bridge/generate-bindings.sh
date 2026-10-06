@@ -13,14 +13,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_DIR="$SCRIPT_DIR"
 source "$WORKSPACE_DIR/../../tools/scripts/load-sccache-aws-creds.sh"
-CRATE_DIR="$WORKSPACE_DIR/codex-mobile-client"
 OUT_SWIFT="$WORKSPACE_DIR/generated/swift"
 OUT_KOTLIN="$WORKSPACE_DIR/generated/kotlin"
+SWIFT_BINDINGS_HASH_FILE="$WORKSPACE_DIR/../../apps/ios/GeneratedRust/.swift-bindings.hash"
+BINDINGS_HASH_SCRIPT="$WORKSPACE_DIR/../../tools/scripts/uniffi-bindings-input-hash.sh"
 
 cd "$WORKSPACE_DIR"
 
 if [[ -z "${RUSTC_WRAPPER:-}" ]] && [[ "${CARGO_INCREMENTAL:-}" != "1" ]] && command -v sccache >/dev/null 2>&1; then
-    export RUSTC_WRAPPER="$(command -v sccache)"
+    sccache_path="$(command -v sccache)"
+    export RUSTC_WRAPPER="$sccache_path"
 fi
 
 "$WORKSPACE_DIR/../../tools/scripts/update-alleycat-main.sh" --shared
@@ -100,6 +102,8 @@ if [[ "$GENERATE_SWIFT" -eq 1 ]]; then
         --language swift \
         --out-dir "$OUT_SWIFT"
     cp "$OUT_SWIFT/codex_mobile_clientFFI.modulemap" "$OUT_SWIFT/module.modulemap"
+    mkdir -p "$(dirname "$SWIFT_BINDINGS_HASH_FILE")"
+    "$BINDINGS_HASH_SCRIPT" >"$SWIFT_BINDINGS_HASH_FILE"
 fi
 
 if [[ "$GENERATE_KOTLIN" -eq 1 ]]; then
@@ -111,6 +115,8 @@ if [[ "$GENERATE_KOTLIN" -eq 1 ]]; then
     cargo run -p uniffi-bindgen -- generate \
         --library "$DYLIB_FILE" \
         --language kotlin \
+        --config "$WORKSPACE_DIR/uniffi.toml" \
+        --no-format \
         --out-dir "$OUT_KOTLIN"
 fi
 

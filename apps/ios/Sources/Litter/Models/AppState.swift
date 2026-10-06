@@ -33,6 +33,10 @@ enum ChatRuntimeMode: String, Codable, CaseIterable, Identifiable {
 @MainActor
 @Observable
 final class AppState {
+    /// Conversation being popped off the stack (set the moment Back or the
+    /// edge swipe begins). The leaving screen stops re-binding immediately
+    /// instead of rebuilding its transcript during the pop animation.
+    var leavingConversationKey: ThreadKey?
     private struct ThreadPermissionOverride {
         var approvalPolicy: String
         var sandboxMode: String
@@ -53,7 +57,6 @@ final class AppState {
 
     var currentCwd = ""
     var showServerPicker = false
-    var collapsedSessionFolders: Set<String> = []
     var sessionsSelectedServerFilterId: String?
     var sessionsShowOnlyForks = false
     var sessionsWorkspaceSortModeRaw = "mostRecent"
@@ -146,18 +149,6 @@ final class AppState {
         case "factory", "factory-droid", "factory_droid", "factory droid": return "droid"
         default: return trimmed
         }
-    }
-
-    func toggleSessionFolder(_ folderPath: String) {
-        if collapsedSessionFolders.contains(folderPath) {
-            collapsedSessionFolders.remove(folderPath)
-        } else {
-            collapsedSessionFolders.insert(folderPath)
-        }
-    }
-
-    func isSessionFolderCollapsed(_ folderPath: String) -> Bool {
-        collapsedSessionFolders.contains(folderPath)
     }
 
     func dismissPendingUserInput(id: String) {

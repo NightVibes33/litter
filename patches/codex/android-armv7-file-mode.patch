@@ -1,0 +1,65 @@
+diff --git a/codex-rs/exec-server/src/no_follow/unix.rs b/codex-rs/exec-server/src/no_follow/unix.rs
+index 23a7fcc..f749118 100644
+--- a/codex-rs/exec-server/src/no_follow/unix.rs
++++ b/codex-rs/exec-server/src/no_follow/unix.rs
+@@ -194,8 +194,8 @@ fn metadata_sync(path: &Path) -> io::Result<FileMetadata> {
+ 
+ #[cfg(target_os = "linux")]
+ fn file_metadata_linux(metadata: Statx) -> io::Result<FileMetadata> {
+-    let kind = u32::from(metadata.stx_mode) & libc::S_IFMT;
+-    if kind == libc::S_IFLNK {
++    let kind = u32::from(metadata.stx_mode) & libc::S_IFMT as u32;
++    if kind == libc::S_IFLNK as u32 {
+         return Err(io::Error::new(
+             io::ErrorKind::InvalidInput,
+             "path contains a symbolic link",
+@@ -207,8 +207,8 @@ fn file_metadata_linux(metadata: Statx) -> io::Result<FileMetadata> {
+         unix_time_ms(metadata.stx_btime.tv_sec, metadata.stx_btime.tv_nsec)
+     };
+     Ok(FileMetadata {
+-        is_directory: kind == libc::S_IFDIR,
+-        is_file: kind == libc::S_IFREG,
++        is_directory: kind == libc::S_IFDIR as u32,
++        is_file: kind == libc::S_IFREG as u32,
+         is_symlink: false,
+         size: metadata.stx_size,
+         created_at_ms,
+@@ -217,16 +217,16 @@ fn file_metadata_linux(metadata: Statx) -> io::Result<FileMetadata> {
+ }
+ 
+ fn file_metadata(metadata: Stat, created_at_ms: i64) -> io::Result<FileMetadata> {
+-    let kind = metadata.st_mode & libc::S_IFMT;
+-    if kind == libc::S_IFLNK {
++    let kind = (metadata.st_mode as u32) & libc::S_IFMT as u32;
++    if kind == libc::S_IFLNK as u32 {
+         return Err(io::Error::new(
+             io::ErrorKind::InvalidInput,
+             "path contains a symbolic link",
+         ));
+     }
+     Ok(FileMetadata {
+-        is_directory: kind == libc::S_IFDIR,
+-        is_file: kind == libc::S_IFREG,
++        is_directory: kind == libc::S_IFDIR as u32,
++        is_file: kind == libc::S_IFREG as u32,
+         is_symlink: false,
+         size: u64::try_from(metadata.st_size).unwrap_or(0),
+         created_at_ms,
+@@ -310,14 +310,14 @@ pub(super) async fn remove(path: PathBuf, recursive: bool, force: bool) -> io::R
+             Err(error) if force && error == rustix::io::Errno::NOENT => return Ok(()),
+             Err(error) => return Err(io::Error::from(error)),
+         };
+-        let kind = metadata.st_mode & libc::S_IFMT;
+-        if kind == libc::S_IFLNK {
++        let kind = (metadata.st_mode as u32) & libc::S_IFMT as u32;
++        if kind == libc::S_IFLNK as u32 {
+             return Err(io::Error::new(
+                 io::ErrorKind::InvalidInput,
+                 "path contains a symbolic link",
+             ));
+         }
+-        let flags = if kind == libc::S_IFDIR {
++        let flags = if kind == libc::S_IFDIR as u32 {
+             AtFlags::REMOVEDIR
+         } else {
+             AtFlags::empty()

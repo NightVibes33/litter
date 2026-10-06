@@ -1,0 +1,5 @@
+framework module emexDE {
+    umbrella header "emexDE.h"
+    export *
+    module * { export * }
+}

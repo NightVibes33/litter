@@ -4,8 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
-import uniffi.codex_mobile_client.AppDiscoveredServer
-import uniffi.codex_mobile_client.AppDiscoverySource
 import uniffi.codex_mobile_client.SavedServerRecord
 
 /**
@@ -19,7 +17,7 @@ data class SavedServer(
     val port: Int,
     val codexPorts: List<Int> = emptyList(),
     val sshPort: Int? = null,
-    val source: String = "manual", // local, bonjour, tailscale, lanProbe, arpScan, ssh, manual
+    val source: String = "manual", // local, ssh, or manual
     val hasCodexServer: Boolean = false,
     val wakeMAC: String? = null,
     val preferredConnectionMode: String? = null, // directCodex or ssh
@@ -29,13 +27,14 @@ data class SavedServer(
     val os: String? = null,
     val sshBanner: String? = null,
     val rememberedByUser: Boolean = false,
+    val detachedTransport: Boolean = false,
     val alleycatHost: String? = null,
     val alleycatNodeId: String? = null,
     val alleycatRelay: String? = null,
     val alleycatAgentName: String? = null,
     val alleycatAgentWire: String? = null,
 ) {
-    /** Stable key for deduplication across discovery cycles. */
+    /** Stable key for deduplicating saved connection entries. */
     val deduplicationKey: String
         get() = websocketURL ?: normalizedHostKey(hostname)
 
@@ -66,6 +65,7 @@ data class SavedServer(
         os?.let { put("os", it) }
         sshBanner?.let { put("sshBanner", it) }
         put("rememberedByUser", rememberedByUser)
+        put("detachedTransport", detachedTransport)
         alleycatHost?.let { put("alleycatHost", it) }
         alleycatNodeId?.let { put("alleycatNodeId", it) }
         alleycatRelay?.let { put("alleycatRelay", it) }
@@ -152,34 +152,6 @@ data class SavedServer(
         codexPort = resolvedPreferredCodexPort ?: availableDirectCodexPorts.firstOrNull(),
     )
 
-    fun toDiscoveredServer(): AppDiscoveredServer {
-        val codexPort = if (hasCodexServer) (preferredCodexPort ?: port) else null
-        val resolvedSshPort = sshPort ?: if (hasCodexServer) null else port
-        return AppDiscoveredServer(
-            id = id,
-            displayName = name,
-            host = hostname,
-            port = codexPort?.toUShort() ?: 0u,
-            codexPort = codexPort?.toUShort(),
-            codexPorts = availableDirectCodexPorts.map { it.toUShort() },
-            sshPort = resolvedSshPort?.toUShort(),
-            source = toAppDiscoverySource(source),
-            reachable = true,
-            os = os,
-            sshBanner = sshBanner,
-        )
-    }
-
-    private fun toAppDiscoverySource(source: String): AppDiscoverySource = when (source.lowercase()) {
-        "bonjour" -> AppDiscoverySource.BONJOUR
-        "tailscale" -> AppDiscoverySource.TAILSCALE
-        "lanprobe", "lan_probe" -> AppDiscoverySource.LAN_PROBE
-        "arpscan", "arp_scan" -> AppDiscoverySource.ARP_SCAN
-        "manual" -> AppDiscoverySource.MANUAL
-        "local" -> AppDiscoverySource.LOCAL
-        else -> AppDiscoverySource.MANUAL
-    }
-
     companion object {
         fun normalizeWakeMac(raw: String?): String? {
             val compact = raw
@@ -231,6 +203,7 @@ data class SavedServer(
             } else {
                 true
             },
+            detachedTransport = obj.optBoolean("detachedTransport"),
             alleycatHost = if (obj.has("alleycatHost")) obj.getString("alleycatHost") else null,
             alleycatNodeId = obj.optString("alleycatNodeId").ifBlank { null },
             alleycatRelay = obj.optString("alleycatRelay").ifBlank { null },
@@ -238,25 +211,6 @@ data class SavedServer(
             alleycatAgentWire = obj.optString("alleycatAgentWire").ifBlank { null },
         )
 
-        fun from(server: AppDiscoveredServer): SavedServer = SavedServer(
-            id = server.id,
-            name = server.displayName,
-            hostname = server.host,
-            port = server.codexPort?.toInt() ?: server.port.toInt(),
-            codexPorts = server.codexPorts.map { it.toInt() },
-            sshPort = server.sshPort?.toInt(),
-            source = when (server.source) {
-                AppDiscoverySource.BONJOUR -> "bonjour"
-                AppDiscoverySource.TAILSCALE -> "tailscale"
-                AppDiscoverySource.LAN_PROBE -> "lanProbe"
-                AppDiscoverySource.ARP_SCAN -> "arpScan"
-                AppDiscoverySource.MANUAL -> "manual"
-                AppDiscoverySource.LOCAL -> "local"
-            },
-            hasCodexServer = server.codexPort != null || server.codexPorts.isNotEmpty(),
-            os = if (server.sshBanner != null) server.os else server.os,
-            sshBanner = server.sshBanner,
-        )
     }
 }
 
@@ -275,6 +229,7 @@ fun SavedServer.toRecord(context: Context? = null) = SavedServerRecord(
     sshPortForwardingEnabled = sshPortForwardingEnabled,
     websocketUrl = websocketURL,
     rememberedByUser = rememberedByUser,
+    detachedTransport = detachedTransport,
     alleycatHost = alleycatHost,
     alleycatUdpPort = alleycatUdpPort,
     alleycatNodeId = alleycatNodeId,
@@ -318,46 +273,10 @@ object SavedServerStore {
         prefs(context).edit().putString(KEY, array.toString()).apply()
     }
 
-    fun upsert(context: Context, server: SavedServer) {
-        val existing = load(context).toMutableList()
-        val prior = existing.firstOrNull { it.id == server.id || it.deduplicationKey == server.deduplicationKey }
-        existing.removeAll { it.id == server.id || it.deduplicationKey == server.deduplicationKey }
-        existing.add(server.copy(rememberedByUser = prior?.rememberedByUser ?: server.rememberedByUser))
-        save(context, existing)
-    }
-
     fun remember(context: Context, server: SavedServer) {
         val existing = load(context).toMutableList()
         existing.removeAll { it.id == server.id || it.deduplicationKey == server.deduplicationKey }
         existing.add(server.copy(rememberedByUser = true))
-        save(context, existing)
-    }
-
-    /**
-     * Legacy Alleycat persistence path. Current remote-host pairings use
-     * [rememberAlleycat].
-     */
-    fun rememberAlleycat(
-        context: Context,
-        serverId: String,
-        displayName: String,
-        relayHost: String,
-    ) {
-        val server = SavedServer(
-            id = serverId,
-            name = displayName,
-            hostname = relayHost,
-            port = 0,
-            codexPorts = emptyList(),
-            sshPort = null,
-            source = "manual",
-            hasCodexServer = true,
-            rememberedByUser = true,
-            alleycatHost = relayHost,
-        )
-        val existing = load(context).toMutableList()
-        existing.removeAll { it.id == server.id || it.deduplicationKey == server.deduplicationKey }
-        existing.add(server)
         save(context, existing)
     }
 
@@ -395,9 +314,34 @@ object SavedServerStore {
         load(context).filter { it.rememberedByUser }
 
     fun remove(context: Context, serverId: String) {
-        val existing = load(context).toMutableList()
-        existing.removeAll { it.id == serverId }
-        save(context, existing)
+        val existing = load(context)
+        val nodeIdsToForget = orphanedAlleycatNodeIds(removing = serverId, from = existing)
+        val remaining = existing.filter { it.id != serverId }
+        save(context, remaining)
+
+        val credentials = AlleycatCredentialStore(context.applicationContext)
+        nodeIdsToForget.forEach(credentials::deleteToken)
+    }
+
+    /**
+     * Alleycat tokens are keyed by node ID, so retain them while another saved
+     * server still points at the same node. The device-wide identity key stays
+     * outside this server-scoped forget operation.
+     */
+    fun orphanedAlleycatNodeIds(removing: String, from: List<SavedServer>): List<String> {
+        val removedNodeIds =
+            from
+                .filter { it.id == removing }
+                .mapNotNull { it.alleycatNodeId.normalizedAlleycatNodeId() }
+                .toSet()
+        if (removedNodeIds.isEmpty()) return emptyList()
+
+        val retainedNodeIds =
+            from
+                .filter { it.id != removing }
+                .mapNotNull { it.alleycatNodeId.normalizedAlleycatNodeId() }
+                .toSet()
+        return (removedNodeIds - retainedNodeIds).sorted()
     }
 
     fun rename(context: Context, serverId: String, newName: String) {
@@ -428,6 +372,20 @@ object SavedServerStore {
         }
     }
 
+    fun updateDetachedTransport(context: Context, serverId: String, detachedTransport: Boolean) {
+        val existing = load(context)
+        val updated = existing.map { server ->
+            if (server.id == serverId) {
+                if (server.detachedTransport != detachedTransport) server.copy(detachedTransport = detachedTransport) else server
+            } else {
+                server
+            }
+        }
+        if (updated != existing) {
+            save(context, updated)
+        }
+    }
+
     private fun normalizedHostKey(host: String): String {
         val trimmed = host.trim().trimStart('[').trimEnd(']').replace("%25", "%")
         val withoutScope = if (!trimmed.contains(":")) {
@@ -437,6 +395,9 @@ object SavedServerStore {
         }
         return withoutScope.lowercase()
     }
+
+    private fun String?.normalizedAlleycatNodeId(): String? =
+        this?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
 
     private fun migrateDisplayName(server: SavedServer): SavedServer {
         val nodeId = server.alleycatNodeId?.trim()?.takeIf { it.isNotEmpty() } ?: return server

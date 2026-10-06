@@ -7,11 +7,8 @@ private let sessionsScreenSignpostLog = OSLog(
 )
 
 struct SessionsScreen: View {
-    private static let sessionListPageLimit: UInt32 = 80
-
     @Environment(AppModel.self) private var appModel
     @Environment(AppState.self) private var appState
-    @Environment(ConversationWarmupCoordinator.self) private var conversationWarmup
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var sessionsModel = SessionsModel()
     @State private var isLoading: Bool
@@ -27,29 +24,31 @@ struct SessionsScreen: View {
     @State private var renameCurrentTitle = ""
     @State private var renameDraft = ""
     @State private var archiveTargetKey: ThreadKey?
-    @State private var collapsedWorkspaceGroupIDs: Set<String> = []
-    @State private var collapsedSessionNodeKeys: Set<ThreadKey> = []
+    @State private var pinnedKeys: Set<PinnedThreadKey> = []
     @State private var pendingActiveSessionScroll = false
     @State private var sessionSearchDebounceTask: Task<Void, Never>?
     @State private var hasLoadedInitialSessions = false
     @State private var isSessionLoadInFlight = false
+    @State private var sessionHydrationLimit = SessionsScreen.sessionHydrationPageSize
+    private static let sessionHydrationPageSize: UInt32 = SessionListRules.pageSize
     private let autoLoadSessions: Bool
     private let onOpenConversation: (ThreadKey) -> Void
     private let onInfo: (() -> Void)?
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter
-    }()
+    private let onPin: ((ThreadKey) -> Void)?
+    private let onUnpin: ((ThreadKey) -> Void)?
 
     init(
         autoLoadSessions: Bool = true,
         onOpenConversation: @escaping (ThreadKey) -> Void,
-        onInfo: (() -> Void)? = nil
+        onInfo: (() -> Void)? = nil,
+        onPin: ((ThreadKey) -> Void)? = nil,
+        onUnpin: ((ThreadKey) -> Void)? = nil
     ) {
         self.autoLoadSessions = autoLoadSessions
         self.onOpenConversation = onOpenConversation
         self.onInfo = onInfo
+        self.onPin = onPin
+        self.onUnpin = onUnpin
         _isLoading = State(initialValue: autoLoadSessions)
     }
 
@@ -62,18 +61,16 @@ struct SessionsScreen: View {
         let base = screenLayout(derived: derived)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .toolbar {
+                // Two actions only, so the computer name in the title
+                // is not squeezed to "macboo…". Refresh is pull-to-refresh
+                // (and in the menu); server info lives in the menu.
                 ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 4) {
-                        if let onInfo {
-                            Button(action: onInfo) {
-                                Image(systemName: "info.circle")
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundStyle(LitterTheme.accent)
-                            }
-                        }
-                        refreshToolbarButton
+                    HStack(spacing: 20) {
+                        filterMenu
+                        newSessionButton
                     }
                 }
+                .litterPlainToolbarItem()
             }
 
         let lifecycle = attachLifecycleHandlers(to: base, derived: derived)
@@ -91,6 +88,8 @@ struct SessionsScreen: View {
                             directoryPickerSheet = sheet
                         }
                     ),
+                    localServerIds: sessionsModel.localServerIds,
+                    browseableServerIds: sessionsModel.browseableServerIds,
                     onServerChanged: { nextServerId in
                         guard var sheet = directoryPickerSheet else { return }
                         sheet.selectedServerId = nextServerId
@@ -115,6 +114,7 @@ struct SessionsScreen: View {
     ) -> some View {
         content
             .task {
+                pinnedKeys = Set(SavedThreadsStore.pinnedKeys())
                 sessionsModel.bind(appModel: appModel, appState: appState)
                 sessionsModel.updateSearchQuery(debouncedSessionSearchQuery)
                 await loadSessionsIfNeeded()
@@ -158,13 +158,8 @@ struct SessionsScreen: View {
             .onChange(of: selectedRuntimeKindFilter) { _, next in
                 sessionsModel.updateRuntimeKindFilter(next)
             }
-            .onChange(of: derived.workspaceGroupIDs) { _, ids in
-                let idSet: Set<String> = Set(ids)
-                collapsedWorkspaceGroupIDs = collapsedWorkspaceGroupIDs.intersection(idSet)
-            }
-            .onChange(of: derived.allThreadKeys) { _, keys in
-                let keySet: Set<ThreadKey> = Set(keys)
-                collapsedSessionNodeKeys = collapsedSessionNodeKeys.intersection(keySet)
+            .onReceive(NotificationCenter.default.publisher(for: .litterThreadPreferencesDidChange)) { _ in
+                pinnedKeys = Set(SavedThreadsStore.pinnedKeys())
             }
             .onDisappear {
                 sessionSearchDebounceTask?.cancel()
@@ -220,58 +215,36 @@ struct SessionsScreen: View {
             }
     }
 
+    // Litter Quiet "all sessions": search field, then one plain virtualized
+    // list grouped by mono section labels (pinned, now, today, yesterday,
+    // this week, older). Rows are title + "server · project · age". Filters
+    // (server, runtime, forks) live in one toolbar menu. See
+    // `SessionListRules` for the virtualization and pagination rules.
     private func screenLayout(derived: SessionsDerivedData) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            newSessionButton
-            Divider().background(LitterTheme.separator)
-            serversRow
-            Divider().background(LitterTheme.separator)
-
+            sessionSearchField
+            if connectedServers.isEmpty {
+                notConnectedLine
+            }
             if derived.allThreads.isEmpty {
                 Spacer()
-                if isLoading {
-                    ProgressView().tint(LitterTheme.accent).frame(maxWidth: .infinity)
-                } else {
-                    Text("No sessions yet")
-                        .litterFont(.footnote)
-                        .foregroundColor(LitterTheme.textMuted)
-                        .frame(maxWidth: .infinity)
-                }
+                Text(isLoading ? "loading…" : "no sessions yet")
+                    .litterMeta()
+                    .frame(maxWidth: .infinity)
+                Spacer()
+            } else if derived.filteredThreads.isEmpty {
+                Spacer()
+                Text(trimmedSessionSearchQuery.isEmpty
+                     ? "no sessions match these filters"
+                     : "no matches for \"\(trimmedSessionSearchQuery)\"")
+                    .litterMeta()
+                    .frame(maxWidth: .infinity)
                 Spacer()
             } else {
-                if isLoading {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(LitterTheme.accent)
-                        Text("Loading more sessions...")
-                            .litterFont(.caption)
-                            .foregroundColor(LitterTheme.textMuted)
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    Divider().background(LitterTheme.separator)
-                }
-                runtimeKindPillRow
-                sessionSearchBar
-                sessionFilterRow
-                Divider().background(LitterTheme.separator)
-                if derived.filteredThreads.isEmpty {
-                    Spacer()
-                    Text("No matches for \"\(trimmedSessionSearchQuery)\"")
-                        .litterFont(.footnote)
-                        .foregroundColor(LitterTheme.textMuted)
-                        .frame(maxWidth: .infinity)
-                    Spacer()
-                } else {
-                    sessionList(derived: derived)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                }
+                sessionList(derived: derived)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
-
         }
-        .background(AlleyBackdrop().ignoresSafeArea())
         .accessibilityIdentifier("sessions.container")
     }
 
@@ -283,11 +256,6 @@ struct SessionsScreen: View {
     private var showOnlyForks: Bool {
         get { appState.sessionsShowOnlyForks }
         nonmutating set { appState.sessionsShowOnlyForks = newValue }
-    }
-
-    private var workspaceSortMode: WorkspaceSortMode {
-        get { WorkspaceSortMode(rawValue: appState.sessionsWorkspaceSortModeRaw) ?? .mostRecent }
-        nonmutating set { appState.sessionsWorkspaceSortModeRaw = newValue.rawValue }
     }
 
     private var connectedServerIds: [String] {
@@ -339,36 +307,27 @@ struct SessionsScreen: View {
         )
     }
 
-    private var newSessionButton: some View {
-        Button {
-            if let defaultServerId = defaultNewSessionServerId(preferredServerId: appState.sessionsSelectedServerFilterId) {
-                if connectedServers.first(where: { $0.id == defaultServerId })?.isLocal == true {
-                    let cwd = LitterPlatform.defaultLocalWorkingDirectory()
-                    Task { await startNewSession(serverId: defaultServerId, cwd: cwd) }
-                } else {
-                    directoryPickerSheet = SessionLaunchSupport.DirectoryPickerSheetModel(selectedServerId: defaultServerId)
-                }
+    private func startNewSessionFromToolbar() {
+        if let defaultServerId = defaultNewSessionServerId(preferredServerId: appState.sessionsSelectedServerFilterId) {
+            if connectedServers.first(where: { $0.id == defaultServerId })?.isLocal == true {
+                let cwd = LitterPlatform.defaultLocalWorkingDirectory()
+                Task { await startNewSession(serverId: defaultServerId, cwd: cwd) }
             } else {
-                appState.showServerPicker = true
+                directoryPickerSheet = SessionLaunchSupport.DirectoryPickerSheetModel(selectedServerId: defaultServerId)
             }
-        } label: {
-            HStack {
-                if isStartingNewSession {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(LitterTheme.textOnAccent)
-                } else {
-                    Image(systemName: "plus")
-                        .litterFont(.subheadline, weight: .medium)
-                    Text("New Session")
-                        .litterFont(.subheadline)
-                }
+        } else {
+            appState.showServerPicker = true
+        }
+    }
+
+    private var newSessionButton: some View {
+        Button(action: startNewSessionFromToolbar) {
+            if isStartingNewSession {
+                ProgressView().controlSize(.small).tint(LitterTheme.textSecondary)
+            } else {
+                Image(systemName: "square.and.pencil")
+                    .foregroundStyle(LitterTheme.textPrimary)
             }
-            .foregroundColor(LitterTheme.textOnAccent)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(LitterTheme.accent)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .disabled(isStartingNewSession)
         // Mac builds (Catalyst + iOS-on-Mac) bind Cmd+N at the menu
@@ -376,418 +335,215 @@ struct SessionsScreen: View {
         // double-bind (Catalyst) or be the only binding (iOS-on-Mac
         // doesn't get menus, so we keep it on then).
         .keyboardShortcut(LitterPlatform.isCatalyst ? nil : KeyboardShortcut("n", modifiers: [.command]))
+        .accessibilityLabel("New session")
         .accessibilityIdentifier("sessions.newSessionButton")
-        .padding(isRegularSurface ? 12 : 16)
     }
 
-    private var isRegularSurface: Bool {
-        LitterPlatform.isRegularSurface(horizontalSizeClass: horizontalSizeClass)
+    private var hasActiveFilters: Bool {
+        selectedServerFilterId != nil || showOnlyForks || selectedRuntimeKindFilter != nil
     }
 
-    private var refreshToolbarButton: some View {
-        Button(action: refreshSessions) {
-            Group {
-                if isLoading && hasLoadedInitialSessions {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(LitterTheme.accent)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                        .litterFont(.subheadline, weight: .semibold)
-                        .foregroundColor(connectedServers.isEmpty ? LitterTheme.textMuted : LitterTheme.accent)
+    /// Server, runtime and fork filters in one menu (was three chip rows).
+    private var filterMenu: some View {
+        let runtimeKinds = Set(sessionsModel.derivedData.allThreads.map(\.agentRuntimeKind))
+        return Menu {
+            Section("Server") {
+                Button {
+                    selectedServerFilterId = nil
+                } label: {
+                    menuLabel("All servers", checked: selectedServerFilterId == nil)
+                }
+                ForEach(connectedServerOptions, id: \.id) { option in
+                    Button {
+                        selectedServerFilterId = option.id
+                    } label: {
+                        menuLabel(option.name, checked: selectedServerFilterId == option.id)
+                    }
                 }
             }
-        }
-        .disabled(isLoading || connectedServers.isEmpty)
-        .accessibilityLabel("Refresh sessions")
-        .accessibilityIdentifier("sessions.refreshButton")
-    }
-
-    private var serversRow: some View {
-        let connected = connectedServers
-        let activeThread = sessionsModel.derivedData.allThreads.first(where: { $0.key == activeThreadKey })
-        let activeThreadEphemeralState = activeThread.flatMap { ephemeralStateByThreadKey[$0.key] }
-
-        return ViewThatFits(in: .horizontal) {
-            serversRowContent(
-                connected: connected,
-                activeThread: activeThread,
-                activeThreadEphemeralState: activeThreadEphemeralState,
-                useSpacer: true
-            )
-            ScrollView(.horizontal, showsIndicators: false) {
-                serversRowContent(
-                    connected: connected,
-                    activeThread: activeThread,
-                    activeThreadEphemeralState: activeThreadEphemeralState,
-                    useSpacer: false
-                )
+            if runtimeKinds.count > 1 {
+                Section("Agent") {
+                    Button {
+                        selectedRuntimeKindFilter = nil
+                    } label: {
+                        menuLabel("All agents", checked: selectedRuntimeKindFilter == nil)
+                    }
+                    ForEach(AgentRuntimeKind.presentationOrder.filter { runtimeKinds.contains($0) }, id: \.self) { kind in
+                        Button {
+                            selectedRuntimeKindFilter = kind
+                        } label: {
+                            menuLabel(kind.titleDisplayLabel, checked: selectedRuntimeKindFilter == kind)
+                        }
+                    }
+                }
             }
+            Section {
+                Toggle("Forks only", isOn: Binding(
+                    get: { showOnlyForks },
+                    set: { showOnlyForks = $0 }
+                ))
+                if hasActiveFilters {
+                    Button("Clear filters") {
+                        selectedServerFilterId = nil
+                        showOnlyForks = false
+                        selectedRuntimeKindFilter = nil
+                    }
+                }
+            }
+            Section {
+                Button {
+                    refreshSessions()
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(isLoading || connectedServers.isEmpty)
+                .accessibilityIdentifier("sessions.refreshButton")
+                if let onInfo {
+                    Button(action: onInfo) {
+                        Label("Computer info", systemImage: "info.circle")
+                    }
+                    .accessibilityIdentifier("sessions.infoButton")
+                }
+                Button {
+                    appState.showServerPicker = true
+                } label: {
+                    Label("Add computer", systemImage: "plus")
+                }
+                .accessibilityIdentifier("sessions.addServerButton")
+            }
+        } label: {
+            Image(systemName: hasActiveFilters
+                  ? "line.3.horizontal.decrease.circle.fill"
+                  : "line.3.horizontal.decrease.circle")
+                .foregroundStyle(hasActiveFilters ? LitterTheme.textPrimary : LitterTheme.textSecondary)
         }
-        .padding(.horizontal, isRegularSurface ? 12 : 16)
-        .padding(.vertical, 12)
+        .accessibilityLabel("Filter sessions")
     }
 
     @ViewBuilder
-    private func serversRowContent(
-        connected: [HomeDashboardServer],
-        activeThread: AppSessionSummary?,
-        activeThreadEphemeralState: SessionsModel.ThreadEphemeralState?,
-        useSpacer: Bool
-    ) -> some View {
-        HStack(spacing: 10) {
-            if connected.isEmpty {
-                Image(systemName: "xmark.circle")
-                    .foregroundColor(LitterTheme.textMuted)
-                    .frame(width: 20)
-                Text("Not connected")
-                    .litterFont(.footnote)
-                    .foregroundColor(LitterTheme.textMuted)
-                    .fixedSize(horizontal: true, vertical: false)
-                if useSpacer { Spacer() }
-                Button("Connect") {
-                    appState.showServerPicker = true
-                }
-                .accessibilityIdentifier("sessions.connectButton")
-                .litterFont(.caption)
-                .foregroundColor(LitterTheme.accent)
-                .hoverEffect(.highlight)
-            } else {
-                Image(systemName: "server.rack")
-                    .foregroundColor(LitterTheme.accent)
-                    .frame(width: 20)
-                Text("\(connected.count) server\(connected.count == 1 ? "" : "s")")
-                    .litterFont(.footnote)
-                    .foregroundColor(LitterTheme.textPrimary)
-                    .fixedSize(horizontal: true, vertical: false)
-                if useSpacer { Spacer() }
-                Button("Add") {
-                    appState.showServerPicker = true
-                }
-                .accessibilityIdentifier("sessions.addServerButton")
-                .litterFont(.caption)
-                .foregroundColor(LitterTheme.accent)
-                .hoverEffect(.highlight)
-                if let activeThread {
-                    Button {
-                        Task { await forkThread(activeThread) }
-                    } label: {
-                        if isForkingActiveThread {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(LitterTheme.accent)
-                        } else {
-                            Text("Fork")
-                        }
-                    }
-                    .disabled(isForkingActiveThread || (activeThreadEphemeralState?.hasTurnActive ?? activeThread.hasActiveTurn))
-                    .litterFont(.caption)
-                    .foregroundColor((activeThreadEphemeralState?.hasTurnActive ?? activeThread.hasActiveTurn) ? LitterTheme.textMuted : LitterTheme.accent)
-                    .hoverEffect(.highlight)
-                }
-            }
+    private func menuLabel(_ title: String, checked: Bool) -> some View {
+        if checked {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
         }
     }
 
-    private var runtimeKindPillRow: some View {
-        // Only show pills when the current sessions list actually contains
-        // multiple runtimes — a single-runtime user (Codex-only) doesn't
-        // need to filter, and the row would just be visual noise.
-        let runtimeKinds = Set(sessionsModel.derivedData.allThreads.map(\.agentRuntimeKind))
-        return Group {
-            if runtimeKinds.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        runtimeKindPill(label: "All", icon: "square.grid.2x2", kind: nil)
-                        ForEach(orderedRuntimeKinds(present: runtimeKinds), id: \.self) { kind in
-                            runtimeKindPill(
-                                label: runtimeKindLabel(kind),
-                                icon: runtimeKindIcon(kind),
-                                kind: kind
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .padding(.vertical, 6)
-            }
-        }
-    }
-
-    private func runtimeKindPill(label: String, icon: String, kind: AgentRuntimeKind?) -> some View {
-        let isActive = selectedRuntimeKindFilter == kind
-        return Button {
-            selectedRuntimeKindFilter = kind
+    private var notConnectedLine: some View {
+        Button {
+            appState.showServerPicker = true
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .litterFont(size: 10, weight: .semibold)
-                Text(label)
-                    .lineLimit(1)
-            }
-            .litterFont(.caption)
-            .foregroundColor(isActive ? LitterTheme.textOnAccent : LitterTheme.textSecondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(isActive ? LitterTheme.accent : LitterTheme.surface.opacity(0.65))
-            .overlay(
-                Capsule()
-                    .stroke(isActive ? LitterTheme.accent : LitterTheme.border.opacity(0.7), lineWidth: 1)
-            )
-            .clipShape(Capsule())
+            Text("no servers connected · connect")
+                .litterMeta()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, LitterSpace.margin)
+                .padding(.bottom, LitterSpace.s)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sessions.connectButton")
     }
 
-    private func orderedRuntimeKinds(present: Set<AgentRuntimeKind>) -> [AgentRuntimeKind] {
-        AgentRuntimeKind.presentationOrder.filter { present.contains($0) }
-    }
-
-    private func runtimeKindLabel(_ kind: AgentRuntimeKind) -> String {
-        kind.titleDisplayLabel
-    }
-
-    private func runtimeKindIcon(_ kind: AgentRuntimeKind) -> String {
-        // The filter pill renders an SF Symbol; the alleycat manifest
-        // ships a PNG, not an SF Symbol name, so we use a generic
-        // fallback here. Richer rendering of the actual agent icon
-        // happens via `AgentIconView` everywhere else in the app.
-        _ = kind
-        return "person.fill"
-    }
-
-    private var sessionSearchBar: some View {
-        HStack(spacing: 8) {
+    private var sessionSearchField: some View {
+        HStack(spacing: LitterSpace.s) {
             Image(systemName: "magnifyingglass")
-                .foregroundColor(LitterTheme.textMuted)
-                .litterFont(.caption)
-
+                .litterFont(.body)
+                .foregroundStyle(LitterTheme.textMuted)
+                .accessibilityHidden(true)
             TextField("Search sessions", text: $sessionSearchQuery)
-                .litterFont(.footnote)
-                .foregroundColor(LitterTheme.textPrimary)
+                .litterFont(size: 17)
+                .foregroundStyle(LitterTheme.textPrimary)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled(true)
-
+                .submitLabel(.search)
             if !sessionSearchQuery.isEmpty {
                 Button {
                     sessionSearchQuery = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(LitterTheme.textMuted)
-                        .litterFont(size: 14)
+                        .foregroundStyle(LitterTheme.textMuted)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(LitterTheme.surface.opacity(0.55))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(LitterTheme.border.opacity(0.85), lineWidth: 1)
-        )
-        .cornerRadius(8)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, LitterSpace.m)
+        .frame(height: 40)
+        .background(LitterTheme.raised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.horizontal, LitterSpace.margin)
+        .padding(.top, LitterSpace.s)
+        .padding(.bottom, LitterSpace.s)
     }
 
-    private var sessionFilterRow: some View {
-        HStack(spacing: 8) {
-            Menu {
-                Button("All servers") { selectedServerFilterId = nil }
-                ForEach(connectedServerOptions, id: \.id) { option in
-                    Button(option.name) { selectedServerFilterId = option.id }
-                }
-            } label: {
-                filterChip(
-                    title: selectedServerFilterTitle,
-                    isActive: selectedServerFilterId != nil,
-                    icon: "server.rack"
-                )
-            }
-            .buttonStyle(.plain)
+    private func isPinned(_ key: ThreadKey) -> Bool {
+        pinnedKeys.contains(PinnedThreadKey(threadKey: key))
+    }
 
-            Button {
-                showOnlyForks.toggle()
-            } label: {
-                filterChip(
-                    title: "Forks",
-                    isActive: showOnlyForks,
-                    icon: "arrow.triangle.branch"
-                )
-            }
-            .buttonStyle(.plain)
-
-            Menu {
-                ForEach(WorkspaceSortMode.allCases) { mode in
-                    Button(mode.title) { workspaceSortMode = mode }
-                }
-            } label: {
-                filterChip(
-                    title: workspaceSortMode.title,
-                    isActive: workspaceSortMode != .mostRecent,
-                    icon: "arrow.up.arrow.down"
-                )
-            }
-            .buttonStyle(.plain)
-
-            if selectedServerFilterId != nil || showOnlyForks {
-                Button("Clear") {
-                    selectedServerFilterId = nil
-                    showOnlyForks = false
-                }
-                .litterFont(.caption)
-                .foregroundColor(LitterTheme.accent)
-            }
-            Spacer(minLength: 0)
+    private func togglePin(_ thread: AppSessionSummary) {
+        let pin = PinnedThreadKey(threadKey: thread.key)
+        if pinnedKeys.contains(pin) {
+            if let onUnpin { onUnpin(thread.key) } else { SavedThreadsStore.remove(pin) }
+            pinnedKeys.remove(pin)
+        } else {
+            if let onPin { onPin(thread.key) } else { SavedThreadsStore.add(pin) }
+            pinnedKeys.insert(pin)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 10)
     }
 
-    private var selectedServerFilterTitle: String {
-        guard let selectedServerFilterId else { return "All servers" }
-        return connectedServerOptions.first(where: { $0.id == selectedServerFilterId })?.name ?? "All servers"
+    private var canLoadMoreSessions: Bool {
+        sessionsModel.derivedData.allThreads.count >= Int(sessionHydrationLimit)
     }
 
-    private func filterChip(title: String, isActive: Bool, icon: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon)
-                .litterFont(size: 10, weight: .semibold)
-            Text(title)
-                .lineLimit(1)
-        }
-        .litterFont(.caption)
-        .foregroundColor(isActive ? LitterTheme.textOnAccent : LitterTheme.textSecondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(isActive ? LitterTheme.accent : LitterTheme.surface.opacity(0.65))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7)
-                .stroke(isActive ? LitterTheme.accent : LitterTheme.border.opacity(0.7), lineWidth: 1)
-        )
-        .cornerRadius(7)
+    /// Automatic pagination: a row within `loadMoreThresholdRows` of the end
+    /// appeared, so fetch the next page.
+    private func loadMoreIfNeeded(rowIndex: Int, rowCount: Int) {
+        guard canLoadMoreSessions, !isSessionLoadInFlight,
+              rowIndex >= rowCount - SessionListRules.loadMoreThresholdRows else { return }
+        loadNextPage()
     }
 
-    private func workspaceGroupHeader(_ group: WorkspaceSessionGroup) -> some View {
-        let isCollapsed = collapsedWorkspaceGroupIDs.contains(group.id)
-
-        return Button {
-            if isCollapsed {
-                collapsedWorkspaceGroupIDs.remove(group.id)
-            } else {
-                collapsedWorkspaceGroupIDs.insert(group.id)
-            }
-        } label: {
-            HStack(alignment: .center, spacing: 8) {
-                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .litterFont(size: 10, weight: .semibold)
-                    .foregroundColor(LitterTheme.textSecondary)
-                    .frame(width: 12)
-
-                Image(systemName: "folder")
-                    .litterFont(size: 11, weight: .semibold)
-                    .foregroundColor(LitterTheme.accent)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(group.workspaceTitle)
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textPrimary)
-                        .lineLimit(1)
-
-                    Text(group.serverHost)
-                        .litterFont(.caption2)
-                        .foregroundColor(LitterTheme.textMuted)
-                        .lineLimit(1)
-
-                    Text(abbreviateHomePath(group.workspacePath))
-                        .litterFont(.caption2)
-                        .foregroundColor(LitterTheme.textMuted)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(LitterTheme.border.opacity(0.75))
-                    .frame(height: 1)
-            }
-        }
-        .buttonStyle(.plain)
+    private func loadNextPage() {
+        guard !isSessionLoadInFlight else { return }
+        sessionHydrationLimit += Self.sessionHydrationPageSize
+        refreshSessions()
     }
 
     private func sessionList(derived: SessionsDerivedData) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 3) {
-                    ForEach(derived.workspaceSections) { section in
-                        if let title = section.title {
-                            Text(title)
-                                .litterFont(.caption2)
-                                .foregroundColor(LitterTheme.textMuted)
-                                .padding(.horizontal, 2)
-                        }
-
-                        ForEach(section.groups) { group in
-                            workspaceGroupHeader(group)
-
-                            if !collapsedWorkspaceGroupIDs.contains(group.id) {
-                                ForEach(visibleSessionRows(for: group)) { row in
-                                    let thread = row.thread
-                                    let isCollapsed = collapsedSessionNodeKeys.contains(thread.key)
-
-                                    sessionRow(
-                                        thread,
-                                        isActive: thread.key == activeThreadKey,
-                                        derived: derived,
-                                        ephemeralState: ephemeralStateByThreadKey[thread.key],
-                                        depth: row.depth,
-                                        hasChildren: row.hasChildren,
-                                        isCollapsed: isCollapsed,
-                                        onToggleNode: {
-                                            guard row.hasChildren else { return }
-                                            if isCollapsed {
-                                                collapsedSessionNodeKeys.remove(thread.key)
-                                            } else {
-                                                collapsedSessionNodeKeys.insert(thread.key)
-                                            }
-                                        },
-                                        onSelectSession: {
-                                            guard resumingKey == nil else { return }
-                                            Task { await resumeSession(thread) }
-                                        }
-                                    )
-                                    .id(thread.key)
-                                    .contextMenu {
-                                        sessionRowContextMenu(thread)
-                                    }
-                                    .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                        Button {
-                                            Task { await forkThread(thread) }
-                                        } label: {
-                                            Label("Fork", systemImage: "arrow.triangle.branch")
-                                        }
-                                        .tint(LitterTheme.accent)
-                                    }
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                        Button(role: .destructive) {
-                                            archiveTargetKey = thread.key
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
-                                    }
-                                }
+        let now = Date()
+        let threads = derived.filteredThreads
+        let indexByKey = Dictionary(threads.enumerated().map { ($1.key, $0) }, uniquingKeysWith: { first, _ in first })
+        let groups = SessionListSection.group(
+            threads,
+            now: now,
+            isPinned: { isPinned($0.key) },
+            updatedAt: { ephemeralStateByThreadKey[$0.key]?.updatedAt ?? $0.updatedAtDate },
+            isActive: { ephemeralStateByThreadKey[$0.key]?.hasTurnActive ?? $0.hasActiveTurn }
+        )
+        return ScrollViewReader { proxy in
+            List {
+                ForEach(groups, id: \.section) { group in
+                    QuietSectionLabelRow(section: group.section)
+                        .quietListRow()
+                    ForEach(group.items) { thread in
+                        sessionRow(thread, now: now)
+                            .quietListRow()
+                            .id(thread.key)
+                            .onAppear {
+                                loadMoreIfNeeded(rowIndex: indexByKey[thread.key] ?? 0, rowCount: threads.count)
                             }
-                        }
                     }
                 }
-                .padding(.leading, 4)
-                .padding(.trailing, 8)
-                .padding(.vertical, 4)
+                if canLoadMoreSessions {
+                    loadMoreSessionsRow
+                        .quietListRow()
+                }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .scrollDismissesKeyboard(.immediately)
+            .environment(\.defaultMinListRowHeight, 0)
+            .contentMargins(.bottom, LitterSpace.xl, for: .scrollContent)
+            .refreshable { await loadSessions() }
+            .transaction { $0.animation = nil }
             .onAppear {
                 scrollToActiveSessionIfNeeded(derived: derived, proxy: proxy)
             }
@@ -797,17 +553,17 @@ struct SessionsScreen: View {
             .onChange(of: derived.filteredThreadKeys) { _, _ in
                 scrollToActiveSessionIfNeeded(derived: derived, proxy: proxy)
             }
-            .onChange(of: collapsedWorkspaceGroupIDs) { _, _ in
-                scrollToActiveSessionIfNeeded(derived: derived, proxy: proxy)
-            }
-            .onChange(of: collapsedSessionNodeKeys) { _, _ in
-                scrollToActiveSessionIfNeeded(derived: derived, proxy: proxy)
-            }
         }
     }
 
     @ViewBuilder
     private func sessionRowContextMenu(_ thread: AppSessionSummary) -> some View {
+        Button {
+            togglePin(thread)
+        } label: {
+            Label(isPinned(thread.key) ? "Unpin" : "Pin", systemImage: isPinned(thread.key) ? "pin.slash" : "pin")
+        }
+
         Button {
             renamingThreadKey = thread.key
             renameCurrentTitle = thread.sessionTitle
@@ -829,250 +585,56 @@ struct SessionsScreen: View {
         }
     }
 
-    private func sessionRow(
-        _ thread: AppSessionSummary,
-        isActive: Bool,
-        derived: SessionsDerivedData,
-        ephemeralState: SessionsModel.ThreadEphemeralState?,
-        depth: Int,
-        hasChildren: Bool,
-        isCollapsed: Bool,
-        onToggleNode: @escaping () -> Void,
-        onSelectSession: @escaping () -> Void
-    ) -> some View {
-        let parent = derived.parentByKey[thread.key]
-        let hasTurnActive = ephemeralState?.hasTurnActive ?? thread.hasActiveTurn
-        let updatedAt = ephemeralState?.updatedAt ?? thread.updatedAtDate
+    private func sessionRow(_ thread: AppSessionSummary, now: Date) -> some View {
+        let ephemeral = ephemeralStateByThreadKey[thread.key]
+        let hasTurnActive = ephemeral?.hasTurnActive ?? thread.hasActiveTurn
+        let updatedAt = ephemeral?.updatedAt ?? thread.updatedAtDate
+        var meta = [QuietMetaPart(thread.serverDisplayName)]
+        if let project = sessionProjectName(thread.cwd) { meta.append(QuietMetaPart(project)) }
+        if thread.isSubagent {
+            meta.append(QuietMetaPart(thread.agentDisplayLabel ?? "agent"))
+        } else if thread.isFork {
+            meta.append(QuietMetaPart("fork"))
+        }
+        if resumingKey == thread.key {
+            meta.append(QuietMetaPart("opening"))
+        } else if hasTurnActive {
+            meta.append(QuietMetaPart("working"))
+        } else {
+            meta.append(QuietMetaPart(sessionAgeLabel(updatedAt, now: now)))
+        }
 
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 6) {
-                HStack(spacing: 0) {
-                    Color.clear
-                        .frame(width: CGFloat(depth) * 8)
-                    if hasChildren {
-                        Button(action: onToggleNode) {
-                            Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                                .litterFont(size: 9, weight: .semibold)
-                                .foregroundColor(LitterTheme.textSecondary)
-                                .frame(width: 10, height: 10)
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        Color.clear.frame(width: 10, height: 10)
-                    }
+        return QuietSessionRow(title: thread.sessionTitle, meta: meta)
+            .onTapGesture {
+                guard resumingKey == nil else { return }
+                Task { await resumeSession(thread) }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("sessions.sessionRow")
+            .hoverEffect(.highlight)
+            .contextMenu { sessionRowContextMenu(thread) }
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                Button {
+                    togglePin(thread)
+                } label: {
+                    Label(isPinned(thread.key) ? "Unpin" : "Pin", systemImage: isPinned(thread.key) ? "pin.slash" : "pin")
                 }
-                .padding(.top, 2)
-
-                HStack(alignment: .top, spacing: 6) {
-                    if hasTurnActive {
-                        PulsingDot().padding(.top, 3)
-                    } else if thread.isSubagent {
-                        subagentStatusIndicator(thread.subagentStatus).padding(.top, 3)
-                    } else {
-                        Circle().fill(LitterTheme.textMuted.opacity(0.4)).frame(width: 8, height: 8).padding(.top, 3)
-                    }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            FormattedText(text: thread.sessionTitle, lineLimit: 2)
-                                .litterFont(.footnote)
-                                .foregroundColor(LitterTheme.textPrimary)
-                                .multilineTextAlignment(.leading)
-                                .accessibilityIdentifier("sessions.sessionTitle")
-
-                            if thread.isSubagent {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "person.2.fill")
-                                        .litterFont(size: 8, weight: .semibold)
-                                    Text(thread.agentDisplayLabel ?? "Agent")
-                                        .litterFont(.caption2)
-                                }
-                                .foregroundColor(LitterTheme.textOnAccent)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(LitterTheme.success)
-                                .cornerRadius(4)
-                            } else if thread.isFork {
-                                Text("Fork")
-                                    .litterFont(.caption2)
-                                    .foregroundColor(LitterTheme.textOnAccent)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 2)
-                                    .background(LitterTheme.accent)
-                                    .cornerRadius(4)
-                            }
-
-                            Spacer(minLength: 0)
-
-                            if resumingKey == thread.key {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(LitterTheme.accent)
-                            }
-                        }
-
-                        HStack(spacing: 4) {
-                            Text(relativeDate(updatedAt))
-                                .foregroundColor(LitterTheme.textSecondary)
-                            if let provider = thread.sessionModelLabel {
-                                Text("•")
-                                    .foregroundColor(LitterTheme.textMuted)
-                                Text(provider)
-                                    .foregroundColor(LitterTheme.textMuted)
-                            }
-                            if let parent {
-                                Text("•")
-                                    .foregroundColor(LitterTheme.textMuted)
-                                Text("from \(parent.sessionTitle)")
-                                    .foregroundColor(LitterTheme.textMuted)
-                            }
-                        }
-                        .litterFont(.caption2)
-                        .lineLimit(1)
-                    }
+                .tint(LitterTheme.accent)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button(role: .destructive) {
+                    archiveTargetKey = thread.key
+                } label: {
+                    Label("Delete", systemImage: "trash")
                 }
-                .contentShape(Rectangle())
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityIdentifier("sessions.sessionRow")
-                .onTapGesture(perform: onSelectSession)
-            }
-
-            if isActive {
-                lineageSummary(for: thread, derived: derived)
-            }
-        }
-        .padding(.leading, 1)
-        .padding(.trailing, 8)
-        .padding(.vertical, 5)
-        .background {
-            if isActive {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(LitterTheme.surfaceLight.opacity(0.55))
-            }
-        }
-        .contentShape(Rectangle())
-        .hoverEffect(.highlight)
-    }
-
-    private func lineageSummary(for thread: AppSessionSummary, derived: SessionsDerivedData) -> some View {
-        let parent = derived.parentByKey[thread.key]
-        let siblings = derived.siblingsByKey[thread.key] ?? []
-        let children = derived.childrenByKey[thread.key] ?? []
-        let hasLineage = parent != nil || !siblings.isEmpty || !children.isEmpty
-
-        return Group {
-            if hasLineage {
-                VStack(alignment: .leading, spacing: 5) {
-                    Divider().background(LitterTheme.border.opacity(0.7))
-
-                    HStack(spacing: 6) {
-                        if let parent {
-                            Button {
-                                Task { await resumeSession(parent) }
-                            } label: {
-                                lineageChip(title: "Parent", count: 1, isInteractive: true)
-                            }
-                            .buttonStyle(.plain)
-                        }
-
-                        if !siblings.isEmpty {
-                            Menu {
-                                ForEach(siblings) { sibling in
-                                    Button(sibling.sessionTitle) {
-                                        Task { await resumeSession(sibling) }
-                                    }
-                                }
-                            } label: {
-                                lineageChip(title: "Siblings", count: siblings.count, isInteractive: true)
-                            }
-                        }
-
-                        if !children.isEmpty {
-                            Menu {
-                                ForEach(children) { child in
-                                    Button(child.sessionTitle) {
-                                        Task { await resumeSession(child) }
-                                    }
-                                }
-                            } label: {
-                                lineageChip(title: "Children", count: children.count, isInteractive: true)
-                            }
-                        }
-
-                        Spacer(minLength: 0)
-                    }
+                Button {
+                    Task { await forkThread(thread) }
+                } label: {
+                    Label("Fork", systemImage: "arrow.triangle.branch")
                 }
+                .tint(LitterTheme.textMuted)
             }
-        }
-    }
-
-    private func lineageChip(title: String, count: Int, isInteractive: Bool) -> some View {
-        Text("\(title) \(count)")
-            .litterFont(.caption2)
-            .foregroundColor(isInteractive ? LitterTheme.accent : LitterTheme.textMuted)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .background(LitterTheme.surface.opacity(0.8))
-            .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .stroke(isInteractive ? LitterTheme.accent.opacity(0.5) : LitterTheme.border.opacity(0.5), lineWidth: 1)
-            )
-            .cornerRadius(5)
-    }
-
-    @ViewBuilder
-    private func subagentStatusIndicator(_ status: AppSubagentStatus) -> some View {
-        switch status {
-        case .completed:
-            Image(systemName: "checkmark.circle.fill")
-                .litterFont(size: 8)
-                .foregroundColor(LitterTheme.success)
-                .frame(width: 8, height: 8)
-        case .errored:
-            Image(systemName: "exclamationmark.circle.fill")
-                .litterFont(size: 8)
-                .foregroundColor(LitterTheme.danger)
-                .frame(width: 8, height: 8)
-        case .shutdown:
-            Image(systemName: "stop.circle.fill")
-                .litterFont(size: 8)
-                .foregroundColor(LitterTheme.textMuted)
-                .frame(width: 8, height: 8)
-        case .interrupted:
-            Image(systemName: "pause.circle.fill")
-                .litterFont(size: 8)
-                .foregroundColor(LitterTheme.warning)
-                .frame(width: 8, height: 8)
-        case .pendingInit, .running, .unknown:
-            Circle()
-                .fill(LitterTheme.textMuted.opacity(0.4))
-                .frame(width: 8, height: 8)
-        }
-    }
-
-    private func visibleSessionRows(for group: WorkspaceSessionGroup) -> [SessionTreeRow] {
-        var rows: [SessionTreeRow] = []
-
-        func append(nodes: [SessionTreeNode], depth: Int) {
-            for node in nodes {
-                let hasChildren = !node.children.isEmpty
-                rows.append(
-                    SessionTreeRow(
-                        thread: node.thread,
-                        depth: depth,
-                        hasChildren: hasChildren
-                    )
-                )
-
-                if hasChildren && !collapsedSessionNodeKeys.contains(node.thread.key) {
-                    append(nodes: node.children, depth: depth + 1)
-                }
-            }
-        }
-
-        append(nodes: group.treeRoots, depth: 0)
-        return rows
     }
 
     private func scheduleActiveSessionScrollIfNeeded() {
@@ -1082,43 +644,9 @@ struct SessionsScreen: View {
 
     private func scrollToActiveSessionIfNeeded(derived: SessionsDerivedData, proxy: ScrollViewProxy) {
         guard pendingActiveSessionScroll, let activeKey = activeThreadKey else { return }
-
-        guard let activeThread = derived.filteredThreads.first(where: { $0.key == activeKey }) else {
-            pendingActiveSessionScroll = false
-            return
-        }
-
-        let activeWorkspaceGroupID = derived.workspaceGroupIDByThreadKey[activeThread.key] ?? workspaceGroupID(for: activeThread)
-        if collapsedWorkspaceGroupIDs.contains(activeWorkspaceGroupID) {
-            collapsedWorkspaceGroupIDs.remove(activeWorkspaceGroupID)
-            return
-        }
-
-        if let collapsedAncestor = ancestorThreadKeys(for: activeKey, derived: derived)
-            .reversed()
-            .first(where: { collapsedSessionNodeKeys.contains($0) }) {
-            collapsedSessionNodeKeys.remove(collapsedAncestor)
-            return
-        }
-
         pendingActiveSessionScroll = false
-        withAnimation(.easeInOut(duration: 0.2)) {
-            proxy.scrollTo(activeKey, anchor: .center)
-        }
-    }
-
-    private func ancestorThreadKeys(for key: ThreadKey, derived: SessionsDerivedData) -> [ThreadKey] {
-        var ancestors: [ThreadKey] = []
-        var visited: Set<ThreadKey> = []
-        var cursor: AppSessionSummary? = derived.parentByKey[key]
-
-        while let thread = cursor, !visited.contains(thread.key) {
-            ancestors.append(thread.key)
-            visited.insert(thread.key)
-            cursor = derived.parentByKey[thread.key]
-        }
-
-        return ancestors
+        guard derived.filteredThreads.contains(where: { $0.key == activeKey }) else { return }
+        proxy.scrollTo(activeKey, anchor: .center)
     }
 
     @AppStorage("workDir") private var workDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? "/"
@@ -1133,6 +661,18 @@ struct SessionsScreen: View {
         Task {
             await loadSessions()
         }
+    }
+
+    private var loadMoreSessionsRow: some View {
+        Button(action: loadNextPage) {
+            Text(isLoading ? "loading more…" : "load more")
+                .litterMeta()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: SessionListRules.sectionLabelHeight + 12)
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
+        .accessibilityIdentifier("sessions.loadMore")
     }
 
     private func loadSessions() async {
@@ -1151,21 +691,30 @@ struct SessionsScreen: View {
         defer { isSessionLoadInFlight = false }
 
         isLoading = true
-        for serverId in connectedServerIds {
-            _ = try? await appModel.client.listThreads(
-                serverId: serverId,
-                params: AppListThreadsRequest(
-                    cursor: nil,
-                    limit: Self.sessionListPageLimit,
-                    sortKey: .updatedAt,
-                    sortDirection: .desc,
-                    archived: nil,
-                    cwd: nil,
-                    searchTerm: nil,
-                    useStateDbOnly: false,
-                    runtimeKinds: nil
-                )
-            )
+        let serverIds = selectedServerFilterId.map { [$0] } ?? connectedServerIds
+        let runtimeKinds = selectedRuntimeKindFilter.map { [$0] }
+        let hydrationLimit = sessionHydrationLimit
+        let client = appModel.client
+        let failures = await withTaskGroup(of: String?.self) { group in
+            for serverId in serverIds {
+                group.addTask {
+                    do {
+                        try await client.listThreads(
+                            serverId: serverId,
+                            params: AppListThreadsRequest(limit: hydrationLimit, sortKey: .updatedAt, sortDirection: .desc, runtimeKinds: runtimeKinds)
+                        )
+                        return nil
+                    } catch {
+                        return error.localizedDescription
+                    }
+                }
+            }
+            return await group.reduce(into: [String]()) { errors, error in
+                if let error { errors.append(error) }
+            }
+        }
+        if failures.count == serverIds.count {
+            sessionActionErrorMessage = failures.first
         }
         await appModel.refreshSnapshot()
 
@@ -1196,14 +745,16 @@ struct SessionsScreen: View {
     private func resumeSession(_ thread: AppSessionSummary) async {
         guard resumingKey == nil else { return }
         resumingKey = thread.key
+        defer { resumingKey = nil }
         sessionActionErrorMessage = nil
-        await conversationWarmup.prewarmIfNeeded()
         workDir = thread.cwd
         appState.currentCwd = thread.cwd
-        let openedKey: ThreadKey?
+        let resumeKey = await appModel.hydrateThreadPermissions(for: thread.key, appState: appState)
+            ?? thread.key
+        appModel.activateThread(resumeKey)
+        onOpenConversation(resumeKey)
+
         do {
-            let resumeKey = await appModel.hydrateThreadPermissions(for: thread.key, appState: appState)
-                ?? thread.key
             let nextKey = try await appModel.resumeThread(
                 key: resumeKey,
                 launchConfig: launchConfig(for: resumeKey),
@@ -1212,18 +763,13 @@ struct SessionsScreen: View {
             if !thread.cwd.isEmpty {
                 RecentDirectoryStore.shared.record(path: thread.cwd, for: thread.key.serverId)
             }
-            appModel.activateThread(nextKey)
-            openedKey = nextKey
+            if nextKey != resumeKey {
+                appModel.activateThread(nextKey)
+                onOpenConversation(nextKey)
+            }
         } catch {
             sessionActionErrorMessage = error.localizedDescription
-            openedKey = nil
         }
-        resumingKey = nil
-        guard let openedKey else {
-            sessionActionErrorMessage = sessionActionErrorMessage ?? "Failed to open conversation."
-            return
-        }
-        onOpenConversation(openedKey)
     }
 
     private func startNewSession(serverId: String, cwd: String) async {
@@ -1235,7 +781,6 @@ struct SessionsScreen: View {
             guard try await appModel.ensureLocalAuthForThreadStart(serverId: serverId) else {
                 return
             }
-            await conversationWarmup.prewarmIfNeeded()
             workDir = cwd
             appState.currentCwd = cwd
             let startedKey = try await appModel.client.startThread(
@@ -1333,42 +878,4 @@ struct SessionsScreen: View {
         archiveTargetKey = nil
     }
 
-    private func relativeDate(_ date: Date) -> String {
-        Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
-    }
 }
-
-private struct SessionTreeRow: Identifiable {
-    let thread: AppSessionSummary
-    let depth: Int
-    let hasChildren: Bool
-
-    var id: ThreadKey { thread.key }
-}
-
-struct PulsingDot: View {
-    @State private var pulse = false
-
-    var body: some View {
-        Circle()
-            .fill(LitterTheme.accent)
-            .frame(width: 8, height: 8)
-            .scaleEffect(pulse ? 1.3 : 1.0)
-            .opacity(pulse ? 0.6 : 1.0)
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
-            .onAppear { pulse = true }
-    }
-}
-
-#if DEBUG
-#Preview("Sessions Screen") {
-    LitterPreviewScene(
-        appModel: LitterPreviewData.makeSidebarAppModel(),
-        appState: LitterPreviewData.makeAppState()
-    ) {
-        NavigationStack {
-            SessionsScreen(autoLoadSessions: false, onOpenConversation: { _ in })
-        }
-    }
-}
-#endif

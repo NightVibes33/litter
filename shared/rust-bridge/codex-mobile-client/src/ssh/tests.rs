@@ -182,18 +182,6 @@ fn test_bootstrap_result_clone() {
 }
 
 #[test]
-fn test_profile_init_sources_common_files() {
-    // Verify the profile init string references the expected shell config files.
-    assert!(PROFILE_INIT.contains(".profile"));
-    assert!(PROFILE_INIT.contains(".bash_profile"));
-    assert!(PROFILE_INIT.contains(".bashrc"));
-    assert!(PROFILE_INIT.contains(".zshenv"));
-    assert!(PROFILE_INIT.contains(".zprofile"));
-    assert!(PROFILE_INIT.contains(".zshrc"));
-    assert!(!PROFILE_INIT.contains("-ic 'printf %s \"$PATH\"'"));
-}
-
-#[test]
 fn test_profile_init_adds_common_node_manager_bins() {
     assert!(PROFILE_INIT.contains("$NVM_BIN"));
     assert!(PROFILE_INIT.contains("ASDF_DATA_DIR"));
@@ -208,7 +196,92 @@ fn test_profile_init_adds_common_node_manager_bins() {
     assert!(PROFILE_INIT.contains(".fnm/node-versions"));
     assert!(PROFILE_INIT.contains(".asdf/shims"));
     assert!(PROFILE_INIT.contains(".local/share/mise/shims"));
+    assert!(PROFILE_INIT.contains(".nix-profile/bin"));
+    assert!(PROFILE_INIT.contains(".local/state}/nix/profile/bin"));
+    assert!(PROFILE_INIT.contains("/etc/profiles/per-user/$USER/bin"));
+    assert!(PROFILE_INIT.contains("/nix/var/nix/profiles/default/bin"));
+    assert!(PROFILE_INIT.contains("/run/current-system/sw/bin"));
     assert!(PROFILE_INIT.contains("export PATH"));
+}
+
+#[cfg(unix)]
+fn run_profile_init(home: &std::path::Path, shell: &std::path::Path) -> String {
+    let script = format!("{PROFILE_INIT}\nprintf '__litter_test_path__%s\\n' \"$PATH\"");
+    let output = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg(script)
+        .env_clear()
+        .env("HOME", home)
+        .env("USER", "litter-test")
+        .env("SHELL", shell)
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .expect("profile init should run under /bin/sh");
+    assert!(
+        output.status.success(),
+        "profile init failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .expect("profile output should be UTF-8")
+        .lines()
+        .find_map(|line| line.strip_prefix("__litter_test_path__"))
+        .expect("profile init should print its final PATH")
+        .to_owned()
+}
+
+#[cfg(unix)]
+fn path_contains(path: &str, expected: &std::path::Path) -> bool {
+    path.split(':')
+        .any(|entry| std::path::Path::new(entry) == expected)
+}
+
+#[cfg(unix)]
+#[test]
+fn test_profile_init_never_executes_startup_files_or_login_shell() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path();
+    let side_effect = "printf launched > \"$HOME/unwanted-terminal\"\n";
+    for file in [
+        ".profile",
+        ".bash_profile",
+        ".bashrc",
+        ".zshenv",
+        ".zprofile",
+        ".zshrc",
+    ] {
+        std::fs::write(home.join(file), side_effect).unwrap();
+    }
+    let fish = home.join("fish");
+    std::fs::write(&fish, format!("#!/bin/sh\n{side_effect}")).unwrap();
+    std::fs::set_permissions(&fish, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let bin = home.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+
+    let path = run_profile_init(home, &fish);
+
+    assert!(!home.join("unwanted-terminal").exists());
+    assert!(path_contains(&path, &bin));
+    assert!(path_contains(&path, std::path::Path::new("/usr/bin")));
+    assert!(path_contains(&path, std::path::Path::new("/bin")));
+}
+
+#[cfg(unix)]
+#[test]
+fn test_profile_init_adds_user_nix_profile_bins_without_shell_config() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path();
+    let legacy_nix_bin = home.join(".nix-profile/bin");
+    let modern_nix_bin = home.join(".local/state/nix/profile/bin");
+    std::fs::create_dir_all(&legacy_nix_bin).unwrap();
+    std::fs::create_dir_all(&modern_nix_bin).unwrap();
+
+    let path = run_profile_init(home, std::path::Path::new("/bin/sh"));
+
+    assert!(path_contains(&path, &legacy_nix_bin));
+    assert!(path_contains(&path, &modern_nix_bin));
 }
 
 #[test]

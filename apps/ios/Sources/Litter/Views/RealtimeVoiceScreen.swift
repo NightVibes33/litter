@@ -14,6 +14,13 @@ struct RealtimeVoiceScreen: View {
     @State private var hasStoredApiKey = OpenAIApiKeyStore.shared.hasStoredKey
     @State private var apiKeyError: String?
     @State private var isRetryingAfterAuthSave = false
+    /// Snapshot projections mirrored by `snapshotObserver` so `body` never
+    /// reads `appModel.snapshot`. A live voice session bumps the snapshot
+    /// continuously, and this screen's body is expensive (edge glow +
+    /// waveform + transcript).
+    @State private var resolvedServer: AppServerSnapshot?
+    @State private var handoffThread: AppThreadSnapshot?
+    @State private var snapshotObserver = AppSnapshotObserver()
 
     private var glowPalette: GlowPalette {
         .from(colorScheme: colorScheme)
@@ -45,7 +52,22 @@ struct RealtimeVoiceScreen: View {
     }
 
     private var server: AppServerSnapshot? {
-        appModel.snapshot?.serverSnapshot(for: threadKey.serverId)
+        resolvedServer
+    }
+
+    /// Called from `snapshotObserver`, never from `body`. Writes `@State`
+    /// only when a projection actually changed. Takes the model explicitly so
+    /// the deferred closure never reads `@Environment`.
+    private func refreshSnapshotProjections(_ appModel: AppModel) {
+        let snapshot = appModel.snapshot
+        let nextServer = snapshot?.serverSnapshot(for: threadKey.serverId)
+        if resolvedServer != nextServer {
+            resolvedServer = nextServer
+        }
+        let nextHandoffThread = handoffThreadKey.flatMap { snapshot?.threadSnapshot(for: $0) }
+        if handoffThread != nextHandoffThread {
+            handoffThread = nextHandoffThread
+        }
     }
 
     private var phase: VoiceSessionPhase {
@@ -150,9 +172,9 @@ struct RealtimeVoiceScreen: View {
                 transcriptContent
                     .padding(.horizontal, 32)
 
-                if let handoffThreadKey {
+                if handoffThreadKey != nil {
                     InlineHandoffView(
-                        threadKey: handoffThreadKey,
+                        thread: handoffThread,
                         maxHeight: 220
                     )
                     .padding(.horizontal, 18)
@@ -173,6 +195,10 @@ struct RealtimeVoiceScreen: View {
         }
         .statusBarHidden()
         .task {
+            // Mirrors the server record and the live handoff thread out of the
+            // snapshot on every (coalesced) revision, from a non-body context.
+            let model = appModel
+            snapshotObserver.start(appModel: model) { refreshSnapshotProjections(model) }
             do {
                 _ = try await appModel.client.refreshAccount(
                     serverId: threadKey.serverId,
@@ -191,6 +217,12 @@ struct RealtimeVoiceScreen: View {
                     apiKeyError = error.localizedDescription
                 }
             }
+        }
+        .onDisappear { snapshotObserver.stop() }
+        // The handoff key comes from `voiceRuntime`, not the snapshot, so a
+        // handoff starting/ending needs its own resolve trigger.
+        .onChange(of: handoffThreadKey) { _, _ in
+            refreshSnapshotProjections(appModel)
         }
         .onChange(of: session?.id) { _, next in
             if next == nil, !isRetryingAfterAuthSave {
@@ -333,7 +365,7 @@ struct RealtimeVoiceScreen: View {
                 .font(LitterFont.styled(.headline, weight: .semibold))
                 .foregroundColor(primaryTextColor)
 
-            Text("Enter your OpenAI API key for this device. Alley Cãt will store it in the local Codex environment as OPENAI_API_KEY.")
+            Text("Enter your OpenAI API key for this device. Litter will store it in the local Codex environment as OPENAI_API_KEY.")
                 .font(LitterFont.styled(.caption))
                 .foregroundColor(secondaryTextColor)
                 .fixedSize(horizontal: false, vertical: true)
@@ -365,10 +397,10 @@ struct RealtimeVoiceScreen: View {
         .frame(maxWidth: 420)
         .background(promptFillColor)
         .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
+            RoundedRectangle(cornerRadius: 24)
                 .stroke(promptStrokeColor, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 24))
     }
 
     private func saveApiKeyAndRetry() {

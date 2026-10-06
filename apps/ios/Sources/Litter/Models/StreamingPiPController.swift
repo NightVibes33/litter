@@ -23,11 +23,6 @@ final class StreamingPiPController: NSObject {
     /// Mirrored to the toolbar button so it can render `pip.fill` while open.
     private(set) var isActive: Bool = false
 
-    /// True while iOS is preparing the sample-buffer PiP controller.
-    /// `startPictureInPicture()` is asynchronous and can take multiple
-    /// run-loop turns after the first frame/audio session are primed.
-    private(set) var isStarting: Bool = false
-
     /// Surfaces a non-fatal startup error to UI (e.g. unsupported device).
     private(set) var lastErrorMessage: String?
 
@@ -78,10 +73,6 @@ final class StreamingPiPController: NSObject {
     @ObservationIgnored private var pipController: AVPictureInPictureController?
     @ObservationIgnored private var possibleObservation: NSKeyValueObservation?
     @ObservationIgnored private var renderTimer: Timer?
-    @ObservationIgnored private var startRetryTimer: Timer?
-    @ObservationIgnored private var startAttemptedAt: Date?
-    @ObservationIgnored private var didRebuildForCurrentStart = false
-    @ObservationIgnored private var startupFramePushCount = 0
     @ObservationIgnored private var pixelBufferPool: CVPixelBufferPool?
     /// Set by `start()` when we want PiP to begin as soon as the controller's
     /// `isPictureInPicturePossible` flips true. Without this gate the first
@@ -107,7 +98,7 @@ final class StreamingPiPController: NSObject {
     var isSupported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
 
     func toggle() {
-        if isActive || isStarting { stop() } else { start() }
+        if isActive { stop() } else { start() }
     }
 
     /// Open PiP pinned to a specific thread (used by the home-card menu).
@@ -123,17 +114,13 @@ final class StreamingPiPController: NSObject {
     }
 
     func start() {
-        guard !isActive, !isStarting else { return }
-        lastErrorMessage = nil
-        isStarting = true
+        guard !isActive else { return }
         guard isSupported else {
-            isStarting = false
             lastErrorMessage = "PiP not supported on this device."
             LLog.warn("pip", "start: device does not support PiP")
             return
         }
         guard ensureSetup() else {
-            isStarting = false
             lastErrorMessage = "Could not initialize PiP."
             return
         }
@@ -141,38 +128,24 @@ final class StreamingPiPController: NSObject {
         // Reset the display layer if it's lingering in a failed/idle state
         // from the previous session — without flushing, enqueue is a no-op
         // and `isPictureInPicturePossible` never flips true on reopen.
-        hostView?.displayLayer.flushAndRemoveImage()
+        hostView?.displayLayer.sampleBufferRenderer.flush(
+            removingDisplayedImage: true,
+            completionHandler: nil
+        )
         audioKeeper.activate()
-        startAttemptedAt = Date()
-        didRebuildForCurrentStart = false
-        startupFramePushCount = 0
         // Push at least one frame so the layer has content before start.
         // PiP refuses to start against an empty display layer.
-        pushFrame(force: true)
-        startupFramePushCount += 1
+        pushFrame()
         startRenderTimer()
         pendingStart = true
-        startReadinessRetryTimer()
         startIfPossible()
     }
 
     func stop() {
-        let wasWaitingToStart = pendingStart
         pendingStart = false
-        stopStartReadinessRetryTimer()
-        if wasWaitingToStart {
-            endSession()
-            return
-        }
         // didStop delegate handles per-session cleanup (timer + audio).
         // Host view + controller + pool persist for the next session.
-        if pipController?.isPictureInPictureActive == true {
-            pipController?.stopPictureInPicture()
-        } else if isStarting {
-            // The start call was sent but iOS has not delivered a delegate
-            // callback yet. Cancel local work; a late callback is stopped.
-            endSession()
-        }
+        pipController?.stopPictureInPicture()
     }
 
     /// Calls `startPictureInPicture()` if (a) we have a pending start and
@@ -183,76 +156,8 @@ final class StreamingPiPController: NSObject {
         guard pendingStart, let controller = pipController else { return }
         guard controller.isPictureInPicturePossible else { return }
         pendingStart = false
-        stopStartReadinessRetryTimer()
         controller.startPictureInPicture()
         LLog.info("pip", "startPictureInPicture invoked")
-    }
-
-    /// `isPictureInPicturePossible` can fail to flip after lifecycle changes
-    /// even after the first frame is enqueued. Keep the layer warm briefly and
-    /// force a clean controller rebuild if iOS leaves us stuck.
-    private func startReadinessRetryTimer() {
-        stopStartReadinessRetryTimer()
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.retryStartReadiness() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        startRetryTimer = timer
-    }
-
-    private func stopStartReadinessRetryTimer() {
-        startRetryTimer?.invalidate()
-        startRetryTimer = nil
-        startAttemptedAt = nil
-        didRebuildForCurrentStart = false
-        startupFramePushCount = 0
-    }
-
-    private func retryStartReadiness() {
-        guard pendingStart else {
-            stopStartReadinessRetryTimer()
-            return
-        }
-        guard let started = startAttemptedAt else {
-            startAttemptedAt = Date()
-            return
-        }
-
-        // Retry with fresh frames first; iOS often needs a couple of run-loop
-        // turns after audio activation and sample-buffer enqueue.
-        pushFrame(force: true)
-        startupFramePushCount += 1
-        startIfPossible()
-        guard pendingStart else { return }
-
-        let elapsed = Date().timeIntervalSince(started)
-        if elapsed >= 1.5, !didRebuildForCurrentStart {
-            didRebuildForCurrentStart = true
-            rebuildControllerForStartRetry()
-            pushFrame(force: true)
-            startupFramePushCount += 1
-            startIfPossible()
-            return
-        }
-
-        guard elapsed >= 8.0 else { return }
-        let layerStatus = hostView?.displayLayer.status.rawValue ?? -1
-        let ready = hostView?.displayLayer.isReadyForMoreMediaData ?? false
-        let frames = startupFramePushCount
-        pendingStart = false
-        stopStartReadinessRetryTimer()
-        lastErrorMessage = "PiP could not start. Layer status: \(layerStatus), ready: \(ready), frames: \(frames)."
-        isStarting = false
-        LLog.warn(
-            "pip",
-            "start timed out waiting for PiP readiness",
-            fields: [
-                "layerStatus": "\(layerStatus)",
-                "ready": "\(ready)",
-                "frames": "\(frames)"
-            ]
-        )
-        endSession()
     }
 
     /// Per-session cleanup invoked from `pictureInPictureControllerDidStop`.
@@ -265,10 +170,8 @@ final class StreamingPiPController: NSObject {
         observationGeneration &+= 1
         renderTimer?.invalidate()
         renderTimer = nil
-        stopStartReadinessRetryTimer()
         audioKeeper.deactivate()
         isActive = false
-        isStarting = false
         pinnedThreadKey = nil
         userHeightOverride = nil
         isDirty = false
@@ -285,12 +188,7 @@ final class StreamingPiPController: NSObject {
             LLog.warn("pip", "ensureSetup: key window unavailable")
             return false
         }
-        // Keep the source layer attached to the active window without making
-        // it effectively hidden. iOS can render a deeply buried/transparent
-        // layer while still refusing to mark its PiP controller as possible.
         let host = PiPHostView(frame: CGRect(x: -1, y: -1, width: 1, height: 1))
-        host.isUserInteractionEnabled = false
-        host.accessibilityElementsHidden = true
         window.addSubview(host)
         hostView = host
         ensurePixelBufferPool()
@@ -315,18 +213,6 @@ final class StreamingPiPController: NSObject {
             Task { @MainActor [weak self] in self?.startIfPossible() }
         }
         return true
-    }
-
-    private func rebuildControllerForStartRetry() {
-        possibleObservation?.invalidate()
-        possibleObservation = nil
-        pipController?.delegate = nil
-        pipController = nil
-        hostView?.removeFromSuperview()
-        hostView = nil
-        pixelBufferPool = nil
-        guard ensureSetup() else { return }
-        LLog.info("pip", "rebuilt controller while waiting for PiP readiness")
     }
 
     private func keyWindow() -> UIWindow? {
@@ -376,24 +262,25 @@ final class StreamingPiPController: NSObject {
         }
     }
 
-    private func pushFrame(force: Bool = false) {
+    private func pushFrame() {
         guard let host = hostView else { return }
         // Recover from a failed layer state — happens after some PiP
         // transitions / app lifecycle events. Without this, enqueue is a
         // silent no-op and the window appears frozen.
-        if host.displayLayer.status == .failed {
+        let sampleBufferRenderer = host.displayLayer.sampleBufferRenderer
+        if sampleBufferRenderer.status == .failed {
             LLog.warn(
                 "pip",
                 "display layer failed; flushing",
                 fields: [
-                    "error": host.displayLayer.error?.localizedDescription ?? "unknown"
+                    "error": sampleBufferRenderer.error?.localizedDescription ?? "unknown"
                 ]
             )
-            host.displayLayer.flushAndRemoveImage()
+            sampleBufferRenderer.flush(removingDisplayedImage: true, completionHandler: nil)
         }
         // Skip when the layer's queue is full; rendering + buffer alloc
         // are the expensive part, so bail before paying that cost.
-        guard force || host.displayLayer.isReadyForMoreMediaData else { return }
+        guard sampleBufferRenderer.isReadyForMoreMediaData else { return }
         // Reassign content each tick so ImageRenderer doesn't reuse a cached
         // render — particularly important on a fresh session where the
         // observed state changed but the renderer instance is the same.
@@ -435,14 +322,14 @@ final class StreamingPiPController: NSObject {
             // the layer's queue may refuse to accept the new-format
             // buffer and `isReadyForMoreMediaData` stays false — which
             // is the "stops updating after I resize" symptom.
-            host.displayLayer.flush()
+            sampleBufferRenderer.flush()
             currentRenderSize = targetPixels
             pixelBufferPool = nil
         }
         ensurePixelBufferPool(size: targetPixels)
         guard let pixelBuffer = makePixelBuffer(from: finalImage) else { return }
         guard let sampleBuffer = makeSampleBuffer(from: pixelBuffer) else { return }
-        host.displayLayer.enqueue(sampleBuffer)
+        sampleBufferRenderer.enqueue(sampleBuffer)
         // Only clear dirty + advance heartbeat once the frame actually
         // made it into the layer's queue. Early-returns above leave the
         // dirty flag intact so the next tick retries.
@@ -585,11 +472,6 @@ extension StreamingPiPController: AVPictureInPictureControllerDelegate {
         _ controller: AVPictureInPictureController
     ) {
         Task { @MainActor in
-            guard self.isStarting else {
-                controller.stopPictureInPicture()
-                return
-            }
-            self.isStarting = false
             self.isActive = true
             LLog.info("pip", "didStartPictureInPicture")
         }
@@ -611,7 +493,6 @@ extension StreamingPiPController: AVPictureInPictureControllerDelegate {
         Task { @MainActor in
             LLog.warn("pip", "failedToStartPictureInPicture", fields: ["error": "\(error)"])
             self.lastErrorMessage = error.localizedDescription
-            self.isStarting = false
             self.endSession()
         }
     }

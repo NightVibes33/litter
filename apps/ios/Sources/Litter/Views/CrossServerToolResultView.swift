@@ -70,9 +70,6 @@ struct CrossServerToolResultView: View {
             return t.isEmpty ? "Untitled session" : t
         }
         var model: String { modelProvider ?? "" }
-        var parsedDate: Date? {
-            updatedAt.map { Date(timeIntervalSince1970: TimeInterval($0) / 1000.0) }
-        }
 
         private enum CodingKeys: String, CodingKey {
             case id, preview, modelProvider, updatedAt, cwd, serverName
@@ -195,9 +192,9 @@ struct SessionServerCardRow: View {
         .padding(.vertical, 12)
         .background(LitterTheme.surface.opacity(0.6))
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 14)
                 .stroke(LitterTheme.border.opacity(0.7), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 }

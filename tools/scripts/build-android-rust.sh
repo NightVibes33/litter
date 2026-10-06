@@ -25,7 +25,8 @@ if [ -z "${ANDROID_NDK_HOME:-}" ] && [ -z "${ANDROID_NDK_ROOT:-}" ]; then
 fi
 
 if [ "${CARGO_INCREMENTAL:-}" != "1" ] && command -v sccache >/dev/null 2>&1; then
-  export RUSTC_WRAPPER="$(command -v sccache)"
+  sccache_path="$(command -v sccache)"
+  export RUSTC_WRAPPER="$sccache_path"
 fi
 
 # libghostty.so per-ABI must exist before the Android JNI bridge links
@@ -69,12 +70,16 @@ for abi in "${REQUESTED_ABIS[@]}"; do
       ABI_NAME="arm64-v8a"
       RUST_TARGET="aarch64-linux-android"
       ;;
+    armeabi-v7a|armv7-linux-androideabi)
+      ABI_NAME="armeabi-v7a"
+      RUST_TARGET="armv7-linux-androideabi"
+      ;;
     x86_64|x86-64|x86_64-linux-android)
       ABI_NAME="x86_64"
       RUST_TARGET="x86_64-linux-android"
       ;;
     *)
-      echo "error: unsupported Android ABI '$abi' (supported: arm64-v8a, x86_64)" >&2
+      echo "error: unsupported Android ABI '$abi' (supported: arm64-v8a, armeabi-v7a, x86_64)" >&2
       exit 1
       ;;
   esac
@@ -99,9 +104,9 @@ rustup target add "${RUST_TARGETS[@]}"
 
 mkdir -p "$OUT_DIR"
 
-for abi_dir in arm64-v8a x86_64; do
+for abi_dir in arm64-v8a armeabi-v7a x86_64; do
   if [[ " $SELECTED_ABIS " != *" $abi_dir "* ]]; then
-    rm -rf "$OUT_DIR/$abi_dir"
+    rm -rf "${OUT_DIR:?}/$abi_dir"
   fi
 done
 
@@ -109,7 +114,12 @@ echo "==> Building codex_mobile_client Android shared libs..."
 cd "$WORKSPACE_DIR"
 cargo ndk "${ABI_ARGS[@]}" -o "$OUT_DIR" build --profile "$RUST_PROFILE" -p codex-mobile-client
 
-echo "==> Building codex_bridge Android shared libs..."
-cargo ndk "${ABI_ARGS[@]}" -o "$OUT_DIR" build --profile "$RUST_PROFILE" -p codex-bridge
+# Fail the build instead of shipping an app whose embedded iSH runtime has a
+# broken (empty-stub) ARM64 vdso; at runtime that SIGABRTs as soon as a guest
+# process hits a signal. Mirrors the iOS guard in apps/ios/scripts/build-rust.sh.
+TARGET_DIR="${CARGO_TARGET_DIR:-$WORKSPACE_DIR/target}"
+for target in "${RUST_TARGETS[@]}"; do
+  "$REPO_DIR/tools/scripts/check-ish-vdso.sh" "$TARGET_DIR" "$target" "$RUST_PROFILE"
+done
 
 echo "==> Done. Android JNI libs are in: $OUT_DIR"

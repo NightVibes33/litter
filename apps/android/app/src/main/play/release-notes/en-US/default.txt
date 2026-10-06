@@ -1,4 +1,6 @@
-Initial Android release of Litter.
-- On-device and remote runtime support
-- Improved conversation readability and text sizing
-- Stronger server discovery and connection behavior
+Clearer and complete.
+
+- Full session history for Claude Code, Pi and other harnesses.
+- A new model picker: harness first, then models by provider, with search.
+- Simpler Settings and cleaner session titles.
+- Faster reconnects.

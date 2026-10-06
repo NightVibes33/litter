@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, Waker};
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use alleycat_bridge_core::{Bridge, ProcessLauncher, serve_stream};
 use alleycat_claude_bridge::index::{ClaudeSessionInfo, entry_from_claude};
@@ -38,11 +38,39 @@ use crate::types::{AgentRuntimeInfo, AgentRuntimeKind};
 /// How long we'll poll a freshly-spawned local opencode for `/global/health`.
 const OPENCODE_LOCAL_HEALTH_BUDGET: Duration = Duration::from_secs(10);
 const OPENCODE_LOCAL_HEALTH_INTERVAL: Duration = Duration::from_millis(50);
-/// How many candidate ports we'll check when picking a free remote port.
-const REMOTE_PORT_PROBE_CANDIDATES: u16 = 50;
-/// Probe range for ephemeral remote ports (matches Linux's local port range).
-const REMOTE_PORT_PROBE_BASE: u16 = 17600;
-const REMOTE_PORT_PROBE_SPAN: u16 = 2000;
+/// Well-known port where a reusable `opencode serve` listens (opencode's own
+/// default). Reuse probes start here, and spawns bind here so the next
+/// connect/reconnect can find the server again instead of launching a fresh
+/// one — mirroring the Codex bootstrap's well-known port identity.
+const OPENCODE_DEFAULT_PORT: u16 = 4096;
+/// How many consecutive ports (starting at `OPENCODE_DEFAULT_PORT`) we'll
+/// probe for an existing server / try to spawn on before giving up.
+const OPENCODE_PORT_CANDIDATES: u16 = 4;
+/// Short probe budget when deciding whether an occupied port is a healthy
+/// opencode server worth reusing (vs a foreign process to skip). Kept tiny so
+/// scanning candidates over the tunnel doesn't stall the connect.
+const OPENCODE_REUSE_PROBE_ATTEMPTS: u32 = 5;
+const OPENCODE_REUSE_PROBE_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Keep OMP isolated from any inherited Pi agent directory/profile on the host.
+struct OmpLauncher {
+    inner: Arc<dyn ProcessLauncher>,
+    agent_dir: String,
+}
+impl ProcessLauncher for OmpLauncher {
+    fn launch(
+        &self,
+        mut spec: alleycat_bridge_core::ProcessSpec,
+    ) -> futures::future::BoxFuture<'_, io::Result<Box<dyn alleycat_bridge_core::ChildProcess>>>
+    {
+        spec.env
+            .retain(|(key, _)| key != "PI_CODING_AGENT_DIR" && key != "OMP_PROFILE");
+        spec.env
+            .push(("PI_CODING_AGENT_DIR".into(), self.agent_dir.clone().into()));
+        spec.env.push(("OMP_PROFILE".into(), "".into()));
+        self.inner.launch(spec)
+    }
+}
 
 #[derive(Clone)]
 struct StreamCloseHandle {
@@ -50,28 +78,10 @@ struct StreamCloseHandle {
 }
 
 impl StreamCloseHandle {
-    fn with_on_close(self, on_close: Box<dyn Fn() + Send + Sync + 'static>) -> Self {
-        *self
-            .state
-            .on_close
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some(on_close);
-        self
-    }
-
     fn close(&self) {
         let already_closed = self.state.closed.swap(true, Ordering::SeqCst);
-        let on_close = if already_closed {
-            None
-        } else {
-            self.state
-                .on_close
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .take()
-        };
-        if let Some(on_close) = on_close {
-            on_close();
+        if already_closed {
+            return;
         }
         if let Some(waker) = self
             .state
@@ -88,7 +98,6 @@ impl StreamCloseHandle {
 struct StreamCloseState {
     closed: AtomicBool,
     waker: StdMutex<Option<Waker>>,
-    on_close: StdMutex<Option<Box<dyn Fn() + Send + Sync + 'static>>>,
 }
 
 struct ClosableStream<S> {
@@ -101,7 +110,6 @@ impl<S> ClosableStream<S> {
         let state = Arc::new(StreamCloseState {
             closed: AtomicBool::new(false),
             waker: StdMutex::new(None),
-            on_close: StdMutex::new(None),
         });
         (
             Self {
@@ -201,8 +209,6 @@ pub enum SshBridgeError {
     UseExistingCodexPath,
     #[error("Windows SSH bridge remotes are not supported yet")]
     WindowsRemoteNotYetSupported,
-    #[error("detached SSH bridge transport is not implemented yet")]
-    DetachedNotYetImplemented,
 }
 
 impl From<SshError> for SshBridgeError {
@@ -214,15 +220,30 @@ impl From<SshError> for SshBridgeError {
 pub async fn probe_remote_agents(
     ssh: &Arc<SshClient>,
 ) -> Result<Vec<RemoteAgentAvailability>, SshBridgeError> {
+    if let Some(cached) = ssh.with_detection(|d| d.agents.clone()) {
+        info!("ssh bridge agent probe cached availability={cached:?}");
+        return Ok(cached);
+    }
+    let availability = probe_remote_agents_uncached(ssh).await?;
+    let stored = availability.clone();
+    ssh.with_detection(|d| d.agents = Some(stored));
+    Ok(availability)
+}
+
+pub(crate) async fn probe_remote_agents_uncached(
+    ssh: &SshClient,
+) -> Result<Vec<RemoteAgentAvailability>, SshBridgeError> {
     info!("ssh bridge agent probe start");
     let shell = ssh.detect_remote_shell().await;
     info!("ssh bridge agent probe shell={shell:?}");
-    let kinds = [
-        "claude".to_string(),
-        "pi".to_string(),
-        "opencode".to_string(),
-        "codex".to_string(),
-    ];
+    // Single source of truth for "which agents can litter itself launch
+    // over SSH". Pairing-only agents (droid, devin, amp, hermes, grok,
+    // shell) are deliberately absent: litter links no bridge for them,
+    // so probing would advertise a connection it cannot make.
+    let kinds = crate::store::agent_catalog::SSH_BRIDGE_PROBE_ORDER
+        .iter()
+        .map(|kind| (*kind).to_string())
+        .collect::<Vec<_>>();
     if shell == RemoteShell::PowerShell {
         let availability = kinds
             .into_iter()
@@ -236,7 +257,8 @@ pub async fn probe_remote_agents(
     }
 
     let script = format!(
-        "{PROFILE_INIT}\n{}",
+        "{PROFILE_INIT}\n{}\n{}\n{}",
+        crate::local_studio::probe_script(),
         r#"find_cmd() {
   cmd="$1"
   case "$cmd" in
@@ -285,12 +307,8 @@ probe_one_executes() {
     fi
   done
   printf '%s\t\n' "$label"
-}
-
-probe_one claude claude
-probe_one pi pi-coding-agent pi
-probe_one_executes opencode opencode
-probe_one codex codex"#
+}"#,
+        crate::store::agent_catalog::ssh_probe_script_lines()
     );
     let result = ssh.exec_shell(&script, shell).await?;
     if result.exit_code != 0 {
@@ -318,56 +336,23 @@ pub async fn connect_runtime_resources_via_ssh(
         state_root.display(),
         runtime_kinds
     );
+    // Warm the (memoized) shell probe once so the concurrent runtime
+    // connects below share it instead of racing to probe.
+    let _ = ssh.detect_remote_shell().await;
+    // Each runtime's bootstrap is independent (own CLI lookup, own bridge,
+    // own stream), so connect them concurrently rather than one after the
+    // other. Results keep the requested order; the first error still wins.
+    let connects = runtime_kinds.into_iter().map(|kind| {
+        let ssh = Arc::clone(&ssh);
+        let state_root = state_root.clone();
+        async move { connect_one_runtime_via_ssh(ssh, &state_root, kind, transport, prefer_ipv6).await }
+    });
     let mut resources = Vec::new();
     let mut infos = Vec::new();
-    for kind in runtime_kinds {
-        info!("ssh bridge runtime connect begin kind={kind:?}");
-        let (client, trait_transport) = if kind == "codex" {
-            let (client, reconnect_transport) =
-                connect_codex_via_ssh(Arc::clone(&ssh), prefer_ipv6).await?;
-            let t: Arc<dyn RemoteTransport> = Arc::new(reconnect_transport);
-            (client, Some(t))
-        } else {
-            let state_dir = state_root.join(runtime_label(&kind));
-            let current_close = Arc::new(StdMutex::new(None));
-            let (client, close_handle) = connect_app_server_client_via_ssh_with_close(
-                Arc::clone(&ssh),
-                &state_dir,
-                kind.clone(),
-                None,
-                transport,
-            )
-            .await?;
-            if let Some(close_handle) = close_handle {
-                *current_close
-                    .lock()
-                    .unwrap_or_else(|error| error.into_inner()) = Some(close_handle);
-            }
-            let reconnect_transport = SshBridgeReconnectTransport {
-                ssh: Arc::clone(&ssh),
-                state_dir,
-                kind: kind.clone(),
-                transport,
-                current_close,
-            };
-            let t: Arc<dyn RemoteTransport> = Arc::new(reconnect_transport);
-            (client, Some(t))
-        };
-        info!("ssh bridge runtime connect ready kind={kind:?}");
-        let name = runtime_label(&kind).to_string();
-        let display_name = runtime_display_name(&kind).to_string();
-        resources.push(RuntimeRemoteSessionResource {
-            runtime_kind: kind.clone(),
-            client,
-            transport: trait_transport,
-            keepalive: None,
-        });
-        infos.push(AgentRuntimeInfo {
-            kind,
-            name,
-            display_name,
-            available: true,
-        });
+    for result in futures::future::join_all(connects).await {
+        let (resource, info) = result?;
+        resources.push(resource);
+        infos.push(info);
     }
     info!(
         "ssh bridge runtime connect complete registered_runtimes={:?}",
@@ -377,6 +362,131 @@ pub async fn connect_runtime_resources_via_ssh(
             .collect::<Vec<_>>()
     );
     Ok((resources, infos))
+}
+
+async fn connect_one_runtime_via_ssh(
+    ssh: Arc<SshClient>,
+    state_root: &Path,
+    kind: AgentRuntimeKind,
+    transport: SshBridgeTransport,
+    prefer_ipv6: bool,
+) -> Result<(RuntimeRemoteSessionResource, AgentRuntimeInfo), SshBridgeError> {
+    info!("ssh bridge runtime connect begin kind={kind:?}");
+    let (client, trait_transport) = if kind == "codex" {
+        let (client, reconnect_transport) =
+            connect_codex_via_ssh(Arc::clone(&ssh), prefer_ipv6).await?;
+        let t: Arc<dyn RemoteTransport> = Arc::new(reconnect_transport);
+        (client, Some(t))
+    } else {
+        let state_dir = state_root.join(runtime_label(&kind));
+        let current_close = Arc::new(StdMutex::new(None));
+        let (client, close_handle) = connect_app_server_client_via_ssh_with_close(
+            Arc::clone(&ssh),
+            &state_dir,
+            kind.clone(),
+            None,
+            transport,
+        )
+        .await?;
+        if let Some(close_handle) = close_handle {
+            *current_close
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = Some(close_handle);
+        }
+        let reconnect_transport = SshBridgeReconnectTransport {
+            ssh: Arc::clone(&ssh),
+            state_dir,
+            kind: kind.clone(),
+            transport,
+            current_close,
+        };
+        let t: Arc<dyn RemoteTransport> = Arc::new(reconnect_transport);
+        (client, Some(t))
+    };
+    info!("ssh bridge runtime connect ready kind={kind:?}");
+    let name = runtime_label(&kind).to_string();
+    let display_name = runtime_display_name(&kind).to_string();
+    Ok((
+        RuntimeRemoteSessionResource {
+            runtime_kind: kind.clone(),
+            client,
+            transport: trait_transport,
+            keepalive: None,
+        },
+        AgentRuntimeInfo {
+            kind,
+            name,
+            display_name,
+            available: true,
+        },
+    ))
+}
+
+/// Re-run every probe whose result is in `previous` against the live
+/// connection, bypassing the memo, and return the fresh detection. Used by
+/// the stale-while-revalidate refresh after a cached reconnect. Probes that
+/// fail keep no entry (so the next reconnect re-probes them).
+pub(crate) async fn revalidate_detection(
+    ssh: &SshClient,
+    previous: &crate::ssh::SshDetection,
+) -> crate::ssh::SshDetection {
+    let shell = ssh.detect_remote_shell_uncached().await;
+    let mut fresh = crate::ssh::SshDetection {
+        shell: Some(shell),
+        ..Default::default()
+    };
+    let codex = async {
+        if previous.codex_path.is_none() {
+            return None;
+        }
+        let binary = ssh.resolve_codex_binary_uncached(shell).await.ok()??;
+        let (proxy, daemon, version) = tokio::join!(
+            ssh.app_server_proxy_supported_uncached(&binary, shell),
+            ssh.app_server_daemon_supported_uncached(&binary, shell),
+            ssh.read_server_version_uncached(binary.path(), shell),
+        );
+        Some((binary.path().to_string(), proxy.ok(), daemon.ok(), version))
+    };
+    let agents = async {
+        if previous.agents.is_none() {
+            return None;
+        }
+        probe_remote_agents_uncached(ssh).await.ok()
+    };
+    let clis = futures::future::join_all(previous.cli_paths.keys().map(|key| async move {
+        let candidates = key.split('\n').map(str::to_string).collect::<Vec<_>>();
+        let path = resolve_remote_cli_uncached(ssh, shell, &candidates).await.ok()?;
+        let validated = if previous.validated_clis.iter().any(|v| v == &previous.cli_paths[key]) {
+            validate_remote_cli_executes_uncached(ssh, shell, &path, "cli")
+                .await
+                .is_ok()
+        } else {
+            false
+        };
+        Some((key.clone(), path, validated))
+    }));
+    let omp = async {
+        if previous.omp_agent_dir.is_none() {
+            return None;
+        }
+        resolve_omp_agent_dir_uncached(ssh, shell).await.ok()
+    };
+    let (codex, agents, clis, omp) = tokio::join!(codex, agents, clis, omp);
+    if let Some((path, proxy, daemon, version)) = codex {
+        fresh.codex_path = Some(path);
+        fresh.app_server_proxy_supported = proxy;
+        fresh.app_server_daemon_supported = daemon;
+        fresh.codex_version = version;
+    }
+    fresh.agents = agents;
+    for (key, path, validated) in clis.into_iter().flatten() {
+        if validated {
+            fresh.validated_clis.push(path.clone());
+        }
+        fresh.cli_paths.insert(key, path);
+    }
+    fresh.omp_agent_dir = omp;
+    fresh
 }
 
 #[derive(Clone)]
@@ -441,19 +551,37 @@ impl RemoteTransport for SshBridgeReconnectTransport {
     }
 }
 
-pub async fn connect_app_server_client_via_ssh(
+async fn connect_app_server_client_via_ssh_with_close(
     ssh: Arc<SshClient>,
     state_dir: impl AsRef<Path>,
     kind: AgentRuntimeKind,
     bin_override: Option<String>,
     transport: SshBridgeTransport,
-) -> Result<AppServerClient, SshBridgeError> {
-    connect_app_server_client_via_ssh_with_close(ssh, state_dir, kind, bin_override, transport)
+) -> Result<(AppServerClient, Option<StreamCloseHandle>), SshBridgeError> {
+    let annotate_kind = kind.clone();
+    connect_bridge_runtime_via_ssh(ssh, state_dir, kind, bin_override, transport)
         .await
-        .map(|(client, _close_handle)| client)
+        .map_err(|error| annotate_with_requirement(error, &annotate_kind))
 }
 
-async fn connect_app_server_client_via_ssh_with_close(
+/// Rewrite a bare "binary not found" into "<Agent>: <binary> not found —
+/// install X". Every SSH-bridge failure the user can act on flows
+/// through here, so the picker never shows a dead end without saying
+/// what it needs.
+fn annotate_with_requirement(error: SshBridgeError, kind: &str) -> SshBridgeError {
+    let SshBridgeError::AgentCliMissing(detail) = error else {
+        return error;
+    };
+    let label = runtime_display_name(kind);
+    match crate::store::agent_catalog::requirement(kind) {
+        Some(requirement) => SshBridgeError::AgentCliMissing(format!(
+            "{label}: `{detail}` was not found on the SSH host — {requirement}"
+        )),
+        None => SshBridgeError::AgentCliMissing(format!("{label}: `{detail}`")),
+    }
+}
+
+async fn connect_bridge_runtime_via_ssh(
     ssh: Arc<SshClient>,
     state_dir: impl AsRef<Path>,
     kind: AgentRuntimeKind,
@@ -475,14 +603,14 @@ async fn connect_app_server_client_via_ssh_with_close(
     };
     let bridge: Arc<dyn Bridge> = match kind.as_str() {
         "claude" => {
-            let bin = resolve_remote_cli(
-                &ssh,
-                shell,
-                &cli_candidates(&["claude"], bin_override.as_deref()),
-            )
-            .await?;
+            // CLI lookup and session-index hydration are independent execs.
+            let candidates = cli_candidates(&["claude"], bin_override.as_deref());
+            let (bin, ()) = tokio::join!(
+                resolve_remote_cli(&ssh, shell, &candidates),
+                hydrate_remote_claude_index(&ssh, shell, &state_dir)
+            );
+            let bin = bin?;
             info!("ssh bridge resolved runtime cli kind={kind:?} bin={bin}");
-            hydrate_remote_claude_index(&ssh, shell, &state_dir).await;
             ClaudeBridge::builder()
                 .agent_bin(bin)
                 .launcher(Arc::clone(&launcher))
@@ -493,15 +621,59 @@ async fn connect_app_server_client_via_ssh_with_close(
                 .await
                 .map_err(|error| SshBridgeError::BridgeStartupFailed(error.to_string()))?
         }
-        "pi" => {
-            let bin = resolve_remote_cli(
-                &ssh,
-                shell,
-                &cli_candidates(&["pi-coding-agent", "pi"], bin_override.as_deref()),
-            )
-            .await?;
+        "pi" | "omp" | crate::local_studio::RUNTIME_KIND => {
+            let local_studio_runtime = if kind == crate::local_studio::RUNTIME_KIND {
+                Some(
+                    crate::local_studio::resolve_runtime(&ssh, shell)
+                        .await?
+                        .ok_or_else(|| {
+                            SshBridgeError::BridgeStartupFailed(
+                                "Local Studio controller runtime was not found on the SSH host"
+                                    .into(),
+                            )
+                        })?,
+                )
+            } else {
+                None
+            };
+            let bin = match local_studio_runtime.as_ref() {
+                Some(runtime) => runtime.program.clone(),
+                None => {
+                    resolve_remote_cli(
+                        &ssh,
+                        shell,
+                        &cli_candidates(
+                            if kind == "omp" {
+                                &["omp"]
+                            } else {
+                                &["pi-coding-agent", "pi"]
+                            },
+                            bin_override.as_deref(),
+                        ),
+                    )
+                    .await?
+                }
+            };
             info!("ssh bridge resolved runtime cli kind={kind:?} bin={bin}");
-            let hydrator = match scan_remote_pi_sessions(&ssh, shell).await {
+            let omp_agent_dir = if kind == "omp" {
+                Some(resolve_omp_agent_dir(&ssh, shell).await?)
+            } else {
+                None
+            };
+            let agent_dir = omp_agent_dir.as_deref().or_else(|| {
+                local_studio_runtime
+                    .as_ref()
+                    .map(|runtime| runtime.agent_dir.as_str())
+            });
+            let pi_launcher: Arc<dyn ProcessLauncher> = match local_studio_runtime.as_ref() {
+                Some(runtime) => crate::local_studio::launcher(Arc::clone(&launcher), runtime),
+                None if kind == "omp" => Arc::new(OmpLauncher {
+                    inner: Arc::clone(&launcher),
+                    agent_dir: omp_agent_dir.clone().unwrap(),
+                }),
+                None => Arc::clone(&launcher),
+            };
+            let hydrator = match scan_remote_pi_sessions(&ssh, shell, agent_dir).await {
                 Ok(sessions) => {
                     info!(
                         count = sessions.len(),
@@ -514,13 +686,24 @@ async fn connect_app_server_client_via_ssh_with_close(
                     PiHydrator::with_sessions(Vec::new())
                 }
             };
-            PiBridge::builder()
+            let builder = PiBridge::builder()
                 .agent_bin(bin)
-                .launcher(Arc::clone(&launcher))
+                .launcher(pi_launcher)
                 .codex_home(state_dir)
                 .pool_capacity(4)
                 .trust_persisted_cwd(true)
-                .hydrator(hydrator)
+                .hydrator(hydrator);
+            let builder = if let Some(agent_dir) = omp_agent_dir {
+                builder.native_settings_path(PathBuf::from(agent_dir).join("config.yml"))
+            } else {
+                builder
+            };
+            let builder = if kind == crate::local_studio::RUNTIME_KIND {
+                builder.model_provider_prefix(crate::local_studio::RUNTIME_KIND)
+            } else {
+                builder
+            };
+            builder
                 .build()
                 .await
                 .map_err(|error| SshBridgeError::BridgeStartupFailed(error.to_string()))?
@@ -529,12 +712,14 @@ async fn connect_app_server_client_via_ssh_with_close(
             return connect_opencode_via_ssh(ssh, state_dir, bin_override).await;
         }
         "codex" => return Err(SshBridgeError::UseExistingCodexPath),
-        // Every other agent (amp/droid/hermes/anything new from
-        // alleycat) is alleycat-only — the SSH bootstrap path doesn't
-        // know how to launch it on the remote.
+        // Every other agent (amp/droid/devin/hermes/grok/shell, plus
+        // anything new alleycat starts advertising) is pairing-only:
+        // litter links no bridge crate that can launch it on the remote,
+        // so the host has to run the bridge itself. Say exactly what the
+        // user needs to do instead of failing with a bare id.
         _ => {
-            return Err(SshBridgeError::BridgeStartupFailed(format!(
-                "agent `{kind}` is only available through Alleycat pairing"
+            return Err(SshBridgeError::BridgeStartupFailed(pairing_only_message(
+                &kind,
             )));
         }
     };
@@ -563,8 +748,8 @@ async fn connect_bridge_stream(
         client_name: "Litter".to_string(),
         client_version: "1.0".to_string(),
         experimental_api: true,
-        mcp_server_openai_form_elicitation: true,
         opt_out_notification_methods: Vec::new(),
+        mcp_server_openai_form_elicitation: false,
         channel_capacity: 256,
     };
     let remote = codex_slingshot::json_line_wire::connect_json_line_stream(client_io, args, label)
@@ -593,8 +778,8 @@ async fn connect_codex_via_ssh(
         client_name: "Litter".to_string(),
         client_version: "1.0".to_string(),
         experimental_api: true,
-        mcp_server_openai_form_elicitation: true,
         opt_out_notification_methods: Vec::new(),
+        mcp_server_openai_form_elicitation: false,
         channel_capacity: 256,
     };
     let client_result = match bootstrap.transport {
@@ -640,84 +825,138 @@ async fn connect_opencode_via_ssh(
     .await?;
     info!("ssh bridge resolved runtime cli kind=Opencode bin={bin}");
     validate_remote_cli_executes(&ssh, shell, &bin, "opencode").await?;
-    let remote_port = pick_remote_port(&ssh, shell).await?;
-    let session_id = format!("opencode-{}", now_millis());
-    info!(
-        "ssh bridge opencode remote start bin={bin} remote_port={remote_port} session_id={session_id}"
-    );
-    spawn_remote_opencode(&ssh, shell, &bin, remote_port, &session_id).await?;
-    if let Err(error) =
-        wait_until_remote_opencode_healthy(&ssh, shell, remote_port, &session_id).await
-    {
-        schedule_remote_opencode_cleanup(Arc::clone(&ssh), shell, remote_port, session_id.clone());
-        return Err(error);
-    }
-    let local_port = match ssh.forward_port_to(0, "127.0.0.1", remote_port).await {
-        Ok(port) => port,
-        Err(error) => {
-            schedule_remote_opencode_cleanup(
-                Arc::clone(&ssh),
-                shell,
-                remote_port,
-                session_id.clone(),
-            );
-            return Err(error.into());
+
+    // Attach-or-spawn, mirroring the Codex bootstrap: probe a well-known port
+    // range for an existing healthy `opencode serve` and reuse it; only spawn
+    // a fresh server on a free candidate when nothing is already running. The
+    // spawned server persists across disconnects so a reconnect attaches to it
+    // instead of re-launching (which is what used to leave the session list
+    // empty while the fresh server re-materialized its threads).
+    for offset in 0..OPENCODE_PORT_CANDIDATES {
+        let port = OPENCODE_DEFAULT_PORT + offset;
+
+        if ssh.is_port_listening_shell(port, shell).await {
+            info!("ssh bridge opencode reuse candidate port={port} already listening; probing");
+            let local_port = match ssh.forward_port_to(0, "127.0.0.1", port).await {
+                Ok(local_port) => local_port,
+                Err(error) => {
+                    warn!("ssh bridge opencode reuse forward failed port={port}: {error}");
+                    continue;
+                }
+            };
+            let base_url = format!("http://127.0.0.1:{local_port}");
+            if opencode_healthy_reuse_probe(&base_url).await {
+                info!("ssh bridge opencode attach existing port={port} local_port={local_port}");
+                match attach_opencode_bridge(state_dir.clone(), base_url).await {
+                    Ok(connected) => return Ok(connected),
+                    Err(error) => {
+                        warn!(
+                            "ssh bridge opencode attach failed port={port}: {error}; trying next candidate"
+                        );
+                        let _ = ssh.abort_forward_port(local_port).await;
+                        continue;
+                    }
+                }
+            }
+            let _ = ssh.abort_forward_port(local_port).await;
+            warn!("ssh bridge opencode reuse candidate port={port} did not answer /global/health");
+            continue;
         }
-    };
-    let base_url = format!("http://127.0.0.1:{local_port}");
-    info!(
-        "ssh bridge opencode forwarded remote_port={remote_port} local_port={local_port} session_id={session_id}"
-    );
-    if let Err(error) = wait_until_opencode_healthy(&base_url).await {
-        let logs = fetch_remote_opencode_logs(&ssh, shell, &session_id)
-            .await
-            .unwrap_or_else(|log_error| {
-                format!("failed to fetch remote opencode logs: {log_error}")
-            });
-        schedule_remote_opencode_cleanup(Arc::clone(&ssh), shell, remote_port, session_id.clone());
-        return Err(SshBridgeError::BridgeStartupFailed(format!(
-            "{error}; remote opencode logs:\n{logs}"
-        )));
+
+        // Free port: spawn opencode here so it is discoverable on the next
+        // connect/reconnect. The session dir is stable (`opencode`, not
+        // `opencode-<millis>`) so the pidfile doubles as our ownership marker.
+        let session_id = "opencode";
+        info!("ssh bridge opencode remote start bin={bin} port={port} session_id={session_id}");
+        spawn_remote_opencode(&ssh, shell, &bin, port, session_id).await?;
+        if let Err(error) = wait_until_remote_opencode_healthy(&ssh, shell, port, session_id).await
+        {
+            schedule_remote_opencode_cleanup(Arc::clone(&ssh), shell, port, session_id.to_string());
+            return Err(error);
+        }
+        let local_port = match ssh.forward_port_to(0, "127.0.0.1", port).await {
+            Ok(local_port) => local_port,
+            Err(error) => {
+                schedule_remote_opencode_cleanup(
+                    Arc::clone(&ssh),
+                    shell,
+                    port,
+                    session_id.to_string(),
+                );
+                return Err(error.into());
+            }
+        };
+        let base_url = format!("http://127.0.0.1:{local_port}");
+        info!(
+            "ssh bridge opencode spawned+forwarded port={port} local_port={local_port} session_id={session_id}"
+        );
+        if let Err(error) =
+            wait_until_opencode_healthy(&base_url, OPENCODE_LOCAL_HEALTH_BUDGET).await
+        {
+            let logs = fetch_remote_opencode_logs(&ssh, shell, session_id)
+                .await
+                .unwrap_or_else(|log_error| {
+                    format!("failed to fetch remote opencode logs: {log_error}")
+                });
+            schedule_remote_opencode_cleanup(Arc::clone(&ssh), shell, port, session_id.to_string());
+            return Err(SshBridgeError::BridgeStartupFailed(format!(
+                "{error}; remote opencode logs:\n{logs}"
+            )));
+        }
+        return match attach_opencode_bridge(state_dir, base_url).await {
+            Ok(connected) => Ok(connected),
+            Err(error) => {
+                schedule_remote_opencode_cleanup(
+                    Arc::clone(&ssh),
+                    shell,
+                    port,
+                    session_id.to_string(),
+                );
+                Err(error)
+            }
+        };
     }
 
-    let bridge = match OpencodeBridge::builder()
+    Err(SshBridgeError::BridgeStartupFailed(
+        "opencode server could not be attached or started on any candidate port".to_string(),
+    ))
+}
+
+/// Build an `OpencodeBridge` pointed at an already-healthy server and connect
+/// the app-server stream. The server itself is left running on disconnect —
+/// the caller decides when to clean up a spawned server (see the failure
+/// paths in [`connect_opencode_via_ssh`]); attaching to an existing server
+/// never kills it.
+async fn attach_opencode_bridge(
+    state_dir: PathBuf,
+    base_url: String,
+) -> Result<(AppServerClient, Option<StreamCloseHandle>), SshBridgeError> {
+    let bridge = OpencodeBridge::builder()
         .runtime(OpencodeRuntime::external(base_url, String::new()))
         .state_dir(state_dir)
         .build()
         .await
-    {
-        Ok(bridge) => bridge,
-        Err(error) => {
-            schedule_remote_opencode_cleanup(
-                Arc::clone(&ssh),
-                shell,
-                remote_port,
-                session_id.clone(),
-            );
-            return Err(SshBridgeError::BridgeStartupFailed(error.to_string()));
+        .map_err(|error| SshBridgeError::BridgeStartupFailed(error.to_string()))?;
+    connect_bridge_stream(bridge, "opencode".to_string()).await
+}
+
+/// Quick `/global/health` check used to decide whether an occupied candidate
+/// port is a reusable opencode server vs a foreign process. Much shorter than
+/// the spawn-path readiness budget so scanning the port range stays cheap.
+async fn opencode_healthy_reuse_probe(base_url: &str) -> bool {
+    let client = reqwest::Client::new();
+    let url = format!("{}/global/health", base_url.trim_end_matches('/'));
+    for _ in 0..OPENCODE_REUSE_PROBE_ATTEMPTS {
+        if let Ok(resp) = client.get(&url).send().await
+            && resp.status().is_success()
+            && let Ok(body) = resp.json::<serde_json::Value>().await
+            && body.get("healthy").and_then(serde_json::Value::as_bool) == Some(true)
+        {
+            return true;
         }
-    };
-    let (client, close_handle) = match connect_bridge_stream(bridge, "opencode".to_string()).await {
-        Ok(result) => result,
-        Err(error) => {
-            schedule_remote_opencode_cleanup(
-                Arc::clone(&ssh),
-                shell,
-                remote_port,
-                session_id.clone(),
-            );
-            return Err(error);
-        }
-    };
-    let close_handle = close_handle.map(|handle| {
-        handle.with_on_close(remote_opencode_cleanup_callback(
-            ssh,
-            shell,
-            remote_port,
-            session_id,
-        ))
-    });
-    Ok((client, close_handle))
+        tokio::time::sleep(OPENCODE_REUSE_PROBE_INTERVAL).await;
+    }
+    false
 }
 
 fn cli_candidates(defaults: &[&str], bin_override: Option<&str>) -> Vec<String> {
@@ -732,7 +971,53 @@ fn cli_candidates(defaults: &[&str], bin_override: Option<&str>) -> Vec<String> 
         .collect()
 }
 
+async fn resolve_omp_agent_dir(
+    ssh: &SshClient,
+    shell: RemoteShell,
+) -> Result<String, SshBridgeError> {
+    if let Some(dir) = ssh.with_detection(|d| d.omp_agent_dir.clone()) {
+        return Ok(dir);
+    }
+    let dir = resolve_omp_agent_dir_uncached(ssh, shell).await?;
+    let stored = dir.clone();
+    ssh.with_detection(|d| d.omp_agent_dir = Some(stored));
+    Ok(dir)
+}
+
+async fn resolve_omp_agent_dir_uncached(
+    ssh: &SshClient,
+    shell: RemoteShell,
+) -> Result<String, SshBridgeError> {
+    let result = ssh
+        .exec_shell("printf '%s/.omp/agent\n' \"$HOME\"", shell)
+        .await?;
+    let directory = result.stdout.trim().to_string();
+    if result.exit_code != 0 || !directory.starts_with('/') {
+        return Err(SshBridgeError::BridgeStartupFailed(
+            "Could not resolve the remote OMP home".into(),
+        ));
+    }
+    Ok(directory)
+}
+
 async fn resolve_remote_cli(
+    ssh: &SshClient,
+    shell: RemoteShell,
+    candidates: &[String],
+) -> Result<String, SshBridgeError> {
+    let key = crate::ssh::cli_key(candidates);
+    if let Some(path) = ssh.with_detection(|d| d.cli_paths.get(&key).cloned()) {
+        return Ok(path);
+    }
+    let path = resolve_remote_cli_uncached(ssh, shell, candidates).await?;
+    let stored = path.clone();
+    ssh.with_detection(|d| {
+        d.cli_paths.insert(key, stored);
+    });
+    Ok(path)
+}
+
+async fn resolve_remote_cli_uncached(
     ssh: &SshClient,
     shell: RemoteShell,
     candidates: &[String],
@@ -746,9 +1031,8 @@ async fn resolve_remote_cli(
         .collect::<Vec<_>>()
         .join(" ");
     let script = format!(
-        "{PROFILE_INIT}\n{}",
-        format!(
-            r#"for cmd in {candidate_list}; do
+        r#"{PROFILE_INIT}
+for cmd in {candidate_list}; do
   case "$cmd" in
     */*)
       if [ -x "$cmd" ]; then
@@ -766,7 +1050,6 @@ async fn resolve_remote_cli(
   esac
 done
 exit 127"#
-        )
     );
     let result = ssh.exec_shell(&script, shell).await?;
     if result.exit_code == 0 {
@@ -782,6 +1065,25 @@ exit 127"#
 }
 
 async fn validate_remote_cli_executes(
+    ssh: &SshClient,
+    shell: RemoteShell,
+    bin: &str,
+    label: &str,
+) -> Result<(), SshBridgeError> {
+    if ssh.with_detection(|d| d.validated_clis.iter().any(|v| v == bin)) {
+        return Ok(());
+    }
+    validate_remote_cli_executes_uncached(ssh, shell, bin, label).await?;
+    let stored = bin.to_string();
+    ssh.with_detection(|d| {
+        if !d.validated_clis.contains(&stored) {
+            d.validated_clis.push(stored);
+        }
+    });
+    Ok(())
+}
+
+async fn validate_remote_cli_executes_uncached(
     ssh: &SshClient,
     shell: RemoteShell,
     bin: &str,
@@ -891,8 +1193,12 @@ async fn scan_remote_claude_sessions(
 async fn scan_remote_pi_sessions(
     ssh: &SshClient,
     shell: RemoteShell,
+    agent_dir: Option<&str>,
 ) -> Result<Vec<PiSessionInfo>, SshBridgeError> {
-    let script = format!("{PROFILE_INIT}\n{REMOTE_PI_SESSION_SCAN}");
+    let prefix = agent_dir
+        .map(crate::local_studio::session_scan_prefix)
+        .unwrap_or_default();
+    let script = format!("{PROFILE_INIT}\n{prefix}\n{REMOTE_PI_SESSION_SCAN}");
     let result = ssh.exec_shell(&script, shell).await?;
     if result.exit_code != 0 {
         return Err(SshBridgeError::Transport(nonempty_stderr_or_stdout(result)));
@@ -1051,10 +1357,13 @@ async fn wait_until_remote_opencode_healthy(
     }
 }
 
-async fn wait_until_opencode_healthy(base_url: &str) -> Result<(), SshBridgeError> {
+async fn wait_until_opencode_healthy(
+    base_url: &str,
+    budget: Duration,
+) -> Result<(), SshBridgeError> {
     let client = reqwest::Client::new();
     let url = format!("{}/global/health", base_url.trim_end_matches('/'));
-    let deadline = Instant::now() + OPENCODE_LOCAL_HEALTH_BUDGET;
+    let deadline = Instant::now() + budget;
     loop {
         if let Ok(resp) = client.get(&url).send().await
             && resp.status().is_success()
@@ -1083,17 +1392,6 @@ async fn fetch_remote_opencode_logs(
     );
     let result = ssh.exec_shell(&script, shell).await?;
     Ok(nonempty_stdout_or_stderr(result))
-}
-
-fn remote_opencode_cleanup_callback(
-    ssh: Arc<SshClient>,
-    shell: RemoteShell,
-    remote_port: u16,
-    session_id: String,
-) -> Box<dyn Fn() + Send + Sync + 'static> {
-    Box::new(move || {
-        schedule_remote_opencode_cleanup(Arc::clone(&ssh), shell, remote_port, session_id.clone());
-    })
 }
 
 fn schedule_remote_opencode_cleanup(
@@ -1149,13 +1447,13 @@ fn parse_agent_probe(stdout: &str) -> Vec<RemoteAgentAvailability> {
         .lines()
         .filter_map(|line| {
             let (cmd, path) = line.split_once('\t').unwrap_or((line, ""));
-            let kind = match cmd {
-                "claude" => "claude".to_string(),
-                "pi" | "pi-coding-agent" => "pi".to_string(),
-                "opencode" => "opencode".to_string(),
-                "codex" => "codex".to_string(),
-                _ => return None,
-            };
+            // Normalize through the catalog so probe labels, aliases
+            // (`pi-coding-agent`) and the canonical kind stay in sync
+            // with the script that produced them, and so an agent litter
+            // cannot bridge never leaks into the picker.
+            let kind = crate::store::agent_catalog::entry(cmd)
+                .filter(|entry| entry.reach.supports_ssh_bridge())
+                .map(|entry| entry.name.to_string())?;
             let status = if path.trim().is_empty() {
                 AgentAvailabilityStatus::AgentCliMissing
             } else {
@@ -1164,44 +1462,6 @@ fn parse_agent_probe(stdout: &str) -> Vec<RemoteAgentAvailability> {
             Some(RemoteAgentAvailability { kind, status })
         })
         .collect()
-}
-
-async fn pick_remote_port(ssh: &SshClient, shell: RemoteShell) -> Result<u16, SshBridgeError> {
-    let start = fallback_remote_port();
-    for offset in 0..REMOTE_PORT_PROBE_CANDIDATES {
-        let port = REMOTE_PORT_PROBE_BASE
-            + ((start - REMOTE_PORT_PROBE_BASE + offset) % REMOTE_PORT_PROBE_SPAN);
-        if remote_port_looks_free(ssh, shell, port).await? {
-            return Ok(port);
-        }
-    }
-    debug!(
-        "remote free-port probe failed, falling back to time-derived port: {}",
-        start
-    );
-    Ok(start)
-}
-
-async fn remote_port_looks_free(
-    ssh: &SshClient,
-    shell: RemoteShell,
-    port: u16,
-) -> Result<bool, SshBridgeError> {
-    let port_str = port.to_string();
-    let script = format!(
-        "{PROFILE_INIT}\n{}",
-        crate::ssh_scripts::render(
-            crate::ssh_scripts::posix::REMOTE_PORT_FREE_PROBE,
-            &[("PORT", &port_str)],
-        )
-    );
-    let result = ssh.exec_shell(&script, shell).await?;
-    Ok(result.exit_code == 0)
-}
-
-fn fallback_remote_port() -> u16 {
-    let span = now_millis() % 2000;
-    17600 + span as u16
 }
 
 fn nonempty_stderr_or_stdout(result: crate::ssh::ExecResult) -> String {
@@ -1224,11 +1484,18 @@ fn nonempty_stdout_or_stderr(result: crate::ssh::ExecResult) -> String {
     }
 }
 
-fn now_millis() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
+/// Explain why an agent cannot be reached over SSH and what to do about
+/// it. Reaches the user verbatim as a connect-failure message.
+fn pairing_only_message(kind: &str) -> String {
+    let label = runtime_display_name(kind);
+    match crate::store::agent_catalog::requirement(kind) {
+        Some(requirement) => format!(
+            "{label} can't be started over SSH — it runs on the paired host. To use it, {requirement}."
+        ),
+        None => format!(
+            "{label} can't be started over SSH — litter has no bridge for it. Pair with kittylitter on a host that runs it."
+        ),
+    }
 }
 
 pub fn runtime_label(kind: &str) -> &str {
@@ -1239,8 +1506,191 @@ pub fn runtime_label(kind: &str) -> &str {
 }
 
 fn runtime_display_name(kind: &str) -> &str {
-    // Fall back to the raw id when no metadata is cached. Real
-    // human-facing display strings come from
-    // `AgentMetadataStore::get(kind).display_name`.
-    kind
+    // Prefer the built-in catalog label so an SSH-bridge server shows
+    // "Claude" / "Local Studio" rather than the raw id. Agents litter
+    // has no catalog entry for fall back to the id; richer strings
+    // still come from `AgentMetadataStore::get(kind).display_name` once
+    // a host has been probed.
+    crate::store::agent_catalog::display_name(kind).unwrap_or(kind)
+}
+
+#[cfg(test)]
+mod local_studio_tests {
+    use super::*;
+
+    #[test]
+    fn probe_parser_exposes_ready_local_studio_catalog() {
+        let agents =
+            parse_agent_probe("local-studio\t/home/test/.local-studio/pi-agent\npi\t/usr/bin/pi\n");
+        assert_eq!(agents[0].kind, "local-studio");
+        assert_eq!(agents[0].status, AgentAvailabilityStatus::Available);
+    }
+
+    #[test]
+    fn probe_parser_keeps_missing_catalog_unavailable() {
+        let agents = parse_agent_probe("local-studio\t\n");
+        assert_eq!(agents[0].status, AgentAvailabilityStatus::AgentCliMissing);
+    }
+}
+
+#[cfg(test)]
+mod agent_registration_tests {
+    use super::*;
+
+    /// Claude and opencode are fully bridged by litter's own SSH path —
+    /// they must survive the probe with their real availability, not be
+    /// filtered out on the way through.
+    #[test]
+    fn probe_parser_registers_every_ssh_bridgeable_agent() {
+        let agents = parse_agent_probe(concat!(
+            "local-studio\t1\n",
+            "claude\t/usr/local/bin/claude\n",
+            "pi\t/usr/local/bin/pi-coding-agent\n",
+            "omp\t/usr/local/bin/omp\n",
+            "opencode\t\n",
+            "codex\t/usr/local/bin/codex\n",
+        ));
+        let kinds = agents
+            .iter()
+            .map(|agent| agent.kind.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            vec!["local-studio", "claude", "pi", "omp", "opencode", "codex"]
+        );
+        assert_eq!(
+            agents
+                .iter()
+                .find(|agent| agent.kind == "claude")
+                .map(|agent| agent.status.clone()),
+            Some(AgentAvailabilityStatus::Available)
+        );
+        assert_eq!(
+            agents
+                .iter()
+                .find(|agent| agent.kind == "opencode")
+                .map(|agent| agent.status.clone()),
+            Some(AgentAvailabilityStatus::AgentCliMissing)
+        );
+    }
+
+    #[test]
+    fn probe_parser_normalizes_aliases_to_canonical_kinds() {
+        let agents =
+            parse_agent_probe("pi-coding-agent\t/usr/bin/pi\nclaude-code\t/usr/bin/claude\n");
+        assert_eq!(
+            agents.iter().map(|a| a.kind.as_str()).collect::<Vec<_>>(),
+            vec!["pi", "claude"]
+        );
+    }
+
+    /// A visible-but-unusable agent is worse than a hidden one: litter
+    /// links no bridge for these, so they must never reach the SSH
+    /// picker as "available".
+    #[test]
+    fn probe_parser_drops_pairing_only_agents() {
+        let agents = parse_agent_probe(concat!(
+            "droid\t/usr/local/bin/droid\n",
+            "devin\t/usr/local/bin/devin\n",
+            "amp\t/usr/local/bin/amp\n",
+            "hermes\t/usr/local/bin/hermes\n",
+            "grok\t/usr/local/bin/grok\n",
+            "shell\t/bin/sh\n",
+            "unknown-agent\t/usr/bin/unknown\n",
+        ));
+        assert!(
+            agents.is_empty(),
+            "pairing-only agents must not be offered over SSH: {agents:?}"
+        );
+    }
+
+    #[test]
+    fn runtime_display_name_uses_catalog_labels() {
+        assert_eq!(runtime_display_name("claude"), "Claude");
+        assert_eq!(runtime_display_name("opencode"), "opencode");
+        assert_eq!(runtime_display_name("codex"), "Codex");
+        assert_eq!(runtime_display_name("local-studio"), "Local Studio");
+        assert_eq!(runtime_display_name("droid"), "Droid");
+        assert_eq!(runtime_display_name("brand-new"), "brand-new");
+    }
+
+    #[test]
+    fn pairing_only_message_names_the_agent_and_the_fix() {
+        let message = pairing_only_message("droid");
+        assert!(message.contains("Droid"), "{message}");
+        assert!(message.contains("kittylitter"), "{message}");
+
+        let unknown = pairing_only_message("brand-new");
+        assert!(unknown.contains("brand-new"), "{unknown}");
+        assert!(unknown.contains("kittylitter"), "{unknown}");
+    }
+
+    #[test]
+    fn missing_cli_errors_say_what_to_install() {
+        let annotated = annotate_with_requirement(
+            SshBridgeError::AgentCliMissing("claude".to_string()),
+            "claude",
+        );
+        let message = annotated.to_string();
+        assert!(message.contains("Claude"), "{message}");
+        assert!(message.contains("`claude`"), "{message}");
+        assert!(message.contains("authenticate"), "{message}");
+    }
+
+    #[test]
+    fn non_cli_errors_are_left_alone() {
+        let untouched =
+            annotate_with_requirement(SshBridgeError::WindowsRemoteNotYetSupported, "claude");
+        assert!(matches!(
+            untouched,
+            SshBridgeError::WindowsRemoteNotYetSupported
+        ));
+    }
+}
+
+#[cfg(test)]
+mod omp_runtime_tests {
+    use super::*;
+    use alleycat_bridge_core::{ChildProcess, ProcessSpec};
+    struct Capture(StdMutex<Option<ProcessSpec>>);
+    impl ProcessLauncher for Capture {
+        fn launch(
+            &self,
+            spec: ProcessSpec,
+        ) -> futures::future::BoxFuture<'_, io::Result<Box<dyn ChildProcess>>> {
+            *self.0.lock().unwrap() = Some(spec);
+            Box::pin(async { Err(io::Error::other("captured")) })
+        }
+    }
+    #[tokio::test]
+    async fn omp_launch_cannot_inherit_pi_sessions_or_an_unrelated_profile() {
+        let capture = Arc::new(Capture(StdMutex::new(None)));
+        let launcher = OmpLauncher {
+            inner: capture.clone(),
+            agent_dir: "/remote/user/.omp/agent".into(),
+        };
+        let mut spec = ProcessSpec::new("/remote/bin/omp");
+        spec.args = vec!["--mode".into(), "rpc".into()];
+        spec.env = vec![
+            ("PI_CODING_AGENT_DIR".into(), "/wrong/pi/agent".into()),
+            ("OMP_PROFILE".into(), "unrelated".into()),
+        ];
+        let _ = launcher.launch(spec).await;
+        let spec = capture.0.lock().unwrap().take().unwrap();
+        assert_eq!(spec.program, PathBuf::from("/remote/bin/omp"));
+        assert_eq!(
+            spec.env,
+            vec![
+                (
+                    "PI_CODING_AGENT_DIR".into(),
+                    "/remote/user/.omp/agent".into()
+                ),
+                ("OMP_PROFILE".into(), "".into())
+            ]
+        );
+        assert_eq!(
+            spec.args,
+            vec![std::ffi::OsString::from("--mode"), "rpc".into()]
+        );
+    }
 }

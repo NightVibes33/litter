@@ -15,9 +15,8 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     @Binding var showPhotoPicker: Bool
     @Binding var showCamera: Bool
     @Binding var showFileImporter: Bool
-    @Binding var showRemoteFilePicker: Bool
-    @Binding var selectedPhoto: PhotosPickerItem?
-    @Binding var capturedImage: UIImage?
+    @Binding var selectedPhotos: [PhotosPickerItem]
+    @Binding var attachedImages: [UIImage]
     @Binding var showModelSelector: Bool
     @Binding var showPermissionsSheet: Bool
     @Binding var showExperimentalSheet: Bool
@@ -28,18 +27,30 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     @Binding var slashErrorMessage: String?
     @Binding var showMicPermissionAlert: Bool
     let onOpenSettings: () -> Void
-    let onLoadSelectedPhoto: (PhotosPickerItem) async -> Void
-    let onLoadSelectedFiles: ([URL]) async -> Void
-    let onSearchRemoteFiles: (String) async throws -> [FileSearchResult]
-    let onAttachRemoteFile: (FileSearchResult) -> Void
+    let onLoadSelectedPhotos: ([PhotosPickerItem]) async -> Void
+    let onLoadSelectedFile: (URL) -> Void
     let onLoadExperimentalFeatures: () async -> Void
     let onIsExperimentalFeatureEnabled: (String, Bool) -> Bool
     let onSetExperimentalFeature: (String, Bool) async -> Void
     let onLoadSkills: (Bool, Bool) async -> Void
-    let onSetSkillEnabled: (SkillMetadata, Bool) async -> Void
     let onRenameThread: (String) async -> Void
     @ViewBuilder let content: Content
     @State private var modelSelectorDetent: PresentationDetent = .large
+
+    /// Bridge binding for `CameraView` which expects a single `UIImage?`.
+    /// Appends the captured photo to the `attachedImages` array (capped at
+    /// the shared limit) instead of replacing existing attachments.
+    private var cameraImageBinding: Binding<UIImage?> {
+        Binding(
+            get: { attachedImages.last },
+            set: { newImage in
+                guard let newImage else { return }
+                if attachedImages.count < ComposerAttachmentLimits.maxImages {
+                    attachedImages.append(newImage)
+                }
+            }
+        )
+    }
 
     private var selectedModelBinding: Binding<String> {
         Binding(
@@ -104,8 +115,17 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
         ComposerSandboxOption.allCases.first { $0.wireValue == selectedSandboxValue }?.description ?? "This sandbox setting is managed by the server."
     }
 
+    /// `appModel.snapshot?.threads.first(where:)` is an O(threads) scan and is
+    /// read ten times across the permissions/model sheets. `threadSnapshot` is
+    /// the O(1) indexed lookup AppModel already exposes (and the one
+    /// ConversationView uses for the same thread).
+    ///
+    /// TODO(perf): stop reading `appModel` from this coordinator entirely once
+    /// `ConversationComposerSnapshot` carries `threadAgentRuntimeKind`,
+    /// `threadEffectiveApprovalPolicy`, `threadEffectiveSandboxPolicy`,
+    /// `threadAmpReasoningEffortLocked` and `modelCatalogLoaded`.
     private var currentThread: AppThreadSnapshot? {
-        appModel.snapshot?.threads.first(where: { $0.key == snapshot.threadKey })
+        appModel.threadSnapshot(for: snapshot.threadKey)
     }
 
     private var currentRuntimeSupportsPermissionOverrides: Bool {
@@ -137,11 +157,9 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
     }
 
     private var attachSheetDetentHeight: CGFloat {
-        let showsFile = true
-        let showsComputerFile = true
         let showsCamera = !LitterPlatform.isCatalyst
-        let count = 1 + (showsFile ? 1 : 0) + (showsComputerFile ? 1 : 0) + (showsCamera ? 1 : 0)
-        return count >= 4 ? 320 : (count >= 3 ? 260 : 210)
+        let count = 2 + (showsCamera ? 1 : 0)
+        return count >= 3 ? 260 : 210
     }
 
     var body: some View {
@@ -156,10 +174,6 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                         showAttachMenu = false
                         showFileImporter = true
                     },
-                    onChooseComputerFile: {
-                        showAttachMenu = false
-                        showRemoteFilePicker = true
-                    },
                     onTakePhoto: LitterPlatform.isCatalyst ? nil : {
                         showAttachMenu = false
                         showCamera = true
@@ -168,41 +182,40 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                 .presentationDetents([.height(attachSheetDetentHeight)])
                 .presentationDragIndicator(.visible)
             }
-            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhoto, matching: .images)
+            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotos, maxSelectionCount: ComposerAttachmentLimits.maxImages, matching: .images)
             .fileImporter(
                 isPresented: $showFileImporter,
-                allowedContentTypes: [.item, .folder],
-                allowsMultipleSelection: true
+                allowedContentTypes: ConversationAttachmentSupport.supportedFileContentTypes,
+                allowsMultipleSelection: false
             ) { result in
-                guard case let .success(urls) = result else { return }
-                Task { await onLoadSelectedFiles(urls) }
+                guard case let .success(urls) = result,
+                      let url = urls.first else { return }
+                onLoadSelectedFile(url)
             }
-            .sheet(isPresented: $showRemoteFilePicker) {
-                ConversationRemoteFilePickerView(
-                    onSearch: onSearchRemoteFiles,
-                    onAttach: onAttachRemoteFile
-                )
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-            }
-            .onChange(of: selectedPhoto) { _, item in
-                guard let item else { return }
-                Task { await onLoadSelectedPhoto(item) }
+            .onChange(of: selectedPhotos) { _, items in
+                guard !items.isEmpty else { return }
+                Task { await onLoadSelectedPhotos(items) }
             }
             .fullScreenCover(isPresented: $showCamera) {
-                CameraView(image: $capturedImage)
+                CameraView(image: cameraImageBinding)
                     .ignoresSafeArea()
             }
             .sheet(isPresented: $showModelSelector) {
                 ModelSelectorSheet(
                     models: snapshot.availableModels,
+                    catalogLoaded: appModel.snapshot?.serverSnapshot(for: snapshot.threadKey.serverId)?.availableModels != nil,
+                    catalogError: appModel.modelCatalogError(for: snapshot.threadKey.serverId),
+                    onRetryModels: {
+                        Task {
+                            await appModel.loadAvailableModelsIfNeeded(
+                                serverId: snapshot.threadKey.serverId,
+                                force: true
+                            )
+                        }
+                    },
                     selectedModel: selectedModelBinding,
                     selectedAgentRuntimeKind: selectedAgentRuntimeKindBinding,
                     reasoningEffort: reasoningEffortBinding,
-                    threadKey: snapshot.threadKey,
-                    collaborationMode: snapshot.collaborationMode,
-                    effectiveApprovalPolicy: currentThread?.effectiveApprovalPolicy,
-                    effectiveSandboxPolicy: currentThread?.effectiveSandboxPolicy,
                     isReasoningEffortLocked: currentThread?.ampReasoningEffortLocked == true
                 )
                 .presentationDetents([.medium, .large], selection: $modelSelectorDetent)
@@ -213,6 +226,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
             .onChange(of: showModelSelector) { _, isPresented in
                 if isPresented {
                     modelSelectorDetent = .large
+                    Task { await appModel.loadAvailableModelsIfNeeded(serverId: snapshot.threadKey.serverId) }
                 }
             }
             .sheet(isPresented: $showPermissionsSheet) {
@@ -249,7 +263,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
             } message: {
                 Text("Current thread title:\n\(renameCurrentThreadTitle)")
             }
-            .alert(slashCommandAlertTitle(for: slashErrorMessage), isPresented: Binding(
+            .alert("Slash Command Error", isPresented: Binding(
                 get: { slashErrorMessage != nil },
                 set: { if !$0 { slashErrorMessage = nil } }
             )) {
@@ -309,11 +323,11 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                     }
                     .padding(14)
                     .background(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .fill(LitterTheme.surface.opacity(0.82))
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .stroke(LitterTheme.border.opacity(0.55), lineWidth: 1)
                     )
 
@@ -372,7 +386,7 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                 .padding(16)
                 .padding(.bottom, 28)
             }
-            .background(AlleyBackdrop().ignoresSafeArea())
+            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
             .navigationTitle("Permissions")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -393,18 +407,18 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                     .foregroundStyle(LitterTheme.textPrimary)
                     .litterFont(.subheadline, weight: .semibold)
             }
-            Text("This agent does not support Alley Cãt-side thread permission overrides, so approval and sandbox choices are not sent for this session.")
+            Text("This agent does not support Litter-side thread permission overrides, so approval and sandbox choices are not sent for this session.")
                 .foregroundStyle(LitterTheme.textMuted)
                 .litterFont(.caption)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(LitterTheme.surface.opacity(0.82))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(LitterTheme.border.opacity(0.55), lineWidth: 1)
         )
     }
@@ -467,11 +481,11 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(LitterTheme.surface.opacity(0.74))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .stroke(LitterTheme.border.opacity(0.5), lineWidth: 1)
         )
     }
@@ -579,14 +593,14 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                                 .labelsHidden()
                                 .tint(LitterTheme.accent)
                             }
-                            .listRowBackground(LitterTheme.surface.opacity(0.88))
+                            .listRowBackground(LitterTheme.surface.opacity(0.6))
                         }
                     }
                     .scrollContentBackground(.hidden)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(AlleyBackdrop().ignoresSafeArea())
+            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
             .navigationTitle("Experimental")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -615,41 +629,33 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
                 } else {
                     List {
                         ForEach(skills) { skill in
-                            Toggle(
-                                isOn: Binding(
-                                    get: { skill.enabled },
-                                    set: { enabled in
-                                        Task { await onSetSkillEnabled(skill, enabled) }
-                                    }
-                                )
-                            ) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack {
-                                        Text(skill.name)
-                                            .litterFont(.subheadline)
-                                            .foregroundColor(LitterTheme.textPrimary)
-                                        Spacer()
-                                        Text(skill.enabled ? "enabled" : "disabled")
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text(skill.name)
+                                        .litterFont(.subheadline)
+                                        .foregroundColor(LitterTheme.textPrimary)
+                                    Spacer()
+                                    if skill.enabled {
+                                        Text("enabled")
                                             .litterFont(.caption2)
-                                            .foregroundColor(skill.enabled ? LitterTheme.accent : LitterTheme.textMuted)
+                                            .foregroundColor(LitterTheme.accent)
                                     }
-                                    Text(skill.description)
-                                        .litterFont(.caption)
-                                        .foregroundColor(LitterTheme.textSecondary)
-                                    Text(skill.path.value)
-                                        .litterFont(.caption2)
-                                        .foregroundColor(LitterTheme.textMuted)
                                 }
+                                Text(skill.description)
+                                    .litterFont(.caption)
+                                    .foregroundColor(LitterTheme.textSecondary)
+                                Text(skill.path.value)
+                                    .litterFont(.caption2)
+                                    .foregroundColor(LitterTheme.textMuted)
                             }
-                            .tint(LitterTheme.accent)
-                            .listRowBackground(LitterTheme.surface.opacity(0.88))
+                            .listRowBackground(LitterTheme.surface.opacity(0.6))
                         }
                     }
                     .scrollContentBackground(.hidden)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(AlleyBackdrop().ignoresSafeArea())
+            .background(LitterTheme.backgroundGradient.ignoresSafeArea())
             .navigationTitle("Skills")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -664,19 +670,4 @@ struct ConversationComposerModalCoordinator<Content: View>: View {
             }
         }
     }
-}
-
-func slashCommandAlertTitle(for message: String?) -> String {
-    let trimmed = message?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    guard !trimmed.isEmpty else { return "Slash Command" }
-
-    let neutralPrefixes = [
-        "Goal set.",
-        "Goal token budget set",
-        "Goal status set",
-        "Goal cleared.",
-        "Goal:",
-        "No goal is set for this thread."
-    ]
-    return neutralPrefixes.contains { trimmed.hasPrefix($0) } ? "Slash Command" : "Slash Command Error"
 }

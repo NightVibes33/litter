@@ -5,9 +5,32 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      build_only:
+        description: "Build an installable debug APK without store signing or publishing"
+        type: boolean
+        default: false
+      native_run_id:
+        description: "Reuse native libraries from a run with unchanged native sources and matching ABIs"
+        type: string
+        default: ""
+      bindings_run_id:
+        description: "Reuse shared-prep from a prior run with unchanged binding sources"
+        type: string
+        default: ""
+      abis:
+        description: "CPU architectures (ARM64 phones/TVs, x86-64 emulators/PCs)"
+        type: choice
+        default: arm64-v8a
+        options:
+          - arm64-v8a
+          - armeabi-v7a
+          - x86_64
+          - arm64-v8a,x86_64
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   detect-android-changes:
@@ -16,7 +39,7 @@ jobs:
       run_release: ${{ steps.filter.outputs.run_release }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 2
 
@@ -52,7 +75,7 @@ jobs:
     needs: detect-android-changes
     if: needs.detect-android-changes.outputs.run_release == 'true'
     runs-on: macos-26-intel
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       SCCACHE_BUCKET: rust-cache
@@ -65,15 +88,55 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
+
+      - name: Validate reusable binding sources
+        if: inputs.bindings_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BINDINGS_RUN_ID: ${{ inputs.bindings_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$BINDINGS_RUN_ID" =~ ^[0-9]+$ ]]
+          source_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BINDINGS_RUN_ID" --jq '.head_sha')"
+          git diff --exit-code "$source_sha" "$GITHUB_SHA" -- \
+            shared/rust-bridge shared/third_party/codex
+          while IFS= read -r patch; do
+            case "$patch" in
+              patches/codex/android-armv7-file-mode.patch) ;;
+              *) echo "Binding-affecting patch changed: $patch"; exit 1 ;;
+            esac
+          done < <(git diff --name-only "$source_sha" "$GITHUB_SHA" -- patches/codex)
+
+      - name: Download reusable shared bindings
+        if: inputs.bindings_run_id != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: shared-prep
+          path: .ci-reused-bindings
+          run-id: ${{ inputs.bindings_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Restore reusable shared bindings
+        if: inputs.bindings_run_id != ''
+        run: |
+          set -euo pipefail
+          archive="$(find .ci-reused-bindings -name generated-mobile-sources.tgz -print -quit)"
+          test -n "$archive"
+          tar -xzf "$archive" -C .
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '26.3'
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
 
       - name: Setup Zig (libghostty build)
         uses: mlugg/setup-zig@v2
@@ -83,37 +146,54 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Configure sccache
+        run: |
+          if [ -n "${SCCACHE_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BUCKET=" >> "$GITHUB_ENV"
+            echo "SCCACHE_ENDPOINT=" >> "$GITHUB_ENV"
+            echo "SCCACHE_S3_KEY_PREFIX=" >> "$GITHUB_ENV"
+            echo "AWS_ACCESS_KEY_ID=" >> "$GITHUB_ENV"
+            echo "AWS_SECRET_ACCESS_KEY=" >> "$GITHUB_ENV"
+          fi
+
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Sync codex submodule
         run: ./apps/ios/scripts/sync-codex.sh --preserve-current
 
       - name: Restore generated mobile bindings cache
         id: mobile-bindings-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             shared/rust-bridge/generated
-          key: mobile-bindings-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/generate-bindings.sh', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/uniffi-bindgen/**', 'patches/codex/**', 'shared/third_party/codex/codex-rs/app-server-protocol/src/protocol/**', 'shared/third_party/codex/codex-rs/protocol/src/**') }}
+          key: mobile-bindings-kotlin-${{ runner.os }}-${{ hashFiles('apps/ios/scripts/sync-codex.sh', 'shared/rust-bridge/generate-bindings.sh', 'shared/rust-bridge/Cargo.toml', 'shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/codex-mobile-client/src/**', 'shared/rust-bridge/uniffi-bindgen/**', 'patches/codex/**', 'shared/third_party/codex/codex-rs/app-server-protocol/src/protocol/**', 'shared/third_party/codex/codex-rs/protocol/src/**') }}
 
       - name: Generate shared mobile bindings
-        if: steps.mobile-bindings-cache.outputs.cache-hit != 'true'
+        if: inputs.bindings_run_id == '' && steps.mobile-bindings-cache.outputs.cache-hit != 'true'
         env:
-          RUSTC_WRAPPER: sccache
           CARGO_INCREMENTAL: "0"
         run: |
           cd shared/rust-bridge
           ./generate-bindings.sh --kotlin-only
+
+      - name: Generate Material3 scheme roles
+        run: |
+          bash tools/scripts/generate-material-schemes.sh
 
       - name: Package shared prep artifact
         run: |
           mkdir -p .ci-prep/shared
           tar -czf .ci-prep/shared/generated-mobile-sources.tgz -C . \
             shared/rust-bridge/generated \
+            apps/android/app/src/main/java/com/litter/android/ui/LitterMaterialSchemes.generated.kt \
 
       - name: Upload shared prep artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: shared-prep
           path: .ci-prep/shared
@@ -123,9 +203,10 @@ jobs:
     needs: [detect-android-changes, shared-prep]
     if: needs.detect-android-changes.outputs.run_release == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     environment: release
     env:
+      ANDROID_ABIS: ${{ inputs.abis || 'arm64-v8a' }}
       SCCACHE_BUCKET: rust-cache
       SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_R2_ENDPOINT }}
       SCCACHE_REGION: auto
@@ -137,24 +218,26 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
           fetch-depth: 0
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: '12266719'
 
       - name: Install Android platforms and NDK
         run: |
           yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;30.0.14904198"
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;30.0.14904198"
 
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev libcap-dev clang cmake
@@ -169,10 +252,24 @@ jobs:
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
+      - name: Configure sccache
+        run: |
+          if [ -n "${SCCACHE_ENDPOINT:-}" ] && [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+          else
+            echo "SCCACHE_BUCKET=" >> "$GITHUB_ENV"
+            echo "SCCACHE_ENDPOINT=" >> "$GITHUB_ENV"
+            echo "SCCACHE_S3_KEY_PREFIX=" >> "$GITHUB_ENV"
+            echo "AWS_ACCESS_KEY_ID=" >> "$GITHUB_ENV"
+            echo "AWS_SECRET_ACCESS_KEY=" >> "$GITHUB_ENV"
+          fi
+
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Prime sccache
+        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
         run: |
           export SCCACHE_ERROR_LOG="$RUNNER_TEMP/sccache-android.log"
           rm -f "$SCCACHE_ERROR_LOG"
@@ -181,7 +278,7 @@ jobs:
           sccache --show-stats || true
 
       - name: Download shared prep artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: shared-prep
           path: .ci-prep/shared
@@ -202,16 +299,72 @@ jobs:
       - name: Install cargo-ndk
         run: env -u RUSTC_WRAPPER cargo install cargo-ndk --locked
 
+      - name: Validate reusable native sources
+        if: inputs.native_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NATIVE_RUN_ID: ${{ inputs.native_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$NATIVE_RUN_ID" =~ ^[0-9]+$ ]]
+          source_sha="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_RUN_ID" --jq '.head_sha')"
+          git diff --exit-code "$source_sha" "$GITHUB_SHA" -- \
+            shared/rust-bridge shared/third_party/codex shared/third_party/ghostty \
+            patches/codex patches/ghostty tools/scripts/build-android-rust.sh \
+            tools/scripts/build-ghostty-android.sh tools/scripts/build-proot-android.sh \
+            tools/scripts/patch-ghostty-armv7.py apps/ios/scripts/sync-codex.sh \
+            apps/ios/scripts/sync-ghostty.sh apps/android/scripts/download-alpine-fs.sh
+
+      - name: Restore reusable native libraries
+        if: inputs.native_run_id != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: android-native-${{ inputs.abis || 'arm64-v8a' }}
+          path: apps/android
+          run-id: ${{ inputs.native_run_id }}
+          github-token: ${{ github.token }}
+
       - name: Build Rust JNI libs
+        if: inputs.native_run_id == ''
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/30.0.14904198
-          RUSTC_WRAPPER: sccache
         run: make rust-android
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Prepare local runtime assets
+        if: inputs.native_run_id == ''
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/30.0.14904198
+        run: make android-alpine-fs proot-android
+
+      - name: Save native build for Kotlin retries
+        uses: actions/upload-artifact@v6
+        with:
+          name: android-native-${{ inputs.abis || 'arm64-v8a' }}
+          path: |
+            apps/android/core/bridge/src/main/jniLibs
+            apps/android/core/bridge/src/main/cpp/include/ghostty.h
+            apps/android/app/src/main/jniLibs
+            apps/android/app/src/main/assets/alpine-fs.tgz
+            apps/android/app/src/main/assets/alpine-fs.version
+          if-no-files-found: error
+
+      - name: Build and test installable debug APK
+        if: inputs.build_only
+        run: apps/android/gradlew -p apps/android :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
+
+      - name: Upload device and TV build
+        if: inputs.build_only
+        uses: actions/upload-artifact@v6
+        with:
+          name: alleycat-android-${{ inputs.abis }}
+          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
 
       - name: Decode upload keystore
+        if: ${{ !inputs.build_only }}
         env:
           ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
         run: |
@@ -225,6 +378,7 @@ jobs:
           ls -lh "$store_file"
 
       - name: Build signed release APK
+        if: ${{ !inputs.build_only }}
         env:
           LITTER_UPLOAD_STORE_FILE: ${{ env.LITTER_UPLOAD_STORE_FILE }}
           LITTER_UPLOAD_STORE_PASSWORD: ${{ secrets.LITTER_UPLOAD_STORE_PASSWORD }}
@@ -233,13 +387,14 @@ jobs:
         run: apps/android/gradlew -p apps/android :app:assembleRelease
 
       - name: Generate checksums
+        if: ${{ !inputs.build_only }}
         run: |
           APK_PATH="apps/android/app/build/outputs/apk/release/app-release.apk"
           sha256sum "$APK_PATH" > "${APK_PATH}.sha256"
 
       - name: Upload build artifact (manual runs)
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && !inputs.build_only
+        uses: actions/upload-artifact@v6
         with:
           name: app-release
           path: |
@@ -248,7 +403,7 @@ jobs:
 
       - name: Publish GitHub Release (tag runs)
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             apps/android/app/build/outputs/apk/release/app-release.apk

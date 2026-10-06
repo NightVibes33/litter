@@ -1,16 +1,12 @@
 import SwiftUI
 import StoreKit
 
-enum TipJarFeature {
-    static let isVisible = false
-}
-
 struct TipJarView: View {
     private var store: TipJarStore { TipJarStore.shared }
 
     var body: some View {
         ZStack {
-            AlleyBackdrop().ignoresSafeArea()
+            LitterTheme.backgroundGradient.ignoresSafeArea()
 
             Form {
                 headerSection
@@ -19,7 +15,7 @@ struct TipJarView: View {
                     Section {
                         ProgressView()
                             .frame(maxWidth: .infinity)
-                            .listRowBackground(LitterTheme.surface.opacity(0.88))
+                            .listRowBackground(LitterTheme.surface.opacity(0.6))
                     }
                 } else {
                     tipsSection
@@ -38,7 +34,7 @@ struct TipJarView: View {
                         Text(message)
                             .litterFont(.caption)
                             .foregroundColor(LitterTheme.danger)
-                            .listRowBackground(LitterTheme.surface.opacity(0.88))
+                            .listRowBackground(LitterTheme.surface.opacity(0.6))
                     }
                 }
             }
@@ -51,7 +47,7 @@ struct TipJarView: View {
                     .scaleEffect(1.2)
             }
         }
-        .navigationTitle("Tip the Alley Cãt")
+        .navigationTitle("Tip the Kitty")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await store.loadProducts()
@@ -71,14 +67,14 @@ struct TipJarView: View {
                         .font(.system(size: 28))
                         .foregroundColor(LitterTheme.accent)
                 }
-                Text("If you enjoy Alley Cãt, consider leaving a tip. Tips help support ongoing development and are entirely optional.")
+                Text("If you enjoy Litter, consider leaving a tip. Tips help support ongoing development and are entirely optional.")
                     .litterFont(.caption)
                     .foregroundColor(LitterTheme.textSecondary)
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
-            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
         }
     }
 
@@ -96,7 +92,7 @@ struct TipJarView: View {
                             .foregroundColor(LitterTheme.accent)
                     }
                     .padding(.vertical, 4)
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
                 } else {
                     Button {
                         Task { await store.purchase(tier) }
@@ -114,7 +110,7 @@ struct TipJarView: View {
                     }
                     .padding(.vertical, 4)
                     .disabled(store.purchaseState == .purchasing)
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
                 }
             }
         } header: {
@@ -147,7 +143,7 @@ struct TipJarView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 4)
-                .listRowBackground(LitterTheme.surface.opacity(0.88))
+                .listRowBackground(LitterTheme.surface.opacity(0.6))
             }
         } header: {
             Text("Home Header")
@@ -169,7 +165,7 @@ struct TipJarView: View {
                     .frame(maxWidth: .infinity)
             }
             .disabled(store.purchaseState == .purchasing)
-            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
         }
     }
 
@@ -185,29 +181,37 @@ struct TipJarView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
-            .listRowBackground(LitterTheme.surface.opacity(0.88))
+            .listRowBackground(LitterTheme.surface.opacity(0.6))
         }
         .transition(.opacity)
     }
 }
 
-struct SupporterBadge: View {
+/// Renders purchased kitty icons for a tier range (e.g. 0..<2 = lower tiers,
+/// 2..<4 = higher tiers) next to the home logo. Collapses to nothing for
+/// ranges with no purchased tiers. `loadProducts` is called by the host
+/// screen so this stays a pure read.
+struct SupporterKittyBadges: View {
+    let tierIndices: Range<Int>
     @State private var showTipJar = false
 
     var body: some View {
-        if TipJarFeature.isVisible {
-            let store = TipJarStore.shared
-            Button { showTipJar = true } label: {
-                if let tier = store.supporterTier {
-                    TipCatIcon(name: tier.icon, size: 36)
-                } else {
-                    Image(systemName: "pawprint.fill")
-                        .font(.system(size: 14))
-                        .foregroundColor(LitterTheme.textMuted)
-                        .frame(width: 28, height: 28)
+        let store = TipJarStore.shared
+        let purchased = store.tiers.enumerated()
+            .filter { tierIndices.contains($0.offset) && store.isHeaderKittySelected($0.element) }
+            .map(\.element)
+        if !purchased.isEmpty {
+            HStack(spacing: 2) {
+                ForEach(purchased, id: \.id) { tier in
+                    Button { showTipJar = true } label: {
+                        Image(tier.icon)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 28, height: 28)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .task { await store.loadProducts() }
             .sheet(isPresented: $showTipJar) {
                 NavigationStack {
                     TipJarView()
@@ -223,60 +227,16 @@ struct SupporterBadge: View {
     }
 }
 
-/// Renders purchased kitty icons for a tier range (e.g. 0..<2 = lower tiers,
-/// 2..<4 = higher tiers) next to the home logo. Collapses to nothing for
-/// ranges with no purchased tiers. `loadProducts` is called by the host
-/// screen so this stays a pure read.
-struct SupporterKittyBadges: View {
-    let tierIndices: Range<Int>
-    @State private var showTipJar = false
-
-    var body: some View {
-        if TipJarFeature.isVisible {
-            let store = TipJarStore.shared
-            let purchased = store.tiers.enumerated()
-                .filter { tierIndices.contains($0.offset) && store.isHeaderKittySelected($0.element) }
-                .map(\.element)
-            if !purchased.isEmpty {
-                HStack(spacing: 2) {
-                    ForEach(purchased, id: \.id) { tier in
-                        Button { showTipJar = true } label: {
-                            ZStack {
-                                AlleyCatMark(size: 26)
-                                Circle()
-                                    .fill(LitterTheme.success)
-                                    .frame(width: 7, height: 7)
-                                    .offset(x: 10, y: 10)
-                            }
-                            .frame(width: 30, height: 30)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .sheet(isPresented: $showTipJar) {
-                    NavigationStack {
-                        TipJarView()
-                            .toolbar {
-                                ToolbarItem(placement: .topBarTrailing) {
-                                    Button("Done") { showTipJar = false }
-                                        .foregroundColor(LitterTheme.accent)
-                                }
-                            }
-                    }
-                }
-            }
-        }
-    }
-}
-
 private struct TipCatIcon: View {
     let name: String
     let size: CGFloat
 
     var body: some View {
-        AlleyCatMark(size: size * 0.78)
+        Image(name)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size * 0.9, height: size * 0.9)
             .frame(width: size, height: size)
             .modifier(GlassCircleModifier())
-            .accessibilityHidden(true)
     }
 }

@@ -1,16 +1,13 @@
 import SwiftUI
-import Network
 
 struct DiscoveryView: View {
     var onServerSelected: ((DiscoveredServer) -> Void)?
     @Environment(AppModel.self) private var appModel
-    @State private var discovery: NetworkDiscovery
     @State private var sshServer: DiscoveredServer?
-    @State private var connectionChoiceServer: DiscoveredServer?
     @State private var pendingSSHServer: DiscoveredServer?
     @State private var sshAgentContext: SSHBridgeAgentContext?
     @State private var showManualEntry = false
-    @State private var showAlleycatSheet = false
+    @State private var alleycatPairingMode: AlleycatPairingMode?
     @State private var showSlingshotHosts = false
     @State private var slingshotEnvironments: [AppSlingshotEnvironment] = []
     @State private var slingshotIsLoading = false
@@ -22,61 +19,29 @@ struct DiscoveryView: View {
     @State private var manualWakeMAC = ""
     @State private var autoSSHStarted = false
     @State private var connectingServer: DiscoveredServer?
-    @State private var wakingServer: DiscoveredServer?
     @State private var pendingAutoNavigateServerId: String?
     @State private var pendingAutoNavigateServer: DiscoveredServer?
     @State private var connectError: String?
-    @State private var renameTarget: DiscoveredServer?
-    @State private var renameText = ""
     @Environment(AppState.self) private var appState
-    private let autoStartDiscovery: Bool
-    private let initialServers: [DiscoveredServer]
+    private let autoStartSimulatorSSH: Bool
     private let slingshotBaseURL = "https://chatgpt.com/backend-api"
 
     init(
         onServerSelected: ((DiscoveredServer) -> Void)? = nil,
-        discovery: NetworkDiscovery? = nil,
-        autoStartDiscovery: Bool = true,
-        initialServers: [DiscoveredServer] = []
+        autoStartSimulatorSSH: Bool = true
     ) {
         self.onServerSelected = onServerSelected
-        _discovery = State(initialValue: discovery ?? NetworkDiscovery())
-        self.autoStartDiscovery = autoStartDiscovery
-        self.initialServers = initialServers
-    }
-
-    private var localServers: [DiscoveredServer] {
-        discovery.servers.filter { $0.source == .local }
-    }
-
-    private var networkServers: [DiscoveredServer] {
-        discovery.servers.filter { $0.source != .local }
-    }
-
-    private func applyInitialServersIfNeeded() {
-        guard !initialServers.isEmpty, discovery.servers.isEmpty else { return }
-        discovery.servers = initialServers
-        discovery.isScanning = false
-    }
-
-    private func refreshDiscovery() {
-        guard autoStartDiscovery else {
-            applyInitialServersIfNeeded()
-            return
-        }
-        discovery.startScanning()
+        self.autoStartSimulatorSSH = autoStartSimulatorSSH
     }
 
     private func handleAppear() {
-        guard autoStartDiscovery else { return }
+        guard autoStartSimulatorSSH else { return }
         maybeStartSimulatorAutoSSH()
     }
 
-    private func handleDisappear() {}
-
     var body: some View {
         ZStack {
-            AlleyBackdrop().ignoresSafeArea()
+            LitterTheme.backgroundGradient.ignoresSafeArea()
             chooserContent
         }
         .navigationTitle("Add Server")
@@ -87,7 +52,6 @@ struct DiscoveryView: View {
             }
         }
         .onAppear { handleAppear() }
-        .onDisappear { handleDisappear() }
         .sheet(item: $sshServer) { server in
             SSHLoginSheet(server: server) { target in
                 sshServer = nil
@@ -122,69 +86,52 @@ struct DiscoveryView: View {
                 }
             )
         }
-        .confirmationDialog(
-            connectionChoiceServer.map { "Connect to \($0.name)" } ?? "Choose Connection",
-            isPresented: connectionChoicePresented,
-            titleVisibility: .visible
-        ) {
-            if let server = connectionChoiceServer {
-                ForEach(server.availableDirectCodexPorts, id: \.self) { port in
-                    Button("Use Codex (\(port))") {
-                        let preferredServer = server.withConnectionPreference(.directCodex, codexPort: port)
-                        connectionChoiceServer = nil
-                        Task { await connectToServer(preferredServer) }
-                    }
-                }
-                if server.canConnectViaSSH {
-                    Button("Connect via SSH") {
-                        let preferredServer = server.withConnectionPreference(.ssh)
-                        connectionChoiceServer = nil
-                        sshServer = preferredServer
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                connectionChoiceServer = nil
-            }
-        } message: {
-            if let server = connectionChoiceServer {
-                Text(connectionChoiceMessage(for: server))
-            }
-        }
         .sheet(isPresented: $showManualEntry) {
             manualEntrySheet
         }
         .sheet(isPresented: $showSlingshotHosts) {
             slingshotHostsSheet
         }
-        .sheet(isPresented: $showAlleycatSheet) {
-            AlleycatAddServerSheet(appModel: appModel, startScanningOnAppear: true) { result in
-                showAlleycatSheet = false
-                Task { await connectAlleycatTarget(result) }
-            }
+        .sheet(item: $alleycatPairingMode) { pairingMode in
+            AlleycatAddServerSheet(
+                appModel: appModel,
+                startScanningOnAppear: true,
+                pairingMode: pairingMode,
+                onConnected: { result in
+                    alleycatPairingMode = nil
+                    Task { await connectAlleycatTarget(result) }
+                }
+            )
         }
         .onChange(of: showManualEntry) { _, isPresented in
             guard !isPresented, let pendingSSHServer else { return }
             self.pendingSSHServer = nil
             self.sshServer = pendingSSHServer
         }
-        .onChange(of: appModel.snapshot) { _, _ in
+        .onChange(of: appModel.snapshotRevision) { _, _ in
             guard let pendingAutoNavigateServerId else { return }
             guard let serverSnapshot = appModel.snapshot?.serverSnapshot(for: pendingAutoNavigateServerId) else {
                 return
             }
             if serverSnapshot.health == .connected {
                 self.pendingAutoNavigateServerId = nil
-                if let server = pendingAutoNavigateServer
-                    ?? discovery.servers.first(where: { $0.id == pendingAutoNavigateServerId }) {
+                if let server = pendingAutoNavigateServer {
                     self.pendingAutoNavigateServer = nil
                     navigateAfterConnect(server)
                 }
             } else if serverSnapshot.health == .disconnected,
                       let message = serverSnapshot.connectionProgress?.terminalMessage {
+                let failedServerId = pendingAutoNavigateServerId
                 self.pendingAutoNavigateServerId = nil
                 self.pendingAutoNavigateServer = nil
-                connectError = message
+                if decodeSshHostKeyChallenge(message: message)?.isChanged == true {
+                    appModel.recordSshHostKeyChange(
+                        serverId: failedServerId ?? "",
+                        errorMessage: message
+                    )
+                } else {
+                    connectError = message
+                }
             }
         }
         .alert("Connection Failed", isPresented: showConnectError, actions: {
@@ -192,53 +139,22 @@ struct DiscoveryView: View {
         }, message: {
             Text(connectError ?? "Unable to connect.")
         })
-        .alert("Rename Server", isPresented: Binding(
-            get: { renameTarget != nil },
-            set: { if !$0 { renameTarget = nil } }
+        .alert("SSH Host Identity Changed", isPresented: Binding(
+            get: { appModel.sshHostKeyChangeChallenge != nil },
+            set: { if !$0 { appModel.clearSshHostKeyChange() } }
         )) {
-            TextField("Name", text: $renameText)
-            Button("Cancel", role: .cancel) { renameTarget = nil }
-            Button("Save") {
-                if let server = renameTarget {
-                    let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let newName = trimmed.isEmpty ? server.hostname : trimmed
-                    SavedServerStore.upsert(DiscoveredServer(
-                        id: server.id,
-                        name: newName,
-                        hostname: server.hostname,
-                        port: server.port,
-                        codexPorts: server.codexPorts,
-                        sshPort: server.sshPort,
-                        source: server.source,
-                        hasCodexServer: server.hasCodexServer,
-                        wakeMAC: server.wakeMAC,
-                        preferredConnectionMode: server.preferredConnectionMode,
-                        preferredCodexPort: server.preferredCodexPort,
-                        os: server.os,
-                        sshBanner: server.sshBanner
-                    ))
-                    if let idx = discovery.servers.firstIndex(where: { $0.id == server.id }) {
-                        discovery.servers[idx] = DiscoveredServer(
-                            id: server.id,
-                            name: newName,
-                            hostname: server.hostname,
-                            port: server.port,
-                            codexPorts: server.codexPorts,
-                            sshPort: server.sshPort,
-                            source: server.source,
-                            hasCodexServer: server.hasCodexServer,
-                            wakeMAC: server.wakeMAC,
-                            preferredConnectionMode: server.preferredConnectionMode,
-                            preferredCodexPort: server.preferredCodexPort,
-                            os: server.os,
-                            sshBanner: server.sshBanner
-                        )
-                    }
+            Button("Replace Stored Identity", role: .destructive) {
+                guard let challenge = appModel.sshHostKeyChangeChallenge else { return }
+                Task {
+                    await AppRuntimeController.shared.replaceSshHostKey(
+                        serverId: challenge.serverId,
+                        fingerprint: challenge.fingerprint
+                    )
                 }
-                renameTarget = nil
             }
+            Button("Cancel", role: .cancel) { appModel.clearSshHostKeyChange() }
         } message: {
-            Text("Enter a new name for this server.")
+            Text("The SSH identity for this server changed. This can happen after a server is recreated, but may also indicate a man-in-the-middle attack. New fingerprint: \(appModel.sshHostKeyChangeChallenge?.fingerprint ?? "unknown")")
         }
     }
 
@@ -255,14 +171,26 @@ struct DiscoveryView: View {
 
                 chooserCard(
                     title: "Pair with kittylitter",
-                    subtitle: "Run npx kittylitter on the host, then scan the QR code it prints.",
+                    subtitle: "Install Kittylitter on your computer, then scan its QR code.",
                     badge: "RECOMMENDED",
                     icon: "qrcode.viewfinder",
                     supportedAgents: Self.kittylitterAgents,
                     isRecommended: true,
                     accessibilityID: "discovery.chooser.kittylitter"
                 ) {
-                    showAlleycatSheet = true
+                    alleycatPairingMode = .kittylitter
+                }
+
+                chooserCard(
+                    title: "Local Studio",
+                    subtitle: "Scan the QR from Local Studio Profile, or paste Copy connection JSON.",
+                    badge: nil,
+                    icon: "server.rack",
+                    supportedAgents: ["local-studio"],
+                    isRecommended: false,
+                    accessibilityID: "discovery.chooser.local-studio"
+                ) {
+                    alleycatPairingMode = .localStudio
                 }
 
                 chooserCard(
@@ -326,74 +254,43 @@ struct DiscoveryView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: icon)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundColor(LitterTheme.accent)
-                        .frame(width: 36, height: 36)
-                        .background(
-                            Circle()
-                                .fill(LitterTheme.accent.opacity(isRecommended ? 0.16 : 0.10))
-                        )
-                        .padding(.top, 2)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 8) {
+            // A text row: title (+ mono badge word), one line of what it
+            // does, and the agents it works with. No icon tile or stroke.
+            VStack(alignment: .leading, spacing: LitterSpace.s) {
+                HStack(alignment: .top, spacing: LitterSpace.m) {
+                    VStack(alignment: .leading, spacing: LitterSpace.xs) {
+                        HStack(alignment: .firstTextBaseline, spacing: LitterSpace.s) {
                             Text(title)
-                                .litterFont(.subheadline, weight: .semibold)
+                                .litterFont(.body, weight: isRecommended ? .semibold : .regular)
                                 .foregroundColor(LitterTheme.textPrimary)
                             if let badge {
-                                Text(badge)
-                                    .litterFont(.caption2, weight: .semibold)
-                                    .foregroundColor(LitterTheme.accentStrong)
-                                    .tracking(0.5)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(
-                                        Capsule()
-                                            .fill(LitterTheme.accent.opacity(0.14))
-                                    )
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(LitterTheme.accent.opacity(0.45), lineWidth: 0.6)
-                                    )
+                                Text(badge.lowercased())
+                                    .litterMeta()
                             }
                         }
                         Text(subtitle)
-                            .litterFont(.caption)
+                            .litterFont(.footnote)
                             .foregroundColor(LitterTheme.textSecondary)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
-                            .padding(.top, 2)
                     }
 
                     Spacer()
 
                     Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(LitterTheme.textMuted)
-                        .padding(.top, 10)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(LitterTheme.meta)
+                        .padding(.top, 4)
+                        .accessibilityHidden(true)
                 }
 
                 if !supportedAgents.isEmpty {
                     supportedAgentsStrip(supportedAgents)
                 }
             }
-            .padding(.vertical, 14)
-            .padding(.horizontal, 16)
+            .padding(.vertical, LitterSpace.m)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(LitterTheme.surface.opacity(isRecommended ? 0.85 : 0.6))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(
-                        LitterTheme.accent.opacity(isRecommended ? 0.45 : 0.18),
-                        lineWidth: isRecommended ? 1.0 : 0.8
-                    )
-            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier(accessibilityID)
@@ -401,208 +298,18 @@ struct DiscoveryView: View {
 
     @ViewBuilder
     private func supportedAgentsStrip(_ agents: [AgentRuntimeKind]) -> some View {
-        HStack(spacing: 8) {
-            Text("Works with")
-                .litterFont(.caption2)
-                .foregroundColor(LitterTheme.textMuted)
-                .tracking(0.4)
-                .fixedSize(horizontal: true, vertical: false)
-            HStack(spacing: 5) {
-                ForEach(agents, id: \.self) { agent in
-                    AgentIconView(kind: agent, size: 18)
-                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    // MARK: - Sections (legacy discovery list, retained for sheet plumbing)
-
-    private var allServers: [DiscoveredServer] {
-        localServers + networkServers
-    }
-
-    private var serversSection: some View {
-        Section {
-            if allServers.isEmpty {
-                if discovery.isInitialLoad {
-                    HStack {
-                        ProgressView().tint(LitterTheme.textMuted).scaleEffect(0.7)
-                        Text("Scanning...")
-                            .litterFont(.footnote)
-                            .foregroundColor(LitterTheme.textMuted)
-                    }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
-                } else {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("No servers found")
-                            .litterFont(.footnote)
-                            .foregroundColor(LitterTheme.textMuted)
-                        if discovery.isScanning {
-                            Text("Still searching network...")
-                                .litterFont(.caption)
-                                .foregroundColor(LitterTheme.textSecondary)
-                        }
-                    }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
-                }
-            } else {
-                ForEach(allServers) { server in
-                    serverRow(server)
-                }
-            }
-
-            if let notice = discovery.tailscaleDiscoveryNotice {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "network.slash")
-                        .foregroundColor(LitterTheme.textSecondary)
-                        .frame(width: 18, alignment: .top)
-                    Text(notice)
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textSecondary)
-                }
-                .listRowBackground(LitterTheme.surface.opacity(0.88))
-            }
-        } header: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text("Servers")
-                        .foregroundColor(LitterTheme.textSecondary)
-                    Spacer()
-                    if discovery.isScanning, let label = discovery.scanProgressLabel {
-                        Text(label)
-                            .litterFont(.caption2)
-                            .foregroundColor(LitterTheme.textMuted)
-                    }
-                }
-                if discovery.isScanning {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(LitterTheme.surface)
-                                .frame(height: 3)
-                            Capsule()
-                                .fill(LitterTheme.accent)
-                                .frame(
-                                    width: geo.size.width * CGFloat(discovery.scanProgress),
-                                    height: 3
-                                )
-                                .animation(.easeInOut(duration: 0.25), value: discovery.scanProgress)
-                        }
-                    }
-                    .frame(height: 3)
-                }
-            }
-        }
-        .listRowBackground(LitterTheme.surface.opacity(0.88))
-    }
-
-    // MARK: - Row
-
-    private func serverRow(_ server: DiscoveredServer) -> some View {
-        let rowIdentifier = serverRowAccessibilityIdentifier(for: server)
-        let serverSnapshot = appModel.snapshot?.servers.first(where: { $0.serverId == server.id })
-        return Button {
-            handleTap(server)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: serverIconName(for: server))
-                    .foregroundColor(server.hasCodexServer ? LitterTheme.accent : LitterTheme.textSecondary)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(server.name)
-                        .litterFont(.subheadline)
-                        .foregroundColor(LitterTheme.textPrimary)
-                    Text(serverSubtitle(server))
-                        .litterFont(.caption)
-                        .foregroundColor(LitterTheme.textSecondary)
-                }
-                Spacer()
-                if let progressTag = progressTag(for: serverSnapshot) {
-                    statusTag(label: progressTag.label, color: progressTag.color)
-                } else if let health = serverSnapshot?.health,
-                          health != .disconnected {
-                    statusTag(label: health.displayLabel.lowercased(), color: health.accentColor)
-                } else if connectingServer?.id == server.id {
-                    ProgressView().controlSize(.small).tint(LitterTheme.accent)
-                } else if wakingServer?.id == server.id {
-                    ProgressView().controlSize(.small).tint(LitterTheme.accent)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .foregroundColor(LitterTheme.textMuted)
-                        .font(.caption)
-                }
-            }
-        }
-        .accessibilityIdentifier(rowIdentifier)
-        .disabled(connectingServer != nil || wakingServer != nil)
-        .contextMenu {
-            if server.source != .local {
-                Button {
-                    renameText = server.name
-                    renameTarget = server
-                } label: {
-                    Label("Rename", systemImage: "pencil")
-                }
-            }
-        }
-    }
-
-    private func serverRowAccessibilityIdentifier(for server: DiscoveredServer) -> String {
-        let kind = server.hasCodexServer ? "codex" : "ssh"
-        let host = server.hostname
-            .lowercased()
-            .replacingOccurrences(of: ".", with: "_")
-            .replacingOccurrences(of: ":", with: "_")
-            .replacingOccurrences(of: " ", with: "_")
-        return "discovery.server.\(kind).\(host)"
-    }
-
-    private func serverSubtitle(_ server: DiscoveredServer) -> String {
-        if server.source == .local { return "In-process server" }
-        let snapshot = connectedSnapshot(for: server)
-        if let progressDetail = snapshot?.connectionProgressDetail,
-           !progressDetail.isEmpty {
-            return progressDetail
-        }
-        let displayHost = snapshot?.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-            ? snapshot!.host
-            : server.hostname
-        var parts = [displayHost]
-        if let os = server.os {
-            parts.append(" - \(os)")
-        }
-        let directPorts = server.availableDirectCodexPorts.map(String.init)
-        if !directPorts.isEmpty {
-            parts.append(" - codex \(directPorts.joined(separator: ", "))")
-        }
-        if server.canConnectViaSSH {
-            parts.append(" - ssh \(server.resolvedSSHPort)")
-        }
-        return parts.joined()
+        Text("works with " + agents.map { $0.displayLabel.lowercased() }.joined(separator: " · "))
+            .litterMeta()
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder
     private func statusTag(label: String, color: Color) -> some View {
-        Text(label)
-            .litterFont(.caption2)
-            .foregroundColor(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.15))
-            .cornerRadius(4)
-    }
-
-    private func connectedSnapshot(for server: DiscoveredServer) -> AppServerSnapshot? {
-        appModel.snapshot?.servers.first(where: { $0.serverId == server.id && !$0.isLocal })
+        Text(label.lowercased())
+            .litterMeta(color)
     }
 
     // MARK: - Actions
-
-    private func handleTap(_ server: DiscoveredServer) {
-        Task { await handleTapAsync(server) }
-    }
 
     private func navigateAfterConnect(_ server: DiscoveredServer) {
         guard let snapshot = appModel.snapshot?.servers.first(where: { $0.serverId == server.id }) else {
@@ -614,261 +321,6 @@ struct DiscoveryView: View {
             return
         }
         onServerSelected?(server)
-    }
-
-    @MainActor
-    private func handleTapAsync(_ server: DiscoveredServer) async {
-        if appModel.snapshot?.servers.first(where: { $0.serverId == server.id })?.health == .connected {
-            navigateAfterConnect(server)
-            return
-        }
-
-        let prepared = await prepareServerForSelection(server)
-        if prepared.server.requiresConnectionChoice {
-            connectionChoiceServer = prepared.server
-        } else if prepared.server.hasCodexServer, prepared.server.connectionTarget != nil {
-            await connectToServer(prepared.server)
-        } else if prepared.canAttemptSSH {
-            sshServer = prepared.server.withConnectionPreference(.ssh)
-        } else {
-            connectError = "Server did not respond after wake attempt. Enable Wake for network access on the Mac."
-        }
-    }
-
-    private func prepareServerForSelection(_ server: DiscoveredServer) async -> (server: DiscoveredServer, canAttemptSSH: Bool) {
-        guard server.source != .local else {
-            return (server, true)
-        }
-
-        wakingServer = server
-        defer { wakingServer = nil }
-
-        let wakeResult = await waitForWakeSignal(
-            host: server.hostname,
-            preferredCodexPort: server.hasCodexServer ? server.port : nil,
-            preferredSSHPort: server.sshPort,
-            timeout: server.hasCodexServer ? 12.0 : 18.0,
-            wakeMAC: server.wakeMAC
-        )
-
-        switch wakeResult {
-        case .codex(let port):
-            return (
-                DiscoveredServer(
-                    id: server.id,
-                    name: server.name,
-                    hostname: server.hostname,
-                    port: port,
-                    codexPorts: [port] + server.codexPorts.filter { $0 != port },
-                    sshPort: server.sshPort,
-                    source: server.source,
-                    hasCodexServer: true,
-                    wakeMAC: server.wakeMAC,
-                    sshPortForwardingEnabled: server.sshPortForwardingEnabled,
-                    preferredConnectionMode: server.preferredConnectionMode,
-                    preferredCodexPort: port
-                ),
-                true
-            )
-        case .ssh(let sshPort):
-            return (
-                DiscoveredServer(
-                    id: server.id,
-                    name: server.name,
-                    hostname: server.hostname,
-                    port: nil,
-                    codexPorts: server.codexPorts,
-                    sshPort: sshPort,
-                    source: server.source,
-                    hasCodexServer: false,
-                    wakeMAC: server.wakeMAC,
-                    sshPortForwardingEnabled: server.sshPortForwardingEnabled,
-                    preferredConnectionMode: .ssh
-                ),
-                true
-            )
-        case .none:
-            // Don't hard-block when wake probing is inconclusive; continue with
-            // normal connect/SSH flow so users can still attempt recovery.
-            return (server, true)
-        }
-    }
-
-    private enum WakeSignalResult {
-        case codex(UInt16)
-        case ssh(UInt16)
-        case none
-    }
-
-    private func waitForWakeSignal(
-        host: String,
-        preferredCodexPort: UInt16?,
-        preferredSSHPort: UInt16?,
-        timeout: TimeInterval,
-        wakeMAC: String?
-    ) async -> WakeSignalResult {
-        let codexPorts = orderedCodexPorts(preferred: preferredCodexPort)
-        let sshPorts = orderedSSHPorts(preferred: preferredSSHPort)
-        let deadline = Date().addingTimeInterval(max(timeout, 0.5))
-        var lastWakePacketAt = Date.distantPast
-
-        while Date() < deadline {
-            if let wakeMAC, Date().timeIntervalSince(lastWakePacketAt) >= 2.0 {
-                sendWakeMagicPacket(to: wakeMAC, hostHint: host)
-                lastWakePacketAt = Date()
-            }
-
-            for port in codexPorts {
-                if await isPortOpen(host: host, port: port, timeout: 0.7) {
-                    return .codex(port)
-                }
-            }
-
-            for port in sshPorts {
-                if await isPortOpen(host: host, port: port, timeout: 0.7) {
-                    return .ssh(port)
-                }
-            }
-
-            try? await Task.sleep(for: .milliseconds(350))
-        }
-
-        return .none
-    }
-
-    private func orderedCodexPorts(preferred: UInt16?) -> [UInt16] {
-        var ports = [UInt16]()
-        if let preferred {
-            ports.append(preferred)
-        }
-        ports.append(contentsOf: [8390, 9234, 4222])
-
-        var seen = Set<UInt16>()
-        return ports.filter { seen.insert($0).inserted }
-    }
-
-    private func orderedSSHPorts(preferred: UInt16?) -> [UInt16] {
-        var ports = [UInt16]()
-        if let preferred {
-            ports.append(preferred)
-        }
-        ports.append(22)
-
-        var seen = Set<UInt16>()
-        return ports.filter { seen.insert($0).inserted }
-    }
-
-    private func sendWakeMagicPacket(to wakeMAC: String, hostHint: String) {
-        guard let macBytes = macBytes(from: wakeMAC) else { return }
-        var packet = Data(repeating: 0xFF, count: 6)
-        for _ in 0..<16 {
-            packet.append(contentsOf: macBytes)
-        }
-
-        let targets = wakeBroadcastTargets(for: hostHint)
-        for target in targets {
-            sendBroadcastUDP(packet: packet, host: target, port: 9)
-            sendBroadcastUDP(packet: packet, host: target, port: 7)
-        }
-    }
-
-    private func macBytes(from normalizedMAC: String) -> [UInt8]? {
-        let compact = normalizedMAC.replacingOccurrences(of: ":", with: "")
-        guard compact.count == 12 else { return nil }
-        var bytes: [UInt8] = []
-        bytes.reserveCapacity(6)
-        var index = compact.startIndex
-        for _ in 0..<6 {
-            let next = compact.index(index, offsetBy: 2)
-            let chunk = compact[index..<next]
-            guard let byte = UInt8(chunk, radix: 16) else { return nil }
-            bytes.append(byte)
-            index = next
-        }
-        return bytes
-    }
-
-    private func wakeBroadcastTargets(for host: String) -> [String] {
-        var targets = ["255.255.255.255"]
-        let parts = host.split(separator: ".")
-        if parts.count == 4,
-           let _ = Int(parts[0]),
-           let _ = Int(parts[1]),
-           let _ = Int(parts[2]),
-           let _ = Int(parts[3]) {
-            targets.append("\(parts[0]).\(parts[1]).\(parts[2]).255")
-        }
-        return Array(Set(targets))
-    }
-
-    private func sendBroadcastUDP(packet: Data, host: String, port: UInt16) {
-        let fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
-        guard fd >= 0 else { return }
-        defer { close(fd) }
-
-        var enabled: Int32 = 1
-        withUnsafePointer(to: &enabled) { enabledPtr in
-            _ = setsockopt(fd, SOL_SOCKET, SO_BROADCAST, enabledPtr, socklen_t(MemoryLayout<Int32>.size))
-        }
-
-        var addr = sockaddr_in()
-        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = CFSwapInt16HostToBig(port)
-        host.withCString { cString in
-            _ = inet_pton(AF_INET, cString, &addr.sin_addr)
-        }
-
-        packet.withUnsafeBytes { bytes in
-            guard let base = bytes.baseAddress else { return }
-            var destination = addr
-            withUnsafePointer(to: &destination) { destinationPtr in
-                destinationPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                    _ = sendto(fd, base, packet.count, 0, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
-        }
-    }
-
-    private func isPortOpen(host: String, port: UInt16, timeout: TimeInterval) async -> Bool {
-        await withCheckedContinuation { continuation in
-            guard let endpointPort = NWEndpoint.Port(rawValue: port) else {
-                continuation.resume(returning: false)
-                return
-            }
-
-            let connection = NWConnection(host: NWEndpoint.Host(host), port: endpointPort, using: .tcp)
-            let gate = WakeProbeResumeGate()
-
-            connection.stateUpdateHandler = { state in
-                switch state {
-                case .ready:
-                    if gate.markResumed() {
-                        connection.stateUpdateHandler = nil
-                        connection.cancel()
-                        continuation.resume(returning: true)
-                    }
-                case .failed, .cancelled:
-                    if gate.markResumed() {
-                        connection.stateUpdateHandler = nil
-                        connection.cancel()
-                        continuation.resume(returning: false)
-                    }
-                default:
-                    break
-                }
-            }
-
-            connection.start(queue: .global(qos: .utility))
-
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                if gate.markResumed() {
-                    connection.stateUpdateHandler = nil
-                    connection.cancel()
-                    continuation.resume(returning: false)
-                }
-            }
-        }
     }
 
     private func connectToServer(_ server: DiscoveredServer, targetOverride: ConnectionTarget? = nil) async {
@@ -888,7 +340,6 @@ struct DiscoveryView: View {
             switch target {
             case .local:
                 startedAsyncBootstrap = false
-                try await LitterPlatform.ensureLocalRuntimeReady()
                 connectedServerId = try await appModel.serverBridge.connectLocalServer(
                     serverId: server.id,
                     displayName: server.name,
@@ -1050,7 +501,7 @@ struct DiscoveryView: View {
                     return supports && $0.kind != "codex"
                 }
                 switch $0.kind {
-                case "claude", "pi", "opencode": return true
+                case "claude", "pi", "opencode", "local-studio": return true
                 default: return false
                 }
             }
@@ -1069,7 +520,18 @@ struct DiscoveryView: View {
             )
         } catch {
             connectingServer = nil
-            connectError = error.localizedDescription
+            // The probe session is the first trust-store check in the guided
+            // flow, so a changed host key surfaces here first. Route it to
+            // the shared confirm dialog instead of the raw marker text.
+            let message = error.localizedDescription
+            if decodeSshHostKeyChallenge(message: message)?.isChanged == true {
+                appModel.recordSshHostKeyChange(
+                    serverId: server.id,
+                    errorMessage: message
+                )
+            } else {
+                connectError = message
+            }
         }
     }
 
@@ -1193,7 +655,7 @@ struct DiscoveryView: View {
     private var slingshotHostsSheet: some View {
         NavigationStack {
             ZStack {
-                AlleyBackdrop().ignoresSafeArea()
+                LitterTheme.backgroundGradient.ignoresSafeArea()
                 List {
                     Section {
                         if slingshotIsLoading && slingshotEnvironments.isEmpty {
@@ -1233,13 +695,13 @@ struct DiscoveryView: View {
                         }
                     } header: {
                         Text("Connected Computers")
-                            .foregroundColor(LitterTheme.textSecondary)
+                            .litterSectionLabel()
                     } footer: {
                         Text("These computers come from ChatGPT using your signed-in account. Start Codex on the computer first so it appears here.")
-                            .litterFont(.caption2)
+                            .litterFont(.footnote)
                             .foregroundColor(LitterTheme.textMuted)
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
                 }
                 .scrollContentBackground(.hidden)
             }
@@ -1251,11 +713,11 @@ struct DiscoveryView: View {
                         Task { await loadSlingshotEnvironments() }
                     }
                     .disabled(slingshotIsLoading)
-                    .foregroundColor(LitterTheme.accent)
+                    .foregroundColor(LitterTheme.textPrimary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Cancel") { showSlingshotHosts = false }
-                        .foregroundColor(LitterTheme.accent)
+                        .foregroundColor(LitterTheme.textPrimary)
                 }
             }
             .task {
@@ -1268,22 +730,22 @@ struct DiscoveryView: View {
 
     private func slingshotEnvironmentRow(_ environment: AppSlingshotEnvironment) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: slingshotIconName(for: environment))
-                .foregroundColor(environment.online ? LitterTheme.accent : LitterTheme.textMuted)
-                .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(environment.displayName)
-                    .litterFont(.subheadline)
+                    .litterFont(.body)
                     .foregroundColor(environment.online ? LitterTheme.textPrimary : LitterTheme.textSecondary)
                 Text(slingshotSubtitle(for: environment))
-                    .litterFont(.caption)
+                    .litterFont(.footnote)
                     .foregroundColor(LitterTheme.textSecondary)
             }
             Spacer()
-            statusTag(
-                label: environment.online ? (environment.busy ? "busy" : "online") : "offline",
-                color: environment.online ? (environment.busy ? .orange : LitterTheme.accent) : LitterTheme.textMuted
-            )
+            // Healthy (online, idle) shows nothing.
+            if !environment.online || environment.busy {
+                statusTag(
+                    label: environment.online ? "busy" : "offline",
+                    color: environment.online ? LitterTheme.warning : LitterTheme.meta
+                )
+            }
         }
         .padding(.vertical, 2)
     }
@@ -1347,26 +809,20 @@ struct DiscoveryView: View {
 
     private func slingshotSubtitle(for environment: AppSlingshotEnvironment) -> String {
         var parts: [String] = []
-        if let hostName = environment.hostName?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+        if let hostName = environment.hostName?.trimmingCharacters(in: .whitespacesAndNewlines),
            !hostName.isEmpty {
             parts.append(hostName)
         }
-
-        var platformParts: [String] = []
-        let operatingSystem = environment.operatingSystem.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-        if !operatingSystem.isEmpty {
-            platformParts.append(operatingSystem)
-        }
-        if let architecture = environment.architecture?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
-           !architecture.isEmpty {
-            platformParts.append(architecture)
-        }
-        let platform = platformParts.joined(separator: " ")
+        let platform = [environment.operatingSystem, environment.architecture]
+            .compactMap { value -> String? in
+                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed?.isEmpty == false ? trimmed : nil
+            }
+            .joined(separator: " ")
         if !platform.isEmpty {
             parts.append(platform)
         }
-
-        if let version = environment.appServerVersion?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines),
+        if let version = environment.appServerVersion?.trimmingCharacters(in: .whitespacesAndNewlines),
            !version.isEmpty {
             parts.append("Codex \(version)")
         }
@@ -1376,25 +832,12 @@ struct DiscoveryView: View {
         return parts.joined(separator: " - ")
     }
 
-    private func slingshotIconName(for environment: AppSlingshotEnvironment) -> String {
-        switch environment.operatingSystem.lowercased() {
-        case "linux":
-            return "server.rack"
-        case "windows":
-            return "desktopcomputer"
-        case "macos", "darwin":
-            return "desktopcomputer"
-        default:
-            return "laptopcomputer"
-        }
-    }
-
     // MARK: - Manual Entry
 
     private var manualEntrySheet: some View {
         NavigationStack {
             ZStack {
-                AlleyBackdrop().ignoresSafeArea()
+                LitterTheme.backgroundGradient.ignoresSafeArea()
                 Form {
                     Section {
                         Picker("Connection Type", selection: $manualConnectionMode) {
@@ -1405,9 +848,9 @@ struct DiscoveryView: View {
                         .pickerStyle(.segmented)
                     } header: {
                         Text("Connection")
-                            .foregroundColor(LitterTheme.textSecondary)
+                            .litterSectionLabel()
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                     Section {
                         if manualConnectionMode == .codex {
@@ -1435,7 +878,7 @@ struct DiscoveryView: View {
                         }
                     } header: {
                         Text(manualConnectionMode.formHeader)
-                            .foregroundColor(LitterTheme.textSecondary)
+                            .litterSectionLabel()
                     } footer: {
                         if manualConnectionMode == .codex {
                             Text("Prefer the SSH flow — it bootstraps codex on the remote bound to 127.0.0.1 and forwards the port over SSH.\nIf you run it manually, bind loopback and tunnel yourself: codex app-server --listen ws://127.0.0.1:8390\nFor reverse proxies: wss://example.com/ws?token=SECRET\nDo not bind 0.0.0.0 or expose directly to the internet unless you know what you are doing.")
@@ -1443,16 +886,16 @@ struct DiscoveryView: View {
                                 .foregroundColor(LitterTheme.textMuted)
                         }
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
 
                     Section {
                         Button(manualConnectionMode.primaryButtonTitle) {
                             submitManualEntry()
                         }
                         .foregroundColor(LitterTheme.accent)
-                        .litterFont(.subheadline)
+                        .litterFont(.body)
                     }
-                    .listRowBackground(LitterTheme.surface.opacity(0.88))
+                    .listRowBackground(LitterTheme.surface.opacity(0.6))
                 }
                 .scrollContentBackground(.hidden)
             }
@@ -1632,66 +1075,6 @@ struct DiscoveryView: View {
         showManualEntry = false
     }
 
-    private var connectionChoicePresented: Binding<Bool> {
-        Binding(
-            get: { connectionChoiceServer != nil },
-            set: { newValue in
-                if !newValue {
-                    connectionChoiceServer = nil
-                }
-            }
-        )
-    }
-
-    private func connectionChoiceMessage(for server: DiscoveredServer) -> String {
-        let directPorts = server.availableDirectCodexPorts.map(String.init)
-        if directPorts.isEmpty {
-            return "Use SSH to bootstrap Codex on \(server.hostname)."
-        }
-        if server.canConnectViaSSH {
-            return "Codex is available on ports \(directPorts.joined(separator: ", ")) and SSH is also available on port \(server.resolvedSSHPort)."
-        }
-        return "Choose a Codex app-server port on \(server.hostname)."
-    }
-
-    private func progressTag(
-        for serverSnapshot: AppServerSnapshot?
-    ) -> (label: String, color: Color)? {
-        guard let serverSnapshot,
-              let label = serverSnapshot.connectionProgressLabel,
-              let step = serverSnapshot.currentConnectionStep else {
-            return nil
-        }
-
-        let color: Color
-        switch step.state {
-        case .failed:
-            color = .red
-        case .completed where step.kind == .connected:
-            color = LitterTheme.accentStrong
-        case .awaitingUserInput:
-            color = .orange
-        default:
-            color = LitterTheme.accent
-        }
-
-        return (label, color)
-    }
-}
-
-private final class WakeProbeResumeGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var resumed = false
-
-    func markResumed() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if resumed {
-            return false
-        }
-        resumed = true
-        return true
-    }
 }
 
 private enum ManualConnectionMode: String, CaseIterable, Identifiable {
@@ -1727,19 +1110,3 @@ private enum ManualConnectionMode: String, CaseIterable, Identifiable {
         }
     }
 }
-
-#if DEBUG
-#Preview("Discovery") {
-    LitterPreviewScene(
-        appModel: LitterPreviewData.makeDiscoveryAppModel(),
-        includeBackground: false
-    ) {
-        NavigationStack {
-            DiscoveryView(
-                autoStartDiscovery: false,
-                initialServers: LitterPreviewData.sampleDiscoveryServers
-            )
-        }
-    }
-}
-#endif

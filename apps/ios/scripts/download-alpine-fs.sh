@@ -44,6 +44,11 @@ echo "==> Verifying checksum for $FAKEFS_TGZ"
 
 echo "==> Installing fs archive"
 mkdir -p "$RESOURCES_DIR"
+# A stray symlink (even a self-referencing one) is not a directory to `-d`;
+# drop it so the tarball extracts into a real directory.
+if [ -L "$RESOURCES_DIR/fs" ]; then
+    rm -f "$RESOURCES_DIR/fs"
+fi
 if [ -d "$RESOURCES_DIR/fs" ]; then
     staging="$RESOURCES_DIR/.fs.old-$$"
     if mv "$RESOURCES_DIR/fs" "$staging" 2>/dev/null; then

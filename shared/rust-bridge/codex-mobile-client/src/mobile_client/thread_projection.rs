@@ -104,6 +104,9 @@ pub(super) fn queued_follow_up_text_from_inputs(inputs: &[upstream::UserInput]) 
             upstream::UserInput::Image { .. } | upstream::UserInput::LocalImage { .. } => {
                 attachment_count += 1;
             }
+            upstream::UserInput::Audio { .. } | upstream::UserInput::LocalAudio { .. } => {
+                text_parts.push("[Audio attachment]".to_string());
+            }
             upstream::UserInput::Skill { .. } | upstream::UserInput::Mention { .. } => {}
         }
     }
@@ -115,60 +118,7 @@ pub(super) fn queued_follow_up_text_from_inputs(inputs: &[upstream::UserInput]) 
     }
 }
 
-pub(super) fn queued_follow_up_kind_from_json_value(
-    value: &serde_json::Value,
-) -> Option<AppQueuedFollowUpKind> {
-    let object = value.as_object()?;
-    let raw_kind = object
-        .get("kind")
-        .or_else(|| object.get("category"))
-        .or_else(|| object.get("queueKind"))
-        .or_else(|| object.get("queue_kind"))
-        .and_then(serde_json::Value::as_str)?
-        .trim()
-        .to_ascii_lowercase();
-
-    match raw_kind.as_str() {
-        "pending_steer" | "pending-steer" | "pendingsteer" | "steer" => {
-            Some(AppQueuedFollowUpKind::PendingSteer)
-        }
-        "rejected_steer" | "rejected-steer" | "rejectedsteer" | "retrying_steer"
-        | "retrying-steer" | "retryingsteer" => Some(AppQueuedFollowUpKind::RetryingSteer),
-        "queued" | "queued_follow_up" | "queued-follow-up" | "queuedfollowup" => {
-            Some(AppQueuedFollowUpKind::Message)
-        }
-        _ => None,
-    }
-}
-
-pub(super) fn queued_follow_up_text_from_json_value(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::String(text) => {
-            let trimmed = text.trim();
-            (!trimmed.is_empty()).then(|| trimmed.to_string())
-        }
-        serde_json::Value::Object(object) => {
-            if let Some(nested) = object
-                .get("userMessage")
-                .or_else(|| object.get("user_message"))
-            {
-                return queued_follow_up_text_from_json_value(nested);
-            }
-
-            if let Some(text) = string_field(object, &["text", "message", "summary"]) {
-                return Some(text);
-            }
-
-            let attachment_count = array_field_len(object, &["localImages", "local_images"])
-                + array_field_len(object, &["remoteImageUrls", "remote_image_urls"])
-                + array_field_len(object, &["images", "imageUrls", "image_urls"]);
-
-            attachment_summary(attachment_count)
-        }
-        _ => None,
-    }
-}
-
+#[cfg(test)]
 pub(super) fn queued_follow_up_inputs_from_json_value(
     value: &serde_json::Value,
 ) -> Vec<upstream::UserInput> {
@@ -280,6 +230,7 @@ pub(super) fn queued_follow_up_message_json_from_inputs(
     let mut text_elements = Vec::new();
     let mut remote_image_urls = Vec::new();
     let mut local_images = Vec::new();
+    let mut audio_inputs = Vec::new();
     let mut mention_bindings = Vec::new();
     let mut skill_bindings = Vec::new();
 
@@ -305,6 +256,9 @@ pub(super) fn queued_follow_up_message_json_from_inputs(
                     "path": path,
                 }));
             }
+            upstream::UserInput::Audio { .. } | upstream::UserInput::LocalAudio { .. } => {
+                audio_inputs.push(serde_json::to_value(input).ok()?);
+            }
             upstream::UserInput::Mention { name, path } => {
                 mention_bindings.push(serde_json::json!({
                     "mention": name,
@@ -324,6 +278,7 @@ pub(super) fn queued_follow_up_message_json_from_inputs(
         && text_elements.is_empty()
         && remote_image_urls.is_empty()
         && local_images.is_empty()
+        && audio_inputs.is_empty()
         && mention_bindings.is_empty()
         && skill_bindings.is_empty()
     {
@@ -335,11 +290,13 @@ pub(super) fn queued_follow_up_message_json_from_inputs(
         "textElements": text_elements,
         "remoteImageUrls": remote_image_urls,
         "localImages": local_images,
+        "audioInputs": audio_inputs,
         "mentionBindings": mention_bindings,
         "skillBindings": skill_bindings,
     }))
 }
 
+#[cfg(test)]
 pub(super) fn string_field(
     object: &serde_json::Map<String, serde_json::Value>,
     keys: &[&str],
@@ -365,30 +322,12 @@ pub(super) fn string_field(
         })
 }
 
-pub(super) fn array_field_len(
-    object: &serde_json::Map<String, serde_json::Value>,
-    keys: &[&str],
-) -> usize {
-    keys.iter()
-        .filter_map(|key| object.get(*key))
-        .find_map(|value| value.as_array().map(Vec::len))
-        .unwrap_or(0)
-}
-
 pub(super) fn attachment_summary(attachment_count: usize) -> Option<String> {
     match attachment_count {
         0 => None,
         1 => Some("1 image attachment".to_string()),
         count => Some(format!("{count} image attachments")),
     }
-}
-
-pub(super) fn stable_follow_up_preview_id(scope: &str, index: usize, text: &str) -> String {
-    let mut hasher = DefaultHasher::new();
-    scope.hash(&mut hasher);
-    index.hash(&mut hasher);
-    text.hash(&mut hasher);
-    format!("{scope}-{index}-{:016x}", hasher.finish())
 }
 
 pub(super) fn remote_oauth_callback_port(auth_url: &str) -> Result<u16, RpcError> {
@@ -479,48 +418,15 @@ pub(super) fn user_boundary_text_for_turn(
 }
 
 pub fn reasoning_effort_string(value: crate::types::ReasoningEffort) -> String {
-    match value {
-        crate::types::ReasoningEffort::None => "none".to_string(),
-        crate::types::ReasoningEffort::Minimal => "minimal".to_string(),
-        crate::types::ReasoningEffort::Low => "low".to_string(),
-        crate::types::ReasoningEffort::Medium => "medium".to_string(),
-        crate::types::ReasoningEffort::High => "high".to_string(),
-        crate::types::ReasoningEffort::XHigh => "xhigh".to_string(),
-        crate::types::ReasoningEffort::Max => "max".to_string(),
-    }
+    crate::types::reasoning_effort_wire_value(value)
 }
-
 pub fn reasoning_effort_from_string(value: &str) -> Option<crate::types::ReasoningEffort> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "none" => Some(crate::types::ReasoningEffort::None),
-        "minimal" => Some(crate::types::ReasoningEffort::Minimal),
-        "low" => Some(crate::types::ReasoningEffort::Low),
-        "medium" => Some(crate::types::ReasoningEffort::Medium),
-        "high" => Some(crate::types::ReasoningEffort::High),
-        "xhigh" => Some(crate::types::ReasoningEffort::XHigh),
-        "max" => Some(crate::types::ReasoningEffort::Max),
-        _ => None,
-    }
+    crate::types::reasoning_effort_from_wire_value(Some(value.into()))
 }
-
 pub(super) fn core_reasoning_effort_from_mobile(
     value: crate::types::ReasoningEffort,
 ) -> codex_protocol::openai_models::ReasoningEffort {
-    match value {
-        crate::types::ReasoningEffort::None => codex_protocol::openai_models::ReasoningEffort::None,
-        crate::types::ReasoningEffort::Minimal => {
-            codex_protocol::openai_models::ReasoningEffort::Minimal
-        }
-        crate::types::ReasoningEffort::Low => codex_protocol::openai_models::ReasoningEffort::Low,
-        crate::types::ReasoningEffort::Medium => {
-            codex_protocol::openai_models::ReasoningEffort::Medium
-        }
-        crate::types::ReasoningEffort::High => codex_protocol::openai_models::ReasoningEffort::High,
-        crate::types::ReasoningEffort::XHigh => {
-            codex_protocol::openai_models::ReasoningEffort::XHigh
-        }
-        crate::types::ReasoningEffort::Max => codex_protocol::openai_models::ReasoningEffort::XHigh,
-    }
+    value.into()
 }
 
 pub(super) fn collaboration_mode_from_thread(
@@ -564,52 +470,6 @@ pub(super) fn map_ssh_transport_error(error: crate::ssh::SshError) -> TransportE
     TransportError::ConnectionFailed(error.to_string())
 }
 
-pub(super) async fn refresh_thread_list_from_app_server(
-    session: Arc<ServerSession>,
-    app_store: Arc<AppStoreReducer>,
-    server_id: &str,
-) -> Result<(), RpcError> {
-    // Multiplexed sessions (Alleycat) carry a separate command channel per
-    // agent runtime. `thread/list` is not thread-scoped, so the default
-    // dispatcher routes it to Codex only — pi and opencode threads would
-    // never appear in the UI. Fan the request out across every runtime the
-    // session knows about and merge the pages, so the user sees their pi /
-    // opencode threads alongside codex's. `runtime_kinds()` returns
-    // `[Codex]` for non-multiplexed sessions, preserving the previous
-    // single-runtime behavior.
-    let runtime_kinds = session.runtime_kinds();
-
-    let mut incoming_ids = HashSet::new();
-    for runtime_kind in runtime_kinds {
-        let mut cursor = None;
-        loop {
-            let response =
-                match request_thread_list_page_for_runtime(&session, runtime_kind.clone(), cursor)
-                    .await
-                {
-                    Ok(response) => response,
-                    Err(error) => {
-                        warn!(
-                            "thread/list failed for runtime {:?} on server {}: {}",
-                            runtime_kind, server_id, error
-                        );
-                        break;
-                    }
-                };
-            let page = thread_list_page_to_thread_infos(response.data, &mut incoming_ids);
-            app_store.upsert_thread_list_page_for_runtime(server_id, runtime_kind.clone(), &page);
-
-            let Some(next_cursor) = response.next_cursor else {
-                break;
-            };
-            cursor = Some(next_cursor);
-        }
-    }
-
-    app_store.finalize_thread_list_sync(server_id, &incoming_ids);
-    Ok(())
-}
-
 pub(super) async fn refresh_account_from_app_server(
     session: Arc<ServerSession>,
     app_store: Arc<AppStoreReducer>,
@@ -632,58 +492,6 @@ pub(super) async fn refresh_account_from_app_server(
         response.requires_openai_auth,
     );
     Ok(())
-}
-
-async fn request_thread_list_page_for_runtime(
-    session: &ServerSession,
-    runtime_kind: AgentRuntimeKind,
-    cursor: Option<String>,
-) -> Result<upstream::ThreadListResponse, RpcError> {
-    let params = match cursor {
-        Some(cursor) => serde_json::json!({ "cursor": cursor }),
-        None => serde_json::json!({}),
-    };
-    let response = session
-        .request_for_runtime(runtime_kind, "thread/list", params)
-        .await?;
-    let mut response = response;
-    normalize_empty_thread_list_cwds(&mut response);
-    serde_json::from_value::<upstream::ThreadListResponse>(response)
-        .map_err(|error| RpcError::Deserialization(format!("deserialize thread/list: {error}")))
-}
-
-fn normalize_empty_thread_list_cwds(value: &mut serde_json::Value) {
-    let Some(data) = value
-        .get_mut("data")
-        .and_then(serde_json::Value::as_array_mut)
-    else {
-        return;
-    };
-    for item in data {
-        let Some(map) = item.as_object_mut() else {
-            continue;
-        };
-        if let Some(serde_json::Value::String(cwd)) = map.get_mut("cwd")
-            && cwd.is_empty()
-        {
-            *cwd = "/".to_string();
-        }
-    }
-}
-
-fn thread_list_page_to_thread_infos(
-    data: Vec<upstream::Thread>,
-    incoming_ids: &mut HashSet<String>,
-) -> Vec<ThreadInfo> {
-    let mut threads = Vec::new();
-    for thread in data {
-        let Some(info) = thread_info_from_upstream_thread(thread) else {
-            continue;
-        };
-        incoming_ids.insert(info.id.clone());
-        threads.push(info);
-    }
-    threads
 }
 
 pub(super) fn session_is_current(
@@ -720,21 +528,55 @@ pub(super) async fn read_thread_response_from_app_server(
     })
 }
 
+pub(super) async fn read_thread_response_from_app_server_runtime(
+    session: Arc<ServerSession>,
+    runtime_kind: AgentRuntimeKind,
+    thread_id: &str,
+    include_turns: bool,
+) -> Result<upstream::ThreadReadResponse, RpcError> {
+    let response = session
+        .request_for_runtime(
+            runtime_kind,
+            "thread/read",
+            serde_json::json!({ "threadId": thread_id, "includeTurns": include_turns }),
+        )
+        .await?;
+    serde_json::from_value::<upstream::ThreadReadResponse>(response).map_err(|error| {
+        RpcError::Deserialization(format!("deserialize thread/read response: {error}"))
+    })
+}
+
 pub(super) fn upsert_thread_snapshot_from_app_server_read_response(
     app_store: &AppStoreReducer,
     server_id: &str,
     response: upstream::ThreadReadResponse,
+    include_turns: bool,
 ) -> Result<(), RpcError> {
+    let snapshot = thread_snapshot_from_app_server_read_response(
+        app_store,
+        server_id,
+        response,
+        include_turns,
+    )?;
+    app_store.upsert_thread_snapshot(snapshot);
+    Ok(())
+}
+
+pub(super) fn thread_snapshot_from_app_server_read_response(
+    app_store: &AppStoreReducer,
+    server_id: &str,
+    mut response: upstream::ThreadReadResponse,
+    include_turns: bool,
+) -> Result<ThreadSnapshot, RpcError> {
+    if !include_turns {
+        response.thread.turns.clear();
+    }
     let turns = response.thread.turns.clone();
     let thread_id = response.thread.id.clone();
-    let existing = app_store
-        .snapshot()
-        .threads
-        .get(&ThreadKey {
-            server_id: server_id.to_string(),
-            thread_id: thread_id.to_string(),
-        })
-        .cloned();
+    let existing = app_store.thread_snapshot(&ThreadKey {
+        server_id: server_id.to_string(),
+        thread_id: thread_id.to_string(),
+    });
     let mut snapshot = thread_snapshot_from_upstream_thread_with_overrides(
         server_id,
         response.thread,
@@ -747,28 +589,9 @@ pub(super) fn upsert_thread_snapshot_from_app_server_read_response(
     if let Some(existing) = existing.as_ref() {
         copy_thread_runtime_fields(existing, &mut snapshot);
     }
+    crate::store::reconcile::apply_pagination_merge(existing.as_ref(), &mut snapshot, &turns);
     reconcile_active_turn(existing.as_ref(), &mut snapshot, &turns);
-    app_store.upsert_thread_snapshot(snapshot);
-    Ok(())
-}
-
-pub(super) fn upstream_thread_status_from_summary_status(
-    status: ThreadSummaryStatus,
-) -> upstream::ThreadStatus {
-    match status {
-        ThreadSummaryStatus::NotLoaded | ThreadSummaryStatus::Idle => upstream::ThreadStatus::Idle,
-        ThreadSummaryStatus::Active => upstream::ThreadStatus::Active {
-            active_flags: Vec::new(),
-        },
-        ThreadSummaryStatus::SystemError => upstream::ThreadStatus::SystemError,
-    }
-}
-
-pub(super) fn thread_snapshot_from_upstream_thread(
-    server_id: &str,
-    thread: upstream::Thread,
-) -> ThreadSnapshot {
-    thread_snapshot_from_upstream_thread_state(server_id, thread, None, None, None, None, None)
+    Ok(snapshot)
 }
 
 pub(super) fn thread_snapshot_from_upstream_thread_state(
@@ -783,7 +606,7 @@ pub(super) fn thread_snapshot_from_upstream_thread_state(
     let info = ThreadInfo::from(thread.clone());
     let items = crate::conversation::hydrate_turns(&thread.turns, &Default::default());
     let mut snapshot = ThreadSnapshot::from_info(server_id, info);
-    snapshot.items = items;
+    snapshot.items = items.into();
     snapshot.model = model;
     snapshot.reasoning_effort = reasoning_effort;
     snapshot.effective_approval_policy = effective_approval_policy;
@@ -821,6 +644,14 @@ pub fn reconcile_active_turn(
     if target.active_turn_id.is_some() {
         target.info.status = ThreadSummaryStatus::Active;
         return;
+    }
+    if let Some(remote_id) = active_turn_id_from_turns(upstream_turns) {
+        target.active_turn_id = Some(remote_id);
+        target.info.status = ThreadSummaryStatus::Active;
+        return;
+    }
+    if !upstream_turns.is_empty() && matches!(target.info.status, ThreadSummaryStatus::Active) {
+        target.info.status = ThreadSummaryStatus::Idle;
     }
     let Some(local_id) = existing.and_then(|t| t.active_turn_id.clone()) else {
         return;
@@ -928,5 +759,31 @@ pub(super) fn server_request_id_json(id: upstream::RequestId) -> serde_json::Val
     match id {
         upstream::RequestId::Integer(value) => serde_json::Value::Number(value.into()),
         upstream::RequestId::String(value) => serde_json::Value::String(value),
+    }
+}
+
+#[cfg(test)]
+mod audio_compat_tests {
+    use super::*;
+
+    #[test]
+    fn queued_audio_draft_retains_original_inputs_and_wire_payloads() {
+        let inputs = vec![
+            upstream::UserInput::Audio {
+                url: "data:audio/wav;base64,c2FtcGxl".into(),
+            },
+            upstream::UserInput::LocalAudio {
+                path: "/tmp/voice.wav".into(),
+            },
+        ];
+        assert!(
+            queued_follow_up_text_from_inputs(&inputs)
+                .unwrap()
+                .contains("Audio attachment")
+        );
+        let json = queued_follow_up_message_json_from_inputs(&inputs).unwrap();
+        let retained: Vec<upstream::UserInput> =
+            serde_json::from_value(json["audioInputs"].clone()).unwrap();
+        assert_eq!(retained, inputs);
     }
 }

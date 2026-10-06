@@ -142,8 +142,8 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEUserspaceManager.m",
-    "",
-    "PEUserspaceManager unused Swift import",
+    notification_objc_shim,
+    "PEUserspaceManager notification bridge",
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/NXConsoleView.m",
@@ -155,14 +155,6 @@ replace_generated_swift_import(
     nxos_version_objc_shim,
     "NXProject OS version bridge",
 )
-
-cc_driver = Path("ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/Tools/CCDriver.cpp")
-cc_driver_text = cc_driver.read_text()
-cc_driver_before = '        case kCCDriverTypeSwift:\n        {\n            if(!driver->swiftCompilation)\n            {\n                return nullptr;\n            }\n            const auto &Args = driver->swiftCompilation->getArgs();\n            if(const llvm::opt::Arg *A = Args.getLastArg(swift::options::OPT_sdk))\n            {\n                cxxstr = A->getValue();\n            }\n            break;\n        }\n'
-cc_driver_after = '        case kCCDriverTypeSwift:\n        {\n            for(size_t i = 0; i + 1 < driver->argStorage.size(); ++i)\n            {\n                if(driver->argStorage[i] == "-sdk")\n                {\n                    cxxstr = driver->argStorage[i + 1];\n                    break;\n                }\n            }\n            break;\n        }\n'
-if cc_driver_before not in cc_driver_text and cc_driver_after not in cc_driver_text:
-    raise SystemExit("Missing expected CoreCompiler Swift SDK lookup block")
-cc_driver.write_text(cc_driver_text.replace(cc_driver_before, cc_driver_after))
 
 def ensure_liveprocess_info_plist_metadata():
     plist_path = Path("ThirdParty/EmexDE/Source/LiveProcess/Info.plist")

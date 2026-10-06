@@ -19,24 +19,26 @@ val uploadStorePassword = projectPropOrEnv("LITTER_UPLOAD_STORE_PASSWORD")
 val uploadKeyAlias = projectPropOrEnv("LITTER_UPLOAD_KEY_ALIAS")
 val uploadKeyPassword = projectPropOrEnv("LITTER_UPLOAD_KEY_PASSWORD")
 val hasUploadSigning = listOf(uploadStoreFile, uploadStorePassword, uploadKeyAlias, uploadKeyPassword).all { !it.isNullOrBlank() }
+val supportedAbis = (projectPropOrEnv("ANDROID_ABIS") ?: "arm64-v8a")
+    .split(",")
+    .map(String::trim)
+    .filter(String::isNotEmpty)
 
 android {
     namespace = "com.sigkitten.litter.android"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = projectPropOrEnv("ANDROID_NDK_VERSION") ?: "30.0.14904198"
 
     defaultConfig {
         applicationId = "com.sigkitten.litter.android"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 11
-        versionName = "1.5.0"
-        buildConfigField("boolean", "ENABLE_ON_DEVICE_BRIDGE", "true")
-        buildConfigField("String", "RUNTIME_STARTUP_MODE", "\"hybrid\"")
-        buildConfigField("String", "APP_RUNTIME_TRANSPORT", "\"app_bridge_rpc_transport\"")
-        manifestPlaceholders["runtimeStartupMode"] = "hybrid"
-        manifestPlaceholders["enableOnDeviceBridge"] = "true"
+        targetSdk = 36
+        versionCode = 210020040
+        versionName = "2.1.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters += supportedAbis
+        }
     }
 
     if (hasUploadSigning) {
@@ -112,11 +114,11 @@ play {
     projectPropOrEnv("LITTER_PLAY_PROMOTE_TRACK")?.let { promoteTrack.set(it) }
 
     // Release status:
-    //   completed   → 100% rollout (default, matches historical behavior)
+    //   completed   → 100% rollout
     //   inProgress  → staged rollout, requires userFraction
     //   draft       → upload only, no release
     //   halted      → pause current rollout
-    val statusName = (projectPropOrEnv("LITTER_PLAY_RELEASE_STATUS") ?: "completed").lowercase()
+    val statusName = (projectPropOrEnv("LITTER_PLAY_RELEASE_STATUS") ?: "draft").lowercase()
     releaseStatus.set(
         when (statusName) {
             "inprogress", "in_progress" -> com.github.triplet.gradle.androidpublisher.ReleaseStatus.IN_PROGRESS
@@ -160,6 +162,7 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.noties.markwon:core:4.6.2")
     implementation("io.noties.markwon:ext-latex:4.6.2")
+    implementation("io.noties.markwon:ext-tables:4.6.2")
     implementation("io.noties.markwon:inline-parser:4.6.2")
     implementation("io.noties.markwon:syntax-highlight:4.6.2") {
         exclude(group = "org.jetbrains", module = "annotations-java5")
@@ -168,23 +171,21 @@ dependencies {
         exclude(group = "org.jetbrains", module = "annotations-java5")
     }
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("com.android.billingclient:billing-ktx:7.0.0")
+    implementation("com.android.billingclient:billing-ktx:8.0.0")
 
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
-    implementation("androidx.media3:media3-transformer:1.4.1")
 
-    implementation("io.github.webrtc-sdk:android:144.7559.04")
+    implementation("io.github.webrtc-sdk:android:144.7559.09")
 
     // Alleycat remote-host pairing QR scanner
-    implementation("androidx.camera:camera-core:1.3.4")
-    implementation("androidx.camera:camera-camera2:1.3.4")
-    implementation("androidx.camera:camera-lifecycle:1.3.4")
-    implementation("androidx.camera:camera-view:1.3.4")
+    implementation("androidx.camera:camera-core:1.6.1")
+    implementation("androidx.camera:camera-camera2:1.6.1")
+    implementation("androidx.camera:camera-lifecycle:1.6.1")
+    implementation("androidx.camera:camera-view:1.6.1")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
-    implementation("androidx.glance:glance-appwidget:1.1.0")
-    implementation("androidx.glance:glance-material3:1.1.0")
+    implementation("androidx.glance:glance-appwidget:1.1.1")
 
     implementation(platform("com.google.firebase:firebase-bom:33.0.0"))
     implementation("com.google.firebase:firebase-messaging")
@@ -193,9 +194,10 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("tools.fastlane:screengrab:2.1.1")

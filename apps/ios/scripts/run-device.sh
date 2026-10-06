@@ -45,6 +45,16 @@ if [[ -z "${APP_PATH}" ]]; then
   exit 1
 fi
 
+BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${APP_PATH}/Info.plist" 2>/dev/null || true)"
+if [[ -z "${BUNDLE_ID}" ]]; then
+  echo "ERROR: CFBundleIdentifier is missing from ${APP_PATH}/Info.plist" >&2
+  exit 1
+fi
+APP_EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${APP_PATH}/Info.plist" 2>/dev/null || true)"
+if [[ -z "${APP_EXECUTABLE_NAME}" ]]; then
+  APP_EXECUTABLE_NAME="$(basename "${APP_PATH}" .app)"
+fi
+
 # ---------------------------------------------------------------------------
 # Device discovery — try local first, fall back to Tailscale tunnel
 # ---------------------------------------------------------------------------
@@ -204,6 +214,8 @@ PY
 start_tailscale_tunnel() {
   local log="${RUN_DIR}/tunnel.log"
   echo "==> Starting pymobiledevice3 WiFi tunnel for ${DEVICE_NAME} (${DEVICE_UDID})..."
+  # The privileged process does not need to own this caller-created log file.
+  # shellcheck disable=SC2024
   sudo -n /usr/local/bin/litter-ios-remote start-tunnel --connection-type wifi --udid "${DEVICE_UDID}" \
     > "${log}" 2>&1 &
   TUNNEL_PID=$!
@@ -336,7 +348,7 @@ if [[ -z "${DEVICE_SELECTION}" ]]; then
   exit 1
 fi
 
-IFS=$'\t' read -r DEVICE_ID XCTRACE_DEVICE_ID DEVICE_NAME DEVICE_TUNNEL_STATE DEVICE_PAIRING_STATE DEVICE_DDI_AVAILABLE DEVICE_STATE_RANK <<<"${DEVICE_SELECTION}"
+IFS=$'\t' read -r DEVICE_ID XCTRACE_DEVICE_ID DEVICE_NAME DEVICE_TUNNEL_STATE _DEVICE_PAIRING_STATE DEVICE_DDI_AVAILABLE DEVICE_STATE_RANK <<<"${DEVICE_SELECTION}"
 
 if [[ -z "${DEVICE_ID}" ]]; then
   echo "ERROR: failed to resolve a usable device identifier" >&2

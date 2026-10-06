@@ -1,1 +1,7 @@
-Bug fixes and improvements.
+Smoother, clearer, complete.
+
+- Typing stays fast after a reply.
+- Full session history for Claude Code, Pi and other harnesses.
+- A new model picker: harness first, then models by provider, with search.
+- Conversations sit in a centered column; code and tables no longer run off the screen.
+- Simpler Settings and cleaner session titles.

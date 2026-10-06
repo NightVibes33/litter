@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +45,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.litter.android.ui.LitterTextStyle
+import com.litter.android.ui.LitterQuiet
+import com.litter.android.ui.LitterSpacing
+import com.litter.android.ui.LitterType
+import com.litter.android.ui.metaLine
 import com.litter.android.ui.LitterTheme
 import com.litter.android.ui.LocalTextScale
 import com.litter.android.ui.scaled
@@ -104,9 +112,8 @@ data class TranscriptTurn(
 }
 
 /**
- * Groups a flat list of hydrated items into UI turns with the same boundary rules
- * as iOS: explicit user turn boundaries split turns, and streaming tails merge
- * back into the live turn instead of rendering as separate groups.
+ * Groups a flat list of hydrated items by explicit user boundaries and server
+ * turn IDs. Items without provenance remain with the preceding turn.
  */
 fun buildTranscriptTurns(
     items: List<HydratedConversationItem>,
@@ -115,9 +122,7 @@ fun buildTranscriptTurns(
 ): List<TranscriptTurn> {
     if (items.isEmpty()) return emptyList()
 
-    val groupedItems = mergeConsecutiveExplorationGroups(
-        mergeTrailingStreamingGroups(groupItems(items), isStreaming),
-    )
+    val groupedItems = groupItems(items)
     val collapseBoundary = maxOf(0, groupedItems.size - expandedRecentTurnCount)
     val lastIndex = groupedItems.lastIndex
 
@@ -168,68 +173,305 @@ private fun groupItems(items: List<HydratedConversationItem>): List<List<Hydrate
     return groups
 }
 
-private fun mergeTrailingStreamingGroups(
-    groups: List<List<HydratedConversationItem>>,
-    isStreaming: Boolean,
-): List<List<HydratedConversationItem>> {
-    if (!isStreaming || groups.size <= 1) return groups
-
-    val liveTurnStartIndex = groups.indexOfLast { containsLiveTurnBoundary(it) }
-    if (liveTurnStartIndex == -1 || liveTurnStartIndex >= groups.lastIndex) return groups
-
-    val mergedLiveTurn = groups.subList(liveTurnStartIndex, groups.size).flatten()
-    return buildList {
-        addAll(groups.subList(0, liveTurnStartIndex))
-        add(mergedLiveTurn)
-    }
+private fun turnIdentifier(items: List<HydratedConversationItem>, ordinal: Int): String {
+    val first = items.firstOrNull() ?: return "turn-$ordinal"
+    return "turn-${first.id}"
 }
 
-private fun mergeConsecutiveExplorationGroups(
-    groups: List<List<HydratedConversationItem>>,
-): List<List<HydratedConversationItem>> {
-    val merged = mutableListOf<List<HydratedConversationItem>>()
-    val explorationBuffer = mutableListOf<HydratedConversationItem>()
+/** Collapse is an initial presentation choice, not a reaction to sending a turn. */
+internal class TranscriptPresentationState {
+    private val defaults = mutableMapOf<String, Boolean>()
+    private val presentationIds = mutableMapOf<String, String>()
+    private var uniqueSourceAliases = emptyMap<String, String>()
 
-    fun flushExplorationBuffer() {
-        if (explorationBuffer.isEmpty()) return
-        merged += explorationBuffer.toList()
-        explorationBuffer.clear()
+    fun update(turns: List<TranscriptTurn>) {
+        entryCache.keys.retainAll(turns.map { it.id }.toSet())
+        val sourceCounts = turns.mapNotNull { it.turnId }.groupingBy { it }.eachCount()
+        turns.forEach { turn ->
+            val presentationId = presentationIds.getOrPut(turn.id) {
+                turn.turnId?.takeIf { sourceCounts[it] == 1 }?.let(uniqueSourceAliases::get) ?: turn.id
+            }
+            defaults.getOrPut(presentationId) { turn.isCollapsedByDefault && !turn.isActiveTurn }
+        }
+        // Explicit user boundaries can split one source turn into several UI
+        // groups; only unambiguous server IDs may transfer presentation state.
+        uniqueSourceAliases = turns.mapNotNull { turn ->
+            turn.turnId?.takeIf { sourceCounts[it] == 1 }?.let { it to presentationId(turn) }
+        }.toMap()
     }
 
-    groups.forEach { group ->
-        if (group.isExplorationGroup()) {
-            explorationBuffer += group
-        } else {
-            flushExplorationBuffer()
-            merged += group
+    private data class CachedEntries(
+        val items: List<HydratedConversationItem>,
+        val isActive: Boolean,
+        val rows: List<TranscriptRow.Entry>,
+        val chain: TurnChain?,
+    )
+
+    /** Chain expansion default per finished turn, captured once so a changed preference never re-flips old turns. */
+    private val chainDefaults = mutableMapOf<String, Boolean>()
+
+    fun chainExpanded(turn: TranscriptTurn, overrides: Map<String, Boolean>, preference: Boolean): Boolean {
+        val id = presentationId(turn)
+        overrides[id]?.let { return it }
+        if (turn.isActiveTurn) return true
+        return chainDefaults.getOrPut(id) { preference }
+    }
+
+    fun chain(turn: TranscriptTurn): TurnChain? {
+        entries(turn)
+        return entryCache[turn.id]?.chain
+    }
+
+    private val entryCache = mutableMapOf<String, CachedEntries>()
+
+    fun entries(turn: TranscriptTurn): List<TranscriptRow.Entry> {
+        val cached = entryCache[turn.id]
+        if (cached != null && cached.isActive == turn.isActiveTurn && cached.items == turn.items) {
+            return cached.rows
+        }
+        return projectEntries(turn).also {
+            entryCache[turn.id] = CachedEntries(turn.items, turn.isActiveTurn, it, buildTurnChain(turn, it))
         }
     }
 
-    flushExplorationBuffer()
-    return merged
+    private fun projectEntries(turn: TranscriptTurn): List<TranscriptRow.Entry> {
+        val entries = buildTimelineEntries(turn.items, turn.isActiveTurn)
+        val streamingAssistantId = if (turn.isActiveTurn) {
+            turn.items.lastOrNull { it.content is HydratedConversationItemContent.Assistant }?.id
+        } else null
+        val latestCommandId = entries.asReversed().firstNotNullOfOrNull { entry ->
+            (entry as? TimelineEntry.Single)?.item
+                ?.takeIf { it.content is HydratedConversationItemContent.CommandExecution }?.id
+        }
+        return entries.mapIndexed { index, entry ->
+            TranscriptRow.Entry(entry, turn.isActiveTurn, streamingAssistantId, latestCommandId, index == entries.lastIndex)
+        }
+    }
+
+    fun presentationId(turn: TranscriptTurn): String = presentationIds[turn.id] ?: turn.id
+
+    fun isCollapsedByDefault(turn: TranscriptTurn): Boolean = defaults[presentationId(turn)] == true
 }
 
-private fun containsLiveTurnBoundary(items: List<HydratedConversationItem>): Boolean {
-    return items.any { item ->
-        item.isFromUserTurnBoundary || item.content is HydratedConversationItemContent.User
+/** Each message/tool group is its own lazy item, even inside a very long turn. */
+internal sealed class TranscriptRow(val key: String, val contentType: String) {
+    class Entry(
+        val entry: TimelineEntry,
+        val isActiveTurn: Boolean,
+        val streamingAssistantItemId: String?,
+        val latestCommandExecutionItemId: String?,
+        val isLastEntry: Boolean,
+    ) : TranscriptRow(
+        when (entry) {
+            is TimelineEntry.Single -> "item-${entry.item.id}"
+            is TimelineEntry.Exploration -> entry.group.id
+        },
+        when (entry) {
+            is TimelineEntry.Single -> entry.item.content.javaClass.simpleName
+            is TimelineEntry.Exploration -> "exploration"
+        },
+    )
+
+    /** Per-turn summary line ("ran 3 commands · read 2 files ›") that discloses the work chain. */
+    class Chain(val turn: TranscriptTurn, val chain: TurnChain, val expanded: Boolean, val expansionId: String) :
+        TranscriptRow("chain-${turn.id}", "chain")
+
+    class Collapsed(val turn: TranscriptTurn, val expansionId: String) : TranscriptRow("collapsed-${turn.id}", "collapsed")
+    class Footer(val turn: TranscriptTurn, val canCollapse: Boolean, val expansionId: String) :
+        TranscriptRow("footer-${turn.id}", "footer")
+}
+
+internal fun LazyListScope.transcriptRows(
+    rows: List<TranscriptRow>,
+    content: @Composable LazyItemScope.(TranscriptRow) -> Unit,
+) {
+    items(rows, key = { it.key }, contentType = { it.contentType }, itemContent = content)
+}
+
+internal fun buildTranscriptRows(
+    turns: List<TranscriptTurn>,
+    collapseState: TranscriptPresentationState,
+    expandedTurnIds: Set<String>,
+    chainOverrides: Map<String, Boolean> = emptyMap(),
+    chainExpandedByDefault: Boolean = false,
+): List<TranscriptRow> = buildList {
+    collapseState.update(turns)
+    turns.forEach { turn ->
+        val canCollapse = collapseState.isCollapsedByDefault(turn)
+        val expansionId = collapseState.presentationId(turn)
+        if (canCollapse && expansionId !in expandedTurnIds && !turn.isActiveTurn) {
+            add(TranscriptRow.Collapsed(turn, expansionId))
+        } else {
+            val entries = collapseState.entries(turn)
+            val chain = collapseState.chain(turn)
+            if (chain == null) {
+                addAll(entries)
+            } else {
+                // Collapsed chains emit no rows for their members, so their
+                // children are never composed; visible rows keep their keys.
+                val expanded = collapseState.chainExpanded(turn, chainOverrides, chainExpandedByDefault)
+                entries.forEachIndexed { index, entry ->
+                    if (index == chain.firstIndex) add(TranscriptRow.Chain(turn, chain, expanded, expansionId))
+                    if (expanded || entry.key !in chain.memberKeys) add(entry)
+                }
+            }
+            add(TranscriptRow.Footer(turn, canCollapse, expansionId))
+        }
     }
 }
 
-private fun List<HydratedConversationItem>.isExplorationGroup(): Boolean {
-    return isNotEmpty() && all { item ->
-        val content = item.content as? HydratedConversationItemContent.CommandExecution
-        content?.v1?.isPureExploration() == true
-    }
+/** View-only projection of a turn's reasoning, tool, and subagent work. */
+internal class TurnChain(
+    val memberKeys: Set<String>,
+    val firstIndex: Int,
+    val summary: String,
+    val isRunning: Boolean,
+)
+
+/** Items that belong in the collapsible work chain rather than the answer. */
+private fun HydratedConversationItemContent.isChainWork(): Boolean = when (this) {
+    is HydratedConversationItemContent.Reasoning,
+    is HydratedConversationItemContent.CommandExecution,
+    is HydratedConversationItemContent.FileChange,
+    is HydratedConversationItemContent.McpToolCall,
+    is HydratedConversationItemContent.DynamicToolCall,
+    is HydratedConversationItemContent.MultiAgentAction,
+    is HydratedConversationItemContent.WebSearch,
+    is HydratedConversationItemContent.ImageView,
+    -> true
+    else -> false
 }
 
-private fun turnIdentifier(items: List<HydratedConversationItem>, ordinal: Int): String {
-    val first = items.firstOrNull() ?: return "turn-$ordinal"
-    val sourceTurnId = items.firstNotNullOfOrNull { it.sourceTurnId }
-    return if (sourceTurnId != null) {
-        "turn-$sourceTurnId-${first.id}"
-    } else {
-        "turn-${first.id}"
+private fun AppOperationStatus.isRunning(): Boolean =
+    this == AppOperationStatus.PENDING || this == AppOperationStatus.IN_PROGRESS
+
+internal fun buildTurnChain(turn: TranscriptTurn, entries: List<TranscriptRow.Entry>): TurnChain? {
+    // Commentary between tool calls is part of the work; the last assistant
+    // message (the answer) always stays visible.
+    val lastAssistantId = turn.items.lastOrNull { it.content is HydratedConversationItemContent.Assistant }?.id
+    val members = mutableSetOf<String>()
+    var firstIndex = -1
+    var thought = false
+    var commands = 0
+    var reads = 0
+    var searches = 0
+    var edits = 0
+    var tools = 0
+    var agents = 0
+    var durationMs = 0L
+    var running = false
+    entries.forEachIndexed { index, row ->
+        val isMember = when (val entry = row.entry) {
+            is TimelineEntry.Exploration -> {
+                entry.group.items.forEach { item ->
+                    val data = (item.content as? HydratedConversationItemContent.CommandExecution)?.v1 ?: return@forEach
+                    durationMs += data.durationMs ?: 0L
+                    if (data.status.isRunning()) running = true
+                    data.actions.forEach { action ->
+                        when (action.kind) {
+                            HydratedCommandActionKind.READ -> reads += 1
+                            HydratedCommandActionKind.SEARCH, HydratedCommandActionKind.LIST_FILES -> searches += 1
+                            HydratedCommandActionKind.UNKNOWN -> commands += 1
+                        }
+                    }
+                }
+                true
+            }
+            is TimelineEntry.Single -> {
+                val item = entry.item
+                when (val c = item.content) {
+                    is HydratedConversationItemContent.Reasoning -> { thought = true; true }
+                    is HydratedConversationItemContent.CommandExecution -> {
+                        commands += 1
+                        durationMs += c.v1.durationMs ?: 0L
+                        if (c.v1.status.isRunning()) running = true
+                        true
+                    }
+                    is HydratedConversationItemContent.FileChange -> {
+                        edits += c.v1.changes.size.coerceAtLeast(1)
+                        if (c.v1.status.isRunning()) running = true
+                        true
+                    }
+                    is HydratedConversationItemContent.MultiAgentAction -> {
+                        agents += c.v1.receiverThreadIds.size.coerceAtLeast(1)
+                        if (c.v1.status.isRunning()) running = true
+                        true
+                    }
+                    is HydratedConversationItemContent.Assistant ->
+                        c.v1.phase == AppMessagePhase.COMMENTARY && item.id != lastAssistantId
+                    else -> if (c.isChainWork()) { tools += 1; true } else false
+                }
+            }
+        }
+        if (isMember) {
+            members += row.key
+            if (firstIndex < 0) firstIndex = index
+        }
     }
+    if (members.isEmpty()) return null
+    return TurnChain(
+        memberKeys = members,
+        firstIndex = firstIndex,
+        summary = turnChainSummary(thought, durationMs, commands, reads, searches, edits, tools, agents, turn.isActiveTurn),
+        isRunning = running || turn.isActiveTurn,
+    )
+}
+
+internal fun turnChainSummary(
+    thought: Boolean,
+    durationMs: Long,
+    commands: Int,
+    reads: Int,
+    searches: Int,
+    edits: Int,
+    tools: Int,
+    agents: Int,
+    isActive: Boolean,
+): String {
+    fun plural(n: Int, one: String, many: String) = "$n ${if (n == 1) one else many}"
+    val duration = durationMs.takeIf { it >= 1000 }?.let { formatChainDuration(it) }
+    val lead = when {
+        isActive -> "working"
+        thought && duration != null -> "thought $duration"
+        thought -> "thought"
+        duration != null -> "worked $duration"
+        else -> null
+    }
+    val parts = listOfNotNull(
+        lead,
+        commands.takeIf { it > 0 }?.let { "ran ${plural(it, "command", "commands")}" },
+        reads.takeIf { it > 0 }?.let { "read ${plural(it, "file", "files")}" },
+        searches.takeIf { it > 0 }?.let { "searched ${plural(it, "time", "times")}" },
+        edits.takeIf { it > 0 }?.let { "edited ${plural(it, "file", "files")}" },
+        tools.takeIf { it > 0 }?.let { "called ${plural(it, "tool", "tools")}" },
+        agents.takeIf { it > 0 }?.let { plural(it, "agent", "agents") },
+    )
+    return parts.joinToString(" · ").ifEmpty { "worked" }
+}
+
+private fun formatChainDuration(ms: Long): String {
+    val seconds = ms / 1000
+    return if (seconds < 60) "${seconds}s" else "${seconds / 60}m ${seconds % 60}s"
+}
+
+/** Summary line for a turn's work chain; tapping toggles the chain. */
+@Composable
+internal fun TurnChainSummaryRow(
+    chain: TurnChain,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+) {
+    Text(
+        text = chain.summary + if (expanded) " ‹" else " ›",
+        style = LitterType.meta,
+        color = if (chain.isRunning) LitterTheme.textSecondary else LitterQuiet.meta,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(vertical = LitterSpacing.xs),
+    )
 }
 
 /**
@@ -241,67 +483,45 @@ fun CollapsedTurnCard(
     turn: TranscriptTurn,
     onExpand: () -> Unit,
 ) {
+    // Older turns collapse to the prompt plus one mono summary line.
+    val meta = remember(turn.id, turn.commandCount, turn.fileChangeCount, turn.totalDurationMs) {
+        val dur = turn.totalDurationMs
+        metaLine(
+            turn.commandCount.takeIf { it > 0 }?.let { "$it cmd" },
+            turn.fileChangeCount.takeIf { it > 0 }?.let { "$it files" },
+            dur.takeIf { it > 0 }?.let { if (it < 1000) "${it}ms" else "%.1fs".format(it / 1000.0) },
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(LitterTheme.surface, RoundedCornerShape(10.dp))
             .clickable(onClick = onExpand)
-            .padding(10.dp),
+            .padding(vertical = LitterSpacing.xs),
+        verticalArrangement = Arrangement.spacedBy(LitterSpacing.xxs),
     ) {
-        // User prompt preview
         turn.userPrompt?.let { prompt ->
             Text(
                 text = prompt,
                 color = LitterTheme.textPrimary,
-                fontSize = LitterTextStyle.footnote.scaled,
+                fontSize = LitterTextStyle.body.scaled,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-
-        // Assistant snippet
         turn.assistantSnippet?.let { snippet ->
             Text(
                 text = snippet,
                 color = LitterTheme.textSecondary,
-                fontSize = LitterTextStyle.caption.scaled,
+                fontSize = LitterTextStyle.subheadline.scaled,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
             )
         }
-
-        // Metadata footer
-        Row(
-            modifier = Modifier.padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (turn.commandCount > 0) {
-                MetadataBadge("${turn.commandCount} cmd", LitterTheme.toolCallCommand)
-            }
-            if (turn.fileChangeCount > 0) {
-                MetadataBadge("${turn.fileChangeCount} files", LitterTheme.toolCallFileChange)
-            }
-            if (turn.totalDurationMs > 0) {
-                val dur = if (turn.totalDurationMs < 1000) "${turn.totalDurationMs}ms"
-                else "%.1fs".format(turn.totalDurationMs / 1000.0)
-                MetadataBadge(dur, LitterTheme.textMuted)
-            }
-            Spacer(Modifier.weight(1f))
-            Text("Tap to expand", color = LitterTheme.textMuted, fontSize = LitterTextStyle.caption2.scaled)
-        }
+        Text(
+            text = if (meta.isEmpty()) "earlier turn ›" else "$meta ›",
+            style = LitterType.meta,
+        )
     }
-}
-
-@Composable
-private fun MetadataBadge(text: String, color: androidx.compose.ui.graphics.Color) {
-    Text(
-        text = text,
-        color = color,
-        fontSize = LitterTextStyle.caption2.scaled,
-        fontWeight = FontWeight.Medium,
-    )
 }
 
 /**
@@ -370,22 +590,11 @@ fun ExplorationGroupRow(
     showsCollapsedPreview: Boolean,
 ) {
     val textScale = LocalTextScale.current
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by rememberSaveable { mutableStateOf(false) }
     val entries = remember(group.items) { group.explorationEntries() }
     val isActive = remember(entries) { entries.any { it.isInProgress } }
     val previewScrollState = rememberScrollState()
-    val shimmerProgress by rememberInfiniteTransition(label = "exploration-header-shimmer").animateFloat(
-        initialValue = -1f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "exploration-header-shimmer-progress",
-    )
-    val bulletSize = (6f * textScale).dp
-    val bulletTopPadding = (5f * textScale).dp
-    val previewHeight = (LitterTextStyle.caption * textScale * 3.6f).dp + 18.dp
+    val previewHeight = (LitterType.META_SIZE * textScale * 4.4f).dp + 18.dp
 
     LaunchedEffect(entries, previewScrollState.maxValue, expanded, showsCollapsedPreview) {
         if (expanded || !showsCollapsedPreview || previewScrollState.maxValue <= 0) return@LaunchedEffect
@@ -403,43 +612,27 @@ fun ExplorationGroupRow(
             .fillMaxWidth()
             .animateContentSize(),
     ) {
-        Row(
+        // Expandable mono line; no always-on shimmer (it animated even for
+        // finished groups).
+        Text(
+            text = remember(entries, isActive, expanded) {
+                group.explorationSummaryText(isActive = isActive).lowercase() +
+                    if (expanded) " ‹" else " ›"
+            },
+            style = LitterType.meta,
+            color = if (isActive) LitterTheme.textPrimary else LitterQuiet.meta,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(LitterTheme.surface, RoundedCornerShape(8.dp))
                 .clickable { expanded = !expanded }
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = if (expanded) "▼" else "▶",
-                color = LitterTheme.textMuted,
-                fontSize = LitterTextStyle.caption.scaled,
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = remember(entries, isActive) {
-                    group.explorationSummaryText(isActive = isActive)
-                },
-                color = if (isActive) LitterTheme.textPrimary else LitterTheme.textSecondary,
-                fontSize = LitterTextStyle.caption.scaled,
-                modifier = Modifier
-                    .weight(1f)
-                    .explorationHeaderShimmer(active = isActive, progress = shimmerProgress),
-            )
-        }
+                .padding(vertical = LitterSpacing.xs),
+        )
 
         if (!expanded && showsCollapsedPreview && entries.isNotEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 24.dp, top = 4.dp)
-                    .heightIn(min = 56.dp, max = previewHeight)
-                    .background(
-                        LitterTheme.surface.copy(alpha = 0.6f),
-                        RoundedCornerShape(8.dp),
-                    )
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .padding(start = LitterSpacing.sm)
+                    .heightIn(max = previewHeight)
                     .verticalScroll(previewScrollState),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
@@ -449,24 +642,9 @@ fun ExplorationGroupRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.Top,
                     ) {
-                        Spacer(
-                            modifier = Modifier
-                                .padding(top = bulletTopPadding)
-                                .width(bulletSize)
-                                .height(bulletSize)
-                                .background(
-                                    color = if (entry.isInProgress) {
-                                        LitterTheme.warning
-                                    } else {
-                                        LitterTheme.textMuted
-                                    },
-                                    shape = RoundedCornerShape(percent = 50),
-                                ),
-                        )
                         Text(
                             text = entry.label,
-                            color = LitterTheme.textSecondary,
-                            fontSize = LitterTextStyle.caption.scaled,
+                            style = LitterType.meta,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f),
@@ -479,28 +657,13 @@ fun ExplorationGroupRow(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 24.dp, top = 1.dp),
+                        .padding(start = LitterSpacing.sm, top = 1.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
-                    Spacer(
-                        modifier = Modifier
-                            .padding(top = bulletTopPadding)
-                            .width(bulletSize)
-                            .height(bulletSize)
-                            .background(
-                                color = if (entry.isInProgress) {
-                                    LitterTheme.warning
-                                } else {
-                                    LitterTheme.textMuted
-                                },
-                                shape = RoundedCornerShape(percent = 50),
-                            ),
-                    )
                     Text(
                         text = entry.label,
-                        color = LitterTheme.textSecondary,
-                        fontSize = LitterTextStyle.caption.scaled,
+                        style = LitterType.meta,
                         maxLines = Int.MAX_VALUE,
                         overflow = TextOverflow.Clip,
                         modifier = Modifier.weight(1f),
@@ -635,28 +798,4 @@ private fun workspaceTitle(path: String): String {
     val normalized = path.replace('\\', '/').trimEnd('/')
     val lastSegment = normalized.substringAfterLast('/', normalized)
     return if (lastSegment.isBlank()) path else lastSegment
-}
-
-private fun Modifier.explorationHeaderShimmer(active: Boolean, progress: Float): Modifier {
-    if (!active) return this
-    return drawWithContent {
-        drawContent()
-        val width = size.width
-        val shimmerWidth = width * 0.35f
-        val startX = (width + shimmerWidth) * progress - shimmerWidth
-        drawRect(
-            brush = Brush.horizontalGradient(
-                colors = listOf(
-                    Color.Transparent,
-                    Color.White.copy(alpha = 0.3f),
-                    Color.Transparent,
-                ),
-                startX = startX,
-                endX = startX + shimmerWidth,
-            ),
-            topLeft = Offset.Zero,
-            size = size,
-            blendMode = BlendMode.SrcAtop,
-        )
-    }
 }

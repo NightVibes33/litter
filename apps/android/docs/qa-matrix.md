@@ -6,38 +6,41 @@ This matrix covers transport reliability and startup-path parity for Android web
 
 ## Automated Regression Scaffolding
 
-Run unit tests for both runtime flavors:
+Run the unit-test suite for the single hybrid runtime:
 
 ```bash
-./gradlew :app:testOnDeviceDebugUnitTest
-./gradlew :app:testRemoteOnlyDebugUnitTest
+./gradlew :app:testDebugUnitTest
 ```
 
 Current automated checks:
 
-- `RuntimeFlavorConfigTest`
-  - validates startup mode/build config parity (`ENABLE_ON_DEVICE_BRIDGE`, `RUNTIME_STARTUP_MODE`)
-  - validates canonical app runtime transport declaration (`APP_RUNTIME_TRANSPORT`)
-- `BridgeTransportReliabilityPolicyTest`
-  - validates reconnect detection policy for healthy/stale websocket state
-- `CodexRuntimeStartupPolicyTest`
-  - validates startup toggle parsing and precedence logic
-- `ThreadPlaceholderPrunePolicyTest`
-  - validates placeholder prune-on-refresh behavior (including active-thread exemption)
+- `SavedServerTransportTest`
+  - validate persisted transport selection
+- `AppComposerPayloadTest`, `SnapshotExtensionsTest`, and conversation UI tests
+  - validate typed composer inputs, snapshot projection, markdown sizing, slash commands, math, and response errors
+- `RealtimeWebRtcTransportTest` and `RealtimeWebRtcSessionTest`
+  - validate the typed SDP transport and native WebRTC session lifecycle
+- OAuth, server pairing, appearance, and home-dashboard tests
+  - validate their platform adapters without duplicating the Rust reducer
 
 ## Manual Matrix
 
-| Area | onDevice flavor | remoteOnly flavor |
-|---|---|---|
-| App launch | App launches and can start local bridge-backed session | App launches and does not auto-start local bridge |
-| Connect local/on-device | Success (`ServerConfig.local`) | Expected failure with clear "disabled" error |
-| Connect remote server | Success | Success |
-| SSH-discovered remote server | Prompts for SSH credentials, connects through SSH port forwarding, and never attempts `ws://host:22` directly | Same |
-| Local transport drop | Reconnect and one-time reinitialize before next non-initialize RPC | N/A (local startup disabled) |
-| Remote transport drop | Reconnect behavior via Rust `AppStore` updates and resumed RPC notifications | Same |
-| Thread start/resume fallback sandbox | `workspace-write` with `danger-full-access` fallback when linux sandbox missing | Same |
-| Thread turn pagination (v0.125+ remote) | Conversation opens with last 5 turns; "Load earlier messages" button fetches older 5-turn pages via `thread/turns/list` | Same |
-| Thread turn pagination fallback (v0.124 remote) | Capability flips off via response inspection; embedded turns load fully; "Load earlier" button hidden | Same |
+| Area | Hybrid runtime |
+|---|---|
+| App launch | App launches and can start a local bridge-backed session |
+| Connect local/on-device | Success (`ServerConfig.local`) |
+| Connect remote server | Success |
+| Manual or saved SSH server | Prompts for SSH credentials, connects through SSH port forwarding, and never attempts `ws://host:22` directly |
+| SSH changed identity (saved server and terminal) | Both platforms decode the shared Rust challenge. Verify hostname and IPv6 targets: Cancel preserves the old pin; Replace stores only SHA256 fingerprint and retries successfully. Device acceptance pending. |
+| SSH changed identity (guided connect) | Both platforms route a changed host key from guided connect (probe, bootstrap, and SSH bridge paths) to the confirm modal instead of raw marker text; Replace syncs saved servers first so re-pinning works for servers saved this session. A changed key on a never-saved discovery target shows the confirm modal but Replace cannot reconnect it until the server is saved (tracked follow-up). Device acceptance pending. |
+| Local transport drop | Reconnect and one-time reinitialize before the next non-initialize RPC |
+| Remote transport drop | Reconnect behavior via Rust `AppStore` updates and resumed RPC notifications |
+| Slow remote RPC | Shared Rust regression verifies that a 300 ms catalog response does not block unrelated requests or notifications; concurrent transport failures reconnect once, and shutdown drops pending replies. Applies to both platforms. Physical-device tap-to-render validation remains separate. |
+| Saved Alleycat relay identity | Shared Rust canonicalizes DNS relay URLs, including older saved pairings. Android 17 ARM64 16K emulator: relay-only cold restarts produced duplicate-endpoint eviction on 2/2 baseline runs; candidate Rust produced 0/3 evictions and connected in 5.5s, 2.4s, and 2.2s. Controlled native-library replacement retained the signed baseline shell and pairing; final signed-artifact and physical-device acceptance remain separate gates. |
+| Thread start/resume fallback sandbox | `workspace-write` with `danger-full-access` fallback when Linux sandboxing is unavailable |
+| Thread turn pagination (v0.125+ remote) | Conversation opens with the last 5 turns; "Load earlier messages" fetches older 5-turn pages via `thread/turns/list` |
+| Thread turn pagination fallback (v0.124 remote) | Capability flips off via response inspection; embedded turns load fully; "Load earlier" is hidden |
+| Multi-turn history and rendering | Follow-ups retain existing expansion; authoritative turn boundaries and late provenance are covered by unit tests. Expanded message/tool-group entries use individual lazy rows, with a 500-message fixture. Shared Rust covers stale reads, partial hydration and late completion. See [review and validation contract](../../../docs/MULTI_TURN_REVIEW.md); production-device latency remains a separate acceptance check. |
 
 ## Terminal UX Matrix
 
@@ -57,7 +60,9 @@ tracks parity between iOS (UIKit + Metal) and Android (Compose + SurfaceView).
 | Cell-grid math | Driven by Ghostty `surfaceMetrics`; falls back to font-size-aware estimate on first frame | Same path via `nativeSurfaceSize` |
 | Resize on rotation / keyboard show-hide | `layoutSubviews` plus `UIResponder.keyboardWillChangeFrame` triggers | `onSizeChanged` re-fires through Compose's `imePadding` insets |
 | Mouse-tracking apps (vim / htop) | Single-finger drag forwards to Ghostty when `mouseCaptured` | Same |
-| Alleycat remote host | Discovery toolbar QR button opens `AlleycatAddServerSheet`; CameraX + ML Kit scan parses the Alleycat payload via `AlleycatBridge.parsePairPayload`; debug builds expose paste-JSON path; after token-authenticated pairing the sheet calls `serverBridge.listAlleycatAgents`, lets the user choose Codex/Pi/OpenCode, connects with `serverBridge.connectRemoteOverAlleycat`, and persists the token through `AlleycatCredentialStore`; `SavedServerStore.rememberAlleycat` writes `{node_id, relay?, agent}` records, reconnect attaches the encrypted-store token directly, and legacy Alleycat records require a new QR scan. | Same |
+| Alleycat remote host | Add Server's Kittylitter QR card opens `AlleycatAddServerSheet`; CameraX + ML Kit scan parses the Alleycat payload via `AlleycatBridge.parsePairPayload`; debug builds expose paste-JSON path; after token-authenticated pairing the sheet calls `serverBridge.listAlleycatAgents`, lets the user choose Codex/Pi/OpenCode, connects with `serverBridge.connectRemoteOverAlleycat`, and persists the token through `AlleycatCredentialStore`; `SavedServerStore.rememberAlleycat` writes `{node_id, relay?, agent}` records, reconnect attaches the encrypted-store token directly, and legacy Alleycat records require a new QR scan. | Same |
+| Local Studio host (pairing) | Add Server → **Local Studio** opens the pairing sheet in Local Studio mode. Scanning the QR from Local Studio's Profile → Phone connection, or pasting its Copy connection JSON, saves a server with id `alleycat:local-studio:<nodeId>` and forces a new QR scan if the keychain/prefs entry is missing. | **Verified 2026-07-30 on an API 36 ARM64 emulator.** Copy-connection pairing reached the live Local Studio relay; the shared parser now normalizes the trailing dot emitted by the relay hostname, and the freshly signed release APK reconnected the saved pairing after reinstall. |
+| Local Studio host (runtime) | Selecting Local Studio launches the shared Pi bridge against Local Studio's own `pi-agent` home, so the standard model selector, chat/tool timeline, and remote filesystem UI are reused. Permission controls are hidden because the runtime is fixed full-access. | **Verified 2026-07-30 on an API 36 ARM64 emulator.** The signed `1.6.0` release APK connected, resumed and hydrated Local Studio threads, and displayed the completed `ANDROID_LOCAL_STUDIO_OK` turn. The transport proof suite also passed all 11 scenarios, including command output, filesystem access, mid-turn status, reconnect, and final hydration. |
 
 ## Plugin `@`-mention parity (follow-up)
 
@@ -76,10 +81,10 @@ broader composer autocomplete work.
 
 ## Suggested Smoke Steps
 
-1. `onDeviceDebug`: connect local default server, start thread, send turn, toggle network off/on, send another turn.
-2. `onDeviceDebug`: kill local bridge process (or force stop app), relaunch, confirm initialize and thread list recover.
-3. `remoteOnlyDebug`: attempt local connect path, verify explicit disabled error; connect remote server and run thread/list + turn/start.
-4. Both flavors: verify account read/login status refresh still updates UI after reconnect.
+1. `debug`: connect the local default server, start a thread, send a turn, toggle network off/on, then send another turn.
+2. `debug`: force-stop the app, relaunch, and confirm initialization and the thread list recover.
+3. `debug`: connect a remote server and run `thread/list` plus `turn/start`.
+4. Verify account read/login status refresh still updates UI after reconnect.
 
 ## Thinking-indicator Minigame (iOS + Android)
 
@@ -128,9 +133,19 @@ disconnects and re-establishes the chosen transport.
 
 ### Session Sidebar
 
-- Sidebar stays unmounted while closed; local UI controls persist when reopened.
-- Search + server filter + forks filter produce stable grouping and lineage chips.
-- Opening/closing sidebar does not trigger excessive recomposition/signpost churn in idle state.
+The legacy Android `Route.Sessions` and `SessionsScreen` are no longer present
+in the current navigation tree. PR #330 intentionally exposes the existing
+All Sessions browser and its bounded Load more action on iOS only: Android
+needs a new reachable browser, not a link to the removed screen. Shared Rust
+hydration limits and protection against pruning other runtimes apply to both
+platforms.
+
+Android follow-up acceptance: add a home entry point that browses sessions
+across connected servers, loads older results, filters them, and resumes and
+pins the selected session. Verify more than 200 sessions per runtime, mixed
+Codex/Claude servers, empty results, load failures, and continued live updates
+when a CLI-created session is opened. Until then, do not report Android
+browser parity as complete.
 
 ### Thread List Consistency
 
@@ -180,7 +195,7 @@ for the matching state.
 | Zoom 4 (deep) | Tool log expands to 3 rows; response preview cap rises to 50% screen; preview scroll-anchors to bottom when overflowing. |
 | Response preview crossfade | New assistant-block id flip triggers Crossfade on the preview; preserved on empty new-turn assistant items via `displayedAssistantMessage` walking back to last non-empty. |
 | TurnStopwatchChip | Live 1Hz tick while turn active (end=null) via `produceState` + `delay(1000)`; static elapsed when ended. Format `<60s → "Xs"`, `<3600s → "Xm" or "XmYs"`. |
-| Tool log grouping | Consecutive exploration commands (read/search/listFiles `HydratedCommandActionKind`) collapse into `⌕ Explored N files, M searches, K listings` summary row; other tool kinds render as single-line rows with `toolIconForName` glyph. |
+| Tool log grouping | Consecutive exploration commands (read/search/listFiles `HydratedCommandActionKind`) collapse into `⌕ Explored N files, M searches, K listings` summary row; other tool kinds render as single-line rows. |
 | inlineStats chips | Turn count, tool count, diff `+N/-N`, TurnStopwatchChip, token % (warning tint ≥80%). Left text truncates first; chips stay pinned. |
 | recentUserMessage | `>` chip prefix + FormattedText at `LitterFont.conversationBodyPointSize × textScale`. Only shown when message exists and differs from title. |
 | StatusDot shimmer | Active state gets both the 800ms alpha pulse AND a 2s linear-gradient sweep overlay. |
@@ -188,6 +203,7 @@ for the matching state.
 | Swipe reply | Right-swipe on home row reveals reply affordance (`SessionReplySwipe` via `SwipeableRow.leadingAction`); past commit threshold opens `QuickReplySheet` modal; send path resumes the thread before `startTurn` to avoid "thread cannot be found" on cold launches. Left-swipe reveals hide (trailingAction). |
 | SavedProjectStore | Last-selected server + project persist across app restart via Rust `preferencesSetHomeSelection` / `HomeSelection`. Wired through `LitterApp.kt`. |
 | StreamingMarkdownView bodySize | Optional `bodySize` parameter thread through to TextView font size; opt-in by response preview and by direct consumers that need parametric sizing. |
+| Streaming render cost | Both platforms extend the cached final markdown chunk for a plain-text append (`StreamingAssistantRenderCache.extendEntry` / `StreamingTextCoordinator.extendFrontier`) and re-parse otherwise. A streamed message must render exactly what a cold parse of the same text renders: iOS asserts this in `StreamingAssistantRenderCacheTests`; on Android, compare the frontier blocks against a `MessageParser.extractRenderBlocksTyped(text)` call on the same text after `StreamingTextCoordinator.clear()`. The fast path only applies when the message has no `http://` / `https://` URL, so a URL split across tokens still autolinks. |
 
 ## Tool Call Card Parity Matrix (iOS + Android)
 
@@ -226,7 +242,7 @@ Generative UI is permanent (no flag). Local-server threads register `show_widget
 | Bootstrap | `AppClient.setSavedAppsDirectory(MobilePreferencesDirectory.path(context))` is called once in `AppModel.init`, before any thread starts. Without this, the Rust `show_widget` finalize hook is a silent no-op. |
 | Auto-upsert | When the model finalizes a `show_widget` with `app_id = "fitness-tracker"` on a local-server thread, the Rust hook calls `saved_app_upsert(directory, originThreadId, appId, title, html, w, h, schema)` and writes to `{filesDir}/LitterPreferences/apps/saved_apps.json` + `html/<uuid>.html`. No Kotlin-initiated promote call is needed. |
 | Saved-as chip | Finalized `WidgetRow` whose `HydratedWidgetData.appId` is non-null renders a compact "Saved as `<slug>`" chip below the WebView (11sp mono, accent slug). Tap resolves `SavedAppsStore.appForSlug(slug, threadId)` to a UUID and pushes `Route.SavedApp`. Chip is absent when `appId == null` or the widget isn't finalized. |
-| Home-row takeover | `HomeDashboardScreen` keeps a `savedAppsByThread` map keyed by `originThreadId`, reloaded via `SavedAppsStore.reload` on every snapshot tick (MVP coarse reactivity; R3 will supply a `SavedAppsChanged` stream). When a session's threadId has entries, its row renders `HomeAppTakeoverRow` (monogram + title + slug subtitle + "+N more" when there are siblings) instead of `SessionCanvasRow`. Tap navigates to `Route.SavedApp(mostRecent.id)`. Swipe-to-hide on the session still works. |
+| Home-row takeover | **Removed.** The takeover row and its `savedAppsByThread` / per-session `sessionApps` feeder pipeline were deleted; no `Takeover` symbol remains under `apps/android`. Saved apps are reachable only via the Saved-as chip and the Apps list. |
 | Apps list entry | Settings sheet "Apps → Saved Apps" row is always visible (no flag gate). Pushes `Route.Apps`. |
 | Apps list | `AppsListScreen` renders apps newest-updated-first: monogram tile + title + relative timestamp. Swipe-to-dismiss cascades `savedAppDelete`. Empty state explains that saved apps are created automatically. |
 | Detail relaunch | Tapping a row (or a Saved-as chip, or a home-row takeover) pushes `Route.SavedApp(uuid)`. `SavedAppScreen` calls `savedAppGet(dir, uuid)` on enter, hydrates the WebView with `wrapWidgetHtml(html, AppStateInjection(stateJson, schemaVersion))`, and registers `__LitterAppBridge` via `addJavascriptInterface`. |
@@ -237,7 +253,7 @@ Generative UI is permanent (no flag). Local-server threads register `show_widget
 | Origin server routing | Update RPC prefers `originThreadId`'s server → active thread's server → any local server → any connected. No connected server → clear error message. |
 | View Conversation | Top bar has a chat-bubble icon (`Icons.AutoMirrored.Filled.Chat`) that pushes `Route.Conversation(originThreadKey)`. Only rendered when `originThreadId` still resolves to a `ThreadKey` in the current snapshot — gone otherwise. |
 | Rename / delete | Top bar title tap → rename dialog → `savedAppRename`. Overflow "Delete" → destructive confirmation → `savedAppDelete` → pop back to list. |
-| Same slug in two threads | Model emitting `app_id = "fitness-tracker"` in two different origin threads creates two independent saved apps (distinct UUIDs, separate state files). The Apps list shows both; home-row takeover on each thread points at its own. |
+| Same slug in two threads | Model emitting `app_id = "fitness-tracker"` in two different origin threads creates two independent saved apps (distinct UUIDs, separate state files). The Apps list shows both. |
 | Regression: timeline widgets with no slug | A `show_widget` call that omits `app_id` (or is pre-R2) renders with the baseline `wrapWidgetHtml(html)` shell, does not trigger auto-save, and shows no Saved-as chip. |
 | Regression: thread delete | Deleting an `originThreadId` thread does not affect saved apps; the `View Conversation` button becomes hidden for those apps but update/state flows still work. |
 
@@ -277,3 +293,71 @@ Replaces the prior WebSocket + base64-PCM audio pump with a platform-native WebR
 | Known non-blockers | Per-frame input/output meter animation no longer drives — requires `RTCRtpReceiver.stats` polling to restore (follow-up) | Same flat meter behavior; speaker toggle currently stubbed to a boolean — follow-up to honor runtime routing |
 | Regression: custom AEC path | Retired — `codex-ios-audio` crate + `AecBridge.swift` / `VoiceSessionAudioCodec.swift` were deleted; libwebrtc AEC3 handles echo cancellation natively | Retired — `AecBridge.kt` deleted; `JavaAudioDeviceModule` enables the hardware AEC + NS |
 | Regression: SSH-tunneled codex server | RPC still flows through SSH; WebRTC peer goes direct to OpenAI edge from device. If client runs in fully air-gapped network, realtime voice will not establish | Same |
+| Theme hex colors preserve CSS alpha | `litterHexRGBA` parses #RGB/#RGBA/#RRGGBB/#RRGGBBAA with alpha last; swatch/index colors keep the alpha byte; theme tokens strip alpha at decode (`ThemeDefinition.sanitizeHex`) so app colors stay opaque (`HexColorTests`) | `colorFromHex` moves the alpha byte to the ARGB front instead of dropping it; theme tokens strip alpha via `tokenColorFromHex` to match iOS and the generated Material schemes (`ThemeColorTest`) |
+
+## Message link menus (iOS PR #322)
+
+This PR updates iOS's Hairball renderer and native context menu. Android's
+Markwon renderer needs a separate parity verification: bare HTTP/HTTPS URLs
+must be tappable, existing Markdown links must remain valid, and code must
+remain literal. The per-link copy action is an Android follow-up; verify URL
+deduplication, the five-link cap, and distinct labels for ports, queries, and
+fragments when adding it. No Android execution was covered by this iOS change.
+
+## 2.1.1 stability candidate
+
+- Shared SSH setup now discovers tool directories without executing login/rc
+  scripts. Regression fixture verifies no shell startup side effects; Nix
+  path discovery remains covered. Real SSH and Kittylitter device acceptance
+  is pending.
+- Android Ghostty selects epoll directly to avoid seccomp's fatal io_uring
+  probe (#354). Terminal open/input/close/reopen acceptance on Android hardware
+  is pending; compilation alone does not close this gate.
+- Android Ghostty now bundles GLAD and explicitly links EGL/GLESv3. Verify the
+  native library actually loads: the older 2.1.0 APK fell back to text output
+  after an unresolved `imgl3wProcs` symbol, masking native renderer failures.
+- Android 17 / ARM64 / 16 KB emulator: libraries load, opening and reopening
+  Terminal does not trigger SIGSYS, and basic command input/output passes via
+  both Run and the keyboard action. Native surface creation fails on OpenGL ES
+  3.1. The fallback is line-oriented and does not provide full ANSI screen
+  semantics. Physical-device and native-renderer acceptance remain pending.
+- Home server/session projections are memoized by their actual inputs rather
+  than the entire snapshot, avoiding repeated sorting on unrelated deltas.
+- Conversation rows use stable turn identities when earlier pages are inserted,
+  matching iOS. Verify the visible row and expansion state survive pagination.
+- Both platforms set Codex thread start/resume/fork configuration to disable
+  login-shell tools and shell snapshots; shared Rust regression tests cover the
+  three operations and preservation of unrelated settings and other runtimes.
+- App Store/Play release acceptance is tracked separately from build success.
+
+## Harness catalog and settings refresh (2.1.2)
+
+Implemented on both iOS and Android through shared Rust. Device acceptance is pending for this revision.
+
+| Check | Required result on both platforms |
+|---|---|
+| Cold model picker | Native catalog available before creating a thread; custom and plugin IDs preserved |
+| Refresh/reconnect | Catalog expires after 60 seconds, incomplete refresh retries after 5 seconds; failed runtime retains prior choices; old connection cannot publish into replacement |
+| Reasoning selection | Native supported values only; persistent and custom values round-trip |
+| OMP isolation | Separate runtime, model catalog, and config.yml; Pi settings are unchanged |
+| Harness settings | Searchable lazy list, typed edits, native source/scope, enforced read-only constraints, authoritative save read-back |
+| SSH settings | Claude/Pi/OMP values read and written on the remote host with credential fields preserved and redacted |
+| Streaming | Unchanged server/runtime projections do not invalidate the settings list |
+
+## Model picker layout
+
+Both platforms render the composer model picker from the same Rust fields (`ModelInfo.entryKind`, `pickerName`, `providerLabel`). iOS verified on simulator against a paired kittylitter host; Android is compile-checked in CI only.
+
+| Check | Required result on both platforms |
+|---|---|
+| Root | Current selection, up to 4 recents, one row per harness with counts, then Options (reasoning, fast, plan, full access) |
+| Harness page | Modes and plugin modes listed separately from models; multi-provider catalogs over 30 models start folded with the selected provider open |
+| Search | Matches every whitespace token across harness, provider, and model names; results capped at 150 with a total count |
+| Modes | Amp `low`/`medium`/`high`/`ultra` are `Mode`, other Amp entries `PluginMode`; never shown as models |
+| Host execution | Discovery and settings launch headless processes without terminal windows or Dock helpers |
+
+Validation for the 2.1.2 candidate: shared Rust library tests passed (823 passed, 3 existing manual/live tests ignored). The final `a5aaa9f6` Android library built successfully; all 58 unit tests and six settings/navigation instrumentation tests passed on Android 17. These cover unset strings/booleans/enums, managed policy, and MainActivity Settings → Harnesses navigation. Logo/splash animation state stays in draw/layer scopes using the standard Compose infinite-animation clock. The focused iOS harness settings UI test also passed against the ABI-compatible simulator library, including authoritative fixture readback and read-only controls. Final iOS artifact/input validation and store release remain pending.
+
+## Android TV
+
+TV launcher and remote-first home are implemented. Phone/tablet home is retained. Build and device acceptance are pending; see [Android TV build and QA](android-tv.md). Full D-pad coverage of shared conversation/settings screens is not yet verified.

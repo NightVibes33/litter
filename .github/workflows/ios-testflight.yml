@@ -3,6 +3,11 @@ name: iOS TestFlight Release
 on:
   workflow_dispatch:
     inputs:
+      build_only:
+        description: "Validate the build without publishing or uploading to TestFlight"
+        required: false
+        default: false
+        type: boolean
       existing_build_id:
         description: "Repair distribution of an uploaded build without rebuilding"
         required: false
@@ -23,6 +28,8 @@ on:
       - main
     paths:
       - 'apps/ios/**'
+      - 'tools/scripts/build-ios-code-mode-runtime.sh'
+      - '.github/workflows/ios-code-mode-runtime.yml'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
       - 'shared/third_party/ghostty/**'
@@ -49,6 +56,9 @@ env:
   SUBMODULE_CHECKOUT_PATHS: "shared/third_party/codex shared/third_party/ghostty"
 
 jobs:
+  ios-code-mode-runtime:
+    uses: ./.github/workflows/ios-code-mode-runtime.yml
+
   testflight-preflight:
     if: ${{ inputs.existing_build_id == '' && (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip mobile-release]')) }}
     runs-on: macos-26-intel
@@ -129,7 +139,7 @@ jobs:
           fi
 
   prepare-release-assets:
-    needs: testflight-preflight
+    needs: [testflight-preflight, ios-code-mode-runtime]
     runs-on: macos-26-intel
     timeout-minutes: 240
     env:
@@ -245,6 +255,13 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/scripts/patch-emexde-generated-swift-imports-for-ios-ci.py
+
+      - name: Download sandboxed iOS code-mode runtime
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ios-code-mode-runtime-*
+          merge-multiple: true
+          path: build/ios-code-mode
 
       - name: Prepare iOS release assets
         env:
@@ -758,12 +775,14 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           LITTER_TESTFLIGHT_FAST: "1"
           INCLUDE_LIVEPROCESS: "0"
+          TESTFLIGHT_SKIP_UPLOAD: ${{ inputs.build_only && '1' || '0' }}
           ALLOW_XCODE_EXPORTED_SEAL_WARNING: "0"
         run: |
           set -euo pipefail
           ./apps/ios/scripts/testflight-upload.sh
 
       - name: Commit TestFlight version bump
+        if: ${{ !inputs.build_only }}
         run: |
           set -euo pipefail
           if git diff --quiet -- apps/ios/project.yml docs/releases/testflight-whats-new.md; then
