@@ -1,6 +1,7 @@
 import Foundation
 import ImageIO
 import UIKit
+import UniformTypeIdentifiers
 
 
 struct ConversationAttachment: Identifiable {

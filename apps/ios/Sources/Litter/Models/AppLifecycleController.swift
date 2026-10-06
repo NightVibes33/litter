@@ -96,7 +96,7 @@ final class AppLifecycleController {
             } catch {
                 logLocalRuntimeUnavailable(error, fields: ["serverId": serverId])
                 await appModel.refreshSnapshot()
-                return
+                return error.localizedDescription
             }
         }
         appModel.reconnectController.setMultiClankerAndQuicEnabled(enabled: true)
