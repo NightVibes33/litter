@@ -9,7 +9,10 @@
 #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]
 pub mod ish_exec;
 
-#[cfg(any(test, all(target_os = "ios", not(target_abi = "macabi"))))]
+#[cfg(any(
+    all(test, feature = "local-code-mode-tests"),
+    all(target_os = "ios", not(target_abi = "macabi"))
+))]
 mod local_code_mode;
 
 #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]

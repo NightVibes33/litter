@@ -59,9 +59,9 @@ tar = "0.4"
 
 [features]
 rpc-trace = []
+local-code-mode-tests = ["dep:codex-code-mode-runtime"]
 
 [dev-dependencies]
-codex-code-mode-runtime = { workspace = true }
 tempfile = "3"
 
 [build-dependencies]
@@ -73,6 +73,10 @@ codex-code-mode-runtime = { workspace = true }
 # iSH backend. Tracks the iSH repo's `main` branch — `cargo update -p
 # ish-embed-host` pulls the latest.
 ish-embed-host = { git = "https://github.com/dnakov/litter-ish.git", branch = "main" }
+
+[target.'cfg(not(all(target_os = "ios", not(target_abi = "macabi"))))'.dependencies]
+# Opt-in host execution tests do not add V8 to normal mobile/host builds.
+codex-code-mode-runtime = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
