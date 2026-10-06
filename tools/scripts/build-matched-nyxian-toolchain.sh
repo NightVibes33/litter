@@ -19,7 +19,11 @@ STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
 mkdir -p "$STAGING/CoreCompilerSupportLibs"
 cp -R "$LLVM_SOURCE/CoreCompilerSupportLibs/." "$STAGING/CoreCompilerSupportLibs/"
-cp -R "$LLVM_SOURCE/LLVM.xcframework" "$STAGING/CoreCompilerSupportLibs/"
+# The support bundle may contain an older LLVM framework with real header
+# directories. Replace it before copying the freshly built framework: merging
+# a directory symlink over that directory fails with Darwin cp.
+rm -rf "$STAGING/CoreCompilerSupportLibs/LLVM.xcframework"
+cp -RL "$LLVM_SOURCE/LLVM.xcframework" "$STAGING/CoreCompilerSupportLibs/"
 HEADERS="$STAGING/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/Headers"
 BUILD_ROOT="$LLVM_SOURCE/build/LLVMClangSwift_iphoneos"
 # Include every generated header from this same build, after the upstream
