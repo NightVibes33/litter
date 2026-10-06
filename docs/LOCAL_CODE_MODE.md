@@ -26,7 +26,10 @@ tools/scripts/build-ios-code-mode-runtime.sh aarch64-apple-ios
 tools/scripts/build-ios-code-mode-runtime.sh aarch64-apple-ios-sim
 ```
 
-The host regression executes a real cell with JIT disabled and checks that
+The host regression is opt-in (`--features local-code-mode-tests`) so ordinary
+host/Android tests do not acquire a native V8 requirement. Use the matching
+OpenAI Codex `rusty-v8-v150.4.0` sandbox archive and generated bindings via
+`RUSTY_V8_ARCHIVE` and `RUSTY_V8_SRC_BINDING_PATH`. It executes a real cell with JIT disabled and checks that
 unsupported resource limits are rejected. Native archive/link validation runs
 in the iOS workflows. Device acceptance still requires opening a local thread
 with a server-advertised code-mode model, executing a cell and nested tool,
