@@ -9,7 +9,7 @@ on:
         default: false
         type: boolean
       existing_build_id:
-        description: "Repair distribution of an uploaded build without rebuilding"
+        description: "Repair an uploaded build by Apple record ID or build number without rebuilding"
         required: false
         default: ""
         type: string

@@ -66,6 +66,20 @@ class Apple:
         return items
 
 
+def resolve_build(apple, build_id, bundle_id):
+    if not build_id.isdecimal():
+        return build_id
+    query = urllib.parse.urlencode({'filter[bundleId]': bundle_id})
+    apps = apple.collection('/v1/apps?' + query)
+    if len(apps) != 1:
+        raise RuntimeError('Expected exactly one app for the requested bundle ID')
+    query = urllib.parse.urlencode({'filter[app]': apps[0]['id'], 'filter[version]': build_id})
+    builds = apple.collection('/v1/builds?' + query)
+    if len(builds) != 1:
+        raise RuntimeError(f'Expected exactly one uploaded build numbered {build_id}; found {len(builds)}')
+    return builds[0]['id']
+
+
 def inspect(apple, build_id, bundle_id, group_names, repair=False):
     group_names = [name.strip() for name in group_names if name.strip()]
     if not group_names:
@@ -136,7 +150,10 @@ if __name__ == '__main__':
     parser.add_argument('--repair', action='store_true')
     args = parser.parse_args()
     try:
-        inspect(Apple(), args.build_id, args.bundle_id, [n.strip() for n in args.groups.split(',') if n.strip()], args.repair)
+        apple = Apple()
+        build_id = resolve_build(apple, args.build_id, args.bundle_id)
+        print(f'Build record: {build_id}')
+        inspect(apple, build_id, args.bundle_id, [n.strip() for n in args.groups.split(',') if n.strip()], args.repair)
     except (RuntimeError, KeyError, ValueError) as error:
         print(f'::error::{error}')
         raise SystemExit(1)

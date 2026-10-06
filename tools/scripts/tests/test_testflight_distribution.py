@@ -1,5 +1,6 @@
 import importlib.util
 import unittest
+import urllib.parse
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location('distribution', Path(__file__).parents[1] / 'testflight-distribution.py')
@@ -39,6 +40,33 @@ class AppleFake:
 
 
 class DistributionTests(unittest.TestCase):
+    def test_build_number_resolution_is_scoped_to_requested_app(self):
+        class Lookup:
+            def collection(self, path):
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+                if path.startswith('/v1/apps?'):
+                    self.bundle = query['filter[bundleId]'][0]
+                    return [{'id': 'expected-app'}]
+                self.filters = query
+                return [{'id': 'apple-build-id'}]
+        apple = Lookup()
+        self.assertEqual(m.resolve_build(apple, '20261006181035', 'expected'), 'apple-build-id')
+        self.assertEqual(apple.bundle, 'expected')
+        self.assertEqual(apple.filters, {'filter[app]': ['expected-app'], 'filter[version]': ['20261006181035']})
+
+    def test_missing_or_ambiguous_build_number_is_rejected(self):
+        class Lookup:
+            def collection(self, path):
+                return [{'id': 'app'}] if path.startswith('/v1/apps?') else self.builds
+        for builds in ([], [{'id': 'one'}, {'id': 'two'}]):
+            apple = Lookup()
+            apple.builds = builds
+            with self.assertRaisesRegex(RuntimeError, 'exactly one uploaded build'):
+                m.resolve_build(apple, '123', 'expected')
+
+    def test_existing_record_id_needs_no_lookup(self):
+        self.assertEqual(m.resolve_build(None, 'apple-build-id', 'expected'), 'apple-build-id')
+
     def inspect(self, apple, repair=True):
         return m.inspect(apple, 'build', 'expected', ['Internal Testers', 'Beta Testers'], repair)
 

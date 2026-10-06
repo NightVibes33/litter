@@ -582,8 +582,15 @@ if [[ "$WAIT_FOR_PROCESSING" == "1" ]]; then
 fi
 
 if ! upload_json="$("${upload_cmd[@]}")"; then
-    echo "TestFlight upload failed for version $MARKETING_VERSION / build $BUILD_NUMBER." >&2
-    exit 1
+    # The upload can commit successfully before --wait times out. Recover
+    # only the exact version/build record; never upload the same IPA again.
+    build_id="$(find_build_id "$APP_STORE_APP_ID" "$MARKETING_VERSION" "$BUILD_NUMBER" 20)"
+    if [[ -z "$build_id" ]]; then
+        echo "TestFlight upload failed and no matching Apple build is visible for version $MARKETING_VERSION / build $BUILD_NUMBER." >&2
+        exit 1
+    fi
+    echo "==> Upload wait failed; continuing with existing Apple build $build_id"
+    upload_json="$(jq -n --arg id "$build_id" '{data: {id: $id}}')"
 fi
 echo "$upload_json" >"$BUILD_DIR/upload_result.json"
 
