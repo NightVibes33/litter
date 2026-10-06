@@ -24,12 +24,15 @@ HEADERS="$STAGING/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/Headers"
 BUILD_ROOT="$LLVM_SOURCE/build/LLVMClangSwift_iphoneos"
 # Include every generated header from this same build, after the upstream
 # source-header copies. No headers are downloaded from a different release.
+# Swift's generated include tree links swift/bridging back to its source
+# headers. Follow those links so they merge with the framework's directories
+# and the packaged headers do not depend on the CI checkout remaining present.
 for generated in \
   "$BUILD_ROOT/llvm-iphoneos-arm64/include" \
   "$BUILD_ROOT/llvm-iphoneos-arm64/tools/clang/include" \
   "$BUILD_ROOT/llvm-iphoneos-arm64/tools/lld/include" \
   "$BUILD_ROOT/swift-iphoneos-arm64/include"; do
-  if [ -d "$generated" ]; then cp -R "$generated/." "$HEADERS/"; fi
+  if [ -d "$generated" ]; then cp -RL "$generated/." "$HEADERS/"; fi
 done
 cat > "$STAGING/compiler-headers.cpp" <<'CPP'
 #include <swift/Frontend/Frontend.h>

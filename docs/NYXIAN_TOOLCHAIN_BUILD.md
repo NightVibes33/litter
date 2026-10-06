@@ -20,6 +20,10 @@ checksums for both artifact archives. The consumer rejects other source
 revisions and changed archives. The first uncached build compiles the toolchain;
 subsequent matching builds reuse the complete artifact pair.
 
+The generated header overlay follows directory symlinks, including Swift's
+`swift/bridging` link, when merging into the framework's source headers. This
+keeps the packaged headers usable after the build checkout is removed.
+
 A green IPA build verifies packaging, not on-device compiler execution.
 After installing the full unsigned variant and preparing its iOS SDK resources,
 use Alley Cãt's existing `litter-swift-selftest` command to exercise Swift, UIKit,
