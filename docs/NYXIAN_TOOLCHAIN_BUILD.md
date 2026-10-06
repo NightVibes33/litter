@@ -33,3 +33,7 @@ links the existing MDK framework instead of defining duplicate Objective-C
 classes. Private asset packs cannot overwrite the matched compiler or its
 support libraries. SDK payloads retain their separate import/private-lane path;
 the safe TestFlight lane does not embed this compiler bridge.
+
+BuildKit resolves Swift modules and Clang built-in headers from the bundled
+`Shared/SwiftToolchain/usr` before consulting imported asset packs, keeping
+runtime compiler resources aligned with the pinned native libraries.

@@ -2620,7 +2620,21 @@ actor LitterBuildKit {
         fileExists(sdkRoot.appendingPathComponent("SDKSettings.plist"))
     }
 
+    private static var bundledCompilerToolchainRoot: URL? {
+        Bundle.main.resourceURL?.appendingPathComponent("Shared/SwiftToolchain/usr", isDirectory: true)
+    }
+
     private static var clangResourceRoot: URL {
+        if let root = bundledCompilerToolchainRoot,
+           let versions = try? FileManager.default.contentsOfDirectory(
+               at: root.appendingPathComponent("lib/clang", isDirectory: true),
+               includingPropertiesForKeys: nil
+           ),
+           let matching = versions.sorted(by: {
+               $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending
+           }).first(where: { fileExists($0.appendingPathComponent("include/stdarg.h")) }) {
+            return matching
+        }
         if let path = installedManifest?.toolchain.clangResourceDir, !path.isEmpty {
             return buildKitRoot.appendingPathComponent(path, isDirectory: true)
         }
@@ -2628,13 +2642,25 @@ actor LitterBuildKit {
     }
 
     private static var cxxStandardLibraryIncludeRoot: URL {
+        if let bundled = bundledCompilerToolchainRoot?.appendingPathComponent("include/c++/v1", isDirectory: true),
+           fileExists(bundled.appendingPathComponent("vector")) {
+            return bundled
+        }
         if let path = installedManifest?.toolchain.cxxStandardLibraryIncludeDir, !path.isEmpty {
             return buildKitRoot.appendingPathComponent(path, isDirectory: true)
         }
+        let sdkHeaders = sdkRoot.appendingPathComponent("usr/include/c++/v1", isDirectory: true)
+        if fileExists(sdkHeaders.appendingPathComponent("vector")) { return sdkHeaders }
         return toolchainRoot.appendingPathComponent("CxxStandardLibrary/include/c++/v1", isDirectory: true)
     }
 
     private static var swiftResourceRoot: URL {
+        // The embedded compiler and these modules come from the same pinned
+        // build. Prefer them over potentially older imported asset overlays.
+        if let bundled = bundledCompilerToolchainRoot?.appendingPathComponent("lib/swift", isDirectory: true),
+           fileExists(bundled.appendingPathComponent("iphoneos", isDirectory: true)) {
+            return bundled
+        }
         if let path = installedManifest?.toolchain.swiftResourceDir, !path.isEmpty {
             return buildKitRoot.appendingPathComponent(path, isDirectory: true)
         }
