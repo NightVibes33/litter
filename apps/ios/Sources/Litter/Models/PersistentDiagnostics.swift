@@ -1,0 +1,107 @@
+import Foundation
+import CryptoKit
+import MetricKit
+
+/// Synchronous file writes preserve the last completed log entry if the process exits.
+/// Never install Swift signal handlers: allocating or taking locks there is unsafe.
+final class DiagnosticsLogWriter: @unchecked Sendable {
+    let directory: URL
+    private let lock = NSLock()
+    private let maxBytes: Int
+    private let maxFiles: Int
+    private var file: URL?
+    private var bytes = 0
+
+    init(directory: URL, maxBytes: Int = 512 * 1024, maxFiles: Int = 5) {
+        self.directory = directory
+        self.maxBytes = maxBytes
+        self.maxFiles = maxFiles
+    }
+
+    func append(_ line: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let bounded = String(LLog.redact(line).prefix(min(16_384, max(1, (maxBytes - 1) / 4)))) + "\n"
+            let data = Data(bounded.utf8)
+            if file == nil || bytes + data.count > maxBytes {
+                let nextFile = directory.appendingPathComponent("session-\(UUID().uuidString).log")
+                try Data().write(to: nextFile, options: .atomic)
+                file = nextFile
+                bytes = 0
+                trimFiles(extension: "log", keeping: maxFiles)
+            }
+            guard let file else { return }
+            let handle = try FileHandle(forWritingTo: file)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: data)
+            bytes += data.count
+        } catch {
+            // Logging failure must not crash the app or recursively invoke LLog.
+        }
+    }
+
+    func saveReport(_ data: Data, prefix: String, extension suffix: String) -> URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let identity = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            let url = directory.appendingPathComponent("\(prefix)-\(identity).\(suffix)")
+            if FileManager.default.fileExists(atPath: url.path) { return url }
+            try data.write(to: url, options: .atomic)
+            trimFiles(extension: suffix, keeping: maxFiles)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    private func trimFiles(extension suffix: String, keeping count: Int) {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.creationDateKey]
+        )) ?? []
+        let ordered = files.filter { $0.pathExtension == suffix }.sorted {
+            let lhs = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+            let rhs = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+            return lhs > rhs
+        }
+        for file in ordered.dropFirst(max(1, count)) { try? FileManager.default.removeItem(at: file) }
+    }
+}
+
+enum PersistentDiagnostics {
+    static let writer = DiagnosticsLogWriter(directory:
+        (FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))
+            .appendingPathComponent("Diagnostics", isDirectory: true)
+    )
+
+    static func saveRecoveryBundle(_ text: String) -> URL? {
+        writer.saveReport(Data(LLog.redact(text).utf8), prefix: "recovery", extension: "txt")
+    }
+}
+
+/// iOS delivers diagnostic payloads asynchronously; reports are not guaranteed
+/// immediately after a crash, and an ordinary OS termination may have no crash report.
+final class AppleCrashDiagnostics: NSObject, MXMetricManagerSubscriber {
+    static let shared = AppleCrashDiagnostics()
+
+    func start() {
+        MXMetricManager.shared.add(self)
+        if let payloads = MXMetricManager.shared.pastDiagnosticPayloads {
+            didReceive(payloads)
+        }
+    }
+
+    func didReceive(_ payloads: [MXDiagnosticPayload]) {
+        for payload in payloads {
+            let report = LLog.redact(String(decoding: payload.jsonRepresentation(), as: UTF8.self))
+            _ = PersistentDiagnostics.writer.saveReport(
+                Data(report.utf8), prefix: "apple-diagnostic", extension: "json"
+            )
+        }
+    }
+}

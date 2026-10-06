@@ -14,6 +14,11 @@ enum LLog {
 
         let codexHome = resolveCodexHome()
         setenv("CODEX_HOME", codexHome.path, 1)
+        AppleCrashDiagnostics.shared.start()
+        info("diagnostics", "session started", fields: [
+            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
+            "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        ])
     }
 
     static func trace(_ subsystem: String, _ message: String, fields: [String: Any] = [:], payloadJson: String? = nil) {
@@ -83,6 +88,9 @@ enum LLog {
             ringLines.removeFirst(ringLines.count - ringLimit)
         }
         ringLock.unlock()
+        if level != .debug {
+            PersistentDiagnostics.writer.append(line)
+        }
     }
 
     #if DEBUG

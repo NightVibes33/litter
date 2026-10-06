@@ -4,6 +4,7 @@ import UIKit
 struct DiagnosticsBundleView: View {
     @State private var bundleText = ""
     @State private var isCollecting = false
+    @State private var savedBundleURL: URL?
     @State private var sharePayload: DiagnosticsSharePayload?
 
     @StateObject private var taskBag = ViewTaskBag()
@@ -40,7 +41,7 @@ struct DiagnosticsBundleView: View {
                 Text("Recovery")
                     .foregroundStyle(LitterTheme.textSecondary)
             } footer: {
-                Text("Bundles include app/runtime status and the last 200 in-memory log lines after token redaction.")
+                Text("Redacted session logs and recovery bundles are saved in Files → On My iPhone → Alley Cãt → Diagnostics. Apple crash reports appear there when iOS delivers them.")
             }
 
             Section {
@@ -81,18 +82,16 @@ struct DiagnosticsBundleView: View {
         isCollecting = true
         defer { isCollecting = false }
         bundleText = await DiagnosticsBundleBuilder.build()
+        savedBundleURL = PersistentDiagnostics.saveRecoveryBundle(bundleText)
     }
 
     private func shareBundle() {
         guard !bundleText.isEmpty else { return }
-        do {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("AlleyCatDiagnostics-\(UUID().uuidString).txt")
-            try LLog.redact(bundleText).write(to: url, atomically: true, encoding: .utf8)
-            sharePayload = DiagnosticsSharePayload(url: url)
-        } catch {
-            LLog.error("diagnostics", "failed to write diagnostics bundle", error: error)
+        guard let url = savedBundleURL ?? PersistentDiagnostics.saveRecoveryBundle(bundleText) else {
+            LLog.error("diagnostics", "failed to write diagnostics bundle")
+            return
         }
+        sharePayload = DiagnosticsSharePayload(url: url)
     }
 }
 

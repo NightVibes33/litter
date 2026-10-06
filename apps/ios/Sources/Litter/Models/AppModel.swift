@@ -2320,6 +2320,11 @@ final class AppModel {
 
     func startTurn(key: ThreadKey, payload: AppComposerPayload) async throws {
         try await ensureLocalRuntimeIfNeeded(serverId: key.serverId)
+        LLog.info("conversation", "starting turn", fields: [
+            "model": payload.model ?? "server default",
+            "effort": payload.effort.map { String(describing: $0) } ?? "default",
+            "local": snapshot?.serverSnapshot(for: key.serverId)?.isLocal == true
+        ])
         let start = DispatchTime.now()
         // Closed by the first assistant delta for this thread, or by the
         // turn-finished branch of `handleStoreUpdate` when the turn
