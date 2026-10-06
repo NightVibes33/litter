@@ -91,9 +91,7 @@ final class AppleCrashDiagnostics: NSObject, MXMetricManagerSubscriber {
 
     func start() {
         MXMetricManager.shared.add(self)
-        if let payloads = MXMetricManager.shared.pastDiagnosticPayloads {
-            didReceive(payloads)
-        }
+        didReceive(MXMetricManager.shared.pastDiagnosticPayloads)
     }
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
