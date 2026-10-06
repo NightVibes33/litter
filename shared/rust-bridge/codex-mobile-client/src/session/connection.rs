@@ -613,7 +613,8 @@ impl ServerSession {
         #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]
         if !crate::ish_runtime::ready_or_wait(Duration::from_secs(60)).await {
             return Err(TransportError::ConnectionFailed(
-                "iSH runtime did not finish bootstrapping before local Codex server start".to_string(),
+                "iSH runtime did not finish bootstrapping before local Codex server start"
+                    .to_string(),
             ));
         }
 
@@ -644,9 +645,12 @@ impl ServerSession {
         let mut cli_overrides = vec![
             ("features.goals".to_string(), true.into()),
             ("features.realtime_conversation".to_string(), true.into()),
-            // iOS cannot spawn Codex's separate code-mode host executable from
-            // the app bundle in TestFlight. Keep mobile on the in-process path.
-            ("features.code_mode_host".to_string(), false.into()),
+            // iOS supplies an embedded, jitless provider below. Other mobile
+            // targets retain their existing behavior until they have a provider.
+            (
+                "features.code_mode_host".to_string(),
+                cfg!(all(target_os = "ios", not(target_abi = "macabi"))).into(),
+            ),
             (
                 "experimental_realtime_ws_model".to_string(),
                 "gpt-realtime-2".to_string().into(),
@@ -694,7 +698,8 @@ impl ServerSession {
             resolved_builder = resolved_builder.codex_home(codex_home.clone());
         }
         if let Some(ref working_dir) = in_process.working_directory {
-            resolved_builder = resolved_builder.fallback_cwd(Some(in_process_fallback_cwd(working_dir)));
+            resolved_builder =
+                resolved_builder.fallback_cwd(Some(in_process_fallback_cwd(working_dir)));
         }
 
         let resolved_config = resolved_builder.build().await.unwrap_or(base_config);
@@ -739,11 +744,16 @@ impl ServerSession {
             channel_capacity: in_process.channel_capacity,
         };
 
-        let mut handle = codex_app_server::in_process::start(args)
-            .await
-            .map_err(|e| {
-                TransportError::ConnectionFailed(format!("in-process start failed: {e}"))
-            })?;
+        #[cfg(all(target_os = "ios", not(target_abi = "macabi")))]
+        let start = codex_app_server::in_process::start_with_code_mode_provider(
+            args,
+            Some(Arc::new(crate::local_code_mode::MobileCodeModeProvider)),
+        );
+        #[cfg(not(all(target_os = "ios", not(target_abi = "macabi"))))]
+        let start = codex_app_server::in_process::start(args);
+        let mut handle = start.await.map_err(|e| {
+            TransportError::ConnectionFailed(format!("in-process start failed: {e}"))
+        })?;
 
         let sender = handle.sender();
         let (event_tx, _) = broadcast::channel::<ServerEvent>(256);
@@ -2028,7 +2038,7 @@ mod tests {
             experimental_api: true,
             mcp_server_openai_form_elicitation: false,
             opt_out_notification_methods: Vec::new(),
-                channel_capacity: 16,
+            channel_capacity: 16,
         }
     }
 
@@ -2718,7 +2728,10 @@ mod tests {
     #[test]
     fn json_value_to_request_id_invalid() {
         for value in [json!(true), json!(null), json!(1.5), json!(u64::MAX)] {
-            assert!(json_value_to_request_id(&value).is_err(), "accepted {value}");
+            assert!(
+                json_value_to_request_id(&value).is_err(),
+                "accepted {value}"
+            );
         }
     }
 

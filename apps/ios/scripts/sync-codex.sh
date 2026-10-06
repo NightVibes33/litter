@@ -6,6 +6,7 @@ IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$IOS_DIR/../.." && pwd)"
 SUBMODULE_DIR="$REPO_DIR/shared/third_party/codex"
 PATCH_FILES=(
+    "$REPO_DIR/patches/codex/mobile-in-process-code-mode.patch"
     "$REPO_DIR/patches/codex/mobile-crypto-compat.patch"
     "$REPO_DIR/patches/codex/ios-exec-hook.patch"
     "$REPO_DIR/patches/codex/thread-read-permissions.patch"

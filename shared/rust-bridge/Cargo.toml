@@ -7,6 +7,7 @@ members = [
 resolver = "3"
 
 [workspace.dependencies]
+codex-code-mode-runtime = { path = "../third_party/codex/codex-rs/code-mode-runtime" }
 codex-app-server = { path = "../third_party/codex/codex-rs/app-server" }
 codex-app-server-client = { path = "../third_party/codex/codex-rs/app-server-client" }
 codex-app-server-protocol = { path = "../third_party/codex/codex-rs/app-server-protocol" }

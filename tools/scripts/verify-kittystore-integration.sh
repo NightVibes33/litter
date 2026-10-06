@@ -464,7 +464,7 @@ require_grep "Native container file browser path" "IshFS.nativeContainerMountPat
 
 # App builds retain Intel runners; the upstream Swift preset requires ARM64.
 for workflow in "$ROOT_DIR"/.github/workflows/*.yml; do
-  if [ "$(basename "$workflow")" != "nyxian-toolchain.yml" ] && grep -q "^[[:space:]]*runs-on: macos-26$" "$workflow"; then
+  if [ "$(basename "$workflow")" != "nyxian-toolchain.yml" ] && [ "$(basename "$workflow")" != "ios-code-mode-runtime.yml" ] && grep -q "^[[:space:]]*runs-on: macos-26$" "$workflow"; then
     fail "macOS 26 app workflows must use the Intel runner label macos-26-intel"
   fi
 done

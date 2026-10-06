@@ -343,14 +343,27 @@ fi
 # so the git-tracked dependency can move without breaking iOS/Catalyst builds.
 rustup target add i686-unknown-linux-musl aarch64-unknown-linux-musl
 
+ios_runtime_cargo() {
+  local runtime_target="$1"
+  shift
+  local runtime_dir="$REPO_DIR/build/ios-code-mode/$runtime_target"
+  if [ ! -s "$runtime_dir/librusty_v8.a.gz" ] || [ ! -s "$runtime_dir/src_binding.rs" ]; then
+    echo "error: build/download ios-code-mode-runtime before building the iOS device library" >&2
+    return 1
+  fi
+  (cd "$runtime_dir" && shasum -a 256 -c SHA256SUMS) || return 1
+  RUSTY_V8_ARCHIVE="$runtime_dir/librusty_v8.a.gz" \
+  RUSTY_V8_SRC_BINDING_PATH="$runtime_dir/src_binding.rs" cargo "$@"
+}
+
 if [ "$DEVICE_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios ($PROFILE)..."
-  cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios --crate-type staticlib $CARGO_FEATURES
+  ios_runtime_cargo aarch64-apple-ios rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios --crate-type staticlib $CARGO_FEATURES
   check_ish_vdso_for aarch64-apple-ios
   copy_device_artifact
 elif [ "$SIM_ONLY" -eq 1 ]; then
   echo "==> Building codex-mobile-client for aarch64-apple-ios-sim ($PROFILE)..."
-  cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios-sim --crate-type staticlib $CARGO_FEATURES
+  ios_runtime_cargo aarch64-apple-ios-sim rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios-sim --crate-type staticlib $CARGO_FEATURES
   check_ish_vdso_for aarch64-apple-ios-sim
   copy_sim_artifact "$CARGO_TARGET_DIR_EFFECTIVE/aarch64-apple-ios-sim/$PROFILE/libcodex_mobile_client.a"
 elif [ "$MACABI_ONLY" -eq 1 ]; then
@@ -396,11 +409,11 @@ else
   echo "==> Building codex-mobile-client for device, simulator, and Catalyst macabi targets ($PROFILE) in parallel..."
 
   build_device() {
-    cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios --crate-type staticlib $CARGO_FEATURES
+    ios_runtime_cargo aarch64-apple-ios rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios --crate-type staticlib $CARGO_FEATURES
   }
 
   build_sim() {
-    cargo rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios-sim --crate-type staticlib $CARGO_FEATURES
+    ios_runtime_cargo aarch64-apple-ios-sim rustc --manifest-path "$RUST_BRIDGE_DIR/Cargo.toml" -p codex-mobile-client $CARGO_PROFILE_FLAG --target aarch64-apple-ios-sim --crate-type staticlib $CARGO_FEATURES
   }
 
   build_macabi_arm64() {

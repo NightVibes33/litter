@@ -1,0 +1,51 @@
+diff --git a/codex-rs/app-server/src/in_process.rs b/codex-rs/app-server/src/in_process.rs
+index 20e44d3..1f344e8 100644
+--- a/codex-rs/app-server/src/in_process.rs
++++ b/codex-rs/app-server/src/in_process.rs
+@@ -369,7 +369,15 @@ impl InProcessClientHandle {
+ /// This function sends `initialize` followed by `initialized` before returning
+ /// the handle, so callers receive a ready-to-use runtime. If initialize fails,
+ /// the runtime is shut down and an `InvalidData` error is returned.
+-pub async fn start(mut args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {
++pub async fn start(args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {
++    start_with_code_mode_provider(args, None).await
++}
++
++/// Starts a runtime with a platform-owned code-mode provider instead of spawning a host.
++pub async fn start_with_code_mode_provider(
++    mut args: InProcessStartArgs,
++    code_mode_session_provider: Option<Arc<dyn codex_code_mode::CodeModeSessionProvider>>,
++) -> IoResult<InProcessClientHandle> {
+     if let Ok(Some(err)) = check_execpolicy_for_warnings(&args.config.config_layer_stack).await {
+         let (path, range) = crate::exec_policy_warning_location(&err);
+         args.config_warnings.push(ConfigWarningNotification {
+@@ -380,7 +388,7 @@ pub async fn start(mut args: InProcessStartArgs) -> IoResult<InProcessClientHand
+         });
+     }
+     let initialize = args.initialize.clone();
+-    let client = start_uninitialized(args).await?;
++    let client = start_uninitialized(args, code_mode_session_provider).await?;
+ 
+     let initialize_response = client
+         .request(ClientRequest::Initialize {
+@@ -419,7 +427,10 @@ async fn run_outbound_router(
+     }
+ }
+ 
+-async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {
++async fn start_uninitialized(
++    args: InProcessStartArgs,
++    code_mode_session_provider: Option<Arc<dyn codex_code_mode::CodeModeSessionProvider>>,
++) -> IoResult<InProcessClientHandle> {
+     args.config.auth_config().validate()?;
+     let channel_capacity = args.channel_capacity.max(1);
+     let installation_id = resolve_installation_id(&args.config.codex_home).await?;
+@@ -492,7 +503,7 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
+                 ))),
+                 auth_manager,
+                 installation_id,
+-                code_mode_session_provider: None,
++                code_mode_session_provider,
+                 rpc_transport: AppServerRpcTransport::InProcess,
+                 remote_control_handle: None,
+                 plugin_startup_tasks: Some(PluginStartupConfig::Current),

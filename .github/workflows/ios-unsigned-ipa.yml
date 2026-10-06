@@ -68,13 +68,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ios-code-mode-runtime:
+    uses: ./.github/workflows/ios-code-mode-runtime.yml
+
   nyxian-toolchain:
     if: github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private'
     uses: ./.github/workflows/nyxian-toolchain.yml
 
   build-unsigned-ipa:
-    needs: nyxian-toolchain
-    if: ${{ !cancelled() && (needs.nyxian-toolchain.result == 'success' || needs.nyxian-toolchain.result == 'skipped') }}
+    needs: [nyxian-toolchain, ios-code-mode-runtime]
+    if: ${{ !cancelled() && needs.ios-code-mode-runtime.result == 'success' && (needs.nyxian-toolchain.result == 'success' || needs.nyxian-toolchain.result == 'skipped') }}
     name: Build unsigned sideload IPA
     runs-on: macos-26-intel
     timeout-minutes: 360
@@ -108,6 +111,13 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+
+      - name: Download sandboxed iOS code-mode runtime
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ios-code-mode-runtime-*
+          merge-multiple: true
+          path: build/ios-code-mode
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1

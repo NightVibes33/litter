@@ -57,6 +57,15 @@ configured Local Studio data directory during upgrades.
 An Alleycat change is not in Litter until the revision, lockfile, generated
 bindings, and both mobile runtimes are verified.
 
+## Local iOS code-mode validation
+
+The integration branch supplies the upstream jitless in-process code-mode
+runtime and builds matching sandboxed V8 device/simulator artifacts from pinned
+source. Native compilation, signing/archive checks, and device execution remain
+acceptance gates; this is not a claim that an installed build has passed them.
+Android and Catalyst do not acquire the V8 production dependency. See
+[LOCAL_CODE_MODE.md](LOCAL_CODE_MODE.md) for the source pin and verification path.
+
 ## P0 — dependency security
 
 RustSec was rerun on 2026-09-21 against both candidate lockfiles after updating
