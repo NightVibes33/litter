@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("litterTerminalInitialDirectory") private var terminalInitialDirectory = HomeAnchor.path
     @State private var alleyCatToolPath: [AlleyCatToolRoute] = []
     @AppStorage("litterSettingsRequestedRoute") private var requestedToolRoute = ""
+    @State private var showOnboardingReplay = false
     @State private var activeServerSheet: SettingsServerSheet?
     @State private var serverEditError: String?
     /// Server projections mirrored out of `appModel.snapshot` by
@@ -48,6 +49,9 @@ struct SettingsView: View {
                         category("Appearance", "paintbrush", id: "settings.category.appearance") {
                             AppearanceSettingsView()
                         }
+                        category("Icon Switcher", "app.badge", id: "settings.category.appIcon") {
+                            AppIconSettingsView()
+                        }
                         category("Conversation", "text.bubble", id: "settings.category.conversation") {
                             settingsPage("Conversation") { conversationSection }
                         }
@@ -64,6 +68,7 @@ struct SettingsView: View {
                             NavigationLink("BuildKit", value: AlleyCatToolRoute.buildKit)
                         }
                         NavigationLink("Files", value: AlleyCatToolRoute.files)
+                        NavigationLink("Terminal", value: AlleyCatToolRoute.terminal)
                     } header: {
                         settingsHeader("Alley Cãt tools")
                     }
@@ -71,6 +76,17 @@ struct SettingsView: View {
                         category("Advanced", "slider.horizontal.3", id: "settings.category.advanced") {
                             settingsPage("Advanced") { advancedSections }
                         }
+                        category("Updates", "arrow.down.circle", id: "settings.category.updates") {
+                            AppUpdateSettingsView()
+                        }
+                        category("Diagnostics", "cross.case", id: "settings.category.diagnostics") {
+                            DiagnosticsBundleView()
+                        }
+                        Button("Replay Onboarding") {
+                            showOnboardingReplay = true
+                        }
+                        .accessibilityIdentifier("settings.replayOnboarding")
+                        .settingsRowBackground()
                         category("Tip the Kitty", "heart", id: "settings.category.support") {
                             TipJarView()
                         }
@@ -95,6 +111,9 @@ struct SettingsView: View {
                 case .buildKit: BuildKitSettingsView()
                 case .files: LocalFileWorkspaceView()
                 case .terminal: TerminalScreen(cwd: terminalInitialDirectory)
+                case .appearance: AppearanceSettingsView()
+                case .conversation: settingsPage("Conversation") { conversationSection }
+                case .harnesses: HarnessSettingsView()
                 }
             }
             .onAppear { consumeRequestedToolRoute() }
@@ -123,6 +142,27 @@ struct SettingsView: View {
                         .foregroundColor(LitterTheme.textPrimary)
                         .accessibilityIdentifier("settings.done")
                 }
+            }
+            .sheet(isPresented: $showOnboardingReplay) {
+                OnboardingView(
+                    mode: .replay,
+                    onFinish: { showOnboardingReplay = false },
+                    onOpenFiles: { path in
+                        UserDefaults.standard.set(path, forKey: LitterOnboardingState.fileWorkspaceInitialDirectoryKey)
+                        alleyCatToolPath.append(.files)
+                    },
+                    onOpenTerminal: { path in
+                        terminalInitialDirectory = path
+                        alleyCatToolPath.append(.terminal)
+                    },
+                    onOpenServerPicker: { activeServerSheet = .add },
+                    onOpenSettingsRoute: { route in
+                        requestedToolRoute = route == "aiProviders" ? "harnesses" : route
+                        consumeRequestedToolRoute()
+                    }
+                )
+                .environment(appModel)
+                .environment(appState)
             }
             .sheet(item: $activeServerSheet) { sheet in
                 switch sheet {
@@ -1511,12 +1551,15 @@ private enum AlleyCatToolRoute: String, Hashable {
     case buildKit
     case files
     case terminal
+    case appearance
+    case conversation
+    case harnesses
 
     var isAvailable: Bool {
         switch self {
         case .store, .signing: AppDistributionCapabilities.includesKittyStore
         case .nyxian, .buildKit: AppDistributionCapabilities.includesEmexDE
-        case .files, .terminal: true
+        case .files, .terminal, .appearance, .conversation, .harnesses: true
         }
     }
 }

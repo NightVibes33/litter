@@ -54,7 +54,7 @@ struct AppearanceSettingsView: View {
         } header: {
             SettingsSectionHeader("Mode")
         } footer: {
-            Text("Match the device setting, or keep Litter fixed in light or dark mode.")
+            Text("Match the device setting, or keep Alley Cãt fixed in light or dark mode.")
                 .litterFont(.footnote)
                 .foregroundColor(LitterTheme.textMuted)
         }
