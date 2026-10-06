@@ -78,14 +78,19 @@ mod tests {
             .initial_response()
             .await
             .unwrap();
-        assert!(matches!(
-            response,
-            RuntimeResponse::Result {
-                error_text: None,
-                ..
-            }
-        ));
-        assert!(serde_json::to_string(&response).unwrap().contains("2"));
+        let RuntimeResponse::Result {
+            content_items,
+            error_text,
+            ..
+        } = response
+        else {
+            panic!("cell did not complete: {response:?}");
+        };
+        assert_eq!(error_text, None);
+        assert_eq!(
+            content_items,
+            vec![FunctionCallOutputContentItem::InputText { text: "2".into() }]
+        );
         session.shutdown().await.unwrap();
     }
 }
