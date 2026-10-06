@@ -106,6 +106,7 @@ jobs:
       LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS: ${{ github.event_name == 'workflow_dispatch' && inputs.build_mode == 'nyxian-private' && '1' || '0' }}
       LITTER_PRESERVE_NYXIAN_LIVEPROCESS: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_mode == 'full-sideload' || inputs.build_mode == 'nyxian-private') && '1' || '0' }}
       LITTER_SKIP_ALLEYCAT_UPDATE: "1"
+      LITTER_USE_MATCHED_NYXIAN_TOOLCHAIN: "1"
 
     steps:
       - name: Checkout
@@ -1099,6 +1100,26 @@ jobs:
           path: build/NyxianSourcePackages
           key: ${{ steps.nyxian_swiftpm_cache.outputs.cache-primary-key }}
 
+      - name: Build ChatGPT native compiler bridge against archived Nyxian
+        if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Litter.xcarchive/Products/Applications -type d -name '*.app' -print | head -n 1)"
+          test -n "$APP_PATH"
+          FRAMEWORKS="$APP_PATH/Frameworks"
+          NYXIAN_ROOT="$PWD/ThirdParty/EmexDE/Source/Frameworks" \
+          CORECOMPILER_FRAMEWORK="$FRAMEWORKS/CoreCompiler.framework" \
+          MOBILEDEVELOPMENTKIT_FRAMEWORK="$FRAMEWORKS/MobileDevelopmentKit.framework" \
+          LITTER_BUILDKIT_NATIVE_MODE=inprocess \
+          LITTER_BUILDKIT_NATIVE_OUT_DIR="$FRAMEWORKS/LitterBuildKitNative.framework" \
+          LITTER_BUILDKIT_OPENSSL_FRAMEWORK="$FRAMEWORKS/OpenSSL.framework" \
+          tools/scripts/build-litter-buildkit-native.sh
+          DRIVER="$FRAMEWORKS/LitterBuildKitNative.framework/LitterBuildKitNative"
+          nm -gU "$DRIVER" | awk '{print $NF}' | grep -qx '_litter_buildkit_run_json'
+          otool -L "$DRIVER" | grep -q 'CoreCompiler.framework/CoreCompiler'
+          otool -L "$DRIVER" | grep -q 'MobileDevelopmentKit.framework/MobileDevelopmentKit'
+          codesign --force --sign - --timestamp=none "$FRAMEWORKS/LitterBuildKitNative.framework"
+
       - name: Verify archived BuildKit asset payload
         if: env.LITTER_EMBED_PRIVATE_BUILDKIT_ASSETS == '1'
         run: |
@@ -1372,8 +1393,7 @@ jobs:
 
           forbidden=0
           for item in \
-            "$APP_PATH/LitterBuildKitAssets.zip" \
-            "$APP_PATH/Frameworks/LitterBuildKitNative.framework"
+            "$APP_PATH/LitterBuildKitAssets.zip"
           do
             if [ -e "$item" ]; then
               echo "::error::Sideload IPA must not embed private BuildKit SDK/toolchain payload: $item" >&2
@@ -1387,7 +1407,7 @@ jobs:
           fi
 
           if [ "$LITTER_NYXIAN_PRIVATE_BUILD" = "1" ]; then
-            for framework in CoreCompiler.framework MobileDevelopmentKit.framework emexDE.framework; do
+            for framework in CoreCompiler.framework MobileDevelopmentKit.framework emexDE.framework LitterBuildKitNative.framework; do
               if [ ! -d "$APP_PATH/Frameworks/$framework" ]; then
                 echo "::error::Full sideload IPA is missing embedded emexDE runtime framework: $framework" >&2
                 forbidden=1

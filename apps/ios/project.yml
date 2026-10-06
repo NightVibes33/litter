@@ -1063,6 +1063,10 @@ targets:
             fi
           }
           for framework in CoreCompiler.framework LitterBuildKitNative.framework; do
+            if [ "$framework" = "CoreCompiler.framework" ] && [ "${LITTER_USE_MATCHED_NYXIAN_TOOLCHAIN:-0}" = "1" ]; then
+              echo "Keeping the CoreCompiler built from the matching pinned toolchain"
+              continue
+            fi
             if [ -d "$ASSET_ROOT/$framework" ]; then
               destination="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/$framework"
               executable="${framework%.framework}"
@@ -1124,10 +1128,14 @@ targets:
               sign_if_requested "$destination"
             done
           }
-          SUPPORT_ROOT="$ASSET_ROOT/CoreCompilerSupportLibs"
-          SDK_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/SDK"
-          copy_buildkit_support_dylibs_from "$SUPPORT_ROOT"
-          copy_buildkit_support_dylibs_from "$SDK_ROOT"
+          if [ "${LITTER_USE_MATCHED_NYXIAN_TOOLCHAIN:-0}" = "1" ]; then
+            echo "Keeping the matching emexDE compiler support libraries"
+          else
+            SUPPORT_ROOT="$ASSET_ROOT/CoreCompilerSupportLibs"
+            SDK_ROOT="$SRCROOT/Sources/Litter/Resources/BuildKitAssets/SDK"
+            copy_buildkit_support_dylibs_from "$SUPPORT_ROOT"
+            copy_buildkit_support_dylibs_from "$SDK_ROOT"
+          fi
     settings:
       base:
         PRODUCT_NAME: "Alley Cat"

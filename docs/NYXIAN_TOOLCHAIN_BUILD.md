@@ -26,3 +26,10 @@ use Alley Cãt's existing `litter-swift-selftest` command to exercise Swift, UIK
 C, C++, Objective-C, Objective-C++, and IPA export. Keep its compiler diagnostics
 and generated artifacts when checking ChatGPT's existing BuildKit command path.
 On-device building and signing still require device validation.
+
+The full unsigned archive also builds `LitterBuildKitNative.framework` against
+the archived CoreCompiler, MobileDevelopmentKit, and OpenSSL frameworks. It
+links the existing MDK framework instead of defining duplicate Objective-C
+classes. Private asset packs cannot overwrite the matched compiler or its
+support libraries. SDK payloads retain their separate import/private-lane path;
+the safe TestFlight lane does not embed this compiler bridge.

@@ -10,6 +10,7 @@ MIN_IOS="${LITTER_BUILDKIT_MIN_IOS:-18.0}"
 SDK="${IPHONEOS_SDK_PATH:-}"
 MODE="${LITTER_BUILDKIT_NATIVE_MODE:-runner}"
 CORECOMPILER_FRAMEWORK="${CORECOMPILER_FRAMEWORK:-}"
+MOBILEDEVELOPMENTKIT_FRAMEWORK="${MOBILEDEVELOPMENTKIT_FRAMEWORK:-}"
 KITTYSTORE_SIGNER="${LITTER_BUILDKIT_ENABLE_KITTYSTORE_SIGNER:-1}"
 OPENSSL_FRAMEWORK="${LITTER_BUILDKIT_OPENSSL_FRAMEWORK:-$NYXIAN_ROOT/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework}"
 
@@ -85,8 +86,18 @@ if [[ "$MODE" = "inprocess" ]]; then
     -F"$(dirname "$CORECOMPILER_FRAMEWORK")"
     -framework CoreCompiler
   )
+  SOURCES+=("$SRC_DIR/LitterBuildKitInProcess.mm")
+  if [[ -n "$MOBILEDEVELOPMENTKIT_FRAMEWORK" ]]; then
+    if [[ ! -f "$MOBILEDEVELOPMENTKIT_FRAMEWORK/MobileDevelopmentKit" ]]; then
+      echo "error: MobileDevelopmentKit framework executable is missing" >&2
+      exit 1
+    fi
+    # The embedded emexDE runtime already owns these Objective-C classes.
+    # Link its matching framework rather than defining duplicate MDK classes.
+    COMMON_COMPILE_FLAGS+=(-F"$(dirname "$MOBILEDEVELOPMENTKIT_FRAMEWORK")")
+    LINK_FLAGS+=(-F"$(dirname "$MOBILEDEVELOPMENTKIT_FRAMEWORK")" -framework MobileDevelopmentKit)
+  else
   SOURCES+=(
-    "$SRC_DIR/LitterBuildKitInProcess.mm"
     "$NYXIAN_ROOT/MobileDevelopmentKit/Support/MDKCFType.m"
     "$NYXIAN_ROOT/MobileDevelopmentKit/Support/MDKDiagnostic.m"
     "$NYXIAN_ROOT/MobileDevelopmentKit/Support/MDKFile.m"
@@ -96,6 +107,7 @@ if [[ "$MODE" = "inprocess" ]]; then
     "$NYXIAN_ROOT/MobileDevelopmentKit/Tools/MDKSDK.m"
     "$NYXIAN_ROOT/MobileDevelopmentKit/Tools/Linker/MDKLinker.m"
   )
+  fi
 
   if [[ "$KITTYSTORE_SIGNER" != "0" ]]; then
     if [[ ! -d "$FEATHER_ZSIGN_ROOT" ]]; then
