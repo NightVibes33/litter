@@ -76,6 +76,21 @@ def resolve_build(apple, build_id, bundle_id):
     query = urllib.parse.urlencode({'filter[app]': apps[0]['id'], 'filter[version]': build_id})
     builds = apple.collection('/v1/builds?' + query)
     if len(builds) != 1:
+        if not builds:
+            upload_query = urllib.parse.urlencode({'filter[cfBundleVersion]': build_id, 'limit': 20})
+            uploads = apple.collection(f"/v1/apps/{apps[0]['id']}/buildUploads?{upload_query}")
+            print('Apple upload records: ' + json.dumps([
+                {'id': upload['id'], **{key: upload.get('attributes', {}).get(key)
+                 for key in ('cfBundleVersion', 'cfBundleShortVersionString', 'createdDate', 'uploadedDate', 'state')}}
+                for upload in uploads
+            ]))
+            for upload in uploads:
+                files = apple.collection(f"/v1/buildUploads/{upload['id']}/buildUploadFiles?limit=200")
+                print('Apple upload file diagnostics: ' + json.dumps([
+                    {key: file.get('attributes', {}).get(key)
+                     for key in ('fileName', 'uploaded', 'assetDeliveryState')}
+                    for file in files
+                ]))
         raise RuntimeError(f'Expected exactly one uploaded build numbered {build_id}; found {len(builds)}')
     return builds[0]['id']
 
