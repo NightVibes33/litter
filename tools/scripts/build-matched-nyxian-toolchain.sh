@@ -10,7 +10,7 @@ OUTPUT="${1:-$ROOT/build/nyxian-toolchain}"
 mkdir -p "$OUTPUT"
 # Use the nested upstream Makefile and its preset: fetch matching sibling
 # repositories, build the real Swift frontend, and bundle generated headers.
-make -C "$LLVM_SOURCE" CHECK_DEPS=0 all
+(cd "$LLVM_SOURCE" && make CHECK_DEPS=0 all)
 [[ -s "$LLVM_SOURCE/LLVM.xcframework/ios-arm64/llvm.a" ]]
 [[ -s "$LLVM_SOURCE/LLVM.xcframework/ios-arm64/Headers/swift/Config.h" ]]
 [[ -s "$LLVM_SOURCE/LLVM.xcframework/ios-arm64/Headers/swift/Option/Options.inc" ]]

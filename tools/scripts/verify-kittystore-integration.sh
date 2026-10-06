@@ -236,7 +236,7 @@ require_grep "emexDE CI patches LiveProcess plist package type" "<string>XPC!</s
 require_grep "emexDE unsigned IPA workflow validates LiveProcess bundle id" "IPA LiveProcess.appex has invalid CFBundleIdentifier" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "emexDE private LiveProcess workflow bundle id is Litter-prefixed" 'PRODUCT_BUNDLE_IDENTIFIER="com.sigkitten.litter.39A8Q3T3TR.liveprocess"' ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "emexDE matched artifact installation" "install-nyxian-toolchain-artifacts.sh" ".github/workflows/ios-unsigned-ipa.yml"
-require_grep "emexDE upstream toolchain build" "make -C" "tools/scripts/build-matched-nyxian-toolchain.sh"
+require_grep "emexDE upstream toolchain build" "make CHECK_DEPS=0 all" "tools/scripts/build-matched-nyxian-toolchain.sh"
 require_grep "iOS unsigned IPA uses Intel macOS 26 runner" "runs-on: macos-26-intel" ".github/workflows/ios-unsigned-ipa.yml"
 require_grep "iOS TestFlight uses Intel macOS 26 runner" "runs-on: macos-26-intel" ".github/workflows/ios-testflight.yml"
 require_grep "Feather signing stores upstream options key" "signing_options" "apps/ios/Sources/Litter/Models/FeatherSigningMaterialStore.swift"
