@@ -1,0 +1,26 @@
+diff --git a/build.rs b/build.rs
+--- a/build.rs
++++ b/build.rs
+@@ -275,9 +275,19 @@
+     "cargo:rustc-env=RUSTY_V8_SRC_BINDING_PATH={}",
+     out_path.display()
+   );
+-  bindings
+-    .write_to_file(out_path)
+-    .expect("Couldn't write bindings!");
++  // Some libclang versions expose String's nested WriteFlags constants
++  // without the enclosing class prefix. Keep the names expected by the
++  // Rust wrapper in the generated bindings shipped with the native archive.
++  let bindings = bindings.to_string()
++    .replace(
++      "pub const WriteFlags_kNullTerminate:",
++      "pub const v8_String_WriteFlags_kNullTerminate:",
++    )
++    .replace(
++      "pub const WriteFlags_kReplaceInvalidUtf8:",
++      "pub const v8_String_WriteFlags_kReplaceInvalidUtf8:",
++    );
++  std::fs::write(out_path, bindings).expect("Couldn't write bindings!");
+ }
+ 
+ fn build_v8(is_asan: bool) {

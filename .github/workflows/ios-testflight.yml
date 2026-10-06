@@ -29,6 +29,7 @@ on:
     paths:
       - 'apps/ios/**'
       - 'tools/scripts/build-ios-code-mode-runtime.sh'
+      - 'patches/rusty-v8/**'
       - '.github/workflows/ios-code-mode-runtime.yml'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'

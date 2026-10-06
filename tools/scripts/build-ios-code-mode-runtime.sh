@@ -6,6 +6,15 @@ TARGET="${1:-aarch64-apple-ios}"
 OUTPUT_DIR="$REPO_DIR/build/ios-code-mode/$TARGET"
 test "$(uname -s)" = Darwin
 test "$(git -C "$SOURCE_DIR" rev-parse HEAD)" = 5c15a6995c9bb4bacd3e341b59fff32c909c80bf
+# Normalize libclang's nested enum names before rusty_v8 compiles its wrapper.
+# Keep this fix root-managed rather than changing the pinned source revision.
+PATCH="$REPO_DIR/patches/rusty-v8/ios-write-flags-bindings.patch"
+if git -C "$SOURCE_DIR" apply --reverse --check "$PATCH" 2>/dev/null; then
+    : # Already applied by an earlier local build.
+else
+    git -C "$SOURCE_DIR" apply --check "$PATCH"
+    git -C "$SOURCE_DIR" apply "$PATCH"
+fi
 # Building the upstream runtime requires this exact native ABI configuration.
 # rusty_v8's iOS build logic disables JIT tiers and WebAssembly on device.
 export V8_FROM_SOURCE=1

@@ -12,7 +12,12 @@ Codex dependency. `.github/workflows/ios-code-mode-runtime.yml` builds the nativ
 libraries with `v8_enable_sandbox` from immutable upstream revision
 `5c15a6995c9bb4bacd3e341b59fff32c909c80bf`. The ordinary published iOS binaries
 lack the sandbox configuration used by Codex and cannot substitute for these
-artifacts. Archive and generated bindings are produced together and checked
+artifacts. Archive and generated bindings are produced together with the
+root-managed `patches/rusty-v8/ios-write-flags-bindings.patch` applied
+before compilation. This normalizes two nested enum constant names emitted by
+libclang to the names expected by the pinned Rust wrapper; it does not change
+the native ABI. The patch participates in the producer's cache key.
+Archive and generated bindings are checked
 with SHA-256 before consuming them. Their environment overrides apply only to
 iOS Rust compilation; host binding generation, Android, and Catalyst retain
 their existing dependency paths.
