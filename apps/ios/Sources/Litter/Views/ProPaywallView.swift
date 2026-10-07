@@ -77,9 +77,8 @@ struct ProPaywallView: View {
         Section {
             proRow("Terminal", detail: "Run local shell commands in the shared iSH workspace", icon: "terminal")
             proRow("Full File Browser", detail: "Browse, preview, import, export, move, rename, and delete files", icon: "folder")
-            proRow("Chat Appearance", detail: "Apply custom chat backgrounds and typing effects", icon: "paintbrush")
-            proRow("App Icons", detail: "Switch between the Alley Cãt icon and the original icon", icon: "app.fill")
-            proRow("Advanced Tools", detail: "Use local diagnostics and power-user filesystem actions", icon: "wrench.and.screwdriver")
+            proRow("Chat Appearance", detail: "Apply custom chat backgrounds", icon: "paintbrush")
+            proRow("App Icons", detail: "Apply the paid alternate app icons", icon: "app.fill")
         } header: {
             Text("Included")
                 .foregroundStyle(LitterTheme.textSecondary)
@@ -125,7 +124,7 @@ struct ProPaywallView: View {
                             .foregroundStyle(LitterTheme.accent)
                     }
                 }
-                .disabled(store.purchaseState == .purchasing || store.purchaseState == .loading)
+                .disabled(store.product == nil || store.purchaseState == .purchasing || store.purchaseState == .loading)
                 .listRowBackground(LitterTheme.surface.opacity(0.88))
 
                 Button {
@@ -186,5 +185,26 @@ struct ProPaywallView: View {
                 .foregroundStyle(LitterTheme.danger)
                 .listRowBackground(LitterTheme.surface.opacity(0.88))
         }
+    }
+}
+
+/// Gates the paid screen before its task starts; included sideload access uses
+/// the same view path and never asks StoreKit for a transaction.
+struct ProAccessGate<Content: View>: View {
+    let feature: ProFeature
+    @ViewBuilder let content: () -> Content
+    @State private var store = ProAccessStore.shared
+
+    var body: some View {
+        Group {
+            if store.hasProAccess {
+                content()
+            } else if store.isLoading {
+                ProgressView("Checking Pro access…")
+            } else {
+                ProPaywallView(feature: feature)
+            }
+        }
+        .task { await store.loadProducts() }
     }
 }

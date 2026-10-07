@@ -28,6 +28,10 @@ struct LocalFileWorkspaceView: View {
 
     @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
+        ProAccessGate(feature: .fileBrowser) { paidContent }
+    }
+
+    private var paidContent: some View {
         sheetLayer
     }
 

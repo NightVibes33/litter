@@ -1,8 +1,6 @@
 import Foundation
 import Observation
-#if !LITTER_APP_STORE_SAFE
 import StoreKit
-#endif
 
 enum ProFeature: String, Identifiable, Hashable {
     case all
@@ -44,7 +42,6 @@ enum ProFeature: String, Identifiable, Hashable {
     }
 }
 
-#if LITTER_APP_STORE_SAFE
 @MainActor
 @Observable
 final class ProAccessStore {
@@ -57,54 +54,7 @@ final class ProAccessStore {
     }
 
     static let shared = ProAccessStore()
-
-    private(set) var hasProAccess = true
-    private(set) var purchaseState: PurchaseState = .purchased
-    private(set) var isLoading = false
-
-    var displayPrice: String { "Included" }
-    var productDisplayName: String { "Alley Cãt Pro" }
-
-    private init() {}
-
-    func loadProducts() async {
-        hasProAccess = true
-        purchaseState = .purchased
-        isLoading = false
-    }
-
-    func purchasePro() async {
-        hasProAccess = true
-        purchaseState = .purchased
-        isLoading = false
-    }
-
-    func restorePurchases() async {
-        hasProAccess = true
-        purchaseState = .purchased
-        isLoading = false
-    }
-
-    func refreshEntitlements() async {
-        hasProAccess = true
-        purchaseState = .purchased
-        isLoading = false
-    }
-}
-#else
-@MainActor
-@Observable
-final class ProAccessStore {
-    enum PurchaseState: Equatable {
-        case idle
-        case loading
-        case purchasing
-        case purchased
-        case failed(String)
-    }
-
-    static let shared = ProAccessStore()
-    static let proProductID = "com.sigkitten.litter.pro"
+    static let proProductID = "com.nightvibes.alleycat.pro"
 
     private(set) var product: Product?
     private(set) var hasProAccess = AppDistributionCapabilities.unlocksProForSideload
@@ -117,7 +67,7 @@ final class ProAccessStore {
         if AppDistributionCapabilities.unlocksProForSideload {
             return "Included"
         }
-        return product?.displayPrice ?? "$9.99"
+        return product?.displayPrice ?? "Unavailable"
     }
 
     var productDisplayName: String {
@@ -128,7 +78,7 @@ final class ProAccessStore {
         guard !AppDistributionCapabilities.unlocksProForSideload else { return }
         updatesTask = Task { [weak self] in
             for await result in Transaction.updates {
-                if case .verified(let transaction) = result {
+                if case .verified(let transaction) = result, transaction.productID == Self.proProductID {
                     await transaction.finish()
                     await self?.refreshEntitlements()
                 }
@@ -157,7 +107,7 @@ final class ProAccessStore {
             let products = try await Product.products(for: [Self.proProductID])
             product = products.first { $0.id == Self.proProductID }
             await refreshEntitlements()
-            purchaseState = .idle
+            purchaseState = hasProAccess ? .purchased : (product == nil ? .failed("Alley Cãt Pro is currently unavailable.") : .idle)
         } catch {
             await refreshEntitlements()
             purchaseState = .failed(error.localizedDescription)
@@ -227,6 +177,7 @@ final class ProAccessStore {
         var unlocked = false
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
+            guard transaction.productType == .nonConsumable else { continue }
             guard transaction.productID == Self.proProductID else { continue }
             guard transaction.revocationDate == nil else { continue }
             unlocked = true
@@ -235,5 +186,3 @@ final class ProAccessStore {
         hasProAccess = unlocked
     }
 }
-
-#endif

@@ -35,6 +35,10 @@ struct TerminalScreen: View {
     private let alleycatServerIdPrefix = "alleycat:"
 
     var body: some View {
+        ProAccessGate(feature: .terminal) { paidContent }
+    }
+
+    private var paidContent: some View {
         GeometryReader { geometry in
             let terminalInsets = terminalHorizontalInsets(for: geometry)
 

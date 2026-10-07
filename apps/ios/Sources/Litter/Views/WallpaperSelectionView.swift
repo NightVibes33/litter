@@ -55,6 +55,10 @@ struct WallpaperSelectionView: View {
     }
 
     var body: some View {
+        ProAccessGate(feature: .appearance) { paidContent }
+    }
+
+    private var paidContent: some View {
         ZStack {
             // Sample bubbles overlay
             sampleBubbles

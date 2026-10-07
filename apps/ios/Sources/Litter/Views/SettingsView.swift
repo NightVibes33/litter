@@ -89,6 +89,9 @@ struct SettingsView: View {
                         }
                         .accessibilityIdentifier("settings.replayOnboarding")
                         .settingsRowBackground()
+                        category("Alley Cãt Pro", "pawprint.fill", id: "settings.category.pro") {
+                            ProPaywallView(feature: .all)
+                        }
                         category("Tip the Kitty", "heart", id: "settings.category.support") {
                             TipJarView()
                         }
