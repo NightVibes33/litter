@@ -45,3 +45,18 @@ advertised models without a baked-in allowlist. The pinned bundled catalog
 includes GPT-6-Astra, GPT-5.6-Sol, GPT-5.6-Terra, and GPT-5.6-Luna;
 GPT-6.1-Sol, GPT-6-Sol, and GPT-6-Luna require the connected server to advertise
 those IDs. Adding a display name locally does not grant backend model access.
+
+The iOS app requests Apple's `com.apple.developer.kernel.extended-virtual-addressing`
+entitlement in device, Debug, and App Store configurations. The pinned V8 iOS
+sandbox reserves 8 GB of virtual address space; this is an address reservation,
+not an 8 GB physical-memory allocation. Incident
+`B71A19D2-D1C6-4945-BC64-8673BF8FB8A9` in build `20261006181035`
+shows a fatal allocation failure during sandbox initialization on the first
+code-mode tool call. That build lacked the entitlement. The repair retains
+sandbox compilation, source pins, and JIT-disabled execution. Distribution
+signing must preserve the entitlement, and a real device must execute a cell
+and nested tool before this incident is considered resolved. If Apple rejects
+the capability in the provisioning profile, report that signing blocker.
+
+Updates and Diagnostics Settings entries are available only in the sideload
+variant. TestFlight retains background crash recording without those entries.

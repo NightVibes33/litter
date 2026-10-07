@@ -76,11 +76,13 @@ struct SettingsView: View {
                         category("Advanced", "slider.horizontal.3", id: "settings.category.advanced") {
                             settingsPage("Advanced") { advancedSections }
                         }
-                        category("Updates", "arrow.down.circle", id: "settings.category.updates") {
-                            AppUpdateSettingsView()
-                        }
-                        category("Diagnostics", "cross.case", id: "settings.category.diagnostics") {
-                            DiagnosticsBundleView()
+                        if !AppDistributionCapabilities.isAppStoreSafe {
+                            category("Updates", "arrow.down.circle", id: "settings.category.updates") {
+                                AppUpdateSettingsView()
+                            }
+                            category("Diagnostics", "cross.case", id: "settings.category.diagnostics") {
+                                DiagnosticsBundleView()
+                            }
                         }
                         Button("Replay Onboarding") {
                             showOnboardingReplay = true

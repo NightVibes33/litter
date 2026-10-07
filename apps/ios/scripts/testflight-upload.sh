@@ -538,6 +538,13 @@ verify_testflight_fast_ipa_is_app_store_safe() {
         exit 1
     fi
 
+    # Code-mode V8 requires an 8 GB virtual address reservation on iOS.
+    /usr/bin/codesign -d --entitlements :- "$payload_app" >"$work_dir/signed-entitlements.plist" 2>/dev/null
+    if [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.kernel.extended-virtual-addressing' "$work_dir/signed-entitlements.plist" 2>/dev/null)" != "true" ]]; then
+        echo "Exported TestFlight app lacks extended virtual addressing required by code mode." >&2
+        exit 1
+    fi
+
     offenders_log="$work_dir/app-store-unsafe-frameworks.txt"
     find "$payload_app" -path '*/Frameworks/*.framework' -maxdepth 4 -print |
         grep -E '/(AltSign-Dynamic|SideStore|AltStoreCore|Roxas|Minimuxer|RustBridge)\.framework$' >"$offenders_log" || true
