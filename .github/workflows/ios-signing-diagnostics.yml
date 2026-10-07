@@ -24,4 +24,4 @@ jobs:
           trap 'rm -f "$ASC_PRIVATE_KEY_PATH"' EXIT
           printf '%s' "$ASC_PRIVATE_KEY_P8_B64" | base64 --decode > "$ASC_PRIVATE_KEY_PATH"
           chmod 600 "$ASC_PRIVATE_KEY_PATH"
-          python3 tools/scripts/inspect-ios-signing.py --bundle-id com.sigkitten.litter.39A8Q3T3TR
+          python3 tools/scripts/inspect-ios-signing.py --bundle-id com.nightvibes.alleycat

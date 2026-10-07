@@ -160,7 +160,7 @@ def inspect(apple, build_id, bundle_id, group_names, repair=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build-id', required=True)
-    parser.add_argument('--bundle-id', default='com.sigkitten.litter.39A8Q3T3TR')
+    parser.add_argument('--bundle-id', default='com.nightvibes.alleycat')
     parser.add_argument('--groups', default='Internal Testers,Beta Testers')
     parser.add_argument('--repair', action='store_true')
     args = parser.parse_args()
