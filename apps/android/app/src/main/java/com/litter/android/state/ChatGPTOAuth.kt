@@ -237,6 +237,22 @@ object ChatGPTOAuth {
         return refreshed
     }
 
+    suspend fun completeDeviceAuthorization(
+        context: Context,
+        authorization: uniffi.codex_mobile_client.DeviceLoginAuthorization,
+    ): ChatGPTOAuthTokenBundle {
+        val body = listOf(
+            "grant_type=authorization_code",
+            "code=${Uri.encode(authorization.authorizationCode)}",
+            "redirect_uri=${Uri.encode("$authIssuer/deviceauth/callback")}",
+            "client_id=${Uri.encode(clientId)}",
+            "code_verifier=${Uri.encode(authorization.codeVerifier)}",
+        ).joinToString("&")
+        val tokens = exchangeToken(body)
+        withContext(Dispatchers.IO) { ChatGPTOAuthTokenStore(context).save(tokens) }
+        return tokens
+    }
+
     private suspend fun exchangeToken(body: String): ChatGPTOAuthTokenBundle = withContext(Dispatchers.IO) {
         tokenBundleFromPayload(exchangeTokenPayloadWithRetries(body))
     }

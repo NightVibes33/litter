@@ -11,6 +11,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.sigkitten.litter.android.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,9 +57,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import android.app.UiModeManager
+import uniffi.codex_mobile_client.startDeviceLogin
 import kotlinx.coroutines.withContext
 
 class ChatGPTOAuthActivity : ComponentActivity() {
+    private var deviceCode by mutableStateOf<String?>(null)
+    private val isTv: Boolean get() = (getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
     private lateinit var attempt: ChatGPTOAuth.AuthAttempt
     private var isCompleting by mutableStateOf(false)
     private var authJob: Job? = null
@@ -87,6 +97,8 @@ class ChatGPTOAuthActivity : ComponentActivity() {
         setContent {
             LitterAppTheme {
                 ChatGPTOAuthActivityScreen(
+                    deviceCode = deviceCode,
+                    deviceLogin = isTv && attempt.mode == ChatGPTOAuth.MODE_LOGIN,
                     pageError = pageError,
                     isLaunchingBrowser = isLaunchingBrowser,
                     isCompleting = isCompleting,
@@ -134,7 +146,11 @@ class ChatGPTOAuthActivity : ComponentActivity() {
     }
 
     private fun beginAuthorization() {
-        if (authJob != null) return
+        if (authJob?.isActive == true) return
+        if (isTv && attempt.mode == ChatGPTOAuth.MODE_LOGIN) {
+            beginDeviceAuthorization()
+            return
+        }
 
         authJob = lifecycleScope.launch {
             try {
@@ -195,6 +211,37 @@ class ChatGPTOAuthActivity : ComponentActivity() {
         }
     }
 
+    private fun beginDeviceAuthorization() {
+        authJob = lifecycleScope.launch {
+            try {
+                pageError = null
+                isLaunchingBrowser = true
+                val login = startDeviceLogin()
+                val prompt = login.prompt()
+                deviceCode = prompt.userCode
+                isLaunchingBrowser = false
+                while (true) {
+                    delay(prompt.intervalSeconds.toLong() * 1000L)
+                    val authorization = login.poll() ?: continue
+                    isCompleting = true
+                    pendingTokens = ChatGPTOAuth.completeDeviceAuthorization(applicationContext, authorization)
+                    didReceiveBrowserReturn = true
+                    finishIfReady()
+                    break
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                deviceCode = null
+                pageError = "Sign-in could not complete. Check your connection and enable device code authorization in ChatGPT security settings, then try again. Codes expire after 15 minutes."
+            } finally {
+                isLaunchingBrowser = false
+                isCompleting = false
+                authJob = null
+            }
+        }
+    }
+
     private fun finishIfReady() {
         val tokens = pendingTokens
         val stepUpToken = pendingStepUpToken
@@ -214,6 +261,10 @@ class ChatGPTOAuthActivity : ComponentActivity() {
     }
 
     private fun launchBrowser(): Boolean {
+        if (isTv && attempt.mode == ChatGPTOAuth.MODE_LOGIN) {
+            beginAuthorization()
+            return true
+        }
         val authUri = Uri.parse(attempt.authorizeUrl)
         return try {
             CustomTabsIntent.Builder()
@@ -314,6 +365,8 @@ class ChatGPTOAuthActivity : ComponentActivity() {
 
 @Composable
 private fun ChatGPTOAuthActivityScreen(
+    deviceCode: String?,
+    deviceLogin: Boolean,
     pageError: String?,
     isLaunchingBrowser: Boolean,
     isCompleting: Boolean,
@@ -353,7 +406,7 @@ private fun ChatGPTOAuthActivityScreen(
                 }
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = "ChatGPT Login",
+                    text = "Alley Cåt · ChatGPT sign-in",
                     color = LitterTheme.textPrimary,
                     fontSize = 16.sp,
                 )
@@ -365,7 +418,8 @@ private fun ChatGPTOAuthActivityScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 28.dp),
+                .padding(horizontal = 28.dp, vertical = 64.dp)
+                .verticalScroll(rememberScrollState()),
         ) {
             if (isLaunchingBrowser || isCompleting) {
                 CircularProgressIndicator(color = LitterTheme.accent)
@@ -373,7 +427,9 @@ private fun ChatGPTOAuthActivityScreen(
             }
 
             Text(
-                text = if (browserOpened) {
+                text = if (deviceLogin) {
+                    "Sign in on your phone"
+                } else if (browserOpened) {
                     "Continue the ChatGPT login in your browser."
                 } else {
                     "Opening a secure browser for ChatGPT login."
@@ -384,15 +440,28 @@ private fun ChatGPTOAuthActivityScreen(
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                text = if (browserOpened) {
+                text = if (deviceLogin) {
+                    "Open auth.openai.com/codex/device on your phone and enter the code below. This TV will finish automatically."
+                } else if (browserOpened) {
                     "After the login finishes, this screen will complete automatically. If the browser closed early, you can open it again below."
                 } else {
-                    "Google blocks sign-in inside embedded web views, so Litter uses your browser for this flow."
+                    "Alley Cåt uses secure browser or device authorization for sign-in."
                 },
                 color = LitterTheme.textSecondary,
-                fontSize = 13.sp,
+                fontSize = if (deviceLogin) 20.sp else 13.sp,
                 textAlign = TextAlign.Center,
             )
+
+            deviceCode?.let { code ->
+                Spacer(Modifier.height(16.dp))
+                Image(painterResource(R.drawable.chatgpt_device_signin_qr),
+                    contentDescription = "Scan to open ChatGPT device sign-in on your phone",
+                    modifier = Modifier.size(128.dp))
+                Spacer(Modifier.height(12.dp))
+                Text(code, color = LitterTheme.accent, fontSize = 36.sp)
+                Spacer(Modifier.height(12.dp))
+                Text("Only approve a code you started here. Expires in 15 minutes.", color = LitterTheme.textSecondary, fontSize = 16.sp)
+            }
 
             pageError?.let { message ->
                 Spacer(Modifier.height(16.dp))
@@ -407,9 +476,9 @@ private fun ChatGPTOAuthActivityScreen(
             Spacer(Modifier.height(24.dp))
             Button(
                 onClick = { onOpenBrowser() },
-                enabled = !isLaunchingBrowser && !isCompleting,
+                enabled = !isLaunchingBrowser && !isCompleting && deviceCode == null,
             ) {
-                Text(if (browserOpened) "Open browser again" else "Open browser")
+                Text(if (deviceCode != null) "Waiting for approval…" else "Start sign-in")
             }
         }
 

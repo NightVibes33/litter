@@ -1,6 +1,15 @@
 package com.litter.android.ui.tv
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import com.sigkitten.litter.android.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -46,10 +55,17 @@ fun TvHomeScreen(
     LaunchedEffect(Unit) { initialFocus.requestFocus() }
 
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 27.dp),
+        Modifier.fillMaxSize().background(LitterTheme.background).padding(horizontal = 48.dp, vertical = 27.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Text("Alley Cãt", fontSize = 32.sp, color = LitterTheme.textPrimary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Image(painterResource(R.drawable.alley_cat_app_icon), contentDescription = null,
+                modifier = Modifier.size(80.dp).clip(RoundedCornerShape(20.dp)))
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Alley Cåt", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = LitterTheme.textPrimary)
+                Text("Your coding workspace", fontSize = 20.sp, color = LitterTheme.textSecondary)
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             TvButton("Add server", onShowDiscovery, Modifier.focusRequester(initialFocus))
             TvButton("Settings", onShowSettings)
@@ -58,7 +74,7 @@ fun TvHomeScreen(
         Text("Recent conversations", fontSize = 24.sp, color = LitterTheme.textPrimary)
         if (sessions.isEmpty()) {
             Text(
-                "Add a server to start. Use the remote arrows to move and Select to open.",
+                "Connect your workspace to start a conversation. Use the remote arrows to move and Select to open.",
                 color = LitterTheme.textSecondary,
                 fontSize = 20.sp,
             )
@@ -81,9 +97,10 @@ private fun TvButton(label: String, onClick: () -> Unit, modifier: Modifier = Mo
     Button(
         onClick = onClick,
         modifier = modifier.onFocusChanged { focused = it.isFocused },
+        shape = RoundedCornerShape(16.dp),
         border = BorderStroke(3.dp, if (focused) LitterTheme.accent else LitterTheme.border),
         colors = ButtonDefaults.buttonColors(
-            containerColor = LitterTheme.surface,
+            containerColor = if (focused) LitterTheme.accent.copy(alpha = 0.16f) else LitterTheme.surface,
             contentColor = LitterTheme.textPrimary,
         ),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp),

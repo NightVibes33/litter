@@ -353,7 +353,7 @@ jobs:
 
       - name: Build and test installable debug APK
         if: inputs.build_only
-        run: apps/android/gradlew -p apps/android :app:assembleDebug :app:testDebugUnitTest :app:assembleDebugAndroidTest
+        run: apps/android/gradlew -p apps/android :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebugAndroidTest
 
       - name: Upload device and TV build
         if: inputs.build_only

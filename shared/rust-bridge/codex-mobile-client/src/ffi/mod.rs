@@ -9,6 +9,7 @@ mod android;
 mod app_store;
 mod client;
 mod errors;
+mod device_login;
 mod parser;
 mod reconnect;
 mod remote_path;

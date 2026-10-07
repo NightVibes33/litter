@@ -1,4 +1,4 @@
-# Alley Cãt on Android and Android TV
+# Alley Cåt on Android and Android TV
 
 One APK supports Android phones, tablets, and Android TV (Android 8.0/API 26 or newer). The package remains `com.sigkitten.litter.android`. The TV launcher uses a remote-first home screen with visible focus outlines, Add server, Settings, Apps, and recent conversations. Conversation, settings, and connection screens currently reuse upstream Android UI; full remote-only acceptance testing is still required before calling TV support complete.
 
@@ -24,3 +24,20 @@ ARMv7 (`armeabi-v7a`) is now available as a separate CI build selection for 32-b
 - Verify text input with the TV keyboard and an external keyboard, scrolling, server setup, authentication, approvals, and reconnect.
 - Check conversations and settings for unreachable touch-only controls; these screens need device validation and may need additional TV adaptations.
 - Test both ARM64 hardware and an x86-64 TV emulator before release.
+
+## TV account sign-in
+
+ChatGPT login on a TV uses the pinned Codex provider's device authorization
+endpoints. Scan the QR code or open `https://auth.openai.com/codex/device` on your phone, sign in,
+and enter the one-time code displayed on the TV. The TV polls for approval
+and stores the resulting tokens in its existing encrypted credential store;
+it does not need a browser or localhost redirect. Codes expire after 15
+minutes. Back/Close cancels polling. If required, enable device code
+authorization in your ChatGPT security settings. Remote-control enrollment
+still uses the separate browser step-up flow; device login does not grant
+remote-control enrollment automatically.
+
+The TV home uses the actual iOS default icon, shared theme colors, larger
+workspace/conversation typography, rounded cards and visible remote focus.
+Phone/tablet home remains unchanged. ARMv7 native compilation and physical-TV
+sign-in, focus, scrolling and conversation acceptance remain required.

@@ -361,3 +361,15 @@ Validation for the 2.1.2 candidate: shared Rust library tests passed (823 passed
 ## Android TV
 
 TV launcher and remote-first home are implemented. Phone/tablet home is retained. Build and device acceptance are pending; see [Android TV build and QA](android-tv.md). Full D-pad coverage of shared conversation/settings screens is not yet verified.
+
+### Android TV device login and visual parity (pending device acceptance)
+
+- TV ChatGPT login displays the provider's phone verification URL, QR code and
+  one-time code; no TV browser callback is required. Confirm approval reaches
+  the existing encrypted token store and local account RPC on ARMv7 hardware.
+- Check cancel/Back, expiry, failed code requests and retry without duplicate
+  polling. Remote-control enrollment remains a separate browser step-up.
+- TV home uses the actual iOS default icon and shared theme tokens. Verify
+  initial Add server focus, arrows, Select, Back and recent conversation scrolling.
+- Shared device login is available through UniFFI; iOS retains browser login
+  because its browser callback is supported. No iOS UI change is needed here.
