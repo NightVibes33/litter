@@ -147,8 +147,14 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/NXConsoleView.m",
-    "",
-    "NXConsoleView unused Swift import",
+    "\n".join([
+        "#import <UIKit/UIKit.h>",
+        "@interface LDETheme : NSObject",
+        "+ (nullable LDETheme *)current;",
+        "@property (nonatomic, readonly, nonnull) UIColor *gutterHairlineColor;",
+        "@end",
+    ]),
+    "NXConsoleView Swift theme bridge",
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m",
