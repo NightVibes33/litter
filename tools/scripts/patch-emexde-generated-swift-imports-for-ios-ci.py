@@ -137,8 +137,8 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXTarget.m",
-    "",
-    "NXTarget unused Swift import",
+    "#import <MobileDevelopmentKit/MDKOSVersion.h>",
+    "NXTarget OS version import",
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEUserspaceManager.m",

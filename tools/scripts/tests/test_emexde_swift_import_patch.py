@@ -40,5 +40,11 @@ class EmexDEImportPatchTests(unittest.TestCase):
             self.assertIn('NotifLevelError = 2', first)
             self.assertIn('[NotificationServer NotifyUserWithLevel:NotifLevelError', first)
             self.assertNotIn('Nyxian-Swift.h', first)
+            target_path = root / SOURCE / 'Nyxian/LindChain/IDEFoundation/NXTarget.m'
+            target_first = target_path.read_text()
+            self.assertIn('#import <MobileDevelopmentKit/MDKOSVersion.h>', target_first)
+            self.assertIn('[MDKOSVersion versionWithVersionString:', target_first)
+            self.assertNotIn('Nyxian-Swift.h', target_first)
             subprocess.run([sys.executable, str(SCRIPT)], cwd=root, check=True, capture_output=True)
             self.assertEqual(first, path.read_text())
+            self.assertEqual(target_first, target_path.read_text())
