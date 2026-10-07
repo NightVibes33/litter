@@ -3,7 +3,7 @@ import Foundation
 import SwiftUI
 
 struct LitterOnboardingState {
-    static let currentVersion = 1
+    static let currentVersion = 2
     static let completedVersionKey = "litterOnboardingCompletedVersion"
     static let replayRequestedKey = "litterOnboardingReplayRequested"
     static let fileWorkspaceInitialDirectoryKey = "litterFileWorkspaceInitialDirectory"
@@ -175,7 +175,7 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 14) {
             heroPanel(
                 systemImage: "iphone.gen3.radiowaves.left.and.right",
-                title: "Your iPhone coding workspace",
+                title: "Your coding workspace",
                 detail: "Alley Cãt brings AI chat, local files, a shared terminal, remote machines, and iOS build tools into one mobile workspace."
             )
             featureGrid(welcomeFeatures)
@@ -185,9 +185,11 @@ struct OnboardingView: View {
     private var welcomeFeatures: [OnboardingFeature] {
         var features: [OnboardingFeature] = [
             .init(icon: "bubble.left.and.text.bubble.right", title: "AI threads", detail: "Start, resume, fork, and inspect coding sessions."),
-            .init(icon: "folder", title: "Fakefs files", detail: "Browse the same /root runtime the bot uses."),
-            .init(icon: "terminal", title: "Shared terminal", detail: "Run commands directly in the embedded iSH shell.")
+            .init(icon: "folder", title: "Workspace files", detail: "Browse files in the local runtime workspace.")
         ]
+        if ExperimentalFeatures.shared.isEnabled(.terminal) {
+            features.append(.init(icon: "terminal", title: "Terminal", detail: "Open Terminal from Settings or the home screen."))
+        }
         if AppDistributionCapabilities.includesEmexDE {
             features.append(.init(icon: "hammer", title: "emexDE", detail: "Open the full embedded iOS development environment."))
         }
@@ -199,10 +201,10 @@ struct OnboardingView: View {
             checkCard(readiness.check(.runtime))
             routeCard(
                 icon: ChatRuntimeMode.chatGPTAccount.systemImage,
-                title: "ChatGPT Account",
+                title: "Account sign-in",
                 detail: "Use the signed-in route for normal Alley Cãt conversations and hosted models.",
-                actionTitle: "Open AI Providers",
-                action: { finishAndOpen { onOpenSettingsRoute("aiProviders") } }
+                actionTitle: "Open Account",
+                action: { finishAndOpen { onOpenSettingsRoute("account") } }
             )
             routeCard(
                 icon: ChatRuntimeMode.computerBridge.systemImage,
@@ -224,7 +226,7 @@ struct OnboardingView: View {
                 detail: "The browser can show hidden files, shortcuts, builds, commands, and files the bot mentions.",
                 primaryTitle: "Open Files",
                 primaryAction: { finishAndOpen { onOpenFiles(HomeAnchor.path) } },
-                secondaryTitle: "Open Terminal",
+                secondaryTitle: ExperimentalFeatures.shared.isEnabled(.terminal) ? "Open Terminal" : nil,
                 secondaryAction: { finishAndOpen { onOpenTerminal(HomeAnchor.path) } }
             )
             demoWorkspacePanel
@@ -237,16 +239,16 @@ struct OnboardingView: View {
             heroPanel(
                 systemImage: "hammer.fill",
                 title: "emexDE development app",
-                detail: "emexDE replaces the old Nyxian BuildKit settings path with the full embedded Swift and iOS development app."
+                detail: "Open Nyxian for on-device projects and BuildKit for compiler settings in the full sideload build."
             )
             commandStrip(["swift --version", "litter-swift-check hello.swift", "litter-swift-selftest", "litter-build-status"])
             actionPanel(
                 icon: "shippingbox.fill",
-                title: "Full app instead of BuildKit",
-                detail: "Use emexDE as the user-facing on-device development app. The old Nyxian BuildKit screen is no longer the settings path.",
+                title: "Nyxian and BuildKit",
+                detail: "Use Nyxian for development and BuildKit to check compiler readiness.",
                 primaryTitle: "Open emexDE",
                 primaryAction: { finishAndOpen { onOpenSettingsRoute("emexDE") } },
-                secondaryTitle: "Terminal",
+                secondaryTitle: ExperimentalFeatures.shared.isEnabled(.terminal) ? "Terminal" : nil,
                 secondaryAction: { finishAndOpen { onOpenTerminal(HomeAnchor.path) } }
             )
         }
@@ -258,7 +260,7 @@ struct OnboardingView: View {
                 .init(icon: "paintbrush", title: "Themes", detail: "Pick light and dark app themes."),
                 .init(icon: "photo", title: "Wallpapers", detail: "Use generated, image, video, or solid backgrounds."),
                 .init(icon: "text.cursor", title: "Typing effects", detail: "Tune streaming text effects, speed, and reveal style."),
-                .init(icon: "pip", title: "PiP", detail: "Keep a live turn visible while using other apps.")
+                .init(icon: "app.badge", title: "App icons", detail: "Choose an alternate icon in Icon Switcher.")
             ])
             actionPanel(
                 icon: "slider.horizontal.3",
@@ -518,7 +520,7 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
         case .welcome: return "Build with Alley Cãt"
         case .runtime: return "Pick your runtime"
         case .workspace: return "Files and terminal"
-        case .buildKit: return "emexDE on iPhone"
+        case .buildKit: return "Nyxian and BuildKit"
         case .personalize: return "Make it yours"
         case .checklist: return "You are ready"
         }
@@ -529,7 +531,7 @@ private enum LitterOnboardingPage: Int, CaseIterable, Identifiable {
         case .welcome: return "A practical tour of the workspace you will use every day."
         case .runtime: return "Use hosted AI or connect a computer for local/private models."
         case .workspace: return "The bot, file browser, and terminal share the same iSH fakefs."
-        case .buildKit: return "Open the embedded iOS development app instead of the old BuildKit screen."
+        case .buildKit: return "Development tools are included in the full sideload build."
         case .personalize: return "Tune the interface without losing the developer workflow."
         case .checklist: return "Live checks show what is ready and what needs setup."
         }
@@ -684,7 +686,7 @@ private final class LitterOnboardingReadinessStore: ObservableObject {
         if connectedCount > 0 {
             update(.runtime, status: .ready, detail: "\(connectedCount) conversation route\(connectedCount == 1 ? "" : "s") connected. Preferred route: \(appState.preferredChatRuntimeMode.title).")
         } else {
-            update(.runtime, status: .warning, detail: "No connected route yet. Add a server or sign in from AI provider settings.")
+            update(.runtime, status: .warning, detail: "No connected route yet. Add a server or sign in from Account settings.")
         }
 
         if AppDistributionCapabilities.includesEmexDE {

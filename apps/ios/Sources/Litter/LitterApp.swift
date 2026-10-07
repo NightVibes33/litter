@@ -414,6 +414,8 @@ struct ContentView: View {
     @State private var overlayProjection = OverlayProjectionModel()
     @State private var composerBottomInset: CGFloat = 0
     @State private var lastObservedActiveThread: ThreadKey?
+    @State private var showFirstRunOnboarding = false
+    @AppStorage(LitterOnboardingState.completedVersionKey) private var onboardingCompletedVersion = 0
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("conversationTextSizeStep") private var textSizeStep = ConversationTextSize.medium.rawValue
@@ -516,6 +518,40 @@ struct ContentView: View {
                 appState.showModelSelector = false
             }
             appRuntime.handleSnapshotRevisionChange()
+        }
+        .onAppear {
+            if onboardingCompletedVersion == 0 {
+                showFirstRunOnboarding = true
+            }
+        }
+        .fullScreenCover(isPresented: $showFirstRunOnboarding) {
+            OnboardingView(
+                mode: .firstRun,
+                onFinish: {
+                    onboardingCompletedVersion = LitterOnboardingState.currentVersion
+                    showFirstRunOnboarding = false
+                },
+                onOpenFiles: { path in
+                    UserDefaults.standard.set(path, forKey: LitterOnboardingState.fileWorkspaceInitialDirectoryKey)
+                    UserDefaults.standard.set("files", forKey: "litterSettingsRequestedRoute")
+                    appState.showSettings = true
+                },
+                onOpenTerminal: { path in
+                    guard ExperimentalFeatures.shared.isEnabled(.terminal) else { return }
+                    UserDefaults.standard.set(path, forKey: "litterTerminalInitialDirectory")
+                    UserDefaults.standard.set("terminal", forKey: "litterSettingsRequestedRoute")
+                    appState.showSettings = true
+                },
+                onOpenServerPicker: { appState.showServerPicker = true },
+                onOpenSettingsRoute: { route in
+                    UserDefaults.standard.set(route, forKey: "litterSettingsRequestedRoute")
+                    appState.showSettings = true
+                }
+            )
+            .environment(appModel)
+            .environment(appState)
+            .environment(themeManager)
+            .environment(\.textScale, textScale)
         }
         .sheet(isPresented: $bindableAppState.showServerPicker) {
             NavigationStack {

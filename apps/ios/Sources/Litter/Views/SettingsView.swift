@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var alleyCatToolPath: [AlleyCatToolRoute] = []
     @AppStorage("litterSettingsRequestedRoute") private var requestedToolRoute = ""
     @State private var showOnboardingReplay = false
+    @State private var experimentalFeatures = ExperimentalFeatures.shared
     @State private var activeServerSheet: SettingsServerSheet?
     @State private var serverEditError: String?
     /// Server projections mirrored out of `appModel.snapshot` by
@@ -67,8 +68,16 @@ struct SettingsView: View {
                             NavigationLink("Nyxian", value: AlleyCatToolRoute.nyxian)
                             NavigationLink("BuildKit", value: AlleyCatToolRoute.buildKit)
                         }
-                        NavigationLink("Files", value: AlleyCatToolRoute.files)
-                        NavigationLink("Terminal", value: AlleyCatToolRoute.terminal)
+                        NavigationLink(value: AlleyCatToolRoute.files) {
+                            SettingsRowLabel(title: "Files", systemImage: "folder", value: nil)
+                        }
+                        .settingsRowBackground()
+                        if experimentalFeatures.isEnabled(.terminal) {
+                            NavigationLink(value: AlleyCatToolRoute.terminal) {
+                                SettingsRowLabel(title: "Terminal", systemImage: "terminal", value: nil)
+                            }
+                            .settingsRowBackground()
+                        }
                     } header: {
                         settingsHeader("Alley Cãt tools")
                     }
@@ -84,9 +93,12 @@ struct SettingsView: View {
                                 DiagnosticsBundleView()
                             }
                         }
-                        Button("Replay Onboarding") {
+                        Button {
                             showOnboardingReplay = true
+                        } label: {
+                            SettingsRowLabel(title: "Replay Onboarding", systemImage: "arrow.counterclockwise", value: nil)
                         }
+                        .tint(LitterTheme.textPrimary)
                         .accessibilityIdentifier("settings.replayOnboarding")
                         .settingsRowBackground()
                         category("Alley Cãt Pro", "pawprint.fill", id: "settings.category.pro") {
@@ -119,6 +131,7 @@ struct SettingsView: View {
                 case .appearance: AppearanceSettingsView()
                 case .conversation: settingsPage("Conversation") { conversationSection }
                 case .harnesses: HarnessSettingsView()
+                case .account: settingsPage("Account") { accountSection }
                 }
             }
             .onAppear { consumeRequestedToolRoute() }
@@ -1559,12 +1572,14 @@ private enum AlleyCatToolRoute: String, Hashable {
     case appearance
     case conversation
     case harnesses
+    case account
 
     var isAvailable: Bool {
         switch self {
         case .store, .signing: AppDistributionCapabilities.includesKittyStore
         case .nyxian, .buildKit: AppDistributionCapabilities.includesEmexDE
-        case .files, .terminal, .appearance, .conversation, .harnesses: true
+        case .terminal: ExperimentalFeatures.shared.isEnabled(.terminal)
+        case .files, .appearance, .conversation, .harnesses, .account: true
         }
     }
 }
