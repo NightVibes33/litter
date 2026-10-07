@@ -1,0 +1,27 @@
+name: Inspect iOS signing capabilities
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-app-id:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read registered Apple capabilities
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY_P8_B64: ${{ secrets.ASC_PRIVATE_KEY_P8_B64 }}
+        run: |
+          set -euo pipefail
+          ASC_PRIVATE_KEY_PATH="$RUNNER_TEMP/alleycat-signing-diagnostics.p8"
+          export ASC_PRIVATE_KEY_PATH
+          trap 'rm -f "$ASC_PRIVATE_KEY_PATH"' EXIT
+          printf '%s' "$ASC_PRIVATE_KEY_P8_B64" | base64 --decode > "$ASC_PRIVATE_KEY_PATH"
+          chmod 600 "$ASC_PRIVATE_KEY_PATH"
+          python3 tools/scripts/inspect-ios-signing.py --bundle-id com.sigkitten.litter.39A8Q3T3TR
