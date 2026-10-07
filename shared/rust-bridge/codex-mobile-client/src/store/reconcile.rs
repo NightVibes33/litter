@@ -86,16 +86,16 @@ impl MobileClient {
                     .map(|_| ())
                     .map_err(RpcError::Deserialization)
             }
-            "thread/rollback" => {
-                let response = downcast_public_rpc_response::<upstream::ThreadRollbackResponse>(
+            "thread/revert" => {
+                let response = downcast_public_rpc_response::<upstream::ThreadRevertResponse>(
                     wire_method,
                     response,
                 )?;
-                let params = downcast_public_rpc_params::<upstream::ThreadRollbackParams>(
+                let params = downcast_public_rpc_params::<upstream::ThreadRevertParams>(
                     wire_method,
                     params.map(|value| value as &dyn Any),
                 )?;
-                self.apply_thread_rollback_response(server_id, &params.thread_id, response)
+                self.apply_thread_revert_response(server_id, &params.thread_id, response)
                     .map(|_| ())
                     .map_err(RpcError::Deserialization)
             }
@@ -423,11 +423,11 @@ impl MobileClient {
         Ok(())
     }
 
-    pub fn apply_thread_rollback_response(
+    pub fn apply_thread_revert_response(
         &self,
         server_id: &str,
         thread_id: &str,
-        response: &upstream::ThreadRollbackResponse,
+        response: &upstream::ThreadRevertResponse,
     ) -> Result<ThreadKey, String> {
         let key = ThreadKey {
             server_id: server_id.to_string(),
@@ -457,6 +457,8 @@ impl MobileClient {
             crate::copy_thread_runtime_fields(current, &mut snapshot);
             crate::reconcile_active_turn(Some(current), &mut snapshot, &response.thread.turns);
         }
+        snapshot.older_turns_cursor = response.turns_backwards_cursor.clone();
+        snapshot.initial_turns_loaded = false;
         let next_key = snapshot.key.clone();
         self.apply_persisted_thread_collaboration_mode(&mut snapshot);
         self.app_store.upsert_thread_snapshot(snapshot);
@@ -863,6 +865,7 @@ mod tests {
         );
 
         let response = upstream::GetAccountResponse {
+            workspace_routing: None,
             account: Some(upstream::Account::Chatgpt {
                 email: Some("user@example.com".into()),
                 plan_type: codex_protocol::account::PlanType::Pro,
@@ -967,6 +970,7 @@ mod tests {
 
         let response = upstream::ModelListResponse {
             data: vec![upstream::Model {
+                available_access_programs: None,
                 id: "gpt-5.4".to_string(),
                 model: "gpt-5.4".to_string(),
                 upgrade: None,
@@ -1035,33 +1039,35 @@ mod tests {
             .await
             .expect("thread/list reconciliation should succeed without params");
 
-        let rollback_response = upstream::ThreadRollbackResponse {
+        let rollback_response = upstream::ThreadRevertResponse {
+            turns_backwards_cursor: None,
+            items_backwards_cursor: None,
             thread: test_upstream_thread("thread-1"),
         };
 
         let missing_params_error = client
             .reconcile_public_rpc(
-                "thread/rollback",
+                "thread/revert",
                 "srv",
                 Option::<&()>::None,
                 &rollback_response,
             )
             .await
-            .expect_err("thread/rollback should reject missing params");
+            .expect_err("thread/revert should reject missing params");
         assert!(
             missing_params_error
                 .to_string()
-                .contains("unexpected params type while reconciling thread/rollback")
+                .contains("unexpected params type while reconciling thread/revert")
         );
 
-        let params = upstream::ThreadRollbackParams {
+        let params = upstream::ThreadRevertParams {
             thread_id: "thread-1".to_string(),
-            num_turns: 1,
+            before_turn_id: "turn-1".to_string(),
         };
         client
-            .reconcile_public_rpc("thread/rollback", "srv", Some(&params), &rollback_response)
+            .reconcile_public_rpc("thread/revert", "srv", Some(&params), &rollback_response)
             .await
-            .expect("thread/rollback reconciliation should succeed with params");
+            .expect("thread/revert reconciliation should succeed with params");
 
         let snapshot = client.app_snapshot();
         assert!(snapshot.threads.contains_key(&ThreadKey {
@@ -1513,6 +1519,7 @@ mod tests {
             ServerHealthSnapshot::Connected,
         );
         let response = upstream::ThreadStartResponse {
+            disabled_plugin_ids: Vec::new(),
             multi_agent_mode: Default::default(),
             thread: test_upstream_thread("thread-1"),
             model: "gpt-5".to_string(),

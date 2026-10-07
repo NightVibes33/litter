@@ -152,6 +152,52 @@ mod mobile_client_tests {
     }
 
     #[test]
+    fn user_boundary_uses_source_turn_id_instead_of_transcript_item_count() {
+        use crate::conversation_uniffi::{
+            HydratedAssistantMessageData, HydratedConversationItem,
+            HydratedConversationItemContent as Content, HydratedUserMessageData,
+        };
+        let mut snapshot = ThreadSnapshot::from_info("srv", make_thread_info("thread"));
+        let user = |id: &str, turn: Option<&str>| HydratedConversationItem {
+            id: id.into(),
+            content: Content::User(HydratedUserMessageData {
+                text: id.into(),
+                image_data_uris: vec![],
+            }),
+            source_turn_id: turn.map(str::to_string),
+            source_turn_index: None,
+            timestamp: None,
+            is_from_user_turn_boundary: true,
+        };
+        let assistant = HydratedConversationItem {
+            id: "answer".into(),
+            content: Content::Assistant(HydratedAssistantMessageData {
+                text: "answer".into(),
+                agent_nickname: None,
+                agent_role: None,
+                phase: None,
+            }),
+            source_turn_id: Some("turn-a".into()),
+            source_turn_index: None,
+            timestamp: None,
+            is_from_user_turn_boundary: false,
+        };
+        snapshot.items = vec![
+            user("message-a", Some("turn-a")),
+            assistant,
+            user("message-b", Some("turn-b")),
+        ]
+        .into();
+        assert_eq!(
+            source_turn_id_for_user_boundary(&snapshot, 1).unwrap(),
+            "turn-b"
+        );
+        assert!(source_turn_id_for_user_boundary(&snapshot, 2).is_err());
+        snapshot.items = vec![user("message-without-turn", None)].into();
+        assert!(source_turn_id_for_user_boundary(&snapshot, 0).is_err());
+    }
+
+    #[test]
     fn reasoning_effort_parsing_accepts_known_values() {
         assert_eq!(
             reasoning_effort_from_string("low"),
@@ -1987,9 +2033,11 @@ mod mobile_client_tests {
             .external_resume_thread(server_id, thread_id, None)
             .await
             .expect("initial resume should succeed");
-        client
-            .app_store
-            .set_runtime_turn_pagination(server_id, "codex", TurnPaginationSupport::Unsupported);
+        client.app_store.set_runtime_turn_pagination(
+            server_id,
+            "codex",
+            TurnPaginationSupport::Unsupported,
+        );
         client
             .external_resume_thread(server_id, thread_id, None)
             .await
@@ -2028,9 +2076,11 @@ mod mobile_client_tests {
         client
             .app_store
             .upsert_server(&config, ServerHealthSnapshot::Connected);
-        client
-            .app_store
-            .set_runtime_turn_pagination(server_id, "codex", TurnPaginationSupport::Unsupported);
+        client.app_store.set_runtime_turn_pagination(
+            server_id,
+            "codex",
+            TurnPaginationSupport::Unsupported,
+        );
 
         let requests = Arc::new(StdMutex::new(Vec::<String>::new()));
         let request_handler: TestRequestHandler = {
@@ -2380,6 +2430,7 @@ mod mobile_client_tests {
             .start_turn(
                 server_id,
                 upstream::TurnStartParams {
+                    disabled_plugin_ids: None,
                     additional_context: None,
                     client_user_message_id: None,
                     cyber_access_program: None,
@@ -2436,6 +2487,7 @@ mod mobile_client_tests {
 
     fn interrupt_test_params(thread_id: &str, text: &str) -> upstream::TurnStartParams {
         upstream::TurnStartParams {
+            disabled_plugin_ids: None,
             additional_context: None,
             client_user_message_id: None,
             cyber_access_program: None,
@@ -2631,7 +2683,9 @@ mod mobile_client_tests {
                     .expect("request log lock should not be poisoned")
                     .push(format!("{runtime}:thread/turns/list:{:?}", params.limit));
                 let mut turns: Vec<_> = (0..turn_count)
-                    .map(|index| completed_turn_json(&format!("turn-{index}"), &format!("msg {index}")))
+                    .map(|index| {
+                        completed_turn_json(&format!("turn-{index}"), &format!("msg {index}"))
+                    })
                     .collect();
                 turns.reverse();
                 if let Some(limit) = params.limit {
@@ -2646,7 +2700,12 @@ mod mobile_client_tests {
         })
     }
 
-    fn seed_thread_for_runtime(client: &MobileClient, server_id: &str, thread_id: &str, runtime: &str) {
+    fn seed_thread_for_runtime(
+        client: &MobileClient,
+        server_id: &str,
+        thread_id: &str,
+        runtime: &str,
+    ) {
         let key = ThreadKey {
             server_id: server_id.to_string(),
             thread_id: thread_id.to_string(),

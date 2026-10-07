@@ -3,24 +3,19 @@
 use std::sync::Arc;
 
 use codex_code_mode_runtime::{
-    CodeModeSession, CodeModeSessionCellExecutionLimits, CodeModeSessionDelegate,
-    CodeModeSessionProvider, CodeModeSessionProviderFuture, InProcessCodeModeSession, V8JitMode,
-    initialize_v8,
+    CodeModeSession, CodeModeSessionCellExecutionLimits, CodeModeSessionProvider,
+    CodeModeSessionProviderFuture, InProcessCodeModeSession, V8JitMode, initialize_v8,
 };
 
 pub(crate) struct MobileCodeModeProvider;
 
 impl CodeModeSessionProvider for MobileCodeModeProvider {
-    fn create_session<'a>(
-        &'a self,
-        delegate: Arc<dyn CodeModeSessionDelegate>,
-    ) -> CodeModeSessionProviderFuture<'a> {
-        self.create_session_with_limits(delegate, CodeModeSessionCellExecutionLimits::default())
+    fn create_session(&self) -> CodeModeSessionProviderFuture<'_> {
+        self.create_session_with_limits(CodeModeSessionCellExecutionLimits::default())
     }
 
     fn create_session_with_limits<'a>(
         &'a self,
-        delegate: Arc<dyn CodeModeSessionDelegate>,
         limits: CodeModeSessionCellExecutionLimits,
     ) -> CodeModeSessionProviderFuture<'a> {
         Box::pin(async move {
@@ -32,9 +27,7 @@ impl CodeModeSessionProvider for MobileCodeModeProvider {
             // Availability queries happen even for direct-tool threads. Keep
             // native initialization lazy until a code-mode cell needs a session.
             initialize_v8(V8JitMode::Disabled)?;
-            Ok(Arc::new(InProcessCodeModeSession::with_delegate_and_limits(
-                delegate, limits,
-            )) as Arc<dyn CodeModeSession>)
+            Ok(Arc::new(InProcessCodeModeSession::with_limits(limits)) as Arc<dyn CodeModeSession>)
         })
     }
 }
@@ -52,25 +45,26 @@ mod tests {
         let delegate = Arc::new(NoopCodeModeSessionDelegate);
         assert!(
             provider
-                .create_session_with_limits(
-                    delegate.clone(),
-                    CodeModeSessionCellExecutionLimits {
-                        max_heap_size_bytes: Some(1024),
-                        ..Default::default()
-                    }
-                )
+                .create_session_with_limits(CodeModeSessionCellExecutionLimits {
+                    max_heap_size_bytes: Some(1024),
+                    ..Default::default()
+                })
                 .await
                 .is_err()
         );
-        let session = provider.create_session(delegate).await.unwrap();
+        let session = provider.create_session().await.unwrap();
         let response = session
-            .execute(ExecuteRequest {
-                tool_call_id: "mobile-jitless-test".into(),
-                enabled_tools: vec![],
-                source: "text(1 + 1)".into(),
-                yield_time_ms: Some(10_000),
-                max_output_tokens: Some(100),
-            })
+            .execute(
+                ExecuteRequest {
+                    tool_call_id: "mobile-jitless-test".into(),
+                    enabled_tools: vec![],
+                    source: "text(1 + 1)".into(),
+                    yield_time_ms: Some(10_000),
+                    max_output_tokens: Some(100),
+                },
+                delegate,
+                None,
+            )
             .await
             .unwrap()
             .initial_response()

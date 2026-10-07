@@ -1,9 +1,9 @@
 diff --git a/codex-rs/exec-server/src/no_follow/unix.rs b/codex-rs/exec-server/src/no_follow/unix.rs
-index 23a7fcc..f749118 100644
+index 23a7fcc83..f749118ca 100644
 --- a/codex-rs/exec-server/src/no_follow/unix.rs
 +++ b/codex-rs/exec-server/src/no_follow/unix.rs
 @@ -194,8 +194,8 @@ fn metadata_sync(path: &Path) -> io::Result<FileMetadata> {
- 
+
  #[cfg(target_os = "linux")]
  fn file_metadata_linux(metadata: Statx) -> io::Result<FileMetadata> {
 -    let kind = u32::from(metadata.stx_mode) & libc::S_IFMT;
@@ -26,7 +26,7 @@ index 23a7fcc..f749118 100644
          created_at_ms,
 @@ -217,16 +217,16 @@ fn file_metadata_linux(metadata: Statx) -> io::Result<FileMetadata> {
  }
- 
+
  fn file_metadata(metadata: Stat, created_at_ms: i64) -> io::Result<FileMetadata> {
 -    let kind = metadata.st_mode & libc::S_IFMT;
 -    if kind == libc::S_IFLNK {

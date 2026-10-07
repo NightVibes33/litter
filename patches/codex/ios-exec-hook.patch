@@ -1,9 +1,9 @@
 diff --git a/codex-rs/core/src/exec.rs b/codex-rs/core/src/exec.rs
-index 95b78eba..af644709 100644
+index fa458ed1b..2c896143e 100644
 --- a/codex-rs/core/src/exec.rs
 +++ b/codex-rs/core/src/exec.rs
 @@ -3,7 +3,7 @@ use std::os::unix::process::ExitStatusExt;
- 
+
  use std::collections::HashMap;
  use std::io;
 -#[cfg(target_os = "windows")]
@@ -11,10 +11,10 @@ index 95b78eba..af644709 100644
  use std::path::Path;
  use std::path::PathBuf;
  use std::process::ExitStatus;
-@@ -58,6 +58,90 @@ use codex_utils_path_uri::PathUri;
- use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
- use codex_utils_pty::process_group::kill_child_process_group;
- 
+@@ -60,6 +60,90 @@ use codex_utils_pty::process_group::kill_child_process_group;
+ use codex_utils_pty::process_group::kill_process_group;
+ use codex_utils_pty::process_group::terminate_process_group;
+
 +#[cfg(target_os = "ios")]
 +use std::sync::Arc;
 +#[cfg(any(target_os = "ios", target_os = "android"))]
@@ -100,18 +100,18 @@ index 95b78eba..af644709 100644
 +}
 +
  pub const DEFAULT_EXEC_COMMAND_TIMEOUT_MS: u64 = 10_000;
- 
+
  // Hardcode these since it does not seem worth including the libc crate just
-@@ -203,7 +287,7 @@ impl ExecExpiration {
+@@ -204,7 +288,7 @@ impl ExecExpiration {
      }
- 
+
      /// If ExecExpiration is a timeout, returns the timeout in milliseconds.
 -    #[cfg(target_os = "windows")]
 +    #[cfg(any(target_os = "windows", target_os = "ios"))]
      pub(crate) fn timeout_ms(&self) -> Option<u64> {
          match self {
              ExecExpiration::Timeout(duration) => Some(duration.as_millis() as u64),
-@@ -885,6 +969,7 @@ fn aggregate_output(
+@@ -918,6 +1002,7 @@ fn aggregate_output(
  /// Note this command does not apply any sandboxing logic. The caller is
  /// responsible for constructing [ExecParams::command] to include any sandboxing
  /// wrapper args, as appropriate.
@@ -119,10 +119,10 @@ index 95b78eba..af644709 100644
  async fn exec(
      params: ExecParams,
      network_sandbox_policy: NetworkSandboxPolicy,
-@@ -917,6 +1002,56 @@ async fn exec(
+@@ -949,6 +1034,56 @@ async fn exec(
              })?;
      }
- 
+
 +    #[cfg(any(target_os = "ios", target_os = "android"))]
 +    let mut command = command;
 +    #[cfg(any(target_os = "ios", target_os = "android"))]
@@ -177,21 +177,22 @@ index 95b78eba..af644709 100644
          CodexErr::Io(io::Error::new(
              io::ErrorKind::InvalidInput,
 diff --git a/codex-rs/core/src/unified_exec/async_watcher.rs b/codex-rs/core/src/unified_exec/async_watcher.rs
+index f30c750cb..6f7acb175 100644
 --- a/codex-rs/core/src/unified_exec/async_watcher.rs
 +++ b/codex-rs/core/src/unified_exec/async_watcher.rs
-@@ -48,7 +48,7 @@
+@@ -48,7 +48,7 @@ struct Emitter {
      call_id: String,
  }
- 
+
 -struct Buffer<const MAX_BYTES: usize = UNIFIED_EXEC_OUTPUT_DELTA_MAX_BYTES> {
 +pub(crate) struct Buffer<const MAX_BYTES: usize = UNIFIED_EXEC_OUTPUT_DELTA_MAX_BYTES> {
      pending: Vec<u8>,
-     transcript: Arc<Mutex<HeadTailBuffer>>,
      emitter: Emitter,
-@@ -246,8 +246,27 @@
+ }
+@@ -242,8 +242,27 @@ pub(crate) fn spawn_exit_watcher(
      });
  }
- 
+
 +impl Buffer {
 +    #[cfg(target_os = "ios")]
 +    pub(crate) fn for_mobile(
@@ -217,19 +218,20 @@ diff --git a/codex-rs/core/src/unified_exec/async_watcher.rs b/codex-rs/core/src
          const {
              assert!(
                  MAX_BYTES >= char::MAX.len_utf8(),
-@@ -292,7 +311,7 @@
+@@ -282,7 +301,7 @@ impl<const MAX_BYTES: usize> Buffer<MAX_BYTES> {
          while emitter.emit(&mut next_chunk).await {}
      }
- 
+
 -    async fn finish(self) {
 +    pub(crate) async fn finish(self) {
          let Self {
              pending,
-             transcript: _,
+             mut emitter,
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
+index 3dc3e97d9..bd7901a55 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
 +++ b/codex-rs/core/src/unified_exec/process_manager.rs
-@@ -55,6 +55,8 @@
+@@ -55,6 +55,8 @@ use crate::unified_exec::UnifiedExecError;
  use crate::unified_exec::UnifiedExecProcessManager;
  use crate::unified_exec::WriteStdinInteractionEvent;
  use crate::unified_exec::WriteStdinRequest;
@@ -238,7 +240,7 @@ diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/s
  use crate::unified_exec::async_watcher::emit_exec_end_for_unified_exec;
  use crate::unified_exec::async_watcher::emit_failed_exec_end_for_unified_exec;
  use crate::unified_exec::async_watcher::spawn_exit_watcher;
-@@ -501,6 +503,11 @@
+@@ -525,6 +527,11 @@ impl UnifiedExecProcessManager {
          mut completion: Option<&mut Completion<'_>>,
      ) -> Result<ExecCommandToolOutput, UnifiedExecError> {
          let cwd = request.cwd.clone();
@@ -250,10 +252,10 @@ diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/s
          let process = self
              .open_session_with_sandbox(&request, cwd.clone(), context)
              .await;
-@@ -814,6 +821,123 @@
+@@ -845,6 +852,123 @@ impl UnifiedExecProcessManager {
          Ok(response)
      }
- 
+
 +    #[cfg(target_os = "ios")]
 +    async fn exec_command_ios(
 +        &self,
@@ -371,6 +373,6 @@ diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/s
 +        })
 +    }
 +
-     pub(crate) async fn write_stdin(
-         &self,
-         context: &UnifiedExecContext,
+     #[tracing::instrument(
+         name = "unified_exec.write_stdin",
+         level = "info",

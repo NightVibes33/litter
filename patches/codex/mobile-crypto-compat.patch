@@ -1,7 +1,8 @@
 diff --git a/codex-rs/Cargo.toml b/codex-rs/Cargo.toml
+index 500798270..fc87e69f4 100644
 --- a/codex-rs/Cargo.toml
 +++ b/codex-rs/Cargo.toml
-@@ -332,7 +332,7 @@
+@@ -348,7 +348,7 @@ chardetng = "0.1.17"
  chrono = "0.4.43"
  clap = "4"
  clap_complete = "4"

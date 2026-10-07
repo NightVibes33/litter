@@ -1,7 +1,8 @@
 diff --git a/codex-rs/app-server-protocol/src/protocol/v2/item.rs b/codex-rs/app-server-protocol/src/protocol/v2/item.rs
+index 5c5b184d7..6e4a75a15 100644
 --- a/codex-rs/app-server-protocol/src/protocol/v2/item.rs
 +++ b/codex-rs/app-server-protocol/src/protocol/v2/item.rs
-@@ -1337,6 +1337,7 @@
+@@ -1352,6 +1352,7 @@ pub struct ItemGuardianApprovalReviewStartedNotification {
      pub thread_id: String,
      pub turn_id: String,
      /// Unix timestamp (in milliseconds) when this review started.
@@ -9,7 +10,7 @@ diff --git a/codex-rs/app-server-protocol/src/protocol/v2/item.rs b/codex-rs/app
      #[ts(type = "number")]
      pub started_at_ms: i64,
      /// Stable identifier for this review.
-@@ -1368,9 +1369,11 @@
+@@ -1383,9 +1384,11 @@ pub struct ItemGuardianApprovalReviewCompletedNotification {
      pub thread_id: String,
      pub turn_id: String,
      /// Unix timestamp (in milliseconds) when this review started.
@@ -21,7 +22,7 @@ diff --git a/codex-rs/app-server-protocol/src/protocol/v2/item.rs b/codex-rs/app
      #[ts(type = "number")]
      pub completed_at_ms: i64,
      /// Stable identifier for this review.
-@@ -1553,6 +1556,7 @@
+@@ -1568,6 +1571,7 @@ pub struct CommandExecutionRequestApprovalParams {
      pub turn_id: String,
      pub item_id: String,
      /// Unix timestamp (in milliseconds) when this approval request started.
@@ -29,7 +30,7 @@ diff --git a/codex-rs/app-server-protocol/src/protocol/v2/item.rs b/codex-rs/app
      #[ts(type = "number")]
      pub started_at_ms: i64,
      /// Unique identifier for this specific approval callback.
-@@ -1633,6 +1637,7 @@
+@@ -1648,6 +1652,7 @@ pub struct FileChangeRequestApprovalParams {
      pub turn_id: String,
      pub item_id: String,
      /// Unix timestamp (in milliseconds) when this approval request started.
@@ -38,9 +39,10 @@ diff --git a/codex-rs/app-server-protocol/src/protocol/v2/item.rs b/codex-rs/app
      pub started_at_ms: i64,
      /// Optional explanatory reason (e.g. request for extra write access).
 diff --git a/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs b/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs
+index fd1379111..5e627df59 100644
 --- a/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs
 +++ b/codex-rs/app-server-protocol/src/protocol/v2/permissions.rs
-@@ -777,6 +777,7 @@
+@@ -777,6 +777,7 @@ pub struct PermissionsRequestApprovalParams {
      #[serde(default)]
      pub environment_id: Option<String>,
      /// Unix timestamp (in milliseconds) when this approval request started.

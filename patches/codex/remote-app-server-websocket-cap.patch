@@ -1,26 +1,28 @@
 diff --git a/codex-rs/app-server-client/src/lib.rs b/codex-rs/app-server-client/src/lib.rs
+index 079d1bd2c..9ff2a2c4b 100644
 --- a/codex-rs/app-server-client/src/lib.rs
 +++ b/codex-rs/app-server-client/src/lib.rs
-@@ -63,6 +63,7 @@
+@@ -64,6 +64,7 @@ use toml::Value as TomlValue;
  use tracing::warn;
- 
+
  pub use crate::path::AppServerPath;
 +pub use crate::remote::JsonRpcWire;
  pub use crate::remote::RemoteAppServerClient;
  pub use crate::remote::RemoteAppServerConnectArgs;
  pub use crate::remote::RemoteAppServerEndpoint;
 diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-client/src/remote.rs
+index 6b5571bf0..d984a9d96 100644
 --- a/codex-rs/app-server-client/src/remote.rs
 +++ b/codex-rs/app-server-client/src/remote.rs
-@@ -12,6 +12,7 @@
- 
+@@ -12,6 +12,7 @@ higher-level session logic.
+
  use std::collections::HashMap;
  use std::collections::VecDeque;
 +use std::future::Future;
  use std::io::Error as IoError;
  use std::io::ErrorKind;
  use std::io::Result as IoResult;
-@@ -52,7 +53,6 @@
+@@ -53,7 +54,6 @@ use tokio_tungstenite::MaybeTlsStream;
  use tokio_tungstenite::WebSocketStream;
  use tokio_tungstenite::client_async_with_config;
  use tokio_tungstenite::connect_async_with_config;
@@ -28,10 +30,10 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
  use tokio_tungstenite::tungstenite::Message;
  use tokio_tungstenite::tungstenite::client::IntoClientRequest;
  use tokio_tungstenite::tungstenite::http::HeaderValue;
-@@ -175,6 +175,107 @@
+@@ -177,6 +177,107 @@ enum SocketPeerPolicy {
      NonElevatedCurrentUser,
  }
- 
+
 +/// Litter extension: trait abstraction over the wire that the remote app-server worker drives.
 +///
 +/// Upstream's `connect()` only knows how to talk WebSocket frames (over TCP or UDS). Litter needs
@@ -136,7 +138,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
  impl RemoteAppServerClient {
      pub async fn connect(args: RemoteAppServerConnectArgs) -> IoResult<Self> {
          Self::connect_with_policy(args, SocketPeerPolicy::ExplicitEndpoint).await
-@@ -197,23 +298,19 @@
+@@ -199,23 +300,19 @@ impl RemoteAppServerClient {
          args: RemoteAppServerConnectArgs,
          peer_policy: SocketPeerPolicy,
      ) -> IoResult<Self> {
@@ -163,10 +165,10 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
              }
          }
      }
-@@ -234,16 +331,75 @@
+@@ -236,16 +333,75 @@ impl RemoteAppServerClient {
          self.metadata.platform_os.as_deref()
      }
- 
+
 -    async fn connect_with_stream<S>(
 -        channel_capacity: usize,
 -        endpoint: String,
@@ -245,7 +247,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
          let (pending_events, metadata) = initialize_remote_connection(
              &mut stream,
              &endpoint,
-@@ -262,7 +418,7 @@
+@@ -264,7 +420,7 @@ impl RemoteAppServerClient {
                  tokio::select! {
                      command = command_rx.recv() => {
                          let Some(command) = command else {
@@ -254,7 +256,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                              break;
                          };
                          match command {
-@@ -276,8 +432,7 @@
+@@ -278,8 +434,7 @@ impl RemoteAppServerClient {
                                      continue;
                                  }
                                  pending_requests.insert(request_id.clone(), response_tx);
@@ -264,7 +266,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                      JSONRPCMessage::Request(*request),
                                      &endpoint,
                                  )
-@@ -301,8 +456,7 @@
+@@ -303,8 +458,7 @@ impl RemoteAppServerClient {
                                  }
                              }
                              RemoteClientCommand::Notify { notification, response_tx } => {
@@ -274,7 +276,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                      JSONRPCMessage::Notification(
                                          jsonrpc_notification_from_client_notification(notification),
                                      ),
-@@ -316,8 +470,7 @@
+@@ -318,8 +472,7 @@ impl RemoteAppServerClient {
                                  result,
                                  response_tx,
                              } => {
@@ -284,7 +286,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                      JSONRPCMessage::Response(JSONRPCResponse {
                                          id: request_id,
                                          result,
-@@ -332,8 +485,7 @@
+@@ -334,8 +487,7 @@ impl RemoteAppServerClient {
                                  error,
                                  response_tx,
                              } => {
@@ -294,7 +296,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                      JSONRPCMessage::Error(JSONRPCError {
                                          error,
                                          id: request_id,
-@@ -344,13 +496,11 @@
+@@ -346,13 +498,11 @@ impl RemoteAppServerClient {
                                  let _ = response_tx.send(result);
                              }
                              RemoteClientCommand::Shutdown { response_tx } => {
@@ -311,7 +313,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                      }
                                  });
                                  let _ = response_tx.send(close_result);
-@@ -358,21 +508,21 @@
+@@ -360,21 +510,21 @@ impl RemoteAppServerClient {
                              }
                          }
                      }
@@ -339,7 +341,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                          if let Some(event) =
                                              app_server_event_from_notification(notification)
                                              && let Err(err) = deliver_event(
-@@ -384,7 +534,7 @@
+@@ -386,7 +536,7 @@ impl RemoteAppServerClient {
                                                  break;
                                              }
                                      }
@@ -348,7 +350,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                          let request_id = request.id.clone();
                                          let method = request.method.clone();
                                          match ServerRequest::try_from(request) {
-@@ -400,8 +550,7 @@
+@@ -402,8 +552,7 @@ impl RemoteAppServerClient {
                                              }
                                              Err(err) => {
                                                  warn!(%err, method, "rejecting unknown remote app-server request");
@@ -358,7 +360,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                                      JSONRPCMessage::Error(JSONRPCError {
                                                          error: JSONRPCErrorError {
                                                              code: -32601,
-@@ -433,48 +582,9 @@
+@@ -435,48 +584,9 @@ impl RemoteAppServerClient {
                                              }
                                          }
                                      }
@@ -408,7 +410,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                  let message = format!(
                                      "remote app server at `{endpoint}` transport failed: {err}"
                                  );
-@@ -484,10 +594,10 @@
+@@ -486,10 +596,10 @@ impl RemoteAppServerClient {
                                          message: message.clone(),
                                      },
                                  );
@@ -421,10 +423,10 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                  let message = format!(
                                      "remote app server at `{endpoint}` closed the connection"
                                  );
-@@ -841,20 +951,19 @@
+@@ -817,20 +927,19 @@ fn remote_websocket_config() -> WebSocketConfig {
          .max_message_size(Some(REMOTE_APP_SERVER_MAX_WEBSOCKET_MESSAGE_SIZE))
  }
- 
+
 -async fn initialize_remote_connection<S>(
 -    stream: &mut WebSocketStream<S>,
 +async fn initialize_remote_connection<W>(
@@ -446,8 +448,8 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
          JSONRPCMessage::Request(jsonrpc_request_from_client_request(
              ClientRequest::Initialize {
                  request_id: initialize_request_id.clone(),
-@@ -867,13 +976,8 @@
- 
+@@ -843,13 +952,8 @@ where
+
      timeout(initialize_timeout, async {
          loop {
 -            match stream.next().await {
@@ -462,7 +464,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                      match message {
                          JSONRPCMessage::Response(response) if response.id == initialize_request_id => {
                              metadata.server_version = response
-@@ -917,8 +1021,7 @@
+@@ -893,8 +997,7 @@ where
                                  }
                                  Err(err) => {
                                      warn!(%err, method, "rejecting unknown remote app-server request during initialize");
@@ -472,7 +474,7 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                                          JSONRPCMessage::Error(JSONRPCError {
                                              error: JSONRPCErrorError {
                                                  code: -32601,
-@@ -938,29 +1041,8 @@
+@@ -914,29 +1017,8 @@ where
                          JSONRPCMessage::Response(_) | JSONRPCMessage::Error(_) => {}
                      }
                  }
@@ -504,20 +506,20 @@ diff --git a/codex-rs/app-server-client/src/remote.rs b/codex-rs/app-server-clie
                      break Err(IoError::new(
                          ErrorKind::UnexpectedEof,
                          format!("remote app server at `{endpoint}` closed during initialize"),
-@@ -977,8 +1059,7 @@
+@@ -953,8 +1035,7 @@ where
          )
      })??;
- 
+
 -    write_jsonrpc_message(
 -        stream,
 +    wire.send_message(
          JSONRPCMessage::Notification(jsonrpc_notification_from_client_notification(
              ClientNotification::Initialized,
          )),
-@@ -1032,34 +1113,11 @@
+@@ -1008,34 +1089,11 @@ fn jsonrpc_notification_from_client_notification(
      }
  }
- 
+
 -async fn write_jsonrpc_message<S>(
 -    stream: &mut WebSocketStream<S>,
 -    message: JSONRPCMessage,

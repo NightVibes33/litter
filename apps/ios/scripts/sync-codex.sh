@@ -40,28 +40,24 @@ case "$SYNC_MODE" in
         ;;
 esac
 
-echo "==> Syncing codex submodule..."
-# An uninitialized submodule is an empty directory without its own .git file.
-# `git -C` alone is not sufficient here: Git walks up to the parent worktree
-# and can incorrectly report the superproject's HEAD as the submodule HEAD.
-if [ ! -e "$SUBMODULE_DIR/.git" ] || ! git -C "$SUBMODULE_DIR" rev-parse --verify HEAD >/dev/null 2>&1; then
-    git -C "$REPO_DIR" submodule update --init --recursive shared/third_party/codex
-elif [ "$SYNC_MODE" = "--recorded-gitlink" ]; then
-    git -C "$REPO_DIR" submodule update --init --recursive shared/third_party/codex
-else
-    recorded_commit="$(git -C "$REPO_DIR" ls-files --stage shared/third_party/codex | awk 'NR == 1 { print $2 }')"
-    current_commit="$(git -C "$SUBMODULE_DIR" rev-parse HEAD)"
-
-    if [ -z "$recorded_commit" ]; then
-        echo "error: could not resolve recorded submodule gitlink for shared/third_party/codex" >&2
+# Root-owned source pin; the recorded gitlink remains the bootstrap checkout.
+# Fetch the exact release commit, then apply this repository's mobile overlays.
+CODEX_UPSTREAM_URL="https://github.com/openai/codex.git"
+CODEX_UPSTREAM_REV="d27764b82f7118f674371e6d6e76271d9d606edb"
+echo "==> Syncing pinned Codex 0.160.1..."
+if [ ! -e "$SUBMODULE_DIR/.git" ]; then
+    git -C "$REPO_DIR" submodule update --init shared/third_party/codex
+fi
+current_commit="$(git -C "$SUBMODULE_DIR" rev-parse HEAD)"
+if [ "$current_commit" != "$CODEX_UPSTREAM_REV" ]; then
+    if [ -n "$(git -C "$SUBMODULE_DIR" status --porcelain)" ]; then
+        echo "error: preserve local Codex edits before switching to $CODEX_UPSTREAM_REV" >&2
         exit 1
     fi
-
-    if [ "$current_commit" = "$recorded_commit" ]; then
-        echo "==> codex submodule already at recorded gitlink ${current_commit:0:9}"
-    else
-        echo "==> Preserving current codex checkout ${current_commit:0:9} (recorded gitlink ${recorded_commit:0:9})"
+    if ! git -C "$SUBMODULE_DIR" cat-file -e "$CODEX_UPSTREAM_REV^{commit}" 2>/dev/null; then
+        git -C "$SUBMODULE_DIR" fetch --depth=1 "$CODEX_UPSTREAM_URL" "$CODEX_UPSTREAM_REV"
     fi
+    git -C "$SUBMODULE_DIR" checkout --detach "$CODEX_UPSTREAM_REV"
 fi
 
 for PATCH_FILE in "${PATCH_FILES[@]}"; do

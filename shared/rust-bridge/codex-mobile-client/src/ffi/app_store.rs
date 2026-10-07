@@ -45,6 +45,7 @@ mod tests {
     #[test]
     fn thread_item_parses_mcp_arguments_json() {
         let item = upstream::ThreadItem::McpToolCall {
+            mcp_app_ui: None,
             id: "mcp-1".into(),
             server: "filesystem".into(),
             tool: "read_file".into(),
@@ -80,10 +81,13 @@ mod tests {
             prompt: Some("Review the changes".into()),
             model: None,
             reasoning_effort: None,
-            agents_states: HashMap::from([("sub-thread-1".into(), upstream::CollabAgentState {
-                status: upstream::CollabAgentStatus::Running,
-                message: Some("Working".into()),
-            })]),
+            agents_states: HashMap::from([(
+                "sub-thread-1".into(),
+                upstream::CollabAgentState {
+                    status: upstream::CollabAgentStatus::Running,
+                    message: Some("Working".into()),
+                },
+            )]),
         };
 
         let upstream::ThreadItem::CollabAgentToolCall { agents_states, .. } = item else {
@@ -990,10 +994,9 @@ fn merge_app_update(
             *requests = next_requests;
             Ok(())
         }
-        (
-            AppStoreUpdateRecord::VoiceSessionChanged,
-            AppStoreUpdateRecord::VoiceSessionChanged,
-        ) => Ok(()),
+        (AppStoreUpdateRecord::VoiceSessionChanged, AppStoreUpdateRecord::VoiceSessionChanged) => {
+            Ok(())
+        }
         (_current, next) => Err(Box::new(next)),
     }
 }

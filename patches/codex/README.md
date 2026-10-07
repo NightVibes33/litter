@@ -15,7 +15,23 @@ Touches `core/src/exec.rs` and `core/src/unified_exec/{async_watcher.rs,process_
 
 Consumed by `shared/rust-bridge/codex-mobile-client/src/ish_exec.rs` (`set_ios_exec_hook`), `android_exec.rs` (`set_android_tool_resolver`), and `shell_preflight.rs` (`set_mobile_exec_preflight`).
 
-## Upstream 0.155.1 changes
+## Upstream 0.160.1 source pin
+
+`sync-codex.sh` selects the exact upstream release commit
+`d27764b82f7118f674371e6d6e76271d9d606edb` before applying the mobile
+overlays. The recorded submodule gitlink remains the bootstrap source; it is
+not the runtime version. Existing local edits are preserved by refusing a
+source switch until the checkout is clean. No fork branch or moving tag is
+used as the build input.
+
+The release catalog includes the upstream `gpt-6.1-sol` entry. Availability
+still comes from authenticated catalog discovery. The patches retain mobile
+execution hooks, in-process code mode, remote stream transport, realtime
+dynamic tools and client-controlled handoff. Upstream bootstrap/auth setup,
+HTTP redirect policy and realtime reasoning events are retained during the
+rebase. V8 remains pinned to sandboxed, jitless 150.4.0.
+
+## Previous upstream 0.155.1 changes
 
 Validated patch base: `rust-v0.155.1` (`be2951ea`). The former mobile code-mode stub is retired: upstream code-mode now uses a remote gRPC provider and no longer embeds V8. The reasoning-effort patch is retired because upstream now defines Max, Ultra, Persistent, and Custom values.
 

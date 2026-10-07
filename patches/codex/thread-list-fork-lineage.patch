@@ -1,7 +1,8 @@
 diff --git a/codex-rs/rollout/src/list.rs b/codex-rs/rollout/src/list.rs
+index 13c94617a..6e5d47c4c 100644
 --- a/codex-rs/rollout/src/list.rs
 +++ b/codex-rs/rollout/src/list.rs
-@@ -56,6 +56,9 @@
+@@ -57,6 +57,9 @@ pub struct ThreadItem {
      pub path: PathBuf,
      /// Thread ID from session metadata.
      pub thread_id: Option<ThreadId>,
@@ -11,7 +12,7 @@ diff --git a/codex-rs/rollout/src/list.rs b/codex-rs/rollout/src/list.rs
      /// First user message captured for this thread, if any.
      pub first_user_message: Option<String>,
      /// Best available user-facing preview for discovery and list display.
-@@ -113,6 +116,7 @@
+@@ -114,6 +117,7 @@ struct HeadTailSummary {
      originator: Option<String>,
      saw_session_meta: bool,
      thread_id: Option<ThreadId>,
@@ -19,7 +20,7 @@ diff --git a/codex-rs/rollout/src/list.rs b/codex-rs/rollout/src/list.rs
      first_user_message: Option<String>,
      preview: Option<String>,
      cwd: Option<PathBuf>,
-@@ -822,6 +826,7 @@
+@@ -834,6 +838,7 @@ async fn build_thread_item(
          let HeadTailSummary {
              originator,
              thread_id,
@@ -27,7 +28,7 @@ diff --git a/codex-rs/rollout/src/list.rs b/codex-rs/rollout/src/list.rs
              first_user_message,
              preview,
              cwd,
-@@ -846,6 +851,7 @@
+@@ -858,6 +863,7 @@ async fn build_thread_item(
              originator,
              path,
              thread_id,
@@ -35,7 +36,7 @@ diff --git a/codex-rs/rollout/src/list.rs b/codex-rs/rollout/src/list.rs
              first_user_message,
              preview,
              section: None,
-@@ -1163,6 +1169,7 @@
+@@ -1176,6 +1182,7 @@ async fn read_head_summary(path: &Path, head_limit: usize) -> io::Result<HeadTai
                      summary.agent_role = session_meta_line.meta.agent_role.clone();
                      summary.model_provider = session_meta_line.meta.model_provider.clone();
                      summary.thread_id = Some(session_meta_line.meta.id);
@@ -44,9 +45,10 @@ diff --git a/codex-rs/rollout/src/list.rs b/codex-rs/rollout/src/list.rs
                      summary.git_branch = session_meta_line
                          .git
 diff --git a/codex-rs/rollout/src/recorder.rs b/codex-rs/rollout/src/recorder.rs
+index cd05f6149..c878d996a 100644
 --- a/codex-rs/rollout/src/recorder.rs
 +++ b/codex-rs/rollout/src/recorder.rs
-@@ -1350,6 +1350,7 @@
+@@ -1372,6 +1372,7 @@ fn fill_missing_thread_item_metadata(item: &mut ThreadItem, state_item: ThreadIt
          originator,
          path: _state_path,
          thread_id: _state_thread_id,
@@ -54,17 +56,17 @@ diff --git a/codex-rs/rollout/src/recorder.rs b/codex-rs/rollout/src/recorder.rs
          first_user_message,
          preview,
          section,
-@@ -1426,6 +1427,9 @@
-     }
+@@ -1449,6 +1450,9 @@ fn fill_missing_thread_item_metadata(item: &mut ThreadItem, state_item: ThreadIt
      if recency_at.is_some() {
          item.recency_at = recency_at;
-+    }
+     }
 +    if item.forked_from_id.is_none() {
 +        item.forked_from_id = forked_from_id;
-     }
++    }
  }
- 
-@@ -2106,6 +2110,7 @@
+
+ #[allow(clippy::too_many_arguments)]
+@@ -2128,6 +2132,7 @@ fn thread_item_from_state_metadata(
          originator: item.originator,
          path: item.rollout_path,
          thread_id: Some(item.id),
@@ -73,9 +75,10 @@ diff --git a/codex-rs/rollout/src/recorder.rs b/codex-rs/rollout/src/recorder.rs
          preview: item.preview,
          section: item.section,
 diff --git a/codex-rs/rollout/src/recorder_tests.rs b/codex-rs/rollout/src/recorder_tests.rs
+index af55bf6dd..6cbe5821d 100644
 --- a/codex-rs/rollout/src/recorder_tests.rs
 +++ b/codex-rs/rollout/src/recorder_tests.rs
-@@ -1592,10 +1592,12 @@
+@@ -1640,10 +1640,12 @@ async fn list_threads_metadata_filter_overlays_state_db_list_metadata() -> std::
  fn fill_missing_thread_item_metadata_preserves_identity_and_prefers_state_git_fields() {
      let filesystem_thread_id = ThreadId::new();
      let state_thread_id = ThreadId::new();
@@ -88,7 +91,7 @@ diff --git a/codex-rs/rollout/src/recorder_tests.rs b/codex-rs/rollout/src/recor
          path: filesystem_path.clone(),
          thread_id: Some(filesystem_thread_id),
          first_user_message: Some("filesystem message".to_string()),
-@@ -1625,6 +1627,7 @@
+@@ -1673,6 +1675,7 @@ fn fill_missing_thread_item_metadata_preserves_identity_and_prefers_state_git_fi
      };
      let state_item = ThreadItem {
          originator: None,
@@ -96,18 +99,19 @@ diff --git a/codex-rs/rollout/src/recorder_tests.rs b/codex-rs/rollout/src/recor
          path: state_path,
          thread_id: Some(state_thread_id),
          first_user_message: Some("state message".to_string()),
-@@ -1690,6 +1693,7 @@
+@@ -1738,6 +1741,7 @@ fn fill_missing_thread_item_metadata_preserves_identity_and_prefers_state_git_fi
      assert_eq!(item.created_at.as_deref(), Some("2025-01-03T16:00:00Z"));
      assert_eq!(item.recency_at.as_deref(), Some("2025-01-03T16:00:30.001Z"));
      assert_eq!(item.updated_at.as_deref(), Some("2025-01-03T16:01:02.003Z"));
 +    assert_eq!(item.forked_from_id, Some(state_fork_thread_id));
  }
- 
+
  #[tokio::test]
 diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
+index 27fd11ba4..1df0b775c 100644
 --- a/codex-rs/rollout/src/tests.rs
 +++ b/codex-rs/rollout/src/tests.rs
-@@ -720,6 +720,7 @@
+@@ -756,6 +756,7 @@ async fn test_list_conversations_latest_first() {
          items: vec![
              ThreadItem {
                  originator: Some("test_originator".to_string()),
@@ -115,7 +119,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
                  path: p1,
                  thread_id: Some(thread_id_from_uuid(u3)),
                  first_user_message: Some("Hello from user".to_string()),
-@@ -746,6 +747,7 @@
+@@ -782,6 +783,7 @@ async fn test_list_conversations_latest_first() {
              },
              ThreadItem {
                  originator: Some("test_originator".to_string()),
@@ -123,7 +127,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
                  path: p2,
                  thread_id: Some(thread_id_from_uuid(u2)),
                  first_user_message: Some("Hello from user".to_string()),
-@@ -772,6 +774,7 @@
+@@ -808,6 +810,7 @@ async fn test_list_conversations_latest_first() {
              },
              ThreadItem {
                  originator: Some("test_originator".to_string()),
@@ -131,7 +135,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
                  path: p3,
                  thread_id: Some(thread_id_from_uuid(u1)),
                  first_user_message: Some("Hello from user".to_string()),
-@@ -891,6 +894,7 @@
+@@ -927,6 +930,7 @@ async fn test_pagination_cursor() {
          items: vec![
              ThreadItem {
                  originator: Some("test_originator".to_string()),
@@ -139,7 +143,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
                  path: p5,
                  thread_id: Some(thread_id_from_uuid(u5)),
                  first_user_message: Some("Hello from user".to_string()),
-@@ -917,6 +921,7 @@
+@@ -953,6 +957,7 @@ async fn test_pagination_cursor() {
              },
              ThreadItem {
                  originator: Some("test_originator".to_string()),
@@ -147,7 +151,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
                  path: p4,
                  thread_id: Some(thread_id_from_uuid(u4)),
                  first_user_message: Some("Hello from user".to_string()),
-@@ -979,6 +984,7 @@
+@@ -1015,6 +1020,7 @@ async fn test_pagination_cursor() {
          items: vec![
              ThreadItem {
                  originator: Some("test_originator".to_string()),
@@ -155,7 +159,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
                  path: p3,
                  thread_id: Some(thread_id_from_uuid(u3)),
                  first_user_message: Some("Hello from user".to_string()),
-@@ -1005,6 +1011,7 @@
+@@ -1041,6 +1047,7 @@ async fn test_pagination_cursor() {
              },
              ThreadItem {
                  originator: Some("test_originator".to_string()),
@@ -163,7 +167,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
                  path: p2,
                  thread_id: Some(thread_id_from_uuid(u2)),
                  first_user_message: Some("Hello from user".to_string()),
-@@ -1059,6 +1066,7 @@
+@@ -1095,6 +1102,7 @@ async fn test_pagination_cursor() {
      let expected_page3 = ThreadsPage {
          items: vec![ThreadItem {
              originator: Some("test_originator".to_string()),
@@ -171,7 +175,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
              path: p1,
              thread_id: Some(thread_id_from_uuid(u1)),
              first_user_message: Some("Hello from user".to_string()),
-@@ -1238,6 +1246,7 @@
+@@ -1304,6 +1312,7 @@ async fn test_get_thread_contents() {
      let expected_page = ThreadsPage {
          items: vec![ThreadItem {
              originator: Some("test_originator".to_string()),
@@ -179,7 +183,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
              path: expected_path,
              thread_id: Some(thread_id_from_uuid(uuid)),
              first_user_message: Some("Hello from user".to_string()),
-@@ -1646,6 +1655,7 @@
+@@ -1714,6 +1723,7 @@ async fn test_timestamp_only_cursor_skips_same_second_filesystem_ties() {
          items: vec![
              ThreadItem {
                  originator: Some("test_originator".to_string()),
@@ -187,7 +191,7 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
                  path: p3,
                  thread_id: Some(thread_id_from_uuid(u3)),
                  first_user_message: Some("Hello from user".to_string()),
-@@ -1672,6 +1682,7 @@
+@@ -1740,6 +1750,7 @@ async fn test_timestamp_only_cursor_skips_same_second_filesystem_ties() {
              },
              ThreadItem {
                  originator: Some("test_originator".to_string()),
@@ -196,9 +200,10 @@ diff --git a/codex-rs/rollout/src/tests.rs b/codex-rs/rollout/src/tests.rs
                  thread_id: Some(thread_id_from_uuid(u2)),
                  first_user_message: Some("Hello from user".to_string()),
 diff --git a/codex-rs/thread-store/src/local/helpers.rs b/codex-rs/thread-store/src/local/helpers.rs
+index 96b92b131..ef6a30ba3 100644
 --- a/codex-rs/thread-store/src/local/helpers.rs
 +++ b/codex-rs/thread-store/src/local/helpers.rs
-@@ -156,7 +156,7 @@
+@@ -156,7 +156,7 @@ pub(super) fn stored_thread_from_rollout_item(
          thread_id,
          extra_config: None,
          rollout_path: Some(rollout_path),
@@ -206,9 +211,9 @@ diff --git a/codex-rs/thread-store/src/local/helpers.rs b/codex-rs/thread-store/
 +        forked_from_id: item.forked_from_id,
          parent_thread_id: item.parent_thread_id,
          preview,
-         name: None,
+         name: codex_state::is_guardian_review_source(&source)
 diff --git a/codex-rs/thread-store/src/local/list_threads.rs b/codex-rs/thread-store/src/local/list_threads.rs
-index 015d35f4..e1f50987 100644
+index 015d35f4d..e1f50987a 100644
 --- a/codex-rs/thread-store/src/local/list_threads.rs
 +++ b/codex-rs/thread-store/src/local/list_threads.rs
 @@ -374,6 +374,7 @@ mod tests {
@@ -216,13 +221,13 @@ index 015d35f4..e1f50987 100644
      use crate::local::test_support::write_session_file;
      use crate::local::test_support::write_session_file_with;
 +    use crate::local::test_support::write_session_file_with_fork;
- 
+
      #[tokio::test]
      async fn list_threads_uses_default_provider_when_rollout_omits_provider() {
 @@ -413,6 +414,61 @@ mod tests {
          assert_eq!(page.items[0].model_provider, "test-provider");
      }
- 
+
 +    #[tokio::test]
 +    async fn cold_list_threads_preserves_fork_lineage_from_rollout() {
 +        let home = TempDir::new().expect("temp dir");

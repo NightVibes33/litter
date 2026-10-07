@@ -1429,15 +1429,15 @@ impl MobileClient {
         .map_err(RpcClientError::Rpc)
     }
 
-    pub(crate) async fn server_thread_rollback(
+    pub(crate) async fn server_thread_revert(
         &self,
         server_id: &str,
-        params: upstream::ThreadRollbackParams,
-    ) -> Result<upstream::ThreadRollbackResponse, crate::RpcClientError> {
+        params: upstream::ThreadRevertParams,
+    ) -> Result<upstream::ThreadRevertResponse, crate::RpcClientError> {
         use crate::{RpcClientError, next_request_id};
         self.request_typed_for_server(
             server_id,
-            upstream::ClientRequest::ThreadRollback {
+            upstream::ClientRequest::ThreadRevert {
                 request_id: upstream::RequestId::Integer(next_request_id()),
                 params,
             },
@@ -3872,16 +3872,17 @@ impl MobileClient {
         self.get_session(&key.server_id)?;
         let current = self.snapshot_thread(key)?;
         ensure_thread_is_editable(&current)?;
-        let rollback_depth = rollback_depth_for_turn(&current, selected_turn_index as usize)?;
+        let before_turn_id =
+            source_turn_id_for_user_boundary(&current, selected_turn_index as usize)?;
         let prefill_text = user_boundary_text_for_turn(&current, selected_turn_index as usize)?;
 
-        if rollback_depth > 0 {
+        {
             let response = self
-                .server_thread_rollback(
+                .server_thread_revert(
                     &key.server_id,
-                    upstream::ThreadRollbackParams {
+                    upstream::ThreadRevertParams {
                         thread_id: key.thread_id.clone(),
-                        num_turns: rollback_depth,
+                        before_turn_id,
                     },
                 )
                 .await
@@ -3899,8 +3900,12 @@ impl MobileClient {
             copy_thread_runtime_fields(&current, &mut snapshot);
             reconcile_active_turn(Some(&current), &mut snapshot, &turns);
             self.apply_persisted_thread_collaboration_mode(&mut snapshot);
+            snapshot.initial_turns_loaded = false;
+            snapshot.older_turns_cursor = response.turns_backwards_cursor;
             self.app_store.upsert_thread_snapshot(snapshot);
         }
+        self.load_thread_turns_page(&key.server_id, &key.thread_id, None, None)
+            .await?;
 
         self.set_active_thread(Some(key.clone()));
         Ok(prefill_text)
@@ -3921,7 +3926,7 @@ impl MobileClient {
         self.get_session(&key.server_id)?;
         let source = self.snapshot_thread(key)?;
         ensure_thread_is_editable(&source)?;
-        let rollback_depth = rollback_depth_for_turn(&source, selected_turn_index as usize)?;
+        let last_turn_id = source_turn_id_for_user_boundary(&source, selected_turn_index as usize)?;
 
         let developer_instructions =
             crate::local_runtime_instructions::splice_local_runtime_developer_instructions(
@@ -3930,22 +3935,22 @@ impl MobileClient {
                 developer_instructions,
             );
 
+        let mut params: upstream::ThreadForkParams = crate::types::AppForkThreadRequest {
+            thread_id: key.thread_id.clone(),
+            model,
+            cwd,
+            approval_policy,
+            sandbox,
+            developer_instructions,
+            persist_extended_history,
+            exclude_turns: false,
+        }
+        .try_into()
+        .map_err(|e: crate::RpcClientError| RpcError::Deserialization(e.to_string()))?;
+
+        params.last_turn_id = Some(last_turn_id);
         let response = self
-            .server_thread_fork(
-                &key.server_id,
-                crate::types::AppForkThreadRequest {
-                    thread_id: key.thread_id.clone(),
-                    model,
-                    cwd,
-                    approval_policy,
-                    sandbox,
-                    developer_instructions,
-                    persist_extended_history,
-                    exclude_turns: false,
-                }
-                .try_into()
-                .map_err(|e: crate::RpcClientError| RpcError::Deserialization(e.to_string()))?,
-            )
+            .server_thread_fork(&key.server_id, params)
             .await
             .map_err(|e| RpcError::Deserialization(e.to_string()))?;
 
@@ -3963,28 +3968,6 @@ impl MobileClient {
         )
         .map_err(RpcError::Deserialization)?;
         let next_key = snapshot.key.clone();
-
-        if rollback_depth > 0 {
-            let rollback_response = self
-                .server_thread_rollback(
-                    &key.server_id,
-                    upstream::ThreadRollbackParams {
-                        thread_id: next_key.thread_id.clone(),
-                        num_turns: rollback_depth,
-                    },
-                )
-                .await
-                .map_err(|e| RpcError::Deserialization(e.to_string()))?;
-            snapshot = thread_snapshot_from_upstream_thread_with_overrides(
-                &key.server_id,
-                rollback_response.thread,
-                fork_model,
-                fork_reasoning,
-                snapshot.effective_approval_policy.clone(),
-                snapshot.effective_sandbox_policy.clone(),
-            )
-            .map_err(RpcError::Deserialization)?;
-        }
 
         self.apply_persisted_thread_collaboration_mode(&mut snapshot);
         self.app_store.upsert_thread_snapshot(snapshot);

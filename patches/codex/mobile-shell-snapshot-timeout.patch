@@ -1,10 +1,11 @@
 diff --git a/codex-rs/core/src/shell_snapshot.rs b/codex-rs/core/src/shell_snapshot.rs
+index 994506d24..e44fb224c 100644
 --- a/codex-rs/core/src/shell_snapshot.rs
 +++ b/codex-rs/core/src/shell_snapshot.rs
-@@ -101,6 +101,11 @@
+@@ -102,6 +102,11 @@ struct FailOpenAlias {
      authorized: bool,
  }
- 
+
 +// On mobile (iOS/Android) the shell environment is minimal and snapshot
 +// attempts frequently timeout, adding 10s to every thread/start.
 +#[cfg(any(target_os = "ios", target_os = "android"))]

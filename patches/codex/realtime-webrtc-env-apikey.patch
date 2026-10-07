@@ -1,7 +1,8 @@
 diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
+index f5ac49533..3dde18bf9 100644
 --- a/codex-rs/core/src/client.rs
 +++ b/codex-rs/core/src/client.rs
-@@ -586,6 +586,7 @@
+@@ -672,6 +672,7 @@ impl ModelClient {
          session_config: ApiRealtimeSessionConfig,
          mut extra_headers: ApiHeaderMap,
          api_provider_override: Option<ApiProvider>,
@@ -9,14 +10,20 @@ diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
      ) -> Result<RealtimeWebrtcCallStart> {
          // Create the media call over HTTP first, then retain matching auth so realtime can attach
          // the server-side control WebSocket to the call id from that HTTP response.
-@@ -599,10 +600,33 @@
+@@ -686,15 +687,34 @@ impl ModelClient {
+             client_setup.api_auth.as_ref(),
          ));
          let api_provider = api_provider_override.unwrap_or(client_setup.api_provider);
-         let transport = self.build_api_transport(&api_provider, REALTIME_CALLS_ENDPOINT)?;
+-        let transport = self.build_api_transport(
+-            &api_provider,
+-            REALTIME_CALLS_ENDPOINT,
+-            client_setup.redirect_policy,
+-        )?;
 -        let response = ApiRealtimeCallClient::new(transport, api_provider, client_setup.api_auth)
 -            .create_with_session_and_headers(sdp, session_config, extra_headers)
 -            .await
 -            .map_err(|error| self.state.provider.map_api_error(error))?;
++        let transport = self.build_api_transport(&api_provider, REALTIME_CALLS_ENDPOINT, client_setup.redirect_policy)?;
 +        let response =
 +            match ApiRealtimeCallClient::new(transport, api_provider, client_setup.api_auth)
 +                .create_with_session_and_headers(
@@ -35,7 +42,7 @@ diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
 +                    let mut fallback_headers = extra_headers.clone();
 +                    fallback_headers.extend(sideband_websocket_auth_headers(api_auth.as_ref()));
 +                    let transport =
-+                        self.build_api_transport(&api_provider, REALTIME_CALLS_ENDPOINT)?;
++                        self.build_api_transport(&api_provider, REALTIME_CALLS_ENDPOINT, client_setup.redirect_policy)?;
 +                    let response = ApiRealtimeCallClient::new(transport, api_provider, api_auth)
 +                        .create_with_session_and_headers(sdp, session_config, extra_headers)
 +                        .await
@@ -48,9 +55,10 @@ diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
              sdp: response.sdp,
              call_id: response.call_id,
 diff --git a/codex-rs/core/src/realtime_conversation.rs b/codex-rs/core/src/realtime_conversation.rs
+index db2cde5f0..b3706a851 100644
 --- a/codex-rs/core/src/realtime_conversation.rs
 +++ b/codex-rs/core/src/realtime_conversation.rs
-@@ -29,6 +29,8 @@
+@@ -29,6 +29,8 @@ use codex_api::RealtimeWebsocketEvents;
  use codex_api::RealtimeWebsocketWriter;
  use codex_api::build_session_headers;
  use codex_api::map_api_error;
@@ -58,24 +66,24 @@ diff --git a/codex-rs/core/src/realtime_conversation.rs b/codex-rs/core/src/real
 +use codex_model_provider::BearerAuthProvider;
  use codex_config::config_toml::RealtimeWsMode;
  use codex_config::config_toml::RealtimeWsVersion;
- use codex_login::CodexAuth;
-@@ -507,6 +509,7 @@
- 
+ use codex_http_client::HttpClientFactory;
+@@ -525,6 +527,7 @@ struct ConversationState {
  struct RealtimeStart {
      api_provider: ApiProvider,
+     http_client_factory: HttpClientFactory,
 +    webrtc_api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
      realtime_sideband_base_url: Option<String>,
      extra_headers: Option<HeaderMap>,
      client_managed_handoffs: bool,
-@@ -600,6 +603,7 @@
-     async fn start_inner(&self, start: RealtimeStart) -> CodexResult<RealtimeStartOutput> {
+@@ -633,6 +636,7 @@ impl RealtimeConversationManager {
          let RealtimeStart {
              api_provider,
+             http_client_factory,
 +            webrtc_api_fallback,
              realtime_sideband_base_url,
              extra_headers,
              client_managed_handoffs,
-@@ -669,6 +673,7 @@
+@@ -704,6 +708,7 @@ impl RealtimeConversationManager {
                      session_config.clone(),
                      extra_headers.unwrap_or_default(),
                      realtime_call_api_provider,
@@ -83,15 +91,15 @@ diff --git a/codex-rs/core/src/realtime_conversation.rs b/codex-rs/core/src/real
                  )
                  .await?;
              let task = spawn_webrtc_sideband_input_task(RealtimeWebrtcSidebandInputTask {
-@@ -1204,6 +1209,7 @@
- 
+@@ -1288,6 +1293,7 @@ pub(crate) async fn handle_start(
  struct PreparedRealtimeConversationStart {
      api_provider: ApiProvider,
+     http_client_factory: HttpClientFactory,
 +    webrtc_api_fallback: Option<(ApiProvider, SharedAuthProvider)>,
      realtime_sideband_base_url: Option<String>,
      extra_headers: Option<HeaderMap>,
      client_managed_handoffs: bool,
-@@ -1310,6 +1316,14 @@
+@@ -1404,6 +1410,14 @@ async fn prepare_realtime_start(
      let requested_realtime_session_id = session_config.session_id.clone();
      let event_parser = session_config.event_parser;
      let originator = sess.originator().await;
@@ -106,7 +114,7 @@ diff --git a/codex-rs/core/src/realtime_conversation.rs b/codex-rs/core/src/real
      let mut extra_headers = match transport {
          ConversationStartTransport::Websocket => {
              let realtime_api_key = realtime_api_key(auth.as_ref(), &provider)?;
-@@ -1324,7 +1338,7 @@
+@@ -1418,7 +1432,7 @@ async fn prepare_realtime_start(
          | ConversationStartTransport::ExistingCall { .. } => {
              realtime_request_headers(
                  requested_realtime_session_id.as_deref(),
@@ -115,46 +123,47 @@ diff --git a/codex-rs/core/src/realtime_conversation.rs b/codex-rs/core/src/real
                  event_parser,
                  originator.as_str(),
              )?
-@@ -1345,6 +1359,7 @@
-     }
+@@ -1440,6 +1454,7 @@ async fn prepare_realtime_start(
      Ok(PreparedRealtimeConversationStart {
          api_provider,
+         http_client_factory,
 +        webrtc_api_fallback,
          realtime_sideband_base_url,
          extra_headers: Some(extra_headers),
          client_managed_handoffs: params.client_managed_handoffs,
-@@ -1567,6 +1582,7 @@
- ) -> CodexResult<()> {
+@@ -1664,6 +1679,7 @@ async fn handle_start_inner(
      let PreparedRealtimeConversationStart {
          api_provider,
+         http_client_factory,
 +        webrtc_api_fallback,
          realtime_sideband_base_url,
          extra_headers,
          client_managed_handoffs,
-@@ -1595,6 +1611,7 @@
-     };
+@@ -1694,6 +1710,7 @@ async fn handle_start_inner(
      let start = RealtimeStart {
          api_provider,
+         http_client_factory,
 +        webrtc_api_fallback,
          realtime_sideband_base_url,
          extra_headers,
          client_managed_handoffs,
-@@ -1794,6 +1811,11 @@
-     Err(CodexErr::InvalidRequest(
-         "realtime conversation requires API key auth".to_string(),
+@@ -1896,6 +1913,11 @@ fn realtime_api_key(auth: Option<&CodexAuth>, provider: &ModelProviderInfo) -> C
      ))
-+}
-+
+ }
+
 +fn realtime_webrtc_api_provider() -> CodexResult<ApiProvider> {
 +    ModelProviderInfo::create_openai_provider(/*base_url*/ None)
 +        .to_api_provider(Some(AuthMode::ApiKey))
- }
- 
++}
++
  fn realtime_request_headers(
+     realtime_session_id: Option<&str>,
+     api_key: Option<&str>,
 diff --git a/codex-rs/core/src/realtime_conversation_tests.rs b/codex-rs/core/src/realtime_conversation_tests.rs
+index e7e8fc03d..89029cfa6 100644
 --- a/codex-rs/core/src/realtime_conversation_tests.rs
 +++ b/codex-rs/core/src/realtime_conversation_tests.rs
-@@ -355,3 +355,10 @@
+@@ -356,3 +356,10 @@ fn realtime_headers_include_only_non_default_originator() {
          );
      }
  }

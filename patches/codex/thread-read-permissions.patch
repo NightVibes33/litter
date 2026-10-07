@@ -1,7 +1,8 @@
 diff --git a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
+index 2e166d550..1952842fe 100644
 --- a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
 +++ b/codex-rs/app-server-protocol/src/protocol/v2/thread.rs
-@@ -1679,6 +1679,10 @@
+@@ -1683,6 +1683,10 @@ pub struct ThreadReadParams {
  #[ts(export_to = "v2/")]
  pub struct ThreadReadResponse {
      pub thread: Thread,
@@ -10,12 +11,13 @@ diff --git a/codex-rs/app-server-protocol/src/protocol/v2/thread.rs b/codex-rs/a
 +    #[serde(default)]
 +    pub sandbox: Option<SandboxPolicy>,
  }
- 
+
  #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 diff --git a/codex-rs/app-server/src/request_processors/thread_processor.rs b/codex-rs/app-server/src/request_processors/thread_processor.rs
+index 289cb6395..48e0fe858 100644
 --- a/codex-rs/app-server/src/request_processors/thread_processor.rs
 +++ b/codex-rs/app-server/src/request_processors/thread_processor.rs
-@@ -2872,7 +2872,21 @@
+@@ -2837,7 +2837,21 @@ impl ThreadRequestProcessor {
              .read_thread_view(thread_uuid, include_turns)
              .await
              .map_err(thread_read_view_error)?;
@@ -36,5 +38,5 @@ diff --git a/codex-rs/app-server/src/request_processors/thread_processor.rs b/co
 +                .map(|config| config.sandbox_policy().into()),
 +        })
      }
- 
+
      /// Builds the API view for `thread/read` from persisted metadata plus optional live state.

@@ -17,6 +17,31 @@ full `cargo` build and `RustSec` run, so treat them as unverified until rerun.
 
 ## Alleycat dependency boundary
 
+### Codex 0.160.1 mobile runtime upgrade (2026-10-07)
+
+The root-owned sync script selects upstream release commit
+`d27764b82f7118f674371e6d6e76271d9d606edb` and applies the refreshed mobile
+overlays; the recorded submodule gitlink remains the bootstrap checkout.
+Sequential application, a second idempotent sync, and dirty-checkout
+preservation were checked against isolated source checkouts. The release's
+bundled catalog includes GPT-6.1 Sol; authenticated account discovery still
+determines availability in the app.
+
+The mobile adapters now use source turn IDs for edit/fork boundaries and
+hydrate retained history after `thread/revert`. They handle upstream image
+references, network-policy startup arguments, realtime reasoning-status
+defaults, and Pro Max account-plan mapping. The mobile host suite passed
+868 tests with 7 ignored, the 14 Slingshot tests passed, and the locked
+all-targets compilation check passed. Swift and Kotlin UniFFI bindings were
+regenerated successfully. The iOS code-mode provider was adapted to the new
+per-execution delegate API while retaining disabled JIT. Its separate Linux
+execution test could not run because upstream does not publish the required
+sandboxed V8 150.4.0 Linux archive (HTTP 404); native iOS validation is pending.
+Native iOS archive, signing, device execution, and model discovery remain
+required acceptance checks. This validation does not re-measure the RustSec
+or strict-Clippy findings below. V8's source/ABI pin and the Alleycat Git
+revision are unchanged.
+
 Alleycat is not a Litter submodule. Litter consumes selected bridge crates by
 Git revision, and that revision is the production dependency surface.
 

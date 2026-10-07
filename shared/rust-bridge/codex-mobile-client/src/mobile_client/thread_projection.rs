@@ -159,10 +159,25 @@ pub(super) fn queued_follow_up_inputs_from_json_value(
         .flatten()
         .filter_map(serde_json::Value::as_str)
         .map(|url| upstream::UserInput::Image {
-            url: url.to_string(),
+            image: upstream::ImageReference::Inline {
+                url: url.to_string(),
+            },
             detail: None,
         });
     inputs.extend(remote_images);
+    if let Some(images) = message
+        .get("imageInputs")
+        .and_then(serde_json::Value::as_array)
+    {
+        inputs.extend(
+            images
+                .iter()
+                .filter_map(|value| {
+                    serde_json::from_value::<upstream::UserInput>(value.clone()).ok()
+                })
+                .filter(|input| matches!(input, upstream::UserInput::Image { .. })),
+        );
+    }
 
     let local_images = message
         .get("localImages")
@@ -229,6 +244,7 @@ pub(super) fn queued_follow_up_message_json_from_inputs(
     let mut text = None;
     let mut text_elements = Vec::new();
     let mut remote_image_urls = Vec::new();
+    let mut image_inputs = Vec::new();
     let mut local_images = Vec::new();
     let mut audio_inputs = Vec::new();
     let mut mention_bindings = Vec::new();
@@ -246,9 +262,12 @@ pub(super) fn queued_follow_up_message_json_from_inputs(
                 }
                 text_elements = current_elements.clone();
             }
-            upstream::UserInput::Image { url, .. } => {
-                remote_image_urls.push(url.clone());
-            }
+            upstream::UserInput::Image { image, .. } => match image {
+                upstream::ImageReference::Inline { url } => remote_image_urls.push(url.clone()),
+                upstream::ImageReference::File { .. } => {
+                    image_inputs.push(serde_json::to_value(input).ok()?)
+                }
+            },
             upstream::UserInput::LocalImage { path, .. } => {
                 let placeholder = format!("[Image #{}]", local_images.len() + 1);
                 local_images.push(serde_json::json!({
@@ -277,6 +296,7 @@ pub(super) fn queued_follow_up_message_json_from_inputs(
     if text.is_none()
         && text_elements.is_empty()
         && remote_image_urls.is_empty()
+        && image_inputs.is_empty()
         && local_images.is_empty()
         && audio_inputs.is_empty()
         && mention_bindings.is_empty()
@@ -289,6 +309,7 @@ pub(super) fn queued_follow_up_message_json_from_inputs(
         "text": text.unwrap_or_default(),
         "textElements": text_elements,
         "remoteImageUrls": remote_image_urls,
+        "imageInputs": image_inputs,
         "localImages": local_images,
         "audioInputs": audio_inputs,
         "mentionBindings": mention_bindings,
@@ -366,28 +387,30 @@ pub(super) fn ensure_thread_is_editable(snapshot: &ThreadSnapshot) -> Result<(),
     Ok(())
 }
 
-pub(super) fn rollback_depth_for_turn(
+pub(super) fn source_turn_id_for_user_boundary(
     snapshot: &ThreadSnapshot,
     selected_turn_index: usize,
-) -> Result<u32, RpcError> {
-    let user_turn_indices = snapshot
+) -> Result<String, RpcError> {
+    let item = snapshot
         .items
         .iter()
-        .enumerate()
-        .filter_map(|(idx, item)| {
+        .filter(|item| {
             matches!(
                 item.content,
                 crate::conversation_uniffi::HydratedConversationItemContent::User(_)
             )
-            .then_some(idx)
         })
-        .collect::<Vec<_>>();
-    let item_index = *user_turn_indices.get(selected_turn_index).ok_or_else(|| {
-        RpcError::Deserialization(format!("unknown user turn index {}", selected_turn_index))
-    })?;
-    let turns_after = snapshot.items.len().saturating_sub(item_index + 1);
-    u32::try_from(turns_after)
-        .map_err(|_| RpcError::Deserialization("rollback depth overflow".to_string()))
+        .nth(selected_turn_index)
+        .ok_or_else(|| {
+            RpcError::Deserialization(format!("unknown user turn index {selected_turn_index}"))
+        })?;
+    item.source_turn_id
+        .as_ref()
+        .filter(|id| !id.trim().is_empty())
+        .cloned()
+        .ok_or_else(|| {
+            RpcError::Deserialization("selected message has no source turn ID".to_string())
+        })
 }
 
 pub(super) fn user_boundary_text_for_turn(
@@ -785,5 +808,22 @@ mod audio_compat_tests {
         let retained: Vec<upstream::UserInput> =
             serde_json::from_value(json["audioInputs"].clone()).unwrap();
         assert_eq!(retained, inputs);
+    }
+}
+
+#[cfg(test)]
+mod image_reference_compat_tests {
+    use super::*;
+
+    #[test]
+    fn file_image_reference_survives_queued_message_round_trip() {
+        let inputs = vec![upstream::UserInput::Image {
+            image: upstream::ImageReference::File {
+                file_id: "file-test".into(),
+            },
+            detail: None,
+        }];
+        let value = queued_follow_up_message_json_from_inputs(&inputs).unwrap();
+        assert_eq!(queued_follow_up_inputs_from_json_value(&value), inputs);
     }
 }

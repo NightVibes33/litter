@@ -228,7 +228,8 @@ impl From<codex_protocol::account::PlanType> for PlanType {
             codex_protocol::account::PlanType::Enterprise => Self::Enterprise,
             codex_protocol::account::PlanType::Edu => Self::Edu,
             codex_protocol::account::PlanType::Unknown => Self::Unknown,
-            codex_protocol::account::PlanType::ProLite => Self::Pro,
+            codex_protocol::account::PlanType::ProLite
+            | codex_protocol::account::PlanType::ProMax => Self::Pro,
             codex_protocol::account::PlanType::SelfServeBusinessProLite => Self::Business,
             codex_protocol::account::PlanType::Ent26
             | codex_protocol::account::PlanType::EnterpriseCbpAutomation => Self::Enterprise,

@@ -1284,9 +1284,14 @@ pub(crate) fn render_user_input(inputs: &[UserInput]) -> (String, Vec<String>) {
                     text_parts.push(trimmed);
                 }
             }
-            UserInput::Image { url, .. } => {
-                images.push(url.clone());
-            }
+            UserInput::Image { image, .. } => match image {
+                codex_app_server_protocol::ImageReference::Inline { url } => {
+                    images.push(url.clone())
+                }
+                codex_app_server_protocol::ImageReference::File { .. } => {
+                    text_parts.push("[Image attachment]".to_string())
+                }
+            },
             UserInput::LocalImage { path, .. } => {
                 images.push(format!("file://{}", path.display()));
             }
@@ -2140,6 +2145,8 @@ diff --git a/parser.rs b/parser.rs\n\
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::CommandExecution {
+                model_context: None,
+                sandbox_type: None,
                 plugin_id: None,
                 script_path: None,
                 id: "c1".into(),
@@ -2198,6 +2205,8 @@ diff --git a/parser.rs b/parser.rs\n\
         let turns = vec![make_turn(
             "t1",
             vec![ThreadItem::CommandExecution {
+                model_context: None,
+                sandbox_type: None,
                 plugin_id: None,
                 script_path: None,
                 id: "c1".into(),
@@ -2319,6 +2328,7 @@ diff --git a/parser.rs b/parser.rs\n\
             "t-tools",
             vec![
                 ThreadItem::McpToolCall {
+                    mcp_app_ui: None,
                     app_context: None,
                     plugin_id: None,
                     read_only_hint: None,
@@ -2482,6 +2492,7 @@ diff --git a/parser.rs b/parser.rs\n\
             "t-computer-use",
             vec![
                 ThreadItem::McpToolCall {
+                    mcp_app_ui: None,
                     app_context: None,
                     plugin_id: None,
                     read_only_hint: None,
@@ -2514,6 +2525,7 @@ diff --git a/parser.rs b/parser.rs\n\
                 },
                 // Non-computer-use MCP should not populate the typed view.
                 ThreadItem::McpToolCall {
+                    mcp_app_ui: None,
                     app_context: None,
                     plugin_id: None,
                     read_only_hint: None,
@@ -2676,6 +2688,8 @@ diff --git a/parser.rs b/parser.rs\n\
         let turns = vec![make_turn(
             "t-command-truncate",
             vec![ThreadItem::CommandExecution {
+                model_context: None,
+                sandbox_type: None,
                 plugin_id: None,
                 script_path: None,
                 id: "cmd-1".into(),

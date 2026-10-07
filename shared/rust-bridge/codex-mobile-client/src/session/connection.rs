@@ -712,6 +712,7 @@ impl ServerSession {
         let session_source = SessionSource::VSCode;
 
         let args = InProcessStartArgs {
+            embedded_network_policy: Default::default(),
             arg0_paths: Arg0DispatchPaths::default(),
             config: Arc::new(resolved_config),
             cli_overrides,

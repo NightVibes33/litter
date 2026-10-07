@@ -364,9 +364,7 @@ impl MobileClient {
             upstream::ClientRequest::ThreadRead { params, .. } => Some(params.thread_id.as_str()),
             upstream::ClientRequest::ThreadResume { params, .. } => Some(params.thread_id.as_str()),
             upstream::ClientRequest::ThreadFork { params, .. } => Some(params.thread_id.as_str()),
-            upstream::ClientRequest::ThreadRollback { params, .. } => {
-                Some(params.thread_id.as_str())
-            }
+            upstream::ClientRequest::ThreadRevert { params, .. } => Some(params.thread_id.as_str()),
             upstream::ClientRequest::ThreadUnsubscribe { params, .. } => {
                 Some(params.thread_id.as_str())
             }
@@ -386,7 +384,9 @@ impl MobileClient {
             // and, on a multi-runtime host, the cancel lands on the ChatGPT
             // app-server which doesn't know the OpenCode thread id
             // (`server error -32600: thread not found`).
-            upstream::ClientRequest::TurnInterrupt { params, .. } => Some(params.thread_id.as_str()),
+            upstream::ClientRequest::TurnInterrupt { params, .. } => {
+                Some(params.thread_id.as_str())
+            }
             _ => None,
         };
         thread_id
@@ -1225,7 +1225,7 @@ pub(crate) fn client_request_wire_method(request: &upstream::ClientRequest) -> &
         upstream::ClientRequest::ThreadRead { .. } => "thread/read",
         upstream::ClientRequest::ThreadResume { .. } => "thread/resume",
         upstream::ClientRequest::ThreadFork { .. } => "thread/fork",
-        upstream::ClientRequest::ThreadRollback { .. } => "thread/rollback",
+        upstream::ClientRequest::ThreadRevert { .. } => "thread/revert",
         upstream::ClientRequest::ThreadTurnsList { .. } => "thread/turns/list",
         upstream::ClientRequest::TurnStart { .. } => "turn/start",
         upstream::ClientRequest::TurnSteer { .. } => "turn/steer",
@@ -1793,6 +1793,8 @@ mod tests {
     #[test]
     fn deserialize_typed_response_resolves_read_action_paths_against_command_cwd() {
         let command_item = ThreadItem::CommandExecution {
+            model_context: None,
+            sandbox_type: None,
             plugin_id: None,
             script_path: None,
             id: "cmd-1".into(),

@@ -163,7 +163,10 @@ fn user_input_into_upstream(value: AppUserInput) -> Result<upstream::UserInput, 
                 .map(text_element_into_upstream)
                 .collect::<Result<Vec<_>, _>>()?,
         },
-        AppUserInput::Image { url } => upstream::UserInput::Image { url, detail: None },
+        AppUserInput::Image { url } => upstream::UserInput::Image {
+            image: upstream::ImageReference::Inline { url },
+            detail: None,
+        },
         AppUserInput::LocalImage { path } => upstream::UserInput::LocalImage {
             path: path_buf_from_mobile(path),
             detail: None,
@@ -856,6 +859,7 @@ impl TryFrom<AppStartRealtimeSessionRequest> for upstream::ThreadRealtimeStartPa
             transport: value.transport.map(Into::into),
             voice: value.voice.map(Into::into),
             client_controlled_handoff: value.client_controlled_handoff,
+            backend_reasoning_status: false,
             client_managed_handoffs: None,
             delegation_ack_filler: None,
             flush_transcript_tail_on_session_end: None,

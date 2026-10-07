@@ -272,7 +272,7 @@ struct ConversationView: View {
     /// Resolve the user-message position in the currently-loaded transcript.
     /// `forkThreadFromMessage` / `editMessage` on the Rust side expect an
     /// index into `thread.items` filtered to user messages — see
-    /// `rollback_depth_for_turn` in `mobile_client/thread_projection.rs`.
+    /// `source_turn_id_for_user_boundary` in `mobile_client/thread_projection.rs`.
     /// Recomputing from the live `items` keeps the index correct under
     /// pagination (older turns can shift positions; cached `sourceTurnIndex`
     /// from a prior hydrate would be stale).
