@@ -238,8 +238,15 @@ jobs:
             echo "hit=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Cache local Rust compiler objects
+        uses: actions/cache@v4
+        with:
+          path: .ci-cache/rust-sccache
+          key: ios-testflight-sccache-v1-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            ios-testflight-sccache-v1-${{ runner.os }}-${{ hashFiles('shared/rust-bridge/Cargo.lock', 'shared/rust-bridge/rust-toolchain.toml') }}-
+
       - name: Setup sccache
-        if: env.SCCACHE_ENDPOINT != '' && env.AWS_ACCESS_KEY_ID != '' && env.AWS_SECRET_ACCESS_KEY != ''
         uses: mozilla-actions/sccache-action@v0.0.9
 
       - name: Prime sccache
@@ -264,6 +271,26 @@ jobs:
           merge-multiple: true
           path: build/ios-code-mode
 
+      - name: Cache verified Alpine filesystem
+        uses: actions/cache@v4
+        with:
+          path: |
+            apps/ios/Resources/fs.tar.gz
+            apps/ios/Resources/fs.version
+          key: ios-alpine-v1-${{ hashFiles('Makefile', 'apps/ios/scripts/download-alpine-fs.sh') }}
+
+      - name: Validate cached Alpine identity
+        run: |
+          set -euo pipefail
+          version="$(awk '$1 == "ALPINE_FS_VERSION" && $2 == ":=" {print $3; exit}' Makefile)"
+          if [[ -s apps/ios/Resources/fs.tar.gz && "$(cat apps/ios/Resources/fs.version 2>/dev/null)" == "alpine-fs=$version" ]]; then
+            mkdir -p .build-stamps
+            # Ask Make for its stamp directory instead of trusting cached stamps.
+            stamp="$(make -s --eval='print-alpine-stamp:;@echo $(STAMP_ALPINE_FS)' print-alpine-stamp)"
+            mkdir -p "$(dirname "$stamp")"
+            touch "$stamp"
+          fi
+
       - name: Prepare iOS release assets
         env:
           CARGO_INCREMENTAL: "0"
@@ -277,10 +304,15 @@ jobs:
             trap 'status=$?; echo "==> sccache stats"; sccache --show-stats || true; if [ -f "$SCCACHE_ERROR_LOG" ]; then echo "==> sccache error log"; tail -200 "$SCCACHE_ERROR_LOG" || true; fi; exit $status' EXIT
             sccache --zero-stats || true
           else
-            echo "==> sccache remote cache is not configured; building without RUSTC_WRAPPER"
-            export SCCACHE_DISABLE=1
-            unset RUSTC_WRAPPER SCCACHE_BUCKET SCCACHE_ENDPOINT SCCACHE_REGION SCCACHE_S3_KEY_PREFIX SCCACHE_S3_USE_SSL
+            echo "==> Using local Rust compiler cache"
+            unset SCCACHE_BUCKET SCCACHE_ENDPOINT SCCACHE_REGION SCCACHE_S3_KEY_PREFIX SCCACHE_S3_USE_SSL
             unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
+            export SCCACHE_DIR="$GITHUB_WORKSPACE/.ci-cache/rust-sccache"
+            export SCCACHE_CACHE_SIZE=1G
+            export RUSTC_WRAPPER=sccache
+            sccache --stop-server || true
+            sccache --start-server
+            trap 'sccache --show-stats || true; sccache --stop-server || true' EXIT
           fi
           if [[ "${LITTER_TESTFLIGHT_FAST:-0}" == "1" ]]; then
             python3 tools/scripts/patch-ios-testflight-fast-project.py
@@ -290,11 +322,10 @@ jobs:
           else
             ./apps/ios/scripts/build-rust.sh --preserve-current --device-only
           fi
-          if [[ "${SCCACHE_DISABLE:-0}" == "1" ]]; then
-            make RUSTC_WRAPPER= SCCACHE_BUCKET= SCCACHE_ENDPOINT= AWS_ACCESS_KEY_ID= AWS_SECRET_ACCESS_KEY= alpine-fs xcgen
-          else
-            make alpine-fs xcgen
-          fi
+          # build-rust or the exact generated cache already supplied bindings.
+          # make xcgen would follow missing stamps and rebuild the host cdylib.
+          make alpine-fs
+          ./apps/ios/scripts/regenerate-project.sh
           if [[ "${SCCACHE_DISABLE:-0}" != "1" ]] && command -v sccache >/dev/null 2>&1; then
             echo "==> sccache stats after iOS release prep"
             sccache --show-stats || true
@@ -756,13 +787,25 @@ jobs:
           echo "BETA_GROUP_NAMES=$BETA_GROUP_NAMES" >> "$GITHUB_ENV"
           echo "WAIT_FOR_PROCESSING=$WAIT_FOR_PROCESSING" >> "$GITHUB_ENV"
 
-      - name: Reset SwiftPM binary artifact cache
+      - name: Identify Xcode cache compatibility
+        id: xcode_cache
         run: |
           set -euo pipefail
-          artifact_root="$HOME/Library/Caches/org.swift.swiftpm/artifacts"
-          if [ -d "$artifact_root" ]; then
-            find "$artifact_root" -maxdepth 1 -name 'https___github_com_stasel_WebRTC*' -exec rm -rf {} +
-          fi
+          fingerprint="$( { xcodebuild -version; xcrun --sdk iphoneos --show-sdk-version; uname -m; } | shasum -a 256 | cut -d ' ' -f 1)"
+          echo "toolchain=$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Swift packages and archive intermediates
+        id: xcode_intermediates
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .ci-cache/SwiftPackages
+            .ci-cache/TestFlight/ModuleCache.noindex
+            .ci-cache/TestFlight/SDKStatCaches.noindex
+            .ci-cache/TestFlight/Build/Intermediates.noindex/ArchiveIntermediates/Litter/IntermediateBuildFilesPath
+          key: ios-testflight-xcode-v1-${{ steps.xcode_cache.outputs.toolchain }}-${{ hashFiles('apps/ios/project.yml', 'apps/ios/Litter.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'tools/scripts/patch-ios-testflight-fast-project.py', 'apps/ios/scripts/testflight-upload.sh') }}-${{ github.sha }}
+          restore-keys: |
+            ios-testflight-xcode-v1-${{ steps.xcode_cache.outputs.toolchain }}-${{ hashFiles('apps/ios/project.yml', 'apps/ios/Litter.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved', 'tools/scripts/patch-ios-testflight-fast-project.py', 'apps/ios/scripts/testflight-upload.sh') }}-
 
       - name: Build and upload TestFlight IPA
         env:
@@ -776,11 +819,25 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           LITTER_TESTFLIGHT_FAST: "1"
           INCLUDE_LIVEPROCESS: "0"
+          TESTFLIGHT_DERIVED_DATA_PATH: ${{ github.workspace }}/.ci-cache/TestFlight
+          TESTFLIGHT_SWIFT_PACKAGES_PATH: ${{ github.workspace }}/.ci-cache/SwiftPackages
+          TESTFLIGHT_INCREMENTAL_ARCHIVE: "1"
           TESTFLIGHT_SKIP_UPLOAD: ${{ inputs.build_only && '1' || '0' }}
           ALLOW_XCODE_EXPORTED_SEAL_WARNING: "0"
         run: |
           set -euo pipefail
           ./apps/ios/scripts/testflight-upload.sh
+
+      - name: Save reusable Xcode intermediates
+        if: ${{ !cancelled() && steps.xcode_intermediates.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .ci-cache/SwiftPackages
+            .ci-cache/TestFlight/ModuleCache.noindex
+            .ci-cache/TestFlight/SDKStatCaches.noindex
+            .ci-cache/TestFlight/Build/Intermediates.noindex/ArchiveIntermediates/Litter/IntermediateBuildFilesPath
+          key: ${{ steps.xcode_intermediates.outputs.cache-primary-key }}
 
       - name: Commit TestFlight version bump
         if: ${{ !inputs.build_only }}

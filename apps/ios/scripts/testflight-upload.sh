@@ -244,10 +244,20 @@ if [[ "$TESTFLIGHT_SKIP_BUILD" != "1" ]]; then
         -configuration "$CONFIGURATION"
         -destination "generic/platform=iOS"
         -archivePath "$ARCHIVE_PATH"
-        clean archive
+        archive
         MARKETING_VERSION="$MARKETING_VERSION"
         CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
     )
+
+    if [[ "${TESTFLIGHT_INCREMENTAL_ARCHIVE:-0}" != "1" ]]; then
+        archive_cmd=("${archive_cmd[0]}" clean "${archive_cmd[@]:1}")
+    fi
+    if [[ -n "${TESTFLIGHT_DERIVED_DATA_PATH:-}" ]]; then
+        archive_cmd+=(-derivedDataPath "$TESTFLIGHT_DERIVED_DATA_PATH")
+    fi
+    if [[ -n "${TESTFLIGHT_SWIFT_PACKAGES_PATH:-}" ]]; then
+        archive_cmd+=(-clonedSourcePackagesDirPath "$TESTFLIGHT_SWIFT_PACKAGES_PATH")
+    fi
 
     if [[ -n "$TEAM_ID" ]]; then
         archive_cmd+=(DEVELOPMENT_TEAM="$TEAM_ID")

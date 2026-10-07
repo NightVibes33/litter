@@ -60,3 +60,17 @@ the capability in the provisioning profile, report that signing blocker.
 
 Updates and Diagnostics Settings entries are available only in the sideload
 variant. TestFlight retains background crash recording without those entries.
+
+TestFlight CI reuses exact-key generated Rust assets without invoking the
+Make `xcgen` binding dependency again. Alpine archives are cached by the
+Makefile/downloader identity and checked against their version marker. Rust
+uses a bounded local sccache when remote storage is not configured. Swift
+packages and archive intermediates use an explicit stable DerivedData path;
+their cache family includes Xcode build, iPhoneOS SDK, architecture, project
+spec, package lock, fast-mode patcher, and archive script. Source commits get
+separate cache entries and may restore compatible intermediates for Xcode to
+revalidate. CI does not clean before an incremental archive; ordinary local
+script usage still cleans by default. Signed products, archives, IPAs,
+provisioning profiles, and signing keys are excluded. Signing/export and
+entitlement checks always run. Warm-run duration remains a CI measurement,
+not a guaranteed few-minute release or Apple processing SLA.
