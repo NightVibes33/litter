@@ -15,6 +15,8 @@ def inspect(apple, identifier):
         'returnedCount': len(bundles),
         'returnedIdentifiers': [b.get('attributes', {}).get('identifier') for b in bundles],
     }))
+    # Apple's identifier filter also returns extension/prefix matches.
+    bundles = [b for b in bundles if b['attributes']['identifier'] == identifier]
     if not bundles:
         # Match the signing lane's paginated bundle-ID list when Apple's filtered
         # endpoint returns no resources for an otherwise registered identifier.

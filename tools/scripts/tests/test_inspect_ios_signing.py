@@ -30,7 +30,10 @@ class SigningTests(unittest.TestCase):
             def collection(self, path):
                 calls.append(path)
                 if len(calls) == 1:
-                    return [{'id': 'app-resource', 'attributes': {'identifier': 'com.example.app', 'platform': 'IOS'}}]
+                    return [
+                        {'id': 'extension', 'attributes': {'identifier': 'com.example.app.extension', 'platform': 'IOS'}},
+                        {'id': 'app-resource', 'attributes': {'identifier': 'com.example.app', 'platform': 'IOS'}},
+                    ]
                 return [{'attributes': {'capabilityType': 'EXTENDED_VIRTUAL_ADDRESSING'}}]
 
         result = signing.inspect(Apple(), 'com.example.app')
