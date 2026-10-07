@@ -10,6 +10,11 @@ import urllib.parse
 def inspect(apple, identifier):
     query = urllib.parse.urlencode({'filter[identifier]': identifier})
     bundles = apple.collection('/v1/bundleIds?' + query)
+    print('Apple filtered bundle-ID lookup: ' + json.dumps({
+        'requestedIdentifier': identifier,
+        'returnedCount': len(bundles),
+        'returnedIdentifiers': [b.get('attributes', {}).get('identifier') for b in bundles],
+    }))
     if not bundles:
         # Match the signing lane's paginated bundle-ID list when Apple's filtered
         # endpoint returns no resources for an otherwise registered identifier.

@@ -39,7 +39,7 @@ class SigningTests(unittest.TestCase):
         self.assertEqual(calls[1], '/v1/bundleIds/app-resource/bundleIdCapabilities?limit=200')
 
     def test_duplicate_or_wrong_bundle_is_rejected_before_capability_lookup(self):
-        for bundles in ([], [{'attributes': {'identifier': 'wrong'}}], [None, None]):
+        for bundles in ([], [{'attributes': {'identifier': 'wrong'}}], [{"attributes": {"identifier": "com.example.app"}}, {"attributes": {"identifier": "com.example.app"}}]):
             class Apple:
                 def collection(self, path):
                     return bundles
