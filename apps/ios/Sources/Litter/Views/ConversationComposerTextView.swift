@@ -286,6 +286,9 @@ struct ConversationComposerTextView: UIViewRepresentable {
         }
 
         func applyMentionHighlight(to textView: UITextView) {
+            // Formatting marked text can interrupt keyboard composition. Apply
+            // deferred highlighting after UIKit commits the composed text.
+            guard textView.markedTextRange == nil else { return }
             let names = parent.mentionHighlightNames
             let text = textView.text ?? ""
             if text == lastHighlightedText, names == lastHighlightNames { return }
@@ -293,7 +296,7 @@ struct ConversationComposerTextView: UIViewRepresentable {
             // highlighted before. Re-coloring the full text storage here
             // invalidated TextKit layout for the entire draft on every
             // keystroke, which scales with draft length.
-            if names.isEmpty, !hasAppliedHighlight {
+            if (names.isEmpty || !text.contains("$")), !hasAppliedHighlight {
                 lastHighlightedText = text
                 lastHighlightNames = names
                 if textView.typingAttributes[.foregroundColor] == nil {
