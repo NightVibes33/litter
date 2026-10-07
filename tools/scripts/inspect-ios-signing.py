@@ -26,7 +26,7 @@ def inspect(apple, identifier):
     if len(bundles) != 1 or bundles[0]['attributes']['identifier'] != identifier:
         raise RuntimeError('Expected exactly one matching Apple bundle ID')
     bundle = bundles[0]
-    capabilities = apple.collection(f"/v1/bundleIds/{bundle['id']}/bundleIdCapabilities?limit=200")
+    capabilities = apple.collection(f"/v1/bundleIds/{bundle['id']}/bundleIdCapabilities")
     result = {
         'identifier': identifier,
         'platform': bundle['attributes'].get('platform'),

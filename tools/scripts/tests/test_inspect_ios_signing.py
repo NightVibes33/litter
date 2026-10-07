@@ -18,7 +18,7 @@ class SigningTests(unittest.TestCase):
                         {'id': 'wrong', 'attributes': {'identifier': 'com.example.other'}},
                         {'id': 'right', 'attributes': {'identifier': 'com.example.app'}},
                     ]
-                if path != '/v1/bundleIds/right/bundleIdCapabilities?limit=200':
+                if path != '/v1/bundleIds/right/bundleIdCapabilities':
                     raise AssertionError(path)
                 return []
         self.assertEqual(signing.inspect(Apple(), 'com.example.app')['capabilityTypes'], [])
@@ -39,7 +39,7 @@ class SigningTests(unittest.TestCase):
         result = signing.inspect(Apple(), 'com.example.app')
         self.assertEqual(result['capabilityTypes'], ['EXTENDED_VIRTUAL_ADDRESSING'])
         self.assertIn('filter%5Bidentifier%5D=com.example.app', calls[0])
-        self.assertEqual(calls[1], '/v1/bundleIds/app-resource/bundleIdCapabilities?limit=200')
+        self.assertEqual(calls[1], '/v1/bundleIds/app-resource/bundleIdCapabilities')
 
     def test_duplicate_or_wrong_bundle_is_rejected_before_capability_lookup(self):
         for bundles in ([], [{'attributes': {'identifier': 'wrong'}}], [{"attributes": {"identifier": "com.example.app"}}, {"attributes": {"identifier": "com.example.app"}}]):
