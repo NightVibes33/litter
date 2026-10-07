@@ -602,6 +602,7 @@ targets:
     entitlements:
       path: Sources/Litter/Litter.entitlements
       properties:
+        com.apple.developer.kernel.extended-virtual-addressing: true
         aps-environment: production
         # iCloud KVS sync (Feature C). Re-add when the iCloud container
         # `iCloud.com.sigkitten.litter.39A8Q3T3TR` exists in the Apple Developer Portal

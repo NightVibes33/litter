@@ -23,7 +23,11 @@ cp -R "$LLVM_SOURCE/CoreCompilerSupportLibs/." "$STAGING/CoreCompilerSupportLibs
 # directories. Replace it before copying the freshly built framework: merging
 # a directory symlink over that directory fails with Darwin cp.
 rm -rf "$STAGING/CoreCompilerSupportLibs/LLVM.xcframework"
-cp -RL "$LLVM_SOURCE/LLVM.xcframework" "$STAGING/CoreCompilerSupportLibs/"
+python3 - "$LLVM_SOURCE/LLVM.xcframework" "$STAGING/CoreCompilerSupportLibs/LLVM.xcframework" <<'PYFRAMEWORK'
+import shutil
+import sys
+shutil.copytree(sys.argv[1], sys.argv[2], symlinks=False)
+PYFRAMEWORK
 HEADERS="$STAGING/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/Headers"
 BUILD_ROOT="$LLVM_SOURCE/build/LLVMClangSwift_iphoneos"
 # Include every generated header from this same build, after the upstream
@@ -36,7 +40,15 @@ for generated in \
   "$BUILD_ROOT/llvm-iphoneos-arm64/tools/clang/include" \
   "$BUILD_ROOT/llvm-iphoneos-arm64/tools/lld/include" \
   "$BUILD_ROOT/swift-iphoneos-arm64/include"; do
-  if [ -d "$generated" ]; then cp -RL "$generated/." "$HEADERS/"; fi
+  if [ -d "$generated" ]; then
+    python3 - "$generated" "$HEADERS" <<'PYHEADERS'
+import shutil
+import sys
+# Follow source directory links and merge entries individually. Darwin cp can
+# reject a directory link even with -RL when merging generated include trees.
+shutil.copytree(sys.argv[1], sys.argv[2], symlinks=False, dirs_exist_ok=True)
+PYHEADERS
+  fi
 done
 cat > "$STAGING/compiler-headers.cpp" <<'CPP'
 #include <swift/Frontend/Frontend.h>
