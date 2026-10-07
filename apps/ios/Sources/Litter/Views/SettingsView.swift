@@ -104,9 +104,6 @@ struct SettingsView: View {
                         category("Alley Cãt Pro", "pawprint.fill", id: "settings.category.pro") {
                             ProPaywallView(feature: .all)
                         }
-                        category("Tip the Kitty", "heart", id: "settings.category.support") {
-                            TipJarView()
-                        }
                     } header: {
                         settingsHeader("More")
                     } footer: {
@@ -277,9 +274,9 @@ struct SettingsView: View {
         let info = Bundle.main.infoDictionary
         guard let version = info?["CFBundleShortVersionString"] as? String else { return nil }
         if let build = info?["CFBundleVersion"] as? String, !build.isEmpty {
-            return "Litter \(version) (\(build))"
+            return "Alley Cãt \(version) (\(build))"
         }
-        return "Litter \(version)"
+        return "Alley Cãt \(version)"
     }
 
     // MARK: - Conversation Section
