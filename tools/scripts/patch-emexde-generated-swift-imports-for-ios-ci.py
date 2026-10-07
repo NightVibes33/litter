@@ -152,7 +152,7 @@ replace_generated_swift_import(
 )
 replace_generated_swift_import(
     "ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m",
-    nxos_version_objc_shim,
+    '#import <LindChain/IDEFoundation/NXBootstrap.h>\n' + nxos_version_objc_shim,
     "NXProject OS version bridge",
 )
 

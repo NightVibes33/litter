@@ -45,6 +45,12 @@ class EmexDEImportPatchTests(unittest.TestCase):
             self.assertIn('#import <MobileDevelopmentKit/MDKOSVersion.h>', target_first)
             self.assertIn('[MDKOSVersion versionWithVersionString:', target_first)
             self.assertNotIn('Nyxian-Swift.h', target_first)
+            project_path = root / SOURCE / 'Nyxian/LindChain/IDEFoundation/NXProject.m'
+            project_first = project_path.read_text()
+            self.assertIn('#import <LindChain/IDEFoundation/NXBootstrap.h>', project_first)
+            self.assertIn('NXBootstrap.shared.sdkURL.path', project_first)
+            self.assertNotIn('Nyxian-Swift.h', project_first)
             subprocess.run([sys.executable, str(SCRIPT)], cwd=root, check=True, capture_output=True)
+            self.assertEqual(project_first, project_path.read_text())
             self.assertEqual(first, path.read_text())
             self.assertEqual(target_first, target_path.read_text())
