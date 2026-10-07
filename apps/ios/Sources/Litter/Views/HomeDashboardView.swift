@@ -43,6 +43,7 @@ struct HomeDashboardView: View {
     /// hosting navigation when a "Saved Apps" launcher should be exposed.
     var onShowApps: (() -> Void)? = nil
     var onShowTerminal: (() -> Void)? = nil
+    var onShowFiles: (() -> Void)? = nil
     var onBrowseSessions: (() -> Void)? = nil
     let onPinThread: (ThreadKey) -> Void
     let onUnpinThread: (ThreadKey) -> Void
@@ -322,6 +323,12 @@ struct HomeDashboardView: View {
             // apps load, a server connects). Their slots are always
             // reserved so the header never re-lays out when they do.
             HStack(spacing: 0) {
+                if let onShowFiles {
+                    Button(action: onShowFiles) {
+                        headerGlyph("folder")
+                    }
+                    .accessibilityLabel("Files")
+                }
                 Button { onShowTerminal?() } label: {
                     headerGlyph("terminal")
                 }

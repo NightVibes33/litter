@@ -14,7 +14,6 @@ struct SettingsView: View {
     @State private var alleyCatToolPath: [AlleyCatToolRoute] = []
     @AppStorage("litterSettingsRequestedRoute") private var requestedToolRoute = ""
     @State private var showOnboardingReplay = false
-    @State private var experimentalFeatures = ExperimentalFeatures.shared
     @State private var activeServerSheet: SettingsServerSheet?
     @State private var serverEditError: String?
     /// Server projections mirrored out of `appModel.snapshot` by
@@ -67,16 +66,6 @@ struct SettingsView: View {
                         if AppDistributionCapabilities.includesEmexDE {
                             NavigationLink("Nyxian", value: AlleyCatToolRoute.nyxian)
                             NavigationLink("BuildKit", value: AlleyCatToolRoute.buildKit)
-                        }
-                        NavigationLink(value: AlleyCatToolRoute.files) {
-                            SettingsRowLabel(title: "Files", systemImage: "folder", value: nil)
-                        }
-                        .settingsRowBackground()
-                        if experimentalFeatures.isEnabled(.terminal) {
-                            NavigationLink(value: AlleyCatToolRoute.terminal) {
-                                SettingsRowLabel(title: "Terminal", systemImage: "terminal", value: nil)
-                            }
-                            .settingsRowBackground()
                         }
                     } header: {
                         settingsHeader("Alley Cãt tools")
@@ -163,6 +152,7 @@ struct SettingsView: View {
                     mode: .replay,
                     onFinish: { showOnboardingReplay = false },
                     onOpenFiles: { path in
+                        guard ExperimentalFeatures.shared.isEnabled(.files) else { return }
                         UserDefaults.standard.set(path, forKey: LitterOnboardingState.fileWorkspaceInitialDirectoryKey)
                         alleyCatToolPath.append(.files)
                     },
@@ -1576,7 +1566,8 @@ private enum AlleyCatToolRoute: String, Hashable {
         case .store, .signing: AppDistributionCapabilities.includesKittyStore
         case .nyxian, .buildKit: AppDistributionCapabilities.includesEmexDE
         case .terminal: ExperimentalFeatures.shared.isEnabled(.terminal)
-        case .files, .appearance, .conversation, .harnesses, .account: true
+        case .files: ExperimentalFeatures.shared.isEnabled(.files)
+        case .appearance, .conversation, .harnesses, .account: true
         }
     }
 }

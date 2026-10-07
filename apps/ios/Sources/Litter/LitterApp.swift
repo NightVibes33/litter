@@ -532,6 +532,7 @@ struct ContentView: View {
                     showFirstRunOnboarding = false
                 },
                 onOpenFiles: { path in
+                    guard ExperimentalFeatures.shared.isEnabled(.files) else { return }
                     UserDefaults.standard.set(path, forKey: LitterOnboardingState.fileWorkspaceInitialDirectoryKey)
                     UserDefaults.standard.set("files", forKey: "litterSettingsRequestedRoute")
                     appState.showSettings = true
@@ -718,6 +719,7 @@ private struct HomeNavigationView: View {
         case savedApp(appId: String)
         /// Local on-device terminal backed by the shared Rust terminal session.
         case terminal(preferredAlleycatNodeId: String?)
+        case files
     }
 
     private var connectedServerOptions: [DirectoryPickerServerOption] {
@@ -741,6 +743,11 @@ private struct HomeNavigationView: View {
         guard experimentalFeatures.isEnabled(.terminal) else { return nil }
         return { navigationPath.append(.terminal(preferredAlleycatNodeId: nil)) }
         #endif
+    }
+
+    private var filesLauncher: (() -> Void)? {
+        guard experimentalFeatures.isEnabled(.files) else { return nil }
+        return { navigationPath.append(.files) }
     }
 
     /// Debounced projection from HomeDashboardModel — no `appModel.snapshot`
@@ -945,6 +952,8 @@ private struct HomeNavigationView: View {
                     AppsListView()
                 case .savedApp(let appId):
                     SavedAppDetailView(appId: appId)
+                case .files:
+                    LocalFileWorkspaceView()
                 case let .terminal(preferredAlleycatNodeId):
                     TerminalScreen(
                         cwd: preferredTerminalWorkingDirectory(),
@@ -1520,6 +1529,7 @@ private struct HomeNavigationView: View {
             onShowSettings: { appState.showSettings = true },
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
             onShowTerminal: terminalLauncher,
+            onShowFiles: filesLauncher,
             onBrowseSessions: { showSessions(for: homeDashboardModel.selectedServerId) },
             onPinThread: pinThread,
             onUnpinThread: unpinThread,
@@ -1569,6 +1579,7 @@ private struct HomeNavigationView: View {
             onShowSettings: { appState.showSettings = true },
             onShowApps: savedAppsStore.apps.isEmpty ? nil : { navigationPath.append(.appsList) },
             onShowTerminal: terminalLauncher,
+            onShowFiles: filesLauncher,
             onBrowseSessions: { showSessions(for: homeDashboardModel.selectedServerId) },
             onPinThread: pinThread,
             onUnpinThread: unpinThread,

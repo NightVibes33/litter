@@ -6,6 +6,7 @@ enum LitterFeature: String, CaseIterable, Identifiable {
     case appleWatch = "apple_watch"
     case thinkingMinigame = "thinking_minigame"
     case terminal = "terminal"
+    case files = "files"
 
     var id: String { rawValue }
 
@@ -15,6 +16,7 @@ enum LitterFeature: String, CaseIterable, Identifiable {
         case .appleWatch: return "Apple Watch"
         case .thinkingMinigame: return "Thinking minigame"
         case .terminal: return "Terminal"
+        case .files: return "Files"
         }
     }
 
@@ -23,7 +25,8 @@ enum LitterFeature: String, CaseIterable, Identifiable {
         case .realtimeVoice: return "Show the realtime voice launcher on the home screen."
         case .appleWatch: return "Push server, task, and approval state to a paired Apple Watch. Requires the Alley Cãt watch app to be installed."
         case .thinkingMinigame: return "Tap the Thinking shimmer while the assistant generates to play a tiny generated minigame."
-        case .terminal: return "Show Terminal in Settings and on the home screen."
+        case .terminal: return "Show Terminal on the home screen."
+        case .files: return "Show Files on the home screen."
         }
     }
 
@@ -32,6 +35,7 @@ enum LitterFeature: String, CaseIterable, Identifiable {
         case .realtimeVoice: return true
         case .thinkingMinigame: return false
         case .terminal: return false
+        case .files: return false
         case .appleWatch:
             // Default on now that the watch app is embedded again. The bridge
             // still no-ops when WatchConnectivity is unavailable.

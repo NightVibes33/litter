@@ -12,12 +12,19 @@ class OnboardingConfigurationTests(unittest.TestCase):
         self.assertIn(".fullScreenCover(isPresented: $showFirstRunOnboarding)", source)
         self.assertIn("onboardingCompletedVersion = LitterOnboardingState.currentVersion", source)
 
-    def test_settings_tool_rows_share_existing_style(self):
-        source = (IOS / "Views/SettingsView.swift").read_text()
-        for title in ("Files", "Terminal", "Replay Onboarding"):
-            self.assertIn('SettingsRowLabel(title: "' + title + '"', source)
-        self.assertIn("if experimentalFeatures.isEnabled(.terminal)", source)
-        self.assertIn("case .terminal: ExperimentalFeatures.shared.isEnabled(.terminal)", source)
+    def test_tools_are_controlled_from_advanced_and_launched_from_home(self):
+        settings = (IOS / "Views/SettingsView.swift").read_text()
+        self.assertIn('SettingsRowLabel(title: "Replay Onboarding"', settings)
+        self.assertNotIn('NavigationLink(value: AlleyCatToolRoute.files)', settings)
+        self.assertNotIn('NavigationLink(value: AlleyCatToolRoute.terminal)', settings)
+        for feature in ("files", "terminal"):
+            self.assertIn(f"case .{feature}: ExperimentalFeatures.shared.isEnabled(.{feature})", settings)
+            model = (IOS / "Models/ExperimentalFeatures.swift").read_text()
+            self.assertIn(f"case .{feature}: return false", model)
+            app = (IOS / "LitterApp.swift").read_text()
+            self.assertIn(f"guard experimentalFeatures.isEnabled(.{feature})", app)
+        home = (IOS / "Views/HomeDashboardView.swift").read_text()
+        self.assertIn("if let onShowFiles", home)
 
     def test_tour_uses_current_features_and_routes(self):
         source = (IOS / "Views/OnboardingView.swift").read_text()
