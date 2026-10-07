@@ -10,6 +10,12 @@ import urllib.parse
 def inspect(apple, identifier):
     query = urllib.parse.urlencode({'filter[identifier]': identifier})
     bundles = apple.collection('/v1/bundleIds?' + query)
+    if not bundles:
+        # Match the signing lane's paginated bundle-ID list when Apple's filtered
+        # endpoint returns no resources for an otherwise registered identifier.
+        listed = apple.collection('/v1/bundleIds?limit=200')
+        bundles = [b for b in listed if b['attributes']['identifier'] == identifier]
+        print(f'Apple bundle lookup: filtered=0, listed={len(listed)}, exact_matches={len(bundles)}')
     if len(bundles) != 1 or bundles[0]['attributes']['identifier'] != identifier:
         raise RuntimeError('Expected exactly one matching Apple bundle ID')
     bundle = bundles[0]

@@ -8,6 +8,21 @@ spec.loader.exec_module(signing)
 
 
 class SigningTests(unittest.TestCase):
+    def test_empty_filtered_lookup_falls_back_to_exact_paginated_match(self):
+        class Apple:
+            def collection(self, path):
+                if 'filter%5Bidentifier%5D' in path:
+                    return []
+                if path == '/v1/bundleIds?limit=200':
+                    return [
+                        {'id': 'wrong', 'attributes': {'identifier': 'com.example.other'}},
+                        {'id': 'right', 'attributes': {'identifier': 'com.example.app'}},
+                    ]
+                if path != '/v1/bundleIds/right/bundleIdCapabilities?limit=200':
+                    raise AssertionError(path)
+                return []
+        self.assertEqual(signing.inspect(Apple(), 'com.example.app')['capabilityTypes'], [])
+
     def test_exact_bundle_capabilities_are_read_without_mutation(self):
         calls = []
 
