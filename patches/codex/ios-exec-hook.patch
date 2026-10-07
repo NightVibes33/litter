@@ -1,5 +1,5 @@
 diff --git a/codex-rs/core/src/exec.rs b/codex-rs/core/src/exec.rs
-index fa458ed1b..2c896143e 100644
+index fa458ed..2c89614 100644
 --- a/codex-rs/core/src/exec.rs
 +++ b/codex-rs/core/src/exec.rs
 @@ -3,7 +3,7 @@ use std::os::unix::process::ExitStatusExt;
@@ -177,7 +177,7 @@ index fa458ed1b..2c896143e 100644
          CodexErr::Io(io::Error::new(
              io::ErrorKind::InvalidInput,
 diff --git a/codex-rs/core/src/unified_exec/async_watcher.rs b/codex-rs/core/src/unified_exec/async_watcher.rs
-index f30c750cb..6f7acb175 100644
+index f30c750..b1598f9 100644
 --- a/codex-rs/core/src/unified_exec/async_watcher.rs
 +++ b/codex-rs/core/src/unified_exec/async_watcher.rs
 @@ -48,7 +48,7 @@ struct Emitter {
@@ -189,7 +189,7 @@ index f30c750cb..6f7acb175 100644
      pending: Vec<u8>,
      emitter: Emitter,
  }
-@@ -242,8 +242,27 @@ pub(crate) fn spawn_exit_watcher(
+@@ -242,8 +242,25 @@ pub(crate) fn spawn_exit_watcher(
      });
  }
 
@@ -197,11 +197,9 @@ index f30c750cb..6f7acb175 100644
 +    #[cfg(target_os = "ios")]
 +    pub(crate) fn for_mobile(
 +        context: &UnifiedExecContext,
-+        transcript: Arc<Mutex<HeadTailBuffer>>,
 +    ) -> Self {
 +        Self {
 +            pending: Vec::new(),
-+            transcript,
 +            emitter: Emitter {
 +                remaining_deltas: MAX_EXEC_OUTPUT_DELTAS_PER_CALL,
 +                session: Arc::clone(&context.session),
@@ -218,7 +216,7 @@ index f30c750cb..6f7acb175 100644
          const {
              assert!(
                  MAX_BYTES >= char::MAX.len_utf8(),
-@@ -282,7 +301,7 @@ impl<const MAX_BYTES: usize> Buffer<MAX_BYTES> {
+@@ -282,7 +299,7 @@ impl<const MAX_BYTES: usize> Buffer<MAX_BYTES> {
          while emitter.emit(&mut next_chunk).await {}
      }
 
@@ -228,7 +226,7 @@ index f30c750cb..6f7acb175 100644
              pending,
              mut emitter,
 diff --git a/codex-rs/core/src/unified_exec/process_manager.rs b/codex-rs/core/src/unified_exec/process_manager.rs
-index 3dc3e97d9..bd7901a55 100644
+index 3dc3e97..cf181af 100644
 --- a/codex-rs/core/src/unified_exec/process_manager.rs
 +++ b/codex-rs/core/src/unified_exec/process_manager.rs
 @@ -55,6 +55,8 @@ use crate::unified_exec::UnifiedExecError;
@@ -252,7 +250,7 @@ index 3dc3e97d9..bd7901a55 100644
          let process = self
              .open_session_with_sandbox(&request, cwd.clone(), context)
              .await;
-@@ -845,6 +852,123 @@ impl UnifiedExecProcessManager {
+@@ -845,6 +852,130 @@ impl UnifiedExecProcessManager {
          Ok(response)
      }
 
@@ -289,7 +287,9 @@ index 3dc3e97d9..bd7901a55 100644
 +            Some(context.session.thread_id),
 +        );
 +        let start = Instant::now();
-+        let transcript = Arc::new(tokio::sync::Mutex::new(HeadTailBuffer::default()));
++        let output_buffer = Arc::new(tokio::sync::Mutex::new(
++            super::process::OutputBuffers::default(),
++        ));
 +        let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 +        let output_handler: IosExecOutputHandler = Arc::new(move |chunk| {
 +            let _ = chunk_tx.send(chunk);
@@ -316,16 +316,20 @@ index 3dc3e97d9..bd7901a55 100644
 +            }
 +        });
 +
-+        let mut output = Buffer::for_mobile(context, Arc::clone(&transcript));
++        let mut output = Buffer::for_mobile(context);
 +        let (exit_code, raw_output) = loop {
 +            tokio::select! {
-+                Some(chunk) = chunk_rx.recv() => output.push(chunk).await,
++                Some(chunk) = chunk_rx.recv() => {
++                    output_buffer.lock().await.push_chunk(&chunk);
++                    output.push(chunk).await;
++                },
 +                result = &mut join => {
 +                    break result.unwrap_or((-1, b"spawn_blocking panicked\n".to_vec()));
 +                }
 +            }
 +        };
 +        while let Ok(chunk) = chunk_rx.try_recv() {
++            output_buffer.lock().await.push_chunk(&chunk);
 +            output.push(chunk).await;
 +        }
 +        output.finish().await;
@@ -333,6 +337,7 @@ index 3dc3e97d9..bd7901a55 100644
 +
 +        let text = String::from_utf8_lossy(&raw_output).to_string();
 +        emit_exec_end_for_unified_exec(
++            None,
 +            Arc::clone(&context.session),
 +            Arc::clone(&context.step_context.turn),
 +            Arc::clone(&context.step_context.settings.model_info),
@@ -341,7 +346,7 @@ index 3dc3e97d9..bd7901a55 100644
 +            cwd,
 +            Some(request.process_id.to_string()),
 +            None,
-+            transcript,
++            output_buffer,
 +            text.clone(),
 +            exit_code,
 +            wall_time,
