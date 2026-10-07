@@ -286,7 +286,7 @@ jobs:
           if [[ -s apps/ios/Resources/fs.tar.gz && "$(cat apps/ios/Resources/fs.version 2>/dev/null)" == "alpine-fs=$version" ]]; then
             mkdir -p .build-stamps
             # Ask Make for its stamp directory instead of trusting cached stamps.
-            stamp="$(make -s --eval='print-alpine-stamp:;@echo $(STAMP_ALPINE_FS)' print-alpine-stamp)"
+            stamp="$(make -s -f Makefile -f /dev/stdin print-alpine-stamp <<< 'print-alpine-stamp:;@echo $(STAMP_ALPINE_FS)')"
             mkdir -p "$(dirname "$stamp")"
             touch "$stamp"
           fi
