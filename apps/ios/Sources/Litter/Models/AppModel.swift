@@ -1113,6 +1113,8 @@ final class AppModel {
     }
 
     private func handleStoreUpdate(_ update: AppStoreUpdateRecord) async {
+        // Record event kinds, never conversation content or streaming text.
+        LLog.debug("store", "received update", fields: ["type": Self.updateLabel(update)])
         // Argument is an `@autoclosure`: nothing below is evaluated outside
         // DEBUG, and even in DEBUG it only reads the case discriminant.
         PerfTracker.event("storeUpdate", ["type": Self.updateLabel(update)])

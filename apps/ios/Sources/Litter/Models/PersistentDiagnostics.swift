@@ -12,7 +12,7 @@ final class DiagnosticsLogWriter: @unchecked Sendable {
     private var file: URL?
     private var bytes = 0
 
-    init(directory: URL, maxBytes: Int = 512 * 1024, maxFiles: Int = 5) {
+    init(directory: URL, maxBytes: Int = 2 * 1024 * 1024, maxFiles: Int = 10) {
         self.directory = directory
         self.maxBytes = maxBytes
         self.maxFiles = maxFiles
@@ -78,6 +78,24 @@ enum PersistentDiagnostics {
             ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true))
             .appendingPathComponent("Diagnostics", isDirectory: true)
     )
+
+    /// Documents is exposed by UIFileSharingEnabled and LSSupportsOpeningDocumentsInPlace.
+    static func prepareFilesAccess() {
+        let guide = """
+        Alley Cãt diagnostics
+        Open Files → Browse → On My iPhone/iPad → Alley Cãt → Diagnostics.
+        Session logs include debug events, lifecycle, runtime and action failures.
+        Logs rotate at 2 MB, retaining 10 files. Previous sessions survive restart.
+        Apple diagnostic reports appear when iOS delivers them; delivery is not immediate.
+        Credentials are redacted. Review logs before sharing: IDs and file paths may remain.
+        """
+        do {
+            try FileManager.default.createDirectory(at: writer.directory, withIntermediateDirectories: true)
+            try guide.write(to: writer.directory.appendingPathComponent("README.txt"), atomically: true, encoding: .utf8)
+        } catch {
+            writer.append("Diagnostics directory setup failed: \(error.localizedDescription)")
+        }
+    }
 
     static func saveRecoveryBundle(_ text: String) -> URL? {
         writer.saveReport(Data(LLog.redact(text).utf8), prefix: "recovery", extension: "txt")

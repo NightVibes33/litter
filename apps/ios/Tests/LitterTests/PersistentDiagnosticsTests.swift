@@ -35,6 +35,18 @@ final class PersistentDiagnosticsTests: XCTestCase {
         for file in files { XCTAssertLessThanOrEqual(try Data(contentsOf: file).count, 256) }
     }
 
+    func testDebugFieldsPersistWithoutCredentialsOrPayloadContents() throws {
+        let marker = UUID().uuidString
+        LLog.debug("test", marker, fields: ["threadId": "thread-123", "password": "short", "accessToken": "short"], payloadJson: "private conversation text")
+        let line = try XCTUnwrap(LLog.recentRedactedLines().last)
+        XCTAssertTrue(line.contains(marker))
+        XCTAssertTrue(line.contains("thread-123"))
+        XCTAssertFalse(line.contains("short"))
+        XCTAssertFalse(line.contains("private conversation text"))
+        let files = try FileManager.default.contentsOfDirectory(at: PersistentDiagnostics.writer.directory, includingPropertiesForKeys: nil).filter { $0.pathExtension == "log" }
+        XCTAssertTrue(try files.contains { try String(contentsOf: $0, encoding: .utf8).contains(marker) })
+    }
+
     func testRepeatedApplePayloadIsSavedOnce() throws {
         let writer = DiagnosticsLogWriter(directory: directory)
         let data = Data("crash report".utf8)

@@ -14,6 +14,7 @@ enum LLog {
 
         let codexHome = resolveCodexHome()
         setenv("CODEX_HOME", codexHome.path, 1)
+        PersistentDiagnostics.prepareFilesAccess()
         AppleCrashDiagnostics.shared.start()
         info("diagnostics", "session started", fields: [
             "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
@@ -53,17 +54,9 @@ enum LLog {
 
     private static func emit(level: OSLogType, subsystem: String, message: String, fields: [String: Any], payloadJson: String?) {
         let logger = Logger(subsystem: subsystemRoot, category: subsystem)
+        let rendered = redact(render(message: message, fields: fields, payloadJson: payloadJson))
         #if DEBUG
-        let rendered = render(message: message, fields: fields, payloadJson: payloadJson)
         mirrorToStderr(level: level, subsystem: subsystem, rendered: rendered)
-        #else
-        let rendered: String
-        switch level {
-        case .debug:
-            rendered = message
-        default:
-            rendered = render(message: message, fields: fields, payloadJson: payloadJson)
-        }
         #endif
 
         record(level: level, subsystem: subsystem, rendered: rendered)
@@ -88,9 +81,7 @@ enum LLog {
             ringLines.removeFirst(ringLines.count - ringLimit)
         }
         ringLock.unlock()
-        if level != .debug {
-            PersistentDiagnostics.writer.append(line)
-        }
+        PersistentDiagnostics.writer.append(line)
     }
 
     #if DEBUG
@@ -113,11 +104,11 @@ enum LLog {
 
     private static func render(message: String, fields: [String: Any], payloadJson: String?) -> String {
         var parts = [message]
-        if let fieldsJson = jsonString(from: fields) {
+        if let fieldsJson = jsonString(from: sanitized(fields)) {
             parts.append("fields=\(fieldsJson)")
         }
         if let payloadJson, !payloadJson.isEmpty {
-            parts.append("payload=\(payloadJson)")
+            parts.append("payloadBytes=\(payloadJson.utf8.count)")
         }
         return parts.joined(separator: " ")
     }
@@ -170,6 +161,17 @@ enum LLog {
         let codexHome = base.appendingPathComponent("codex", isDirectory: true)
         try? FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
         return codexHome
+    }
+
+    private static func sanitized(_ fields: [String: Any]) -> [String: Any] {
+        fields.mapValues { value in
+            if let nested = value as? [String: Any] { return sanitized(nested) }
+            return value
+        }.reduce(into: [String: Any]()) { result, pair in
+            let key = pair.key.lowercased()
+            let sensitive = ["token", "password", "secret", "authorization", "apikey", "api_key", "cookie", "prompt", "content", "transcript", "hex"]
+            result[pair.key] = sensitive.contains(where: { key.contains($0) }) ? "[REDACTED]" : pair.value
+        }
     }
 
     private static func jsonString(from fields: [String: Any]) -> String? {

@@ -1759,6 +1759,8 @@ private struct HomeNavigationView: View {
     }
 
     private func deleteThread(_ key: ThreadKey) async {
+        let fields = ["serverId": key.serverId, "threadId": key.threadId]
+        LLog.info("conversation", "archive requested", fields: fields)
         do {
             try await appModel.client.archiveThread(
                 serverId: key.serverId,
@@ -1766,9 +1768,11 @@ private struct HomeNavigationView: View {
             )
             // Archive removes the server thread: reading it again can return
             // thread-not-found and rehydrate a stale home entry.
+            LLog.info("conversation", "archive acknowledged", fields: fields)
             homeDashboardModel.unpinThread(key)
             hideThread(key)
         } catch {
+            LLog.error("conversation", "archive failed", error: error, fields: fields)
             actionErrorMessage = "Could not delete this chat: \(error.localizedDescription)"
         }
     }
