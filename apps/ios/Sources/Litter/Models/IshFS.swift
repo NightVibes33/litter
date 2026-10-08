@@ -325,14 +325,16 @@ enum IshFS {
 
         do {
             try await body { chunk in
+                try Task.checkCancellation()
                 let result = await run("printf %s \(shellQuote(chunk)) | base64 -d >> \(temp)")
                 guard result.exitCode == 0 else { throw error("Could not write \(path)", result: result) }
             }
+            try Task.checkCancellation()
             let moveCommand: String
             if replaceExisting {
-                moveCommand = "mv \(temp) \(target)"
+                moveCommand = "[ ! -d \(target) ] && [ ! -L \(target) ] || exit 17; mv \(temp) \(target)"
             } else {
-                moveCommand = "[ ! -e \(target) ] || exit 17; mv \(temp) \(target)"
+                moveCommand = "[ ! -e \(target) ] && [ ! -L \(target) ] || exit 17; mv \(temp) \(target)"
             }
             let move = await run(moveCommand)
             guard move.exitCode == 0 else { throw error("Could not replace \(path)", result: move) }
@@ -475,6 +477,7 @@ enum IshFS {
 
         let fm = FileManager.default
         let shareDir = fm.temporaryDirectory.appendingPathComponent("LitterSharedArtifacts", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: shareDir, withIntermediateDirectories: true)
         let name = sanitizedHostFileName(suggestedFileName ?? URL(fileURLWithPath: path).lastPathComponent)
         let destination = shareDir.appendingPathComponent(name, isDirectory: false)
@@ -482,20 +485,30 @@ enum IshFS {
         fm.createFile(atPath: destination.path, contents: nil)
 
         let handle = try FileHandle(forWritingTo: destination)
-        defer { try? handle.close() }
+        var completed = false
+        defer {
+            try? handle.close()
+            if !completed { try? fm.removeItem(at: shareDir) }
+        }
 
         let chunkSize = 48_000
         let chunkCount = Int((size + Int64(chunkSize) - 1) / Int64(chunkSize))
         let quoted = shellQuote(path)
         for index in 0..<chunkCount {
+            try Task.checkCancellation()
             let chunk = await run("dd if=\(quoted) bs=\(chunkSize) skip=\(index) count=1 2>/dev/null | base64")
             guard chunk.exitCode == 0 else { throw error("Could not export \(path)", result: chunk) }
             let encoded = chunk.output.replacingOccurrences(of: "\n", with: "")
             guard let data = Data(base64Encoded: encoded) else {
                 throw NSError(domain: "IshFS", code: 6, userInfo: [NSLocalizedDescriptionKey: "Could not decode exported file chunk."])
             }
+            let expectedBytes = min(Int64(chunkSize), size - Int64(index * chunkSize))
+            guard Int64(data.count) == expectedBytes else {
+                throw NSError(domain: "IshFS", code: 7, userInfo: [NSLocalizedDescriptionKey: "File changed or could not be fully read during export. Please retry."])
+            }
             try handle.write(contentsOf: data)
         }
+        completed = true
         return destination
     }
 

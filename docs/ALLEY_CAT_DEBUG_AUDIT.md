@@ -48,3 +48,30 @@ Native Swift compilation and installed-device confirmation remain required.
 Entire browser acceptance is still open for import/export, editing, extraction,
 preview, concurrent operations, protected/mounted locations and failure recovery;
 the alert repair is not proof of the reported device failure's sole cause.
+
+### Extended browser pass (2026-10-08)
+
+Reviewed listing/filtering/sorting, navigation and shortcuts, creation, single/
+batch deletion, rename/move/duplicate/compress, extraction, import, sharing,
+text/image preview and editor saving. Additional repaired paths:
+
+- Sharing uses a unique host directory per export, retaining same-name exports.
+  Each decoded chunk must match the expected length; short reads fail instead
+  of returning a corrupt file. Cancellation removes incomplete host output.
+- Directory sharing removes its fakefs temporary archive on copy failure too.
+- Non-overwriting imports reject dangling symlink destinations. File writes
+  check cancellation before committing. Replacement rejects directories and
+  symlinks rather than moving a temporary file into a folder or destroying a
+  link; editing a symlink reports an error instead of silently replacing it.
+- Folder symlinks navigate to their directory.
+- The editor prevents editing after a failed load and while saving, captures the
+  saved text, and confirms unsaved dismissal.
+- Move requires an existing destination directory; duplicate and compress
+  resolve names in the source item's folder, retaining that folder across awaits.
+
+Nine focused checks pass. Native/archive acceptance remains pending. Device
+coverage must include mounted-location permissions, same-name shares, large
+files, interrupted writes, link previews, and unsaved dismissal. The current
+tab/newline-delimited listing cannot faithfully represent filenames containing
+tabs/newlines. Archive extraction still depends on installed fakefs tools.
+These limits are recorded rather than described as verified functionality.

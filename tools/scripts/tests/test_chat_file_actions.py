@@ -93,3 +93,32 @@ class ChatFileActionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 17)
             self.assertTrue(dest.is_symlink())
             self.assertEqual(src.read_text(), 'original')
+
+    def test_import_commit_rejects_dangling_destination(self):
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        section = source.split('if replaceExisting {', 1)[1].split('let move =', 1)[0]
+        command = re.findall(r'moveCommand = "(.*)"', section)[1].replace('\\\"', '"')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            temp = root / 'incoming'
+            temp.write_text('imported')
+            target = root / 'existing link'
+            target.symlink_to(root / 'absent')
+            command = command.replace('\\(target)', shlex.quote(str(target)))
+            command = command.replace('\\(temp)', shlex.quote(str(temp)))
+            result = subprocess.run(['sh', '-c', command], capture_output=True)
+            self.assertEqual(result.returncode, 17)
+            self.assertTrue(target.is_symlink())
+            self.assertEqual(temp.read_text(), 'imported')
+
+    def test_export_and_editor_failure_guards(self):
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        export = source.split('static func copyFileToTemporaryURL', 1)[1]
+        self.assertIn('.appendingPathComponent(UUID().uuidString', export)
+        self.assertIn('Int64(data.count) == expectedBytes', export)
+        self.assertIn('if !completed', export)
+        view = (IOS / 'Views/LocalFileWorkspaceView.swift').read_text()
+        editor = view.split('private struct LocalTextFileEditorView', 1)[1].split('private struct LocalFilePreviewSheet', 1)[0]
+        self.assertIn('.disabled(!didLoad || isSaving)', editor)
+        self.assertIn('guard didLoad, !isSaving', editor)
+        self.assertIn('.interactiveDismissDisabled(hasUnsavedChanges || isSaving)', editor)

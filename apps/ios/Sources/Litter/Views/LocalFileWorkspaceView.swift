@@ -589,6 +589,13 @@ struct LocalFileWorkspaceView: View {
             alertMessage = "This symlink target is missing."
             return
         }
+        if entry.kind == .symlink {
+            let result = await IshFS.run("[ -d \(IshFS.shellQuote(entry.path)) ]")
+            if result.exitCode == 0 {
+                await model.navigate(to: entry.path)
+                return
+            }
+        }
         if entry.kind == .directory {
             await model.open(entry)
             return
@@ -1315,6 +1322,8 @@ private final class LocalFileWorkspaceModel {
     }
 
     func move(_ entry: LocalFileEntry, toDirectory directory: String) async throws {
+        let check = await IshFS.run("[ -d \(IshFS.shellQuote(directory)) ]")
+        guard check.exitCode == 0 else { throw makeError("Destination folder does not exist.", result: check) }
         let target = RemotePath.parse(path: directory).join(name: entry.name).asString()
         try await IshFS.rename(path: entry.path, to: target)
         removeStoredPath(entry.path)
@@ -1322,16 +1331,18 @@ private final class LocalFileWorkspaceModel {
     }
 
     func duplicate(_ entry: LocalFileEntry) async throws {
-        let name = try await availableDuplicateName(for: entry.name)
-        let target = RemotePath.parse(path: currentPath).join(name: name).asString()
+        let directory = RemotePath.parse(path: entry.path).parent().asString()
+        let name = try await availableDuplicateName(for: entry.name, directory: directory)
+        let target = RemotePath.parse(path: directory).join(name: name).asString()
         try await IshFS.duplicate(path: entry.path, destination: target)
         await reload()
     }
 
     @discardableResult
     func compress(_ entry: LocalFileEntry) async throws -> String {
-        let name = try await availableArchiveName(for: entry.name)
-        let target = RemotePath.parse(path: currentPath).join(name: name).asString()
+        let directory = RemotePath.parse(path: entry.path).parent().asString()
+        let name = try await availableArchiveName(for: entry.name, directory: directory)
+        let target = RemotePath.parse(path: directory).join(name: name).asString()
         let result = await IshFS.compress(path: entry.path, destination: target)
         guard result.exitCode == 0 else { throw makeError("Could not compress \(entry.name)", result: result) }
         await reload()
@@ -1382,7 +1393,12 @@ private final class LocalFileWorkspaceModel {
                 let archivePath = "/tmp/litter-share-\(UUID().uuidString).tar.gz"
                 let result = await IshFS.compress(path: entry.path, destination: archivePath)
                 guard result.exitCode == 0 else { throw makeError("Could not prepare \(entry.name) for sharing", result: result) }
-                urls.append(try await IshFS.copyFileToTemporaryURL(path: archivePath, suggestedFileName: "\(entry.name).tar.gz"))
+                do {
+                    urls.append(try await IshFS.copyFileToTemporaryURL(path: archivePath, suggestedFileName: "\(entry.name).tar.gz"))
+                } catch {
+                    _ = await IshFS.run("rm -f \(IshFS.shellQuote(archivePath))")
+                    throw error
+                }
                 _ = await IshFS.run("rm -f \(IshFS.shellQuote(archivePath))")
             } else {
                 urls.append(try await IshFS.copyFileToTemporaryURL(path: entry.path, suggestedFileName: entry.name))
@@ -1505,7 +1521,7 @@ private final class LocalFileWorkspaceModel {
         save(recentItems, key: recentsKey)
     }
 
-    private func availableDuplicateName(for name: String) async throws -> String {
+    private func availableDuplicateName(for name: String, directory: String) async throws -> String {
         let nsName = name as NSString
         let stem = nsName.deletingPathExtension.isEmpty ? name : nsName.deletingPathExtension
         let ext = nsName.pathExtension
@@ -1513,20 +1529,20 @@ private final class LocalFileWorkspaceModel {
             let suffix = index == 0 ? " copy" : " copy \(index + 1)"
             return ext.isEmpty ? "\(stem)\(suffix)" : "\(stem)\(suffix).\(ext)"
         }
-        return try await firstAvailableName(candidates: candidates)
+        return try await firstAvailableName(candidates: candidates, directory: directory)
     }
 
-    private func availableArchiveName(for name: String) async throws -> String {
+    private func availableArchiveName(for name: String, directory: String) async throws -> String {
         let base = "\(name).tar.gz"
         let candidates: [String] = (0..<100).map { index in
             index == 0 ? base : "\(name) \(index + 1).tar.gz"
         }
-        return try await firstAvailableName(candidates: candidates)
+        return try await firstAvailableName(candidates: candidates, directory: directory)
     }
 
-    private func firstAvailableName(candidates: [String]) async throws -> String {
+    private func firstAvailableName(candidates: [String], directory: String) async throws -> String {
         for candidate in candidates {
-            let target = RemotePath.parse(path: currentPath).join(name: candidate).asString()
+            let target = RemotePath.parse(path: directory).join(name: candidate).asString()
             if !(await IshFS.exists(path: target)) {
                 return candidate
             }
@@ -2040,6 +2056,8 @@ private struct LocalTextFileEditorView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var hasUnsavedChanges = false
+    @State private var didLoad = false
+    @State private var showDiscardConfirmation = false
 
     @StateObject private var taskBag = ViewTaskBag()
     var body: some View {
@@ -2051,6 +2069,7 @@ private struct LocalTextFileEditorView: View {
                         .foregroundStyle(LitterTheme.textSecondary)
                 } else {
                     TextEditor(text: $text)
+                        .disabled(!didLoad || isSaving)
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(LitterTheme.textPrimary)
                         .scrollContentBackground(.hidden)
@@ -2065,7 +2084,11 @@ private struct LocalTextFileEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss(); onClose(false) }
+                    Button("Close") {
+                        if hasUnsavedChanges { showDiscardConfirmation = true }
+                        else { dismiss(); onClose(false) }
+                    }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -2076,6 +2099,11 @@ private struct LocalTextFileEditorView: View {
                     .disabled(isLoading || isSaving || !hasUnsavedChanges)
                     .foregroundStyle(LitterTheme.accent)
                 }
+            }
+            .interactiveDismissDisabled(hasUnsavedChanges || isSaving)
+            .confirmationDialog("Discard unsaved changes?", isPresented: $showDiscardConfirmation, titleVisibility: .visible) {
+                Button("Discard Changes", role: .destructive) { dismiss(); onClose(false) }
+                Button("Keep Editing", role: .cancel) {}
             }
             .task { await load() }
             .onDisappear { taskBag.cancelAll() }
@@ -2091,6 +2119,7 @@ private struct LocalTextFileEditorView: View {
         isLoading = true
         do {
             text = try await IshFS.readTextFile(path: file.path, maxBytes: 1_000_000)
+            didLoad = true
             hasUnsavedChanges = false
         } catch {
             errorMessage = error.localizedDescription
@@ -2099,9 +2128,12 @@ private struct LocalTextFileEditorView: View {
     }
 
     private func save() async {
+        guard didLoad, !isSaving else { return }
         isSaving = true
+        defer { isSaving = false }
+        let savedText = text
         do {
-            try await IshFS.writeTextFile(path: file.path, text: text)
+            try await IshFS.writeTextFile(path: file.path, text: savedText)
             hasUnsavedChanges = false
             onClose(true)
         } catch {
