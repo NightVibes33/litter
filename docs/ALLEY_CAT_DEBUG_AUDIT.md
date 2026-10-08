@@ -30,3 +30,21 @@ Open dependency advisories and other platform limitations remain tracked in
 REPOSITORY_AUDIT.md. This audit does not clear them. Native Swift XCTest,
 latest signed/full unsigned archives, real Apple group states and a physical
 phone walkthrough are necessary before claiming the app is fully debugged.
+
+### File browser follow-up (2026-10-08)
+
+Delete, Rename, and Move alerts now capture their presented item instead of
+reading optional state cleared by dismissal. Single and batch deletion update
+the listing only after filesystem success; failures remain visible. Rename
+uses the item's parent rather than the currently displayed folder. Duplicate,
+archive, and existence checks recognize dangling symlinks. Sorting now applies
+the selected order to files, symlinks, and special entries alike, keeping folders
+first.
+
+Seven focused checks pass, including actual extracted shell commands deleting
+files, nonempty directories, dangling links and absent paths, and duplicate/
+rename collision protection. These shell checks run on Linux, not iSH.
+Native Swift compilation and installed-device confirmation remain required.
+Entire browser acceptance is still open for import/export, editing, extraction,
+preview, concurrent operations, protected/mounted locations and failure recovery;
+the alert repair is not proof of the reported device failure's sole cause.

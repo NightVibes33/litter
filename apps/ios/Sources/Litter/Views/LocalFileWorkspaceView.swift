@@ -78,15 +78,14 @@ struct LocalFileWorkspaceView: View {
 
     private var deleteAlertLayer: some View {
         renameMoveAlertLayer
-            .alert("Delete Item", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })) {
+            .alert("Delete Item", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }), presenting: deleteTarget) { target in
                 Button("Cancel", role: .cancel) { deleteTarget = nil }
                 Button("Delete", role: .destructive) {
-                    guard let target = deleteTarget else { return }
                     deleteTarget = nil
                     taskBag.run { await delete(target) }
                 }
-            } message: {
-                Text("This removes \(deleteTarget?.name ?? "this item") from the iSH filesystem.")
+            } message: { target in
+                Text("This removes \(target.name) from the iSH filesystem.")
             }
             .alert("Delete Selected Items", isPresented: $showDeleteSelection) {
                 Button("Cancel", role: .cancel) {}
@@ -102,31 +101,29 @@ struct LocalFileWorkspaceView: View {
 
     private var renameMoveAlertLayer: some View {
         creationAlertLayer
-            .alert("Rename", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })) {
+            .alert("Rename", isPresented: Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } }), presenting: renameTarget) { target in
                 TextField("Name", text: $renameText)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { renameTarget = nil }
                 Button("Save") {
-                    guard let target = renameTarget else { return }
                     let name = renameText
                     renameTarget = nil
                     taskBag.run { await rename(target, to: name) }
                 }
             }
-            .alert("Move Item", isPresented: Binding(get: { moveTarget != nil }, set: { if !$0 { moveTarget = nil } })) {
+            .alert("Move Item", isPresented: Binding(get: { moveTarget != nil }, set: { if !$0 { moveTarget = nil } }), presenting: moveTarget) { target in
                 TextField("Destination folder", text: $moveDestination)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 Button("Cancel", role: .cancel) { moveTarget = nil }
                 Button("Move") {
-                    guard let target = moveTarget else { return }
                     let destination = moveDestination
                     moveTarget = nil
                     taskBag.run { await move(target, toDirectory: destination) }
                 }
-            } message: {
-                Text("Move \(moveTarget?.name ?? "this item") to another iSH folder. You can use ~ for /root.")
+            } message: { target in
+                Text("Move \(target.name) to another iSH folder. You can use ~ for /root.")
             }
     }
 
@@ -1311,7 +1308,7 @@ private final class LocalFileWorkspaceModel {
     }
 
     func rename(_ entry: LocalFileEntry, to name: String) async throws {
-        let target = RemotePath.parse(path: currentPath).join(name: name).asString()
+        let target = RemotePath.parse(path: entry.path).parent().join(name: name).asString()
         try await IshFS.rename(path: entry.path, to: target)
         removeStoredPath(entry.path)
         await reload()
@@ -1342,10 +1339,10 @@ private final class LocalFileWorkspaceModel {
     }
 
     func delete(_ entry: LocalFileEntry) async throws {
-        entries.removeAll { $0.path == entry.path }
-        selectedPaths.remove(entry.path)
         do {
             try await IshFS.delete(path: entry.path)
+            entries.removeAll { $0.path == entry.path }
+            selectedPaths.remove(entry.path)
             removeStoredPath(entry.path)
             await reload()
         } catch {
@@ -1356,14 +1353,12 @@ private final class LocalFileWorkspaceModel {
 
     func deleteSelectedEntries(_ targets: [LocalFileEntry]) async throws {
         guard !targets.isEmpty else { return }
-        let targetPaths = Set(targets.map(\.path))
-        entries.removeAll { targetPaths.contains($0.path) }
-        selectedPaths.subtract(targetPaths)
-
         var failures: [String] = []
         for entry in targets {
             do {
                 try await IshFS.delete(path: entry.path)
+                entries.removeAll { $0.path == entry.path }
+                selectedPaths.remove(entry.path)
                 removeStoredPath(entry.path)
             } catch {
                 failures.append("\(entry.name): \(error.localizedDescription)")
@@ -1455,7 +1450,7 @@ private final class LocalFileWorkspaceModel {
 
     private func sortEntries(_ entries: [LocalFileEntry]) -> [LocalFileEntry] {
         entries.sorted { lhs, rhs in
-            if lhs.kind != rhs.kind { return lhs.kind == .directory }
+            if (lhs.kind == .directory) != (rhs.kind == .directory) { return lhs.kind == .directory }
             switch sort {
             case .name:
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending

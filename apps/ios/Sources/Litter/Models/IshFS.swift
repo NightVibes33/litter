@@ -343,7 +343,7 @@ enum IshFS {
     }
 
     static func duplicate(path: String, destination: String) async throws {
-        let result = await run("dest=\(shellQuote(destination)); [ ! -e \"$dest\" ] || exit 17; cp -R \(shellQuote(path)) \"$dest\"")
+        let result = await run("dest=\(shellQuote(destination)); [ ! -e \"$dest\" ] && [ ! -L \"$dest\" ] || exit 17; cp -R \(shellQuote(path)) \"$dest\"")
         guard result.exitCode == 0 else { throw error("Could not duplicate item. An item with that name may already exist.", result: result) }
     }
 
@@ -351,7 +351,7 @@ enum IshFS {
         await run("""
         src=\(shellQuote(path))
         dest=\(shellQuote(destination))
-        [ ! -e "$dest" ] || exit 17
+        [ ! -e "$dest" ] && [ ! -L "$dest" ] || exit 17
         parent=${src%/*}
         base=${src##*/}
         if [ -z "$parent" ] || [ "$parent" = "$src" ]; then parent=/; fi
@@ -365,7 +365,7 @@ enum IshFS {
     }
 
     static func exists(path: String) async -> Bool {
-        let result = await run("[ -e \(shellQuote(path)) ]")
+        let result = await run("[ -e \(shellQuote(path)) ] || [ -L \(shellQuote(path)) ]")
         return result.exitCode == 0
     }
 

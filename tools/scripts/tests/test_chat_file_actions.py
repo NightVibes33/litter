@@ -49,3 +49,47 @@ class ChatFileActionTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(dest.read_text(), 'original')
                 self.assertFalse(src.exists())
+
+    def test_file_alerts_capture_presented_target(self):
+        source = (IOS / 'Views/LocalFileWorkspaceView.swift').read_text()
+        for target in ('deleteTarget', 'renameTarget', 'moveTarget'):
+            self.assertIn(f'presenting: {target}) {{ target in', source)
+            self.assertNotIn(f'guard let target = {target} else', source)
+
+    def test_delete_shell_removes_files_folders_and_dangling_links(self):
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        section = source.split('static func delete(path: String)', 1)[1]
+        template = section.split('await run("""', 1)[1].split('""")', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            file = root / "quote's file"
+            file.write_text('data')
+            folder = root / 'nonempty folder'
+            folder.mkdir()
+            (folder / 'child').write_text('data')
+            link = root / 'broken link'
+            link.symlink_to(root / 'absent')
+            for target in (file, folder, link, root / 'already absent'):
+                command = template.replace('\\(shellQuote(path))', shlex.quote(str(target)))
+                command = command.replace('\\(nativeContainerMountPath)', '/mnt/container')
+                result = subprocess.run(['sh', '-c', command], capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse(target.exists())
+                self.assertFalse(target.is_symlink())
+
+    def test_duplicate_preserves_dangling_destination(self):
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        section = source.split('static func duplicate(path: String, destination: String)', 1)[1]
+        command = re.search(r'let result = await run\("(.*)"\)', section).group(1).replace('\\\"', '"')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / 'source'
+            src.write_text('original')
+            dest = root / 'destination'
+            dest.symlink_to(root / 'missing')
+            command = command.replace('\\(shellQuote(path))', shlex.quote(str(src)))
+            command = command.replace('\\(shellQuote(destination))', shlex.quote(str(dest)))
+            result = subprocess.run(['sh', '-c', command], capture_output=True)
+            self.assertEqual(result.returncode, 17)
+            self.assertTrue(dest.is_symlink())
+            self.assertEqual(src.read_text(), 'original')
