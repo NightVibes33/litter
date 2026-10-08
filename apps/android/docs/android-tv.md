@@ -41,3 +41,17 @@ The TV home uses the actual iOS default icon, shared theme colors, larger
 workspace/conversation typography, rounded cards and visible remote focus.
 Phone/tablet home remains unchanged. ARMv7 native compilation and physical-TV
 sign-in, focus, scrolling and conversation acceptance remain required.
+
+## QR login to first conversation repair
+
+TV home provides New Chat even when there are no recent conversations. It uses
+the existing shared thread-start flow, restores stored authentication, and
+connects the on-device runtime if no server is connected. Missing authentication
+opens the account sheet; successful TV account login resumes chat creation.
+Starting/error states are visible instead of a misleading empty-session
+connection prompt. Phone login behavior is unchanged.
+
+Native APK validation and physical ARMv7 TV acceptance are pending. Remote
+instrumentation checks cover initial New Chat focus, activation with no sessions,
+and navigation to Settings. QR approval, runtime startup, model discovery, and
+sending a message still require a physical device.

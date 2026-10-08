@@ -47,6 +47,9 @@ fun TvHomeScreen(
     onShowDiscovery: () -> Unit,
     onShowSettings: () -> Unit,
     onShowApps: () -> Unit,
+    onNewChat: () -> Unit = {},
+    isStartingChat: Boolean = false,
+    chatError: String? = null,
 ) {
     val initialFocus = remember { FocusRequester() }
     val sessions = remember(snapshot?.sessionSummaries, snapshot?.servers, snapshot?.threads) {
@@ -67,14 +70,17 @@ fun TvHomeScreen(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            TvButton("Add server", onShowDiscovery, Modifier.focusRequester(initialFocus))
+            TvButton(if (isStartingChat) "Starting chat..." else "New Chat",
+                { if (!isStartingChat) onNewChat() }, Modifier.focusRequester(initialFocus))
+            TvButton("Add server", onShowDiscovery)
             TvButton("Settings", onShowSettings)
             TvButton("Apps", onShowApps)
         }
+        chatError?.let { Text(it, color = LitterTheme.textSecondary, fontSize = 18.sp) }
         Text("Recent conversations", fontSize = 24.sp, color = LitterTheme.textPrimary)
         if (sessions.isEmpty()) {
             Text(
-                "Connect your workspace to start a conversation. Use the remote arrows to move and Select to open.",
+                "No recent conversations yet. Select New Chat to start with your signed-in account, or Add server to connect another workspace.",
                 color = LitterTheme.textSecondary,
                 fontSize = 20.sp,
             )

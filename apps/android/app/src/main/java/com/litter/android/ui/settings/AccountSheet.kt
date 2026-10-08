@@ -51,6 +51,7 @@ import uniffi.codex_mobile_client.AppLoginAccountRequest
 fun AccountSheet(
     serverId: String,
     onDismiss: () -> Unit,
+    onSignedIn: (() -> Unit)? = null,
 ) {
     val appModel = LocalAppModel.current
     val context = LocalContext.current
@@ -94,6 +95,7 @@ fun AccountSheet(
                     appModel.refreshSnapshot()
                     error = null
                     LLog.i("ChatGPTOAuth", "account sheet loginAccount succeeded")
+                    onSignedIn?.invoke()
                 } catch (e: Exception) {
                     error = e.localizedMessage ?: e.message
                     LLog.e("ChatGPTOAuth", "account sheet loginAccount failed", e)

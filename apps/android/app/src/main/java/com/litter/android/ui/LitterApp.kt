@@ -131,6 +131,8 @@ fun LitterApp(
         var showSettings by remember { mutableStateOf(false) }
         var settingsStartDestination by remember { mutableStateOf(SettingsStartDestination.TopLevel) }
         var showAccountForServer by remember { mutableStateOf<String?>(null) }
+        var isStartingTvChat by remember { mutableStateOf(false) }
+        var tvChatError by remember { mutableStateOf<String?>(null) }
         var directoryPickerServerId by remember { mutableStateOf<String?>(null) }
         var directoryPickerForProject by remember { mutableStateOf(false) }
         var showProjectPicker by remember { mutableStateOf(false) }
@@ -274,6 +276,38 @@ fun LitterApp(
             navigateToConversation(resolvedKey)
         }
 
+        fun startTvChat(preferredServerId: String? = selectedServerId) {
+            if (isStartingTvChat) return
+            isStartingTvChat = true
+            tvChatError = null
+            scope.launch {
+                try {
+                    var serverId = SessionLaunchSupport.defaultConnectedServerId(
+                        connectedServerIds = connectedServerOptions.map { it.id },
+                        activeThreadKey = snapshot?.activeThread,
+                        preferredServerId = preferredServerId,
+                    )
+                    if (serverId == null) {
+                        appModel.restartLocalServer()
+                        serverId = appModel.snapshot.value?.servers?.firstOrNull { it.isLocal }?.serverId
+                            ?: error("The on-device runtime could not connect. Please retry.")
+                    }
+                    val cwd = appModel.launchState.snapshot.value.currentCwd.ifBlank { "~" }
+                    startNewSession(serverId, cwd)
+                } catch (error: kotlinx.coroutines.CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    if (error is LocalAccountLoginRequiredException) {
+                        showAccountForServer = error.serverId
+                    } else {
+                        tvChatError = error.localizedMessage ?: "Could not start a chat. Please retry."
+                    }
+                } finally {
+                    isStartingTvChat = false
+                }
+            }
+        }
+
         fun openDirectoryPicker(preferredServerId: String? = null) {
             val targetServerId = SessionLaunchSupport.defaultConnectedServerId(
                 connectedServerIds = connectedServerOptions.map { it.id },
@@ -342,6 +376,9 @@ fun LitterApp(
                             onShowDiscovery = { showDiscovery = true },
                             onShowSettings = { showSettings = true },
                             onShowApps = { navigate(Route.Apps) },
+                            onNewChat = { startTvChat() },
+                            isStartingChat = isStartingTvChat,
+                            chatError = tvChatError,
                         )
                     } else HomeDashboardScreen(
                         onOpenConversation = navigateToConversation,
@@ -689,6 +726,13 @@ fun LitterApp(
                 AccountSheet(
                     serverId = serverId,
                     onDismiss = { showAccountForServer = null },
+                    onSignedIn = if (isTelevision) {
+                        {
+                            showAccountForServer = null
+                            showSettings = false
+                            startTvChat(serverId)
+                        }
+                    } else null,
                 )
             }
         }
