@@ -58,17 +58,17 @@ struct SettingsView: View {
                     } header: {
                         settingsHeader("Interface")
                     }
-                    Section {
-                        if AppDistributionCapabilities.includesKittyStore {
-                            NavigationLink("KittyStore", value: AlleyCatToolRoute.store)
-                            NavigationLink("Signing", value: AlleyCatToolRoute.signing)
+                    if AppDistributionCapabilities.includesKittyStore || AppDistributionCapabilities.includesEmexDE {
+                        Section {
+                            if AppDistributionCapabilities.includesKittyStore {
+                                NavigationLink("KittyStore", value: AlleyCatToolRoute.store)
+                                NavigationLink("Signing", value: AlleyCatToolRoute.signing)
+                            }
+                            if AppDistributionCapabilities.includesEmexDE {
+                                NavigationLink("Nyxian", value: AlleyCatToolRoute.nyxian)
+                                NavigationLink("BuildKit", value: AlleyCatToolRoute.buildKit)
+                            }
                         }
-                        if AppDistributionCapabilities.includesEmexDE {
-                            NavigationLink("Nyxian", value: AlleyCatToolRoute.nyxian)
-                            NavigationLink("BuildKit", value: AlleyCatToolRoute.buildKit)
-                        }
-                    } header: {
-                        settingsHeader("Alley Cãt tools")
                     }
                     Section {
                         category("Advanced", "slider.horizontal.3", id: "settings.category.advanced") {
