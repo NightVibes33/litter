@@ -605,6 +605,7 @@ struct ConversationMessageList: View {
     @State private var isNearBottom = true
     @State private var isFollowingBottom = true
     @State private var scrollPosition = ScrollPosition()
+    @State private var transcriptFitsViewport = true
     @State private var showScrollToBottomButton = false
     @State private var waitingForDataExpired = false
     @State private var pinchBaseStep: Int?
@@ -733,10 +734,12 @@ struct ConversationMessageList: View {
                 } action: { oldLayout, newLayout in
                     // Keyboard/composer resizing can hide the last message even
                     // when the transcript's content height does not change.
+                    transcriptFitsViewport = newLayout.contentHeight <= newLayout.viewportHeight + 1
                     guard newLayout != oldLayout, isFollowingBottom else { return }
                     followBottom()
                 }
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .defaultScrollAnchor(.top, for: .alignment)
                 .scrollPosition($scrollPosition)
                 .simultaneousGesture(
                     MagnificationGesture(minimumScaleDelta: 0.03)
@@ -759,6 +762,7 @@ struct ConversationMessageList: View {
                 }
                 .onChange(of: activeThreadKey) {
                     scrollPosition = ScrollPosition()
+                    transcriptFitsViewport = true
                     isFollowingBottom = true
                     isNearBottom = true
                     showScrollToBottomButton = false
@@ -932,7 +936,12 @@ struct ConversationMessageList: View {
         // update makes scrolling chase an ever-moving destination.
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
-        withTransaction(transaction) { scrollPosition.scrollTo(edge: .bottom) }
+        // A new/short transcript must stay below the navigation header.
+        // Bottom-following a viewport-sized lazy layout can move its padded
+        // first row above the visible region until the user pulls it down.
+        withTransaction(transaction) {
+            scrollPosition.scrollTo(edge: transcriptFitsViewport ? .top : .bottom)
+        }
     }
 
 
