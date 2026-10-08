@@ -646,10 +646,14 @@ struct LocalFileWorkspaceView: View {
     }
 
     private func openTerminal(at path: String) {
+        guard ExperimentalFeatures.shared.isEnabled(.terminal) else {
+            settingsRequestedRoute = "advanced"
+            appState.showSettings = true
+            return
+        }
         terminalInitialDirectory = path
         settingsRequestedRoute = "terminal"
         appState.showSettings = true
-        alertMessage = "Opening Settings Terminal."
     }
 
     private func terminalPath(for entry: LocalFileEntry) -> String {

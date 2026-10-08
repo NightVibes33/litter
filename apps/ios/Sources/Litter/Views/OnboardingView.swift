@@ -188,7 +188,7 @@ struct OnboardingView: View {
             .init(icon: "folder", title: "Workspace files", detail: "Browse files in the local runtime workspace.")
         ]
         if ExperimentalFeatures.shared.isEnabled(.terminal) {
-            features.append(.init(icon: "terminal", title: "Terminal", detail: "Open Terminal from Settings or the home screen."))
+            features.append(.init(icon: "terminal", title: "Terminal", detail: "Enable Terminal in Advanced to show it on the home screen."))
         }
         if AppDistributionCapabilities.includesEmexDE {
             features.append(.init(icon: "hammer", title: "emexDE", detail: "Open the full embedded iOS development environment."))
@@ -224,8 +224,8 @@ struct OnboardingView: View {
                 icon: "folder.fill",
                 title: "Files start at /root",
                 detail: "The browser can show hidden files, shortcuts, builds, commands, and files the bot mentions.",
-                primaryTitle: "Open Files",
-                primaryAction: { finishAndOpen { onOpenFiles(HomeAnchor.path) } },
+                primaryTitle: ExperimentalFeatures.shared.isEnabled(.files) ? "Open Files" : "Enable Files in Advanced",
+                primaryAction: { finishAndOpen { openFilesIfEnabled(HomeAnchor.path) } },
                 secondaryTitle: ExperimentalFeatures.shared.isEnabled(.terminal) ? "Open Terminal" : nil,
                 secondaryAction: { finishAndOpen { onOpenTerminal(HomeAnchor.path) } }
             )
@@ -293,8 +293,8 @@ struct OnboardingView: View {
                 detail: "Open a project folder, pick the runtime you want, and ask Alley Cãt to inspect or change real files.",
                 primaryTitle: "Start a Thread",
                 primaryAction: { onFinish() },
-                secondaryTitle: "Open Files",
-                secondaryAction: { finishAndOpen { onOpenFiles(HomeAnchor.path) } }
+                secondaryTitle: ExperimentalFeatures.shared.isEnabled(.files) ? "Open Files" : "Enable Files in Advanced",
+                secondaryAction: { finishAndOpen { openFilesIfEnabled(HomeAnchor.path) } }
             )
         }
     }
@@ -333,7 +333,7 @@ struct OnboardingView: View {
                 .disabled(demoState == .creating || demoState == .created)
 
                 Button("Open") {
-                    finishAndOpen { onOpenFiles(LitterOnboardingDemoWorkspace.path) }
+                    finishAndOpen { openFilesIfEnabled(LitterOnboardingDemoWorkspace.path) }
                 }
                 .buttonStyle(.bordered)
                 .tint(LitterTheme.accent)
@@ -478,6 +478,14 @@ struct OnboardingView: View {
             await readiness.refresh(appModel: appModel, appState: appState)
         } catch {
             demoState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func openFilesIfEnabled(_ path: String) {
+        if ExperimentalFeatures.shared.isEnabled(.files) {
+            onOpenFiles(path)
+        } else {
+            onOpenSettingsRoute("advanced")
         }
     }
 

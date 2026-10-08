@@ -33,3 +33,12 @@ class OnboardingConfigurationTests(unittest.TestCase):
         self.assertIn('onOpenSettingsRoute("account")', source)
         self.assertIn('ExperimentalFeatures.shared.isEnabled(.terminal) ? "Open Terminal" : nil', source)
         self.assertNotIn("old Nyxian BuildKit", source)
+
+    def test_disabled_file_actions_open_advanced_instead_of_dismissing_to_nowhere(self):
+        onboarding = (IOS / "Views/OnboardingView.swift").read_text()
+        self.assertIn('onOpenSettingsRoute("advanced")', onboarding)
+        self.assertNotIn('finishAndOpen { onOpenFiles(', onboarding)
+        settings = (IOS / "Views/SettingsView.swift").read_text()
+        self.assertIn('case .advanced: settingsPage("Advanced") { advancedSections }', settings)
+        files = (IOS / "Views/LocalFileWorkspaceView.swift").read_text()
+        self.assertIn('guard ExperimentalFeatures.shared.isEnabled(.terminal)', files)

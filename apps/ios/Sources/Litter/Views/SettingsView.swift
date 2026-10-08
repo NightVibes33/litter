@@ -108,6 +108,7 @@ struct SettingsView: View {
             }
             .navigationDestination(for: AlleyCatToolRoute.self) { route in
                 switch route {
+                case .advanced: settingsPage("Advanced") { advancedSections }
                 case .store: KittyStoreRouteView()
                 case .signing: FeatherSigningSettingsView()
                 case .nyxian: EmexDERouteView()
@@ -1560,6 +1561,7 @@ private enum AlleyCatToolRoute: String, Hashable {
     case conversation
     case harnesses
     case account
+    case advanced
 
     var isAvailable: Bool {
         switch self {
@@ -1567,7 +1569,7 @@ private enum AlleyCatToolRoute: String, Hashable {
         case .nyxian, .buildKit: AppDistributionCapabilities.includesEmexDE
         case .terminal: ExperimentalFeatures.shared.isEnabled(.terminal)
         case .files: ExperimentalFeatures.shared.isEnabled(.files)
-        case .appearance, .conversation, .harnesses, .account: true
+        case .appearance, .conversation, .harnesses, .account, .advanced: true
         }
     }
 }
