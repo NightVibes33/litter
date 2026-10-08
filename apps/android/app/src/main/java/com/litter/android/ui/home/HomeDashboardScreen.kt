@@ -155,7 +155,6 @@ fun HomeDashboardScreen(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    confirmAction = null
                     scope.launch {
                         lifecycleController.replaceSshHostKey(appModel, challenge.serverId, challenge.fingerprint)
                     }
