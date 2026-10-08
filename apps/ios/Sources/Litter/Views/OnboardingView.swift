@@ -698,8 +698,12 @@ private final class LitterOnboardingReadinessStore: ObservableObject {
         }
 
         if AppDistributionCapabilities.includesEmexDE {
-            let buildKit = await LitterBuildKit.shared.status()
-            update(.buildKit, status: buildKit.isReadyForNativeBuilds ? .ready : .warning, detail: buildKit.readinessDetail)
+            let compiler = Bundle.main.privateFrameworksURL?
+                .appendingPathComponent("CoreCompiler.framework/CoreCompiler")
+            let bundled = compiler.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+            update(.buildKit, status: bundled ? .ready : .warning, detail: bundled
+                ? "CoreCompiler is included in this IPA. Open emexDE to prepare bundled support files and download the iPhoneOS SDK on first use. No separate compiler asset pack is required. Building and running your own apps may still require signing setup."
+                : "The bundled CoreCompiler framework is missing. This installation cannot provide the full emexDE compiler; install the full sideload IPA.")
         }
         isRefreshing = false
     }
