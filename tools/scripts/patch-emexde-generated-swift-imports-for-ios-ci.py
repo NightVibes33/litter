@@ -198,3 +198,13 @@ print(f"Normalized {len(changed)} emexDE generated Swift imports.")
 for source in changed:
     print(source)
 print("Exposed emexDE Swift bridge declarations for generated ObjC headers.")
+
+# Target identity must not depend on whether Xcode has emitted its Swift header.
+workspace = Path("ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m")
+if workspace.exists():
+    text = workspace.read_text()
+    before = "#if __has_include(<Nyxian-Swift.h>)"
+    after = "#if HOST_ENV"
+    if before not in text and after + "\n#define LIVEPROCESS 0" not in text:
+        raise SystemExit("Missing expected LDEApplicationWorkspace host selection")
+    workspace.write_text(text.replace(before, after))
