@@ -109,3 +109,20 @@ pass, including executing the actual permission-preserving commit command.
 The complete Python tooling suite passes 50 tests with the existing vendored
 EmexDE source available through an uncommitted local symlink. This is host
 validation; native compilation/device operation remain pending.
+
+### Read and editor consistency pass
+
+Listings use stat metadata rather than reading file contents, including symlink
+targets; pipe/device links are not read for sizing. Preview and export size
+checks require regular files, and preview reads are bounded and validate the
+decoded byte count against metadata. An actual extracted size command test
+rejects a FIFO without blocking.
+
+Browser imports explicitly preserve valid browser-selected fakefs destinations,
+including /var and /, instead of chat attachment normalization silently routing
+them to Home. The editor compares against its loaded baseline, offers failed-load
+retry, and checks current disk text before saving to detect external changes.
+This is an optimistic conflict check, not an atomic cross-process lock. The
+complete tooling suite passes 52 tests (15 browser checks). Native/device
+acceptance still pending. Signed 37710275793 prep passed; upload job113096391172
+queued at last check. Unsigned 37693850806 remains active, no IPA yet.

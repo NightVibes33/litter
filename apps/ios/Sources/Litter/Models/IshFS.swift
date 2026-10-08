@@ -208,8 +208,8 @@ enum IshFS {
             kind=l
             link_target=$(readlink "$p" 2>/dev/null || echo '')
             [ -e "$p" ] || broken=1
-            if [ "$broken" -eq 0 ] && [ ! -d "$p" ]; then
-              size=$(wc -c < "$p" 2>/dev/null || echo 0)
+            if [ "$broken" -eq 0 ] && [ -f "$p" ]; then
+              size=$(stat -L -c '%s' "$p" 2>/dev/null || echo 0)
             else
               size=0
             fi
@@ -218,7 +218,7 @@ enum IshFS {
             size=0
           elif [ -f "$p" ]; then
             kind=f
-            size=$(wc -c < "$p" 2>/dev/null || echo 0)
+            size=$(stat -c '%s' "$p" 2>/dev/null || echo 0)
           else
             kind=s
             size=0
@@ -278,17 +278,22 @@ enum IshFS {
 
     static func readFileData(path: String, maxBytes: Int64) async throws -> Data {
         let quoted = shellQuote(path)
-        let sizeResult = await run("wc -c < \(quoted) 2>/dev/null || exit 2")
+        let sizeResult = await run("[ -f \(quoted) ] || exit 2; stat -L -c '%s' \(quoted) 2>/dev/null || exit 2")
         guard sizeResult.exitCode == 0 else { throw error("Could not read \(path)", result: sizeResult) }
-        let size = Int64(sizeResult.output.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        guard let size = Int64(sizeResult.output.trimmingCharacters(in: .whitespacesAndNewlines)), size >= 0 else {
+            throw error("Could not determine file size.", result: sizeResult)
+        }
         guard size <= maxBytes else {
             throw NSError(domain: "IshFS", code: 3, userInfo: [NSLocalizedDescriptionKey: "File is too large to preview in-app."])
         }
-        let result = await run("base64 < \(quoted)")
+        let result = await run("head -c \(maxBytes + 1) \(quoted) | base64")
         guard result.exitCode == 0 else { throw error("Could not read \(path)", result: result) }
         let encoded = result.output.replacingOccurrences(of: "\n", with: "")
         guard let data = Data(base64Encoded: encoded) else {
             throw NSError(domain: "IshFS", code: 4, userInfo: [NSLocalizedDescriptionKey: "Could not decode file preview."])
+        }
+        guard Int64(data.count) == size, Int64(data.count) <= maxBytes else {
+            throw NSError(domain: "IshFS", code: 9, userInfo: [NSLocalizedDescriptionKey: "File changed while being read. Please reopen it."])
         }
         return data
     }
@@ -483,7 +488,7 @@ enum IshFS {
 
 
     static func fileSize(path: String) async throws -> Int64 {
-        let result = await run("wc -c < \(shellQuote(path)) 2>/dev/null || exit 2")
+        let result = await run("[ -f \(shellQuote(path)) ] || exit 2; stat -L -c '%s' \(shellQuote(path)) 2>/dev/null || exit 2")
         guard result.exitCode == 0,
               let size = Int64(result.output.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw error("Could not inspect file size for \(path)", result: result)

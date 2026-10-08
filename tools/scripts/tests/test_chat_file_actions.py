@@ -119,7 +119,8 @@ class ChatFileActionTests(unittest.TestCase):
         self.assertIn('if !completed', export)
         view = (IOS / 'Views/LocalFileWorkspaceView.swift').read_text()
         editor = view.split('private struct LocalTextFileEditorView', 1)[1].split('private struct LocalFilePreviewSheet', 1)[0]
-        self.assertIn('.disabled(!didLoad || isSaving)', editor)
+        self.assertIn('else if !didLoad', editor)
+        self.assertIn('.disabled(isSaving)', editor)
         self.assertIn('guard didLoad, !isSaving', editor)
         self.assertIn('.interactiveDismissDisabled(hasUnsavedChanges || isSaving)', editor)
 
@@ -199,3 +200,24 @@ class ChatFileActionTests(unittest.TestCase):
         read = source.split('static func readTextFile', 1)[1].split('static func writeTextFile', 1)[0]
         self.assertIn('guard let text = String(data: data, encoding: .utf8)', read)
         self.assertNotIn('return result.output', read)
+
+    def test_file_size_rejects_fifo_without_blocking(self):
+        import os
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        section = source.split('static func fileSize', 1)[1]
+        command = re.search(r'let result = await run\("(.*)"\)', section).group(1).replace('\\\"', '"')
+        with tempfile.TemporaryDirectory() as directory:
+            fifo = Path(directory) / 'pipe'
+            os.mkfifo(fifo)
+            command = command.replace('\\(shellQuote(path))', shlex.quote(str(fifo)))
+            result = subprocess.run(['sh', '-c', command], capture_output=True, timeout=2)
+            self.assertEqual(result.returncode, 2)
+
+    def test_editor_tracks_loaded_baseline_and_detects_external_changes(self):
+        source = (IOS / 'Views/LocalFileWorkspaceView.swift').read_text()
+        editor = source.split('private struct LocalTextFileEditorView', 1)[1].split('private struct LocalFilePreviewSheet', 1)[0]
+        self.assertIn('newText != originalText', editor)
+        self.assertIn('guard currentText == originalText', editor)
+        self.assertIn('Button("Retry")', editor)
+        support = (IOS / 'Models/ConversationAttachmentSupport.swift').read_text()
+        self.assertIn('preserveFakefsDestination ? destinationDirectory', support)

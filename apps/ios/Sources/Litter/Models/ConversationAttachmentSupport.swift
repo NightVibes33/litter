@@ -361,7 +361,7 @@ enum ConversationAttachmentSupport {
     }
 
 
-    static func importURLToFakeFS(url: URL, destinationDirectory: String, treatImagesAsFiles: Bool = false) async throws -> ConversationAttachment {
+    static func importURLToFakeFS(url: URL, destinationDirectory: String, treatImagesAsFiles: Bool = false, preserveFakefsDestination: Bool = false) async throws -> ConversationAttachment {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer {
             if didStartAccessing { url.stopAccessingSecurityScopedResource() }
@@ -372,7 +372,7 @@ enum ConversationAttachmentSupport {
             return attachment
         }
 
-        let directory = normalizedFakefsDirectory(destinationDirectory)
+        let directory = preserveFakefsDestination ? destinationDirectory : normalizedFakefsDirectory(destinationDirectory)
         try await IshFS.createDirectoryIfNeeded(path: directory)
         let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
         let isDirectory = resourceValues.isDirectory == true

@@ -1462,7 +1462,8 @@ private final class LocalFileWorkspaceModel {
         _ = try await ConversationAttachmentSupport.importURLToFakeFS(
             url: url,
             destinationDirectory: directory,
-            treatImagesAsFiles: true
+            treatImagesAsFiles: true,
+            preserveFakefsDestination: true
         )
         await reload()
     }
@@ -2107,6 +2108,7 @@ private struct LocalTextFileEditorView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
     @State private var hasUnsavedChanges = false
+    @State private var originalText = ""
     @State private var didLoad = false
     @State private var showDiscardConfirmation = false
 
@@ -2118,9 +2120,16 @@ private struct LocalTextFileEditorView: View {
                 if isLoading {
                     ProgressView("Opening...")
                         .foregroundStyle(LitterTheme.textSecondary)
+                } else if !didLoad {
+                    VStack(spacing: 12) {
+                        Text("Could not open this file.")
+                            .foregroundStyle(LitterTheme.textSecondary)
+                        Button("Retry") { taskBag.run { await load() } }
+                            .foregroundStyle(LitterTheme.accent)
+                    }
                 } else {
                     TextEditor(text: $text)
-                        .disabled(!didLoad || isSaving)
+                        .disabled(isSaving)
                         .font(.system(.body, design: .monospaced))
                         .foregroundStyle(LitterTheme.textPrimary)
                         .scrollContentBackground(.hidden)
@@ -2128,7 +2137,7 @@ private struct LocalTextFileEditorView: View {
                         .background(LitterTheme.surface.opacity(0.42))
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                         .padding(12)
-                        .onChange(of: text) { _, _ in hasUnsavedChanges = true }
+                        .onChange(of: text) { _, newText in hasUnsavedChanges = newText != originalText }
                 }
             }
             .navigationTitle(file.name)
@@ -2169,7 +2178,9 @@ private struct LocalTextFileEditorView: View {
     private func load() async {
         isLoading = true
         do {
-            text = try await IshFS.readTextFile(path: file.path, maxBytes: 1_000_000)
+            let loadedText = try await IshFS.readTextFile(path: file.path, maxBytes: 1_000_000)
+            originalText = loadedText
+            text = loadedText
             didLoad = true
             hasUnsavedChanges = false
         } catch {
@@ -2184,7 +2195,12 @@ private struct LocalTextFileEditorView: View {
         defer { isSaving = false }
         let savedText = text
         do {
+            let currentText = try await IshFS.readTextFile(path: file.path, maxBytes: 1_000_000)
+            guard currentText == originalText else {
+                throw NSError(domain: "LocalFileWorkspace", code: 5, userInfo: [NSLocalizedDescriptionKey: "This file changed outside the editor. Your draft is preserved; copy it before reopening the file."])
+            }
             try await IshFS.writeTextFile(path: file.path, text: savedText)
+            originalText = savedText
             hasUnsavedChanges = false
             onClose(true)
         } catch {
