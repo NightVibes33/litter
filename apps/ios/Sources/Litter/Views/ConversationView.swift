@@ -1534,7 +1534,7 @@ private struct ConversationInputBar: View {
             return modelPickerDisplayName(model)
         }
         let trimmed = selection.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "litter" : trimmed
+        return trimmed.isEmpty ? "Select Model" : trimmed
     }
 
     private var composerReasoningLabel: String? {

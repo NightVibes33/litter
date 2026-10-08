@@ -1759,11 +1759,18 @@ private struct HomeNavigationView: View {
     }
 
     private func deleteThread(_ key: ThreadKey) async {
-        _ = try? await appModel.client.archiveThread(
-            serverId: key.serverId,
-            params: AppArchiveThreadRequest(threadId: key.threadId)
-        )
-        await appModel.refreshThreadSnapshot(key: key)
+        do {
+            try await appModel.client.archiveThread(
+                serverId: key.serverId,
+                params: AppArchiveThreadRequest(threadId: key.threadId)
+            )
+            // Archive removes the server thread: reading it again can return
+            // thread-not-found and rehydrate a stale home entry.
+            homeDashboardModel.unpinThread(key)
+            hideThread(key)
+        } catch {
+            actionErrorMessage = "Could not delete this chat: \(error.localizedDescription)"
+        }
     }
 
     /// Long-press → "Fork" on a home session card. Head-of-thread fork:

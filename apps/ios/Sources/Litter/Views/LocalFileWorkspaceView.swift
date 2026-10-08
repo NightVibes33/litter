@@ -1254,18 +1254,27 @@ private final class LocalFileWorkspaceModel {
         await reload(path: currentPath)
     }
 
+    private var reloadRevision: UInt64 = 0
+
     func reload(path: String) async {
+        reloadRevision &+= 1
+        let revision = reloadRevision
         isLoading = true
         errorMessage = nil
+        defer {
+            if revision == reloadRevision { isLoading = false }
+        }
         do {
-            entries = try await IshFS.listDirectory(path: path, includeHidden: showHidden)
+            let loadedEntries = try await IshFS.listDirectory(path: path, includeHidden: showHidden)
+            guard revision == reloadRevision, !Task.isCancelled else { return }
+            entries = loadedEntries
             currentPath = path
             selectedPaths = selectedPaths.intersection(Set(entries.map(\.path)))
         } catch {
-            entries = []
+            guard revision == reloadRevision, !Task.isCancelled else { return }
+            // Keep the previous folder and its matching entries on failure.
             errorMessage = error.localizedDescription
         }
-        isLoading = false
     }
 
     func open(_ entry: LocalFileEntry) async {

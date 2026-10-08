@@ -398,7 +398,7 @@ enum IshFS {
     }
 
     static func rename(path: String, to destination: String) async throws {
-        let result = await run("dest=\(shellQuote(destination)); [ ! -e \"$dest\" ] || exit 17; mv \(shellQuote(path)) \"$dest\"")
+        let result = await run("dest=\(shellQuote(destination)); [ ! -e \"$dest\" ] && [ ! -L \"$dest\" ] || exit 17; mv \(shellQuote(path)) \"$dest\"")
         guard result.exitCode == 0 else { throw error("Could not rename item. An item with that name may already exist.", result: result) }
     }
 
