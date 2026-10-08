@@ -3,6 +3,11 @@ name: Build pinned Nyxian compiler toolchain
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      cache_only:
+        description: "Restore and validate existing artifacts without compiling"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,6 +39,18 @@ jobs:
         with:
           path: build/nyxian-toolchain
           key: nyxian-upstream-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.source.outputs.nyxian }}-${{ steps.source.outputs.llvm }}-${{ steps.source.outputs.xcode }}-${{ hashFiles('tools/scripts/build-matched-nyxian-toolchain.sh', 'tools/scripts/nyxian-toolchain-provenance.py') }}
+      # This proven producer uses the same pinned sources and build scripts.
+      # Artifact retention is independent of GitHub's evictable cache storage.
+      - name: Restore retained complete toolchain artifact after cache miss
+        if: steps.cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 37570674845
+          artifact-ids: 11470272186
+          merge-multiple: true
+          path: build/nyxian-toolchain
       - name: Validate restored toolchain
         id: prebuilt
         run: |
@@ -44,13 +61,22 @@ jobs:
             rm -rf build/nyxian-toolchain
           fi
       - name: Install upstream build dependencies
-        if: steps.prebuilt.outputs.available != 'true'
+        if: steps.prebuilt.outputs.available != 'true' && !inputs.cache_only
         run: brew install cmake ninja pkgconf ldid dpkg libarchive openssl
       - name: Build complete pinned upstream compiler
-        if: steps.prebuilt.outputs.available != 'true'
+        if: steps.prebuilt.outputs.available != 'true' && !inputs.cache_only
         run: tools/scripts/build-matched-nyxian-toolchain.sh
       - name: Verify produced artifacts
-        run: python3 tools/scripts/nyxian-toolchain-provenance.py verify build/nyxian-toolchain
+        run: |
+          python3 tools/scripts/nyxian-toolchain-provenance.py verify build/nyxian-toolchain
+          python3 - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          manifest = json.loads(Path('build/nyxian-toolchain/provenance.json').read_text())
+          host = subprocess.check_output(['xcodebuild', '-version'], text=True).strip()
+          if manifest.get('xcode') != host:
+              raise SystemExit('Restored compiler Xcode version does not match this runner')
+          PY
       - name: Save complete toolchain cache
         if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
