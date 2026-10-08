@@ -733,9 +733,19 @@ jobs:
       - name: Reset SwiftPM binary artifact cache
         run: |
           set -euo pipefail
-          local_artifacts="$PWD/build/DerivedData/SourcePackages/artifacts"
+          local_artifacts="$DERIVED_DATA_PATH/SourcePackages/artifacts"
+          # Binary files and SwiftPM's inventory must be reset together. Keeping
+          # workspace-state.json after removing artifacts makes SwiftPM treat
+          # missing WebRTC/OpenSSL binaries as already downloaded.
           rm -rf "$local_artifacts"
-          mkdir -p "$PWD/build/DerivedData/SourcePackages"
+          rm -f "$DERIVED_DATA_PATH/SourcePackages/workspace-state.json"
+          mkdir -p "$DERIVED_DATA_PATH/SourcePackages"
+          xcodebuild -resolvePackageDependencies \
+            -project apps/ios/Litter.xcodeproj \
+            -scheme Litter \
+            -clonedSourcePackagesDirPath "$DERIVED_DATA_PATH/SourcePackages" \
+            -disablePackageRepositoryCache
+          test -f "$DERIVED_DATA_PATH/SourcePackages/artifacts/webrtc/WebRTC/WebRTC.xcframework/Info.plist"
 
       - name: Build unsigned archive
         env:
