@@ -597,7 +597,7 @@ struct LocalFileWorkspaceView: View {
             return
         }
         if entry.kind == .symlink {
-            let result = await IshFS.run("[ -d \(IshFS.shellQuote(entry.path)) ]")
+            let result = await model.runCommand("[ -d \(IshFS.shellQuote(entry.path)) ]")
             if result.exitCode == 0 {
                 await model.navigate(to: entry.path)
                 return
@@ -736,7 +736,7 @@ struct LocalFileWorkspaceView: View {
     }
 
     private func runSwiftCheck(_ entry: LocalFileEntry) async {
-        let result = await IshFS.run("litter-swift-check \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
+        let result = await model.runCommand("litter-swift-check \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Swift Check", command: "litter-swift-check \(entry.name)", result: result)
     }
 
@@ -746,7 +746,7 @@ struct LocalFileWorkspaceView: View {
             alertMessage = "No build manifest found in this folder."
             return
         }
-        let result = await IshFS.run("litter-swift-build --timeout 600 \(IshFS.shellQuote(path))", cwd: model.currentPath)
+        let result = await model.runCommand("litter-swift-build --timeout 600 \(IshFS.shellQuote(path))", cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Swift Build", command: "litter-swift-build \((path as NSString).lastPathComponent)", result: result)
     }
 
@@ -756,7 +756,7 @@ struct LocalFileWorkspaceView: View {
             alertMessage = "No build manifest found in this folder."
             return
         }
-        let result = await IshFS.run("litter-ipa-build --timeout 900 \(IshFS.shellQuote(path))", cwd: model.currentPath)
+        let result = await model.runCommand("litter-ipa-build --timeout 900 \(IshFS.shellQuote(path))", cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "IPA Build", command: "litter-ipa-build \((path as NSString).lastPathComponent)", result: result)
         await model.reload()
     }
@@ -771,9 +771,9 @@ struct LocalFileWorkspaceView: View {
         include_hidden=\(includeHidden)
         if command -v rg >/dev/null 2>&1; then
           if [ "$include_hidden" -eq 1 ]; then
-            rg -n --hidden --glob '!/.git/*' -- "$q" "$dir"
+            rg -n -F --hidden --glob '!.git/**' -- "$q" "$dir"
           else
-            rg -n --glob '!.*' -- "$q" "$dir"
+            rg -n -F --glob '!.*' -- "$q" "$dir"
           fi
         else
           if [ "$include_hidden" -eq 1 ]; then
@@ -781,11 +781,11 @@ struct LocalFileWorkspaceView: View {
           else
             find "$dir" -path '*/.*' -prune -o -type f -print 2>/dev/null
           fi | head -n 500 | while IFS= read -r f; do
-            grep -n -I -- "$q" "$f" 2>/dev/null | sed "s#^#$f:#"
+            grep -H -n -I -F -- "$q" "$f" 2>/dev/null
           done
         fi
         """
-        let result = await IshFS.run(command, cwd: model.currentPath)
+        let result = await model.runCommand(command, cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Recursive Search", command: "search \(query)", result: result)
     }
 
@@ -793,20 +793,21 @@ struct LocalFileWorkspaceView: View {
         let command = """
         dir=\(IshFS.shellQuote(model.currentPath))
         find "$dir" -type f 2>/dev/null | head -n 1200 | while IFS= read -r f; do
-          size=$(wc -c < "$f" 2>/dev/null || echo 0)
+          size=$(stat -c '%s' "$f" 2>/dev/null || echo 0)
           if [ "$size" -ge 1048576 ]; then printf '%12s  %s\n' "$size" "$f"; fi
         done | sort -nr | head -n 100
         """
-        let result = await IshFS.run(command, cwd: model.currentPath)
+        let result = await model.runCommand(command, cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Large Files", command: "find files over 1 MB", result: result)
     }
 
     private func runTreeSnapshot() async {
         let command = """
         dir=\(IshFS.shellQuote(model.currentPath))
-        find "$dir" -maxdepth 3 2>/dev/null | sed "s#^$dir#.#" | head -n 300
+        cd "$dir" || exit 2
+        find . -maxdepth 3 2>/dev/null | head -n 300
         """
-        let result = await IshFS.run(command, cwd: model.currentPath)
+        let result = await model.runCommand(command, cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Folder Tree", command: "tree \(model.displayPath)", result: result)
     }
 
@@ -817,17 +818,17 @@ struct LocalFileWorkspaceView: View {
         if [ -z "$top" ]; then echo "No git repository found from $dir"; exit 1; fi
         git -C "$top" status --short --branch
         """
-        let result = await IshFS.run(command, cwd: model.currentPath)
+        let result = await model.runCommand(command, cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Git Status", command: "git status", result: result)
     }
 
     private func runBuildStatus() async {
-        let result = await IshFS.run("litter-build-status", cwd: model.currentPath)
+        let result = await model.runCommand("litter-build-status", cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Build Status", command: "litter-build-status", result: result)
     }
 
     private func runFilesystemDoctor() async {
-        let result = await IshFS.run("litter-fs-doctor", cwd: model.currentPath)
+        let result = await model.runCommand("litter-fs-doctor", cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Filesystem Doctor", command: "litter-fs-doctor", result: result)
     }
 
@@ -866,18 +867,18 @@ struct LocalFileWorkspaceView: View {
         echo "Path: $dir"
         echo
         echo "Counts:"
-        find "$dir" -maxdepth 1 -type d 2>/dev/null | wc -l | sed 's/^/folders: /'
+        find "$dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | sed 's/^/folders: /'
         find "$dir" -maxdepth 1 -type f 2>/dev/null | wc -l | sed 's/^/files: /'
         echo
         echo "Top files:"
         find "$dir" -maxdepth 2 -type f 2>/dev/null | head -n 80
         """
-        let result = await IshFS.run(command, cwd: model.currentPath)
+        let result = await model.runCommand(command, cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Directory Summary", command: "summarize \(entry.name)", result: result)
     }
 
     private func runShellScript(_ entry: LocalFileEntry) async {
-        let result = await IshFS.run("sh \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
+        let result = await model.runCommand("sh \(IshFS.shellQuote(entry.path))", cwd: model.currentPath)
         commandOutput = LocalCommandOutput(title: "Script Output", command: "sh \(entry.name)", result: result)
     }
 
@@ -1326,6 +1327,16 @@ private final class LocalFileWorkspaceModel {
             throw NSError(domain: "LocalFileWorkspace", code: 4, userInfo: [NSLocalizedDescriptionKey: "Another file operation is still running. Please wait for it to finish."])
         }
         isMutating = true
+    }
+
+    func runCommand(_ command: String, cwd: String? = nil) async -> IshFS.Result {
+        do {
+            try beginMutation()
+        } catch {
+            return IshFS.Result(exitCode: 1, output: error.localizedDescription)
+        }
+        defer { isMutating = false }
+        return await IshFS.run(command, cwd: cwd)
     }
 
     func create(name: String, kind: LocalFileEntry.Kind) async throws {

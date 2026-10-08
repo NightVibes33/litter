@@ -221,3 +221,39 @@ class ChatFileActionTests(unittest.TestCase):
         self.assertIn('Button("Retry")', editor)
         support = (IOS / 'Models/ConversationAttachmentSupport.swift').read_text()
         self.assertIn('preserveFakefsDestination ? destinationDirectory', support)
+
+    def test_tree_handles_regex_and_shell_characters_in_folder_path(self):
+        source = (IOS / 'Views/LocalFileWorkspaceView.swift').read_text()
+        section = source.split('private func runTreeSnapshot()', 1)[1]
+        template = section.split('let command = """', 1)[1].split('"""', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory) / "folder[&]#' name"
+            folder.mkdir()
+            (folder / 'child').write_text('text')
+            command = template.replace('\\(IshFS.shellQuote(model.currentPath))', shlex.quote(str(folder)))
+            result = subprocess.run(['sh', '-c', command], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('./child', result.stdout)
+
+    def test_recursive_search_is_literal_in_both_paths(self):
+        source = (IOS / 'Views/LocalFileWorkspaceView.swift').read_text()
+        section = source.split('private func runRecursiveSearch()', 1)[1].split('private func runLargeFileSearch', 1)[0]
+        self.assertIn('rg -n -F', section)
+        self.assertIn('grep -H -n -I -F', section)
+        self.assertNotIn('sed "s#^#$f:#"', section)
+        model = source.split('private final class LocalFileWorkspaceModel', 1)[1]
+        command = model.split('func runCommand(', 1)[1].split('func create(', 1)[0]
+        self.assertIn('try beginMutation()', command)
+        self.assertIn('defer { isMutating = false }', command)
+
+    def test_delete_protects_equivalent_root_paths(self):
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        section = source.split('static func delete(path: String)', 1)[1]
+        template = section.split('await run("""', 1)[1].split('""")', 1)[0]
+        # Replace rm with a marker: never perform a deletion on host root paths.
+        template = template.replace('rm -rf -- "$p"', 'echo UNEXPECTED_DELETE; exit 99')
+        for path in ('/root', '//root', '/root/', '/tmp/../root', '/etc/../etc'):
+            command = template.replace('\\(shellQuote(path))', shlex.quote(path)).replace('\\(nativeContainerMountPath)', '/mnt/container')
+            result = subprocess.run(['sh', '-c', command], capture_output=True)
+            self.assertEqual(result.returncode, 64, (path, result.stdout, result.stderr))
+            self.assertNotIn(b'UNEXPECTED_DELETE', result.stdout)

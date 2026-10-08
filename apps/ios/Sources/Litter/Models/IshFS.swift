@@ -198,7 +198,8 @@ enum IshFS {
         dir=\(quoted)
         [ -d "$dir" ] || exit 2
         [ -r "$dir" ] && [ -x "$dir" ] || exit 13
-        for p in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+        prefix=${dir%/}
+        for p in "$prefix"/* "$prefix"/.[!.]* "$prefix"/..?*; do
           [ -e "$p" ] || [ -L "$p" ] || continue
           name=${p##*/}
           \(hiddenGuard)
@@ -439,7 +440,12 @@ enum IshFS {
     static func delete(path: String) async throws {
         let result = await run("""
         p=\(shellQuote(path))
-        case "$p" in
+        case "$p" in ""|"/") echo "Refusing to delete an empty or root path"; exit 64 ;; esac
+        parent=$(dirname "$p")
+        base=$(basename "$p")
+        parent=$(cd "$parent" 2>/dev/null && pwd -P) || exit 2
+        canonical=${parent%/}/$base
+        case "$canonical" in
           ""|"/"|"/root"|"/usr"|"/etc"|"/bin"|"/sbin"|"/lib"|"/dev"|"/mnt"|"/mnt/apps"|"/mnt/codex"|"\(nativeContainerMountPath)"|"/root/.codex")
             echo "Refusing to delete protected filesystem path: $p"
             exit 64

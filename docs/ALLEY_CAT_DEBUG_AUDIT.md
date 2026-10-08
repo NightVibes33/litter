@@ -126,3 +126,19 @@ This is an optimistic conflict check, not an atomic cross-process lock. The
 complete tooling suite passes 52 tests (15 browser checks). Native/device
 acceptance still pending. Signed 37710275793 prep passed; upload job113096391172
 queued at last check. Unsigned 37693850806 remains active, no IPA yet.
+
+### Browser shell-tool and protected-path follow-up
+
+Recursive search consistently treats user text literally and the fallback no
+longer embeds filenames in sed expressions. Folder Tree works in directories
+containing regex characters by changing directory and listing relative paths.
+Large-file scans use metadata; directory summaries exclude the starting folder.
+View-owned shell tools now participate in the model operation guard.
+
+Root listing avoids doubled path separators. Delete checks its normalized parent
+path against protected paths while retaining the original deletion target.
+Tests stub the delete command before checking equivalent protected-root paths;
+no protected host paths are deleted. The complete tooling suite passes 55 tests,
+including 18 browser checks. Signed37710275793 upload113096391172 remainsactive
+and unsigned4300 IPA113041697414 remainsactive, with no new failures observed.
+Native acceptance and physical-device end-to-end coverage remain open.
