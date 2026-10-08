@@ -75,3 +75,21 @@ files, interrupted writes, link previews, and unsaved dismissal. The current
 tab/newline-delimited listing cannot faithfully represent filenames containing
 tabs/newlines. Archive extraction still depends on installed fakefs tools.
 These limits are recorded rather than described as verified functionality.
+
+### Listing, extraction and directory import follow-up
+
+Directory listing now encodes names, paths and link targets independently, so
+tabs/newlines round-trip; glob enumeration includes broken links and checks
+directory access before listing. Eleven focused tests pass, including actual
+listing commands with unusual names and gzip extraction into the requested
+directory without deleting the source or overwriting an existing output.
+Extraction resolves its destination beside the selected archive and reports
+empty-output failures. Folder import propagates enumeration errors, exclusively
+creates its destination, and removes partial newly created imports on failure
+or cancellation.
+
+Signed run 37707587937 uploaded build 20261008004054 (fdd239 source).
+Authenticated job logs show VALID, internal IN_BETA_TESTING, external
+WAITING_FOR_BETA_REVIEW; both groups have one tester and are assigned. This
+build predates the latest browser fixes. Native verification of these newer
+changes and complete physical-device browser acceptance remain pending.

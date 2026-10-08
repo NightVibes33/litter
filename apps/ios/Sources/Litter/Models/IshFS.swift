@@ -197,7 +197,9 @@ enum IshFS {
         let command = """
         dir=\(quoted)
         [ -d "$dir" ] || exit 2
-        find "$dir" -mindepth 1 -maxdepth 1 2>/dev/null | while IFS= read -r p; do
+        [ -r "$dir" ] && [ -x "$dir" ] || exit 13
+        for p in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+          [ -e "$p" ] || [ -L "$p" ] || continue
           name=${p##*/}
           \(hiddenGuard)
           link_target=
@@ -223,14 +225,23 @@ enum IshFS {
           fi
           modified=$(stat -c '%Y' "$p" 2>/dev/null || stat -c '%Y' -L "$p" 2>/dev/null || echo 0)
           permissions=$(stat -c '%A' "$p" 2>/dev/null || echo '')
-          printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$size" "$modified" "$permissions" "$name" "$p" "$link_target" "$broken"
-        done | sort -f -k5
+          encoded_name=$(printf %s "$name" | base64 | tr -d '\n')
+          encoded_path=$(printf %s "$p" | base64 | tr -d '\n')
+          encoded_link=$(printf %s "$link_target" | base64 | tr -d '\n')
+          printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$kind" "$size" "$modified" "$permissions" "$encoded_name" "$encoded_path" "$encoded_link" "$broken"
+        done
         """
         let result = await run(command)
         guard result.exitCode == 0 else { throw error("Could not list \(path)", result: result) }
         return result.output.split(separator: "\n", omittingEmptySubsequences: true).compactMap { line in
             let parts = line.split(separator: "\t", maxSplits: 7, omittingEmptySubsequences: false).map(String.init)
-            guard parts.count == 8 else { return nil }
+            guard parts.count == 8,
+                  let nameData = Data(base64Encoded: parts[4]),
+                  let name = String(data: nameData, encoding: .utf8),
+                  let pathData = Data(base64Encoded: parts[5]),
+                  let entryPath = String(data: pathData, encoding: .utf8),
+                  let linkData = Data(base64Encoded: parts[6]),
+                  let link = String(data: linkData, encoding: .utf8) else { return nil }
             let modifiedSeconds = TimeInterval(parts[2].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
             let modifiedAt = modifiedSeconds > 0 ? Date(timeIntervalSince1970: modifiedSeconds) : nil
             let kind: LocalFileEntry.Kind
@@ -242,12 +253,12 @@ enum IshFS {
             }
             return LocalFileEntry(
                 kind: kind,
-                name: parts[4],
-                path: parts[5],
+                name: name,
+                path: entryPath,
                 size: Int64(parts[1].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0,
                 modifiedAt: modifiedAt,
                 permissions: parts[3],
-                linkTarget: parts[6].isEmpty ? nil : parts[6],
+                linkTarget: link.isEmpty ? nil : link,
                 isBrokenLink: parts[7] == "1"
             )
         }
@@ -391,7 +402,15 @@ enum IshFS {
           *.zip) command -v unzip >/dev/null 2>&1 && exec unzip -o \(archive) -d \(output) ;;
           *.rar) command -v unar >/dev/null 2>&1 && exec unar -f -o \(output) \(archive); command -v unrar >/dev/null 2>&1 && exec unrar x -o+ \(archive) \(output)/ ;;
           *.tar|*.tar.gz|*.tgz|*.tar.xz|*.txz) exec tar -xf \(archive) -C \(output) ;;
-          *.gz) exec gzip -dk \(archive) ;;
+          *.gz)
+            src=\(archive)
+            base=${src##*/}
+            dest=\(output)/${base%.gz}
+            [ ! -e "$dest" ] && [ ! -L "$dest" ] || exit 17
+            if gzip -dc "$src" > "$dest"; then exit 0; fi
+            rm -f "$dest"
+            exit 2
+            ;;
         esac
         command -v bsdtar >/dev/null 2>&1 && exec bsdtar -xf \(archive) -C \(output)
         echo "No compatible extractor found for this archive. Install unzip, unar, unrar, tar, or bsdtar in fakefs."

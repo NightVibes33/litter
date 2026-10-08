@@ -122,3 +122,49 @@ class ChatFileActionTests(unittest.TestCase):
         self.assertIn('.disabled(!didLoad || isSaving)', editor)
         self.assertIn('guard didLoad, !isSaving', editor)
         self.assertIn('.interactiveDismissDisabled(hasUnsavedChanges || isSaving)', editor)
+
+    def test_listing_round_trips_delimiter_filenames_and_directory_links(self):
+        import base64
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        section = source.split('static func listDirectory', 1)[1]
+        template = section.split('let command = """', 1)[1].split('"""', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            names = ['plain', 'tabs\there', 'line\nbreak', '.hidden', "quote's file"]
+            for name in names:
+                (root / name).write_text('sample')
+            (root / 'broken').symlink_to(root / 'absent')
+            folder = root / 'folder'
+            folder.mkdir()
+            (root / 'folder-link').symlink_to(folder)
+            for include_hidden in (True, False):
+                command = template.replace('\\(quoted)', shlex.quote(str(root)))
+                command = command.replace('\\(hiddenGuard)', '' if include_hidden else 'case "$name" in .*) continue ;; esac;')
+                result = subprocess.run(['sh', '-c', command], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                rows = [line.strip().split('\t') for line in result.stdout.splitlines() if line.strip()]
+                decoded = {base64.b64decode(row[4]).decode(): base64.b64decode(row[5]).decode() for row in rows}
+                expected = set(names + ['broken', 'folder', 'folder-link'])
+                if not include_hidden:
+                    expected.remove('.hidden')
+                self.assertEqual(set(decoded), expected)
+                for name, path in decoded.items():
+                    self.assertEqual(path, str(root / name))
+
+    def test_gzip_extract_uses_requested_destination_and_preserves_source(self):
+        import gzip
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        section = source.split('static func extractArchive', 1)[1]
+        template = section.split('await run("""', 1)[1].split('""")', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "file's data.gz"
+            archive.write_bytes(gzip.compress(b'content'))
+            dest = root / 'extracted folder'
+            command = template.replace('\\(archive)', shlex.quote(str(archive))).replace('\\(output)', shlex.quote(str(dest)))
+            result = subprocess.run(['sh', '-c', command], capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((dest / "file's data").read_bytes(), b'content')
+            self.assertTrue(archive.exists())
+            result = subprocess.run(['sh', '-c', command], capture_output=True)
+            self.assertEqual(result.returncode, 17)

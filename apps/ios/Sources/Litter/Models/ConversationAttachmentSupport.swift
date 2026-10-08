@@ -431,33 +431,44 @@ enum ConversationAttachmentSupport {
     }
 
     private static func copyDirectoryToFakeFS(from sourceURL: URL, to targetPath: String) async throws {
-        try await IshFS.createDirectoryIfNeeded(path: targetPath)
         let itemURLs = try enumeratedFileURLs(in: sourceURL)
-
-        for itemURL in itemURLs {
-            let relative = relativePath(for: itemURL, root: sourceURL)
-            guard !relative.isEmpty else { continue }
-            let destination = fakefsJoin(targetPath, relative)
-            let values = try itemURL.resourceValues(forKeys: [.isDirectoryKey])
-            if values.isDirectory == true {
-                try await IshFS.createDirectoryIfNeeded(path: destination)
-            } else {
-                try await IshFS.createDirectoryIfNeeded(path: parentFakefsPath(destination))
-                try await IshFS.writeFile(path: destination, sourceURL: itemURL, replaceExisting: false)
+        try await IshFS.createDirectory(path: targetPath)
+        do {
+            for itemURL in itemURLs {
+                try Task.checkCancellation()
+                let relative = relativePath(for: itemURL, root: sourceURL)
+                guard !relative.isEmpty else { continue }
+                let destination = fakefsJoin(targetPath, relative)
+                let values = try itemURL.resourceValues(forKeys: [.isDirectoryKey])
+                if values.isDirectory == true {
+                    try await IshFS.createDirectoryIfNeeded(path: destination)
+                } else {
+                    try await IshFS.createDirectoryIfNeeded(path: parentFakefsPath(destination))
+                    try await IshFS.writeFile(path: destination, sourceURL: itemURL, replaceExisting: false)
+                }
             }
+        } catch {
+            try? await IshFS.delete(path: targetPath)
+            throw error
         }
     }
 
     private static func enumeratedFileURLs(in sourceURL: URL) throws -> [URL] {
+        var enumerationError: Error?
         guard let enumerator = FileManager.default.enumerator(
             at: sourceURL,
             includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
             options: [],
-            errorHandler: nil
+            errorHandler: { _, error in
+                enumerationError = error
+                return false
+            }
         ) else {
             throw NSError(domain: "ConversationAttachmentSupport", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not enumerate \(sourceURL.lastPathComponent)."])
         }
-        return enumerator.compactMap { $0 as? URL }
+        let urls = enumerator.compactMap { $0 as? URL }
+        if let enumerationError { throw enumerationError }
+        return urls
     }
 
     private static func relativePath(for itemURL: URL, root: URL) -> String {

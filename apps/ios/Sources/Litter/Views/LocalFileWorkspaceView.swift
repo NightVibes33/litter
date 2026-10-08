@@ -684,13 +684,14 @@ struct LocalFileWorkspaceView: View {
     private func extractArchive(_ entry: LocalFileEntry) async {
         let nsName = entry.name as NSString
         let folderName = nsName.deletingPathExtension.isEmpty ? "\(entry.name) extracted" : "\(nsName.deletingPathExtension) extracted"
-        let destination = RemotePath.parse(path: model.currentPath).join(name: folderName).asString()
+        let destination = RemotePath.parse(path: entry.path).parent().join(name: folderName).asString()
         let result = await IshFS.extractArchive(path: entry.path, destination: destination)
         if result.exitCode == 0 {
             await model.reload()
             alertMessage = "Extracted to \(PathDisplay.display(destination, isLocal: true))."
         } else {
-            alertMessage = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            let output = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            alertMessage = output.isEmpty ? "Could not extract archive (exit \(result.exitCode))." : output
         }
     }
 
