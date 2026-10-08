@@ -55,3 +55,22 @@ Native APK validation and physical ARMv7 TV acceptance are pending. Remote
 instrumentation checks cover initial New Chat focus, activation with no sessions,
 and navigation to Settings. QR approval, runtime startup, model discovery, and
 sending a message still require a physical device.
+
+## Android parity repair validation
+
+The expanded TV repair is under native validation, not accepted as full iOS parity.
+It adds the 13 iOS icon choices, TV-sized settings/account sheets, home-only
+Advanced Files/Terminal launchers, and local file CRUD/import/export/editor.
+Chat archive errors remain visible and local rows are hidden only after RPC success.
+Speaker selection now updates the active WebRTC audio route.
+The editor rejects externally changed content before saving, preserves file modes,
+and warns before discarding edits. Folder deletion does not follow symlinks;
+workspace system roots remain protected. Operations are serialized and imports
+retain the folder selected when the picker opened. Files waits for runtime bootstrap.
+
+Acceptance still requires ARMv7 unit tests, APK assembly, lint, and physical TV
+QR-to-chat, remote navigation, file operations, microphone/speaker/Bluetooth checks.
+Instrumentation compilation alone does not prove those device checks.
+iOS-only integrations such as Nyxian and Apple StoreKit have no equivalent
+Android implementation in this patch. Full browser parity (archive tools, batch
+selection, search, remote files) remains separate work.

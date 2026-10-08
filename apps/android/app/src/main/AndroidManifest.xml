@@ -18,22 +18,161 @@
     <application
         android:allowBackup="true"
         android:usesCleartextTraffic="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/app_icon_current"
         android:label="@string/app_name"
         android:banner="@drawable/tv_banner"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/app_icon_current"
         android:supportsRtl="true"
         android:theme="@style/Theme.App.Starting">
         <activity
             android:name="com.litter.android.MainActivity"
             android:exported="true"
             android:windowSoftInputMode="adjustResize">
+
+        </activity>
+        <activity-alias android:name="com.litter.android.launcher.Icon_current"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="true" android:exported="true"
+            android:icon="@drawable/app_icon_current" android:banner="@drawable/tv_icon_current"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_original"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_original" android:banner="@drawable/tv_icon_original"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_shinobi"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_shinobi" android:banner="@drawable/tv_icon_shinobi"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_electric_pulse"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_electric_pulse" android:banner="@drawable/tv_icon_electric_pulse"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_ocean_connect"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_ocean_connect" android:banner="@drawable/tv_icon_ocean_connect"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_devine_purple"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_devine_purple" android:banner="@drawable/tv_icon_devine_purple"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_green_terminal"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_green_terminal" android:banner="@drawable/tv_icon_green_terminal"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_cosmic_forum"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_cosmic_forum" android:banner="@drawable/tv_icon_cosmic_forum"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_crystal_frost"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_crystal_frost" android:banner="@drawable/tv_icon_crystal_frost"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_cyber_district"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_cyber_district" android:banner="@drawable/tv_icon_cyber_district"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_midnight_amoled"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_midnight_amoled" android:banner="@drawable/tv_icon_midnight_amoled"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_rgb_arena"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_rgb_arena" android:banner="@drawable/tv_icon_rgb_arena"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias android:name="com.litter.android.launcher.Icon_neural_core"
+            android:targetActivity="com.litter.android.MainActivity"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/app_icon_neural_core" android:banner="@drawable/tv_icon_neural_core"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name="com.litter.android.auth.ChatGPTOAuthActivity"
             android:exported="false"

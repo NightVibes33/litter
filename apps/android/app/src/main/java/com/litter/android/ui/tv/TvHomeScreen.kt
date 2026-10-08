@@ -1,6 +1,8 @@
 package com.litter.android.ui.tv
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.size
@@ -10,6 +12,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import com.sigkitten.litter.android.R
+import com.litter.android.state.AppIconController
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -50,7 +54,12 @@ fun TvHomeScreen(
     onNewChat: () -> Unit = {},
     isStartingChat: Boolean = false,
     chatError: String? = null,
+    onShowTerminal: () -> Unit = {},
+    onShowFiles: () -> Unit = {},
+    onShowIcons: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { AppIconController.initialize(context) }
     val initialFocus = remember { FocusRequester() }
     val sessions = remember(snapshot?.sessionSummaries, snapshot?.servers, snapshot?.threads) {
         snapshot?.let { HomeDashboardSupport.recentSessions(it, Int.MAX_VALUE) }.orEmpty()
@@ -62,14 +71,14 @@ fun TvHomeScreen(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            Image(painterResource(R.drawable.alley_cat_app_icon), contentDescription = null,
+            Image(painterResource(AppIconController.selected.drawable), contentDescription = null,
                 modifier = Modifier.size(80.dp).clip(RoundedCornerShape(20.dp)))
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Alley Cåt", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = LitterTheme.textPrimary)
                 Text("Your coding workspace", fontSize = 20.sp, color = LitterTheme.textSecondary)
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             TvButton(if (isStartingChat) "Starting chat..." else "New Chat",
                 { if (!isStartingChat) onNewChat() }, Modifier.focusRequester(initialFocus))
             TvButton("Add server", onShowDiscovery)
@@ -77,6 +86,11 @@ fun TvHomeScreen(
             TvButton("Apps", onShowApps)
         }
         chatError?.let { Text(it, color = LitterTheme.textSecondary, fontSize = 18.sp) }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (com.litter.android.ui.ExperimentalFeatures.isEnabled(com.litter.android.ui.LitterFeature.TERMINAL)) TvButton("Terminal", onShowTerminal)
+            if (com.litter.android.ui.ExperimentalFeatures.isEnabled(com.litter.android.ui.LitterFeature.FILES)) TvButton("Files", onShowFiles)
+            TvButton("Icon Switcher", onShowIcons)
+        }
         Text("Recent conversations", fontSize = 24.sp, color = LitterTheme.textPrimary)
         if (sessions.isEmpty()) {
             Text(
@@ -98,7 +112,7 @@ fun TvHomeScreen(
 }
 
 @Composable
-private fun TvButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun TvButton(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     var focused by remember { mutableStateOf(false) }
     Button(
         onClick = onClick,

@@ -23,6 +23,12 @@ enum class LitterFeature(
         description = "Tap the Thinking shimmer while the assistant generates to play a tiny generated minigame.",
         defaultEnabled = false,
     ),
+    FILES(
+        id = "files",
+        displayName = "Files",
+        description = "Show the local file browser launcher on the home screen.",
+        defaultEnabled = false,
+    ),
     TERMINAL(
         id = "terminal",
         displayName = "Terminal",

@@ -5,6 +5,9 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
 import com.litter.android.ui.tv.TvHomeScreen
+import com.litter.android.ui.tv.TvIconSwitcher
+import com.litter.android.ui.tv.WorkspaceSheet
+import com.litter.android.ui.files.LocalFilesScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -379,6 +382,9 @@ fun LitterApp(
                             onNewChat = { startTvChat() },
                             isStartingChat = isStartingTvChat,
                             chatError = tvChatError,
+                            onShowTerminal = { navigate(Route.Terminal()) },
+                            onShowFiles = { navigate(Route.Files) },
+                            onShowIcons = { navigate(Route.Icons) },
                         )
                     } else HomeDashboardScreen(
                         onOpenConversation = navigateToConversation,
@@ -420,6 +426,9 @@ fun LitterApp(
                             }
                         },
                         onOpenSavedApp = { appId -> navigate(Route.SavedApp(appId)) },
+                        onOpenFiles = if (ExperimentalFeatures.isEnabled(LitterFeature.FILES)) {
+                            { navigate(Route.Files) }
+                        } else null,
                         onOpenTerminal = if (ExperimentalFeatures.isEnabled(LitterFeature.TERMINAL)) {
                             { navigate(Route.Terminal()) }
                         } else {
@@ -544,8 +553,14 @@ fun LitterApp(
                     )
                 }
 
+                is Route.Icons -> TvIconSwitcher(onBack = navigateBack)
+                is Route.Files -> LocalFilesScreen(onBack = navigateBack, onTerminal = {
+                    if (ExperimentalFeatures.isEnabled(LitterFeature.TERMINAL)) navigate(Route.Terminal(cwd = it))
+                    else showSettings = true
+                })
                 is Route.Terminal -> {
                     TerminalScreen(
+                        cwd = route.cwd,
                         preferredAlleycatNodeId = route.preferredAlleycatNodeId,
                         onBack = navigateBack,
                     )
@@ -592,10 +607,10 @@ fun LitterApp(
 
         // Discovery bottom sheet
         if (showDiscovery) {
-            ModalBottomSheet(
+            WorkspaceSheet(
+                television = isTelevision,
                 onDismissRequest = { showDiscovery = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = LitterTheme.background,
+
             ) {
                 DiscoveryScreen(
                     onDismiss = { showDiscovery = false },
@@ -605,10 +620,10 @@ fun LitterApp(
 
         // Settings bottom sheet
         if (showSettings) {
-            ModalBottomSheet(
+            WorkspaceSheet(
+                television = isTelevision,
                 onDismissRequest = { showSettings = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = LitterTheme.background,
+
             ) {
                 SettingsSheet(
                     onDismiss = {
@@ -621,6 +636,9 @@ fun LitterApp(
                         showAccountForServer = serverId
                     },
                     initialSubScreen = settingsStartDestination,
+                    onOpenIcons = { showSettings = false; navigate(Route.Icons) },
+                    onOpenFiles = { showSettings = false; navigate(Route.Files) },
+                    onOpenTerminal = { showSettings = false; navigate(Route.Terminal()) },
                     onOpenApps = {
                         showSettings = false
                         settingsStartDestination = SettingsStartDestination.TopLevel
@@ -631,13 +649,13 @@ fun LitterApp(
         }
 
         if (directoryPickerServerId != null) {
-            ModalBottomSheet(
+            WorkspaceSheet(
+                television = isTelevision,
                 onDismissRequest = {
                     directoryPickerServerId = null
                     directoryPickerForProject = false
                 },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = LitterTheme.background,
+
             ) {
                 DirectoryPickerSheet(
                     servers = connectedServerOptions,
@@ -677,10 +695,10 @@ fun LitterApp(
         }
 
         if (showProjectPicker) {
-            ModalBottomSheet(
+            WorkspaceSheet(
+                television = isTelevision,
                 onDismissRequest = { showProjectPicker = false },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = LitterTheme.background,
+
             ) {
                 val serverNames = remember(snapshot) {
                     snapshot?.servers?.associate { it.serverId to it.displayName } ?: emptyMap()
@@ -718,10 +736,10 @@ fun LitterApp(
 
         // Account bottom sheet
         showAccountForServer?.let { serverId ->
-            ModalBottomSheet(
+            WorkspaceSheet(
+                television = isTelevision,
                 onDismissRequest = { showAccountForServer = null },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = LitterTheme.background,
+
             ) {
                 AccountSheet(
                     serverId = serverId,
