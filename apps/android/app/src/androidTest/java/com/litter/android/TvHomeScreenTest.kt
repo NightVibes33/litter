@@ -35,10 +35,33 @@ class TvHomeScreenTest {
                 )
             }
         }
+        compose.onNodeWithText("New Chat").assertIsFocused()
+            .performKeyInput { pressKey(Key.DirectionRight) }
         compose.onNodeWithText("Add server").assertIsFocused()
             .performKeyInput { pressKey(Key.DirectionRight) }
         compose.onNodeWithText("Settings").assertIsFocused()
             .performKeyInput { pressKey(Key.DirectionCenter) }
         compose.runOnIdle { assertEquals(1, settingsOpened) }
     }
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun remoteCanStartFirstChatWithoutRecentSessions() {
+        var chatsStarted = 0
+        compose.setContent {
+            LitterAppTheme {
+                TvHomeScreen(
+                    snapshot = null,
+                    onOpenConversation = {},
+                    onShowDiscovery = {},
+                    onShowSettings = {},
+                    onShowApps = {},
+                    onNewChat = { chatsStarted++ },
+                )
+            }
+        }
+        compose.onNodeWithText("New Chat").assertIsFocused()
+            .performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.runOnIdle { assertEquals(1, chatsStarted) }
+    }
+
 }

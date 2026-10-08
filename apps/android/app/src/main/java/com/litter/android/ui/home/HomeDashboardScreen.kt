@@ -135,6 +135,7 @@ fun HomeDashboardScreen(
     onStartVoice: (() -> Unit)? = null,
     onOpenSavedApp: ((String) -> Unit)? = null,
     onOpenTerminal: (() -> Unit)? = null,
+    onOpenFiles: (() -> Unit)? = null,
 ) {
     val appModel = LocalAppModel.current
     val context = LocalContext.current
@@ -683,6 +684,11 @@ fun HomeDashboardScreen(
                             )
                         }
                     }
+                    if (onOpenFiles != null) {
+                        IconButton(onClick = onOpenFiles, modifier = Modifier.size(LitterSpacing.touch)) {
+                            Text("Files", color = LitterTheme.textSecondary)
+                        }
+                    }
                     if (onOpenTerminal != null) {
                         IconButton(onClick = onOpenTerminal, modifier = Modifier.size(LitterSpacing.touch)) {
                             Icon(
@@ -1174,14 +1180,10 @@ fun HomeDashboardScreen(
             text = { Text(action.message) },
             confirmButton = {
                 TextButton(onClick = {
+                    confirmAction = null
                     scope.launch {
                         when (action) {
                             is ConfirmAction.ArchiveSession -> {
-                                voiceController.stopVoiceSessionIfActive(appModel, action.session.key)
-                                voiceController.clearPinnedLocalVoiceThreadIfMatches(appModel, action.session.key)
-                                if (appModel.snapshot.value?.activeThread == action.session.key) {
-                                    appModel.store.setActiveThread(null)
-                                }
                                 try {
                                     appModel.client.archiveThread(
                                         action.session.key.serverId,
@@ -1189,9 +1191,24 @@ fun HomeDashboardScreen(
                                             threadId = action.session.key.threadId,
                                         ),
                                     )
-                                } catch (_: Exception) {}
-                                kotlinx.coroutines.delay(400L)
-                                appModel.refreshSnapshot()
+                                    voiceController.stopVoiceSessionIfActive(appModel, action.session.key)
+                                    voiceController.clearPinnedLocalVoiceThreadIfMatches(appModel, action.session.key)
+                                    if (appModel.snapshot.value?.activeThread == action.session.key) {
+                                        appModel.store.setActiveThread(null)
+                                    }
+                                    val pin = uniffi.codex_mobile_client.PinnedThreadKey(
+                                        serverId = action.session.key.serverId, threadId = action.session.key.threadId,
+                                    )
+                                    SavedThreadsStore.remove(context, pin)
+                                    SavedThreadsStore.hide(context, pin)
+                                    pinnedKeys = SavedThreadsStore.pinnedKeys(context)
+                                    hiddenKeys = SavedThreadsStore.hiddenKeys(context)
+                                    appModel.refreshSnapshot()
+                                } catch (error: kotlinx.coroutines.CancellationException) {
+                                    throw error
+                                } catch (error: Exception) {
+                                    confirmAction = ConfirmAction.ActionError("Could not delete this chat: ${error.localizedMessage}")
+                                }
                             }
                             is ConfirmAction.DisconnectServer -> {
                                 SavedServerStore.remove(context, action.server.serverId)
@@ -1200,12 +1217,11 @@ fun HomeDashboardScreen(
                                 appModel.serverBridge.disconnectServer(action.server.serverId)
                                 appModel.refreshSnapshot()
                             }
-                            is ConfirmAction.ReplyError -> {
+                            is ConfirmAction.ActionError, is ConfirmAction.ReplyError -> {
                                 // Informational dialog only — "Confirm" just dismisses.
                             }
                         }
                     }
-                    confirmAction = null
                 }) {
                     Text("Confirm", color = LitterTheme.danger)
                 }
@@ -1374,6 +1390,11 @@ private sealed class ConfirmAction {
     data class DisconnectServer(val server: AppServerSnapshot) : ConfirmAction() {
         override val title = "Disconnect Server"
         override val message = "Disconnect from ${server.displayName}?"
+    }
+
+    data class ActionError(val reason: String) : ConfirmAction() {
+        override val title = "Conversation Action Error"
+        override val message = reason
     }
 
     data class ReplyError(val reason: String) : ConfirmAction() {

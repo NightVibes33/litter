@@ -125,6 +125,7 @@ class VoiceRuntimeController {
 
     fun setSpeakerEnabled(enabled: Boolean) {
         speakerEnabled = enabled
+        synchronized(sessionLock) { webRtcSession?.setSpeakerEnabled(enabled) }
     }
 
     // ── Event handling ───────────────────────────────────────────────────────
@@ -199,6 +200,7 @@ class VoiceRuntimeController {
 
             android.util.Log.i("VoiceRuntime", "Creating WebRTC peer connection and offer...")
             val session = RealtimeWebRtcSession(appModel.appContext)
+            session.setSpeakerEnabled(speakerEnabled)
             val claimed = synchronized(sessionLock) {
                 if (webRtcSession != null) {
                     false

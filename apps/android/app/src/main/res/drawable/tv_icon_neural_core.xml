@@ -1,0 +1,6 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><solid android:color="#101215" /></shape></item>
+    <item android:width="180dp" android:height="180dp" android:gravity="center">
+        <bitmap android:src="@drawable/app_icon_neural_core" android:gravity="fill" />
+    </item>
+</layer-list>

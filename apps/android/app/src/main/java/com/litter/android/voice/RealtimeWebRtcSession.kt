@@ -179,6 +179,13 @@ class RealtimeWebRtcSession(private val context: Context) {
         releaseAudio()
     }
 
+    @Volatile private var requestedSpeakerEnabled = true
+
+    fun setSpeakerEnabled(enabled: Boolean) {
+        requestedSpeakerEnabled = enabled
+        if (didConfigureAudio.get()) audioManager.isSpeakerphoneOn = enabled
+    }
+
     private fun configureAudio() {
         if (!didConfigureAudio.compareAndSet(false, true)) return
         previousAudioMode = audioManager.mode
@@ -197,7 +204,7 @@ class RealtimeWebRtcSession(private val context: Context) {
         audioManager.requestAudioFocus(request)
 
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        audioManager.isSpeakerphoneOn = true
+        audioManager.isSpeakerphoneOn = requestedSpeakerEnabled
     }
 
     private fun releaseAudio() {

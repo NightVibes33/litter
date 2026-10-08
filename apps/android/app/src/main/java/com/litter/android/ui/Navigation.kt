@@ -15,7 +15,9 @@ sealed class Route {
     data class ServerInfo(val serverId: String) : Route()
     data class ServerWallpaperSelection(val serverId: String) : Route()
     data class ServerWallpaperAdjust(val serverId: String) : Route()
+    data object Icons : Route()
+    data object Files : Route()
     data object Apps : Route()
     data class SavedApp(val appId: String) : Route()
-    data class Terminal(val preferredAlleycatNodeId: String? = null) : Route()
+    data class Terminal(val preferredAlleycatNodeId: String? = null, val cwd: String? = null) : Route()
 }

@@ -94,6 +94,7 @@ import com.litter.android.state.ChatGPTOAuth
 import com.litter.android.state.DebugSettings
 import com.litter.android.state.MessageRecorder
 import com.litter.android.state.PetOverlayController
+import com.litter.android.ui.tv.tvFocusOutline
 import com.litter.android.state.SavedServer
 import com.litter.android.state.SavedServerStore
 import com.litter.android.state.SshAuthMethod
@@ -141,6 +142,9 @@ fun SettingsSheet(
     onOpenAccount: (serverId: String) -> Unit,
     initialSubScreen: SettingsStartDestination = SettingsStartDestination.TopLevel,
     onOpenApps: (() -> Unit)? = null,
+    onOpenIcons: (() -> Unit)? = null,
+    onOpenFiles: (() -> Unit)? = null,
+    onOpenTerminal: (() -> Unit)? = null,
 ) {
     // Sub-screen navigation
     var subScreen by remember(initialSubScreen) {
@@ -181,6 +185,9 @@ fun SettingsSheet(
             onOpenAdvanced = { subScreen = SettingsSubScreen.Advanced },
             onOpenTipJar = { subScreen = SettingsSubScreen.TipJar },
             onOpenAccount = onOpenAccount,
+            onOpenIcons = onOpenIcons,
+            onOpenFiles = onOpenFiles,
+            onOpenTerminal = onOpenTerminal,
         )
     }
 }
@@ -197,6 +204,9 @@ private fun SettingsTopLevel(
     onOpenAdvanced: () -> Unit,
     onOpenTipJar: () -> Unit,
     onOpenAccount: (serverId: String) -> Unit,
+    onOpenIcons: (() -> Unit)?,
+    onOpenFiles: (() -> Unit)?,
+    onOpenTerminal: (() -> Unit)?,
 ) {
     val appModel = LocalAppModel.current
     val context = LocalContext.current
@@ -313,13 +323,12 @@ private fun SettingsTopLevel(
             )
         }
 
+        onOpenIcons?.let { open -> item { NavRow(Icons.Default.Palette, "Icon Switcher", open) } }
+
         // ── More ──
         item { SectionHeader("More") }
         item {
             NavRow(icon = Icons.Default.Science, label = "Advanced", onClick = onOpenAdvanced)
-        }
-        item {
-            NavRow(icon = Icons.Default.Pets, label = "Tip the Kitty", onClick = onOpenTipJar)
         }
 
         item { Spacer(Modifier.height(32.dp)) }
@@ -2017,6 +2026,7 @@ private fun SettingsRow(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
             .heightIn(min = if (subtitle != null) LitterSpacing.row else LitterSpacing.touch + LitterSpacing.xs)
+            .tvFocusOutline()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(vertical = LitterSpacing.xs),
     ) {

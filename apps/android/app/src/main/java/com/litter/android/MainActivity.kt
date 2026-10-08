@@ -1,6 +1,9 @@
 package com.litter.android
 
 import android.content.res.Configuration
+import android.app.UiModeManager
+import android.content.Context
+import android.view.KeyEvent
 import com.litter.android.util.EdgeToEdge
 import android.Manifest
 import android.content.Intent
@@ -41,6 +44,28 @@ import kotlinx.coroutines.launch
 import uniffi.codex_mobile_client.ThreadKey
 
 class MainActivity : ComponentActivity() {
+    private fun installTvKeyMapping() {
+        val television = (getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)
+            ?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+        if (!television) return
+        val original = window.callback
+        window.callback = object : android.view.Window.Callback by original {
+            override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                val mapped = when (event.keyCode) {
+                    KeyEvent.KEYCODE_BUTTON_A -> KeyEvent.KEYCODE_DPAD_CENTER
+                    KeyEvent.KEYCODE_BUTTON_B -> KeyEvent.KEYCODE_BACK
+                    else -> event.keyCode
+                }
+                val delivered = if (mapped == event.keyCode) event else KeyEvent(
+                    event.downTime, event.eventTime, event.action, mapped,
+                    event.repeatCount, event.metaState, event.deviceId,
+                    event.scanCode, event.flags, event.source,
+                )
+                return original.dispatchKeyEvent(delivered)
+            }
+        }
+    }
+
     companion object {
         const val EXTRA_NOTIFICATION_SERVER_ID = "litter.notification.serverId"
         const val EXTRA_NOTIFICATION_THREAD_ID = "litter.notification.threadId"
@@ -65,6 +90,7 @@ class MainActivity : ComponentActivity() {
         // theme-background flash between them.
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        installTvKeyMapping()
         EdgeToEdge.apply(
             this,
             darkBars = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==

@@ -1,6 +1,8 @@
 package com.litter.android.ui.terminal
 
 import android.content.Context
+import android.app.UiModeManager
+import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -78,6 +80,8 @@ import com.litter.android.state.SshAuthMethod
 import com.litter.android.state.SshCredentialStore
 import com.litter.android.state.TerminalSessionController
 import com.litter.android.ui.LitterTheme
+import com.litter.android.ui.tv.WorkspaceSheet
+import com.litter.android.ui.tv.tvFocusOutline
 import kotlinx.coroutines.launch
 import uniffi.codex_mobile_client.TerminalBackendKind
 import uniffi.codex_mobile_client.TerminalSshAuth
@@ -89,6 +93,7 @@ fun TerminalScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val television = (context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val controller = remember { TerminalSessionController(scope) }
@@ -218,7 +223,7 @@ fun TerminalScreen(
                 .weight(1f),
         )
 
-        if (!nativeRendererAvailable) {
+        if (!nativeRendererAvailable || television) {
             BasicTerminalInput(controller)
         }
 
@@ -294,15 +299,13 @@ private fun TerminalConfigSheet(
     context: Context,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState()
+    val television = (context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
     var draftFontSize by remember(TerminalConfigPrefs.fontSize) {
         mutableStateOf(TerminalConfigPrefs.fontSize)
     }
-    ModalBottomSheet(
+    WorkspaceSheet(
+        television = television,
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color.Black,
-        contentColor = LitterTheme.textPrimary,
     ) {
         Column(
             modifier = Modifier
@@ -669,17 +672,19 @@ private fun TerminalKey(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val television = (context.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
     TextButton(
         onClick = onClick,
         enabled = enabled,
         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-        modifier = Modifier.height(34.dp),
+        modifier = Modifier.height(if (television) 48.dp else 34.dp).tvFocusOutline(),
     ) {
         Text(
             text = label,
             color = if (enabled) LitterTheme.textSecondary else LitterTheme.textMuted,
             fontFamily = LitterTheme.monoFont,
-            fontSize = 12.sp,
+            fontSize = if (television) 18.sp else 12.sp,
         )
     }
 }
