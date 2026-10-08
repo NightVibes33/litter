@@ -14,6 +14,7 @@ class EmexDEImportPatchTests(unittest.TestCase):
     def test_userspace_notification_bridge_survives_import_replacement_and_rerun(self):
         sources = [
             'Nyxian/UI/UIInit/Terminal.swift',
+            'Nyxian/UI/CodeEditor/CodeEditor+Theme.swift',
             'Nyxian/LindChain/WindowServer/Session/NXWindowSessionTerminal.m',
             'Nyxian/UI/FileList/iOSVersionPickerView.swift',
             'Nyxian/LindChain/IDEFoundation/Project+NotificationServer.swift',
@@ -60,6 +61,13 @@ class EmexDEImportPatchTests(unittest.TestCase):
             self.assertIn('#import <LindChain/IDEFoundation/NXBootstrap.h>', project_first)
             self.assertIn('NXBootstrap.shared.sdkURL.path', project_first)
             self.assertNotIn('Nyxian-Swift.h', project_first)
+            theme_path = root / SOURCE / 'Nyxian/UI/CodeEditor/CodeEditor+Theme.swift'
+            theme_first = theme_path.read_text()
+            theme_original = (REPO / SOURCE / 'Nyxian/UI/CodeEditor/CodeEditor+Theme.swift').read_text()
+            self.assertEqual(theme_original.replace('@objc class LDETheme: NSObject, Theme {',
+                                                   '@objc(LDETheme) class LDETheme: NSObject, Theme {'),
+                             theme_first)
+            self.assertIn('@objc(LDETheme) class LDETheme: NSObject, Theme {', theme_first)
             console_path = root / SOURCE / 'Nyxian/LindChain/IDEConsole/NXConsoleView.m'
             console_first = console_path.read_text()
             self.assertIn('@interface LDETheme : NSObject', console_first)
@@ -71,6 +79,7 @@ class EmexDEImportPatchTests(unittest.TestCase):
             self.assertEqual(workspace_first, workspace_path.read_text())
             self.assertEqual(bootstrap_first, bootstrap_path.read_text())
             self.assertEqual(console_first, console_path.read_text())
+            self.assertEqual(theme_first, theme_path.read_text())
             self.assertEqual(project_first, project_path.read_text())
             self.assertEqual(first, path.read_text())
             self.assertEqual(target_first, target_path.read_text())

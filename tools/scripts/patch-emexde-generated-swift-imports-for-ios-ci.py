@@ -18,6 +18,15 @@ for source in Path("ThirdParty/EmexDE/Source").rglob("*"):
         source.write_text(normalized)
         changed.append(source)
 
+# Match the Objective-C shim's class symbol without changing theme behavior.
+theme_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/CodeEditor/CodeEditor+Theme.swift")
+theme_text = theme_bridge.read_text()
+theme_before = "@objc class LDETheme: NSObject, Theme {"
+theme_after = "@objc(LDETheme) class LDETheme: NSObject, Theme {"
+if theme_before not in theme_text and theme_after not in theme_text:
+    raise SystemExit("Missing expected emexDE LDETheme declaration")
+theme_bridge.write_text(theme_text.replace(theme_before, theme_after))
+
 terminal_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/UIInit/Terminal.swift")
 bridge_text = terminal_bridge.read_text()
 bridge_replacements = {
