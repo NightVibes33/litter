@@ -63,6 +63,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: ios-unsigned-ipa-${{ github.ref }}
