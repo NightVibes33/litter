@@ -1519,6 +1519,7 @@ jobs:
           # Older SideStore versions send the display name verbatim as Apple appIdName.
           # Keep branded UI/TestFlight names; use ASCII names only in unsigned payloads.
           python3 tools/scripts/prepare-sideload-names.py --app "$APP_BUNDLE"
+          python3 tools/scripts/compact-sideload-toolchain.py --app "$APP_BUNDLE"
 
           INFO_PLIST="$APP_BUNDLE/Info.plist"
           BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST" 2>/dev/null || true)"

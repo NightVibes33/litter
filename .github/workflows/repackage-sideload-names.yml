@@ -1,4 +1,4 @@
-name: Repackage unsigned IPA for SideStore
+name: Compact unsigned IPA for SideStore
 on:
   workflow_dispatch:
 permissions:
@@ -13,40 +13,42 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p input output
-          gh release download litter-v1.5.169 --repo "$GITHUB_REPOSITORY" --pattern 'AlleyCat-1.5.169.ipa' --pattern 'AlleyCat-1.5.169.ipa.sha256' --dir input
-          (cd input && sha256sum -c AlleyCat-1.5.169.ipa.sha256)
+          gh release download litter-v1.5.169 --repo "$GITHUB_REPOSITORY" --pattern 'AlleyCat-1.5.169-SideStore.ipa' --pattern 'AlleyCat-1.5.169-SideStore.ipa.sha256' --dir input
+          (cd input && sha256sum -c AlleyCat-1.5.169-SideStore.ipa.sha256)
       - name: Prepare and verify unsigned IPA
         run: |
-          python3 tools/scripts/prepare-sideload-names.py --ipa input/AlleyCat-1.5.169.ipa --output output/AlleyCat-1.5.169-SideStore.ipa
+          python3 tools/scripts/compact-sideload-toolchain.py --ipa input/AlleyCat-1.5.169-SideStore.ipa --output output/AlleyCat-1.5.169-SideStore-Compact.ipa
           python3 - <<'PY'
-          import hashlib, plistlib, zipfile
-          with zipfile.ZipFile('input/AlleyCat-1.5.169.ipa') as old, zipfile.ZipFile('output/AlleyCat-1.5.169-SideStore.ipa') as new:
+          import hashlib, stat, zipfile
+          with zipfile.ZipFile('input/AlleyCat-1.5.169-SideStore.ipa') as old, zipfile.ZipFile('output/AlleyCat-1.5.169-SideStore-Compact.ipa') as new:
               assert old.namelist() == new.namelist()
               changed = []
+              def digest(archive, path):
+                  value = hashlib.sha256()
+                  with archive.open(path) as stream:
+                      for chunk in iter(lambda: stream.read(1024 * 1024), b''):
+                          value.update(chunk)
+                  return value.digest()
               for entry in old.infolist():
                   other = new.getinfo(entry.filename)
-                  assert entry.external_attr == other.external_attr
-                  def digest(archive):
-                      value = hashlib.sha256()
-                      with archive.open(entry.filename) as stream:
-                          for chunk in iter(lambda: stream.read(1024 * 1024), b''):
-                              value.update(chunk)
-                      return value.digest()
-                  if digest(old) == digest(new):
+                  if digest(old, entry.filename) == digest(new, entry.filename):
+                      assert entry.external_attr == other.external_attr
                       continue
-                  assert entry.filename.endswith('/Info.plist')
-                  before, after = (plistlib.loads(archive.read(entry.filename)) for archive in (old, new))
-                  assert {k: v for k, v in before.items() if k not in ('CFBundleName', 'CFBundleDisplayName')} == {k: v for k, v in after.items() if k not in ('CFBundleName', 'CFBundleDisplayName')}
-                  assert after['CFBundleDisplayName'].isascii()
+                  assert entry.filename.rsplit('/', 1)[1] in ('clang++', 'clang-cpp', 'clang-21')
+                  assert stat.S_ISLNK(other.external_attr >> 16)
+                  assert new.read(entry.filename) == b'clang'
+                  canonical = entry.filename.rsplit('/', 1)[0] + '/clang'
+                  assert digest(old, entry.filename) == digest(new, canonical)
                   changed.append(entry.filename)
-              assert changed, 'No bundle names changed'
-              print('Verified: only bundle names changed; all binaries, resources, bundle IDs, and ZIP permissions retained.')
-              print('Changed bundle plists:', changed)
+              assert len(changed) == 3
+              print('Verified all original bytes and command paths preserved; only three identical Clang aliases became relative links.')
+              print('Expanded bytes before:', sum(e.file_size for e in old.infolist()))
+              print('Expanded bytes after:', sum(e.file_size for e in new.infolist()))
           PY
-          (cd output && sha256sum AlleyCat-1.5.169-SideStore.ipa > AlleyCat-1.5.169-SideStore.ipa.sha256)
+          (cd output && sha256sum AlleyCat-1.5.169-SideStore-Compact.ipa > AlleyCat-1.5.169-SideStore-Compact.ipa.sha256)
       - uses: actions/upload-artifact@v4
         with:
-          name: AlleyCat-SideStore-unsigned-ipa
+          name: AlleyCat-SideStore-compact-unsigned-ipa
           path: output/*
       - name: Publish corrected download alongside original
         env:
