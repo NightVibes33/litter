@@ -34,6 +34,10 @@ class EmexDEImportPatchTests(unittest.TestCase):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / SOURCE / relative, destination)
             subprocess.run([sys.executable, str(SCRIPT)], cwd=root, check=True, capture_output=True)
+            bootstrap_path = root / SOURCE / 'Nyxian/LindChain/IDEFoundation/NXBootstrap.m'
+            bootstrap_first = bootstrap_path.read_text()
+            self.assertIn('#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>', bootstrap_first)
+            self.assertIn('ksurface_keychain_update()', bootstrap_first)
             path = root / SOURCE / 'Nyxian/LindChain/ProcEnvironment/PEUserspaceManager.m'
             first = path.read_text()
             self.assertIn('@interface NotificationServer : NSObject', first)
@@ -58,6 +62,7 @@ class EmexDEImportPatchTests(unittest.TestCase):
             self.assertIn('[[LDETheme current] gutterHairlineColor]', console_first)
             self.assertNotIn('Nyxian-Swift.h', console_first)
             subprocess.run([sys.executable, str(SCRIPT)], cwd=root, check=True, capture_output=True)
+            self.assertEqual(bootstrap_first, bootstrap_path.read_text())
             self.assertEqual(console_first, console_path.read_text())
             self.assertEqual(project_first, project_path.read_text())
             self.assertEqual(first, path.read_text())
