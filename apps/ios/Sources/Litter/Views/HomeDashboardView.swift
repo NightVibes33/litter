@@ -248,16 +248,15 @@ struct HomeDashboardView: View {
             .alert("Delete Session?", isPresented: Binding(
                 get: { deleteTargetThread != nil },
                 set: { if !$0 { deleteTargetThread = nil } }
-            )) {
+            ), presenting: deleteTargetThread) { thread in
                 Button("Cancel", role: .cancel) { deleteTargetThread = nil }
                 Button("Delete", role: .destructive) {
-                    if let thread = deleteTargetThread {
-                        Task { await onDeleteThread?(thread.key) }
-                    }
+                    let key = thread.key
                     deleteTargetThread = nil
+                    Task { await onDeleteThread?(key) }
                 }
-            } message: {
-                Text("This will permanently delete \"\(deleteTargetThread?.sessionTitle ?? "this session")\".")
+            } message: { thread in
+                Text("This will archive \"\(thread.sessionTitle)\".")
             }
             .alert("Rename server", isPresented: Binding(
                 get: { renameServerTarget != nil },

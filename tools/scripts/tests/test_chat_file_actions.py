@@ -17,6 +17,14 @@ class ChatFileActionTests(unittest.TestCase):
         self.assertIn('homeDashboardModel.unpinThread(key)', action)
         self.assertIn('actionErrorMessage =', action)
 
+    def test_chat_delete_confirmation_retains_presented_target(self):
+        source = (IOS / 'Views/HomeDashboardView.swift').read_text()
+        action = source.split('.alert("Delete Session?"', 1)[1].split('.alert("Rename server"', 1)[0]
+        self.assertIn('presenting: deleteTargetThread) { thread in', action)
+        self.assertIn('let key = thread.key', action)
+        self.assertIn('await onDeleteThread?(key)', action)
+        self.assertNotIn('if let thread = deleteTargetThread', action)
+
     def test_empty_model_label_does_not_claim_app_name_is_model(self):
         source = (IOS / 'Views/ConversationView.swift').read_text()
         self.assertIn('return trimmed.isEmpty ? "Select Model" : trimmed', source)
