@@ -98,10 +98,10 @@ static NSString *LBIDiagnosticText(NSArray<MDKDiagnostic *> *diagnostics)
         NSString *level = @"diagnostic";
         switch(diagnostic.level)
         {
-            case CCDiagnosticLevelError: level = @"error"; break;
-            case CCDiagnosticLevelWarning: level = @"warning"; break;
-            case CCDiagnosticLevelNote: level = @"note"; break;
-            case CCDiagnosticLevelRemark: level = @"remark"; break;
+            case kCCDiagnosticLevelError: level = @"error"; break;
+            case kCCDiagnosticLevelWarning: level = @"warning"; break;
+            case kCCDiagnosticLevelNote: level = @"note"; break;
+            case kCCDiagnosticLevelRemark: level = @"remark"; break;
             default: break;
         }
         [text appendFormat:@"%@: %@\n", level, diagnostic.message ?: @""];
@@ -113,19 +113,19 @@ static NSString *LBIJobTypeName(CCJobType type)
 {
     switch(type)
     {
-        case CCJobTypeCompiler: return @"compiler";
-        case CCJobTypeSwiftCompiler: return @"swift-compiler";
-        case CCJobTypeLinker: return @"linker";
-        case CCJobTypeDriver: return @"driver";
-        case CCJobTypeSwiftDriver: return @"swift-driver";
-        case CCJobTypeUnknown: return @"unknown";
+        case kCCJobTypeCompiler: return @"compiler";
+        case kCCJobTypeSwiftCompiler: return @"swift-compiler";
+        case kCCJobTypeLinker: return @"linker";
+        case kCCJobTypeDriver: return @"driver";
+        case kCCJobTypeSwiftDriver: return @"swift-driver";
+        case kCCJobTypeUnknown: return @"unknown";
         default: return [NSString stringWithFormat:@"unknown-%u", type];
     }
 }
 
 static BOOL LBIExecuteJob(MDKJob *job, NSArray<MDKDiagnostic *> **diagnostics, NSString **mainSource)
 {
-    if(job.type == CCJobTypeLinker)
+    if(job.type == kCCJobTypeLinker)
     {
         if(mainSource != nil) { *mainSource = nil; }
         return [MDKLinker executeJob:job outDiagnostics:diagnostics];
@@ -230,7 +230,7 @@ static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInte
 
         BOOL didNormalizeLinkerArguments = NO;
         NSArray<NSString *> *normalizedLinkerArguments = LBINormalizedLinkerArguments(jobArguments, &didNormalizeLinkerArguments);
-        if(didNormalizeLinkerArguments && job.type == CCJobTypeDriver)
+        if(didNormalizeLinkerArguments && job.type == kCCJobTypeDriver)
         {
             [log appendFormat:@"job type=%@(%u) normalizing swift linker driver=yes\n", LBIJobTypeName(job.type), job.type];
             [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
@@ -238,7 +238,7 @@ static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInte
 
             NSArray<MDKDiagnostic *> *diagnostics = nil;
             NSString *mainSource = nil;
-            MDKJob *linkerJob = [MDKJob jobWithType:CCJobTypeLinker withArguments:normalizedLinkerArguments];
+            MDKJob *linkerJob = [MDKJob jobWithType:kCCJobTypeLinker withArguments:normalizedLinkerArguments];
             BOOL ok = LBIExecuteJob(linkerJob, &diagnostics, &mainSource);
             [log appendFormat:@"job type=linker(%u) source=%@ ok=%@\n", linkerJob.type, mainSource ?: @"", ok ? @"yes" : @"no"];
             if(diagnostics.count > 0) { [log appendString:LBIDiagnosticText(diagnostics)]; }
@@ -250,12 +250,12 @@ static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInte
             continue;
         }
 
-        if(job.type == CCJobTypeDriver)
+        if(job.type == kCCJobTypeDriver)
         {
             [log appendFormat:@"job type=%@(%u) expanding=yes\n", LBIJobTypeName(job.type), job.type];
             [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
 
-            MDKDriver *driver = [MDKDriver driverWithArguments:jobArguments withType:CCDriverTypeClang];
+            MDKDriver *driver = [MDKDriver driverWithArguments:jobArguments withType:kCCDriverTypeClang];
             if(driver == nil)
             {
                 [log appendString:@"Could not create Nyxian Clang driver for nested driver job.\n"];
@@ -279,13 +279,13 @@ static int LBIExecuteJobs(NSArray<MDKJob *> *jobs, NSMutableString *log, NSUInte
 
         MDKJob *jobToExecute = job;
         NSArray<NSString *> *argumentsToExecute = jobArguments;
-        if(job.type == CCJobTypeLinker && didNormalizeLinkerArguments)
+        if(job.type == kCCJobTypeLinker && didNormalizeLinkerArguments)
         {
             [log appendFormat:@"job type=%@(%u) normalizing linker args=yes\n", LBIJobTypeName(job.type), job.type];
             [log appendFormat:@"job args: %@\n", [jobArguments componentsJoinedByString:@" "]];
             [log appendFormat:@"linker args: %@\n", [normalizedLinkerArguments componentsJoinedByString:@" "]];
             argumentsToExecute = normalizedLinkerArguments;
-            jobToExecute = [MDKJob jobWithType:CCJobTypeLinker withArguments:normalizedLinkerArguments];
+            jobToExecute = [MDKJob jobWithType:kCCJobTypeLinker withArguments:normalizedLinkerArguments];
         }
 
         NSArray<MDKDiagnostic *> *diagnostics = nil;
@@ -574,7 +574,7 @@ static NSString *LBIFakefsOutputPath(NSString *requestedOutput, NSString *cwd)
 static int LBIRunClangDriver(NSArray<NSString *> *arguments, NSMutableString *log)
 {
     [log appendFormat:@"clang driver args: %@\n", [arguments componentsJoinedByString:@" "]];
-    MDKDriver *driver = [MDKDriver driverWithArguments:arguments withType:CCDriverTypeClang];
+    MDKDriver *driver = [MDKDriver driverWithArguments:arguments withType:kCCDriverTypeClang];
     if(driver == nil)
     {
         [log appendString:@"Could not create Nyxian Clang driver.\n"];
@@ -678,7 +678,7 @@ static int LBIRunSwiftDriver(NSArray<NSString *> *arguments, NSMutableString *lo
 {
     [log appendFormat:@"swift driver args: %@\n", [arguments componentsJoinedByString:@" "]];
     LBIAppendStorageDiagnostics(log, storageProbePath);
-    MDKDriver *driver = [MDKDriver driverWithArguments:arguments withType:CCDriverTypeSwift];
+    MDKDriver *driver = [MDKDriver driverWithArguments:arguments withType:kCCDriverTypeSwift];
     if(driver == nil)
     {
         [log appendString:@"Could not create Nyxian Swift driver.\n"];
