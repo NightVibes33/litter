@@ -164,7 +164,7 @@ enum LLog {
     }
 
     private static func sanitized(_ fields: [String: Any]) -> [String: Any] {
-        fields.mapValues { value in
+        fields.mapValues { value -> Any in
             if let nested = value as? [String: Any] { return sanitized(nested) }
             return value
         }.reduce(into: [String: Any]()) { result, pair in
