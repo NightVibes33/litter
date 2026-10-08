@@ -928,6 +928,11 @@ targets:
           fi
           rm -rf "$RESOURCES_DIR/Shared"
           /usr/bin/ditto "$EMEXDE_ROOT/Shared" "$RESOURCES_DIR/Shared"
+          # Standalone compiler tools are CI inputs, not Nyxian runtime resources.
+          rm -rf "$RESOURCES_DIR/Shared/SwiftToolchain"
+          if [ -d "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/emexDE.framework/Shared/SwiftToolchain" ]; then
+            rm -rf "$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/emexDE.framework/Shared/SwiftToolchain"
+          fi
           EMEXDE_FRAMEWORK="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/emexDE.framework"
           if [ -d "$EMEXDE_FRAMEWORK/Frameworks" ]; then
             for private_framework in               FrontBoard.framework               FrontBoardServices.framework               RunningBoardServices.framework               BackBoardServices.framework

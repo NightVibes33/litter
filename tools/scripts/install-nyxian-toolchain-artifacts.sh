@@ -11,11 +11,13 @@ for header in swift/Config.h swift/Option/Options.inc swift/Frontend/Frontend.h 
   [[ -s "$HEADERS/$header" ]] || { echo "Missing generated compiler header: $header" >&2; exit 1; }
 done
 [[ -s "$CORE/CoreCompilerSupportLibs/LLVM.xcframework/ios-arm64/llvm.a" ]]
-# Install the complete upstream runtime toolchain into the same Shared resource
-# directory used by Nyxian's install-nyxian target and Alley Cat's resource phase.
+# Nyxian executes its compiler in CoreCompiler.framework. Its Shared resources
+# are the upstream compressed include/lib/swift archives, not standalone tools.
+# SwiftToolchain.zip remains a provenance-checked CI artifact; never expand it
+# into Shared, which is copied into the installed app.
 SHARED="$ROOT/ThirdParty/EmexDE/Source/Shared"
 rm -rf "$SHARED/SwiftToolchain"
-unzip -q "$ARTIFACTS/SwiftToolchain.zip" -d "$SHARED"
-[[ -f "$SHARED/SwiftToolchain/usr/bin/swiftc" ]]
-[[ -f "$SHARED/SwiftToolchain/usr/bin/swift-frontend" ]]
-echo 'Installed matching upstream compiler libraries, generated headers, and runtime toolchain.'
+for archive in include lib swift; do
+  [[ -s "$SHARED/$archive.zip" ]] || { echo "Missing upstream $archive.zip" >&2; exit 1; }
+done
+echo 'Installed matching compiler libraries and headers; retained upstream compressed bootstrap resources.'

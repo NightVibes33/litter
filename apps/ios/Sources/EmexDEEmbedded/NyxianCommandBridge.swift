@@ -22,6 +22,10 @@ public final class NyxianCommandBridge: NSObject {
             return response(code: 64, status: "invalid-request", message: "Expected a JSON command request.")
         }
 
+        if command == "bootstrap" {
+            return await bootstrapEnvironment()
+        }
+
         NXBootstrap.shared().bootstrap()
         let root = NXBootstrap.shared().projectsURL
 
@@ -134,6 +138,54 @@ public final class NyxianCommandBridge: NSObject {
         default:
             return response(code: 64, status: "unsupported-command", message: "Supported commands: projects, create, build, run.")
         }
+    }
+
+    private static var bootstrapTask: Task<String, Never>?
+
+    private static func bootstrapEnvironment() async -> String {
+        if let task = bootstrapTask { return await task.value }
+        let task = Task { @MainActor in
+            let bootstrap = NXBootstrap.shared()
+            if !bootstrap.isNewest() {
+                bootstrap.bootstrap()
+                // Upstream bootstrap performs extraction/download on its worker.
+                // Poll asynchronously so the app and progress UI remain responsive.
+                for _ in 0..<900 {
+                    if bootstrap.isNewest() { break }
+                    do { try await Task.sleep(for: .seconds(1)) }
+                    catch { return response(code: 130, status: "bootstrap-cancelled", message: "Nyxian bootstrap wait was cancelled.") }
+                }
+            }
+            guard bootstrap.isNewest() else {
+                return response(code: 78, status: "bootstrap-incomplete", message: "Nyxian bootstrap did not finish. Check its download/progress error and retry.")
+            }
+            let required = [
+                bootstrap.sdkURL.appendingPathComponent("SDKSettings.plist"),
+                bootstrap.includeURL.appendingPathComponent("include/stdarg.h"),
+                bootstrap.swiftURL.appendingPathComponent("iphoneos", isDirectory: true)
+            ]
+            guard required.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
+                return response(code: 78, status: "bootstrap-resources-missing", message: "Nyxian reports a current bootstrap, but required SDK/compiler resources are missing.")
+            }
+            let paths = [
+                "sdkRoot": bootstrap.sdkURL.path,
+                "clangResourceRoot": bootstrap.includeURL.path,
+                "swiftResourceRoot": bootstrap.swiftURL.path,
+                "cxxStandardLibraryIncludeRoot": bootstrap.sdkURL.appendingPathComponent("usr/include/c++/v1").path
+            ]
+            do {
+                let root = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/BuildKit", isDirectory: true)
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                try JSONSerialization.data(withJSONObject: paths).write(to: root.appendingPathComponent("nyxian-runtime.json"), options: .atomic)
+            } catch {
+                return response(code: 74, status: "bootstrap-paths-failed", message: error.localizedDescription)
+            }
+            return response(code: 0, status: "bootstrap-ready", payload: paths)
+        }
+        bootstrapTask = task
+        let result = await task.value
+        bootstrapTask = nil
+        return result
     }
 
     private static func schemeKind(_ value: String) -> NXProjectSchemeKind? {

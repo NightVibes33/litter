@@ -2161,6 +2161,17 @@ actor LitterBuildKit {
     }
 
     private func nativeBuildCommand(command: String, args: String, cwd: String, buildDir: String, prelude: String = "", staging providedStaging: BuildKitHostStaging? = nil) async -> BuildKitCommandResult {
+        #if !LITTER_APP_STORE_SAFE
+        if AppDistributionCapabilities.includesEmexDE {
+            _ = await IshFS.repairNativeContainerBridge()
+            guard let json = await EmexDEEmbeddedBridge.runCommandJSON("{\"command\":\"bootstrap\"}"),
+                  let data = json.data(using: .utf8),
+                  let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  result["exitCode"] as? Int == 0 else {
+                return BuildKitCommandResult(exitCode: 78, status: "nyxian-bootstrap-incomplete", log: "Nyxian must finish extracting its resources and downloading the SDK before BuildKit can compile. Open Nyxian to inspect bootstrap progress/errors, then retry.\n")
+            }
+        }
+        #endif
         let staging: BuildKitHostStaging
         if let providedStaging {
             staging = providedStaging
@@ -2553,6 +2564,7 @@ actor LitterBuildKit {
     }
 
     private static var sdkRoot: URL {
+        if let root = nyxianRuntimePath("sdkRoot") { return root }
         if let sdkPath = installedManifest?.toolchain.sdkPath, !sdkPath.isEmpty {
             return buildKitRoot.appendingPathComponent(sdkPath, isDirectory: true)
         }
@@ -2620,21 +2632,16 @@ actor LitterBuildKit {
         fileExists(sdkRoot.appendingPathComponent("SDKSettings.plist"))
     }
 
-    private static var bundledCompilerToolchainRoot: URL? {
-        Bundle.main.resourceURL?.appendingPathComponent("Shared/SwiftToolchain/usr", isDirectory: true)
+    private static func nyxianRuntimePath(_ key: String) -> URL? {
+        let file = buildKitRoot.appendingPathComponent("nyxian-runtime.json")
+        guard let data = try? Data(contentsOf: file),
+              let paths = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              let path = paths[key], path.hasPrefix("/") else { return nil }
+        return URL(fileURLWithPath: path, isDirectory: true)
     }
 
     private static var clangResourceRoot: URL {
-        if let root = bundledCompilerToolchainRoot,
-           let versions = try? FileManager.default.contentsOfDirectory(
-               at: root.appendingPathComponent("lib/clang", isDirectory: true),
-               includingPropertiesForKeys: nil
-           ),
-           let matching = versions.sorted(by: {
-               $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedDescending
-           }).first(where: { fileExists($0.appendingPathComponent("include/stdarg.h")) }) {
-            return matching
-        }
+        if let root = nyxianRuntimePath("clangResourceRoot") { return root }
         if let path = installedManifest?.toolchain.clangResourceDir, !path.isEmpty {
             return buildKitRoot.appendingPathComponent(path, isDirectory: true)
         }
@@ -2642,10 +2649,7 @@ actor LitterBuildKit {
     }
 
     private static var cxxStandardLibraryIncludeRoot: URL {
-        if let bundled = bundledCompilerToolchainRoot?.appendingPathComponent("include/c++/v1", isDirectory: true),
-           fileExists(bundled.appendingPathComponent("vector")) {
-            return bundled
-        }
+        if let root = nyxianRuntimePath("cxxStandardLibraryIncludeRoot") { return root }
         if let path = installedManifest?.toolchain.cxxStandardLibraryIncludeDir, !path.isEmpty {
             return buildKitRoot.appendingPathComponent(path, isDirectory: true)
         }
@@ -2655,12 +2659,7 @@ actor LitterBuildKit {
     }
 
     private static var swiftResourceRoot: URL {
-        // The embedded compiler and these modules come from the same pinned
-        // build. Prefer them over potentially older imported asset overlays.
-        if let bundled = bundledCompilerToolchainRoot?.appendingPathComponent("lib/swift", isDirectory: true),
-           fileExists(bundled.appendingPathComponent("iphoneos", isDirectory: true)) {
-            return bundled
-        }
+        if let root = nyxianRuntimePath("swiftResourceRoot") { return root }
         if let path = installedManifest?.toolchain.swiftResourceDir, !path.isEmpty {
             return buildKitRoot.appendingPathComponent(path, isDirectory: true)
         }
