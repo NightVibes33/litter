@@ -265,15 +265,11 @@ enum IshFS {
     }
 
     static func readTextFile(path: String, maxBytes: Int64) async throws -> String {
-        let sizeResult = await run("wc -c < \(shellQuote(path)) 2>/dev/null || exit 2")
-        guard sizeResult.exitCode == 0 else { throw error("Could not read \(path)", result: sizeResult) }
-        let size = Int64(sizeResult.output.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-        guard size <= maxBytes else {
-            throw NSError(domain: "IshFS", code: 1, userInfo: [NSLocalizedDescriptionKey: "File is too large for the built-in text editor."])
+        let data = try await readFileData(path: path, maxBytes: maxBytes)
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw NSError(domain: "IshFS", code: 8, userInfo: [NSLocalizedDescriptionKey: "This file is not valid UTF-8 text. Export it to edit with a compatible app."])
         }
-        let result = await run("cat \(shellQuote(path))")
-        guard result.exitCode == 0 else { throw error("Could not read \(path)", result: result) }
-        return result.output
+        return text
     }
 
     static func writeTextFile(path: String, text: String) async throws {
@@ -343,7 +339,14 @@ enum IshFS {
             try Task.checkCancellation()
             let moveCommand: String
             if replaceExisting {
-                moveCommand = "[ ! -d \(target) ] && [ ! -L \(target) ] || exit 17; mv \(temp) \(target)"
+                moveCommand = """
+                [ ! -d \(target) ] && [ ! -L \(target) ] || exit 17
+                if [ -e \(target) ]; then
+                  mode=$(stat -c '%a' \(target)) || exit 2
+                  chmod "$mode" \(temp) || exit 2
+                fi
+                mv \(temp) \(target)
+                """
             } else {
                 moveCommand = "[ ! -e \(target) ] && [ ! -L \(target) ] || exit 17; mv \(temp) \(target)"
             }

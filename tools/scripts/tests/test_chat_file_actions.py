@@ -168,3 +168,34 @@ class ChatFileActionTests(unittest.TestCase):
             self.assertTrue(archive.exists())
             result = subprocess.run(['sh', '-c', command], capture_output=True)
             self.assertEqual(result.returncode, 17)
+
+    def test_editor_commit_preserves_executable_mode(self):
+        import os
+        import stat
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        section = source.split('if replaceExisting {', 1)[1]
+        template = section.split('moveCommand = """', 1)[1].split('"""', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "script's name"
+            target.write_text('old')
+            target.chmod(0o751)
+            temp = root / 'temp'
+            temp.write_text('new')
+            command = template.replace('\\(target)', shlex.quote(str(target))).replace('\\(temp)', shlex.quote(str(temp)))
+            result = subprocess.run(['sh', '-c', command], capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(target.read_text(), 'new')
+            self.assertEqual(stat.S_IMODE(os.stat(target).st_mode), 0o751)
+
+    def test_browser_mutations_share_busy_and_cancellation_guard(self):
+        view = (IOS / 'Views/LocalFileWorkspaceView.swift').read_text()
+        model = view.split('private final class LocalFileWorkspaceModel', 1)[1]
+        for operation in ('create', 'rename', 'move', 'duplicate', 'compress', 'delete', 'deleteSelectedEntries', 'export', 'importFile', 'extract'):
+            method = model.split(f'func {operation}(', 1)[1].split('\n    }', 1)[0]
+            self.assertIn('try beginMutation()', method)
+            self.assertIn('defer { isMutating = false }', method)
+        source = (IOS / 'Models/IshFS.swift').read_text()
+        read = source.split('static func readTextFile', 1)[1].split('static func writeTextFile', 1)[0]
+        self.assertIn('guard let text = String(data: data, encoding: .utf8)', read)
+        self.assertNotIn('return result.output', read)

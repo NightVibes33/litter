@@ -185,6 +185,13 @@ struct LocalFileWorkspaceView: View {
                 Divider().overlay(LitterTheme.surfaceLight.opacity(0.4))
                 content
             }
+            .disabled(model.isMutating)
+            if model.isMutating {
+                ProgressView("Working...")
+                    .padding(20)
+                    .background(LitterTheme.surface, in: RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(LitterTheme.textPrimary)
+            }
         }
     }
 
@@ -685,7 +692,13 @@ struct LocalFileWorkspaceView: View {
         let nsName = entry.name as NSString
         let folderName = nsName.deletingPathExtension.isEmpty ? "\(entry.name) extracted" : "\(nsName.deletingPathExtension) extracted"
         let destination = RemotePath.parse(path: entry.path).parent().join(name: folderName).asString()
-        let result = await IshFS.extractArchive(path: entry.path, destination: destination)
+        let result: IshFS.Result
+        do {
+            result = try await model.extract(entry, destination: destination)
+        } catch {
+            alertMessage = error.localizedDescription
+            return
+        }
         if result.exitCode == 0 {
             await model.reload()
             alertMessage = "Extracted to \(PathDisplay.display(destination, isLocal: true))."
@@ -927,8 +940,10 @@ struct LocalFileWorkspaceView: View {
     private func handleImport(_ result: Result<[URL], Error>) async {
         do {
             let urls = try result.get()
+            let destination = model.currentPath
             for url in urls {
-                try await model.importFile(from: url)
+                try Task.checkCancellation()
+                try await model.importFile(from: url, toDirectory: destination)
             }
         } catch {
             alertMessage = error.localizedDescription
@@ -1102,6 +1117,7 @@ private final class LocalFileWorkspaceModel {
     var currentPath = HomeAnchor.path
     var entries: [LocalFileEntry] = []
     var isLoading = false
+    private(set) var isMutating = false
     var errorMessage: String?
     var showHidden = UserDefaults.standard.object(forKey: LocalFileWorkspaceModel.showHiddenKey) as? Bool ?? true {
         didSet { UserDefaults.standard.set(showHidden, forKey: Self.showHiddenKey) }
@@ -1304,7 +1320,17 @@ private final class LocalFileWorkspaceModel {
         await reload(path: parent.isEmpty ? "/" : parent)
     }
 
+    private func beginMutation() throws {
+        try Task.checkCancellation()
+        guard !isMutating else {
+            throw NSError(domain: "LocalFileWorkspace", code: 4, userInfo: [NSLocalizedDescriptionKey: "Another file operation is still running. Please wait for it to finish."])
+        }
+        isMutating = true
+    }
+
     func create(name: String, kind: LocalFileEntry.Kind) async throws {
+        try beginMutation()
+        defer { isMutating = false }
         let target = RemotePath.parse(path: currentPath).join(name: name).asString()
         switch kind {
         case .directory:
@@ -1316,6 +1342,8 @@ private final class LocalFileWorkspaceModel {
     }
 
     func rename(_ entry: LocalFileEntry, to name: String) async throws {
+        try beginMutation()
+        defer { isMutating = false }
         let target = RemotePath.parse(path: entry.path).parent().join(name: name).asString()
         try await IshFS.rename(path: entry.path, to: target)
         removeStoredPath(entry.path)
@@ -1323,6 +1351,8 @@ private final class LocalFileWorkspaceModel {
     }
 
     func move(_ entry: LocalFileEntry, toDirectory directory: String) async throws {
+        try beginMutation()
+        defer { isMutating = false }
         let check = await IshFS.run("[ -d \(IshFS.shellQuote(directory)) ]")
         guard check.exitCode == 0 else { throw makeError("Destination folder does not exist.", result: check) }
         let target = RemotePath.parse(path: directory).join(name: entry.name).asString()
@@ -1332,6 +1362,8 @@ private final class LocalFileWorkspaceModel {
     }
 
     func duplicate(_ entry: LocalFileEntry) async throws {
+        try beginMutation()
+        defer { isMutating = false }
         let directory = RemotePath.parse(path: entry.path).parent().asString()
         let name = try await availableDuplicateName(for: entry.name, directory: directory)
         let target = RemotePath.parse(path: directory).join(name: name).asString()
@@ -1341,6 +1373,8 @@ private final class LocalFileWorkspaceModel {
 
     @discardableResult
     func compress(_ entry: LocalFileEntry) async throws -> String {
+        try beginMutation()
+        defer { isMutating = false }
         let directory = RemotePath.parse(path: entry.path).parent().asString()
         let name = try await availableArchiveName(for: entry.name, directory: directory)
         let target = RemotePath.parse(path: directory).join(name: name).asString()
@@ -1350,7 +1384,15 @@ private final class LocalFileWorkspaceModel {
         return target
     }
 
+    func extract(_ entry: LocalFileEntry, destination: String) async throws -> IshFS.Result {
+        try beginMutation()
+        defer { isMutating = false }
+        return await IshFS.extractArchive(path: entry.path, destination: destination)
+    }
+
     func delete(_ entry: LocalFileEntry) async throws {
+        try beginMutation()
+        defer { isMutating = false }
         do {
             try await IshFS.delete(path: entry.path)
             entries.removeAll { $0.path == entry.path }
@@ -1364,9 +1406,12 @@ private final class LocalFileWorkspaceModel {
     }
 
     func deleteSelectedEntries(_ targets: [LocalFileEntry]) async throws {
+        try beginMutation()
+        defer { isMutating = false }
         guard !targets.isEmpty else { return }
         var failures: [String] = []
         for entry in targets {
+            try Task.checkCancellation()
             do {
                 try await IshFS.delete(path: entry.path)
                 entries.removeAll { $0.path == entry.path }
@@ -1388,8 +1433,11 @@ private final class LocalFileWorkspaceModel {
     }
 
     func export(entries: [LocalFileEntry]) async throws -> [URL] {
+        try beginMutation()
+        defer { isMutating = false }
         var urls: [URL] = []
         for entry in entries {
+            try Task.checkCancellation()
             if entry.kind == .directory {
                 let archivePath = "/tmp/litter-share-\(UUID().uuidString).tar.gz"
                 let result = await IshFS.compress(path: entry.path, destination: archivePath)
@@ -1408,10 +1456,12 @@ private final class LocalFileWorkspaceModel {
         return urls
     }
 
-    func importFile(from url: URL) async throws {
+    func importFile(from url: URL, toDirectory directory: String) async throws {
+        try beginMutation()
+        defer { isMutating = false }
         _ = try await ConversationAttachmentSupport.importURLToFakeFS(
             url: url,
-            destinationDirectory: currentPath,
+            destinationDirectory: directory,
             treatImagesAsFiles: true
         )
         await reload()

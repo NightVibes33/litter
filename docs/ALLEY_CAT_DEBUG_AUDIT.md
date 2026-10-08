@@ -93,3 +93,19 @@ Authenticated job logs show VALID, internal IN_BETA_TESTING, external
 WAITING_FOR_BETA_REVIEW; both groups have one tester and are assigned. This
 build predates the latest browser fixes. Native verification of these newer
 changes and complete physical-device browser acceptance remain pending.
+
+### Browser operation lifecycle pass
+
+All ten model mutation/share entry points now share a MainActor busy guard,
+released with defer, plus cancellation checks. The content shows an operation
+indicator and prevents conflicting actions while work is running. Extraction
+uses the same guard. Batch imports retain the chosen destination across awaits,
+and cancelled batch deletes do not proceed to later items.
+
+The text reader now explicitly validates UTF-8 instead of accepting the shell
+wrapper's empty-string decoding fallback. Editor commits preserve the existing
+file's POSIX permissions, including executable bits. Thirteen focused tests
+pass, including executing the actual permission-preserving commit command.
+The complete Python tooling suite passes 50 tests with the existing vendored
+EmexDE source available through an uncommitted local symlink. This is host
+validation; native compilation/device operation remain pending.
