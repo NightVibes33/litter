@@ -349,6 +349,8 @@ targets:
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks"
         CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES: "YES"
         OTHER_CFLAGS: "$(inherited) -DCLIENT_ENV"
+        # This shim does not consume the app-only Rust or Ghostty libraries.
+        OTHER_LDFLAGS: "-ObjC"
     sources:
       - path: ../../ThirdParty/EmexDE/Source/Frameworks/LiveShim
         headerVisibility: public
