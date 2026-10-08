@@ -807,7 +807,7 @@ actor LitterBuildKit {
         guard AppDistributionCapabilities.includesEmexDE else {
             return BuildKitCommandResult(exitCode: 69, status: "unavailable", log: "Nyxian is not embedded in this unsigned build.\n")
         }
-        _ = await IshFS.ensureNativeContainerMount()
+        _ = await IshFS.repairNativeContainerBridge()
         let tokens = Self.shellWords(args)
         let subcommand = tokens.first ?? "help"
         if subcommand == "help" || subcommand == "--help" || subcommand == "-h" {
@@ -836,7 +836,7 @@ actor LitterBuildKit {
 
         guard let data = try? JSONSerialization.data(withJSONObject: request),
               let requestJSON = String(data: data, encoding: .utf8),
-              let responseJSON = await MainActor.run(body: { EmexDEEmbeddedBridge.runCommandJSON(requestJSON) }),
+              let responseJSON = await EmexDEEmbeddedBridge.runCommandJSON(requestJSON),
               let responseData = responseJSON.data(using: .utf8),
               let response = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any] else {
             return BuildKitCommandResult(exitCode: 70, status: "bridge-unavailable", log: "The embedded Nyxian command bridge could not be loaded.\n")
