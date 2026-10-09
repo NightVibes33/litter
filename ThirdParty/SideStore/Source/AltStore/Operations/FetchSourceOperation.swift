@@ -100,6 +100,13 @@ final class FetchSourceOperation: ResultOperation<Source>
                 do
                 {
                     let (data, response) = try Result((data, response), error).get()
+                    if let httpResponse = response as? HTTPURLResponse,
+                       !(200...299).contains(httpResponse.statusCode) {
+                        // Report the server status before attempting to decode an HTML/error body.
+                        // Do not include source URLs, query tokens or response bodies in diagnostics.
+                        throw NSError(domain: NSURLErrorDomain, code: URLError.badServerResponse.rawValue,
+                                      userInfo: [NSLocalizedDescriptionKey: "Unable to fetch source: HTTP \(httpResponse.statusCode)."])
+                    }
                     
                     let decoder = AltStoreCore.JSONDecoder()
                     decoder.dateDecodingStrategy = .custom({ (decoder) -> Date in
