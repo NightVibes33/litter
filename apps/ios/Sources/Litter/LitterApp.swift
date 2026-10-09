@@ -484,6 +484,12 @@ struct ContentView: View {
             MacWindowTitleBarStyler()
         }
         #endif
+        .onOpenURL { url in
+            guard AppDistributionCapabilities.includesKittyStore,
+                  KittyStoreEmbeddedBridge.handleIncomingURL(url) else { return }
+            UserDefaults.standard.set("store", forKey: "litterSettingsRequestedRoute")
+            appState.showSettings = true
+        }
         .onAppear {
             themeManager.syncSystemColorScheme(colorScheme)
         }

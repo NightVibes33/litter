@@ -111,6 +111,11 @@ public final class KittyStoreEmbeddedEntryPoint: NSObject {
         KittyStoreEmbeddedFactory.bootstrap()
     }
 
+    @objc(handleIncomingURL:)
+    public static func handleIncomingURL(_ url: URL) -> NSNumber {
+        NSNumber(value: KittyStoreIncomingURLs.receive(url))
+    }
+
     @objc(makeRootViewController)
     public static func makeRootViewController() -> UIViewController {
         KittyStoreEmbeddedFactory.makeRootViewController()
@@ -564,6 +569,7 @@ private final class KittyStoreRootViewController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        if let embeddedViewController { KittyStoreIncomingURLs.attach(embeddedViewController) }
         applyBranding()
     }
 
@@ -622,6 +628,7 @@ private final class KittyStoreRootViewController: UIViewController {
         }
 
         embed(viewController)
+        KittyStoreIncomingURLs.attach(viewController)
         applyBranding()
     }
 

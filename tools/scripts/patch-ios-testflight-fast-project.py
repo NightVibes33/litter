@@ -181,6 +181,12 @@ def remove_plist_key_block(text: str, key: str) -> str:
 
 
 def strip_info_plist_app_store_sensitive_keys(text: str) -> str:
+    # Remove only the embedded store URL registration; retain browser-login callbacks.
+    text = re.sub(
+        r"\t\t<dict>\n\t\t\t<key>CFBundleURLName</key>\n"
+        r"\t\t\t<string>com\.nightvibes\.alleycat\.kittystore</string>\n"
+        r".*?\t\t</dict>\n", "", text, flags=re.DOTALL,
+    )
     for block in (
         """	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>

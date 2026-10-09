@@ -85,6 +85,12 @@ enum KittyStoreEmbeddedBridge {
     }
 
     @MainActor
+    static func handleIncomingURL(_ url: URL) -> Bool {
+        (invokeObject(classNames: embeddedEntryPointClassNames,
+                      selectorName: "handleIncomingURL:", argument: url as NSURL) as? NSNumber)?.boolValue ?? false
+    }
+
+    @MainActor
     static func makeRootViewController() -> UIViewController {
         if let viewController = invokeObject(
             classNames: embeddedEntryPointClassNames,

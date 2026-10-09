@@ -1134,7 +1134,7 @@ private extension SettingsViewController
             var urlStr = template.replacingOccurrences(of: "$(BASE64_CERT)", with: encodedCert, options: .literal, range: nil)
             urlStr = urlStr.replacingOccurrences(of: "$(PASSWORD)", with: password, options: .literal, range: nil)
             
-            print(urlStr)
+            // Certificate and password callback must never be written to console logs.
             guard let callbackUrl = URL(string: urlStr) else {
                 let toastView = ToastView(text: NSLocalizedString("Failed to initialize callback URL!", comment: ""), detailText: nil)
                 toastView.show(in: self)
