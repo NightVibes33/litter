@@ -19,6 +19,13 @@ class NyxianEmbeddedStartupTests(unittest.TestCase):
         self.assertIn('!NXApplicationState.extensionLessMode, #available(iOS 26.0, *)', source)
         self.assertIn('tabBarController.selectedViewController === viewController && NXBuilder.builds', source)
 
+    def test_embedded_launch_preserves_host_uikit_appearance(self):
+        source = (ROOT / 'apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift').read_text()
+        # The upstream helper resets appearance proxies globally. Its use in
+        # an embedded controller would modify Alley Cat and KittyStore rows.
+        self.assertNotRegex(source, r'(?m)^\\s*RevertUI\\(\\)')
+        self.assertIn('LDETheme.currentTheme = LDEThemeReader.shared.currentlySelectedTheme()', source)
+
     def test_loader_default_and_recovery_use_existing_upstream_state(self):
         source = (ROOT / 'apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift').read_text()
         self.assertIn('NXApplicationState.loadKernelExtensions = true', source)

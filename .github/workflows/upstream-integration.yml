@@ -47,6 +47,7 @@ jobs:
       - name: Verify Alley Cat integration contracts
         run: |
           python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_*.py'
+          python3 -m unittest discover -s tools/scripts/tests -p 'test_sidestore_*.py'
           tools/scripts/verify-kittystore-integration.sh
       - name: Validate pinned-source BuildKit scripts
         run: |
