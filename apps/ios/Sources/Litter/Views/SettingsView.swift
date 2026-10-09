@@ -73,7 +73,8 @@ struct SettingsView: View {
                                 } label: {
                                     SettingsRowLabel(
                                         title: "Restart Without Nyxian Extensions",
-                                        systemImage: "arrow.clockwise.circle"
+                                        systemImage: "arrow.clockwise.circle",
+                                        titleLineLimit: 2
                                     )
                                 }
                                 .tint(LitterTheme.textPrimary)
@@ -1517,6 +1518,7 @@ struct SettingsRowLabel: View {
     let title: String
     var systemImage: String? = nil
     var value: String? = nil
+    var titleLineLimit: Int = 1
 
     var body: some View {
         HStack(spacing: LitterSpace.m) {
@@ -1530,7 +1532,7 @@ struct SettingsRowLabel: View {
             Text(title)
                 .litterFont(.body)
                 .foregroundStyle(LitterTheme.textPrimary)
-                .lineLimit(1)
+                .lineLimit(titleLineLimit)
                 .layoutPriority(1)
             Spacer(minLength: LitterSpace.s)
             if let value, !value.isEmpty {
