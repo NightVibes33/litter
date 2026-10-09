@@ -16,8 +16,8 @@ private enum CatalogURLs {
 extension UpdateKnownSourcesOperation {
     private struct Response: Decodable {
         var version: Int
-        /// SideStore's upstream catalog publishes its recommendations under "default".
-        /// Alley Cat's supplemental catalog uses "sources" and "trusted".
+        /// SideStore publishes recommendations under "default"; the existing
+        /// Alley Cat catalog also publishes "sources" and "trusted".
         var defaultSources: [KnownSource]?
         var sources: [KnownSource]?
         var trusted: [KnownSource]?
@@ -26,6 +26,32 @@ extension UpdateKnownSourcesOperation {
         private enum CodingKeys: String, CodingKey {
             case version, sources, trusted, blocked
             case defaultSources = "default"
+        }
+    }
+
+    /// URLSession callbacks are concurrent. A lock around shared captured
+    /// local vars is not sufficient for Swift 6 sendability analysis.
+    private final class CatalogCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private var responseMap: [URL: Response] = [:]
+        private var latestError: Error?
+
+        func record(_ response: Response, for url: URL) {
+            lock.lock()
+            responseMap[url] = response
+            lock.unlock()
+        }
+
+        func record(_ error: Error) {
+            lock.lock()
+            latestError = error
+            lock.unlock()
+        }
+
+        func snapshot() -> ([URL: Response], Error?) {
+            lock.lock()
+            defer { lock.unlock() }
+            return (responseMap, latestError)
         }
     }
 }
@@ -50,9 +76,7 @@ class UpdateKnownSourcesOperation: ResultOperation<([KnownSource], [KnownSource]
         // The Add Source screen still needs an explicit plus/confirmation.
         let urls = [CatalogURLs.upstream, CatalogURLs.existing]
         let group = DispatchGroup()
-        let lock = NSLock()
-        var responses: [URL: Response] = [:]
-        var lastError: Error?
+        let collector = CatalogCollector()
 
         for url in urls {
             group.enter()
@@ -66,19 +90,16 @@ class UpdateKnownSourcesOperation: ResultOperation<([KnownSource], [KnownSource]
                     }
                     guard let data else { throw URLError(.zeroByteResource) }
                     let parsed = try JSONDecoder().decode(Response.self, from: data)
-                    lock.lock()
-                    responses[url] = parsed
-                    lock.unlock()
+                    collector.record(parsed, for: url)
                 } catch {
                     NSLog("[SideStoreSources] %@: %@", url.host ?? "unknown", error.localizedDescription)
-                    lock.lock()
-                    lastError = error
-                    lock.unlock()
+                    collector.record(error)
                 }
             }.resume()
         }
 
         group.notify(queue: .main) {
+            let (responses, lastError) = collector.snapshot()
             var result = [KnownSource]()
             var seen = Set<String>()
             for url in urls {
