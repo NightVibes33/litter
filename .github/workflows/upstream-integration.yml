@@ -73,7 +73,48 @@ jobs:
           bash -n tools/scripts/package-buildkit-assets.sh
           sh -n tools/scripts/buildkit-native-source-fingerprint.sh
           tools/scripts/buildkit-native-source-fingerprint.sh
-      - name: Inspect available upstream Xcode schemes
+      # Listing schemes with xcodebuild implicitly resolves every SwiftPM
+      # dependency, potentially blocking this source-integrity job for hours.
+      # Actual Xcode compilation stays in the separate unsigned IPA workflow.
+      - name: Validate committed upstream Xcode scheme references
         run: |
-          xcodebuild -list -project ThirdParty/EmexDE/Source/Nyxian.xcodeproj
-          xcodebuild -list -project ThirdParty/SideStore/Upstream/AltStore.xcodeproj
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          projects = (
+              ("Nyxian", Path("ThirdParty/EmexDE/Source/Nyxian.xcodeproj"),
+               {"Nyxian", "CoreCompiler", "MobileDevelopmentKit", "LiveProcess"}),
+              ("SideStore", Path("ThirdParty/SideStore/Upstream/AltStore.xcodeproj"),
+               {"SideStore", "SideStore - Release"}),
+          )
+          for label, project, required in projects:
+              project_file = project / "project.pbxproj"
+              source = project_file.read_text(encoding="utf-8")
+              if "PBXNativeTarget" not in source:
+                  raise SystemExit(f"{label}: Xcode project has no native targets")
+              schemes = sorted((project / "xcshareddata/xcschemes").glob("*.xcscheme"))
+              available = {item.stem for item in schemes}
+              missing = required - available
+              if missing:
+                  raise SystemExit(f"{label}: missing expected upstream schemes: {sorted(missing)}")
+              for scheme in schemes:
+                  parsed = ET.parse(scheme)
+                  if parsed.getroot().tag != "Scheme":
+                      raise SystemExit(f"{label}: invalid root for {scheme}")
+                  references = parsed.findall(
+                      "./BuildAction/BuildActionEntries/BuildActionEntry/BuildableReference"
+                  )
+                  if scheme.stem in required and not references:
+                      raise SystemExit(f"{label}: no build targets in {scheme}")
+                  for reference in references:
+                      identifier = reference.get("BlueprintIdentifier")
+                      if not identifier:
+                          raise SystemExit(f"{label}: missing blueprint ID in {scheme}")
+                      container = reference.get("ReferencedContainer", "")
+                      if container == f"container:{project.name}" and identifier not in source:
+                          raise SystemExit(
+                              f"{label}: target {identifier} in {scheme} is absent from project"
+                          )
+              print(f"{label}: validated {len(schemes)} shared Xcode schemes without package resolution")
+          PY
