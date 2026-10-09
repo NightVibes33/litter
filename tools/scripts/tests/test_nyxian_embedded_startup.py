@@ -23,7 +23,7 @@ class NyxianEmbeddedStartupTests(unittest.TestCase):
         source = (ROOT / 'apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift').read_text()
         # The upstream helper resets appearance proxies globally. Its use in
         # an embedded controller would modify Alley Cat and KittyStore rows.
-        self.assertNotRegex(source, r'(?m)^\\s*RevertUI\\(\\)')
+        self.assertNotRegex(source, r'(?m)^\s*RevertUI\(\)')
         self.assertIn('LDETheme.currentTheme = LDEThemeReader.shared.currentlySelectedTheme()', source)
 
     def test_loader_default_and_recovery_use_existing_upstream_state(self):
