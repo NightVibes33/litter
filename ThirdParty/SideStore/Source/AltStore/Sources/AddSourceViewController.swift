@@ -79,6 +79,20 @@ class AddSourceViewController: UICollectionViewController
                 
         self.navigationController?.isModalInPresentation = true
         self.navigationController?.view.tintColor = .altPrimary
+
+        // ShrubLibrary publishes a live text index of its built-in sources.
+        // Browse on demand: fetching 107+ complete AltStore feeds during
+        // Add Source startup would overload the store and slow Alley Cat.
+        let shrubButton = UIBarButtonItem(
+            title: "ShrubLibrary",
+            style: .plain,
+            target: self,
+            action: #selector(openShrubLibrary)
+        )
+        shrubButton.accessibilityIdentifier = "sources.browseShrubLibrary"
+        var existingButtons = self.navigationItem.rightBarButtonItems ?? []
+        existingButtons.append(shrubButton)
+        self.navigationItem.rightBarButtonItems = existingButtons
         
         let layout = self.makeLayout()
         self.collectionView.collectionViewLayout = layout
@@ -107,6 +121,28 @@ class AddSourceViewController: UICollectionViewController
         {
             self.fetchRecommendedSources()
         }
+    }
+}
+
+private extension AddSourceViewController
+{
+    @objc func openShrubLibrary()
+    {
+        let picker = ShrubLibraryCatalogViewController { [weak self] sourceURL in
+            guard let self else { return }
+
+            // Route through the existing preview, source validation, and
+            // explicit Add Source confirmation. Never install automatically.
+            self.viewModel.sourceAddress = sourceURL.absoluteString
+            self.viewModel.isShowingPreviewStatus = true
+            if let textCell = self.collectionView.cellForItem(
+                at: IndexPath(item: 0, section: Section.add.rawValue)
+            ) as? AddSourceTextFieldCell {
+                textCell.textField.text = sourceURL.absoluteString
+            }
+            self.navigationController?.popViewController(animated: true)
+        }
+        self.navigationController?.pushViewController(picker, animated: true)
     }
 }
 
@@ -963,4 +999,137 @@ extension AddSourceViewController: UITextFieldDelegate
     
     let addSourceNavigationController = storyboard.instantiateViewController(withIdentifier: "addSourceNavigationController")
     return addSourceNavigationController
+}
+
+
+/**
+ The canonical ShrubLibrary catalog is https://shrublibrary.pages.dev/repos.txt.
+ It is a list of source URLs, not an AltStore source itself. This picker keeps
+ untrusted third-party sources opt-in and loads only the selected feed.
+ */
+@MainActor
+private final class ShrubLibraryCatalogViewController: UITableViewController, UISearchResultsUpdating {
+    private static let indexURL = URL(string: "https://shrublibrary.pages.dev/repos.txt")!
+    private static let cacheKey = "KittyStore.ShrubLibraryVerifiedSourceURLs"
+    private let onSelect: (URL) -> Void
+    private let searchController = UISearchController(searchResultsController: nil)
+    private var allSources: [URL] = []
+    private var displayedSources: [URL] = []
+    private var loadTask: Task<Void, Never>?
+
+    init(onSelect: @escaping (URL) -> Void) {
+        self.onSelect = onSelect
+        super.init(style: .insetGrouped)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("ShrubLibrary catalog must be created with a selection handler")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "ShrubLibrary"
+        tableView.backgroundColor = .altBackground
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "ShrubSource")
+
+        searchController.searchResultsUpdater = self
+        searchController.obscuresBackgroundDuringPresentation = false
+        searchController.searchBar.placeholder = "Search repositories"
+        navigationItem.searchController = searchController
+        navigationItem.hidesSearchBarWhenScrolling = false
+        navigationItem.prompt = "Third-party repositories · choose one to preview"
+
+        let pullToRefresh = UIRefreshControl()
+        pullToRefresh.addTarget(self, action: #selector(refreshCatalog), for: .valueChanged)
+        refreshControl = pullToRefresh
+
+        // Instant fallback for temporary site/network outages.
+        if let cached = UserDefaults.standard.stringArray(forKey: Self.cacheKey) {
+            applySources(cached.compactMap(Self.httpsURL))
+        }
+        refreshCatalog()
+    }
+
+    @objc private func refreshCatalog() {
+        loadTask?.cancel()
+        refreshControl?.beginRefreshing()
+        loadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: Self.indexURL)
+                try Task.checkCancellation()
+                guard let response = response as? HTTPURLResponse,
+                      (200...299).contains(response.statusCode),
+                      let text = String(data: data, encoding: .utf8) else {
+                    throw URLError(.badServerResponse)
+                }
+
+                var seen = Set<String>()
+                let sources = text.split(whereSeparator: \.isNewline)
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+                    .compactMap(Self.httpsURL)
+                    .filter { seen.insert($0.absoluteString).inserted }
+
+                guard !sources.isEmpty else { throw URLError(.cannotParseResponse) }
+                try Task.checkCancellation()
+                UserDefaults.standard.set(sources.map(\.absoluteString), forKey: Self.cacheKey)
+                applySources(sources)
+                navigationItem.prompt = "\(sources.count) third-party repositories · choose one to preview"
+            } catch is CancellationError {
+                // A newer refresh superseded this request.
+            } catch {
+                navigationItem.prompt = allSources.isEmpty
+                    ? "Could not load ShrubLibrary · pull down to retry"
+                    : "Using cached repositories · pull down to refresh"
+            }
+            refreshControl?.endRefreshing()
+        }
+    }
+
+    private static func httpsURL(_ string: String) -> URL? {
+        guard let url = URL(string: string),
+              url.scheme?.lowercased() == "https",
+              url.host != nil else { return nil }
+        return url
+    }
+
+    private func applySources(_ sources: [URL]) {
+        allSources = sources
+        updateSearchResults(for: searchController)
+    }
+
+    func updateSearchResults(for searchController: UISearchController) {
+        let query = searchController.searchBar.text?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        displayedSources = query.isEmpty
+            ? allSources
+            : allSources.filter { $0.absoluteString.localizedCaseInsensitiveContains(query) }
+        tableView.reloadData()
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        displayedSources.count
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        cellForRowAt indexPath: IndexPath
+    ) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "ShrubSource", for: indexPath)
+        let url = displayedSources[indexPath.row]
+        var configuration = UIListContentConfiguration.subtitleCell()
+        configuration.text = url.host ?? "Repository"
+        configuration.secondaryText = url.absoluteString
+        configuration.secondaryTextProperties.numberOfLines = 2
+        cell.contentConfiguration = configuration
+        cell.accessoryType = .disclosureIndicator
+        cell.accessibilityIdentifier = "sources.shrublibrary.repo.\(indexPath.row)"
+        return cell
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        onSelect(displayedSources[indexPath.row])
+    }
 }
