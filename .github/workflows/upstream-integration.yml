@@ -26,6 +26,19 @@ permissions:
   contents: read
 
 jobs:
+  quick-source-contracts:
+    name: Check Alley Cat embedded source contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Check Nyxian and SideStore integration regressions
+        run: |
+          python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_embedded_startup.py'
+          python3 -m unittest discover -s tools/scripts/tests -p 'test_sidestore_catalog_contract.py'
+
   verify-upstreams:
     name: Verify exact source/dependency revisions
     runs-on: macos-26-intel
