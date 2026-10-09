@@ -62,15 +62,23 @@ struct SettingsView: View {
                     if AppDistributionCapabilities.includesKittyStore || AppDistributionCapabilities.includesEmexDE {
                         Section {
                             if AppDistributionCapabilities.includesKittyStore {
-                                NavigationLink("KittyStore", value: AlleyCatToolRoute.store)
-                                NavigationLink("Signing", value: AlleyCatToolRoute.signing)
+                                toolCategory("KittyStore", "shippingbox", route: .store, id: "settings.category.kittyStore")
+                                toolCategory("Signing", "signature", route: .signing, id: "settings.category.signing")
                             }
                             if AppDistributionCapabilities.includesEmexDE {
-                                NavigationLink("Nyxian", value: AlleyCatToolRoute.nyxian)
-                                NavigationLink("BuildKit", value: AlleyCatToolRoute.buildKit)
-                                Button("Restart Without Nyxian Extensions") {
+                                toolCategory("Nyxian", "hammer", route: .nyxian, id: "settings.category.nyxian")
+                                toolCategory("BuildKit", "wrench.and.screwdriver", route: .buildKit, id: "settings.category.buildKit")
+                                Button {
                                     showNyxianRecoveryConfirmation = true
+                                } label: {
+                                    SettingsRowLabel(
+                                        title: "Restart Without Nyxian Extensions",
+                                        systemImage: "arrow.clockwise.circle"
+                                    )
                                 }
+                                .tint(LitterTheme.textPrimary)
+                                .accessibilityIdentifier("settings.restartWithoutNyxianExtensions")
+                                .settingsRowBackground()
                                 .confirmationDialog("Restart Alley Cãt?", isPresented: $showNyxianRecoveryConfirmation, titleVisibility: .visible) {
                                     Button("Restart Without Extensions", role: .destructive) {
                                         EmexDEEmbeddedBridge.restartWithoutExtensions()
@@ -79,6 +87,8 @@ struct SettingsView: View {
                                     Text("Alley Cãt will close and restart with Nyxian extensions disabled for this launch. Save any open files first.")
                                 }
                             }
+                        } header: {
+                            settingsHeader("Tools")
                         }
                     }
                     Section {
@@ -403,6 +413,22 @@ struct SettingsView: View {
             destination()
         } label: {
             SettingsRowLabel(title: title, systemImage: symbol, value: value)
+        }
+        .accessibilityIdentifier(id)
+        .settingsRowBackground()
+    }
+
+    /// Route-based entries keep their deep-link navigation while using the
+    /// same Alley Cat icon, typography, foreground colors, and row fill as
+    /// Appearance, Conversation, Advanced, and Diagnostics.
+    private func toolCategory(
+        _ title: String,
+        _ symbol: String,
+        route: AlleyCatToolRoute,
+        id: String
+    ) -> some View {
+        NavigationLink(value: route) {
+            SettingsRowLabel(title: title, systemImage: symbol)
         }
         .accessibilityIdentifier(id)
         .settingsRowBackground()
