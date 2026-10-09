@@ -207,6 +207,15 @@ ensure_liveprocess_info_plist_metadata()
 # version marker advances. Replace from the same upstream download atomically.
 bootstrap = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m")
 bootstrap_text = bootstrap.read_text()
+# Standalone Nyxian owns all of Documents; embedded Nyxian must own only a
+# child directory because upstream failure recovery clears rootURL entirely.
+old_root = 'stringByAppendingPathComponent:@"Documents"]];'
+new_root = 'stringByAppendingPathComponent:@"Documents/Nyxian"]];'
+if old_root in bootstrap_text:
+    bootstrap_text = bootstrap_text.replace(old_root, new_root, 1)
+elif new_root not in bootstrap_text:
+    raise SystemExit("Missing expected NXBootstrap Documents root")
+
 old_rootca = 'if(![[NSFileManager defaultManager] moveItemAtPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"org.emexlabs.rootca.v1.pub.nxt2c"] toPath:[[self.rootURL URLByAppendingPathComponent:@"RootCAs/org.emexlabs.rootca.v1.pub.nxt2c"] path] error:nil])'
 new_rootca = 'NSData *rootCAData = [NSData dataWithContentsOfFile:[NSTemporaryDirectory() stringByAppendingPathComponent:@"org.emexlabs.rootca.v1.pub.nxt2c"] options:0 error:&error];\n                if(!rootCAData || ![rootCAData writeToURL:[self.rootURL URLByAppendingPathComponent:@"RootCAs/org.emexlabs.rootca.v1.pub.nxt2c"] options:NSDataWritingAtomic error:&error])'
 if old_rootca in bootstrap_text:
@@ -215,6 +224,7 @@ if old_rootca in bootstrap_text:
     bootstrap.write_text(bootstrap_text)
 elif new_rootca not in bootstrap_text:
     raise SystemExit("Missing expected NXBootstrap root CA installation")
+bootstrap.write_text(bootstrap_text)
 
 print(f"Normalized {len(changed)} emexDE generated Swift imports.")
 for source in changed:

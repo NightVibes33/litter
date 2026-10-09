@@ -292,6 +292,7 @@ open class AppDelegate: NSObject, UIApplicationDelegate {
 }
 
 private enum KittyStoreEmbeddedRuntime {
+    @MainActor private static var lifecycleObserver: KittyStoreLifecycleObserver?
     @MainActor private static var didPrepare = false
     @MainActor private static var didStart = false
     @MainActor private static var didFinishStartup = false
@@ -354,6 +355,7 @@ private enum KittyStoreEmbeddedRuntime {
     static func prepareForLaunch() {
         guard !didPrepare else { return }
         didPrepare = true
+        lifecycleObserver = KittyStoreLifecycleObserver()
 
         UserDefaults.registerDefaults()
         UserDefaults.standard.enableEMPforWireguard = false
@@ -481,6 +483,38 @@ private enum KittyStoreEmbeddedRuntime {
     }
 }
 
+
+/// Forward the standalone SideStore scene lifecycle into the embedded runtime.
+/// The host owns UIApplicationDelegate, so SideStore's delegate is never called.
+@MainActor
+private final class KittyStoreLifecycleObserver: NSObject {
+    override init() {
+        super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(enterForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(enterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
+    }
+
+    @objc private func enterForeground() {
+        guard DatabaseManager.shared.isStarted else { return }
+        AppManager.shared.update()
+        if UserDefaults.standard.enableEMPforWireguard {
+            startEMProxy(bind_addr: AppConstants.Proxy.serverURL)
+        }
+        KittyStoreEmbeddedRuntime.startTransportIfPossible()
+    }
+
+    @objc private func enterBackground() {
+        guard UIApplication.shared.applicationState == .background else { return }
+        if UserDefaults.standard.enableEMPforWireguard { stopEMProxy() }
+        guard let monthAgo = Calendar.current.date(byAdding: .month, value: -1, to: Date()) else { return }
+        let cutoff = Calendar.current.startOfDay(for: monthAgo)
+        DatabaseManager.shared.purgeLoggedErrors(before: cutoff) { result in
+            if case .failure(let error) = result {
+                print("[KittyStoreEmbedded] Failed to purge logged errors: \(error.localizedDescription)")
+            }
+        }
+    }
+}
 
 private struct KittyStoreResourcePreflightError: LocalizedError {
     let missingResources: [String]

@@ -5,3 +5,21 @@ KittyStore now retains SideStore’s normal default-source seeding and host Inst
 News uses upstream sources. Endpoint HTTP 403 was observed from the execution workspace; this does not establish the phone’s exact fetch error. Source refresh and news decoding need device diagnostics. No invented news or fallback source is added.
 
 Nyxian uses its bundled CoreCompiler/resources and upstream SDK/bootstrap path; the root CA install has a root-owned retry repair. Verify bootstrap, project build, signing and launch separately. KittyStore also needs physical pairing import, LocalDevVPN transport, account sign-in, IPA installation, refresh and managed-app persistence checks. Source parity alone does not prove these work inside a shared host process. Full audit is incomplete.
+
+## Startup comparison against the pinned standalone sources
+
+| Upstream responsibility | Embedded handling | Acceptance |
+| --- | --- | --- |
+| SideStore defaults, transformers, database | Runtime prepares these; normal source/host registration restored | Native/device pending |
+| SideStore My Apps | Existing managed database and upstream update routine retained | Other app databases are not inherited |
+| SideStore news | Source refresh and news decoder retained; default source restored | Phone fetch error still needed; workspace endpoints returned HTTP 403 |
+| SideStore foreground/background | Added forwarding for app update, proxy lifecycle and error retention; retry deferred transport | Native/device pending |
+| SideStore pairing/signing/install/refresh | Existing minimuxer and AltSign entry points retained | Physical-device validation still needed |
+| SideStore URL import/backup callbacks | Standalone SceneDelegate owns these; host forwarding audit outstanding | Not accepted |
+| Nyxian userspace boot | Added missing PEUserspaceManager boot before window/UI creation, retaining current extension setting | Native/device pending |
+| Nyxian scene/window presentation | Existing window-server/swizzle/controller startup retained | Physical UI checks still needed |
+| Nyxian bootstrap files/SDK/root CA | Same resources/SDK path, atomic root CA retry, root isolated to Documents/Nyxian | Fresh bootstrap/device pending |
+| Nyxian failure cleanup | Clears its own bootstrap root only, preserving host documents | Source regression passes |
+| Nyxian projects/build/run/signing | Upstream controllers/bridges retained | Device build, export and launch pending |
+
+The new bootstrap root does not delete or migrate old Documents/Projects. Existing files remain accessible in Files. This is a shared host, so isolated upstream app containers must be represented explicitly; blindly reusing standalone Documents cleanup would destroy the host's data. Unchecked routes above are concrete remaining work, not a claim of full parity.

@@ -18,6 +18,7 @@ public final class EmexDEEmbeddedFactory: NSObject {
 
 private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBarControllerDelegate, UIOnboardingViewControllerDelegate {
     private static var runtimeBootstrapped = false
+    private static var userspaceBootStarted = false
 
     private let tabViewController = UIThemedTabViewController()
     private var installedRoot = false
@@ -59,6 +60,13 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         }
 
         installedRoot = true
+
+        // Standalone Nyxian boots its userspace before installing the window
+        // server/UI. Its SceneDelegate is not invoked in an embedded framework.
+        if !Self.userspaceBootStarted {
+            Self.userspaceBootStarted = true
+            PEUserspaceManager.shared().boot(withKextLoadingEnabled: NXApplicationState.loadKernelExtensions)
+        }
 
         // Match Nyxian's standalone SceneDelegate startup order. In the
         // embedded build there is no Nyxian SceneDelegate, so these steps must
