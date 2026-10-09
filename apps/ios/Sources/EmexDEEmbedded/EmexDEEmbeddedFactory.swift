@@ -10,6 +10,11 @@ private func liveProcessIsAvailable() -> Bool {
 @MainActor
 @objc(EmexDEEmbeddedFactory)
 public final class EmexDEEmbeddedFactory: NSObject {
+    @objc(restartWithoutExtensions)
+    public static func restartWithoutExtensions() {
+        NXApplicationState.restartAppWithoutKEXTLoadingEnabled()
+    }
+
     @objc(makeRootViewController)
     public static func makeRootViewController() -> UIViewController {
         EmexDEEmbeddedRootViewController()
@@ -67,6 +72,8 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         // server/UI. Its SceneDelegate is not invoked in an embedded framework.
         if !Self.userspaceBootStarted {
             Self.userspaceBootStarted = true
+            // Same normal-launch default as upstream; its persisted recovery flag wins.
+            NXApplicationState.loadKernelExtensions = true
             PEUserspaceManager.shared().boot(withKextLoadingEnabled: NXApplicationState.loadKernelExtensions)
         }
 

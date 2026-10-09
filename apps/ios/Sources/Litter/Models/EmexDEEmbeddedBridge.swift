@@ -13,6 +13,15 @@ enum EmexDEEmbeddedBridge {
         }
         return EmexDEBridgeUnavailableViewController()
     }
+    @MainActor
+    static func restartWithoutExtensions() {
+        guard AppDistributionCapabilities.includesEmexDE else { return }
+        loadEmbeddedFrameworksIfNeeded()
+        guard let resolved = resolveClass(classNames: embeddedFactoryClassNames, selectorName: "restartWithoutExtensions") else { return }
+        let function = unsafeBitCast(method_getImplementation(resolved.method), to: VoidNoArgIMP.self)
+        function(resolved.classObject, resolved.selector)
+    }
+
     #if !LITTER_APP_STORE_SAFE
     @MainActor
     static func runCommandJSON(_ requestJSON: String) async -> String? {
@@ -57,6 +66,7 @@ enum EmexDEEmbeddedBridge {
         }
     }
 
+    private typealias VoidNoArgIMP = @convention(c) (AnyObject, Selector) -> Void
     private typealias ObjectNoArgIMP = @convention(c) (AnyObject, Selector) -> Unmanaged<AnyObject>?
 
     private static func invokeObject(

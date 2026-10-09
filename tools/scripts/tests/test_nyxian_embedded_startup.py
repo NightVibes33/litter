@@ -19,5 +19,15 @@ class NyxianEmbeddedStartupTests(unittest.TestCase):
         self.assertIn('!NXApplicationState.extensionLessMode, #available(iOS 26.0, *)', source)
         self.assertIn('tabBarController.selectedViewController === viewController && NXBuilder.builds', source)
 
+    def test_loader_default_and_recovery_use_existing_upstream_state(self):
+        source = (ROOT / 'apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift').read_text()
+        self.assertIn('NXApplicationState.loadKernelExtensions = true', source)
+        self.assertLess(source.index('NXApplicationState.loadKernelExtensions = true'), source.index('PEUserspaceManager.shared().boot'))
+        self.assertIn('NXApplicationState.restartAppWithoutKEXTLoadingEnabled()', source)
+        settings = (ROOT / 'apps/ios/Sources/Litter/Views/SettingsView.swift').read_text()
+        self.assertIn('if AppDistributionCapabilities.includesEmexDE', settings)
+        self.assertIn('showNyxianRecoveryConfirmation', settings)
+        self.assertIn('Save any open files first.', settings)
+
 if __name__ == '__main__':
     unittest.main()

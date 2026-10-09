@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var alleyCatToolPath: [AlleyCatToolRoute] = []
     @AppStorage("litterSettingsRequestedRoute") private var requestedToolRoute = ""
     @State private var showOnboardingReplay = false
+    @State private var showNyxianRecoveryConfirmation = false
     @State private var activeServerSheet: SettingsServerSheet?
     @State private var serverEditError: String?
     /// Server projections mirrored out of `appModel.snapshot` by
@@ -67,6 +68,16 @@ struct SettingsView: View {
                             if AppDistributionCapabilities.includesEmexDE {
                                 NavigationLink("Nyxian", value: AlleyCatToolRoute.nyxian)
                                 NavigationLink("BuildKit", value: AlleyCatToolRoute.buildKit)
+                                Button("Restart Without Nyxian Extensions") {
+                                    showNyxianRecoveryConfirmation = true
+                                }
+                                .confirmationDialog("Restart Alley Cãt?", isPresented: $showNyxianRecoveryConfirmation, titleVisibility: .visible) {
+                                    Button("Restart Without Extensions", role: .destructive) {
+                                        EmexDEEmbeddedBridge.restartWithoutExtensions()
+                                    }
+                                } message: {
+                                    Text("Alley Cãt will close and restart with Nyxian extensions disabled for this launch. Save any open files first.")
+                                }
                             }
                         }
                     }
