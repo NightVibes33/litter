@@ -23,6 +23,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
     private let tabViewController = UIThemedTabViewController()
     private var installedRoot = false
     private var presentedOnboarding = false
+    private var checkedSigningSetup = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -36,6 +37,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         super.viewDidAppear(animated)
         installUpstreamRootIfNeeded()
         presentOnboardingIfNeeded()
+        checkSigningAfterOnboardingIfNeeded()
     }
 
     private func installUpstreamRootIfNeeded() {
@@ -95,7 +97,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         settingsNavigationController.tabBarItem = UITabBarItem(title: "Settings", image: UIImage(systemName: "gear"), tag: 1)
 
         var viewControllers: [UIViewController] = [contentNavigationController, settingsNavigationController]
-        if UIDevice.current.userInterfaceIdiom == .phone, #available(iOS 26.0, *) {
+        if UIDevice.current.userInterfaceIdiom == .phone, !NXApplicationState.extensionLessMode, #available(iOS 26.0, *) {
             let switcherViewController = UIViewController()
             switcherViewController.tabBarItem = UITabBarItem(tabBarSystemItem: .search, tag: 2)
             switcherViewController.tabBarItem.title = "Switcher"
@@ -143,6 +145,16 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         tabViewController.present(onboardingController, animated: false)
     }
 
+    private func checkSigningAfterOnboardingIfNeeded() {
+        guard !checkedSigningSetup,
+              installedRoot,
+              tabViewController.parent != nil,
+              UserDefaults.standard.object(forKey: "NXOnboardingSentinel") != nil,
+              tabViewController.presentedViewController == nil else { return }
+        checkedSigningSetup = true
+        checkSigningSetup()
+    }
+
     private func makeEmbeddedOnboardingConfiguration() -> UIOnboardingViewConfiguration {
         let frameworkBundle = Bundle(for: EmexDEEmbeddedFactory.self)
         let appIcon = UIImage(
@@ -186,7 +198,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
-        if NXBuilder.builds {
+        if tabBarController.selectedViewController === viewController && NXBuilder.builds {
             return false
         }
         if viewController.tabBarItem.tag == 2 {
@@ -200,7 +212,9 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
 
     func didFinishOnboarding(onboardingViewController: UIOnboardingViewController) {
         onboardingViewController.modalTransitionStyle = .crossDissolve
-        onboardingViewController.dismiss(animated: true)
+        onboardingViewController.dismiss(animated: true) { [weak self] in
+            self?.checkSigningAfterOnboardingIfNeeded()
+        }
         UserDefaults.standard.set(NSNumber(booleanLiteral: true), forKey: "NXOnboardingSentinel")
     }
 }
