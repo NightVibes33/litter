@@ -42,7 +42,7 @@ for rel in (
     "ThirdParty/SideStore/Upstream/AltStore.xcodeproj/project.pbxproj",
     "ThirdParty/SideStore/Upstream/AltStore/Sources/AddSourceViewController.swift",
     "ThirdParty/SideStore/Upstream/Dependencies/SideSign/README.md",
-    "ThirdParty/SideStore/Upstream/Dependencies/minimuxer/Cargo.toml",
+    "ThirdParty/SideStore/Upstream/Dependencies/minimuxer/Common/Package.swift",
     "ThirdParty/SideStore/Source/AltStore.xcodeproj/project.pbxproj",
     "ThirdParty/SideStore/Source/AltStore/Operations/UpdateKnownSourcesOperation.swift",
     "ThirdParty/Nyxian/LitterBuildKitNative/LitterBuildKitNative.h",
