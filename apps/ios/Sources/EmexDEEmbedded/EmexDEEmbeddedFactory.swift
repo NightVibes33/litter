@@ -1,6 +1,10 @@
 import UIKit
 import UIOnboarding
 
+private func nyxianLaunchLog(_ stage: String) {
+    NSLog("[NyxianEmbedded] %@", stage)
+}
+
 private func liveProcessIsAvailable() -> Bool {
     guard let plugInsURL = Bundle.main.builtInPlugInsURL else { return false }
     let extensionURL = plugInsURL.appendingPathComponent("LiveProcess.appex", isDirectory: true)
@@ -32,6 +36,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        nyxianLaunchLog("host viewDidLoad")
         // Do not construct Nyxian's UI until this controller is attached to a
         // UIWindowScene. NXWindowServer is a process-wide singleton and the
         // upstream presentation swizzle assumes it already exists.
@@ -40,13 +45,19 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        nyxianLaunchLog("viewDidAppear: native startup begin")
         installUpstreamRootIfNeeded()
         presentOnboardingIfNeeded()
-        checkSigningAfterOnboardingIfNeeded()
+        // Never open a P12 Files picker in the same layout transaction as
+        // an embedded custom-window controller being mounted.
+        DispatchQueue.main.async { [weak self] in
+            self?.checkSigningAfterOnboardingIfNeeded()
+        }
     }
 
     private func installUpstreamRootIfNeeded() {
         guard !installedRoot else { return }
+        nyxianLaunchLog("native extension preflight")
 
         #if !JAILBREAK_ENV
         guard liveProcessIsAvailable() else {
@@ -71,10 +82,12 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         // Standalone Nyxian boots its userspace before installing the window
         // server/UI. Its SceneDelegate is not invoked in an embedded framework.
         if !Self.userspaceBootStarted {
+            nyxianLaunchLog("PEUserspaceManager boot begin")
             Self.userspaceBootStarted = true
             // Same normal-launch default as upstream; its persisted recovery flag wins.
             NXApplicationState.loadKernelExtensions = true
             PEUserspaceManager.shared().boot(withKextLoadingEnabled: NXApplicationState.loadKernelExtensions)
+            nyxianLaunchLog("PEUserspaceManager boot returned")
         }
 
         // Match Nyxian's standalone SceneDelegate startup order. In the
@@ -82,20 +95,28 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         // be performed by the host before ContentViewController/Settings are
         // created. In particular, presenting a sheet after installing the
         // upstream swizzle dereferences NXWindowServer.shared().
+        nyxianLaunchLog("NXWindowServer initialization begin")
         RevertUI()
         _ = NXWindowServer.shared(with: windowScene)
-        UIViewController.swizzlePresentAndDismissOnce
-        UIBarButtonItem.swizzleBarButtonitem
+        nyxianLaunchLog("NXWindowServer initialized")
+        // The standalone Nyxian swizzles replace UIKit methods process-wide.
+        // In an embedded host they also intercept unrelated Files/P12 pickers
+        // and Alley Cat's own controls, so do not install them here.
 
         if !Self.runtimeBootstrapped {
             Self.runtimeBootstrapped = true
+            nyxianLaunchLog("NXBootstrap schedule")
             NXBootstrap.shared().bootstrap()
+            nyxianLaunchLog("NXBootstrap scheduled")
         }
 
         view.backgroundColor = currentTheme?.backgroundColor ?? .systemBackground
 
+        nyxianLaunchLog("ContentViewController init begin")
         let contentViewController = ContentViewController()
+        nyxianLaunchLog("SettingsViewController init begin")
         let settingsViewController = SettingsViewController()
+        nyxianLaunchLog("native controllers initialized")
 
         let contentNavigationController = UINavigationController(rootViewController: contentViewController)
         let settingsNavigationController = UINavigationController(rootViewController: settingsViewController)
@@ -115,6 +136,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         tabViewController.viewControllers = viewControllers
         tabViewController.delegate = self
         installSingleChild(tabViewController)
+        nyxianLaunchLog("Nyxian root mounted")
     }
 
     private func installSingleChild(_ child: UIViewController) {
