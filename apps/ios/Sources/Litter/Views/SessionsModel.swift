@@ -93,12 +93,15 @@ final class SessionsModel {
         observationGeneration &+= 1
         let generation = observationGeneration
         let revision = appModel.snapshotRevision
-        let derivationFingerprint = "\(revision)|\(appState.sessionsSelectedServerFilterId ?? "all")|\(appState.sessionsShowOnlyForks)|\(selectedRuntimeKind ?? "any")|\(appState.sessionsWorkspaceSortModeRaw)|\(searchQuery)"
+        let hiddenKeys = Set(SavedThreadsStore.hiddenKeys().map(\.threadKey))
+        let hiddenSignature = hiddenKeys.map { "\($0.serverId)/\($0.threadId)" }.sorted().joined(separator: "|")
+        let derivationFingerprint = "\(revision)|\(appState.sessionsSelectedServerFilterId ?? "all")|\(appState.sessionsShowOnlyForks)|\(selectedRuntimeKind ?? "any")|\(appState.sessionsWorkspaceSortModeRaw)|\(searchQuery)|\(hiddenSignature)"
         let snapshot = withObservationTracking {
             let selectedServerFilterId = appState.sessionsSelectedServerFilterId
             let showOnlyForks = appState.sessionsShowOnlyForks
             let workspaceSortMode = WorkspaceSortMode(rawValue: appState.sessionsWorkspaceSortModeRaw) ?? .mostRecent
             let appSnapshot = appModel.snapshot
+            let visibleSessions = (appSnapshot?.sessionSummaries ?? []).filter { !hiddenKeys.contains($0.key) }
 
             let nextConnectedServers = HomeDashboardSupport.sortedConnectedServers(
                 from: appSnapshot?.servers ?? [],
@@ -117,7 +120,7 @@ final class SessionsModel {
             let nextLocalServerIds = Set(rawServers.filter(\.isLocal).map(\.serverId))
             let nextBrowseableServerIds = Set(rawServers.filter(\.canBrowseDirectories).map(\.serverId))
 
-            let nextEphemeralStateByThreadKey = (appSnapshot?.sessionSummaries ?? []).reduce(into: [ThreadKey: ThreadEphemeralState]()) { partialResult, session in
+            let nextEphemeralStateByThreadKey = visibleSessions.reduce(into: [ThreadKey: ThreadEphemeralState]()) { partialResult, session in
                 partialResult[session.key] = ThreadEphemeralState(
                     hasTurnActive: session.hasActiveTurn,
                     updatedAt: session.updatedAtDate
@@ -125,7 +128,7 @@ final class SessionsModel {
             }
 
             let nextFrozenMostRecentThreadOrder = resolvedFrozenMostRecentThreadOrder(
-                sessionSummaries: appSnapshot?.sessionSummaries ?? [],
+                sessionSummaries: visibleSessions,
                 workspaceSortMode: workspaceSortMode,
                 previousDisplayedOrder: previousDisplayedOrder
             )
@@ -137,7 +140,7 @@ final class SessionsModel {
                 nextDerivedData = cached
             } else {
                 nextDerivedData = SessionsDerivation.build(
-                    sessions: appSnapshot?.sessionSummaries ?? [],
+                    sessions: visibleSessions,
                     selectedServerFilterId: selectedServerFilterId,
                     showOnlyForks: showOnlyForks,
                     selectedRuntimeKind: currentRuntimeKindFilter,

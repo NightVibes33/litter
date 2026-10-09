@@ -2033,6 +2033,16 @@ final class AppModel {
         self.snapshot = snapshot
     }
 
+    /// Remove an acknowledged archived session immediately rather than
+    /// leaving a stale cached row until a full server refresh.
+    func reconcileArchivedThread(_ key: ThreadKey) {
+        pendingThreadRefreshKeys.remove(key)
+        pendingThreadStateEvents.removeValue(forKey: key)
+        flushPendingStreamingDeltas(for: key)
+        cachedThreadSnapshots.removeValue(forKey: key)
+        removeThreadSnapshot(for: key)
+    }
+
     private func removeThreadSnapshot(
         for key: ThreadKey,
         agentDirectoryVersion: UInt64? = nil,

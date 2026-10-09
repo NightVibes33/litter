@@ -1789,6 +1789,7 @@ private struct HomeNavigationView: View {
             // Archive removes the server thread: reading it again can return
             // thread-not-found and rehydrate a stale home entry.
             LLog.info("conversation", "archive acknowledged", fields: fields)
+            appModel.reconcileArchivedThread(key)
             homeDashboardModel.unpinThread(key)
             hideThread(key)
         } catch {
