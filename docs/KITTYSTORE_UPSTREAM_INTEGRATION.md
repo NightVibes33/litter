@@ -58,3 +58,22 @@ The shell does not expose a Swift interpreter, SwiftPM, or native test runner. P
 The existing iSH command bridge exposes the real pinned Nyxian project operations through `nyxian projects`, `create`, `build`, and `run`; these are NXProject/NXBuilder operations rather than invented compiler jobs. `nyxian info PROJECT_PATH` now reports actual project Swift/C/linker flags, deployment target and artifact/diagnostic paths. `nyxian diagnostics PROJECT_PATH` returns the persisted upstream debug.json (regular files up to 4 MB); build/run responses also include those diagnostics and the path so local file tools can inspect larger logs. `nyxian clean PROJECT_PATH` calls NXBuilder.clean with a build-busy guard. Commands await actual bootstrap success before using the project index. Host paths returned by these commands are mapped through the existing /mnt/container mount; local file/shell tools can edit the same projects opened by Nyxian. No ChatGPT/shared dynamic tool definitions or model APIs are changed.
 
 Native command parsing, bootstrap, project diagnostics, cleanup, create/edit/build/export/run round trips and actual model tool invocation remain acceptance checks. This command set does not imply a bundled SwiftPM executable or interpreter, complete generic compiler flag/path staging, or automated extension loading. These gaps remain open rather than reporting simulated success.
+
+### Native command results and upstream execution boundary
+
+The pinned Nyxian `NXBuilder.buildProject` compiles through its real phase
+runner. Exporting an app or Ksurface project produces its package; exporting a
+utility produces `project.machoURL`, not an IPA. The shell bridge now checks
+that a successful export points to a nonempty regular file. Swift source reads
+must succeed with complete valid UTF-8 input before starting a compiler job;
+unreadable input is never replaced with an empty program.
+
+Upstream's `.run` builder phase signs and installs the target. Its callback is
+not a program execution result. The bridge reports `install-complete` separately
+from execution and does not invent stdout or an exit status for that program.
+The upstream GUI/runtime owns opening installed targets. General Swift
+interpreter execution and SwiftPM are not supplied by this pinned compiler
+integration. `swift --version` queries the bundled frontend; unsupported
+interpreter/SwiftPM requests fail explicitly. These boundaries are not a claim
+of full command-line or installed-device acceptance. Native CI and device
+compiler/build/install validation remain required.

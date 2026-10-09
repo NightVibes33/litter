@@ -24,3 +24,11 @@ class NativeSwiftCommandsTests(unittest.TestCase):
         self.assertIn('exitCode: 64, status: "swift-tests-unavailable"', swift)
         self.assertIn('exitCode: 64, status: "swift-execution-unavailable"', swift)
         self.assertIn('exitCode: 64, status: "swiftpm-unavailable"', swift)
+
+    def test_failed_input_read_cannot_compile_an_empty_substitute(self):
+        swift = (ROOT / "apps/ios/Sources/Litter/Models/LitterBuildKit.swift").read_text()
+        self.assertNotIn('(try? await IshFS.readTextFile(path: path, maxBytes: 512_000)) ?? ""', swift)
+        self.assertNotIn('(try? await IshFS.readTextFile(path: sourcePath, maxBytes: 512_000)) ?? ""', swift)
+        self.assertEqual(swift.count('status: "swift-input-unreadable"'), 2)
+        self.assertIn('try await IshFS.readFileData(path: path, maxBytes: 512_001)', swift)
+        self.assertIn('guard data.count <= 512_000, let source = String(data: data, encoding: .utf8)', swift)

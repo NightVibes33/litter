@@ -1706,13 +1706,29 @@ actor LitterBuildKit {
         return BuildKitCommandResult(exitCode: Int(bootstrap.exitCode), status: status, log: bootstrap.output)
     }
 
+    private static func readSwiftCompilerInput(path: String) async throws -> String {
+        // Never replace a failed, truncated, or invalid source read with an empty program.
+        let data = try await IshFS.readFileData(path: path, maxBytes: 512_001)
+        guard data.count <= 512_000, let source = String(data: data, encoding: .utf8) else {
+            throw NSError(domain: "LitterBuildKit", code: 66, userInfo: [
+                NSLocalizedDescriptionKey: "Swift input must be valid UTF-8 and no larger than 512 KB."
+            ])
+        }
+        return source
+    }
+
     private func swiftCheck(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         guard let first = tokens.first else {
             return BuildKitCommandResult(exitCode: 64, status: "missing-input", log: "Usage: litter-swift-check path/to/File.swift\n")
         }
         let path = first.hasPrefix("/") ? first : "\(cwd)/\(first)"
-        let source = (try? await IshFS.readTextFile(path: path, maxBytes: 512_000)) ?? ""
+        let source: String
+        do {
+            source = try await Self.readSwiftCompilerInput(path: path)
+        } catch {
+            return BuildKitCommandResult(exitCode: 66, status: "swift-input-unreadable", log: "Cannot read Swift input \(path): \(error.localizedDescription)\nNo compiler job was started.\n")
+        }
         var log = "Alley Cãt BuildKit Swift check\n"
         log += "Input: \(path)\n"
         log += "Backend: Nyxian private asset pack + native driver\n\n"
@@ -1946,7 +1962,12 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 64, status: "swiftc-missing-input", log: "Usage: swiftc path/to/File.swift -o output\n")
         }
         let sourcePath = sourceToken.hasPrefix("/") ? sourceToken : "\(cwd)/\(sourceToken)"
-        let source = (try? await IshFS.readTextFile(path: sourcePath, maxBytes: 512_000)) ?? ""
+        let source: String
+        do {
+            source = try await Self.readSwiftCompilerInput(path: sourcePath)
+        } catch {
+            return BuildKitCommandResult(exitCode: 66, status: "swift-input-unreadable", log: "Cannot read Swift input \(sourcePath): \(error.localizedDescription)\nNo compiler job was started.\n")
+        }
         var log = "\(compatibilityName) compatibility shim\n"
         log += "Input: \(sourcePath)\n"
         log += "Backend: Alley Cãt BuildKit native Swift driver\n\n"

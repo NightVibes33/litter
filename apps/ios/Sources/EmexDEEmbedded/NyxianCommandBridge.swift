@@ -177,10 +177,25 @@ public final class NyxianCommandBridge: NSObject {
                     continuation.resume(returning: (result, output))
                 }
             }
-            let artifact = command == "build" ? project.packageURL.path : (executablePath ?? "")
+            // Upstream exports utilities as Mach-O executables, not IPA packages.
+            let artifact = command == "build"
+                ? (projectKind == .utility ? project.machoURL.path : project.packageURL.path)
+                : (executablePath ?? "")
+            if success, command == "build" {
+                guard let attributes = try? FileManager.default.attributesOfItem(atPath: artifact),
+                      attributes[.type] as? FileAttributeType == .typeRegular,
+                      let size = attributes[.size] as? NSNumber, size.int64Value > 0 else {
+                    return response(code: 74, status: "build-artifact-missing",
+                                    message: "Upstream builder completed without a nonempty export artifact.",
+                                    payload: ["projectPath": project.url.path, "artifactPath": artifact])
+                }
+            }
             return response(
                 code: success ? 0 : 65,
-                status: success ? "\(command)-complete" : "\(command)-failed",
+                status: success ? (command == "run" ? "install-complete" : "build-complete") : "\(command)-failed",
+                message: success && command == "run"
+                    ? "Upstream Nyxian built and installed the target. This does not report execution or a program exit status."
+                    : nil,
                 payload: [
                     "projectPath": project.url.path,
                     "artifactPath": artifact,

@@ -22,3 +22,12 @@ class NyxianProjectCommandsTests(unittest.TestCase):
         self.assertIn("read(upToCount: 4_000_001)", bridge)
         self.assertIn("guard !NXBuilder.builds else", bridge)
         self.assertIn(".typeRegular", bridge)
+
+    def test_utility_export_is_executable_and_completion_requires_artifact(self):
+        bridge = (ROOT / "apps/ios/Sources/EmexDEEmbedded/NyxianCommandBridge.swift").read_text()
+        self.assertIn('projectKind == .utility ? project.machoURL.path : project.packageURL.path', bridge)
+        self.assertIn('if success, command == "build"', bridge)
+        self.assertIn('size.int64Value > 0', bridge)
+        self.assertIn('status: "build-artifact-missing"', bridge)
+        self.assertIn('command == "run" ? "install-complete" : "build-complete"', bridge)
+        self.assertIn('This does not report execution or a program exit status.', bridge)
