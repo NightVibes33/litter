@@ -124,3 +124,14 @@ jobs:
                   raise SystemExit(f'Invalid catalog URL at index {ix}: {u!r}')
               print('SHRUB_REPO',ix+1,u)
           PY
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Swift parser check for the opt-in ShrubLibrary picker
+        run: |
+          set -euo pipefail
+          swiftc -frontend -parse ThirdParty/SideStore/Source/AltStore/Sources/AddSourceViewController.swift
+          grep -q 'https://shrublibrary.pages.dev/repos.txt' ThirdParty/SideStore/Source/AltStore/Sources/AddSourceViewController.swift
+          grep -q 'self.navigationController?.pushViewController(picker, animated: true)' ThirdParty/SideStore/Source/AltStore/Sources/AddSourceViewController.swift
+          echo 'ShrubLibrary picker Swift syntax and opt-in navigation verified'
