@@ -247,7 +247,10 @@ private extension AddSourceViewController
             cell.contentView.layoutMargins.right = self.view.layoutMargins.right
             
             cell.textField.delegate = self
-            
+            // Keep the chosen ShrubLibrary URL visible if this cell is reused
+            // after returning from the picker.
+            cell.textField.text = self.viewModel.sourceAddress
+
             cell.setNeedsLayout()
             cell.layoutIfNeeded()
             
