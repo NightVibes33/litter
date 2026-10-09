@@ -40,6 +40,10 @@ class EmexDEImportPatchTests(unittest.TestCase):
             bootstrap_first = bootstrap_path.read_text()
             self.assertIn('#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>', bootstrap_first)
             self.assertIn('ksurface_keychain_update()', bootstrap_first)
+            self.assertIn('stringByAppendingPathComponent:@"Documents/Nyxian"', bootstrap_first)
+            self.assertNotIn('stringByAppendingPathComponent:@"Documents"]];', bootstrap_first)
+            self.assertIn('NSDataWritingAtomic error:&error', bootstrap_first)
+            self.assertNotIn('failed to move emexlabs public rootca key', bootstrap_first)
             workspace_path = root / SOURCE / 'LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m'
             workspace_first = workspace_path.read_text()
             self.assertIn('#if HOST_ENV\n#define LIVEPROCESS 0', workspace_first)
