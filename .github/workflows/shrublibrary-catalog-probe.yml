@@ -1,0 +1,74 @@
+name: Probe live ShrubLibrary repository index
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - upstream/nyxian-sidestore-integration
+    paths:
+      - '.github/workflows/shrublibrary-catalog-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Inspect public index and client bundles without modifying the site
+        env:
+          SITE_URL: https://shrublibrary.pages.dev/
+        run: |
+          python3 - <<'PY'
+          import json
+          import re
+          import urllib.parse
+          import urllib.request
+          from html.parser import HTMLParser
+          class Links(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.assets=[]
+              def handle_starttag(self, tag, attrs):
+                  d=dict(attrs)
+                  if tag=='script' and d.get('src'):
+                      self.assets.append(d['src'])
+                  if tag=='link' and d.get('href') and ('.js' in d['href'] or 'modulepreload' in d.get('rel','')):
+                      self.assets.append(d['href'])
+          root='https://shrublibrary.pages.dev/'
+          def fetch(url, limit=6000000):
+              req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (compatible; AlleyCat-upstream-audit/1.0)'})
+              with urllib.request.urlopen(req,timeout=25) as res:
+                  print('FETCH',res.status,res.headers.get('content-type'),url)
+                  return res.read(limit)
+          raw=fetch(root)
+          html=raw.decode('utf-8','replace')
+          print('HTML_LEN',len(html))
+          print('HTML_HEAD',html[:7000])
+          parser=Links()
+          parser.feed(html)
+          print('SCRIPT_ASSETS',json.dumps(parser.assets[:100]))
+          matches=set()
+          for asset in parser.assets[:60]:
+              u=urllib.parse.urljoin(root,asset)
+              try:
+                  data=fetch(u).decode('utf-8','replace')
+              except Exception as e:
+                  print('ASSET_ERROR',u,type(e).__name__,str(e)[:180])
+                  continue
+              urls=re.findall(r'https?://[^\\\"\x27\s<>\\]+',data)
+              for url in urls:
+                  url=url.rstrip('.,});]\\')
+                  if any(x in url.lower() for x in ('json','repo','altstore','ipa','source','sideload','github.io','pages.dev','githubusercontent.com')):
+                      matches.add(url)
+              print('ASSET_STATS',len(data),'URL_CANDIDATES',len(urls),'MATCHED',len(matches),u)
+              if 'shrublibrary' in data.lower():
+                  for key in ('repos:', 'repoUrl:', 'sourceURL:', 'sourceUrl:', 'defaultRepos', 'repoList'):
+                      ix=data.find(key)
+                      if ix>=0:
+                          print('CONTEXT',key,data[max(0,ix-150):ix+450])
+          print('MATCHED_URLS_COUNT',len(matches))
+          for url in sorted(matches)[:600]:
+              print('MATCHED_URL',url[:850])
+          PY
