@@ -228,7 +228,7 @@ require_grep "emexDE target uses framework module" "MODULEMAP_FILE: Sources/Emex
 require_grep "emexDE module exposes upstream bridge" "#import <NXBridge.h>" "apps/ios/Sources/EmexDEEmbedded/emexDE.h"
 require_grep "emexDE target embeds LiveProcess" "target: LiveProcess" "apps/ios/project.yml"
 require_grep "emexDE route boots upstream projects" "ContentViewController()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
-require_grep "emexDE route boots upstream settings" "SettingsViewController()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
+require_grep "emexDE route boots upstream settings" "NXSettingsTableViewController()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
 require_grep "emexDE route checks LiveProcess" "liveProcessIsAvailable()" "apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift"
 require_grep "emexDE runtime resources embedded" "Embed emexDE Runtime Resources" "apps/ios/project.yml"
 require_grep "emexDE unsigned IPA workflow path" "ThirdParty/EmexDE/**" ".github/workflows/ios-unsigned-ipa.yml"
