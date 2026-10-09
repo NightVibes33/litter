@@ -51,13 +51,3 @@ extension NSAttributedString {
         self.init(string: string, attributes: attributes)
     }
 }
-
-final class RefreshAllIntent: INIntent {}
-
-extension INInteraction {
-    static func refreshAllApps() -> INInteraction {
-        let intent = RefreshAllIntent()
-        intent.suggestedInvocationPhrase = NSString.deferredLocalizedIntentsString(with: "Refresh my apps") as String
-        return INInteraction(intent: intent, response: nil)
-    }
-}

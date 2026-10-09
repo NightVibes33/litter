@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Intents
 import UserNotifications
 import Combine
 import os
@@ -173,6 +174,12 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // Block briefly on the close handshake so iroh can flush
         // CONNECTION_CLOSE frames; bail if iroh's drain takes too long.
         _ = semaphore.wait(timeout: .now() + 2.5)
+    }
+
+    @MainActor
+    func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {
+        guard AppDistributionCapabilities.includesKittyStore else { return nil }
+        return KittyStoreEmbeddedBridge.intentHandler(for: intent)
     }
 
     func application(_ application: UIApplication, performFetchWithCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {

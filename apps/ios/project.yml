@@ -123,6 +123,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.AltStoreCore
+        INTENTS_CODEGEN_LANGUAGE: Swift
         INFOPLIST_FILE: ../../ThirdParty/SideStore/Source/AltStoreCore/Info.plist
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
@@ -131,7 +132,6 @@ targets:
       - path: ../../ThirdParty/SideStore/Source/AltStoreCore
         excludes:
           - Info.plist
-          - Intents/**
       - path: ../../ThirdParty/SideStore/Source/Shared
     dependencies:
       - target: Roxas
@@ -190,6 +190,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sigkitten.litter.KittyStore
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) ALLEY_CAT_EMBEDDED_STORE"
+        INTENTS_CODEGEN_LANGUAGE: Swift
         PRODUCT_MODULE_NAME: SideStore
         DEFINES_MODULE: "YES"
         CLANG_ENABLE_MODULES: "YES"
@@ -202,8 +204,6 @@ targets:
           - SceneDelegate.swift
           - Info.plist
           - AltStore-Bridging-Header.h
-          - Intents/**
-          - Extensions/INInteraction+AltStore.swift
           - Base.lproj/**
           - Authentication/*.storyboard
           - Components/*.xib

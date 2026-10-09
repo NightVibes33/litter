@@ -1,6 +1,7 @@
 import Foundation
 import Nuke
 import UIKit
+import Intents
 import AltStoreCore
 import Minimuxer
 
@@ -106,6 +107,20 @@ public enum KittyStoreEmbeddedFactory {
 @MainActor
 @objc(KittyStoreEmbeddedEntryPoint)
 public final class KittyStoreEmbeddedEntryPoint: NSObject {
+    private static let refreshIntentHandler = IntentHandler()
+    private static let viewAppIntentHandler = ViewAppIntentHandler()
+
+    @objc(intentHandlerFor:)
+    public static func intentHandler(for intent: INIntent) -> NSObject? {
+        KittyStoreEmbeddedFactory.bootstrap()
+        KittyStoreEmbeddedFactory.startTransportIfPossible()
+        switch intent {
+        case is RefreshAllIntent: return refreshIntentHandler
+        case is ViewAppIntent: return viewAppIntentHandler
+        default: return nil
+        }
+    }
+
     @objc(bootstrap)
     public static func bootstrap() {
         KittyStoreEmbeddedFactory.bootstrap()

@@ -1,6 +1,7 @@
 import Foundation
 import ObjectiveC
 import UIKit
+import Intents
 
 enum KittyStoreEmbeddedBridge {
     struct TransportProbe: Sendable {
@@ -82,6 +83,12 @@ enum KittyStoreEmbeddedBridge {
     @MainActor
     static func bootstrap() {
         invokeVoid(classNames: embeddedEntryPointClassNames, selectorName: "bootstrap")
+    }
+
+    @MainActor
+    static func intentHandler(for intent: INIntent) -> Any? {
+        invokeObject(classNames: embeddedEntryPointClassNames,
+                     selectorName: "intentHandlerFor:", argument: intent)
     }
 
     @MainActor

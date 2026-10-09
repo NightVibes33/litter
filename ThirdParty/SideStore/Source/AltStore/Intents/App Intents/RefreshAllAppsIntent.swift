@@ -138,6 +138,13 @@ private extension RefreshAllAppsIntent
 {
     func refreshAllApps() async throws
     {
+        #if ALLEY_CAT_EMBEDDED_STORE
+        await MainActor.run {
+            KittyStoreEmbeddedFactory.bootstrap()
+            KittyStoreEmbeddedFactory.startTransportIfPossible()
+        }
+        #endif
+
         if !DatabaseManager.shared.isStarted
         {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in

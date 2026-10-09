@@ -214,6 +214,7 @@ def strip_info_plist_app_store_sensitive_keys(text: str) -> str:
         text = text.replace(block, "")
 
     for key in (
+        "INIntentsSupported",
         "LSApplicationQueriesSchemes",
         "UTImportedTypeDeclarations",
     ):
