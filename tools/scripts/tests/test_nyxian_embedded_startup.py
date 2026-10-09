@@ -28,8 +28,14 @@ class NyxianEmbeddedStartupTests(unittest.TestCase):
 
     def test_loader_default_and_recovery_use_existing_upstream_state(self):
         source = (ROOT / 'apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift').read_text()
-        self.assertIn('NXApplicationState.loadKernelExtensions = true', source)
-        self.assertLess(source.index('NXApplicationState.loadKernelExtensions = true'), source.index('PEUserspaceManager.shared().boot'))
+        setting = 'NXApplicationState.loadKernelExtensions = UserDefaults.standard.bool(forKey: "nyxian.boot.kextLoading")'
+        self.assertIn(setting, source)
+        self.assertLess(source.index(setting), source.index('PEUserspaceManager.shared().boot'))
+        self.assertIn('NXUITabBarController()', source)
+        self.assertIn('NXSettingsTableViewController()', source)
+        self.assertNotIn('UIThemedTabViewController()', source)
+        self.assertNotIn('SettingsViewController()', source)
+        self.assertNotIn('currentTheme?.backgroundColor', source)
         self.assertIn('NXApplicationState.restartAppWithoutKEXTLoadingEnabled()', source)
         settings = (ROOT / 'apps/ios/Sources/Litter/Views/SettingsView.swift').read_text()
         self.assertIn('if AppDistributionCapabilities.includesEmexDE', settings)

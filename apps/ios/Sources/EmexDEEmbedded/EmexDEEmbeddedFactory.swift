@@ -29,7 +29,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
     private static var runtimeBootstrapped = false
     private static var userspaceBootStarted = false
 
-    private let tabViewController = UIThemedTabViewController()
+    private let tabViewController = NXUITabBarController()
     private var installedRoot = false
     private var presentedOnboarding = false
     private var checkedSigningSetup = false
@@ -84,8 +84,9 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         if !Self.userspaceBootStarted {
             nyxianLaunchLog("PEUserspaceManager boot begin")
             Self.userspaceBootStarted = true
-            // Same normal-launch default as upstream; its persisted recovery flag wins.
-            NXApplicationState.loadKernelExtensions = true
+            // Match upstream NXSlotMain: honor the persisted Nyxian toggle,
+            // including the one-launch restart-without-extensions override.
+            NXApplicationState.loadKernelExtensions = UserDefaults.standard.bool(forKey: "nyxian.boot.kextLoading")
             PEUserspaceManager.shared().boot(withKextLoadingEnabled: NXApplicationState.loadKernelExtensions)
             nyxianLaunchLog("PEUserspaceManager boot returned")
         }
@@ -113,12 +114,12 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
             nyxianLaunchLog("NXBootstrap scheduled")
         }
 
-        view.backgroundColor = currentTheme?.backgroundColor ?? .systemBackground
+        view.backgroundColor = LDETheme.currentTheme?.backgroundColor ?? .systemBackground
 
         nyxianLaunchLog("ContentViewController init begin")
         let contentViewController = ContentViewController()
-        nyxianLaunchLog("SettingsViewController init begin")
-        let settingsViewController = SettingsViewController()
+        nyxianLaunchLog("NXSettingsTableViewController init begin")
+        let settingsViewController = NXSettingsTableViewController()
         nyxianLaunchLog("native controllers initialized")
 
         let contentNavigationController = UINavigationController(rootViewController: contentViewController)
@@ -172,7 +173,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         presentedOnboarding = true
         let onboardingController = UIOnboardingViewController(withConfiguration: makeEmbeddedOnboardingConfiguration())
         onboardingController.delegate = self
-        onboardingController.backgroundColor = currentTheme?.backgroundColor ?? .systemBackground
+        onboardingController.backgroundColor = LDETheme.currentTheme?.backgroundColor ?? .systemBackground
         onboardingController.loadViewIfNeeded()
         tabViewController.present(onboardingController, animated: false)
     }
@@ -207,7 +208,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
             ]
         )
 
-        let lightBackground = (currentTheme?.backgroundColor ?? UIColor.systemBackground)
+        let lightBackground = (LDETheme.currentTheme?.backgroundColor ?? UIColor.systemBackground)
             .resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
         let buttonConfiguration = UIOnboardingButtonConfiguration(
             title: "Continue",
@@ -254,7 +255,7 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
 private final class EmexDEMissingLiveProcessViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = currentTheme?.backgroundColor ?? .systemBackground
+        view.backgroundColor = LDETheme.currentTheme?.backgroundColor ?? .systemBackground
 
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
