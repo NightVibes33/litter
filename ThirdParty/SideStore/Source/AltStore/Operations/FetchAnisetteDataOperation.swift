@@ -176,7 +176,14 @@ final class FetchAnisetteDataOperation: ResultOperation<ALTAnisetteData>, WebSoc
         } catch {
             throw OperationError.anisetteV3Error(message: "The anisette server returned an unreadable response. Choose another server in Settings and try signing in again.")
         }
-        if let json = parsed as? [String: String] {
+        // Servers may encode routing information as a JSON number. Requiring
+        // every value to be String incorrectly rejects otherwise valid headers.
+        if let object = parsed as? [String: Any] {
+            let json = object.compactMapValues { value -> String? in
+                if let text = value as? String { return text }
+                if let number = value as? NSNumber { return number.stringValue }
+                return nil
+            }
             if v3 {
                 if json["result"] == "GetHeadersError" {
                     let message = json["message"]
@@ -198,9 +205,14 @@ final class FetchAnisetteDataOperation: ResultOperation<ALTAnisetteData>, WebSoc
             if let routingInfo = json["X-Apple-I-MD-RINFO"] { formattedJSON["routingInfo"] = routingInfo }
             
             if v3 {
-                formattedJSON["deviceDescription"] = self.clientInfo!
-                formattedJSON["localUserID"] = self.mdLu!
-                formattedJSON["deviceUniqueIdentifier"] = self.deviceId!
+                guard let clientInfo = self.clientInfo, !clientInfo.isEmpty,
+                      let localUserID = self.mdLu, !localUserID.isEmpty,
+                      let deviceID = self.deviceId, !deviceID.isEmpty else {
+                    throw OperationError.anisetteV3Error(message: "Missing V3 device identifiers; retry client provisioning.")
+                }
+                formattedJSON["deviceDescription"] = clientInfo
+                formattedJSON["localUserID"] = localUserID
+                formattedJSON["deviceUniqueIdentifier"] = deviceID
                 
                 // Generate date stuff on client
                 let formatter = DateFormatter()
@@ -227,8 +239,8 @@ final class FetchAnisetteDataOperation: ResultOperation<ALTAnisetteData>, WebSoc
                 self.printOut("Implementation-Version: \(version)")
             } else { self.printOut("No Implementation-Version header") }
             
-            self.printOut("Anisette used: \(formattedJSON)")
-            self.printOut("Original JSON: \(json)")
+            // Anisette includes one-time credentials. Log only field presence.
+            self.printOut("Anisette fields received: \(formattedJSON.keys.sorted().joined(separator: ", "))")
             if let anisette = ALTAnisetteData(json: formattedJSON) {
                 self.printOut("Anisette is valid!")
                 self.finish(.success(anisette))
@@ -486,9 +498,11 @@ final class FetchAnisetteDataOperation: ResultOperation<ALTAnisetteData>, WebSoc
                         self.printOut("Server is V3")
                         
                         self.clientInfo = clientInfo
-                        self.userAgent = json["user_agent"]!
-                        self.printOut("Client-Info: \(self.clientInfo!)")
-                        self.printOut("User-Agent: \(self.userAgent!)")
+                        guard let userAgent = json["user_agent"], !userAgent.isEmpty else {
+                            return self.finish(.failure(OperationError.anisetteV3Error(message: "V3 server omitted user_agent.")))
+                        }
+                        self.userAgent = userAgent
+                        self.printOut("V3 client info and user agent received")
                         
                         if Keychain.shared.identifier == nil {
                             self.printOut("Generating identifier")
@@ -503,12 +517,15 @@ final class FetchAnisetteDataOperation: ResultOperation<ALTAnisetteData>, WebSoc
                             Keychain.shared.identifier = Data(bytes: &bytes, count: bytes.count).base64EncodedString()
                         }
                         
-                        let decoded = Data(base64Encoded: Keychain.shared.identifier!)!
+                        guard let encoded = Keychain.shared.identifier,
+                              let decoded = Data(base64Encoded: encoded),
+                              decoded.count == 16 else {
+                            return self.finish(.failure(OperationError.anisetteV3Error(message: "Invalid local device identifier; regenerate the signing identity.")))
+                        }
                         self.mdLu = decoded.sha256().hexEncodedString()
-                        self.printOut("X-Apple-I-MD-LU: \(self.mdLu!)")
                         let uuid: UUID = decoded.object()
                         self.deviceId = uuid.uuidString.uppercased()
-                        self.printOut("X-Mme-Device-Id: \(self.deviceId!)")
+                        self.printOut("V3 device identifiers ready")
                         
                         callback()
                     } else { self.handleV1() }

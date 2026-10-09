@@ -21,6 +21,7 @@ on:
   push:
     branches:
       - main
+      - 'integration/upstream-nyxian-sidestore-*'
     paths:
       - 'Makefile'
       - 'Package.swift'

@@ -15,3 +15,11 @@
 	url = https://github.com/emexlab/Nyxian.git
 	branch = main
 	shallow = true
+
+# Current official SideStore code kept separate from the customized Alley Cat
+# compatibility snapshot until a tested adapter replaces AltStoreCore.
+[submodule "ThirdParty/SideStore/Upstream"]
+	path = ThirdParty/SideStore/Upstream
+	url = https://github.com/SideStore/SideStore.git
+	branch = develop
+	shallow = true
