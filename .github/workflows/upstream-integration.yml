@@ -1,0 +1,38 @@
+name: Validate upstream Nyxian and SideStore integration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - upstream/nyxian-sidestore-integration
+    paths:
+      - '.gitmodules'
+      - 'ThirdParty/EmexDE/**'
+      - 'ThirdParty/SideStore/**'
+      - 'ThirdParty/upstream-integration.json'
+      - 'tools/scripts/verify-upstream-integration.py'
+      - '.github/workflows/upstream-integration.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-upstreams:
+    name: Verify exact source/dependency revisions
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+      - name: Validate embedded Nyxian and SideStore upstream trees
+        run: python3 tools/scripts/verify-upstream-integration.py
+      - name: Verify Alley Cat integration contracts
+        run: |
+          python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_*.py'
+          tools/scripts/verify-kittystore-integration.sh
+      - name: Inspect available upstream Xcode schemes
+        run: |
+          xcodebuild -list -project ThirdParty/EmexDE/Source/Nyxian.xcodeproj
+          xcodebuild -list -project ThirdParty/SideStore/Upstream/AltStore.xcodeproj
