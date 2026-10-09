@@ -369,10 +369,8 @@ require_absent "KittyStore install completion does not launch TurnOnDataDelay Sh
 require_absent "KittyStore install path does not open Shortcuts app" "shortcuts://run-shortcut" "ThirdParty/SideStore/Source/AltStore/Operations/SendAppOperation.swift"
 require_absent "KittyStore completion path does not open Shortcuts app" "shortcuts://run-shortcut" "ThirdParty/SideStore/Source/AltStore/Operations/InstallAppOperation.swift"
 require_grep "KittyStore install failure identifies installation_proxy rejection" "installation_proxy rejected" "ThirdParty/SideStore/Source/Dependencies/minimuxer/Sources/Install.swift"
-require_grep "KittyStore My Apps deletes embedded self records" "embeddedHostApps(in: context)" "ThirdParty/SideStore/Source/AltStoreCore/Model/DatabaseManager/DatabaseManager.swift"
 require_grep "KittyStore My Apps filters embedded self records" "excludingEmbeddedHostAppsPredicate" "ThirdParty/SideStore/Source/AltStoreCore/Model/InstalledApp.swift"
 require_grep "KittyStore My Apps filters stale self record names" "embeddedHostNames" "ThirdParty/SideStore/Source/AltStoreCore/Model/InstalledApp.swift"
-require_grep "KittyStore embedded runtime detection is shared" "InstalledApp.hidesEmbeddedHostApps" "ThirdParty/SideStore/Source/AltStoreCore/Model/DatabaseManager/DatabaseManager.swift"
 require_grep "KittyStore My Apps skips self context menu" "isEmbeddedHostApp" "ThirdParty/SideStore/Source/AltStore/My Apps/MyAppsViewController.swift"
 require_grep "KittyStore host matches embedded background" "KittyStoreHostPalette.background" "apps/ios/Sources/Litter/Views/KittyStoreHostView.swift"
 require_grep "KittyStore embedded root uses SideStore background" ".altBackground" "apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift"
@@ -475,3 +473,4 @@ if [ "$missing" -ne 0 ]; then
 fi
 
 echo "KittyStore/Feather integration wiring verified."
+require_absent "KittyStore preserves upstream database seeding" "removeEmbeddedSeededSources" "ThirdParty/SideStore/Source/AltStoreCore/Model/DatabaseManager/DatabaseManager.swift"

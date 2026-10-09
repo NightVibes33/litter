@@ -282,16 +282,9 @@ public extension InstalledApp
 {
     public static var hidesEmbeddedHostApps: Bool
     {
-        let value = Bundle.main.object(forInfoDictionaryKey: "LitterEmbedsSideStore")
-        if let isEmbedded = value as? Bool { return isEmbedded }
-        if let isEmbedded = value as? NSNumber { return isEmbedded.boolValue }
-        if let isEmbedded = value as? String { return (isEmbedded as NSString).boolValue }
-
-        if Bundle.Info.orgbundleIdentifier == "com.sigkitten.litter" { return true }
-        if Bundle.Info.appbundleIdentifier.hasPrefix("com.sigkitten.litter") { return true }
-        if Bundle.main.bundleIdentifier?.hasPrefix("com.sigkitten.litter") == true { return true }
-
-        return Bundle.main.bundleIdentifier == Bundle.Info.orgbundleIdentifier
+        // Embedded KittyStore manages its host just as standalone SideStore
+        // manages itself. Do not suppress normal database seeding or My Apps.
+        return false
     }
 
     static var embeddedHostBundleIdentifiers: [String]
