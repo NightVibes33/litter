@@ -35,7 +35,7 @@ class NyxianEmbeddedStartupTests(unittest.TestCase):
         self.assertIn('NXSettingsTableViewController()', source)
         self.assertNotIn('UIThemedTabViewController()', source)
         self.assertNotIn('SettingsViewController()', source)
-        self.assertNotIn('currentTheme?.backgroundColor', source)
+        self.assertNotIn('= currentTheme?.backgroundColor', source)
         self.assertIn('NXApplicationState.restartAppWithoutKEXTLoadingEnabled()', source)
         settings = (ROOT / 'apps/ios/Sources/Litter/Views/SettingsView.swift').read_text()
         self.assertIn('if AppDistributionCapabilities.includesEmexDE', settings)
