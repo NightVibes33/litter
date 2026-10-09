@@ -415,42 +415,35 @@ private extension DatabaseManager
                 
                 // figure out if the current AltStoreApp is signed with "Use Main Profie" option
                 // by checking if the first extension's entitlement's application-identifier matches current one
-                if isEmbeddedSideStoreRuntime
-                {
-                    installedApp.useMainProfile = true
-                }
-                else
-                {
-                    repeat {
-                        guard let pluginURL = Bundle.main.builtInPlugInsURL else {
-                            installedApp.useMainProfile = true
-                            break
-                        }
-                        guard let pluginFolders = try? FileManager.default.contentsOfDirectory(at: pluginURL, includingPropertiesForKeys: nil) else {
-                            installedApp.useMainProfile = true
-                            break
-                        }
+                repeat {
+                    guard let pluginURL = Bundle.main.builtInPlugInsURL else {
+                        installedApp.useMainProfile = true
+                        break
+                    }
+                    guard let pluginFolders = try? FileManager.default.contentsOfDirectory(at: pluginURL, includingPropertiesForKeys: nil) else {
+                        installedApp.useMainProfile = true
+                        break
+                    }
 
-                        guard let pluginFolder = pluginFolders.first, let altPluginApp = ALTApplication(fileURL: pluginFolder) else {
-                            installedApp.useMainProfile = true
-                            break
-                        }
+                    guard let pluginFolder = pluginFolders.first, let altPluginApp = ALTApplication(fileURL: pluginFolder) else {
+                        installedApp.useMainProfile = true
+                        break
+                    }
 
-                        let entitlements = altPluginApp.entitlements
-                        guard let appId = entitlements[ALTEntitlement.applicationIdentifier] as? String else {
-                            installedApp.useMainProfile = false
-                            print("no ALTEntitlementApplicationIdentifier???")
-                            break
-                        }
+                    let entitlements = altPluginApp.entitlements
+                    guard let appId = entitlements[ALTEntitlement.applicationIdentifier] as? String else {
+                        installedApp.useMainProfile = false
+                        print("no ALTEntitlementApplicationIdentifier???")
+                        break
+                    }
 
-                        if appId.hasSuffix(Bundle.main.bundleIdentifier!) {
-                            installedApp.useMainProfile = true
-                        } else {
-                            installedApp.useMainProfile = false
-                        }
+                    if appId.hasSuffix(Bundle.main.bundleIdentifier!) {
+                        installedApp.useMainProfile = true
+                    } else {
+                        installedApp.useMainProfile = false
+                    }
 
-                    } while(false)
-                }
+                } while(false)
 
                 installedApp.storeApp = storeApp
             }
@@ -458,28 +451,25 @@ private extension DatabaseManager
             /* App Extensions */
             var installedExtensions = Set<InstalledExtension>()
 
-            if !isEmbeddedSideStoreRuntime
+            for appExtension in localApp.appExtensions
             {
-                for appExtension in localApp.appExtensions
+                let resignedBundleID = appExtension.bundleIdentifier
+                let originalBundleID = resignedBundleID.replacingOccurrences(of: localApp.bundleIdentifier, with: StoreApp.altstoreAppID)
+
+                let installedExtension: InstalledExtension
+
+                if let appExtension = installedApp.appExtensions.first(where: { $0.bundleIdentifier == originalBundleID })
                 {
-                    let resignedBundleID = appExtension.bundleIdentifier
-                    let originalBundleID = resignedBundleID.replacingOccurrences(of: localApp.bundleIdentifier, with: StoreApp.altstoreAppID)
-
-                    let installedExtension: InstalledExtension
-
-                    if let appExtension = installedApp.appExtensions.first(where: { $0.bundleIdentifier == originalBundleID })
-                    {
-                        installedExtension = appExtension
-                    }
-                    else
-                    {
-                        installedExtension = InstalledExtension(resignedAppExtension: appExtension, originalBundleIdentifier: originalBundleID, context: context)
-                    }
-
-                    installedExtension.update(resignedAppExtension: appExtension)
-
-                    installedExtensions.insert(installedExtension)
+                    installedExtension = appExtension
                 }
+                else
+                {
+                    installedExtension = InstalledExtension(resignedAppExtension: appExtension, originalBundleIdentifier: originalBundleID, context: context)
+                }
+
+                installedExtension.update(resignedAppExtension: appExtension)
+
+                installedExtensions.insert(installedExtension)
             }
 
             installedApp.appExtensions = installedExtensions
@@ -489,15 +479,10 @@ private extension DatabaseManager
             // @mahee96: it shouldn't matter if it is debug/release, the file is expected to be in its place (except for simulator probably coz it doesn't suppor app installs anyway)
             let replaceCachedApp: Bool
             #if DEBUG && targetEnvironment(simulator)
-            replaceCachedApp = !isEmbeddedSideStoreRuntime
+            replaceCachedApp = true
             #else
-            replaceCachedApp = !isEmbeddedSideStoreRuntime && (!FileManager.default.fileExists(atPath: fileURL.path) || installedApp.version != localApp.version || installedApp.buildVersion != localApp.buildVersion)
+            replaceCachedApp = (!FileManager.default.fileExists(atPath: fileURL.path) || installedApp.version != localApp.version || installedApp.buildVersion != localApp.buildVersion)
             #endif
-
-            if isEmbeddedSideStoreRuntime
-            {
-                print("[KittyStoreEmbedded] Skipping self-app bundle cache for embedded Litter runtime.")
-            }
 
             if replaceCachedApp
             {

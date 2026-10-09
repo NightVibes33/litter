@@ -40,14 +40,17 @@ public enum ReleaseTracks: String, CodingKey, CaseIterable
 
 public extension StoreApp
 {
-    #if ALPHA
-    static let altstoreAppID = Bundle.Info.appbundleIdentifier
-    #elseif BETA
-    static let altstoreAppID = Bundle.Info.appbundleIdentifier
-    #else
-    static let altstoreAppID = Bundle.Info.appbundleIdentifier
-    #endif
-    
+    // The embedded store manages the host app, not a nonexistent standalone KittyStore bundle.
+    // Signing tools retain the original identifier in ALTBundleIdentifier when resigning.
+    static let altstoreAppID: String = {
+        if Bundle.main.object(forInfoDictionaryKey: "LitterEmbedsSideStore") as? Bool == true {
+            return Bundle.main.object(forInfoDictionaryKey: Bundle.Info.altBundleID) as? String
+                ?? Bundle.main.bundleIdentifier
+                ?? Bundle.Info.appbundleIdentifier
+        }
+        return Bundle.Info.appbundleIdentifier
+    }()
+
     static let dolphinAppID = "me.oatmealdome.dolphinios-njb"
 }
 
