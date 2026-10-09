@@ -85,6 +85,18 @@ enum KittyStoreEmbeddedBridge {
     }
 
     @MainActor
+    static func performBackgroundFetch(completion: @escaping (UIBackgroundFetchResult) -> Void) {
+        guard resolveClass(classNames: embeddedEntryPointClassNames, selectorName: "performBackgroundFetch:") != nil else {
+            completion(.failed)
+            return
+        }
+        let callback: @convention(block) (NSNumber) -> Void = { value in
+            completion(UIBackgroundFetchResult(rawValue: numericCast(value.intValue)) ?? .failed)
+        }
+        invokeVoid(classNames: embeddedEntryPointClassNames, selectorName: "performBackgroundFetch:", argument: callback as AnyObject)
+    }
+
+    @MainActor
     static func handleIncomingURL(_ url: URL) -> Bool {
         (invokeObject(classNames: embeddedEntryPointClassNames,
                       selectorName: "handleIncomingURL:", argument: url as NSURL) as? NSNumber)?.boolValue ?? false

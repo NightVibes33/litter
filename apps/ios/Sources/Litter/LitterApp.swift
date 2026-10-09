@@ -175,6 +175,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ = semaphore.wait(timeout: .now() + 2.5)
     }
 
+    func application(_ application: UIApplication, performFetchWithCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
+        guard AppDistributionCapabilities.includesKittyStore else { completionHandler(.noData); return }
+        Task { @MainActor in
+            KittyStoreEmbeddedBridge.performBackgroundFetch(completion: completionHandler)
+        }
+    }
+
     func application(_ application: UIApplication, didReceiveRemoteNotification userInfo: [AnyHashable: Any], fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {
         LLog.info(
             "push",

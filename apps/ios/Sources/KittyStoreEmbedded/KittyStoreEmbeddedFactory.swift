@@ -111,6 +111,17 @@ public final class KittyStoreEmbeddedEntryPoint: NSObject {
         KittyStoreEmbeddedFactory.bootstrap()
     }
 
+    @objc(performBackgroundFetch:)
+    public static func performBackgroundFetch(_ completion: @escaping (NSNumber) -> Void) {
+        KittyStoreEmbeddedRuntime.startIfNeeded { error in
+            guard error == nil else { completion(NSNumber(value: UIBackgroundFetchResult.failed.rawValue)); return }
+            KittyStoreEmbeddedRuntime.startTransportIfPossible()
+            KittyStoreBackgroundRefresh.shared.application(UIApplication.shared, performFetchWithCompletionHandler: { result in
+                completion(NSNumber(value: result.rawValue))
+            })
+        }
+    }
+
     @objc(handleIncomingURL:)
     public static func handleIncomingURL(_ url: URL) -> NSNumber {
         NSNumber(value: KittyStoreIncomingURLs.receive(url))
@@ -363,7 +374,14 @@ private enum KittyStoreEmbeddedRuntime {
         lifecycleObserver = KittyStoreLifecycleObserver()
 
         UserDefaults.registerDefaults()
-        UserDefaults.standard.enableEMPforWireguard = false
+        if UserDefaults.standard.recreateDatabaseOnNextStart {
+            UserDefaults.standard.recreateDatabaseOnNextStart = false
+            DatabaseManager.recreateDatabase()
+        }
+        if UserDefaults.standard.enableEMPforWireguard {
+            startEMProxy(bind_addr: AppConstants.Proxy.serverURL)
+        }
+        KittyStoreBackgroundRefresh.shared.prepareForBackgroundFetch()
         SecureValueTransformer.register()
         prepareImageCache()
         consoleLogProvider?()?.startCapturing()
