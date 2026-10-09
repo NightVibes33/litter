@@ -12,6 +12,8 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <errno.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #ifdef LBN_ENABLE_KITTYSTORE_SIGNER
 #include "common/archive.h"
@@ -1743,11 +1745,60 @@ static char *LBIKittyStoreSign(NSDictionary *request, NSMutableString *log)
 }
 #endif
 
+// Execute the actual bundled frontend. Do not substitute manifest version metadata.
+static char *LBISwiftVersion(void)
+{
+    FILE *capture = tmpfile();
+    if(capture == NULL) { return LBICopyResponse(73, @"swift-version-capture-failed", @"Could not create compiler output capture.\n"); }
+    fflush(stdout);
+    int saved = dup(STDOUT_FILENO);
+    if(saved < 0 || dup2(fileno(capture), STDOUT_FILENO) < 0)
+    {
+        if(saved >= 0) { close(saved); }
+        fclose(capture);
+        return LBICopyResponse(73, @"swift-version-capture-failed", @"Could not capture compiler stdout.\n");
+    }
+    BOOL ok = NO;
+    NSArray<MDKDiagnostic *> *diagnostics = nil;
+    @try
+    {
+        MDKJob *job = [MDKJob jobWithType:kCCJobTypeSwiftCompiler withArguments:@[@"-version"]];
+        ok = LBIExecuteJob(job, &diagnostics, nil);
+    }
+    @catch(NSException *exception)
+    {
+        ok = NO;
+    }
+    @finally
+    {
+        fflush(stdout);
+        dup2(saved, STDOUT_FILENO);
+        close(saved);
+    }
+    rewind(capture);
+    char bytes[65536];
+    size_t count = fread(bytes, 1, sizeof(bytes), capture);
+    fclose(capture);
+    NSString *output = [[NSString alloc] initWithBytes:bytes length:count encoding:NSUTF8StringEncoding] ?: @"";
+    if(!ok || output.length == 0)
+    {
+        return LBICopyResponse(70, @"swift-version-failed", [@"Native Swift version query failed or returned no output.\n" stringByAppendingString:LBIDiagnosticText(diagnostics ?: @[])]);
+    }
+    return LBICopyResponse(0, @"swift-version", output);
+}
+
 extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *requestPath)
 {
+    // CoreCompiler uses process-global frontend state and stdout. Serialize native jobs.
+    @synchronized(MDKDriver.class) {
     @autoreleasepool
     {
         NSString *command = LBIString(request, @"command");
+        if([command isEqualToString:@"litter-swift-version"]) { return LBISwiftVersion(); }
+        if([command isEqualToString:@"litter-swift-test"])
+        {
+            return LBICopyResponse(64, @"swift-tests-unavailable", @"The native test runner is not implemented. No tests were executed.\n");
+        }
         NSString *args = LBIString(request, @"args");
         NSString *buildDir = LBIString(request, @"buildDir");
         NSString *fakefsBuildDir = LBIString(request, @"fakefsBuildDir");
@@ -1809,7 +1860,8 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
 
             if(LBIWordsContain(words, @"-typecheck") || LBIWordsContain(words, @"-parse"))
             {
-                NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:@[@"-typecheck", @"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
+                NSMutableArray<NSString *> *driverArgs = [NSMutableArray arrayWithArray:LBISwiftcUserFlags(words)];
+                [driverArgs addObjectsFromArray:@[@"-sdk", sdkRoot, @"-target", @"arm64-apple-ios18.0"]];
                 LBIAppendSwiftSDKCompatibilityFlags(driverArgs);
                 LBIAppendSwiftClangResourceDir(driverArgs, clangResourceDir, log);
                 if(!LBIAppendSwiftResourceDir(driverArgs, swiftResourceDir, toolchainRoot, buildKitRoot, sdkRoot, log)) { return LBICopyResponse(78, @"swift-resource-dir-missing", log); }
@@ -1903,7 +1955,7 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
             return LBICopyResponseWithArtifacts(0, @"ld-ok", log, artifacts);
         }
 
-        if([command isEqualToString:@"litter-swift-build"] || [command isEqualToString:@"litter-swift-test"] || [command isEqualToString:@"litter-ipa-build"] || [command isEqualToString:@"litter-ipa-package"])
+        if([command isEqualToString:@"litter-swift-build"] || [command isEqualToString:@"litter-ipa-build"] || [command isEqualToString:@"litter-ipa-package"])
         {
             NSDictionary *manifest = LBIProjectManifest(hostProjectPath, log);
             if(manifest == nil) { return LBICopyResponse(66, @"project-invalid", log); }
@@ -1945,10 +1997,11 @@ extern "C" char *LBNRunInProcessBuildKit(NSDictionary *request, NSString *reques
                 return LBICopyResponseWithArtifacts(0, @"ipa-build-ok", log, artifacts);
             }
 
-            NSString *status = [command isEqualToString:@"litter-swift-test"] ? @"swift-test-ok" : @"swift-build-ok";
+            NSString *status = @"swift-build-ok";
             return LBICopyResponse(0, status, log);
         }
 
         return NULL;
+    }
     }
 }

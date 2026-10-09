@@ -769,7 +769,9 @@ actor LitterBuildKit {
             return await swiftSelfTest(cwd: cwd, buildDir: buildDir)
         case "litter-swiftc":
             return await swiftcCompile(args: args, cwd: cwd, buildDir: buildDir, compatibilityName: "litter-swiftc")
-        case "litter-swift-build", "litter-swift-test", "litter-ipa-build", "litter-ipa-package":
+        case "litter-swift-test":
+            return BuildKitCommandResult(exitCode: 64, status: "swift-tests-unavailable", log: "The native test runner is not implemented. No tests were executed.\n")
+        case "litter-swift-build", "litter-ipa-build", "litter-ipa-package":
             return await nativeBuildCommand(command: command, args: args, cwd: cwd, buildDir: buildDir)
         case "litter-clang":
             return await clangCompatibility(command: "clang", args: args, cwd: cwd, buildDir: buildDir)
@@ -1910,56 +1912,30 @@ actor LitterBuildKit {
             return BuildKitCommandResult(exitCode: 64, status: "swift-usage", log: Self.swiftCompatibilityUsage())
         }
         if ["--version", "-version", "version"].contains(first) {
-            let status = await status()
-            return BuildKitCommandResult(exitCode: 0, status: "swift-version", log: Self.compatibilityVersionLog(tool: "swift", status: status))
+            return await nativeCompilerVersion(cwd: cwd, buildDir: buildDir)
         }
         if ["--help", "-help", "help"].contains(first) {
             return BuildKitCommandResult(exitCode: 0, status: "swift-help", log: Self.swiftCompatibilityUsage())
         }
-        if first == "-e" {
-            let expression = tokens.dropFirst().joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !expression.isEmpty else {
-                return BuildKitCommandResult(exitCode: 64, status: "swift-e-missing-expression", log: "Usage: swift -e 'print(\"hello\")'\n")
-            }
-            let sourcePath = "\(buildDir)/swift-e.swift"
-            do {
-                _ = await IshFS.run("mkdir -p \(IshFS.shellQuote(buildDir))")
-                try await IshFS.writeTextFile(path: sourcePath, text: expression + "\n")
-            } catch {
-                return BuildKitCommandResult(exitCode: 73, status: "swift-e-write-failed", log: "Could not stage swift -e source: \(error.localizedDescription)\n")
-            }
-            let result = await swiftCheck(args: sourcePath, cwd: cwd, buildDir: buildDir)
-            let status = result.exitCode == 0 ? "swift-e-check-ok" : result.status
-            let prelude = "Alley Cãt swift -e compatibility: checking the snippet with the iOS Swift driver. iSH cannot execute iOS Mach-O output directly.\nExpression source: \(sourcePath)\n\n"
-            return BuildKitCommandResult(exitCode: result.exitCode, status: status, log: prelude + result.log, artifacts: result.artifacts)
+        if first == "-e" || first == "run" || first.hasSuffix(".swift") {
+            return BuildKitCommandResult(exitCode: 64, status: "swift-execution-unavailable", log: "This install does not expose the Swift interpreter or an iOS executable runner to the iSH shell. No code was executed. Use swiftc to compile an iOS artifact and Nyxian to run/install the built app.\n")
         }
-        if first == "build" {
-            return await nativeBuildCommand(command: "litter-swift-build", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir)
+        if ["build", "test", "package"].contains(first) {
+            return BuildKitCommandResult(exitCode: 64, status: "swiftpm-unavailable", log: "This install does not expose SwiftPM to the iSH shell. No package build or tests were run. The explicit litter-swift-build and litter-ipa-build APIs compile LitterBuild.json projects with the native Nyxian compiler; they are not SwiftPM.\n")
         }
-        if first == "test" {
-            return await nativeBuildCommand(command: "litter-swift-test", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir)
-        }
-        if first == "run" {
-            let prelude = "Alley Cãt swift run compatibility: building an iOS artifact. iSH cannot execute iOS Mach-O binaries.\n"
-            return await nativeBuildCommand(command: "litter-swift-build", args: Self.compatibilityProjectArgs(tokens: Array(tokens.dropFirst())), cwd: cwd, buildDir: buildDir, prelude: prelude)
-        }
-        if first == "package" {
-            return BuildKitCommandResult(exitCode: 64, status: "swift-package-unsupported", log: "Alley Cãt does not embed full SwiftPM yet. Use swift build/test with LitterBuild.json or litter-swift-build/litter-swift-test.\n")
-        }
-        if first.hasSuffix(".swift") {
-            return await swiftCheck(args: args, cwd: cwd, buildDir: buildDir)
-        }
-        return BuildKitCommandResult(exitCode: 64, status: "swift-unsupported", log: "Alley Cãt's swift compatibility shim supports: --version, --help, swift -e, swift <file.swift>, swift build, swift test, and swift run as build-only.\nUse litter-swift-check, litter-swift-build, or litter-swift-test for the canonical bot API.\n")
+        return BuildKitCommandResult(exitCode: 64, status: "swift-unsupported", log: "Supported here: swift --version queries the native compiler. Use swiftc for native compilation. SwiftPM and interpreter commands are unavailable.\n")
     }
 
     private func swiftcCompile(args: String, cwd: String, buildDir: String, compatibilityName: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if let first = tokens.first, ["--version", "-version", "version"].contains(first) {
-            let status = await status()
-            return BuildKitCommandResult(exitCode: 0, status: "swiftc-version", log: Self.compatibilityVersionLog(tool: compatibilityName, status: status))
+            return await nativeCompilerVersion(cwd: cwd, buildDir: buildDir)
         }
         if tokens.contains("--help") || tokens.contains("-help") || tokens.isEmpty {
             return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "swiftc-help", log: Self.swiftcCompatibilityUsage())
+        }
+        guard tokens.filter({ $0.hasSuffix(".swift") }).count <= 1 else {
+            return BuildKitCommandResult(exitCode: 64, status: "swiftc-multiple-inputs-unavailable", log: "Direct shell compilation stages one Swift source. Use the native project build API for multiple sources; no inputs were silently dropped.\n")
         }
         guard let sourceToken = tokens.first(where: { $0.hasSuffix(".swift") }) else {
             return BuildKitCommandResult(exitCode: 64, status: "swiftc-missing-input", log: "Usage: swiftc path/to/File.swift -o output\n")
@@ -1977,9 +1953,8 @@ actor LitterBuildKit {
 
     private func clangCompatibility(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
-        if tokens.contains("--version") || tokens.contains("-version") || tokens.contains("-v") {
-            let status = await status()
-            return BuildKitCommandResult(exitCode: 0, status: "clang-version", log: Self.compatibilityVersionLog(tool: command, status: status))
+        if tokens.count == 1 && ["--version", "-version", "-v"].contains(tokens[0]) {
+            return BuildKitCommandResult(exitCode: 64, status: "clang-version-unavailable", log: "A native clang version query is not implemented here. No version was fabricated.\n")
         }
         if tokens.contains("--help") || tokens.contains("-help") || tokens.isEmpty {
             return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "clang-help", log: Self.clangCompatibilityUsage(tool: command))
@@ -1998,9 +1973,8 @@ actor LitterBuildKit {
 
     private func ldCompatibility(command: String, args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
-        if tokens.contains("--version") || tokens.contains("-version") || tokens.contains("-v") {
-            let status = await status()
-            return BuildKitCommandResult(exitCode: 0, status: "ld-version", log: Self.compatibilityVersionLog(tool: command, status: status))
+        if tokens.count == 1 && ["--version", "-version", "-v"].contains(tokens[0]) {
+            return BuildKitCommandResult(exitCode: 64, status: "ld-version-unavailable", log: "A native ld version query is not implemented here. No version was fabricated.\n")
         }
         if tokens.contains("--help") || tokens.contains("-help") || tokens.isEmpty {
             return BuildKitCommandResult(exitCode: tokens.isEmpty ? 64 : 0, status: "ld-help", log: Self.ldCompatibilityUsage(tool: command))
@@ -2024,7 +1998,7 @@ actor LitterBuildKit {
         }
         if tokens.contains("--version") || tokens.contains("-version") {
             let current = await status()
-            return BuildKitCommandResult(exitCode: 0, status: "xcrun-version", log: Self.compatibilityVersionLog(tool: "xcrun", status: current))
+            return BuildKitCommandResult(exitCode: 64, status: "xcrun-version-unavailable", log: "A native xcrun version query is not implemented here. No version was fabricated.\n")
         }
         if tokens.contains("--show-sdk-path") || tokens.contains("-show-sdk-path") {
             return BuildKitCommandResult(exitCode: 0, status: "xcrun-sdk-path", log: "\(Self.sdkRoot.path)\n")
@@ -2110,8 +2084,7 @@ actor LitterBuildKit {
     private func xcodebuildCompatibility(args: String, cwd: String, buildDir: String) async -> BuildKitCommandResult {
         let tokens = Self.shellWords(args)
         if tokens.contains("-version") || tokens.contains("--version") {
-            let status = await status()
-            return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-version", log: Self.compatibilityVersionLog(tool: "xcodebuild", status: status))
+            return BuildKitCommandResult(exitCode: 64, status: "xcodebuild-version-unavailable", log: "A native xcodebuild version query is not implemented here. No version was fabricated.\n")
         }
         if tokens.contains("-help") || tokens.contains("--help") {
             return BuildKitCommandResult(exitCode: 0, status: "xcodebuild-help", log: Self.xcodebuildCompatibilityUsage())
@@ -3619,27 +3592,22 @@ actor LitterBuildKit {
         """
     }
 
-    private static func compatibilityVersionLog(tool: String, status: LitterBuildKitStatus) -> String {
-        let version = status.assetManifest?.swiftVersion ?? "unknown (toolchain assets unavailable)"
-        return "Swift version \(version)\nAlley Cãt BuildKit \(tool) compatibility driver (iOS)\n"
+    private func nativeCompilerVersion(cwd: String, buildDir: String) async -> BuildKitCommandResult {
+        let queryDir = FileManager.default.temporaryDirectory.appendingPathComponent("nyxian-version-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: queryDir) }
+        let staging = BuildKitHostStaging(log: "", hostWorkDir: queryDir.path, hostProjectPath: nil, hostInputPath: nil, fakefsProjectPath: nil)
+        return await Task.detached(priority: .userInitiated) {
+            Self.runNativeDriver(command: "litter-swift-version", args: "-version", cwd: cwd, buildDir: buildDir, staging: staging)
+                ?? BuildKitCommandResult(exitCode: 78, status: "native-swift-unavailable", log: "The native Nyxian compiler could not be loaded. No version was fabricated.\n")
+        }.value
     }
 
     private static func swiftCompatibilityUsage() -> String {
         """
-        Alley Cãt swift compatibility shim
-        Supported:
-          swift --version
-          swift -e 'print("hello")'  # check-only on iOS; direct Mach-O execution is unavailable in iSH
-          swift path/to/File.swift
-          swift build [LitterBuild.json]
-          swift test [LitterBuild.json]
-          swift run [LitterBuild.json]  # build-only; iSH cannot execute iOS Mach-O output
-
-        Canonical bot commands:
-          litter-swift-selftest
-          litter-swift-check path/to/File.swift
-          litter-swift-build LitterBuild.json
-          litter-swift-test LitterBuild.json
+        swift --version queries the installed native Nyxian Swift frontend.
+        swiftc compiles with that frontend for the iOS target.
+        SwiftPM (build/test/package) and interpreter/run commands are not exposed here.
+        Use the explicit litter-swift-build/litter-ipa-build APIs for LitterBuild.json projects.
         """
     }
 
