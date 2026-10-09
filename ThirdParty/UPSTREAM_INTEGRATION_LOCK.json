@@ -1,0 +1,30 @@
+{
+  "nyxian": {
+    "repo": "emexlab/Nyxian",
+    "previous": "8f606193bed2b5a40e1fccfc2f95123730b1bf26",
+    "target": "350dd8dbeb796bc0ff5bc91ef770f1a2994432e7",
+    "path": "ThirdParty/EmexDE/Source",
+    "nativeDependencies": [
+      "LLVM-On-iOS"
+    ],
+    "status": "integration-candidate"
+  },
+  "sideStore": {
+    "repo": "SideStore/SideStore",
+    "compatibilitySnapshot": "8485efe6c2f6f0fc1eb31cddc27c2abb4aa22d10",
+    "upstreamTarget": "0dd743f75afc358b0ba4a002feb5f19474492371",
+    "sourcePath": "ThirdParty/SideStore/Upstream",
+    "currentIntegratedPath": "ThirdParty/SideStore/Source",
+    "nativeDependencies": [
+      "Dependencies/SideSign",
+      "Dependencies/minimuxer"
+    ],
+    "status": "parallel-source-migration-required"
+  },
+  "preserve": [
+    "apps/ios/Sources/Litter/Views",
+    "apps/ios/Sources/EmexDEEmbedded",
+    "apps/ios/Sources/KittyStoreEmbedded",
+    "ThirdParty/SideStore/Source"
+  ]
+}

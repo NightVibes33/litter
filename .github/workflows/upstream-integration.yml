@@ -1,0 +1,42 @@
+name: Upstream Integration Audit
+
+on:
+  push:
+    branches:
+      - 'integration/upstream-nyxian-sidestore-*'
+  pull_request:
+    paths:
+      - 'ThirdParty/EmexDE/**'
+      - 'ThirdParty/SideStore/**'
+      - 'ThirdParty/UPSTREAM_INTEGRATION_LOCK.json'
+      - 'tools/scripts/verify-upstream-integration.py'
+      - '.github/workflows/upstream-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          submodules: false
+      - name: Fetch pinned upstreams
+        run: |
+          set -euo pipefail
+          git submodule sync
+          git -c protocol.version=2 submodule update --init --depth 1 ThirdParty/EmexDE/Source ThirdParty/SideStore/Upstream
+          git -C ThirdParty/EmexDE/Source submodule update --init --depth 1 LLVM-On-iOS
+          git -C ThirdParty/SideStore/Upstream submodule update --init --depth 1 Dependencies/SideSign Dependencies/minimuxer
+      - name: Audit pins, dependencies, and native app preservation
+        run: python3 tools/scripts/verify-upstream-integration.py
+      - name: Verify current SideStore integration survives migration staging
+        run: |
+          python3 tools/scripts/verify-altstore-source.py
+          test -f ThirdParty/SideStore/Source/AltStoreCore/Model/DatabaseManager/DatabaseManager.swift
+          test -f apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift
+          test -f apps/ios/Sources/EmexDEEmbedded/EmexDEEmbeddedFactory.swift

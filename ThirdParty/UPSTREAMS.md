@@ -34,6 +34,7 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 - SideStore reference repo: https://github.com/SideStore/SideStore.git
 - SideStore reference commit inspected for this integration: `8485efe6c2f6f0fc1eb31cddc27c2abb4aa22d10`
 - SideStore full source snapshot path: `ThirdParty/SideStore/Source`
+- New official SideStore `develop` source pin: `0dd743f75afc358b0ba4a002feb5f19474492371` in `ThirdParty/SideStore/Upstream` (with nested SideSign and minimuxer submodules). This is a parallel migration source tree, **not yet the code loaded by KittyStore**. The current bundled `AltStoreCore` snapshot is preserved until the new `AltStore/Core` and `SideStore/Views` architectures are adapted and pass IPA/on-device tests.
 - SideStore source directories copied from the upstream snapshot:
   - `AltStore`
   - `AltStoreCore`
@@ -86,7 +87,7 @@ These source drops are kept source-only. Generated build products, IPAs, provisi
 ## emexDE
 
 - emexDE reference repo: https://github.com/emexlab/Nyxian.git
-- emexDE submodule commit: `8f606193bed2b5a40e1fccfc2f95123730b1bf26`
+- emexDE submodule commit (upstream integration candidate): `350dd8dbeb796bc0ff5bc91ef770f1a2994432e7`
 - emexDE source path: `ThirdParty/EmexDE/Source`
 - Required nested upstream submodule: `ThirdParty/EmexDE/Source/LLVM-On-iOS`.
 - Litter opens emexDE from Settings as the replacement surface for the old private BuildKit toolbox entry point; the iOS target now builds an embedded `emexDE` module from the upstream Nyxian UI, CoreCompiler, MobileDevelopmentKit, and LiveProcess sources.
