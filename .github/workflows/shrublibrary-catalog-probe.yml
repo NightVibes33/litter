@@ -91,3 +91,18 @@ jobs:
                   print('INDEX_URL',url[:500])
           print('INLINE_SCRIPT_HEAD',repr(max(scripts,key=len)[:3500]) if scripts else '')
           PY
+
+      - name: Identify ShrubLibrary live catalog endpoint
+        run: |
+          python3 - <<'PY'
+          import re,urllib.request
+          req=urllib.request.Request('https://shrublibrary.pages.dev/',headers={'User-Agent':'Mozilla/5.0'})
+          html=urllib.request.urlopen(req,timeout=30).read().decode()
+          js=max(re.findall(r'<script\b[^>]*>([\s\S]*?)</script\s*>',html,re.I),key=len)
+          terms=['defaultUrls','userUrls','fetch(', '/api/', 'api/', 'repo-list', 'repo.json', 'repositories.json', 'repos.json', '.json', 'new URL(', '/default', 'default-repos', 'repoSources', 'S.defaultUrls','initRepos']
+          for term in terms:
+              found=list(re.finditer(re.escape(term),js,re.I))
+              print('TERM',term,'MATCHES',len(found))
+              for m in found[:14]:
+                  print('SNIPPET',term,m.start(),repr(js[max(0,m.start()-260):m.end()+450]))
+          PY
