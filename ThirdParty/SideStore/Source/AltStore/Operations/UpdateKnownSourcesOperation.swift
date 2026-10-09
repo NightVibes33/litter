@@ -16,9 +16,17 @@ private enum CatalogURLs {
 extension UpdateKnownSourcesOperation {
     private struct Response: Decodable {
         var version: Int
+        /// SideStore's upstream catalog publishes its recommendations under "default".
+        /// Alley Cat's supplemental catalog uses "sources" and "trusted".
+        var defaultSources: [KnownSource]?
         var sources: [KnownSource]?
         var trusted: [KnownSource]?
         var blocked: [KnownSource]?
+
+        private enum CodingKeys: String, CodingKey {
+            case version, sources, trusted, blocked
+            case defaultSources = "default"
+        }
     }
 }
 
@@ -75,7 +83,11 @@ class UpdateKnownSourcesOperation: ResultOperation<([KnownSource], [KnownSource]
             var seen = Set<String>()
             for url in urls {
                 guard let response = responses[url] else { continue }
-                for source in response.sources ?? response.trusted ?? [] {
+                // Keep all entries: the official "default" array is distinct
+                // from the legacy "sources" array and from custom trusted feeds.
+                for source in (response.defaultSources ?? [])
+                    + (response.sources ?? [])
+                    + (response.trusted ?? []) {
                     guard let sourceURL = source.sourceURL,
                           sourceURL.scheme?.lowercased() == "https",
                           sourceURL.host != nil else { continue }
@@ -84,7 +96,17 @@ class UpdateKnownSourcesOperation: ResultOperation<([KnownSource], [KnownSource]
                     if seen.insert(key).inserted { result.append(source) }
                 }
             }
-            let blocked = responses[CatalogURLs.existing]?.blocked ?? []
+            // Preserve both upstream and Alley Cat blocking rules, rather
+            // than dropping the upstream list when the supplemental feed loads.
+            var blocked: [KnownSource] = []
+            var blockedIDs = Set<String>()
+            for url in urls {
+                for source in responses[url]?.blocked ?? [] {
+                    if blockedIDs.insert(source.identifier).inserted {
+                        blocked.append(source)
+                    }
+                }
+            }
             if result.isEmpty {
                 if let cached = UserDefaults.shared.recommendedSources, !cached.isEmpty {
                     self.finish(.success((cached, UserDefaults.shared.blockedSources ?? blocked)))
