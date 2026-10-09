@@ -12,6 +12,11 @@ on:
       - 'ThirdParty/upstream-integration.json'
       - 'tools/scripts/verify-upstream-integration.py'
       - 'tools/scripts/audit-upstream-coverage.py'
+      - 'tools/scripts/build-nyxian-buildkit-assets.sh'
+      - 'tools/scripts/build-litter-buildkit-native.sh'
+      - 'tools/scripts/package-buildkit-assets.sh'
+      - 'tools/scripts/buildkit-native-source-fingerprint.sh'
+      - '.github/workflows/buildkit-assets.yml'
       - '.github/workflows/upstream-integration.yml'
 
 permissions:
@@ -43,6 +48,13 @@ jobs:
         run: |
           python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_*.py'
           tools/scripts/verify-kittystore-integration.sh
+      - name: Validate pinned-source BuildKit scripts
+        run: |
+          bash -n tools/scripts/build-nyxian-buildkit-assets.sh
+          bash -n tools/scripts/build-litter-buildkit-native.sh
+          bash -n tools/scripts/package-buildkit-assets.sh
+          sh -n tools/scripts/buildkit-native-source-fingerprint.sh
+          tools/scripts/buildkit-native-source-fingerprint.sh
       - name: Inspect available upstream Xcode schemes
         run: |
           xcodebuild -list -project ThirdParty/EmexDE/Source/Nyxian.xcodeproj
