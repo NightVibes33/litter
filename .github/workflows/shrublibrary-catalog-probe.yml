@@ -106,3 +106,21 @@ jobs:
               for m in found[:14]:
                   print('SNIPPET',term,m.start(),repr(js[max(0,m.start()-260):m.end()+450]))
           PY
+
+      - name: Retrieve published default repositories
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.parse
+          u='https://shrublibrary.pages.dev/repos.txt'
+          data=urllib.request.urlopen(urllib.request.Request(u,headers={'User-Agent':'Mozilla/5.0 (AlleyCat upstream compatibility audit)'}),timeout=30).read().decode('utf-8-sig')
+          urls=[line.strip() for line in data.splitlines() if line.strip() and not line.lstrip().startswith('#')]
+          unique=list(dict.fromkeys(urls))
+          print('SHRUB_INDEX_RAW_BYTES',len(data),'SHRUB_INDEX_ENTRIES',len(urls),'SHRUB_INDEX_UNIQUE',len(unique))
+          if len(unique)<100:
+              raise SystemExit('ShrubLibrary catalog below expected minimum; refuse incomplete import')
+          for ix,u in enumerate(unique):
+              parts=urllib.parse.urlsplit(u)
+              if parts.scheme != 'https' or not parts.netloc:
+                  raise SystemExit(f'Invalid catalog URL at index {ix}: {u!r}')
+              print('SHRUB_REPO',ix+1,u)
+          PY
