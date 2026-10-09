@@ -19,7 +19,7 @@ permissions:
 jobs:
   verify-upstreams:
     name: Verify exact source/dependency revisions
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
