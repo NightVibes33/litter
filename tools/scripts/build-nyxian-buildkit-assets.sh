@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-NYXIAN_ROOT="${NYXIAN_ROOT:-${ROOT_DIR}/ThirdParty/Nyxian}"
-LLVM_ROOT="${LLVM_ON_IOS_ROOT:-${ROOT_DIR}/ThirdParty/LLVM-On-iOS}"
+NYXIAN_ROOT="${NYXIAN_ROOT:-${ROOT_DIR}/ThirdParty/EmexDE/Source}"
+LLVM_ROOT="${LLVM_ON_IOS_ROOT:-${NYXIAN_ROOT}/LLVM-On-iOS}"
 BUILD_UPSTREAM="${LITTER_NYXIAN_BUILD_UPSTREAM:-1}"
 NYXIAN_LLVM_REF="${LITTER_NYXIAN_LLVM_REF:-swift}"
 NYXIAN_LLVM_FALLBACK_REF="${LITTER_NYXIAN_LLVM_FALLBACK_REF:-swift}"
@@ -79,7 +79,7 @@ ensure_nyxian_build_dependencies() {
 
   clone_or_update_dependency \
     "$NYXIAN_ROOT/LLVM-On-iOS" \
-    "https://github.com/ProjectNyxian/LLVM-On-iOS.git" \
+    "https://github.com/emexlab/LLVM-On-iOS.git" \
     "$NYXIAN_LLVM_REF" \
     "$NYXIAN_LLVM_FALLBACK_REF" \
     "Makefile"
@@ -104,7 +104,12 @@ if [[ "$BUILD_UPSTREAM" = "1" ]]; then
   ensure_nyxian_build_dependencies
   if [[ -f "$NYXIAN_ROOT/Makefile" && -d "$NYXIAN_ROOT/LLVM-On-iOS" ]]; then
     echo "==> Building Nyxian CoreCompiler support libs"
-    CHECK_DEPS="${CHECK_DEPS:-0}" make -C "$NYXIAN_ROOT" CoreCompiler/CoreCompilerSupportLibs
+    # The pinned embedded Nyxian now keeps CoreCompiler in Frameworks/.
+    if [[ -d "$NYXIAN_ROOT/Frameworks/CoreCompiler" ]]; then
+      CHECK_DEPS="${CHECK_DEPS:-0}" make -C "$NYXIAN_ROOT" Frameworks/CoreCompiler/CoreCompilerSupportLibs
+    else
+      CHECK_DEPS="${CHECK_DEPS:-0}" make -C "$NYXIAN_ROOT" CoreCompiler/CoreCompilerSupportLibs
+    fi
   elif [[ -f "$LLVM_ROOT/Makefile" && -d "$LLVM_ROOT/Scripts" ]]; then
     echo "==> Building LLVM-On-iOS support libs"
     make -C "$LLVM_ROOT" all
@@ -147,6 +152,7 @@ fi
 
 if [[ -z "$CORECOMPILER_SUPPORT_LIBS" ]]; then
   for candidate in \
+    "$NYXIAN_ROOT/Frameworks/CoreCompiler/CoreCompilerSupportLibs" \
     "$NYXIAN_ROOT/CoreCompiler/CoreCompilerSupportLibs" \
     "$LLVM_ROOT/CoreCompilerSupportLibs" \
     "$(dirname "$CORECOMPILER_FRAMEWORK")/CoreCompilerSupportLibs"; do

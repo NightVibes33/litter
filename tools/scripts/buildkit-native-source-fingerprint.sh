@@ -14,8 +14,8 @@ root = pathlib.Path(sys.argv[1])
 paths = [
     "ThirdParty/Nyxian/LitterBuildKitNative",
     "ThirdParty/Feather/Zsign-Package/src",
-    "ThirdParty/Nyxian/MobileDevelopmentKit/Support",
-    "ThirdParty/Nyxian/MobileDevelopmentKit/Tools",
+    # The embedded runtime owns MDK; do not fingerprint stale vendor headers.
+    "ThirdParty/EmexDE/Source",
     "tools/scripts/build-litter-buildkit-native.sh",
     "tools/scripts/package-buildkit-assets.sh",
     "tools/scripts/verify-nyxian-buildkit-assets.sh",
@@ -49,6 +49,13 @@ if not files:
     raise SystemExit("error: no BuildKit native source files found for fingerprinting")
 
 digest = hashlib.sha256()
+# The parent index stores submodules as gitlinks. Include both checked-out
+# source revisions so the native bridge cache cannot mix compiler ABIs.
+for rel in ("ThirdParty/EmexDE/Source", "ThirdParty/EmexDE/Source/LLVM-On-iOS"):
+    revision = subprocess.check_output(
+        ["git", "-C", str(root / rel), "rev-parse", "HEAD"], text=True
+    ).strip()
+    digest.update(rel.encode("utf-8") + b"\0" + revision.encode("ascii") + b"\n")
 for rel in files:
     path = root / rel
     if not path.is_file():

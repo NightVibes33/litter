@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC_DIR="$ROOT_DIR/ThirdParty/Nyxian/LitterBuildKitNative"
-NYXIAN_ROOT="${NYXIAN_ROOT:-$ROOT_DIR/ThirdParty/Nyxian}"
+NYXIAN_ROOT="${NYXIAN_ROOT:-$ROOT_DIR/ThirdParty/EmexDE/Source}"
 FEATHER_ZSIGN_ROOT="${FEATHER_ZSIGN_ROOT:-$ROOT_DIR/ThirdParty/Feather/Zsign-Package/src}"
 OUT_DIR="${LITTER_BUILDKIT_NATIVE_OUT_DIR:-$ROOT_DIR/artifacts/buildkit/LitterBuildKitNative.framework}"
 MIN_IOS="${LITTER_BUILDKIT_MIN_IOS:-18.0}"
@@ -13,6 +13,15 @@ CORECOMPILER_FRAMEWORK="${CORECOMPILER_FRAMEWORK:-}"
 MOBILEDEVELOPMENTKIT_FRAMEWORK="${MOBILEDEVELOPMENTKIT_FRAMEWORK:-}"
 KITTYSTORE_SIGNER="${LITTER_BUILDKIT_ENABLE_KITTYSTORE_SIGNER:-1}"
 OPENSSL_FRAMEWORK="${LITTER_BUILDKIT_OPENSSL_FRAMEWORK:-$NYXIAN_ROOT/Nyxian/LindChain/OpenSSL.xcframework/ios-arm64/OpenSSL.framework}"
+# LitterBuildKitNative remains a local overlay. Compile it against the exact
+# embedded Nyxian CoreCompiler/MDK source, not the older vendor snapshot.
+if [[ -d "$NYXIAN_ROOT/Frameworks/CoreCompiler" ]]; then
+  CORECOMPILER_SOURCE_ROOT="$NYXIAN_ROOT/Frameworks/CoreCompiler"
+  MDK_SOURCE_ROOT="$NYXIAN_ROOT/Frameworks/MobileDevelopmentKit"
+else
+  CORECOMPILER_SOURCE_ROOT="$NYXIAN_ROOT/CoreCompiler"
+  MDK_SOURCE_ROOT="$NYXIAN_ROOT/MobileDevelopmentKit"
+fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "error: build-litter-buildkit-native.sh must run on macOS with Xcode available" >&2
@@ -70,17 +79,17 @@ if [[ "$MODE" = "inprocess" ]]; then
     exit 1
   fi
   mkdir -p "$MDK_HEADER_ROOT" "$CORECOMPILER_HEADER_ROOT"
-  find "$NYXIAN_ROOT/MobileDevelopmentKit" -type f -name '*.h' -exec cp {} "$MDK_HEADER_ROOT/" \;
-  find "$NYXIAN_ROOT/CoreCompiler" -type f -name '*.h' -exec cp {} "$CORECOMPILER_HEADER_ROOT/" \;
+  find "$MDK_SOURCE_ROOT" -type f -name '*.h' -exec cp {} "$MDK_HEADER_ROOT/" \;
+  find "$CORECOMPILER_SOURCE_ROOT" -type f -name '*.h' -exec cp {} "$CORECOMPILER_HEADER_ROOT/" \;
   COMMON_COMPILE_FLAGS+=(
     -DLBN_ENABLE_INPROCESS=1
     -F"$(dirname "$CORECOMPILER_FRAMEWORK")"
     -I"$TMP_DIR"
     -I"$NYXIAN_ROOT"
-    -I"$NYXIAN_ROOT/CoreCompiler"
-    -I"$NYXIAN_ROOT/CoreCompiler/Support"
-    -I"$NYXIAN_ROOT/MobileDevelopmentKit"
-    -I"$NYXIAN_ROOT/MobileDevelopmentKit/Support"
+    -I"$CORECOMPILER_SOURCE_ROOT"
+    -I"$CORECOMPILER_SOURCE_ROOT/Support"
+    -I"$MDK_SOURCE_ROOT"
+    -I"$MDK_SOURCE_ROOT/Support"
   )
   LINK_FLAGS+=(
     -F"$(dirname "$CORECOMPILER_FRAMEWORK")"
@@ -98,14 +107,14 @@ if [[ "$MODE" = "inprocess" ]]; then
     LINK_FLAGS+=(-F"$(dirname "$MOBILEDEVELOPMENTKIT_FRAMEWORK")" -framework MobileDevelopmentKit)
   else
   SOURCES+=(
-    "$NYXIAN_ROOT/MobileDevelopmentKit/Support/MDKCFType.m"
-    "$NYXIAN_ROOT/MobileDevelopmentKit/Support/MDKDiagnostic.m"
-    "$NYXIAN_ROOT/MobileDevelopmentKit/Support/MDKFile.m"
-    "$NYXIAN_ROOT/MobileDevelopmentKit/Support/MDKFileSourceLocation.m"
-    "$NYXIAN_ROOT/MobileDevelopmentKit/Support/MDKJob.m"
-    "$NYXIAN_ROOT/MobileDevelopmentKit/Tools/MDKDriver.m"
-    "$NYXIAN_ROOT/MobileDevelopmentKit/Tools/MDKSDK.m"
-    "$NYXIAN_ROOT/MobileDevelopmentKit/Tools/Linker/MDKLinker.m"
+    "$MDK_SOURCE_ROOT/Support/MDKCFType.m"
+    "$MDK_SOURCE_ROOT/Support/MDKDiagnostic.m"
+    "$MDK_SOURCE_ROOT/Support/MDKFile.m"
+    "$MDK_SOURCE_ROOT/Support/MDKFileSourceLocation.m"
+    "$MDK_SOURCE_ROOT/Support/MDKJob.m"
+    "$MDK_SOURCE_ROOT/Tools/MDKDriver.m"
+    "$MDK_SOURCE_ROOT/Tools/MDKSDK.m"
+    "$MDK_SOURCE_ROOT/Tools/Linker/MDKLinker.m"
   )
   fi
 
