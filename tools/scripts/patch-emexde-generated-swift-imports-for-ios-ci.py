@@ -87,28 +87,43 @@ for before, after in os_version_replacements.items():
 os_version_bridge.write_text(os_version_text)
 
 notification_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/Project+NotificationServer.swift")
-notification_text = notification_bridge.read_text()
-notification_replacements = {
-    "@objc class NotificationServer: NSObject": "@objc(NotificationServer) public class NotificationServer: NSObject",
-    "@objc enum NotifLevel: Int": "@objc public enum NotifLevel: Int",
-    "@objc static func NotifyUser(": "@objc public static func NotifyUser(",
-}
-for before, after in notification_replacements.items():
-    if before not in notification_text and after not in notification_text:
-        raise SystemExit(f"Missing expected emexDE notification bridge declaration: {before}")
-    notification_text = notification_text.replace(before, after)
-notification_bridge.write_text(notification_text)
+# Older Nyxian revisions declared NotificationServer in a Swift file.
+# Current upstream provides NXAlertDiagnosticPresenter in Objective-C instead.
+# Keep compatibility with both source graphs; do not invent a missing file.
+if notification_bridge.is_file():
+    notification_text = notification_bridge.read_text()
+    notification_replacements = {
+        "@objc class NotificationServer: NSObject": "@objc(NotificationServer) public class NotificationServer: NSObject",
+        "@objc enum NotifLevel: Int": "@objc public enum NotifLevel: Int",
+        "@objc static func NotifyUser(": "@objc public static func NotifyUser(",
+    }
+    for before, after in notification_replacements.items():
+        if before not in notification_text and after not in notification_text:
+            raise SystemExit(f"Missing expected emexDE notification bridge declaration: {before}")
+        notification_text = notification_text.replace(before, after)
+    notification_bridge.write_text(notification_text)
+elif not Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXAlertDiagnosticPresenter.h").is_file():
+    raise SystemExit("Missing both legacy NotificationServer and upstream NXAlertDiagnosticPresenter")
 
 application_management_bridge = Path("ThirdParty/EmexDE/Source/Nyxian/UI/Settings/ApplicationManagement.swift")
 application_management_text = application_management_bridge.read_text()
-application_management_before = "class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
-application_management_after = "@objc(ApplicationManagementViewController) class ApplicationManagementViewController: UIThemedTableViewController, UITextFieldDelegate, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate"
-if application_management_before not in application_management_text and application_management_after not in application_management_text:
-    raise SystemExit("Missing expected emexDE ApplicationManagementViewController declaration")
-application_management_bridge.write_text(application_management_text.replace(application_management_before, application_management_after))
+# NXUITableViewController replaced UIThemedTableViewController upstream.
+# Expose the ObjC symbol without pinning its superclass to the old version.
+application_management_before = "class ApplicationManagementViewController: "
+application_management_after = "@objc(ApplicationManagementViewController) class ApplicationManagementViewController: "
+if application_management_after not in application_management_text:
+    if application_management_before not in application_management_text:
+        raise SystemExit("Missing expected emexDE ApplicationManagementViewController declaration")
+    application_management_text = application_management_text.replace(application_management_before, application_management_after, 1)
+application_management_bridge.write_text(application_management_text)
 
 def replace_generated_swift_import(source_path, shim, label):
     source = Path(source_path)
+    if not source.is_file():
+        # Upstream folded NXTarget into NXProject in its newer source layout.
+        if source.name == "NXTarget.m" and Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXProject.m").is_file():
+            return
+        raise SystemExit(f"Missing expected emexDE source for {label}: {source}")
     source_text = source.read_text()
     marker = '#import "Nyxian-Swift.h"'
     if marker not in source_text:
