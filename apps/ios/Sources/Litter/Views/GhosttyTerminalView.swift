@@ -430,10 +430,15 @@ struct GhosttyTerminalView: UIViewRepresentable {
     /// Initial font size for the pinch base. Re-read on every update so
     /// the SwiftUI source-of-truth and the host view stay in lockstep.
     var fontSize: Double = 13.0
+    var surfaceColor: UIColor = .black
+    var textColor: UIColor = .white
+    var keyColor: UIColor = .darkGray
+    var borderColor: UIColor = .gray
+    var darkKeyboard: Bool = true
 
     func makeUIView(context: Context) -> GhosttyHostView {
         let view = GhosttyHostView()
-        view.backgroundColor = .black
+        view.applyAppearance(surface: surfaceColor, text: textColor, key: keyColor, border: borderColor, darkKeyboard: darkKeyboard)
         view.isOpaque = true
         view.renderer = renderer
         view.onClearTapped = onClearTapped
@@ -454,6 +459,7 @@ struct GhosttyTerminalView: UIViewRepresentable {
         uiView.onSendToAssistant = onSendToAssistant
         uiView.onFontSizePinched = onFontSizePinched
         uiView.currentFontSize = fontSize
+        uiView.applyAppearance(surface: surfaceColor, text: textColor, key: keyColor, border: borderColor, darkKeyboard: darkKeyboard)
         renderer.resize(
             width: uiView.bounds.width,
             height: uiView.bounds.height,
@@ -688,6 +694,22 @@ final class LitterTerminalAccessoryBar: UIView {
     private let stack = UIStackView()
     /// Buttons that need to enable/disable based on pasteboard state.
     private weak var pasteButton: UIButton?
+    private let topHairline = UIView()
+    private var textColor: UIColor = .white
+    private var keyColor: UIColor = .darkGray
+
+    func applyAppearance(surface: UIColor, text: UIColor, key: UIColor, border: UIColor) {
+        backgroundColor = surface
+        textColor = text
+        keyColor = key
+        topHairline.backgroundColor = border
+        for case let button as UIButton in stack.arrangedSubviews {
+            var config = button.configuration
+            config?.baseForegroundColor = text
+            config?.baseBackgroundColor = key
+            button.configuration = config
+        }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -737,7 +759,6 @@ final class LitterTerminalAccessoryBar: UIView {
             stack.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
         ])
 
-        let topHairline = UIView()
         topHairline.translatesAutoresizingMaskIntoConstraints = false
         topHairline.backgroundColor = UIColor.white.withAlphaComponent(0.12)
         addSubview(topHairline)
@@ -798,8 +819,8 @@ final class LitterTerminalAccessoryBar: UIView {
     private func makeKey(title: String) -> UIButton {
         var config = UIButton.Configuration.gray()
         config.title = title
-        config.baseForegroundColor = .white.withAlphaComponent(0.86)
-        config.baseBackgroundColor = UIColor.white.withAlphaComponent(0.10)
+        config.baseForegroundColor = textColor
+        config.baseBackgroundColor = keyColor
         config.background.cornerRadius = 8
         config.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 10, bottom: 6, trailing: 10)
         config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
@@ -1089,6 +1110,16 @@ final class GhosttyHostView: UIView, UIGestureRecognizerDelegate, UIEditMenuInte
 
     private let keyboardOverlay = LitterGhosttyInputView()
     private let accessoryBar = LitterTerminalAccessoryBar()
+
+    func applyAppearance(surface: UIColor, text: UIColor, key: UIColor, border: UIColor, darkKeyboard: Bool) {
+        backgroundColor = surface
+        accessoryBar.applyAppearance(surface: surface, text: text, key: key, border: border)
+        let appearance: UIKeyboardAppearance = darkKeyboard ? .dark : .light
+        if keyboardOverlay.keyboardAppearance != appearance {
+            keyboardOverlay.keyboardAppearance = appearance
+            if keyboardOverlay.isFirstResponder { keyboardOverlay.reloadInputViews() }
+        }
+    }
     private let selectionOverlay = TerminalSelectionOverlayView()
     private lazy var editMenu = UIEditMenuInteraction(delegate: self)
 

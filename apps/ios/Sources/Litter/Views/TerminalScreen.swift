@@ -26,12 +26,11 @@ struct TerminalScreen: View {
     /// from, so the observer only reconciles when servers actually change.
     @State private var observedServerFingerprint: String?
     @AppStorage("litter.terminal.fontSize") private var storedFontSize: Double = 13.0
-    @AppStorage("litter.terminal.themeId") private var storedThemeId: String = "litter-dark"
     @AppStorage("litter.terminal.cursorBlink") private var storedCursorBlink: Bool = true
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
-    private let accent = Color(red: 0, green: 1, blue: 0.612)
+    private var accent: Color { LitterTheme.accent }
     private let alleycatServerIdPrefix = "alleycat:"
 
     var body: some View {
@@ -51,9 +50,9 @@ struct TerminalScreen: View {
                 )
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .top)
-            .background(Color.black)
+            .background(LitterTheme.background)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background(LitterTheme.background.ignoresSafeArea())
         .ignoresSafeArea(.container, edges: [.top, .bottom, .horizontal])
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .toolbar(.hidden, for: .navigationBar)
@@ -88,6 +87,12 @@ struct TerminalScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .litterSavedServersDidChange)) { _ in
             reconcileBackendOptions()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .themeDidChange)) { _ in
+            applyConfigSettings()
+        }
+        .onChange(of: LitterTheme.activeThemeSlug) { _, _ in
+            applyConfigSettings()
         }
         .onDisappear {
             snapshotObserver.stop()
@@ -125,13 +130,13 @@ struct TerminalScreen: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 24, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(LitterTheme.textPrimary)
                         .frame(width: 54, height: 54)
-                        .background(Color.white.opacity(0.09))
+                        .background(LitterTheme.surface)
                         .clipShape(Circle())
                         .overlay {
                             Circle()
-                                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                .stroke(LitterTheme.border, lineWidth: 1)
                         }
                 }
                 .buttonStyle(.plain)
@@ -142,12 +147,12 @@ struct TerminalScreen: View {
 
             Text("Terminal")
                 .font(.system(size: 22, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(LitterTheme.textPrimary)
         }
         .padding(.horizontal, 14)
         .padding(.top, topInset + 8)
         .frame(height: topInset + 86)
-        .background(Color.black)
+        .background(LitterTheme.background)
     }
 
     private func terminalHorizontalInsets(for geometry: GeometryProxy) -> (leading: CGFloat, trailing: CGFloat) {
@@ -201,13 +206,13 @@ struct TerminalScreen: View {
                 .foregroundColor(accent)
                 .padding(.horizontal, 10)
                 .frame(height: 34)
-                .background(Color.white.opacity(0.08))
+                .background(LitterTheme.border)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
             Text(selectedBackend?.subtitle ?? "On device")
                 .font(.custom("SFMono-Regular", size: 11))
-                .foregroundColor(.white.opacity(0.48))
+                .foregroundColor(LitterTheme.textSecondary)
                 .lineLimit(1)
 
             Spacer(minLength: 0)
@@ -221,7 +226,7 @@ struct TerminalScreen: View {
                     .font(.custom("SFMono-Regular", size: 13))
                     .foregroundColor(accent)
                     .frame(width: 34, height: 30)
-                    .background(Color.white.opacity(0.08))
+                    .background(LitterTheme.border)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .accessibilityLabel("Theme and font")
@@ -229,21 +234,19 @@ struct TerminalScreen: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
-        .background(Color.black)
+        .background(LitterTheme.background)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(LitterTheme.border)
                 .frame(height: 1)
         }
         .sheet(isPresented: $showConfigSheet) {
             TerminalConfigSheet(
                 fontSize: $storedFontSize,
-                themeId: $storedThemeId,
                 cursorBlink: $storedCursorBlink,
-                onApply: { fontSize, themeId, cursorBlink in
+                onApply: { fontSize, cursorBlink in
                     applyConfigSettings(
                         fontSize: fontSize,
-                        themeId: themeId,
                         cursorBlink: cursorBlink,
                         regrid: true
                     )
@@ -306,12 +309,16 @@ struct TerminalScreen: View {
                             storedFontSize = newSize
                             applyConfigSettings(
                                 fontSize: newSize,
-                                themeId: storedThemeId,
                                 cursorBlink: storedCursorBlink,
                                 regrid: true
                             )
                         },
-                        fontSize: storedFontSize
+                        fontSize: storedFontSize,
+                        surfaceColor: UIColor(LitterTheme.background),
+                        textColor: UIColor(LitterTheme.textPrimary),
+                        keyColor: UIColor(LitterTheme.surface),
+                        borderColor: UIColor(LitterTheme.border),
+                        darkKeyboard: ThemeStore.shared.colorScheme == .dark
                     )
                     .frame(
                         width: contentWidth,
@@ -332,7 +339,7 @@ struct TerminalScreen: View {
                                 } label: {
                                     Label("Trust \(challenge.fingerprint)", systemImage: "key.fill")
                                         .font(.custom("SFMono-Regular", size: 12))
-                                        .foregroundColor(.black)
+                                        .foregroundColor(LitterTheme.textOnAccent)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
                                         .padding(.horizontal, 10)
@@ -384,10 +391,7 @@ struct TerminalScreen: View {
     }
 
     private var terminalSurfaceBackground: Color {
-        if storedThemeId == TerminalThemeChoice.litterDark.rawValue {
-            return Color(hex: "#282C34")
-        }
-        return Color(hex: themePalette(preset: TerminalThemeChoice.preset(forId: storedThemeId)).background)
+        LitterTheme.background
     }
 
     private var displayText: String {
@@ -429,10 +433,10 @@ struct TerminalScreen: View {
 
     private var phaseColor: Color {
         switch controller.phase {
-        case .idle, .connecting: return .white.opacity(0.45)
+        case .idle, .connecting: return LitterTheme.textSecondary
         case .running: return accent
-        case .exited: return .white.opacity(0.5)
-        case .failed: return .red
+        case .exited: return LitterTheme.textSecondary
+        case .failed: return LitterTheme.danger
         }
     }
 
@@ -628,22 +632,34 @@ struct TerminalScreen: View {
         return normalized(String(trimmed.dropFirst(alleycatServerIdPrefix.count)))
     }
 
+    private var terminalThemeOverrides: String {
+        let store = ThemeStore.shared
+        let theme = store.colorScheme == .dark ? store.dark : store.light
+        let ansi = [theme.surface, theme.danger, theme.success, theme.warning,
+                    theme.accent, theme.accentStrong, theme.textSystem, theme.textPrimary]
+        var lines = ["background = \(theme.background)", "foreground = \(theme.textPrimary)",
+                     "cursor-color = \(theme.accent)", "selection-background = \(theme.surfaceLight)",
+                     "selection-foreground = \(theme.textPrimary)"]
+        for (index, color) in (ansi + ansi).enumerated() {
+            lines.append("palette = \(index)=\(color)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     private func applyConfigSettings() {
         applyConfigSettings(
             fontSize: storedFontSize,
-            themeId: storedThemeId,
             cursorBlink: storedCursorBlink
         )
     }
 
     private func applyConfigSettings(
         fontSize: Double,
-        themeId: String,
         cursorBlink: Bool,
         regrid: Bool = false
     ) {
         let config = TerminalConfig(
-            theme: TerminalThemeChoice.preset(forId: themeId),
+            theme: .custom(ghosttyConf: terminalThemeOverrides),
             fontFamily: "SFMono-Regular",
             fontSizePt: Float(fontSize),
             cursorStyle: .bar,
@@ -669,63 +685,24 @@ struct TerminalScreen: View {
     }
 }
 
-private enum TerminalThemeChoice: String, CaseIterable, Identifiable {
-    case litterDark = "litter-dark"
-    case catppuccinFrappe = "catppuccin-frappe"
-    case catppuccinFrappeLight = "catppuccin-frappe-light"
-    case solarizedDark = "solarized-dark"
-    case solarizedLight = "solarized-light"
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .litterDark: return "Litter Dark"
-        case .catppuccinFrappe: return "Catppuccin Frappé"
-        case .catppuccinFrappeLight: return "Catppuccin Frappé Light"
-        case .solarizedDark: return "Solarized Dark"
-        case .solarizedLight: return "Solarized Light"
-        }
-    }
-
-    var preset: TerminalThemePreset {
-        switch self {
-        case .litterDark: return .litterDark
-        case .catppuccinFrappe: return .catppuccinFrappe
-        case .catppuccinFrappeLight: return .catppuccinFrappeLight
-        case .solarizedDark: return .solarized(dark: true)
-        case .solarizedLight: return .solarized(dark: false)
-        }
-    }
-
-    static func preset(forId id: String) -> TerminalThemePreset {
-        (TerminalThemeChoice(rawValue: id) ?? .litterDark).preset
-    }
-}
-
 private struct TerminalConfigSheet: View {
     @Binding var fontSize: Double
-    @Binding var themeId: String
     @Binding var cursorBlink: Bool
-    let onApply: (Double, String, Bool) -> Void
+    let onApply: (Double, Bool) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var draftFontSize: Double
-    @State private var draftThemeId: String
     @State private var draftCursorBlink: Bool
     @State private var appliedForDismiss = false
 
     init(
         fontSize: Binding<Double>,
-        themeId: Binding<String>,
         cursorBlink: Binding<Bool>,
-        onApply: @escaping (Double, String, Bool) -> Void
+        onApply: @escaping (Double, Bool) -> Void
     ) {
         self._fontSize = fontSize
-        self._themeId = themeId
         self._cursorBlink = cursorBlink
         self.onApply = onApply
         self._draftFontSize = State(initialValue: fontSize.wrappedValue)
-        self._draftThemeId = State(initialValue: themeId.wrappedValue)
         self._draftCursorBlink = State(initialValue: cursorBlink.wrappedValue)
     }
 
@@ -755,13 +732,8 @@ private struct TerminalConfigSheet: View {
                     applyDraft()
                 }
                 Section("Theme") {
-                    Picker("Theme", selection: $draftThemeId) {
-                        ForEach(TerminalThemeChoice.allCases) { choice in
-                            Text(choice.title).tag(choice.id)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    .onChange(of: draftThemeId) { _, _ in applyDraft() }
+                    Text("Matches the theme selected in Settings → Appearance.")
+                        .foregroundStyle(LitterTheme.textSecondary)
                 }
                 Section("Cursor") {
                     Toggle("Blink", isOn: $draftCursorBlink)
@@ -789,9 +761,8 @@ private struct TerminalConfigSheet: View {
 
     private func applyDraft() {
         fontSize = draftFontSize
-        themeId = draftThemeId
         cursorBlink = draftCursorBlink
-        onApply(draftFontSize, draftThemeId, draftCursorBlink)
+        onApply(draftFontSize, draftCursorBlink)
     }
 }
 

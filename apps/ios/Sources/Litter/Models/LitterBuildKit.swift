@@ -3620,22 +3620,8 @@ actor LitterBuildKit {
     }
 
     private static func compatibilityVersionLog(tool: String, status: LitterBuildKitStatus) -> String {
-        var output = "\(tool) compatibility shim for Alley Cãt BuildKit\n"
-        output += "Swift: \(status.assetManifest?.swiftVersion ?? "unknown")\n"
-        output += "SDK: \(status.assetManifest?.sdkVersion ?? "missing")\n"
-        output += "Swift compatibility: \(status.assetManifest?.swiftCompatibilityVersion ?? "unknown")\n"
-        output += "SDK Swift: \(status.assetManifest?.sdkSwiftVersion ?? "unknown")\n"
-        output += "iPhoneOS SDK installed: \(status.sdkInstalled ? "yes" : "no")\n"
-        output += "Clang resource dir installed: \(status.clangResourceDirInstalled ? "yes" : "no")\n"
-        output += "libc++ headers installed: \(status.cxxStandardLibraryHeadersInstalled ? "yes" : "no")\n"
-        output += "Swift resource dir installed: \(status.swiftResourceDirInstalled ? "yes" : "no")\n"
-        output += "Native driver loadable: \(status.nativeDriverLoadable ? "yes" : "no")\n"
-        if !status.nativeDriverLoadable && !status.nativeDriverDiagnostics.isEmpty {
-            output += "Native driver diagnostics:\n"
-            output += status.nativeDriverDiagnostics.prefix(8).map { "- \($0)" }.joined(separator: "\n") + "\n"
-        }
-        output += "Canonical commands: litter-swift-selftest, litter-swift-check, litter-swift-build, litter-swift-test, litter-ipa-build, litter-clang, litter-ld\n"
-        return output
+        let version = status.assetManifest?.swiftVersion ?? "unknown (toolchain assets unavailable)"
+        return "Swift version \(version)\nAlley Cãt BuildKit \(tool) compatibility driver (iOS)\n"
     }
 
     private static func swiftCompatibilityUsage() -> String {
