@@ -14,6 +14,7 @@ on:
       - 'tools/scripts/tests/test_sidestore_*.py'
       - 'ThirdParty/upstream-integration.json'
       - 'tools/scripts/verify-upstream-integration.py'
+      - 'tools/scripts/verify-kittystore-integration.sh'
       - 'tools/scripts/audit-upstream-coverage.py'
       - 'tools/scripts/build-nyxian-buildkit-assets.sh'
       - 'tools/scripts/build-litter-buildkit-native.sh'
