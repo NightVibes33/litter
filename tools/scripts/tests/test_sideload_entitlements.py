@@ -33,10 +33,18 @@ class SideloadEntitlementTests(unittest.TestCase):
                     requested = plistlib.loads(Path(args[args.index("--entitlements") + 1]).read_bytes())
                     self.assertEqual(requested, {module.VA: True})
                     self.assertEqual(args[args.index("--sign") + 1], "-")
-                    self.assertEqual(args[-1], str(app / "Litter"))
+                    target = Path(args[-1])
+                    # Reproduce codesign's bundle discovery when signing in place.
+                    if target.parent == app:
+                        (app / "_CodeSignature").mkdir()
+                    self.assertNotEqual(target.parent, app)
+                    self.assertEqual(target.read_bytes(), b"fixture")
+                    target.write_bytes(b"signed fixture")
                 return subprocess.CompletedProcess(args, 0, plistlib.dumps({module.VA: True}))
             with patch.object(module.subprocess, "run", side_effect=codesign):
                 module.prepare(app)
+            self.assertEqual((app / "Litter").read_bytes(), b"signed fixture")
+            self.assertFalse((app / "_CodeSignature").exists())
 
     def test_executable_cannot_escape_bundle(self):
         with tempfile.TemporaryDirectory() as directory:

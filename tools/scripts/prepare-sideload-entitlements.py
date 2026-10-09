@@ -2,6 +2,7 @@
 """Attach discoverable V8 entitlement metadata before a sideload signer takes over."""
 import argparse
 import plistlib
+import shutil
 from pathlib import Path
 import subprocess
 import tempfile
@@ -20,13 +21,17 @@ def prepare(app: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="alleycat-entitlements-") as directory:
         entitlements = Path(directory) / "entitlements.plist"
         entitlements.write_bytes(plistlib.dumps({VA: True}))
-        # Sign the executable itself: no bundle resource seal or team identity.
+        # codesign recognizes a bundle's main executable even when given its
+        # file path and creates _CodeSignature. Sign a detached copy instead.
+        detached_executable = Path(directory) / name
+        shutil.copy2(executable, detached_executable)
         # AltSign reads entitlement requests from this Mach-O signature.
         subprocess.run([
             "/usr/bin/codesign", "--force", "--sign", "-", "--timestamp=none",
             "--entitlements", str(entitlements), "--generate-entitlement-der",
-            str(executable),
+            str(detached_executable),
         ], check=True)
+        shutil.copy2(detached_executable, executable)
     result = subprocess.run([
         "/usr/bin/codesign", "-d", "--entitlements", ":-", str(executable),
     ], check=True, capture_output=True)
