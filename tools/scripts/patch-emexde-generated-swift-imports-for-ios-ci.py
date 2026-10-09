@@ -203,6 +203,19 @@ def ensure_liveprocess_info_plist_metadata():
 
 ensure_liveprocess_info_plist_metadata()
 
+# A partially completed bootstrap can leave the root CA installed before the
+# version marker advances. Replace from the same upstream download atomically.
+bootstrap = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEFoundation/NXBootstrap.m")
+bootstrap_text = bootstrap.read_text()
+old_rootca = 'if(![[NSFileManager defaultManager] moveItemAtPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"org.emexlabs.rootca.v1.pub.nxt2c"] toPath:[[self.rootURL URLByAppendingPathComponent:@"RootCAs/org.emexlabs.rootca.v1.pub.nxt2c"] path] error:nil])'
+new_rootca = 'NSData *rootCAData = [NSData dataWithContentsOfFile:[NSTemporaryDirectory() stringByAppendingPathComponent:@"org.emexlabs.rootca.v1.pub.nxt2c"] options:0 error:&error];\n                if(!rootCAData || ![rootCAData writeToURL:[self.rootURL URLByAppendingPathComponent:@"RootCAs/org.emexlabs.rootca.v1.pub.nxt2c"] options:NSDataWritingAtomic error:&error])'
+if old_rootca in bootstrap_text:
+    bootstrap_text = bootstrap_text.replace(old_rootca, new_rootca, 1)
+    bootstrap_text = bootstrap_text.replace('error = [NSError errorWithDomain:@"" code:0 userInfo:@{ NSLocalizedDescriptionKey: @"failed to move emexlabs public rootca key" }];', 'if(!error) error = [NSError errorWithDomain:@"" code:0 userInfo:@{ NSLocalizedDescriptionKey: @"failed to install emexlabs public rootca key" }];', 1)
+    bootstrap.write_text(bootstrap_text)
+elif new_rootca not in bootstrap_text:
+    raise SystemExit("Missing expected NXBootstrap root CA installation")
+
 print(f"Normalized {len(changed)} emexDE generated Swift imports.")
 for source in changed:
     print(source)
