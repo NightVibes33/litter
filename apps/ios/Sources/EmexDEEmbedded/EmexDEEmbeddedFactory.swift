@@ -96,7 +96,10 @@ private final class EmexDEEmbeddedRootViewController: UIViewController, UITabBar
         // created. In particular, presenting a sheet after installing the
         // upstream swizzle dereferences NXWindowServer.shared().
         nyxianLaunchLog("NXWindowServer initialization begin")
-        RevertUI()
+        // Initialize Nyxian's palette without calling RevertUI(), which
+        // mutates process-wide UIKit appearance proxies and would restyle
+        // unrelated Alley Cat/KittyStore screens after opening Nyxian.
+        LDETheme.currentTheme = LDEThemeReader.shared.currentlySelectedTheme()
         _ = NXWindowServer.shared(with: windowScene)
         nyxianLaunchLog("NXWindowServer initialized")
         // The standalone Nyxian swizzles replace UIKit methods process-wide.
