@@ -1032,9 +1032,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: build/NyxianSourcePackages
-          key: ios-nyxian-swiftpm-v1-${{ runner.os }}-${{ hashFiles('ThirdParty/Nyxian/Nyxian.xcodeproj/project.pbxproj') }}
+          key: ios-nyxian-swiftpm-v2-${{ runner.os }}-${{ hashFiles('ThirdParty/EmexDE/Source/Nyxian.xcodeproj/project.pbxproj', 'ThirdParty/EmexDE/Source/LLVM-On-iOS/Makefile') }}
           restore-keys: |
-            ios-nyxian-swiftpm-v1-${{ runner.os }}-
+            ios-nyxian-swiftpm-v2-${{ runner.os }}-
 
       - name: Build Nyxian LiveProcess extension
         if: env.LITTER_NYXIAN_PRIVATE_BUILD == '1'
@@ -1066,17 +1066,19 @@ jobs:
             done
           }
 
-          # LiveProcess.xcscheme comes from upstream and points at LiveContainer.xcodeproj.
-          # Resolve packages through the valid app scheme, then build the extension target directly.
+          # Use the same pinned Nyxian checkout for LiveProcess as for the embedded
+          # runtime and matched compiler toolchain. The older vendored project
+          # can produce a mismatched extension with an incompatible userspace.
+          # Resolve SwiftPM packages through the native app scheme first.
           xcodebuild_with_retry "Resolve Nyxian SwiftPM dependencies" \
             xcodebuild -resolvePackageDependencies \
-              -project ThirdParty/Nyxian/Nyxian.xcodeproj \
+              -project ThirdParty/EmexDE/Source/Nyxian.xcodeproj \
               -scheme Nyxian \
               -clonedSourcePackagesDirPath "$SOURCE_PACKAGES"
 
           xcodebuild_with_retry "Build Nyxian LiveProcess extension" \
             xcodebuild build \
-              -project ThirdParty/Nyxian/Nyxian.xcodeproj \
+              -project ThirdParty/EmexDE/Source/Nyxian.xcodeproj \
               -target LiveProcess \
               -configuration Release \
               -sdk iphoneos \
