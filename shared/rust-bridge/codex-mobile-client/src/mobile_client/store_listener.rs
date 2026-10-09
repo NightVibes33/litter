@@ -7,12 +7,20 @@ pub(super) fn spawn_store_listener(
     app_store: Arc<AppStoreReducer>,
     sessions: Arc<RwLock<HashMap<String, Arc<ServerSession>>>>,
     mobile_preferences_directory: Arc<StdMutex<Option<String>>>,
+    direct_resumed_threads: Arc<StdMutex<HashSet<ThreadKey>>>,
     mut rx: broadcast::Receiver<UiEvent>,
 ) {
     MobileClient::spawn_detached(async move {
         loop {
             match rx.recv().await {
                 Ok(event) => {
+                    if let UiEvent::ThreadClosed { key } | UiEvent::ThreadArchived { key } = &event
+                    {
+                        direct_resumed_threads
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .remove(key);
+                    }
                     app_store.apply_ui_event(&event);
                     maybe_reconcile_idle_thread(
                         Arc::clone(&app_store),

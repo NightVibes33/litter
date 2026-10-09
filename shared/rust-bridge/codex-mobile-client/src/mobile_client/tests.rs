@@ -99,6 +99,31 @@ mod mobile_client_tests {
         }
     }
 
+    #[tokio::test]
+    async fn server_close_invalidates_subscription_without_removing_thread() {
+        let client = MobileClient::new();
+        let key = ThreadKey { server_id: "srv".to_string(), thread_id: "thread".to_string() };
+        let mut thread = ThreadSnapshot::from_info("srv", make_thread_info("thread"));
+        thread.is_resumed = true;
+        thread.initial_turns_loaded = true;
+        client.app_store.upsert_thread_snapshot(thread);
+        client.mark_direct_resumed_thread(key.clone());
+        client.event_processor.process_notification("srv", "codex".to_string(),
+            &upstream::ServerNotification::ThreadClosed(upstream::ThreadClosedNotification {
+                thread_id: "thread".to_string(),
+            }));
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if !client.has_direct_resume_marker(&key)
+                    && client.app_store.thread_snapshot(&key).is_some_and(|t| !t.is_resumed) {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        }).await.expect("close must invalidate resume state");
+        assert!(client.app_store.thread_snapshot(&key).unwrap().initial_turns_loaded);
+    }
+
     fn make_server_config(server_id: &str) -> ServerConfig {
         ServerConfig {
             server_id: server_id.to_string(),
@@ -1450,6 +1475,10 @@ mod mobile_client_tests {
                         }))
                         .map_err(|error| RpcError::Deserialization(error.to_string()))
                     }
+                    upstream::ClientRequest::TurnStart { .. } => Ok(json!({
+                        "turn": {"id":"turn-next", "items":[], "status":"inProgress",
+                        "error":null, "startedAt":null, "completedAt":null, "durationMs":null}
+                    })),
                     other => Err(RpcError::Deserialization(format!(
                         "unexpected request in test: {}",
                         other.method_name()
@@ -1478,13 +1507,26 @@ mod mobile_client_tests {
             .await
             .expect("second resume should be skipped");
 
+        let key = ThreadKey { server_id: server_id.to_string(), thread_id: thread_id.to_string() };
+        client.event_processor.process_notification(server_id, "codex".to_string(),
+            &upstream::ServerNotification::ThreadClosed(upstream::ThreadClosedNotification {
+                thread_id: thread_id.to_string(),
+            }));
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while client.app_store.thread_snapshot(&key).unwrap().is_resumed {
+                tokio::task::yield_now().await;
+            }
+        }).await.expect("server close must invalidate subscription");
+        client.start_turn(server_id, interrupt_test_params(thread_id, "after idle"))
+            .await.expect("send must resume unloaded thread first");
+
         let requests = requests
             .lock()
             .expect("request log lock should not be poisoned");
         assert_eq!(
             requests.as_slice(),
-            ["thread/resume"],
-            "duplicate direct resume should not call app-server again"
+            ["thread/resume", "thread/resume", "turn/start"],
+            "reuse live subscription, then resume after close before sending"
         );
     }
 
@@ -2380,6 +2422,7 @@ mod mobile_client_tests {
             .upsert_server(&config, ServerHealthSnapshot::Connected);
         let mut thread = ThreadSnapshot::from_info(server_id, make_thread_info(thread_id));
         thread.info.status = ThreadSummaryStatus::Idle;
+        thread.is_resumed = true;
         thread.model = Some("gpt-5".to_string());
         client.app_store.upsert_thread_snapshot(thread);
 
@@ -2533,6 +2576,7 @@ mod mobile_client_tests {
             .upsert_server(&config, ServerHealthSnapshot::Connected);
         let mut thread = ThreadSnapshot::from_info(server_id, make_thread_info("thread-1"));
         thread.model = Some("gpt-5".to_string());
+        thread.is_resumed = true;
         client.app_store.upsert_thread_snapshot(thread);
         client.app_store.apply_ui_event(&UiEvent::TurnStarted {
             key: key.clone(),

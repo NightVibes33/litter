@@ -803,10 +803,12 @@ impl MobileClient {
         let app_store = Arc::new(AppStoreReducer::new());
         let sessions = Arc::new(RwLock::new(HashMap::new()));
         let mobile_preferences_directory = Arc::new(StdMutex::new(None));
+        let direct_resumed_threads = Arc::new(StdMutex::new(HashSet::new()));
         spawn_store_listener(
             Arc::clone(&app_store),
             Arc::clone(&sessions),
             Arc::clone(&mobile_preferences_directory),
+            Arc::clone(&direct_resumed_threads),
             event_processor.subscribe(),
         );
         Self {
@@ -821,7 +823,7 @@ impl MobileClient {
             saved_apps_directory: Arc::new(StdMutex::new(None)),
             mobile_preferences_directory,
             slingshot_credentials_directory: Arc::new(StdMutex::new(None)),
-            direct_resumed_threads: Arc::new(StdMutex::new(HashSet::new())),
+            direct_resumed_threads,
             resume_locks: Arc::new(StdMutex::new(HashMap::new())),
             thread_runtime_routes: Arc::new(StdMutex::new(HashMap::new())),
             model_catalog_refreshes: StdMutex::new(HashMap::new()),
@@ -3629,6 +3631,17 @@ impl MobileClient {
             server_id: server_id.to_string(),
             thread_id: params.thread_id.clone(),
         };
+        // The server can unload an idle thread without disconnecting the
+        // transport. Reattach before sending; the normal resume path reuses
+        // a valid subscription and retains the durable transcript.
+        if self
+            .app_store
+            .thread_snapshot(&thread_key)
+            .is_some_and(|thread| !thread.is_resumed)
+        {
+            self.external_resume_thread(server_id, &params.thread_id, None)
+                .await?;
+        }
         self.app_store
             .dismiss_plan_implementation_prompt(&thread_key);
         let mut thread_snapshot = self.snapshot_thread(&thread_key).ok();

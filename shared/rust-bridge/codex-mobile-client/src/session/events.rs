@@ -31,6 +31,9 @@ pub(crate) enum UiEvent {
         key: ThreadKey,
         notification: codex_app_server_protocol::ThreadStartedNotification,
     },
+    ThreadClosed {
+        key: ThreadKey,
+    },
     ThreadArchived {
         key: ThreadKey,
     },
@@ -296,6 +299,10 @@ impl EventProcessor {
                     key,
                     notification: n.clone(),
                 });
+            }
+            ServerNotification::ThreadClosed(n) => {
+                let key = Self::make_key(server_id, &n.thread_id);
+                self.emit(UiEvent::ThreadClosed { key });
             }
             ServerNotification::ThreadArchived(n) => {
                 let key = Self::make_key(server_id, &n.thread_id);
@@ -1334,6 +1341,26 @@ mod tests {
     fn subscribe_returns_receiver() {
         let proc = EventProcessor::new();
         let _rx = proc.subscribe();
+    }
+
+    #[test]
+    fn thread_closed_notification_preserves_server_and_thread_identity() {
+        let proc = EventProcessor::new();
+        let mut rx = proc.subscribe();
+        proc.process_notification(
+            "server-a",
+            "codex".to_string(),
+            &ServerNotification::ThreadClosed(proto::ThreadClosedNotification {
+                thread_id: "thread-a".to_string(),
+            }),
+        );
+        match rx.try_recv().expect("closed notification must reach store") {
+            UiEvent::ThreadClosed { key } => {
+                assert_eq!(key.server_id, "server-a");
+                assert_eq!(key.thread_id, "thread-a");
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
     }
 
     // ── Turn lifecycle ─────────────────────────────────────────────────

@@ -266,6 +266,7 @@ impl MobileClient {
         // (which the server rejects until the first user message lands).
         snapshot.initial_turns_loaded = true;
         snapshot.older_turns_cursor = None;
+        snapshot.is_resumed = true;
         let key = snapshot.key.clone();
         let existing = self.app_store.thread_snapshot(&key);
         crate::reconcile_active_turn(existing.as_ref(), &mut snapshot, &response.thread.turns);
@@ -346,6 +347,7 @@ impl MobileClient {
             Some(response.sandbox.clone().into()),
         )
         .map_err(|e| e.to_string())?;
+        snapshot.is_resumed = true;
         let key = snapshot.key.clone();
         let existing = self.app_store.thread_snapshot(&key);
         apply_pagination_merge(existing.as_ref(), &mut snapshot, &response.thread.turns);
@@ -373,6 +375,7 @@ impl MobileClient {
             Some(response.sandbox.clone().into()),
         )
         .map_err(|e| e.to_string())?;
+        snapshot.is_resumed = true;
         let key = snapshot.key.clone();
         let existing = self.app_store.thread_snapshot(&key);
         apply_pagination_merge(existing.as_ref(), &mut snapshot, &response.thread.turns);
@@ -1542,6 +1545,7 @@ mod tests {
             snapshot.initial_turns_loaded,
             "new thread must be marked initial_turns_loaded"
         );
+        assert!(snapshot.is_resumed, "fresh thread is already loaded on the server");
         assert!(snapshot.older_turns_cursor.is_none());
     }
 

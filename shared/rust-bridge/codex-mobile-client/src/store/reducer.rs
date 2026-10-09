@@ -1777,6 +1777,10 @@ impl AppStoreReducer {
                     }
                 });
             }
+            UiEvent::ThreadClosed { key } => {
+                // Unloaded is not deleted: retain the transcript and runtime route.
+                self.mark_thread_resumed(key, false);
+            }
             UiEvent::ThreadArchived { key } => {
                 self.remove_thread(key);
             }
@@ -6590,6 +6594,24 @@ mod tests {
     }
 
     // ── SW-R3: streaming dynamic tool call argument deltas ───────────
+
+    #[test]
+    fn closed_thread_retains_history_but_requires_resume() {
+        let reducer = AppStoreReducer::new();
+        let key = key_thread("closed-thread");
+        let mut thread = ThreadSnapshot::from_info("srv", make_thread_info("closed-thread"));
+        thread.is_resumed = true;
+        thread.initial_turns_loaded = true;
+        thread.agent_runtime_kind = "local-studio".to_string();
+        reducer.upsert_thread_snapshot(thread);
+        reducer.apply_ui_event(&UiEvent::ThreadClosed { key: key.clone() });
+        let retained = reducer.thread_snapshot(&key).expect("unload must retain thread");
+        assert!(!retained.is_resumed);
+        assert!(retained.initial_turns_loaded);
+        assert_eq!(retained.agent_runtime_kind, "local-studio");
+        reducer.apply_ui_event(&UiEvent::ThreadArchived { key: key.clone() });
+        assert!(reducer.thread_snapshot(&key).is_none());
+    }
 
     fn key_thread(thread_id: &str) -> ThreadKey {
         ThreadKey {

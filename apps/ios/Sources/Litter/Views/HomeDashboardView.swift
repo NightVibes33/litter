@@ -256,7 +256,7 @@ struct HomeDashboardView: View {
                     Task { await onDeleteThread?(key) }
                 }
             } message: { thread in
-                Text("This will archive \"\(thread.sessionTitle)\".")
+                Text("This will permanently delete \"\(thread.sessionTitle)\".")
             }
             .alert("Rename server", isPresented: Binding(
                 get: { renameServerTarget != nil },
