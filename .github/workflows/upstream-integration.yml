@@ -11,6 +11,7 @@ on:
       - 'ThirdParty/SideStore/**'
       - 'ThirdParty/upstream-integration.json'
       - 'tools/scripts/verify-upstream-integration.py'
+      - 'tools/scripts/audit-upstream-coverage.py'
       - '.github/workflows/upstream-integration.yml'
 
 permissions:
@@ -28,6 +29,16 @@ jobs:
           fetch-depth: 1
       - name: Validate embedded Nyxian and SideStore upstream trees
         run: python3 tools/scripts/verify-upstream-integration.py
+      - name: Generate complete upstream tracked-file coverage report
+        run: python3 tools/scripts/audit-upstream-coverage.py --output build/upstream-coverage.json
+      - name: Upload upstream coverage and compatibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-source-coverage
+          path: build/upstream-coverage.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Verify Alley Cat integration contracts
         run: |
           python3 -m unittest discover -s tools/scripts/tests -p 'test_nyxian_*.py'

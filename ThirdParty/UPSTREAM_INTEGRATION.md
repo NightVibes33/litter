@@ -31,3 +31,8 @@ KittyStore branding, existing signing flow and all custom behavior.
 The branch is **not a claim that items 2–4 have passed**. See
 `ThirdParty/upstream-integration.json` for source provenance and
 `tools/scripts/verify-upstream-integration.py` for reproducible checks.
+
+CI writes a full tracked-file parity report as the `upstream-source-coverage`
+artifact. It lists identical/changed/upstream-only/local-only files and pinned
+revisions, including binary Git blobs. The report is evidence for migration;
+no active SideStore source is overwritten by the audit.
