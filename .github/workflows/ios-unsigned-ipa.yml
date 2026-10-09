@@ -1548,6 +1548,10 @@ jobs:
               raise SystemExit(f"::error::CURRENT_PROJECT_VERSION must be a numeric build, got {build!r}")
           PY
 
+          # Ad-hoc Mach-O metadata lets sideload signers discover required V8 capability.
+          # This is not an Apple/team signature or provisioning authorization.
+          python3 tools/scripts/prepare-sideload-entitlements.py --app "$APP_BUNDLE"
+
           IPA_NAME="AlleyCat-${VERSION}.ipa"
           /usr/bin/zip -qry "build/unsigned-ipa/$IPA_NAME" Payload
           IPA_PATH="build/unsigned-ipa/$IPA_NAME"
