@@ -828,7 +828,7 @@ actor LitterBuildKit {
             request["language"] = Self.optionValue("--language", in: tokens) ?? "swift"
             request["type"] = Self.optionValue("--type", in: tokens) ?? "app"
             request["interface"] = Self.optionValue("--interface", in: tokens) ?? "swiftui"
-        case "build", "run":
+        case "info", "diagnostics", "clean", "build", "run":
             guard tokens.count >= 2 else { return BuildKitCommandResult(exitCode: 64, status: "usage", log: Self.nyxianUsage()) }
             let fakefsPath = Self.resolveFakefsPath(tokens[1], cwd: cwd)
             request["path"] = Self.nativePathForNyxian(fakefsPath)
@@ -853,7 +853,7 @@ actor LitterBuildKit {
                 return mapped
             }
         }
-        for key in ["path", "projectPath", "artifactPath"] {
+        for key in ["path", "projectPath", "artifactPath", "diagnosticsPath"] {
             if let path = output[key] as? String, !path.isEmpty { output[key] = Self.fakefsPathForNyxian(path) }
         }
         return BuildKitCommandResult(exitCode: code, status: status, log: Self.prettyJSON(output) + "\n")
@@ -884,11 +884,16 @@ actor LitterBuildKit {
           nyxian projects
           nyxian create NAME [--type app|utility] [--language swift|objc|c|cpp]
                              [--interface swiftui|uikit] [--bundle-id ID] [--organization PREFIX]
+          nyxian info PROJECT_PATH
+          nyxian diagnostics PROJECT_PATH
+          nyxian clean PROJECT_PATH
           nyxian build PROJECT_PATH
           nyxian run PROJECT_PATH
 
         Project paths are exposed under /mnt/container so Codex can edit the real Nyxian project directly.
-        build uses NXBuilder export and returns the real IPA path; run uses NXBuilder plus LiveProcess.
+        info reports actual project flags; diagnostics reads upstream debug.json.
+        clean calls upstream NXBuilder cleanup. build uses NXBuilder export and returns the real IPA path plus diagnostics; run uses NXBuilder plus LiveProcess.
+        SwiftPM and interpreter commands are not exposed by this pinned Nyxian integration.
         """ + "\n"
     }
     private func kittyStoreStatus(command: String, args: String) async -> BuildKitCommandResult {

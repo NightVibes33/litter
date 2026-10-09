@@ -26,7 +26,12 @@ public final class NyxianCommandBridge: NSObject {
             return await bootstrapEnvironment()
         }
 
-        NXBootstrap.shared().bootstrap()
+        let bootstrapResponse = await bootstrapEnvironment()
+        guard let bootstrapData = bootstrapResponse.data(using: .utf8),
+              let bootstrapResult = try? JSONSerialization.jsonObject(with: bootstrapData) as? [String: Any],
+              bootstrapResult["exitCode"] as? Int == 0 else {
+            return bootstrapResponse
+        }
         let root = NXBootstrap.shared().projectsURL
 
         switch command {
@@ -90,6 +95,54 @@ public final class NyxianCommandBridge: NSObject {
                 ]
             )
 
+        case "info", "diagnostics", "clean":
+            guard let path = request["path"] as? String, !path.isEmpty,
+                  let project = NXProject(url: URL(fileURLWithPath: path)) else {
+                return response(code: 66, status: "project-not-found", message: "Expected a valid Nyxian project path.")
+            }
+            let diagnosticsURL = project.cacheURL.appendingPathComponent("debug.json")
+            if command == "info" {
+                return response(code: 0, status: "project-info", payload: [
+                    "projectPath": project.url.path,
+                    "name": project.projectConfig.displayName ?? "",
+                    "bundleIdentifier": project.projectConfig.bundleid ?? "",
+                    "type": schemeName(project.projectConfig.schemeKind),
+                    "deploymentTarget": project.projectConfig.deploymentTarget ?? "",
+                    "swiftFlags": project.projectConfig.swiftFlags ?? [],
+                    "compilerFlags": project.projectConfig.compilerFlags ?? [],
+                    "linkerFlags": project.projectConfig.linkerFlags ?? [],
+                    "artifactPath": project.packageURL.path,
+                    "diagnosticsPath": diagnosticsURL.path
+                ])
+            }
+            guard !NXBuilder.builds else {
+                return response(code: 75, status: "build-busy", message: "Wait for the active Nyxian build to finish before reading its diagnostics or cleaning.")
+            }
+            if command == "diagnostics" {
+                do {
+                    return response(code: 0, status: "diagnostics", payload: [
+                        "projectPath": project.url.path,
+                        "diagnosticsPath": diagnosticsURL.path,
+                        "diagnostics": try readDiagnostics(at: diagnosticsURL)
+                    ])
+                } catch {
+                    return response(code: 74, status: "diagnostics-unavailable", message: error.localizedDescription,
+                                    payload: ["diagnosticsPath": diagnosticsURL.path])
+                }
+            }
+            guard let builder = NXBuilder(project: project) else {
+                return response(code: 70, status: "builder-unavailable", message: "Upstream Nyxian could not initialize this project's builder.")
+            }
+            NXBuilder.builds = true
+            defer { NXBuilder.builds = false }
+            do {
+                try builder.clean()
+                return response(code: 0, status: "clean-complete", message: "Upstream Nyxian cleanup completed; this is not a build or test result.",
+                                payload: ["projectPath": project.url.path])
+            } catch {
+                return response(code: 74, status: "clean-failed", message: error.localizedDescription)
+            }
+
         case "build", "run":
             guard let path = request["path"] as? String, !path.isEmpty else {
                 return response(code: 64, status: "missing-path", message: "\(command) requires path.")
@@ -131,13 +184,32 @@ public final class NyxianCommandBridge: NSObject {
                 payload: [
                     "projectPath": project.url.path,
                     "artifactPath": artifact,
-                    "type": schemeName(projectKind)
+                    "type": schemeName(projectKind),
+                    "diagnosticsPath": project.cacheURL.appendingPathComponent("debug.json").path,
+                    "diagnostics": (try? readDiagnostics(at: project.cacheURL.appendingPathComponent("debug.json"))) ?? NSNull()
                 ]
             )
 
         default:
-            return response(code: 64, status: "unsupported-command", message: "Supported commands: projects, create, build, run.")
+            return response(code: 64, status: "unsupported-command", message: "Supported commands: projects, create, info, diagnostics, clean, build, run.")
         }
+    }
+
+    private static func readDiagnostics(at url: URL) throws -> Any {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        guard attributes[.type] as? FileAttributeType == .typeRegular,
+              let size = attributes[.size] as? NSNumber, size.intValue <= 4_000_000 else {
+            throw NSError(domain: "NyxianCommandBridge", code: 74,
+                          userInfo: [NSLocalizedDescriptionKey: "Diagnostics must be a regular JSON file no larger than 4 MB. Read the reported path for larger logs."])
+        }
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: 4_000_001) ?? Data()
+        guard data.count <= 4_000_000, data.count == size.intValue else {
+            throw NSError(domain: "NyxianCommandBridge", code: 74,
+                          userInfo: [NSLocalizedDescriptionKey: "Diagnostics grew beyond the response limit."])
+        }
+        return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
     }
 
     private static var bootstrapTask: Task<String, Never>?
