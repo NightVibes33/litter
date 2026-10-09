@@ -520,6 +520,7 @@ private final class KittyStoreLifecycleObserver: NSObject {
     @objc private func enterForeground() {
         guard DatabaseManager.shared.isStarted else { return }
         AppManager.shared.update()
+        KittyStoreIncomingURLs.resumeDelivery()
         if UserDefaults.standard.enableEMPforWireguard {
             startEMProxy(bind_addr: AppConstants.Proxy.serverURL)
         }

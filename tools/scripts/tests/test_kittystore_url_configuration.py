@@ -23,3 +23,17 @@ class KittyStoreURLConfigurationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class KittyStoreURLDeliveryTests(unittest.TestCase):
+    def test_queue_waits_for_active_attached_store_and_dialog_completion(self):
+        source = (ROOT / 'apps/ios/Sources/KittyStoreEmbedded/KittyStoreIncomingURLs.swift').read_text()
+        start = source.index('private static func flush()')
+        end = source.index('private static func deliver(', start)
+        delivery = source[start:end]
+        for guard in ('UIApplication.shared.applicationState == .active', 'controller.viewIfLoaded?.window != nil', 'controller.presentedViewController == nil'):
+            self.assertLess(delivery.index(guard), delivery.index('pending.removeFirst()'))
+        self.assertNotIn('pending.removeAll()', delivery)
+        self.assertIn('guard !retryScheduled', delivery)
+        self.assertLess(source.index('pending.count < maximumPendingActions'), source.index('copyItem(at: url'))
+        runtime = (ROOT / 'apps/ios/Sources/KittyStoreEmbedded/KittyStoreEmbeddedFactory.swift').read_text()
+        self.assertIn('KittyStoreIncomingURLs.resumeDelivery()', runtime)

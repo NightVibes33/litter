@@ -11,8 +11,11 @@ enum KittyStoreIncomingURLs {
     }
     private static var pending: [Action] = []
     private static weak var controller: UIViewController?
+    private static var retryScheduled = false
+    private static let maximumPendingActions = 16
 
     static func receive(_ url: URL) -> Bool {
+        guard pending.count < maximumPendingActions else { return false }
         let action: Action
         if url.isFileURL {
             guard url.pathExtension.lowercased() == "ipa" else { return false }
@@ -81,11 +84,31 @@ enum KittyStoreIncomingURLs {
         flush()
     }
 
+    static func resumeDelivery() {
+        flush()
+    }
+
     private static func flush() {
-        let actions = pending
-        pending.removeAll()
-        DispatchQueue.main.async {
-            for action in actions { deliver(action) }
+        guard !pending.isEmpty,
+              UIApplication.shared.applicationState == .active,
+              let controller,
+              controller.viewIfLoaded?.window != nil else { return }
+        guard controller.presentedViewController == nil,
+              !controller.isBeingDismissed else {
+            scheduleNextDelivery()
+            return
+        }
+        let action = pending.removeFirst()
+        deliver(action)
+        if !pending.isEmpty { scheduleNextDelivery() }
+    }
+
+    private static func scheduleNextDelivery() {
+        guard !retryScheduled else { return }
+        retryScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            retryScheduled = false
+            flush()
         }
     }
 
