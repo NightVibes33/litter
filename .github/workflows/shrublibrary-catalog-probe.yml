@@ -72,3 +72,22 @@ jobs:
           for url in sorted(matches)[:600]:
               print('MATCHED_URL',url[:850])
           PY
+
+      - name: Extract embedded repository index and data shapes
+        run: |
+          python3 - <<'PY'
+          import re
+          import urllib.request
+          with urllib.request.urlopen(urllib.request.Request('https://shrublibrary.pages.dev/',headers={'User-Agent':'Mozilla/5.0'}),timeout=30) as response:
+              html=response.read().decode('utf-8','replace')
+          print('TOTAL_HTML_BYTES',len(html))
+          scripts=re.findall(r'<script\b[^>]*>([\s\S]*?)</script\s*>',html,re.I)
+          print('INLINE_SCRIPT_COUNT',len(scripts),'SIZES',[len(s) for s in scripts])
+          for word in ['DEFAULT_REPOS','BUILTIN_REPOS','builtinRepos','defaultRepos','REPO_LIST','const repos','const REPOS','repoSources','sources =','sourceURL','altstore','repoUrl','repos:']:
+              ix=html.find(word)
+              if ix>=0: print('INDEX_CONTEXT',word,ix,repr(html[max(0,ix-150):ix+900]))
+          for url in sorted(set(re.findall(r"""https?://[^\s"'<>\\]+""",html))):
+              if any(k in url.lower() for k in ['json','repo','altstore','ipa','github.io','pages.dev','source','sidestore']):
+                  print('INDEX_URL',url[:500])
+          print('INLINE_SCRIPT_HEAD',repr(max(scripts,key=len)[:3500]) if scripts else '')
+          PY
