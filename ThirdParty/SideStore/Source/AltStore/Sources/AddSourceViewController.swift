@@ -727,6 +727,7 @@ private extension AddSourceViewController
                 
                 var sourcesByURL = [URL: Source]()
                 var fetchError: Error?
+                var failedSourceHosts = [String]()
                 
                 for sourceURL in featuredSourceURLs
                 {
@@ -740,6 +741,7 @@ private extension AddSourceViewController
                             case .failure(let error):
                                 print("Failed to load recommended source \(sourceURL.absoluteString):", error.localizedDescription, error)
                                 fetchError = error
+                                failedSourceHosts.append(sourceURL.host ?? "Unknown source")
                                 
                             case .success(let source): sourcesByURL[source.sourceURL] = source
                             }
@@ -759,6 +761,11 @@ private extension AddSourceViewController
                     else
                     {
                         finish(.success(sources))
+                        if !failedSourceHosts.isEmpty, let self = self {
+                            let alert = UIAlertController(title: "Some Sources Could Not Be Loaded", message: "Try opening Add Source again to retry: " + failedSourceHosts.sorted().joined(separator: ", "), preferredStyle: .alert)
+                            alert.addAction(UIAlertAction(title: "OK", style: .default))
+                            self.present(alert, animated: true)
+                        }
                     }
                 }
             }

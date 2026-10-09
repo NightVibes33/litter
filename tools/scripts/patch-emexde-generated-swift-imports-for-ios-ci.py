@@ -9,6 +9,18 @@ those files reference.
 from pathlib import Path
 
 changed = []
+
+# The embedded host must keep iOS LaunchServices intact. Replacing its app
+# proxies with virtual Nyxian apps also affects system document-picker setup.
+launch_services = Path("ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/LSApplicationWorkspace.m")
+launch_services_text = launch_services.read_text()
+load_before = "+ (void)load\n{\n    [super load];"
+load_after = load_before + "\n#if LITTER_EMBEDDED_NYXIAN\n    return;\n#endif"
+if load_after not in launch_services_text:
+    if load_before not in launch_services_text:
+        raise SystemExit("Missing expected Nyxian LaunchServices hook installer")
+    launch_services.write_text(launch_services_text.replace(load_before, load_after, 1))
+
 for source in Path("ThirdParty/EmexDE/Source").rglob("*"):
     if source.suffix not in {".h", ".m", ".mm", ".cpp", ".hpp"}:
         continue

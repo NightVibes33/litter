@@ -23,6 +23,7 @@ class EmexDEImportPatchTests(unittest.TestCase):
             'Nyxian/LindChain/ProcEnvironment/PEProcessManager.m',
             'Nyxian/LindChain/IDEFoundation/NXTarget.m',
             'Nyxian/LindChain/ProcEnvironment/PEUserspaceManager.m',
+            'Nyxian/LindChain/ProcEnvironment/Shims/LSApplicationWorkspace.m',
             'Nyxian/LindChain/IDEConsole/NXConsoleView.m',
             'Nyxian/LindChain/IDEFoundation/NXProject.m',
             'Frameworks/CoreCompiler/Tools/CCDriver.cpp',
@@ -36,6 +37,9 @@ class EmexDEImportPatchTests(unittest.TestCase):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(REPO / SOURCE / relative, destination)
             subprocess.run([sys.executable, str(SCRIPT)], cwd=root, check=True, capture_output=True)
+            launch_services_path = root / SOURCE / 'Nyxian/LindChain/ProcEnvironment/Shims/LSApplicationWorkspace.m'
+            launch_services_first = launch_services_path.read_text()
+            self.assertIn('[super load];\n#if LITTER_EMBEDDED_NYXIAN\n    return;\n#endif', launch_services_first)
             bootstrap_path = root / SOURCE / 'Nyxian/LindChain/IDEFoundation/NXBootstrap.m'
             bootstrap_first = bootstrap_path.read_text()
             self.assertIn('#import <LindChain/ProcEnvironment/Surface/trust/keychain.h>', bootstrap_first)
@@ -81,6 +85,7 @@ class EmexDEImportPatchTests(unittest.TestCase):
             self.assertNotIn('Nyxian-Swift.h', console_first)
             subprocess.run([sys.executable, str(SCRIPT)], cwd=root, check=True, capture_output=True)
             self.assertEqual(workspace_first, workspace_path.read_text())
+            self.assertEqual(launch_services_first, launch_services_path.read_text())
             self.assertEqual(bootstrap_first, bootstrap_path.read_text())
             self.assertEqual(console_first, console_path.read_text())
             self.assertEqual(theme_first, theme_path.read_text())

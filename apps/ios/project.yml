@@ -400,7 +400,7 @@ targets:
         CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES: "YES"
         MODULEMAP_FILE: Sources/EmexDEEmbedded/emexDE.modulemap
         SWIFT_OBJC_INTERFACE_HEADER_NAME: emexDE-Swift.h
-        GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) HOST_ENV=1 CHAR_BIT=8 INT_MAX=2147483647 LONG_MAX=9223372036854775807L ULONG_MAX=18446744073709551615UL"
+        GCC_PREPROCESSOR_DEFINITIONS: "$(inherited) HOST_ENV=1 LITTER_EMBEDDED_NYXIAN=1 CHAR_BIT=8 INT_MAX=2147483647 LONG_MAX=9223372036854775807L ULONG_MAX=18446744073709551615UL"
         OTHER_LDFLAGS: "$(inherited) -lc++ -lz -larchive -framework OpenSSL -framework FrontBoard -framework FrontBoardServices -framework RunningBoardServices -framework BackBoardServices"
         HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess $(SRCROOT)/../../ThirdParty/EmexDE/Source/LiveProcess/LindChain $(BUILT_PRODUCTS_DIR)/CoreCompiler.framework/Headers $(BUILT_PRODUCTS_DIR)/MobileDevelopmentKit.framework/Headers $(BUILT_PRODUCTS_DIR)/LiveShim.framework/Headers"
         LIBRARY_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian $(SRCROOT)/../../ThirdParty/EmexDE/Source/Nyxian/LindChain $(SRCROOT)/../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CoreCompilerSupportLibs"

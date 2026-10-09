@@ -165,9 +165,18 @@ final class FetchAnisetteDataOperation: ResultOperation<ALTAnisetteData>, WebSoc
     // MARK: - COMMON
     
     func extractAnisetteData(_ data: Data, _ response: HTTPURLResponse?, v3: Bool) throws {
+        if let response, !(200...299).contains(response.statusCode) {
+            throw OperationError.anisetteV3Error(message: "The anisette server returned HTTP \(response.statusCode). Choose another server in Settings and try signing in again.")
+        }
         // make sure this JSON is in the format we expect
         // convert data to json
-        if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: String] {
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(with: data, options: [])
+        } catch {
+            throw OperationError.anisetteV3Error(message: "The anisette server returned an unreadable response. Choose another server in Settings and try signing in again.")
+        }
+        if let json = parsed as? [String: String] {
             if v3 {
                 if json["result"] == "GetHeadersError" {
                     let message = json["message"]

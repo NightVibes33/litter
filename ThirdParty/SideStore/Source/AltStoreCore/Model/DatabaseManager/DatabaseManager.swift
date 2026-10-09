@@ -377,6 +377,9 @@ private extension DatabaseManager
             }
             
             // Make sure to always update source URL to be current.
+            if altStoreSource.name == "KittyStore Official" {
+                altStoreSource.name = "SideStore Official"
+            }
             do
             {
                 try altStoreSource.setSourceURL(Source.altStoreSourceURL)
