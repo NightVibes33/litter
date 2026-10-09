@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import UIKit
 import AltStoreCore
 
 @available(iOS 14, *)
