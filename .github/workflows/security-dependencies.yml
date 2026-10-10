@@ -1,0 +1,34 @@
+name: SideStore dependency security build
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/security-dependencies.yml'
+      - 'ThirdParty/SideStore/**/Cargo.toml'
+      - 'ThirdParty/SideStore/**/Cargo.lock'
+      - 'tools/scripts/build-sidestore-minimuxer.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ios-native:
+    runs-on: macos-26-intel
+    timeout-minutes: 60
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+      LITTER_MINIMUXER_SKIP_SIM: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+      - name: Install native build tools
+        run: brew install autoconf automake libtool cmake ninja pkgconf llvm
+      - name: Verify locked dependency resolution
+        run: |
+          cargo metadata --locked --no-deps --format-version 1 --manifest-path ThirdParty/SideStore/minimuxer/Cargo.toml > /dev/null
+          cargo metadata --locked --no-deps --format-version 1 --manifest-path ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml > /dev/null
+      - name: Build both iOS native libraries
+        run: tools/scripts/build-sidestore-minimuxer.sh

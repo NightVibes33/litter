@@ -40,7 +40,7 @@ tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 thiserror = "2"
 tracing = "0.1"
 async-trait = "0.1"
-lru = "0.12"
+lru = "0.18.2"
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 base64 = "0.22"
@@ -48,7 +48,7 @@ bytes = "1.10.1"
 sha2 = "0.10"
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
-russh = "0.62.6"
+russh = "0.63.2"
 futures = "0.3"
 url = "2.5"
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -98,6 +98,8 @@ debug = 0
 codegen-units = 16
 
 [patch.crates-io]
+opentelemetry-http = { path = "vendor/opentelemetry-http-0.32.0" }
+rama-dns = { path = "vendor/rama-dns-0.3.0-alpha.4" }
 rquickjs-sys = { path = "vendor/rquickjs-sys-0.9.0" }
 iroh-base = { path = "vendor/iroh-base-0.98.0" }
 pagable = { path = "vendor/pagable-0.4.1" }

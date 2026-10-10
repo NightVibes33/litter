@@ -28,3 +28,6 @@ log = "0.4"
 [lib]
 crate-type = ["staticlib"]
 name = "rust_bridge"
+
+[patch.crates-io]
+atty = { path = "../../../../vendor/atty-compat" }
