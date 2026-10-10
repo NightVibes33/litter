@@ -3751,15 +3751,47 @@ impl MobileClient {
             },
             &params.thread_id,
         );
+        // The active runtime may have unloaded the thread after a background
+        // suspension, or the cached route may point at another agent runtime.
+        // A definitive "thread not found" rejects this turn before it starts.
+        // Reattach the *same* durable thread ID and retry exactly once, never
+        // creating a replacement conversation or retrying ambiguous failures
+        // (timeouts/disconnects might have accepted the first request).
+        let turn_start_request = || upstream::ClientRequest::TurnStart {
+            request_id: upstream::RequestId::Integer(crate::next_request_id()),
+            params: direct_params.clone(),
+        };
         let response_result = self
             .request_typed_for_server::<upstream::TurnStartResponse>(
                 server_id,
-                upstream::ClientRequest::TurnStart {
-                    request_id: upstream::RequestId::Integer(crate::next_request_id()),
-                    params: direct_params,
-                },
+                turn_start_request(),
             )
             .await;
+        let response_result = match response_result {
+            Err(error) if should_try_next_runtime_after_thread_lookup_error(&error) => {
+                warn!(
+                    server_id,
+                    thread_id = %thread_key.thread_id,
+                    "start_turn: thread lookup failed; attempting authoritative reattach before one retry"
+                );
+                match self
+                    .force_refresh_thread_authoritative(server_id, &thread_key.thread_id)
+                    .await
+                {
+                    Ok(()) => {
+                        self.request_typed_for_server::<upstream::TurnStartResponse>(
+                            server_id,
+                            turn_start_request(),
+                        )
+                        .await
+                    }
+                    Err(reattach_error) => {
+                        Err(format!("{error}; thread reattach failed: {reattach_error}"))
+                    }
+                }
+            }
+            response => response,
+        };
         let response = match response_result {
             Ok(response) => response,
             Err(error) => {
