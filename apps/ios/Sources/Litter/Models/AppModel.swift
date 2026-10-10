@@ -294,8 +294,26 @@ final class AppModel {
     }
 
     private func performSnapshotRefresh() async {
+        let startedAt = DispatchTime.now().uptimeNanoseconds
         do {
-            applySnapshot(try await store.snapshot())
+            let nextSnapshot = try await store.snapshot()
+            let fetchedAt = DispatchTime.now().uptimeNanoseconds
+            applySnapshot(nextSnapshot)
+            let finishedAt = DispatchTime.now().uptimeNanoseconds
+
+            // Full Rust snapshot projection can be costly with long threads.
+            // Emit a bounded, metadata-only diagnostic only for slow passes.
+            // Never capture user messages or per-token text in these fields.
+            let fetchMs = (fetchedAt - startedAt) / 1_000_000
+            let applyMs = (finishedAt - fetchedAt) / 1_000_000
+            if fetchMs >= 120 || applyMs >= 60 {
+                LLog.warn("perf", "slow full snapshot refresh", fields: [
+                    "fetchMs": fetchMs,
+                    "applyMs": applyMs,
+                    "threadCount": nextSnapshot.threads.count,
+                    "sessionSummaryCount": nextSnapshot.sessionSummaries.count
+                ])
+            }
         } catch {
             lastError = error.localizedDescription
         }

@@ -33,6 +33,16 @@ enum AppDistributionCapabilities {
         #endif
     }
 
+    /// A sideload-only background poller. Never run it in TestFlight: the
+    /// regular Litter chat/terminal runtime does not depend on BuildKit.
+    static var shouldRunSideloadBuildKitMonitor: Bool {
+        #if LITTER_APP_STORE_SAFE
+        false
+        #else
+        includesEmexDE
+        #endif
+    }
+
     private static func bundleFlag(named key: String, defaultValue: Bool) -> Bool {
         guard let value = Bundle.main.object(forInfoDictionaryKey: key) else {
             return defaultValue

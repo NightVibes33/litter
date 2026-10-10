@@ -153,7 +153,14 @@ enum LitterPlatform {
             )
         }
 
-        await LitterBuildKit.shared.startFakefsRequestMonitor()
+        // Polling the fakefs tool-request directory is an Alley Cat sideload
+        // integration, not upstream Litter functionality. Running the loop in
+        // TestFlight wastes wakeups and shell work while no Nyxian target exists.
+        #if !LITTER_APP_STORE_SAFE
+        if AppDistributionCapabilities.shouldRunSideloadBuildKitMonitor {
+            await LitterBuildKit.shared.startFakefsRequestMonitor()
+        }
+        #endif
     }
 
     private static func isAlreadyBootstrapped(_ error: Error) -> Bool {
