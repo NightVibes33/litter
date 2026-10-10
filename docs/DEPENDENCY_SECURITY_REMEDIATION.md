@@ -36,7 +36,7 @@ a registry-version scanner alone cannot assess them.
 
 ## Remaining findings
 
-- RSA: `RUSTSEC-2023-0071` reports no patched release. It remains in the SSH dependency path. Unused RustBridge classic
+- RSA: `RUSTSEC-2023-0071` reports no patched release. It remains in the SSH dependency path and the vendored idevice standalone lockfile’s optional classic-pairing graph. RustBridge does not enable that optional graph. Unused RustBridge classic
   pairing-generation features are removed, and JWT uses its supported AWS-LC
   backend instead of vulnerable RustCrypto RSA. Upgrading to another affected RSA release or
   hiding the advisory does not fix it; a cryptographic backend migration needs
