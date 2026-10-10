@@ -58,6 +58,31 @@ jobs:
           # runtime integrations and branding are reported as custom changes,
           # not silently replaced by upstream code.
           protected = (
+              "apps/ios/Sources/Litter/Models/AppSnapshotRecord+Runtime.swift",
+              "apps/ios/Sources/Litter/Models/ConversationItem.swift",
+              "apps/ios/Sources/Litter/Models/PendingUserInputRequest+ThreadMatching.swift",
+              "apps/ios/Sources/Litter/Models/SavedThreadsStore.swift",
+              "apps/ios/Sources/Litter/Views/AppSnapshotObserver.swift",
+              "apps/ios/Sources/Litter/Views/ConversationScreenModel.swift",
+              "apps/ios/Sources/Litter/Views/ConversationTimelineView.swift",
+              "apps/ios/Sources/Litter/Views/ConversationInfoView.swift",
+              "apps/ios/Sources/Litter/Views/ConversationOptionsSheet.swift",
+              "apps/ios/Sources/Litter/Views/ConversationComposerContentView.swift",
+              "apps/ios/Sources/Litter/Views/ConversationComposerEntryRowView.swift",
+              "apps/ios/Sources/Litter/Views/ConversationComposerExpandedView.swift",
+              "apps/ios/Sources/Litter/Views/ConversationComposerModalCoordinator.swift",
+              "apps/ios/Sources/Litter/Views/QuietSessionList.swift",
+              "apps/ios/Sources/Litter/Views/SessionsTypes.swift",
+              "apps/ios/Sources/Litter/Views/ThreadSearchResultsView.swift",
+              "apps/ios/Sources/Litter/Views/TranscriptTurn.swift",
+              "shared/rust-bridge/codex-mobile-client/src/conversation_uniffi.rs",
+              "shared/rust-bridge/codex-mobile-client/src/session/mod.rs",
+              "shared/rust-bridge/codex-mobile-client/src/session/remote_transport.rs",
+              "shared/rust-bridge/codex-mobile-client/src/store/mod.rs",
+              "shared/rust-bridge/codex-mobile-client/src/store/snapshot.rs",
+              "shared/rust-bridge/codex-mobile-client/src/store/updates.rs",
+              "shared/rust-bridge/codex-mobile-client/src/thread_display_text.rs",
+              "shared/rust-bridge/codex-mobile-client/src/thread_modes.rs",
               "apps/ios/Sources/Litter/Views/StreamingAssistantRenderCache.swift",
               "apps/ios/Sources/Litter/Views/MessageRenderCache.swift",
               "apps/ios/Sources/Litter/Models/StreamingRendererCoordinator.swift",
@@ -154,6 +179,21 @@ jobs:
           ]
           if drift:
               lines.extend(f"- `{p}`" for p in drift)
+          # Keep extended entrypoint differences visible even if all protected
+          # upstream foundations match byte-for-byte.
+          adapted = sorted(
+              p for p in summary["ios_swift"]["modified"] + summary["rust_mobile"]["modified"]
+              if (
+                  p.startswith("apps/ios/Sources/Litter/Views/Conversation")
+                  or p.startswith("apps/ios/Sources/Litter/Views/Sessions")
+                  or p.startswith("apps/ios/Sources/Litter/Models/AppModel")
+                  or p.startswith("shared/rust-bridge/codex-mobile-client/src/ffi/")
+                  or p.startswith("shared/rust-bridge/codex-mobile-client/src/mobile_client/")
+                  or p.startswith("shared/rust-bridge/codex-mobile-client/src/store/")
+              )
+          )
+          lines.extend(("", f"Modified Alley Cat conversation/runtime entrypoints: **{len(adapted)}**"))
+          lines.extend(f"- `{p}`" for p in adapted)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
               f.write("\n".join(lines) + "\n")
 
