@@ -267,6 +267,12 @@ final class HomeDashboardModel {
     }
 
     private func refreshState() {
+        PerfTracker.time("HomeDashboardModel.refreshState") {
+            refreshStateImpl()
+        }
+    }
+
+    private func refreshStateImpl() {
         PerfTracker.event("HomeDashboardModel.refreshState")
         guard isActive, let appModel else {
             connectedServers = []

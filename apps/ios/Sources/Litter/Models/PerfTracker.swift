@@ -3,7 +3,7 @@ import OSLog
 
 /// Lightweight performance tracker using os_signpost for Instruments
 /// profiling and LLog for stderr capture in debug builds.
-/// All methods are no-ops when not in DEBUG builds.
+/// Release builds record rate-limited slow-path events, not per-frame traces.
 enum PerfTracker {
     private static let log = OSLog(subsystem: Bundle.main.bundleIdentifier ?? "com.sigkitten.litter", category: "perf")
 
@@ -18,22 +18,60 @@ enum PerfTracker {
     /// `OSSignpostID` through the view tree.
     private nonisolated(unsafe) static var pendingIntervals: [String: (id: OSSignpostID, name: StaticString, start: DispatchTime)] = [:]
 
-    /// Time a synchronous block and emit a signpost + log line.
+    /// Measure an operation in both Debug and release builds. Debug gets
+    /// Instruments signposts; release records only severe, throttled stalls
+    /// in the Files-accessible diagnostics. Fast operations allocate no log.
     @discardableResult
     static func time<T>(_ name: StaticString, _ block: () throws -> T) rethrows -> T {
+        let start = DispatchTime.now()
         #if DEBUG
         let signpostID = OSSignpostID(log: log)
         os_signpost(.begin, log: log, name: name, signpostID: signpostID)
-        let start = DispatchTime.now()
+        #endif
         defer {
             let elapsed = DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds
             let ms = Double(elapsed) / 1_000_000
+            #if DEBUG
             os_signpost(.end, log: log, name: name, signpostID: signpostID)
             LLog.debug("perf", "\(name) took \(String(format: "%.2f", ms))ms")
+            #else
+            if elapsed >= slowOperationNanoseconds {
+                logSlowOperationIfDue(name, elapsedNanoseconds: elapsed)
+            }
+            #endif
         }
-        #endif
         return try block()
     }
+
+    #if !DEBUG
+    // 50 ms is a visible multi-frame hitch at 60 Hz. Emit at most one
+    // occurrence of each operation every 15 seconds so diagnostics do not
+    // compound a slowdown during prolonged streaming or heavy builds.
+    private static let slowOperationNanoseconds: UInt64 = 50_000_000
+    private static let slowReportIntervalNanoseconds: UInt64 = 15_000_000_000
+    private static let slowReportLock = NSLock()
+    private nonisolated(unsafe) static var lastSlowReportByName: [String: UInt64] = [:]
+
+    private static func logSlowOperationIfDue(
+        _ name: StaticString,
+        elapsedNanoseconds: UInt64
+    ) {
+        let operation = String(describing: name)
+        let now = DispatchTime.now().uptimeNanoseconds
+        slowReportLock.lock()
+        let previous = lastSlowReportByName[operation] ?? 0
+        let shouldReport = previous == 0 || now &- previous >= slowReportIntervalNanoseconds
+        if shouldReport {
+            lastSlowReportByName[operation] = now
+        }
+        slowReportLock.unlock()
+        guard shouldReport else { return }
+        LLog.warn("perf", "slow operation", fields: [
+            "operation": operation,
+            "durationMs": Int(elapsedNanoseconds / 1_000_000)
+        ])
+    }
+    #endif
 
     /// Stable interval key for a thread, shared by the begin and end sites.
     ///

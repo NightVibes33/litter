@@ -209,7 +209,9 @@ struct PetSpriteView: View {
         }
         .aspectRatio(CGFloat(petFrameWidth) / CGFloat(petFrameHeight), contentMode: .fit)
         .task(id: spritesheetBytes) {
-            atlas = decodeAtlas(from: spritesheetBytes)
+            atlas = PerfTracker.time("DecodePetSpriteAtlas") {
+                decodeAtlas(from: spritesheetBytes)
+            }
             atlasRevision &+= 1
         }
         .task(id: "\(state.rawValue)-\(reduceMotion)-\(atlasRevision)-\(scenePhase == .active)") {
