@@ -61,6 +61,13 @@ final class SessionsModel {
         refreshState()
     }
 
+    /// Hidden/pinned preferences live in Rust, outside Swift Observation.
+    /// A preference notification must explicitly refresh the derived list.
+    func refreshSavedThreadPreferences() {
+        cachedDerivationFingerprint = nil
+        refreshState()
+    }
+
     func updateSearchQuery(_ query: String) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed != searchQuery else { return }

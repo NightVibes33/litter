@@ -11,6 +11,31 @@ use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
+fn is_missing_thread_rpc_error(error: &ClientError) -> bool {
+    matches!(
+        error,
+        ClientError::Rpc(message) if message.to_ascii_lowercase().contains("thread not found")
+    )
+}
+
+#[cfg(test)]
+mod archive_thread_missing_tests {
+    use super::{ClientError, is_missing_thread_rpc_error};
+
+    #[test]
+    fn missing_thread_is_idempotent_but_transport_errors_are_not() {
+        assert!(is_missing_thread_rpc_error(&ClientError::Rpc(
+            "deserialization failed: server error -32600: thread not found: 01abc".into()
+        )));
+        assert!(!is_missing_thread_rpc_error(&ClientError::Rpc(
+            "connection closed".into()
+        )));
+        assert!(!is_missing_thread_rpc_error(&ClientError::Serialization(
+            "invalid response".into()
+        )));
+    }
+}
+
 async fn rpc<T: serde::de::DeserializeOwned>(
     client: &MobileClient,
     server_id: &str,
@@ -564,12 +589,35 @@ impl AppClient {
         params: types::AppArchiveThreadRequest,
     ) -> Result<(), ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
-            let _: upstream::ThreadArchiveResponse = rpc(
+            let key = types::ThreadKey {
+                server_id: server_id.clone(),
+                thread_id: params.thread_id.clone(),
+            };
+            // A second archive can race another device or a server-side prune.
+            // "Thread not found" means the requested removal is already complete;
+            // other RPC errors must still propagate, so auth/transport failures
+            // never silently erase a valid conversation.
+            match rpc::<upstream::ThreadArchiveResponse>(
                 c.as_ref(),
                 &server_id,
                 req!(server_id, ThreadArchive, params.into()),
             )
-            .await?;
+            .await
+            {
+                Ok(_) => {}
+                Err(error) if is_missing_thread_rpc_error(&error) => {
+                    tracing::info!(
+                        server_id = %server_id,
+                        thread_id = %key.thread_id,
+                        "archive_thread: server thread already absent"
+                    );
+                }
+                Err(error) => return Err(error),
+            }
+            // The server acknowledgement and the local Rust reducer must agree.
+            // Otherwise Swift removes its visible row, but the Rust snapshot
+            // reintroduces the archived thread during the next refresh.
+            c.app_store.remove_thread(&key);
             Ok(())
         })
     }

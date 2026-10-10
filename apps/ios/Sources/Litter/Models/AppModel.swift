@@ -340,6 +340,14 @@ final class AppModel {
         }
     }
 
+    /// An authoritative backend response for a session that no longer exists.
+    /// Keep this separate from connection/authentication errors so we never
+    /// discard conversations when a server is merely offline.
+    static func isMissingThreadError(_ error: Error) -> Bool {
+        let description = "\(error.localizedDescription) \(String(describing: error))"
+        return description.localizedCaseInsensitiveContains("thread not found")
+    }
+
     func activateThread(_ key: ThreadKey?) {
         restoreCachedThreadSnapshotIfNeeded(for: key)
         updateActiveThread(key)

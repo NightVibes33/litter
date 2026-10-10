@@ -239,7 +239,9 @@ struct ConversationView: View {
                     activeThreadKey.threadId,
                     error.localizedDescription
                 )
-                messageActionError = error.localizedDescription
+                messageActionError = AppModel.isMissingThreadError(error)
+                    ? "This conversation no longer exists on the connected server. Your message was not sent. Return to Chats to start a new conversation or delete the stale thread."
+                    : error.localizedDescription
             }
         }
     }

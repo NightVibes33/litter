@@ -160,6 +160,7 @@ struct SessionsScreen: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .litterThreadPreferencesDidChange)) { _ in
                 pinnedKeys = Set(SavedThreadsStore.pinnedKeys())
+                sessionsModel.refreshSavedThreadPreferences()
             }
             .onDisappear {
                 sessionSearchDebounceTask?.cancel()
@@ -751,10 +752,10 @@ struct SessionsScreen: View {
         appState.currentCwd = thread.cwd
         let resumeKey = await appModel.hydrateThreadPermissions(for: thread.key, appState: appState)
             ?? thread.key
-        appModel.activateThread(resumeKey)
-        onOpenConversation(resumeKey)
-
         do {
+            // Verify the server-side thread before navigating. Previously we
+            // opened a stale local ID first, leaving ConversationView pointing
+            // at a nonexistent thread when thread/resume returned -32600.
             let nextKey = try await appModel.resumeThread(
                 key: resumeKey,
                 launchConfig: launchConfig(for: resumeKey),
@@ -763,12 +764,14 @@ struct SessionsScreen: View {
             if !thread.cwd.isEmpty {
                 RecentDirectoryStore.shared.record(path: thread.cwd, for: thread.key.serverId)
             }
-            if nextKey != resumeKey {
-                appModel.activateThread(nextKey)
-                onOpenConversation(nextKey)
-            }
+            appModel.activateThread(nextKey)
+            onOpenConversation(nextKey)
         } catch {
-            sessionActionErrorMessage = error.localizedDescription
+            if AppModel.isMissingThreadError(error) {
+                sessionActionErrorMessage = "This conversation no longer exists on its server. You can delete its stale entry from the sessions list. Other conversations were not changed."
+            } else {
+                sessionActionErrorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -870,8 +873,11 @@ struct SessionsScreen: View {
                 params: AppArchiveThreadRequest(threadId: key.threadId)
             )
             appModel.reconcileArchivedThread(key)
-            SavedThreadsStore.hide(PinnedThreadKey(threadKey: key))
-            pinnedKeys.remove(PinnedThreadKey(threadKey: key))
+            let preferenceKey = PinnedThreadKey(threadKey: key)
+            SavedThreadsStore.remove(preferenceKey)
+            SavedThreadsStore.hide(preferenceKey)
+            pinnedKeys.remove(preferenceKey)
+            sessionsModel.refreshSavedThreadPreferences()
             LLog.info("conversation", "session archive acknowledged", fields: ["serverId": key.serverId, "threadId": key.threadId])
             if appModel.snapshot?.activeThread == nil {
                 workDir = ""
