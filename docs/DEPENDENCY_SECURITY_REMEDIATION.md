@@ -1,61 +1,75 @@
 # Dependency security remediation
 
-This change follows the initial compatible dependency patch in PR #15. It does
-not claim to match or close every private GitHub Dependabot alert: that endpoint
-currently returns HTTP 403 to the repository connection. GitHub last reported
-32 alerts on the default branch after PR #15 (down from 36). OSV package/version findings are a different
-inventory and must not be presented as GitHub alert counts.
+PR #16 follows PR #15's compatible dependency upgrades. GitHub last reported
+32 default-branch alerts after PR #15, down from 36. The private Dependabot
+endpoint still returns HTTP 403 to the repository connection. Registry scanner
+findings are a separate inventory and cannot establish that those alerts closed.
 
 ## Changes
 
-The mobile lockfile upgrades AWS JSON parsing, Faster Hex, Gitoxide, Hickory,
-JWT validation, LRU, OpenSSL, OpenTelemetry, Pageant, Plist/Quick XML, Russh,
-Serde With, and Tar. The Codex manifest and telemetry compatibility changes are
-root-owned patches applied by `sync-codex.sh`; the upstream gitlink is unchanged.
+The mobile graph upgrades AWS JSON, Faster Hex, Gitoxide, Hickory, JWT, LRU,
+OpenSSL, OpenTelemetry, Pageant, Plist/Quick XML, Russh, Serde With, and Tar.
+Root-owned Codex patches retain the upstream gitlink. Rama DNS preserves its
+providers and record types while migrating to matching Hickory 0.26 packages.
+OpenTelemetry HTTP retains its Reqwest 0.13 implementation and adds Reqwest 0.12
+support for existing application clients, preserving TLS identity and policy.
 
-Rama DNS is adapted to Hickory 0.26 with matching resolver, protocol, and network
-packages. DNS provider choices and record types are preserved. OpenTelemetry
-HTTP retains its upstream Reqwest 0.13 support and adds an adapter for existing
-Reqwest 0.12 clients, preserving the application's TLS and network policy path.
+Both SideStore native graphs upgrade TLS/certificate validation, random numbers,
+archive parsing, and applicable HTTP dependencies. Minimuxer also upgrades Bytes,
+H2, OpenSSL, Quinn, Time, and ZIP. The atty adapter replaces unsafe legacy terminal
+detection with maintained is-terminal.
 
-Both SideStore native libraries upgrade TLS, certificate validation, random
-number generation, archive parsing, and applicable HTTP dependencies. Minimuxer
-also upgrades Bytes, H2, OpenSSL, Quinn, Time, and its yanked ZIP dependency.
-Legacy atty consumers use a root-owned compatibility adapter backed by maintained
-is-terminal; the vulnerable Windows raw-pointer implementation is removed from
-their dependency graph. This is a source replacement, not an upstream atty fix.
+Maintenance replacements retain pinned caller APIs through small root-owned
+adapters: ansi_term uses nu-ansi-term; json uses jzon; fxhash uses ccl-fxhash;
+paste uses pastey; atomic-polyfill uses portable-atomic. i18n-embed-fl imports
+maintained proc-macro-error3 directly. Starlark and its syntax crate use
+maintained derive_more Debug and standard Clone, preserving omitted debug fields.
+Their sources and sibling dependencies remain pinned to the previous Starlark
+Git revision. These are implementation replacements, not patched releases of
+legacy packages. Standalone vendor lockfiles receive the same replacements.
 
-RustBridge selects only its used device services. The pinned idevice snapshot
-has a small patch importing its existing RNG and Ed25519 signing trait directly
-so remote pairing does not accidentally require unused classic RSA generation.
+## RSA backend migration
 
-The macOS dependency workflow builds both actual iOS static libraries with
-locked resolution. The mobile workflow compiles all targets and runs existing
-mobile client and Slingshot tests. Local/path adapters also require source review;
-a registry-version scanner alone cannot assess them.
+JWT uses AWS-LC. The pinned Russh/SSH Key source adapters also use AWS-LC for RSA
+key validation, generation, PKCS#1/PKCS#8 import/export, and SHA-256/SHA-512
+signatures. OpenSSH key components and fingerprints retain their formats.
+OpenSSH does not store the two CRT exponents; their conversion uses maintained
+crypto-bigint's constant-time remainder and zeroized temporary storage. AWS-LC
+validates the imported key. No affected RustCrypto rsa package remains resolved.
 
-## Remaining findings
+Compatibility limits: AWS-LC requires RSA private keys of at least 2048 bits.
+SHA-1 private-key authentication signing is rejected; clients must use RSA SHA-2,
+Ed25519, or ECDSA. Legacy SHA-1 host-signature verification remains available with
+2048-bit or larger keys. The backend patches are root-owned changes requiring
+source review and installed-device acceptance, not upstream fixed releases.
 
-- RSA: `RUSTSEC-2023-0071` reports no patched release. It remains in the SSH dependency path and the vendored idevice standalone lockfile’s optional classic-pairing graph. RustBridge does not enable that optional graph. Unused RustBridge classic
-  pairing-generation features are removed, and JWT uses its supported AWS-LC
-  backend instead of vulnerable RustCrypto RSA. Upgrading to another affected RSA release or
-  hiding the advisory does not fix it; a cryptographic backend migration needs
-  separate compatibility and timing-safety validation.
-- Maintenance advisories remain for legacy dependencies including ANSI Term,
-  Atomic Polyfill, Derivative, Fxhash, Json, Paste, and Proc Macro Error 2. They
-  require maintained parent-library replacements or reviewed compatibility
-  patches. They are not suppressed here.
-- Standalone vendored-library lockfiles are scanned too. Their optional
-  telemetry/DNS graphs now use fixed Hickory and OpenTelemetry versions through
-  the same compatibility adapters. Maintenance advisories remain in some of
-  these graphs; the lockfiles are retained rather than deleted to hide findings.
+RustBridge still selects only its used services, including remote pairing, TSS
+image mounting, and TCP tunnels, without unused classic RSA generation. The
+standalone idevice optional classic-pairing path also removes RustCrypto RSA:
+OpenSSL generates and signs certificates while preserving SHA-256, PKCS#8,
+serial number, validity, and root extensions. Its ca module is private.
 
-Reproduce the complete tracked-lockfile registry inventory with:
+## Validation and inventory
+
+Local compatibility tests cover legacy ANSI names/escapes, JSON Unicode and
+invalid input, fixed hash behavior, token-pasting macros, atomic operations,
+RSA SHA-2 signing and negative verification, an independent OpenSSH signature
+fixture, and OpenSSH/PKCS#8 identity round trips. Pairing certificate tests verify
+both certificates with the host key and check device key identity and PKCS#8.
+Mobile all-target and both native library compilation are required CI checks.
+The macOS native workflow additionally tests optional certificate generation.
+
+Reproduce the tracked-lockfile registry inventory:
 
 ```sh
 python tools/scripts/audit-rust-dependencies.py --output /tmp/rust-security.json
 ```
 
-The result includes every tracked Cargo lockfile, not just production packages.
-Network, SSH, device pairing, and signing still need acceptance on installed
-devices after these dependency changes. Passing compilation is not that acceptance.
+The latest candidate inventory reports zero registry package/version advisories
+across all nine tracked Cargo lockfiles. The report also explicitly lists local
+and Git packages requiring source review. A registry scan cannot validate a
+source replacement or establish constant-time behavior by itself. No advisory
+ignore list or alert dismissal is used.
+
+CI and installed-device network, SSH, pairing, and signing acceptance remain
+necessary before release. Recheck the actual GitHub Dependabot count after merge.

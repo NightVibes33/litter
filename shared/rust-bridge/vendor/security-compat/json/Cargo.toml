@@ -1,0 +1,9 @@
+[package]
+name = "json"
+version = "0.12.4"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+jzon = "0.12.5"

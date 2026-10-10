@@ -99,20 +99,20 @@ standalone vendor lockfiles. The registry inventory is reproducible with
 `tools/scripts/audit-rust-dependencies.py`; local compatibility adapters require
 source review in addition to registry checks.
 
-The remaining inventory includes RSA `RUSTSEC-2023-0071` in the SSH dependency
-path, for which RustSec reports no patched release, and maintenance advisories
-for ANSI Term, Atomic Polyfill, Derivative, Fxhash, Json, Paste, and Proc Macro
-Error 2. RustBridge no longer enables unused classic RSA pairing-generation
-code; JWT uses the supported AWS-LC backend. See
+The next candidate registry inventory reports zero advisories across nine tracked
+Cargo lockfiles. Maintenance implementations are replaced by maintained
+backends, and SSH RSA now uses AWS-LC; optional idevice classic certificates use
+OpenSSL. The report explicitly inventories local/Git packages requiring source
+review. These source replacements need compatibility and cryptographic review,
+not merely a registry scan. See
 [`DEPENDENCY_SECURITY_REMEDIATION.md`](DEPENDENCY_SECURITY_REMEDIATION.md) for
-compatibility patches, validation, and outstanding backend/maintenance work.
+changes, RSA minimum-key/SHA-1 compatibility limits, and validation.
 
-**Do not suppress these advisories.** The private GitHub alert inventory is
-currently inaccessible to the repository connection. GitHub last reported
-32 open alerts after PR #15, down from 36; OSV package/version counts are not
-GitHub alert counts. Recheck GitHub after the next remediation is merged.
-Network, SSH, device pairing, and signing need installed-device acceptance;
-passing compilation alone is not that acceptance.
+**Do not suppress advisories.** GitHub's private inventory remains inaccessible.
+GitHub last reported 32 default-branch alerts after PR #15, down from 36;
+the independent candidate's zero findings are not a GitHub alert count.
+Recheck GitHub after merge. CI plus installed-device network, SSH, pairing,
+and signing acceptance remain release gates.
 
 ## P1 — incomplete user-visible behavior
 

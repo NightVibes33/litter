@@ -1,0 +1,106 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -47,7 +47,6 @@
+ legacy-ed25519-pkcs8-parser = ["yasna"]
+ ring = ["dep:ring"]
+ rsa = [
+-    "dep:rsa",
+     "dep:pkcs1",
+     "ssh-key/rsa",
+ ]
+@@ -305,9 +304,6 @@
+ version = "0.17.14"
+ optional = true
+ 
+-[dependencies.rsa]
+-version = "=0.10.0-rc.18"
+-optional = true
+ 
+ [dependencies.russh-cryptovec]
+ version = "0.62.0"
+--- a/src/keys/format/mod.rs
++++ b/src/keys/format/mod.rs
+@@ -144,9 +144,5 @@
+ 
+ #[cfg(feature = "rsa")]
+ fn decode_rsa_pkcs1_der(secret: &[u8]) -> Result<ssh_key::private::RsaKeypair, Error> {
+-    use std::convert::TryInto;
+-
+-    use pkcs1::DecodeRsaPrivateKey;
+-
+-    Ok(rsa::RsaPrivateKey::from_pkcs1_der(secret)?.try_into()?)
++    Ok(ssh_key::private::RsaKeypair::from_pkcs1_der(secret)?)
+ }
+--- a/src/keys/format/pkcs8.rs
++++ b/src/keys/format/pkcs8.rs
+@@ -5,11 +5,11 @@
+ use p521::NistP521;
+ use pkcs8::{AssociatedOid, EncodePrivateKey, PrivateKeyInfoRef, SecretDocument};
+ use spki::ObjectIdentifier;
++use ssh_key::private::{EcdsaKeypair, Ed25519Keypair, Ed25519PrivateKey, KeypairData};
+ use ssh_key::PrivateKey;
+-use ssh_key::private::{EcdsaKeypair, Ed25519Keypair, Ed25519PrivateKey, KeypairData};
+-
++
++use crate::keys::key::safe_rng;
+ use crate::keys::Error;
+-use crate::keys::key::safe_rng;
+ 
+ /// Decode a PKCS#8-encoded private key (ASN.1 or X9.62)
+ pub fn decode_pkcs8(
+@@ -46,17 +46,9 @@
+     // Temporary if {} due to multiple const_oid crate versions
+     #[cfg(feature = "rsa")]
+     if pki.algorithm.oid.as_bytes() == pkcs1::ALGORITHM_OID.as_bytes() {
+-        let sk = &pkcs1::RsaPrivateKey::try_from(pki.private_key)?;
+-        let pk = rsa::RsaPrivateKey::from_components(
+-            rsa::BoxedUint::from_be_slice_vartime(sk.modulus.as_bytes()),
+-            rsa::BoxedUint::from_be_slice_vartime(sk.public_exponent.as_bytes()),
+-            rsa::BoxedUint::from_be_slice_vartime(sk.private_exponent.as_bytes()),
+-            vec![
+-                rsa::BoxedUint::from_be_slice_vartime(sk.prime1.as_bytes()),
+-                rsa::BoxedUint::from_be_slice_vartime(sk.prime2.as_bytes()),
+-            ],
+-        )?;
+-        return Ok(KeypairData::Rsa(pk.try_into()?));
++        return Ok(KeypairData::Rsa(
++            ssh_key::private::RsaKeypair::from_pkcs1_der(pki.private_key.as_bytes())?,
++        ));
+     }
+     match pki.algorithm.oid {
+         ed25519_dalek::pkcs8::ALGORITHM_OID => {
+@@ -115,8 +107,8 @@
+     use super::*;
+ 
+     use der::{
++        asn1::{AnyRef, ContextSpecific, UintRef},
+         Reader, SliceReader, Tag, TagNumber, Tagged,
+-        asn1::{AnyRef, ContextSpecific, UintRef},
+     };
+ 
+     /// Try to parse an SEC1 EC key with full domain parameters.
+@@ -242,11 +234,7 @@
+             sk.to_pkcs8_der()?.as_bytes().to_vec()
+         }
+         #[cfg(feature = "rsa")]
+-        ssh_key::private::KeypairData::Rsa(pair) => {
+-            use rsa::pkcs8::EncodePrivateKey;
+-            let sk: rsa::RsaPrivateKey = pair.try_into()?;
+-            sk.to_pkcs8_der()?.as_bytes().to_vec()
+-        }
++        ssh_key::private::KeypairData::Rsa(pair) => pair.to_pkcs8_der()?,
+         ssh_key::private::KeypairData::Ecdsa(pair) => match pair {
+             EcdsaKeypair::NistP256 { private, .. } => {
+                 let sk = p256::SecretKey::from_slice(private.as_slice())?;
+--- a/src/keys/mod.rs
++++ b/src/keys/mod.rs
+@@ -138,9 +138,6 @@
+     #[error(transparent)]
+     IO(#[from] std::io::Error),
+ 
+-    #[cfg(feature = "rsa")]
+-    #[error("Rsa: {0}")]
+-    Rsa(#[from] rsa::Error),
+ 
+     #[error(transparent)]
+     Pad(#[from] PadError),

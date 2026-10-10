@@ -26,12 +26,15 @@ def main():
         ["git", "ls-files", "*Cargo.lock"], cwd=root, text=True
     ).splitlines()
     packages = defaultdict(list)
+    source_packages = defaultdict(list)
     for filename in files:
         with (root / filename).open("rb") as handle:
             lock = tomllib.load(handle)
         for package in lock["package"]:
             if package.get("source", "").startswith("registry+"):
                 packages[package["name"], package["version"]].append(filename)
+            else:
+                source_packages[package["name"], package["version"], package.get("source", "local/path")].append(filename)
 
     versions = sorted(packages)
     findings = []
@@ -60,6 +63,10 @@ def main():
     report = {
         "lockfiles": files, "registry_versions_checked": len(versions),
         "findings": findings,
+        "packages_requiring_source_review": [
+            {"name": name, "version": version, "source": source, "lockfiles": lockfiles}
+            for (name, version, source), lockfiles in sorted(source_packages.items())
+        ],
         "limitation": "Registry advisories only; local patches require source review. Counts are not GitHub alert counts.",
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

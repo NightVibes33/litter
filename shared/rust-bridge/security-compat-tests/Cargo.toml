@@ -1,0 +1,18 @@
+[package]
+name = "security-compat-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dev-dependencies]
+ansi_term = { path = "../vendor/security-compat/ansi_term" }
+json = { path = "../vendor/security-compat/json" }
+fxhash = { path = "../vendor/security-compat/fxhash" }
+paste = { path = "../vendor/security-compat/paste" }
+atomic-polyfill = { path = "../vendor/security-compat/atomic-polyfill" }
+
+ssh-key = { version = "0.7.0-rc.11", features = ["rsa", "std"] }
+signature = "3"
+russh = { workspace = true }
+
+base64 = "0.22"

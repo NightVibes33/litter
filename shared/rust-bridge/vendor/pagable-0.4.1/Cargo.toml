@@ -159,3 +159,10 @@ features = [
     "test-util",
     "tracing",
 ]
+
+[patch.crates-io]
+paste = { path = "../security-compat/paste" }
+json = { path = "../security-compat/json" }
+ansi_term = { path = "../security-compat/ansi_term" }
+fxhash = { path = "../security-compat/fxhash" }
+atomic-polyfill = { path = "../security-compat/atomic-polyfill" }

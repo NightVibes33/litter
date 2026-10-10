@@ -49,7 +49,6 @@ async-stream = { version = "0.3.6", optional = true }
 
 sha2 = { version = "0.10", optional = true, features = ["oid"] }
 
-rsa = { version = "0.9", optional = true, features = ["sha2"] }
 rand-core-06 = { package = "rand_core", version = "0.6", features = ["getrandom"], optional = true }
 x509-cert = { version = "0.2", optional = true, features = [
   "builder",
@@ -114,7 +113,7 @@ notification_proxy = [
   "dep:futures",
 ]
 location_simulation = []
-pair = ["chrono/default", "tokio/time", "dep:sha2", "dep:rsa", "dep:x509-cert"]
+pair = ["chrono/default", "tokio/time", "dep:sha2", "dep:openssl"]
 pcapd = []
 preboard_service = []
 obfuscate = ["dep:obfstr"]
@@ -183,3 +182,10 @@ full = [
 
 [package.metadata.docs.rs]
 all-features = true
+
+[patch.crates-io]
+paste = { path = "../../../../shared/rust-bridge/vendor/security-compat/paste" }
+json = { path = "../../../../shared/rust-bridge/vendor/security-compat/json" }
+ansi_term = { path = "../../../../shared/rust-bridge/vendor/security-compat/ansi_term" }
+fxhash = { path = "../../../../shared/rust-bridge/vendor/security-compat/fxhash" }
+atomic-polyfill = { path = "../../../../shared/rust-bridge/vendor/security-compat/atomic-polyfill" }

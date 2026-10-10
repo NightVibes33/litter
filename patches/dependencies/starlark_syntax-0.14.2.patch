@@ -1,0 +1,57 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -15,21 +15,20 @@
+ 
+ [dependencies]
+ annotate-snippets = { version = "0.9.0", features = [] }
+-anyhow = { workspace = true }
+-derivative = { workspace = true }
+-derive_more = { workspace = true }
++anyhow = "1.0.102"
++derive_more = { version = "1.0.0", features = ["full"] }
+ logos = "0.15"
+ lsp-types = "0.97.0"
+-memchr = { workspace = true }
+-num-bigint = { workspace = true }
++memchr = "2.8.0"
++num-bigint = { version = "0.4.6", features = ["serde"] }
+ num-traits = "0.2"
+ once_cell = "1.21.4"
+ thiserror = "2.0.18"
+ 
+-allocative = { workspace = true }
+-dupe = { workspace = true }
+-pagable = { workspace = true }
+-starlark_map = { version = "0.14.2", path = "../starlark_map" }
++allocative = { version = "0.3.6", git = "https://github.com/facebook/starlark-rust", rev = "3bed1c40f93da22b8e251dd520dfb8d35bfe1fb7" }
++dupe = { version = "0.9.1", git = "https://github.com/facebook/starlark-rust", rev = "3bed1c40f93da22b8e251dd520dfb8d35bfe1fb7" }
++pagable = { version = "0.4.1", git = "https://github.com/facebook/starlark-rust", rev = "3bed1c40f93da22b8e251dd520dfb8d35bfe1fb7" }
++starlark_map = { version = "0.14.2", git = "https://github.com/facebook/starlark-rust", rev = "3bed1c40f93da22b8e251dd520dfb8d35bfe1fb7" }
+ 
+ [dev-dependencies]
+ serde_json = "1.0"
+--- a/src/syntax/module.rs
++++ b/src/syntax/module.rs
+@@ -20,7 +20,7 @@
+ use std::mem;
+ use std::path::Path;
+ 
+-use derivative::Derivative;
++use derive_more::Debug as Derivative;
+ use dupe::Dupe;
+ 
+ use crate::codemap::CodeMap;
+@@ -53,10 +53,10 @@
+ ///
+ /// The internal details (statements/expressions) are deliberately omitted, as they change
+ /// more regularly. A few methods to obtain information about the AST are provided.
+-#[derive(Derivative)]
+-#[derivative(Debug, Clone)]
++#[derive(Derivative, Clone)]
++
+ pub struct AstModule {
+-    #[derivative(Debug = "ignore")]
++    #[debug(skip)]
+     pub(crate) codemap: CodeMap,
+     pub(crate) statement: AstStmt,
+     pub(crate) dialect: Dialect,

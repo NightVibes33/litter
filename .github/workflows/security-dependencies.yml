@@ -7,6 +7,7 @@ on:
       - 'ThirdParty/SideStore/**/Cargo.toml'
       - 'ThirdParty/SideStore/**/Cargo.lock'
       - 'ThirdParty/SideStore/vendor/**'
+      - 'shared/rust-bridge/vendor/security-compat/**'
       - 'tools/scripts/build-sidestore-minimuxer.sh'
   workflow_dispatch:
 
@@ -31,5 +32,7 @@ jobs:
         run: |
           cargo metadata --locked --no-deps --format-version 1 --manifest-path ThirdParty/SideStore/minimuxer/Cargo.toml > /dev/null
           cargo metadata --locked --no-deps --format-version 1 --manifest-path ThirdParty/SideStore/Source/Dependencies/minimuxer/RustBridge/Cargo.toml > /dev/null
+      - name: Test optional classic pairing certificate backend
+        run: cargo test --locked --manifest-path ThirdParty/SideStore/vendor/idevice-0.1.56/Cargo.toml --features full ca::tests --lib
       - name: Build both iOS native libraries
         run: tools/scripts/build-sidestore-minimuxer.sh

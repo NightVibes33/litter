@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+      CARGO_INCREMENTAL: '0'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -44,4 +45,4 @@ jobs:
 
       - name: Run mobile client and Slingshot tests
         working-directory: shared/rust-bridge
-        run: cargo test --locked -p codex-mobile-client -p codex-slingshot --lib
+        run: cargo test --locked -p codex-mobile-client -p codex-slingshot -p security-compat-tests --lib

@@ -1,1 +1,4 @@
 ThirdParty/Nyxian/** whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
+
+# Starlark golden diagnostics include significant indentation and trailing spaces.
+shared/rust-bridge/vendor/starlark_syntax-0.14.2/src/**/*.golden whitespace=-blank-at-eol

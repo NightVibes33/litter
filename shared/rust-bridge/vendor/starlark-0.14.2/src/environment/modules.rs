@@ -22,8 +22,6 @@
 
 use std::cell::Cell;
 use std::cell::RefCell;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -56,7 +54,6 @@ use crate::pagable::StarlarkDeserialize;
 use crate::pagable::StarlarkDeserializerImpl;
 use crate::pagable::StarlarkSerialize;
 use crate::pagable::StarlarkSerializerImpl;
-use crate::pagable::starlark_deserialize_context::HeapDeserializationState;
 use crate::register_starlark_any;
 use crate::singleton_heap_name;
 use crate::values::Freeze;
@@ -112,12 +109,12 @@ impl PagableSerialize for FrozenModule {
         // Serialize the heap (via pagable arc — actual heap data may be deferred).
         self.heap.pagable_serialize(serializer)?;
 
-        // Force-register offset maps for the heap and its transitive deps. The
+        // Force-register chunk indices for the heap and its transitive deps. The
         // pagable arc may not run heap serialization yet, but we need the
-        // offset maps now so the upcoming starlark serializer can resolve
+        // chunk indices now so the upcoming starlark serializer can resolve
         // FrozenValue pointers. Same trick as `OwnedFrozenValue`.
         let state = StarlarkSerializerImpl::get_or_create_state(serializer);
-        state.ensure_offset_maps_registered(&self.heap);
+        state.ensure_chunk_index_registered(&self.heap)?;
         let mut ctx = StarlarkSerializerImpl::new(serializer, state);
 
         self.module
@@ -141,15 +138,10 @@ impl<'de> PagableDeserialize<'de> for FrozenModule {
     ) -> pagable::Result<Self> {
         let heap = FrozenHeapRef::pagable_deserialize(deserializer)?;
 
-        // Empty `HeapDeserializationState` — the owner heap is fully
-        // deserialized at this point, so `ensure_initialized` is a no-op for
-        // any pointer we resolve into it.
-        let state = StarlarkDeserializerImpl::get_or_create_state(deserializer.as_dyn());
-        let mut ctx = StarlarkDeserializerImpl::new(
-            deserializer.as_dyn(),
-            state,
-            Arc::new(Mutex::new(HeapDeserializationState::empty())),
-        );
+        // The preceding heap deserialization registers its heap state in this
+        // page-in scope, so Starlark fields can resolve `FrozenValue` pointers.
+        let mut ctx = StarlarkDeserializerImpl::recover_from_pagable(deserializer.as_dyn())
+            .map_err(|e: crate::Error| e.into_anyhow())?;
 
         let module = <FrozenAnyValue<FrozenModuleData>>::starlark_deserialize(&mut ctx)
             .map_err(|e: crate::Error| e.into_anyhow())?;

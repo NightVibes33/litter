@@ -2809,8 +2809,15 @@ dependencies = [
 [[package]]
 name = "paste"
 version = "1.0.15"
+dependencies = [
+ "pastey",
+]
+
+[[package]]
+name = "pastey"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "pem-rfc7468"
@@ -5466,3 +5473,19 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[patch.unused]]
+name = "ansi_term"
+version = "0.12.1"
+
+[[patch.unused]]
+name = "atomic-polyfill"
+version = "1.0.3"
+
+[[patch.unused]]
+name = "fxhash"
+version = "0.2.1"
+
+[[patch.unused]]
+name = "json"
+version = "0.12.4"

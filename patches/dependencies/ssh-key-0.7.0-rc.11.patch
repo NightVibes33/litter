@@ -1,0 +1,472 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -116,7 +116,10 @@
+     "cipher/rand_core",
+ ]
+ rsa = [
+-    "dep:rsa",
++    "dep:aws-lc-rs",
++    "dep:crypto-bigint",
++    "dep:pkcs1",
++    "dep:pkcs8",
+     "alloc",
+     "encoding/bigint",
+     "rand_core",
+@@ -251,11 +254,19 @@
+ optional = true
+ default-features = false
+ 
+-[dependencies.rsa]
+-version = "0.10.0-rc.18"
+-features = ["sha2"]
+-optional = true
+-default-features = false
++[dependencies.aws-lc-rs]
++version = "1.18.1"
++optional = true
++
++[dependencies.crypto-bigint]
++version = "0.7.5"
++features = ["alloc", "zeroize"]
++optional = true
++
++[dependencies.pkcs1]
++version = "0.8.0-rc.4"
++features = ["alloc"]
++optional = true
+ 
+ [dependencies.sec1]
+ version = "0.8"
+@@ -337,3 +348,8 @@
+ unsafe_code = "forbid"
+ unused_lifetimes = "warn"
+ unused_qualifications = "warn"
++
++[dependencies.pkcs8]
++version = "0.11"
++optional = true
++features = ["alloc"]
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -247,12 +247,7 @@
+     }
+ }
+ 
+-#[cfg(feature = "rsa")]
+-impl From<rsa::errors::Error> for Error {
+-    fn from(_: rsa::errors::Error) -> Error {
+-        Error::Crypto
+-    }
+-}
++
+ 
+ #[cfg(feature = "std")]
+ impl From<std::io::Error> for Error {
+--- a/src/private/rsa.rs
++++ b/src/private/rsa.rs
+@@ -1,18 +1,15 @@
+ //! Rivest–Shamir–Adleman (RSA) private keys.
+ 
+-use crate::{Error, Mpint, Result, public::RsaPublicKey};
++use crate::{public::RsaPublicKey, Error, Mpint, Result};
+ use core::fmt::{self, Debug};
+ use ctutils::{Choice, CtEq};
+ use encoding::{CheckedSum, Decode, Encode, Reader, Writer};
+ use zeroize::Zeroize;
+ 
+ #[cfg(feature = "rsa")]
+-use {
+-    encoding::Uint,
+-    rand_core::CryptoRng,
+-    rsa::{pkcs1v15, traits::PrivateKeyParts},
+-    sha2::{Digest, digest::const_oid::AssociatedOid},
+-};
++use alloc::{boxed::Box, vec::Vec};
++#[cfg(feature = "rsa")]
++use rand_core::CryptoRng;
+ 
+ /// RSA private key.
+ #[derive(Clone)]
+@@ -151,7 +148,20 @@
+     #[cfg(feature = "rsa")]
+     #[expect(clippy::missing_errors_doc, reason = "TODO")]
+     pub fn random<R: CryptoRng + ?Sized>(rng: &mut R, bit_size: usize) -> Result<Self> {
+-        rsa::RsaPrivateKey::new(rng, bit_size)?.try_into()
++        let _ = rng; // AWS-LC uses its independently seeded system CSPRNG.
++        let size = match bit_size {
++            2048 => aws_lc_rs::rsa::KeySize::Rsa2048,
++            3072 => aws_lc_rs::rsa::KeySize::Rsa3072,
++            4096 => aws_lc_rs::rsa::KeySize::Rsa4096,
++            _ => return Err(Error::Crypto),
++        };
++        let key = aws_lc_rs::rsa::KeyPair::generate(size).map_err(|_| Error::Crypto)?;
++        use aws_lc_rs::encoding::AsDer;
++        let der: aws_lc_rs::encoding::Pkcs8V1Der<'static> =
++            key.as_der().map_err(|_| Error::Crypto)?;
++        // Decode the library-generated PKCS#8 envelope to its PKCS#1 contents.
++        let doc = pkcs8::PrivateKeyInfoRef::try_from(der.as_ref()).map_err(|_| Error::Crypto)?;
++        Self::from_pkcs1_der(doc.private_key.as_bytes())
+     }
+ 
+     /// Create a new keypair from the given `public` and `private` key components.
+@@ -245,77 +255,77 @@
+ }
+ 
+ #[cfg(feature = "rsa")]
+-impl TryFrom<RsaKeypair> for rsa::RsaPrivateKey {
+-    type Error = Error;
+-
+-    fn try_from(key: RsaKeypair) -> Result<rsa::RsaPrivateKey> {
+-        rsa::RsaPrivateKey::try_from(&key)
+-    }
+-}
+-
+-#[cfg(feature = "rsa")]
+-impl TryFrom<&RsaKeypair> for rsa::RsaPrivateKey {
+-    type Error = Error;
+-
+-    fn try_from(key: &RsaKeypair) -> Result<rsa::RsaPrivateKey> {
+-        let ret = rsa::RsaPrivateKey::from_components(
+-            Uint::try_from(key.public.n())?,
+-            Uint::try_from(key.public.e())?,
+-            Uint::try_from(&key.private.d)?,
+-            vec![
+-                Uint::try_from(&key.private.p)?,
+-                Uint::try_from(&key.private.q)?,
+-            ],
+-        )?;
+-
+-        Ok(ret)
+-    }
+-}
+-
+-#[cfg(feature = "rsa")]
+-impl TryFrom<rsa::RsaPrivateKey> for RsaKeypair {
+-    type Error = Error;
+-
+-    fn try_from(key: rsa::RsaPrivateKey) -> Result<RsaKeypair> {
+-        RsaKeypair::try_from(&key)
+-    }
+-}
+-
+-#[cfg(feature = "rsa")]
+-impl TryFrom<&rsa::RsaPrivateKey> for RsaKeypair {
+-    type Error = Error;
+-
+-    fn try_from(key: &rsa::RsaPrivateKey) -> Result<RsaKeypair> {
+-        // Multi-prime keys are not supported
+-        if key.primes().len() > 2 {
++impl RsaKeypair {
++    /// Validate and import a traditional PKCS#1 RSA key through AWS-LC.
++    pub fn from_pkcs1_der(input: &[u8]) -> Result<Self> {
++        aws_lc_rs::rsa::KeyPair::from_der(input).map_err(|_| Error::Crypto)?;
++        let key = pkcs1::RsaPrivateKey::try_from(input).map_err(|_| Error::Crypto)?;
++        if key.other_prime_infos.is_some() {
+             return Err(Error::Crypto);
+         }
+-
+-        let public = RsaPublicKey::try_from(key.to_public_key())?;
+-
+-        let p = &key.primes()[0];
+-        let q = &key.primes()[1];
+-        let iqmp = key.crt_coefficient().ok_or(Error::Crypto)?;
+-
+-        let private = RsaPrivateKey {
+-            d: key.d().into(),
+-            iqmp: iqmp.into(),
+-            p: p.into(),
+-            q: q.into(),
++        let public = RsaPublicKey::new(
++            Mpint::from_positive_bytes(key.public_exponent.as_bytes()),
++            Mpint::from_positive_bytes(key.modulus.as_bytes()),
++        )?;
++        let private = RsaPrivateKey::new(
++            Mpint::from_positive_bytes(key.private_exponent.as_bytes()),
++            Mpint::from_positive_bytes(key.coefficient.as_bytes()),
++            Mpint::from_positive_bytes(key.prime1.as_bytes()),
++            Mpint::from_positive_bytes(key.prime2.as_bytes()),
++        )?;
++        Self::new(public, private)
++    }
++
++    /// Import OpenSSH key components into the maintained RSA backend.
++    pub(crate) fn to_aws_lc(&self) -> Result<aws_lc_rs::rsa::KeyPair> {
++        use crypto_bigint::{BoxedUint, NonZero};
++        use zeroize::Zeroizing;
++        let n = self.public.n().as_positive_bytes().ok_or(Error::Crypto)?;
++        let e = self.public.e().as_positive_bytes().ok_or(Error::Crypto)?;
++        let d = self.private.d.as_positive_bytes().ok_or(Error::Crypto)?;
++        let p = self.private.p.as_positive_bytes().ok_or(Error::Crypto)?;
++        let q = self.private.q.as_positive_bytes().ok_or(Error::Crypto)?;
++        let iqmp = self.private.iqmp.as_positive_bytes().ok_or(Error::Crypto)?;
++        let precision = u32::try_from(n.len())
++            .map_err(|_| Error::Crypto)?
++            .checked_mul(8)
++            .ok_or(Error::Crypto)?;
++        let exponent =
++            Zeroizing::new(BoxedUint::from_be_slice(d, precision).map_err(|_| Error::Crypto)?);
++        let crt_exponent = |prime: &[u8]| -> Result<Zeroizing<Box<[u8]>>> {
++            let prime = Zeroizing::new(
++                BoxedUint::from_be_slice(prime, precision).map_err(|_| Error::Crypto)?,
++            );
++            let denominator = Zeroizing::new(
++                Option::<NonZero<BoxedUint>>::from(NonZero::new(
++                    prime.wrapping_sub(BoxedUint::one_with_precision(precision)),
++                ))
++                .ok_or(Error::Crypto)?,
++            );
++            // Use the maintained library's constant-time remainder, not rem_vartime.
++            let remainder = Zeroizing::new(exponent.rem(&*denominator));
++            Ok(Zeroizing::new(remainder.to_be_bytes()))
+         };
+-
+-        Ok(RsaKeypair { public, private })
+-    }
+-}
+-
+-#[cfg(feature = "rsa")]
+-impl<D> TryFrom<&RsaKeypair> for pkcs1v15::SigningKey<D>
+-where
+-    D: Digest + AssociatedOid,
+-{
+-    type Error = Error;
+-
+-    fn try_from(keypair: &RsaKeypair) -> Result<pkcs1v15::SigningKey<D>> {
+-        Ok(pkcs1v15::SigningKey::new(keypair.try_into()?))
+-    }
+-}
++        let dp = crt_exponent(p)?;
++        let dq = crt_exponent(q)?;
++        aws_lc_rs::rsa::KeyPair::from_components(&aws_lc_rs::rsa::KeyPairComponents {
++            public_key: aws_lc_rs::rsa::PublicKeyComponents { n, e },
++            d,
++            p,
++            q,
++            dP: dp.as_ref(),
++            dQ: dq.as_ref(),
++            qInv: iqmp,
++        })
++        .map_err(|_| Error::Crypto)
++    }
++
++    /// Export PKCS#8 through AWS-LC, retaining the existing key format.
++    pub fn to_pkcs8_der(&self) -> Result<Vec<u8>> {
++        use aws_lc_rs::encoding::AsDer;
++        let key = self.to_aws_lc()?;
++        let der: aws_lc_rs::encoding::Pkcs8V1Der<'static> =
++            key.as_der().map_err(|_| Error::Crypto)?;
++        Ok(der.as_ref().to_vec())
++    }
++}
+--- a/src/public/rsa.rs
++++ b/src/public/rsa.rs
+@@ -3,13 +3,6 @@
+ use crate::{Error, Mpint, Result};
+ use core::hash::{Hash, Hasher};
+ use encoding::{CheckedSum, Decode, Encode, Reader, Writer};
+-
+-#[cfg(feature = "rsa")]
+-use {
+-    encoding::Uint,
+-    rsa::{pkcs1v15, traits::PublicKeyParts},
+-    sha2::{Digest, digest::const_oid::AssociatedOid},
+-};
+ 
+ /// RSA public key.
+ ///
+@@ -98,55 +91,3 @@
+         self.n.as_bytes().hash(state);
+     }
+ }
+-
+-#[cfg(feature = "rsa")]
+-impl TryFrom<RsaPublicKey> for rsa::RsaPublicKey {
+-    type Error = Error;
+-
+-    fn try_from(key: RsaPublicKey) -> Result<rsa::RsaPublicKey> {
+-        rsa::RsaPublicKey::try_from(&key)
+-    }
+-}
+-
+-#[cfg(feature = "rsa")]
+-impl TryFrom<&RsaPublicKey> for rsa::RsaPublicKey {
+-    type Error = Error;
+-
+-    fn try_from(key: &RsaPublicKey) -> Result<rsa::RsaPublicKey> {
+-        let n = Uint::try_from(&key.n)?;
+-        let e = Uint::try_from(&key.e)?;
+-        let ret = rsa::RsaPublicKey::new(n, e).map_err(|_| Error::Crypto)?;
+-
+-        Ok(ret)
+-    }
+-}
+-
+-#[cfg(feature = "rsa")]
+-impl TryFrom<rsa::RsaPublicKey> for RsaPublicKey {
+-    type Error = Error;
+-
+-    fn try_from(key: rsa::RsaPublicKey) -> Result<RsaPublicKey> {
+-        RsaPublicKey::try_from(&key)
+-    }
+-}
+-
+-#[cfg(feature = "rsa")]
+-impl TryFrom<&rsa::RsaPublicKey> for RsaPublicKey {
+-    type Error = Error;
+-
+-    fn try_from(key: &rsa::RsaPublicKey) -> Result<RsaPublicKey> {
+-        RsaPublicKey::new(key.e().into(), key.n().as_ref().into())
+-    }
+-}
+-
+-#[cfg(feature = "rsa")]
+-impl<D> TryFrom<&RsaPublicKey> for pkcs1v15::VerifyingKey<D>
+-where
+-    D: Digest + AssociatedOid,
+-{
+-    type Error = Error;
+-
+-    fn try_from(key: &RsaPublicKey) -> Result<pkcs1v15::VerifyingKey<D>> {
+-        Ok(pkcs1v15::VerifyingKey::new(key.try_into()?))
+-    }
+-}
+--- a/src/signature.rs
++++ b/src/signature.rs
+@@ -1,6 +1,6 @@
+ //! Signatures (e.g. CA signatures over SSH certificates)
+ 
+-use crate::{Algorithm, EcdsaCurve, Error, Mpint, PrivateKey, PublicKey, Result, private, public};
++use crate::{private, public, Algorithm, EcdsaCurve, Error, Mpint, PrivateKey, PublicKey, Result};
+ use alloc::vec::Vec;
+ use core::fmt;
+ use encoding::{CheckedSum, Decode, Encode, Reader, Writer};
+@@ -24,7 +24,7 @@
+ 
+ #[cfg(feature = "rsa")]
+ use {
+-    crate::{HashAlg, private::RsaKeypair, public::RsaPublicKey},
++    crate::{private::RsaKeypair, public::RsaPublicKey, HashAlg},
+     sha2::Sha512,
+ };
+ 
+@@ -704,23 +704,23 @@
+ #[cfg(feature = "rsa")]
+ impl Signer<Signature> for (&RsaKeypair, Option<HashAlg>) {
+     fn try_sign(&self, message: &[u8]) -> signature::Result<Signature> {
+-        let data = match self.1 {
+-            Some(HashAlg::Sha512) => {
+-                rsa::pkcs1v15::SigningKey::<Sha512>::try_from(self.0)?.try_sign(message)
+-            }
+-            Some(HashAlg::Sha256) => {
+-                rsa::pkcs1v15::SigningKey::<Sha256>::try_from(self.0)?.try_sign(message)
+-            }
+-            #[cfg(all(feature = "rsa", feature = "sha1"))]
+-            None => rsa::pkcs1v15::SigningKey::<Sha1>::try_from(self.0)?.try_sign(message),
+-            #[cfg(not(all(feature = "rsa", feature = "sha1")))]
++        let encoding = match self.1 {
++            Some(HashAlg::Sha256) => &aws_lc_rs::signature::RSA_PKCS1_SHA256,
++            Some(HashAlg::Sha512) => &aws_lc_rs::signature::RSA_PKCS1_SHA512,
+             None => return Err(Algorithm::Rsa { hash: None }.unsupported_error().into()),
+-        }
++        };
++        let key = self.0.to_aws_lc().map_err(|_| signature::Error::new())?;
++        let mut data = vec![0; key.public_modulus_len()];
++        key.sign(
++            encoding,
++            &aws_lc_rs::rand::SystemRandom::new(),
++            message,
++            &mut data,
++        )
+         .map_err(|_| signature::Error::new())?;
+-
+         Ok(Signature {
+             algorithm: Algorithm::Rsa { hash: self.1 },
+-            data: data.to_vec(),
++            data,
+         })
+     }
+ }
+@@ -735,27 +735,29 @@
+ #[cfg(feature = "rsa")]
+ impl Verifier<Signature> for RsaPublicKey {
+     fn verify(&self, message: &[u8], signature: &Signature) -> signature::Result<()> {
+-        match signature.algorithm {
+-            Algorithm::Rsa { hash } => {
+-                let signature = rsa::pkcs1v15::Signature::try_from(signature.data.as_ref())?;
+-
+-                match hash {
+-                    #[cfg(not(all(feature = "rsa", feature = "sha1")))]
+-                    None => Err(Algorithm::Rsa { hash: None }.unsupported_error().into()),
+-                    #[cfg(all(feature = "rsa", feature = "sha1"))]
+-                    None => rsa::pkcs1v15::VerifyingKey::<Sha1>::try_from(self)?
+-                        .verify(message, &signature)
+-                        .map_err(|_| signature::Error::new()),
+-                    Some(HashAlg::Sha256) => rsa::pkcs1v15::VerifyingKey::<Sha256>::try_from(self)?
+-                        .verify(message, &signature)
+-                        .map_err(|_| signature::Error::new()),
+-                    Some(HashAlg::Sha512) => rsa::pkcs1v15::VerifyingKey::<Sha512>::try_from(self)?
+-                        .verify(message, &signature)
+-                        .map_err(|_| signature::Error::new()),
+-                }
+-            }
+-            _ => Err(signature.algorithm().unsupported_error().into()),
+-        }
++        let Algorithm::Rsa { hash } = signature.algorithm else {
++            return Err(signature.algorithm().unsupported_error().into());
++        };
++        let algorithm = match hash {
++            Some(HashAlg::Sha256) => &aws_lc_rs::signature::RSA_PKCS1_2048_8192_SHA256,
++            Some(HashAlg::Sha512) => &aws_lc_rs::signature::RSA_PKCS1_2048_8192_SHA512,
++            #[cfg(feature = "sha1")]
++            None => &aws_lc_rs::signature::RSA_PKCS1_2048_8192_SHA1_FOR_LEGACY_USE_ONLY,
++            #[cfg(not(feature = "sha1"))]
++            None => return Err(signature.algorithm().unsupported_error().into()),
++        };
++        let key = aws_lc_rs::rsa::PublicKeyComponents {
++            n: self
++                .n()
++                .as_positive_bytes()
++                .ok_or_else(signature::Error::new)?,
++            e: self
++                .e()
++                .as_positive_bytes()
++                .ok_or_else(signature::Error::new)?,
++        };
++        key.verify(algorithm, message, &signature.data)
++            .map_err(|_| signature::Error::new())
+     }
+ }
+ 
+@@ -773,7 +775,7 @@
+     use {super::Ed25519Keypair, signature::Signer};
+ 
+     #[cfg(feature = "p256")]
+-    use super::{Mpint, zero_pad_field_bytes};
++    use super::{zero_pad_field_bytes, Mpint};
+ 
+     const DSA_SIGNATURE: &[u8] = &hex!(
+         "000000077373682d6473730000002866725bf3c56100e975e21fff28a60f73717534d285ea3e1beefc2891f7189d00bd4d94627e84c55c"
+@@ -920,7 +922,7 @@
+     #[cfg(feature = "dsa")]
+     #[test]
+     fn try_sign_and_verify_dsa() {
+-        use super::{DSA_COMPONENT_SIZE, DsaKeypair};
++        use super::{DsaKeypair, DSA_COMPONENT_SIZE};
+         use encoding::Decode as _;
+         use signature::{Signer as _, Verifier as _};
+ 
+@@ -1003,11 +1005,9 @@
+ 
+     #[test]
+     fn placeholder() {
+-        assert!(
+-            !Signature::try_from(ED25519_SIGNATURE)
+-                .unwrap()
+-                .is_placeholder()
+-        );
++        assert!(!Signature::try_from(ED25519_SIGNATURE)
++            .unwrap()
++            .is_placeholder());
+ 
+         let placeholder = Signature::placeholder();
+         assert!(placeholder.is_placeholder());

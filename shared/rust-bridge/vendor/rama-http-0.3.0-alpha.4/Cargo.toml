@@ -298,6 +298,12 @@ check-cfg = [
 ]
 
 [patch.crates-io]
+paste = { path = "../security-compat/paste" }
+json = { path = "../security-compat/json" }
+ansi_term = { path = "../security-compat/ansi_term" }
+fxhash = { path = "../security-compat/fxhash" }
+atomic-polyfill = { path = "../security-compat/atomic-polyfill" }
+
 rama-core = { path = "../rama-core-0.3.0-alpha.4" }
 rama-dns = { path = "../rama-dns-0.3.0-alpha.4" }
 opentelemetry-http = { path = "../opentelemetry-http-0.32.0" }

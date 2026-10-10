@@ -30,4 +30,10 @@ crate-type = ["staticlib"]
 name = "rust_bridge"
 
 [patch.crates-io]
+paste = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/paste" }
+json = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/json" }
+ansi_term = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/ansi_term" }
+fxhash = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/fxhash" }
+atomic-polyfill = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/atomic-polyfill" }
+
 atty = { path = "../../../../vendor/atty-compat" }
