@@ -55,6 +55,7 @@ private struct PetAnimationProfile {
 }
 
 struct PetOverlayView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var controller = PetOverlayController.shared
     let pet: CachedPetPackage
     let state: PetAvatarState
@@ -111,10 +112,12 @@ struct PetOverlayView: View {
                     controller.endPinch()
                 }
         )
-        .task(id: "\(pet.id)-\(state.rawValue)-\(message ?? "")-\(reduceMotion)") {
+        .task(id: "\(pet.id)-\(state.rawValue)-\(message ?? "")-\(reduceMotion)-\(scenePhase == .active)") {
             ambientState = nil
             ambientMessage = nil
-            guard state == .idle, message == nil else { return }
+            // Do not run background avatar speech/gesture loops when iOS
+            // suspends the scene. SwiftUI cancels this task on phase changes.
+            guard scenePhase == .active, state == .idle, message == nil else { return }
 
             var messageIndex = 0
             var stateIndex = 0
@@ -182,6 +185,7 @@ private struct PetSpeechBubble: View {
 }
 
 struct PetSpriteView: View {
+    @Environment(\.scenePhase) private var scenePhase
     let spritesheetBytes: Data
     let state: PetAvatarState
     let reduceMotion: Bool
@@ -208,10 +212,10 @@ struct PetSpriteView: View {
             atlas = decodeAtlas(from: spritesheetBytes)
             atlasRevision &+= 1
         }
-        .task(id: "\(state.rawValue)-\(reduceMotion)-\(atlasRevision)") {
+        .task(id: "\(state.rawValue)-\(reduceMotion)-\(atlasRevision)-\(scenePhase == .active)") {
             playbackState = state
             frameIndex = 0
-            guard !reduceMotion else { return }
+            guard scenePhase == .active, !reduceMotion else { return }
 
             await playLoop(for: state)
         }
