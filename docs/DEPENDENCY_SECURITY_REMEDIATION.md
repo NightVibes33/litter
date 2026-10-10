@@ -73,3 +73,30 @@ ignore list or alert dismissal is used.
 
 CI and installed-device network, SSH, pairing, and signing acceptance remain
 necessary before release. Recheck the actual GitHub Dependabot count after merge.
+
+## Swift and npm dependency remediation
+
+All six tracked Swift package resolutions and both npm lockfiles were checked.
+Feather upgrades Vapor to 4.122.2, Swift Crypto to 4.5.2, SwiftNIO to 2.101.0,
+NIO HTTP/2 to 1.45.0, and NIO SSL to 2.37.2. A commit-based OSV scan reports
+no matches in the resulting 62 unique resolved commits. Feather uses a local
+Zip 2.1.2 source patch because upstream has no fixed release for CVE-2023-39135.
+Extraction destinations are validated before directory creation or file writes,
+including existing symlink resolution. This source replacement requires review;
+removing its remote pin does not mean upstream Zip 2.1.2 is safe. Tests cover
+normal destinations and invalid boundary names without crafting attack archives.
+
+QuickJS documentation upgrades Docusaurus to 3.10.2 and maintained transitive
+dependencies. Unpatched Braces is replaced by a local source implementation
+with bounded input and iterative AST validation before recursive work. Its
+ordinary API compatibility tests pass. This patch requires source review too.
+Both npm lockfile audits report zero findings; the documentation production
+build and its two compatibility tests pass locally. No audit omission, ignore
+list, or alert dismissal is used.
+
+The macOS workflow compiles and initializes the fixed Swift graph and runs Zip
+tests before building native iOS libraries. The documentation job installs the
+lockfile, audits both npm graphs, tests compatibility, and builds the site.
+These checks do not replace a full Feather app build or device acceptance.
+GitHub's private Dependabot endpoint remains inaccessible: independent inventory
+counts must not be presented as GitHub's remaining alert count.

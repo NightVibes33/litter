@@ -4,3 +4,6 @@ ThirdParty/Nyxian/** whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
 shared/rust-bridge/vendor/starlark_syntax-0.14.2/src/**/*.golden whitespace=-blank-at-eol
 # Unified dependency patches preserve blank context prefixes and original whitespace.
 patches/dependencies/*.patch whitespace=-blank-at-eol
+
+# Zip upstream source retains its original whitespace for review.
+ThirdParty/Feather/Source/Zip/** whitespace=-blank-at-eol,-blank-at-eof,-space-before-tab
