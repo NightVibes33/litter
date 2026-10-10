@@ -108,6 +108,13 @@ not merely a registry scan. See
 [`DEPENDENCY_SECURITY_REMEDIATION.md`](DEPENDENCY_SECURITY_REMEDIATION.md) for
 changes, RSA minimum-key/SHA-1 compatibility limits, and validation.
 
+Swift Crypto, NIO, HTTP/2, SSL, and Vapor pins are upgraded; Feather uses a
+reviewable local Zip boundary-validation patch. All tracked Swift pins have
+zero OSV commit matches (`tools/scripts/audit-swift-dependencies.py`). All four
+locked npm graphs audit clean, including the documentation and both Cloudflare
+services. Unpatched Braces uses a bounded local source implementation; its
+clean audit result requires source review as well.
+
 **Do not suppress advisories.** GitHub's private inventory remains inaccessible.
 GitHub last reported 32 default-branch alerts after PR #15, down from 36;
 the independent candidate's zero findings are not a GitHub alert count.

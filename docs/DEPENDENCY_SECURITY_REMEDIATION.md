@@ -105,3 +105,19 @@ The Cloudflare signup and push-proxy services now have reproducible npm locks.
 Workers types move to major 5 to satisfy Wrangler's current peer requirement.
 Both full dependency audits report zero findings; CI also checks TypeScript
 with the installed graph. This is a build dependency compatibility update.
+
+Reproduce the Swift commit inventory (including explicit local-source review):
+
+```sh
+python tools/scripts/audit-swift-dependencies.py --output /tmp/swift-security.json
+```
+
+Run `npm audit --package-lock-only --ignore-scripts` in tools/scripts, the
+QuickJS documentation directory, and each Cloudflare service to reproduce
+the npm inventories.
+
+Feather's Zsign OpenSSL binary dependency moves from package 3.3.3001 to
+3.6.5000 (bundled OpenSSL 3.6.5). Wrapper-repository commit scans do not establish
+the security status of bundled native binaries; their release provenance and
+upstream security notices require separate review. The dependency is pinned
+exactly and Feather's actual package resolution is validated in CI.
