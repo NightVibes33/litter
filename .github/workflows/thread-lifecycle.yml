@@ -23,6 +23,8 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
