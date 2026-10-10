@@ -799,9 +799,7 @@ struct ConversationMessageList: View {
                     requestedOlderTurnsThreadKey = nil
                     showOlderPageLoader = false
                     DispatchQueue.main.async {
-                        prefetchOlderTurnsIfNeeded(
-                            visibleTurnIDs: visibleTurnIDs,
-                        )
+                        prefetchOlderTurnsIfNeeded(visibleTurnIDs: visibleTurnIDs)
                     }
                 }
                 .onChange(of: collapseTurns) {
