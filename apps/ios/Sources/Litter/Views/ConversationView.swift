@@ -41,6 +41,13 @@ struct ConversationView: View {
         transcript.items
     }
 
+    /// Observe only the permission inputs. Comparing the whole AppThreadSnapshot
+    /// after every streamed item walks the full conversation history and can
+    /// stall scrolling on large chats.
+    private var permissionHydrationSignature: String {
+        "\(activeThreadKey.serverId)/\(activeThreadKey.threadId)|\(String(reflecting: thread.effectiveApprovalPolicy))|\(String(reflecting: thread.effectiveSandboxPolicy))"
+    }
+
     private var threadStatus: ConversationStatus {
         transcript.threadStatus
     }
@@ -186,8 +193,8 @@ struct ConversationView: View {
         .onChange(of: appModel.pendingHandoffTurnErrors[activeThreadKey]) { _, _ in
             consumePendingHandoffTurnError()
         }
-        .onChange(of: thread) { _, newThread in
-            appState.hydratePermissions(from: newThread)
+        .onChange(of: permissionHydrationSignature) { _, _ in
+            appState.hydratePermissions(from: thread)
         }
         .task(id: activeThreadKey) {
             await loadInitialTurnsIfNeeded()
@@ -615,6 +622,10 @@ struct ConversationMessageList: View {
     @State private var transcriptTurns: [TranscriptTurn] = []
     @State private var transcriptBuildKey: Int?
     @State private var renderedTurns: [TranscriptTurn] = []
+    /// Built only when the turn set changes, not on every scroll visibility
+    /// update. A dictionary lookup avoids allocating an O(history) ID array
+    /// for each scroll callback on long conversations.
+    @State private var renderedTurnIndexByID: [String: Int] = [:]
     @State private var timelineProjection = ConversationTranscriptProjection()
     @State private var expandedTurnIDs: Set<String> = []
     /// Explicit per-group toggles of turn work sections; unset groups follow
@@ -667,7 +678,6 @@ struct ConversationMessageList: View {
 
     var body: some View {
         let _ = PerfTracker.event("ConversationMessageList.body")
-        let turns = renderedTurns
         GeometryReader { viewport in
             let columnWidth = LitterSpace.readableColumnWidth(for: viewport.size.width)
             ZStack(alignment: .bottomTrailing) {
@@ -721,7 +731,7 @@ struct ConversationMessageList: View {
                 .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.01) { turnIDs in
                     let visibleTurns = turnIDs.compactMap { timelineProjection.turnIDByEntryID[$0] }
                     visibleTurnIDs = visibleTurns
-                    prefetchOlderTurnsIfNeeded(visibleTurnIDs: visibleTurns, turns: turns)
+                    prefetchOlderTurnsIfNeeded(visibleTurnIDs: visibleTurns)
                 }
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     max(0, geometry.contentSize.height - geometry.visibleRect.maxY)
@@ -791,7 +801,6 @@ struct ConversationMessageList: View {
                     DispatchQueue.main.async {
                         prefetchOlderTurnsIfNeeded(
                             visibleTurnIDs: visibleTurnIDs,
-                            turns: renderedTurns
                         )
                     }
                 }
@@ -891,14 +900,16 @@ struct ConversationMessageList: View {
     }
 
     private func rebuildTimelineProjection() {
-        timelineProjection.update(
-            turns: renderedTurns,
-            expandedTurnIDs: expandedTurnIDs,
-            workExpansion: workGroupExpansion,
-            reasoning: .resolve(reasoningMode),
-            commands: .resolve(commandMode),
-            tools: .resolve(toolMode)
-        )
+        PerfTracker.time("BuildTimelineProjection") {
+            timelineProjection.update(
+                turns: renderedTurns,
+                expandedTurnIDs: expandedTurnIDs,
+                workExpansion: workGroupExpansion,
+                reasoning: .resolve(reasoningMode),
+                commands: .resolve(commandMode),
+                tools: .resolve(toolMode)
+            )
+        }
     }
 
     private func toggleWorkGroup(_ id: String, isExpanded: Bool) {
@@ -947,15 +958,16 @@ struct ConversationMessageList: View {
     }
 
 
-    private func prefetchOlderTurnsIfNeeded(
-        visibleTurnIDs: [String],
-        turns: [TranscriptTurn]
-    ) {
-        guard let earliestVisibleIndex = ConversationInfiniteScrollPolicy.earliestVisibleIndex(
-            visibleIDs: visibleTurnIDs,
-            orderedIDs: turns.map(\.id)
-        ), earliestVisibleIndex <= ConversationInfiniteScrollPolicy.olderPrefetchDistance else { return }
-
+    private func prefetchOlderTurnsIfNeeded(visibleTurnIDs: [String]) {
+        var earliestVisibleIndex: Int?
+        for id in visibleTurnIDs {
+            guard let index = renderedTurnIndexByID[id] else { continue }
+            earliestVisibleIndex = min(earliestVisibleIndex ?? index, index)
+        }
+        guard let earliestVisibleIndex,
+              earliestVisibleIndex <= ConversationInfiniteScrollPolicy.olderPrefetchDistance else {
+            return
+        }
         requestOlderTurnsPage(showLoaderIfCacheExhausted: earliestVisibleIndex == 0)
     }
 
@@ -1010,11 +1022,13 @@ struct ConversationMessageList: View {
             return
         }
 
-        let nextTurns = TranscriptTurn.build(
-            from: items,
-            threadStatus: threadStatus,
-            expandedRecentTurnCount: expandedRecentTurnCount
-        )
+        let nextTurns = PerfTracker.time("BuildTranscriptTurns") {
+            TranscriptTurn.build(
+                from: items,
+                threadStatus: threadStatus,
+                expandedRecentTurnCount: expandedRecentTurnCount
+            )
+        }
         transcriptBuildKey = nextBuildKey
         applyTranscriptTurns(nextTurns, resetExpansion: resetExpansion)
     }
@@ -1089,6 +1103,13 @@ struct ConversationMessageList: View {
         let nextRenderedTurns = TranscriptTurn.renderableTurns(nextTurns)
         transcriptTurns = nextTurns
         renderedTurns = nextRenderedTurns
+        var turnIndices: [String: Int] = [:]
+        turnIndices.reserveCapacity(nextRenderedTurns.count)
+        for (index, turn) in nextRenderedTurns.enumerated() {
+            // Keep the first appearance if an upstream turn repeats an ID.
+            if turnIndices[turn.id] == nil { turnIndices[turn.id] = index }
+        }
+        renderedTurnIndexByID = turnIndices
         if resetExpansion {
             expandedTurnIDs.removeAll()
             workGroupExpansion.removeAll()

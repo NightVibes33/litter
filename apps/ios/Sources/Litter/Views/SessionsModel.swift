@@ -49,6 +49,11 @@ final class SessionsModel {
     /// session list — the cached derivation is reused instead.
     @ObservationIgnored private var cachedDerivationFingerprint: String?
     @ObservationIgnored private var cachedDerivedData: SessionsDerivedData?
+    /// Snapshot revision can advance 8+ times per second due to unrelated
+    /// chat tokens. Rebuild the sorted/grouped session tree only when the
+    /// lightweight session summaries or the actual session filters change.
+    @ObservationIgnored private var cachedSessionSummaries: [AppSessionSummary] = []
+    @ObservationIgnored private var sessionSummariesRevision: UInt64 = 0
 
     func bind(appModel: AppModel, appState: AppState) {
         let needsRebind = self.appModel !== appModel || self.appState !== appState
@@ -99,16 +104,20 @@ final class SessionsModel {
 
         observationGeneration &+= 1
         let generation = observationGeneration
-        let revision = appModel.snapshotRevision
         let hiddenKeys = Set(SavedThreadsStore.hiddenKeys().map(\.threadKey))
         let hiddenSignature = hiddenKeys.map { "\($0.serverId)/\($0.threadId)" }.sorted().joined(separator: "|")
-        let derivationFingerprint = "\(revision)|\(appState.sessionsSelectedServerFilterId ?? "all")|\(appState.sessionsShowOnlyForks)|\(selectedRuntimeKind ?? "any")|\(appState.sessionsWorkspaceSortModeRaw)|\(searchQuery)|\(hiddenSignature)"
         let snapshot = withObservationTracking {
+            let appSnapshot = appModel.snapshot
+            let summaries = appSnapshot?.sessionSummaries ?? []
+            if summaries != cachedSessionSummaries {
+                cachedSessionSummaries = summaries
+                sessionSummariesRevision &+= 1
+            }
+            let derivationFingerprint = "\(sessionSummariesRevision)|\(appState.sessionsSelectedServerFilterId ?? "all")|\(appState.sessionsShowOnlyForks)|\(selectedRuntimeKind ?? "any")|\(appState.sessionsWorkspaceSortModeRaw)|\(searchQuery)|\(hiddenSignature)"
             let selectedServerFilterId = appState.sessionsSelectedServerFilterId
             let showOnlyForks = appState.sessionsShowOnlyForks
             let workspaceSortMode = WorkspaceSortMode(rawValue: appState.sessionsWorkspaceSortModeRaw) ?? .mostRecent
-            let appSnapshot = appModel.snapshot
-            let visibleSessions = (appSnapshot?.sessionSummaries ?? []).filter { !hiddenKeys.contains($0.key) }
+            let visibleSessions = summaries.filter { !hiddenKeys.contains($0.key) }
 
             let nextConnectedServers = HomeDashboardSupport.sortedConnectedServers(
                 from: appSnapshot?.servers ?? [],
@@ -146,15 +155,17 @@ final class SessionsModel {
                 // revision: skip the expensive sort/group pass entirely.
                 nextDerivedData = cached
             } else {
-                nextDerivedData = SessionsDerivation.build(
-                    sessions: visibleSessions,
-                    selectedServerFilterId: selectedServerFilterId,
-                    showOnlyForks: showOnlyForks,
-                    selectedRuntimeKind: currentRuntimeKindFilter,
-                    workspaceSortMode: workspaceSortMode,
-                    searchQuery: currentSearchQuery,
-                    frozenMostRecentOrder: nextFrozenMostRecentThreadOrder
-                )
+                nextDerivedData = PerfTracker.time("DeriveSessionList") {
+                    SessionsDerivation.build(
+                        sessions: visibleSessions,
+                        selectedServerFilterId: selectedServerFilterId,
+                        showOnlyForks: showOnlyForks,
+                        selectedRuntimeKind: currentRuntimeKindFilter,
+                        workspaceSortMode: workspaceSortMode,
+                        searchQuery: currentSearchQuery,
+                        frozenMostRecentOrder: nextFrozenMostRecentThreadOrder
+                    )
+                }
                 cachedDerivationFingerprint = derivationFingerprint
                 cachedDerivedData = nextDerivedData
             }

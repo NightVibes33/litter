@@ -237,6 +237,9 @@ final class HomeDashboardModel {
     func activate() {
         guard !isActive else { return }
         isActive = true
+        // Re-read cloud-backed preferences on entry; subsequent preference
+        // changes arrive through the notification observer above.
+        reloadThreadPreferences()
         refreshState()
     }
 
@@ -272,7 +275,6 @@ final class HomeDashboardModel {
             return
         }
 
-        reloadThreadPreferences()
         observationGeneration &+= 1
         let generation = observationGeneration
         let snapshot = withObservationTracking {
