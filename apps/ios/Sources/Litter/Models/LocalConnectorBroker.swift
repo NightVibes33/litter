@@ -39,9 +39,13 @@ final class LocalConnectorBroker: @unchecked Sendable {
                     NSLocalizedDescriptionKey: "Invalid connector broker port"
                 ])
             }
+            // Supplying both `requiredLocalEndpoint` and `on:` asks Network to
+            // bind the same endpoint twice and produces NWError 22 on some
+            // iOS releases. Keep the loopback endpoint in the parameters and
+            // let Network derive the port from it.
             let parameters = NWParameters.tcp
             parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(Self.bindHost), port: nwPort)
-            let listener = try NWListener(using: parameters, on: nwPort)
+            let listener = try NWListener(using: parameters)
             listener.newConnectionHandler = { [weak self] connection in
                 self?.handle(connection)
             }

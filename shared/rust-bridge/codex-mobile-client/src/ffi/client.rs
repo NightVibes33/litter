@@ -564,12 +564,49 @@ impl AppClient {
         params: types::AppArchiveThreadRequest,
     ) -> Result<(), ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
+            let thread_id = params.thread_id.clone();
             let _: upstream::ThreadArchiveResponse = rpc(
                 c.as_ref(),
                 &server_id,
                 req!(server_id, ThreadArchive, params.into()),
             )
             .await?;
+
+            // Clear local projections after the server acknowledges archive.
+            // Repeated cleanup is safe for partially removed threads.
+            let key = crate::types::ThreadKey {
+                server_id: server_id.clone(),
+                thread_id: thread_id.clone(),
+            };
+            let _ = c.thread_unsubscribe(&server_id, &thread_id).await;
+            c.forget_thread(&key);
+            Ok(())
+        })
+    }
+
+    /// Permanently delete a thread and its server-side lifecycle state.
+    /// Unlike archive, this invokes thread/delete so the server performs its
+    /// atomic rollout, queue, attachment, dynamic-tool, graph, and state-db
+    /// cleanup under the per-thread lifecycle lock.
+    pub async fn delete_thread(
+        &self,
+        server_id: String,
+        params: types::AppDeleteThreadRequest,
+    ) -> Result<(), ClientError> {
+        blocking_async!(self.rt, self.inner, |c| {
+            let thread_id = params.thread_id.clone();
+            let _: upstream::ThreadDeleteResponse = rpc(
+                c.as_ref(),
+                &server_id,
+                req!(server_id, ThreadDelete, params.into()),
+            )
+            .await?;
+            let key = crate::types::ThreadKey {
+                server_id: server_id.clone(),
+                thread_id: thread_id.clone(),
+            };
+            let _ = c.thread_unsubscribe(&server_id, &thread_id).await;
+            c.forget_thread(&key);
             Ok(())
         })
     }

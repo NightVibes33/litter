@@ -162,6 +162,10 @@ final class AppModel {
     @ObservationIgnored private var pendingStreamingDeltas: [StreamingDeltaBatchKey: PendingStreamingDelta] = [:]
     @ObservationIgnored private var pendingStreamingDeltaTask: Task<Void, Never>?
     @ObservationIgnored private var cachedThreadSnapshots: [ThreadKey: AppThreadSnapshot] = [:]
+    /// Keys removed by an explicit archive/delete. Streaming and queued store
+    /// events can arrive after the delete acknowledgement; keep a tombstone
+    /// until an authoritative full snapshot proves the thread exists again.
+    @ObservationIgnored private var deletedThreadTombstones: Set<ThreadKey> = []
     @ObservationIgnored private var loadingTurnPageThreadKeys: Set<ThreadKey> = []
     @ObservationIgnored private var localServerRecoveryTask: Task<Void, Never>?
     private(set) var pendingHandoffTurnErrors: [ThreadKey: String] = [:]
@@ -1047,6 +1051,11 @@ final class AppModel {
             let mergedSnapshot = normalizedSnapshot.map(mergingCachedThreadSnapshots)
             self.snapshot = mergedSnapshot
             if let mergedSnapshot {
+                // A complete database snapshot is authoritative. It is the
+                // only event allowed to clear a delete tombstone; per-thread
+                // stream events remain rejected until then.
+                let liveKeys = Set(mergedSnapshot.threads.map(\.key))
+                deletedThreadTombstones.subtract(liveKeys)
                 persistWakeMACs(from: mergedSnapshot.servers)
                 mergedSnapshot.threads.forEach(cacheThreadSnapshot)
                 lastError = nil
@@ -1120,12 +1129,14 @@ final class AppModel {
         PerfTracker.event("storeUpdate", ["type": Self.updateLabel(update)])
         switch update {
         case .threadUpserted(let thread, let sessionSummary, let agentDirectoryVersion):
+            guard !deletedThreadTombstones.contains(thread.key) else { return }
             applyThreadUpsert(
                 thread,
                 sessionSummary: sessionSummary,
                 agentDirectoryVersion: agentDirectoryVersion
             )
         case .threadMetadataChanged(let state, let sessionSummary, let agentDirectoryVersion):
+            guard !deletedThreadTombstones.contains(state.key) else { return }
             // A turn finishing arrives as a metadata update. Flush any
             // pending streamed text for this thread first so the final
             // token is never lost behind the coalescer window.
@@ -1151,6 +1162,7 @@ final class AppModel {
                 )
             }
         case .threadItemChanged(let key, let item, let sessionSummary):
+            guard !deletedThreadTombstones.contains(key) else { return }
             // The finalized assistant/command item supersedes the streamed
             // placeholder; flush any pending deltas for this thread first.
             flushPendingStreamingDeltas(for: key)
@@ -1166,6 +1178,7 @@ final class AppModel {
             // stream without waiting for a full snapshot rebuild.
             applySessionSummary(sessionSummary)
         case .threadStreamingDelta(let key, let itemId, let kind, let text):
+            guard !deletedThreadTombstones.contains(key) else { return }
             // Feed the live transcript renderer immediately so the streaming
             // bubble stays smooth at the token rate. The snapshot mutation
             // is coalesced below so the rest of the UI (home, overlays,
@@ -1183,6 +1196,7 @@ final class AppModel {
             flushPendingStreamingDeltas(for: key)
             removeThreadSnapshot(for: key, agentDirectoryVersion: agentDirectoryVersion)
         case .activeThreadChanged(let key):
+            if let key, deletedThreadTombstones.contains(key) { return }
             updateActiveThread(key)
             if let key, threadSnapshot(for: key) == nil {
                 await refreshThreadSnapshot(key: key)
@@ -2036,11 +2050,25 @@ final class AppModel {
     /// Remove an acknowledged archived session immediately rather than
     /// leaving a stale cached row until a full server refresh.
     func reconcileArchivedThread(_ key: ThreadKey) {
+        deletedThreadTombstones.insert(key)
         pendingThreadRefreshKeys.remove(key)
         pendingThreadStateEvents.removeValue(forKey: key)
         flushPendingStreamingDeltas(for: key)
         cachedThreadSnapshots.removeValue(forKey: key)
         removeThreadSnapshot(for: key)
+    }
+
+    /// Fence a delete before the network request so late stream events cannot
+    /// repopulate the row while archive is in flight.
+    func beginThreadDeletion(_ key: ThreadKey) {
+        deletedThreadTombstones.insert(key)
+        pendingThreadRefreshKeys.remove(key)
+        pendingThreadStateEvents.removeValue(forKey: key)
+        flushPendingStreamingDeltas(for: key)
+    }
+
+    func rollbackThreadDeletion(_ key: ThreadKey) {
+        deletedThreadTombstones.remove(key)
     }
 
     private func removeThreadSnapshot(
@@ -2625,10 +2653,16 @@ final class AppModel {
             ])
         }
 
-        // Incoming has no items → use cached items entirely.
-        if thread.hydratedConversationItems.isEmpty {
+        // A metadata-only or partial upsert must never erase hydrated history.
+        // Full authoritative snapshots are allowed to replace it; smaller
+        // payloads are transport projections and are merged by item id.
+        if thread.hydratedConversationItems.count < cached.hydratedConversationItems.count {
             var merged = thread
-            merged.hydratedConversationItems = cached.hydratedConversationItems
+            var itemsByID = Dictionary(uniqueKeysWithValues: cached.hydratedConversationItems.map { ($0.id, $0) })
+            for item in thread.hydratedConversationItems { itemsByID[item.id] = item }
+            merged.hydratedConversationItems = cached.hydratedConversationItems.map { itemsByID[$0.id] ?? $0 }
+            let cachedIDs = Set(cached.hydratedConversationItems.map(\.id))
+            merged.hydratedConversationItems.append(contentsOf: thread.hydratedConversationItems.filter { !cachedIDs.contains($0.id) })
             return merged
         }
 

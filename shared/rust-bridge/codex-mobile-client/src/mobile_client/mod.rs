@@ -1388,6 +1388,12 @@ impl MobileClient {
         self.direct_resumed_threads().insert(key);
     }
 
+    pub(crate) fn forget_thread(&self, key: &ThreadKey) {
+        self.direct_resumed_threads().remove(key);
+        self.thread_runtime_routes().remove(key);
+        self.app_store.remove_thread(key);
+    }
+
     pub(super) fn clear_direct_resume_markers_for_server(&self, server_id: &str) {
         self.direct_resumed_threads()
             .retain(|key| key.server_id != server_id);
