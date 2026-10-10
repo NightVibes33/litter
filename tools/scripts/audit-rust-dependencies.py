@@ -27,10 +27,24 @@ def main():
     ).splitlines()
     packages = defaultdict(list)
     source_packages = defaultdict(list)
+    native_source_findings = []
+    native_source_versions = []
     for filename in files:
         with (root / filename).open("rb") as handle:
             lock = tomllib.load(handle)
         for package in lock["package"]:
+            if package["name"] == "openssl-src":
+                embedded = package["version"].split("+")[-1]
+                version_tuple = tuple(int(part) for part in embedded.split("."))
+                baselines = {(3, 5): (3, 5, 9), (3, 6): (3, 6, 5), (4, 0): (4, 0, 3)}
+                baseline = baselines.get(version_tuple[:2])
+                entry = {"file": filename, "package_version": package["version"],
+                         "embedded_openssl_version": embedded}
+                native_source_versions.append(entry)
+                if baseline is None or version_tuple < baseline:
+                    native_source_findings.append({**entry, "reason":
+                        "Bundled OpenSSL is below the reviewed 2026-10-10 security baseline or needs branch review",
+                        "upstream_security_notices": "https://openssl-library.org/news/vulnerabilities/"})
             if package.get("source", "").startswith("registry+"):
                 packages[package["name"], package["version"]].append(filename)
             else:
@@ -54,6 +68,8 @@ def main():
         if len(results) != len(batch):
             raise RuntimeError("Incomplete OSV response")
         for (name, version), result in zip(batch, results):
+            if result.get("error"):
+                raise RuntimeError(str(result["error"]))
             if result.get("vulns"):
                 findings.append({
                     "name": name, "version": version,
@@ -63,17 +79,20 @@ def main():
     report = {
         "lockfiles": files, "registry_versions_checked": len(versions),
         "findings": findings,
+        "native_source_versions": native_source_versions,
+        "native_source_findings": native_source_findings,
         "packages_requiring_source_review": [
             {"name": name, "version": version, "source": source, "lockfiles": lockfiles}
             for (name, version, source), lockfiles in sorted(source_packages.items())
         ],
-        "limitation": "Registry advisories only; local patches require source review. Counts are not GitHub alert counts.",
+        "limitation": "Registry advisories plus an explicit bundled OpenSSL baseline; other embedded native libraries and local patches require source review. Counts are not GitHub alert counts.",
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(f"Checked {len(versions)} registry versions across {len(files)} lockfiles.")
-    print(f"{len(findings)} versions have advisories; report: {args.output}")
+    print(f"{len(findings)} versions have advisories; {len(native_source_findings)} native source baseline findings; report: {args.output}")
+    return bool(findings or native_source_findings)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

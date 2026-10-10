@@ -1,5 +1,10 @@
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bundled_openssl_uses_reviewed_lts_security_release() {
+        assert!(openssl::version::version().starts_with("OpenSSL 3.5.9 "));
+    }
+
     use std::hash::Hasher;
 
     #[test]

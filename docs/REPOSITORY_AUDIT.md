@@ -102,7 +102,9 @@ source review in addition to registry checks.
 The next candidate registry inventory reports zero advisories across nine tracked
 Cargo lockfiles. Maintenance implementations are replaced by maintained
 backends, and SSH RSA now uses AWS-LC; optional idevice classic certificates use
-OpenSSL. The report explicitly inventories local/Git packages requiring source
+OpenSSL. Both Rust source bundles now use OpenSSL 3.5.9, and Feather's
+binary wrapper uses 3.6.5; the inventory separately checks the native source
+release baseline. The report explicitly inventories local/Git packages requiring source
 review. These source replacements need compatibility and cryptographic review,
 not merely a registry scan. See
 [`DEPENDENCY_SECURITY_REMEDIATION.md`](DEPENDENCY_SECURITY_REMEDIATION.md) for

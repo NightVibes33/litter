@@ -8,12 +8,14 @@ on:
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
       - 'patches/codex/**'
+      - 'tools/scripts/audit-rust-dependencies.py'
   pull_request:
     paths:
       - '.github/workflows/thread-lifecycle.yml'
       - 'shared/rust-bridge/**'
       - 'shared/third_party/codex/**'
       - 'patches/codex/**'
+      - 'tools/scripts/audit-rust-dependencies.py'
   workflow_dispatch:
 
 permissions:
@@ -38,6 +40,9 @@ jobs:
 
       - name: Apply repository Codex compatibility patches
         run: ./apps/ios/scripts/sync-codex.sh --preserve-current
+
+      - name: Audit Rust packages and bundled OpenSSL baseline
+        run: python3 tools/scripts/audit-rust-dependencies.py --output "$RUNNER_TEMP/rust-security.json"
 
       - name: Check mobile client
         working-directory: shared/rust-bridge

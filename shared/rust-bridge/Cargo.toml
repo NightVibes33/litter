@@ -99,6 +99,7 @@ debug = 0
 codegen-units = 16
 
 [patch.crates-io]
+openssl-src = { path = "vendor/openssl-src-300.5.9" }
 russh = { path = "vendor/russh-0.63.2" }
 ssh-key = { path = "vendor/ssh-key-0.7.0-rc.11" }
 i18n-embed-fl = { path = "vendor/i18n-embed-fl-0.9.4" }

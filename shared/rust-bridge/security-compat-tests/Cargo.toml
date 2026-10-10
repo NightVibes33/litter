@@ -16,3 +16,5 @@ signature = "3"
 russh = { workspace = true }
 
 base64 = "0.22"
+
+openssl = { version = "0.10.80", features = ["vendored"] }

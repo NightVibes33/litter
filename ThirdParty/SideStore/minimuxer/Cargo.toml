@@ -30,6 +30,7 @@ zip = "4.6.1"
 chrono = "0.4"
 
 [patch.crates-io]
+openssl-src = { path = "../../../shared/rust-bridge/vendor/openssl-src-300.5.9" }
 paste = { path = "../../../shared/rust-bridge/vendor/security-compat/paste" }
 json = { path = "../../../shared/rust-bridge/vendor/security-compat/json" }
 ansi_term = { path = "../../../shared/rust-bridge/vendor/security-compat/ansi_term" }

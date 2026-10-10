@@ -121,3 +121,12 @@ Feather's Zsign OpenSSL binary dependency moves from package 3.3.3001 to
 the security status of bundled native binaries; their release provenance and
 upstream security notices require separate review. The dependency is pinned
 exactly and Feather's actual package resolution is validated in CI.
+
+The mobile and standalone minimuxer OpenSSL source bundles also upgrade to
+LTS 3.5.9. The original openssl-src build API is retained with a root-owned
+source package; Cargo extracts the immutable upstream archive into OUT_DIR,
+verifies its published SHA-256, and performs no build-time network download.
+A compatibility test checks the actual linked OpenSSL release. The inventory
+now additionally rejects bundles below the reviewed native release baselines
+(3.5.9, 3.6.5, or 4.0.3). These checks are distinct from OSV crate advisories.
+See vendor/openssl-src-300.5.9/LITTER_PATCHES.md for provenance and licenses.
