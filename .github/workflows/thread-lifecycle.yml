@@ -48,6 +48,7 @@ jobs:
         working-directory: shared/rust-bridge
         run: cargo check --locked -p codex-mobile-client --all-targets
 
+      # Compatibility tests also verify the actual bundled OpenSSL release.
       - name: Run mobile client and Slingshot tests
         working-directory: shared/rust-bridge
         run: cargo test --locked -p codex-mobile-client -p codex-slingshot -p security-compat-tests --lib

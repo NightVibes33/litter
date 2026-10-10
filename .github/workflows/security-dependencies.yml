@@ -53,8 +53,6 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Build and run fixed Swift dependency graph
-        run: swift run --package-path tools/swift-security-check DependencyCheck
       - name: Resolve Feather app packages with fixed dependencies
         run: xcodebuild -resolvePackageDependencies -project ThirdParty/Feather/Source/Feather.xcodeproj -scheme Feather
       - name: Audit resolved Swift dependency commits
@@ -66,6 +64,8 @@ jobs:
           path: |
             tools/swift-security-check/Package.resolved
             ThirdParty/Feather/Source/Feather.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+      - name: Build and run fixed Swift dependency graph
+        run: swift run --package-path tools/swift-security-check DependencyCheck
       - name: Test hardened Feather archive destination validation
         run: swift test --package-path ThirdParty/Feather/Source/Zip
 
