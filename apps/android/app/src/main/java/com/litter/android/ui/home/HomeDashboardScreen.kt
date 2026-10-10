@@ -1185,9 +1185,9 @@ fun HomeDashboardScreen(
                         when (action) {
                             is ConfirmAction.ArchiveSession -> {
                                 try {
-                                    appModel.client.archiveThread(
+                                    appModel.client.deleteThread(
                                         action.session.key.serverId,
-                                        uniffi.codex_mobile_client.AppArchiveThreadRequest(
+                                        uniffi.codex_mobile_client.AppDeleteThreadRequest(
                                             threadId = action.session.key.threadId,
                                         ),
                                     )

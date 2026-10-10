@@ -876,9 +876,10 @@ struct SessionsScreen: View {
     private func confirmArchiveSession(key: ThreadKey) async {
         do {
             LLog.info("conversation", "session archive requested", fields: ["serverId": key.serverId, "threadId": key.threadId])
-            try await appModel.client.archiveThread(
+            appModel.beginThreadDeletion(key)
+            try await appModel.client.deleteThread(
                 serverId: key.serverId,
-                params: AppArchiveThreadRequest(threadId: key.threadId)
+                params: AppDeleteThreadRequest(threadId: key.threadId)
             )
             appModel.reconcileArchivedThread(key)
             let preferenceKey = PinnedThreadKey(threadKey: key)
@@ -892,6 +893,7 @@ struct SessionsScreen: View {
                 appState.currentCwd = ""
             }
         } catch {
+            appModel.rollbackThreadDeletion(key)
             LLog.error("conversation", "session archive failed", error: error, fields: ["serverId": key.serverId, "threadId": key.threadId])
             sessionActionErrorMessage = "Could not remove session: \(error.localizedDescription)"
         }

@@ -507,6 +507,20 @@ pub struct AppArchiveThreadRequest {
     pub thread_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct AppDeleteThreadRequest {
+    pub thread_id: String,
+}
+
+impl From<AppDeleteThreadRequest> for upstream::ThreadDeleteParams {
+    fn from(value: AppDeleteThreadRequest) -> Self {
+        Self {
+            thread_id: value.thread_id,
+        }
+    }
+}
+
 impl From<AppArchiveThreadRequest> for upstream::ThreadArchiveParams {
     fn from(value: AppArchiveThreadRequest) -> Self {
         Self {
