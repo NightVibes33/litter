@@ -1,0 +1,179 @@
+name: Verify latest Litter upstream parity
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/litter-upstream-parity.yml'
+      - 'apps/ios/Sources/Litter/**'
+      - 'apps/ios/Tests/LitterTests/**'
+      - 'shared/rust-bridge/codex-mobile-client/src/**'
+      - 'apps/android/app/src/main/java/**'
+  schedule:
+    - cron: '17 14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: litter-upstream-parity
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Compare current fork to upstream main
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout fork without submodules
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          submodules: false
+          persist-credentials: false
+
+      - name: Fetch current official Litter main
+        run: git -c protocol.version=2 fetch --no-tags --filter=blob:none https://github.com/0xSero/litter.git main
+
+      - name: Compare upstream history and performance/chat core
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          groups = {
+              "ios_swift": ("apps/ios/Sources/Litter/", ".swift"),
+              "ios_tests": ("apps/ios/Tests/", ".swift"),
+              "rust_mobile": ("shared/rust-bridge/codex-mobile-client/src/", ".rs"),
+              "android_kotlin": ("apps/android/", ".kt"),
+          }
+
+          # These performance and conversation primitives must remain identical
+          # to official Litter. Alley Cat's explicitly extended entrypoints,
+          # runtime integrations and branding are reported as custom changes,
+          # not silently replaced by upstream code.
+          protected = (
+              "apps/ios/Sources/Litter/Views/StreamingAssistantRenderCache.swift",
+              "apps/ios/Sources/Litter/Views/MessageRenderCache.swift",
+              "apps/ios/Sources/Litter/Models/StreamingRendererCoordinator.swift",
+              "apps/ios/Sources/Litter/Views/HomeDashboardSupport.swift",
+              "apps/ios/Sources/Litter/Views/SessionsDerivation.swift",
+              "apps/ios/Sources/Litter/Models/AppThreadSnapshot+Runtime.swift",
+              "shared/rust-bridge/codex-mobile-client/src/store/boundary.rs",
+              "shared/rust-bridge/codex-mobile-client/src/store/actions.rs",
+              "shared/rust-bridge/codex-mobile-client/src/perf_profile.rs",
+              "apps/ios/Tests/LitterTests/PerformanceHelpersTests.swift",
+              "apps/ios/Tests/LitterTests/PerformanceMeasurementTests.swift",
+          )
+
+          def output(*args):
+              return subprocess.check_output(("git", *args), stderr=subprocess.STDOUT)
+
+          def source_tree(ref):
+              output_bytes = output(
+                  "ls-tree", "-r", "-z", "--full-tree", ref, "--",
+                  "apps/ios/Sources/Litter/", "apps/ios/Tests/",
+                  "shared/rust-bridge/codex-mobile-client/src/",
+                  "apps/android/",
+              )
+              result = {}
+              for entry in output_bytes.split(b"\0"):
+                  if not entry:
+                      continue
+                  header, path = entry.split(b"\t", 1)
+                  mode, kind, sha = header.decode("ascii").split(" ")
+                  if kind == "blob":
+                      result[path.decode("utf-8")] = sha
+              return result
+
+          upstream = source_tree("FETCH_HEAD")
+          fork = source_tree("HEAD")
+          try:
+              subprocess.run(
+                  ("git", "merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"),
+                  check=True, capture_output=True,
+              )
+              behind = False
+          except subprocess.CalledProcessError:
+              behind = True
+
+          summary = {}
+          missing_paths = []
+          for name, (prefix, suffix) in groups.items():
+              paths = {p for p in upstream if p.startswith(prefix) and p.endswith(suffix)}
+              same = sorted(p for p in paths if fork.get(p) == upstream[p])
+              modified = sorted(p for p in paths if p in fork and fork[p] != upstream[p])
+              missing = sorted(p for p in paths if p not in fork)
+              added = sorted(p for p in fork if p.startswith(prefix) and p.endswith(suffix) and p not in upstream)
+              summary[name] = {
+                  "upstream": len(paths),
+                  "identical": len(same),
+                  "modified": modified,
+                  "missing": missing,
+                  "fork_only": added,
+              }
+              missing_paths.extend(missing)
+
+          drift = sorted(p for p in protected if p not in upstream or upstream[p] != fork.get(p))
+          report = {
+              "fork_commit": output("rev-parse", "HEAD").decode().strip(),
+              "upstream_commit": output("rev-parse", "FETCH_HEAD").decode().strip(),
+              "upstream_history_missing": behind,
+              "upstream_files_missing": sorted(missing_paths),
+              "protected_core_drift": drift,
+              "groups": summary,
+          }
+
+          dest = Path("build/litter-upstream-parity.json")
+          dest.parent.mkdir(exist_ok=True, parents=True)
+          dest.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+          lines = [
+              "## Alley Cat / Litter upstream parity",
+              f"Fork: `{report['fork_commit']}`",
+              f"Latest upstream: `{report['upstream_commit']}`",
+              f"Upstream history missing: **{behind}**",
+              "",
+              "| Category | Upstream files | Identical | Modified | Missing | Fork-only |",
+              "|---|---:|---:|---:|---:|---:|",
+          ]
+          for name, data in summary.items():
+              lines.append(
+                  f"| {name} | {data['upstream']} | {data['identical']} | "
+                  f"{len(data['modified'])} | {len(data['missing'])} | {len(data['fork_only'])} |"
+              )
+          lines += [
+              "",
+              "Fork-specific adaptations are reported, not overwritten.",
+              f"Protected upstream core drift: **{len(drift)}**",
+          ]
+          if drift:
+              lines.extend(f"- `{p}`" for p in drift)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("\n".join(lines) + "\n")
+
+          if behind or missing_paths or drift:
+              if behind:
+                  print("::error::The fork does not contain all commits from the latest official upstream main.")
+              if missing_paths:
+                  print("::error::Official upstream source files are missing from the fork.")
+              if drift:
+                  print("::error::Protected Litter chat/performance primitives no longer match upstream.")
+              raise SystemExit(1)
+          print("Upstream history and protected chat/performance sources verified.")
+
+          PY
+
+      - name: Upload source parity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: litter-upstream-parity
+          path: build/litter-upstream-parity.json
+          if-no-files-found: warn
+          retention-days: 14
