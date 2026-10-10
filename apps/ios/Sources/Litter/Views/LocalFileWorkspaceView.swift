@@ -1118,7 +1118,6 @@ private final class LocalFileWorkspaceModel {
     var currentPath = HomeAnchor.path
     var entries: [LocalFileEntry] = [] {
         didSet {
-            entriesRevision &+= 1
             cachedVisibleEntries = nil
             cachedFilterCounts = nil
             cachedWorkspaceStats = nil
@@ -1155,7 +1154,6 @@ private final class LocalFileWorkspaceModel {
     /// updates; avoid repeated localized sorts and 8-way full-directory scans.
     /// The property getters still access observed inputs before consulting
     /// the ignored cache, so SwiftUI receives every invalidation.
-    @ObservationIgnored private var entriesRevision: UInt64 = 0
     @ObservationIgnored private var cachedVisibleEntries: [LocalFileEntry]?
     @ObservationIgnored private var cachedFilterCounts: [LocalFileFilter: Int]?
     @ObservationIgnored private var cachedWorkspaceStats: LocalFileWorkspaceStats?
@@ -1195,10 +1193,7 @@ private final class LocalFileWorkspaceModel {
                     entry.kindLabel.localizedCaseInsensitiveContains(query)
             }
         }
-        // sortEntries reads the same observed 'sort'; use currentSort in this
-        // path explicitly so the cache also tracks the sort selection.
-        let result = sortEntries(searched.filter { filter.matches($0) })
-        _ = currentSort
+        let result = sortEntries(searched.filter { filter.matches($0) }, by: currentSort)
         cachedVisibleEntries = result
         return result
     }
@@ -1586,10 +1581,10 @@ private final class LocalFileWorkspaceModel {
         isSelecting = false
     }
 
-    private func sortEntries(_ entries: [LocalFileEntry]) -> [LocalFileEntry] {
+    private func sortEntries(_ entries: [LocalFileEntry], by selectedSort: LocalFileSort) -> [LocalFileEntry] {
         entries.sorted { lhs, rhs in
             if (lhs.kind == .directory) != (rhs.kind == .directory) { return lhs.kind == .directory }
-            switch sort {
+            switch selectedSort {
             case .name:
                 return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
             case .date:
