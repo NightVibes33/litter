@@ -1116,7 +1116,14 @@ private struct LocalFileStoredShortcut: Codable, Hashable {
 @Observable
 private final class LocalFileWorkspaceModel {
     var currentPath = HomeAnchor.path
-    var entries: [LocalFileEntry] = []
+    var entries: [LocalFileEntry] = [] {
+        didSet {
+            entriesRevision &+= 1
+            cachedVisibleEntries = nil
+            cachedFilterCounts = nil
+            cachedWorkspaceStats = nil
+        }
+    }
     var isLoading = false
     private(set) var isMutating = false
     var errorMessage: String?
@@ -1127,15 +1134,31 @@ private final class LocalFileWorkspaceModel {
         didSet { UserDefaults.standard.set(showAdvancedLocations, forKey: Self.showAdvancedLocationsKey) }
     }
     var openFile: LocalFileEntry?
-    var searchQuery = ""
-    var sort: LocalFileSort = .name
+    var searchQuery = "" {
+        didSet { cachedVisibleEntries = nil }
+    }
+    var sort: LocalFileSort = .name {
+        didSet { cachedVisibleEntries = nil }
+    }
     var viewMode: LocalFileViewMode = .list
-    var activeFilter: LocalFileFilter = .all
+    var activeFilter: LocalFileFilter = .all {
+        didSet { cachedVisibleEntries = nil }
+    }
     var isSelecting = false
     var selectedPaths: Set<String> = []
 
     private var favoriteItems: [LocalFileStoredShortcut] = []
     private var recentItems: [LocalFileStoredShortcut] = []
+
+    /// A large iSH directory may contain thousands of entries. SwiftUI can
+    /// query these getters repeatedly during selection, scrolling and toolbar
+    /// updates; avoid repeated localized sorts and 8-way full-directory scans.
+    /// The property getters still access observed inputs before consulting
+    /// the ignored cache, so SwiftUI receives every invalidation.
+    @ObservationIgnored private var entriesRevision: UInt64 = 0
+    @ObservationIgnored private var cachedVisibleEntries: [LocalFileEntry]?
+    @ObservationIgnored private var cachedFilterCounts: [LocalFileFilter: Int]?
+    @ObservationIgnored private var cachedWorkspaceStats: LocalFileWorkspaceStats?
 
     private static let showHiddenKey = "local_file_workspace_show_hidden_v1"
     private static let showAdvancedLocationsKey = "local_file_workspace_show_advanced_locations_v1"
@@ -1156,34 +1179,70 @@ private final class LocalFileWorkspaceModel {
     }
 
     var visibleEntries: [LocalFileEntry] {
+        // Keep @Observable dependencies registered even with a warm cache.
+        let source = entries
+        let query = trimmedSearchQuery
+        let filter = activeFilter
+        let currentSort = sort
+        if let cachedVisibleEntries { return cachedVisibleEntries }
         let searched: [LocalFileEntry]
-        if trimmedSearchQuery.isEmpty {
-            searched = entries
+        if query.isEmpty {
+            searched = source
         } else {
-            searched = entries.filter { entry in
-                entry.name.localizedCaseInsensitiveContains(trimmedSearchQuery) ||
-                    entry.path.localizedCaseInsensitiveContains(trimmedSearchQuery) ||
-                    entry.kindLabel.localizedCaseInsensitiveContains(trimmedSearchQuery)
+            searched = source.filter { entry in
+                entry.name.localizedCaseInsensitiveContains(query) ||
+                    entry.path.localizedCaseInsensitiveContains(query) ||
+                    entry.kindLabel.localizedCaseInsensitiveContains(query)
             }
         }
-        return sortEntries(searched.filter { activeFilter.matches($0) })
+        // sortEntries reads the same observed 'sort'; use currentSort in this
+        // path explicitly so the cache also tracks the sort selection.
+        let result = sortEntries(searched.filter { filter.matches($0) })
+        _ = currentSort
+        cachedVisibleEntries = result
+        return result
     }
 
     var filterCounts: [LocalFileFilter: Int] {
-        Dictionary(uniqueKeysWithValues: LocalFileFilter.allCases.map { filter in
-            (filter, entries.filter { filter.matches($0) }.count)
-        })
+        let source = entries
+        if let cachedFilterCounts { return cachedFilterCounts }
+        // Single pass over the directory rather than a full scan per filter.
+        var counts: [LocalFileFilter: Int] = [:]
+        for filter in LocalFileFilter.allCases { counts[filter] = 0 }
+        for entry in source {
+            for filter in LocalFileFilter.allCases where filter.matches(entry) {
+                counts[filter, default: 0] += 1
+            }
+        }
+        cachedFilterCounts = counts
+        return counts
     }
 
     var workspaceStats: LocalFileWorkspaceStats {
-        LocalFileWorkspaceStats(
-            folders: entries.filter { $0.kind == .directory }.count,
-            files: entries.filter { $0.kind != .directory }.count,
-            code: entries.filter(\.isCode).count,
-            builds: entries.filter { $0.isBuildArtifact || $0.name == "LitterBuild.json" }.count,
-            images: entries.filter(\.isImage).count,
-            totalBytes: entries.reduce(Int64(0)) { $0 + max($1.size, 0) }
+        let source = entries
+        if let cachedWorkspaceStats { return cachedWorkspaceStats }
+        var folders = 0
+        var code = 0
+        var builds = 0
+        var images = 0
+        var totalBytes: Int64 = 0
+        for entry in source {
+            if entry.kind == .directory { folders += 1 }
+            if entry.isCode { code += 1 }
+            if entry.isBuildArtifact || entry.name == "LitterBuild.json" { builds += 1 }
+            if entry.isImage { images += 1 }
+            totalBytes += max(entry.size, 0)
+        }
+        let stats = LocalFileWorkspaceStats(
+            folders: folders,
+            files: source.count - folders,
+            code: code,
+            builds: builds,
+            images: images,
+            totalBytes: totalBytes
         )
+        cachedWorkspaceStats = stats
+        return stats
     }
 
     var selectedEntries: [LocalFileEntry] {
@@ -1207,8 +1266,8 @@ private final class LocalFileWorkspaceModel {
     }
 
     var folderSummary: String {
-        let folderCount = entries.filter { $0.kind == .directory }.count
-        let fileCount = entries.count - folderCount
+        let folderCount = workspaceStats.folders
+        let fileCount = workspaceStats.files
         let hiddenNote = showHidden ? " incl. hidden" : ""
         return "\(folderCount) folders, \(fileCount) files\(hiddenNote)"
     }
