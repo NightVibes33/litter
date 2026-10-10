@@ -345,7 +345,12 @@ final class AppModel {
     /// discard conversations when a server is merely offline.
     static func isMissingThreadError(_ error: Error) -> Bool {
         let description = "\(error.localizedDescription) \(String(describing: error))"
-        return description.localizedCaseInsensitiveContains("thread not found")
+        let value = description.lowercased()
+        return value.contains("thread not found")
+            || value.contains("thread cannot be found")
+            || value.contains("no thread found")
+            || value.contains("unknown thread")
+            || value.contains("was not found in any registered runtime")
     }
 
     func activateThread(_ key: ThreadKey?) {

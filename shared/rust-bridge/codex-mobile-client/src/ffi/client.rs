@@ -59,6 +59,63 @@ async fn rpc_runtime<T: serde::de::DeserializeOwned>(
         .map_err(|error| ClientError::Rpc(error.to_string()))
 }
 
+/// Resolve an existing thread against the runtime that actually owns it.
+/// A thread/list fan-out may have returned a session from Pi, Claude, or
+/// another runtime, while the default RPC lane still points to Codex.
+/// Only a definite "thread not found" is retried on another runtime.
+async fn rpc_existing_thread<T>(
+    client: &MobileClient,
+    server_id: &str,
+    thread_id: &str,
+    make_request: impl Fn() -> upstream::ClientRequest,
+) -> Result<(T, types::AgentRuntimeKind), ClientError>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let session = client
+        .get_session(server_id)
+        .map_err(|error| ClientError::Rpc(error.to_string()))?;
+    let available_runtimes = session.runtime_kinds();
+    let key = types::ThreadKey {
+        server_id: server_id.to_owned(),
+        thread_id: thread_id.to_owned(),
+    };
+    let preferred = client.runtime_for_thread(&key);
+    let mut candidates = Vec::new();
+    if available_runtimes.contains(&preferred) {
+        candidates.push(preferred);
+    }
+    for runtime in available_runtimes {
+        if !candidates.contains(&runtime) {
+            candidates.push(runtime);
+        }
+    }
+    if candidates.is_empty() {
+        return Err(ClientError::Rpc(
+            "No agent runtime is available to access this conversation".into(),
+        ));
+    }
+    let mut missing_error = None;
+    for runtime in candidates {
+        match rpc_runtime::<T>(client, server_id, runtime.clone(), make_request()).await {
+            Ok(response) => return Ok((response, runtime)),
+            Err(error) if is_missing_thread_rpc_error(&error) => {
+                tracing::debug!(
+                    server_id,
+                    thread_id,
+                    runtime = %runtime,
+                    "existing-thread RPC: runtime does not own this thread"
+                );
+                missing_error = Some(error);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(missing_error.unwrap_or_else(|| ClientError::Rpc(
+        "Conversation was not found in any available agent runtime".into(),
+    )))
+}
+
 fn ensure_settings_session(
     client: &MobileClient,
     server_id: &str,
@@ -436,9 +493,6 @@ impl AppClient {
         params: types::AppResumeThreadRequest,
     ) -> Result<types::ThreadKey, ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
-            // Prepend "Apps saved in this thread so far: …" to the
-            // developer_instructions so the model knows which slugs are
-            // already in use.
             let mut params = params;
             let thread_id = params.thread_id.clone();
             params.developer_instructions = splice_saved_apps_context(
@@ -451,30 +505,23 @@ impl AppClient {
                 &server_id,
                 params.developer_instructions,
             );
-            // Resume requests don't carry `dynamic_tools` (the server
-            // remembers them from start). The preamble was injected at
-            // start_thread; developer_instructions persist server-side
-            // across turns, so no re-injection needed here.
             let params = convert_params::<_, upstream::ThreadResumeParams>(params)?;
-            let response: upstream::ThreadResumeResponse = rpc(
+            let (response, runtime_kind) = rpc_existing_thread::<upstream::ThreadResumeResponse>(
                 c.as_ref(),
                 &server_id,
-                req!(server_id, ThreadResume, params),
+                &thread_id,
+                || req!(server_id, ThreadResume, params.clone()),
             )
             .await?;
             let key = c
                 .apply_thread_resume_response(&server_id, &response)
                 .map_err(ClientError::Serialization)?;
+            c.note_thread_runtime(key.clone(), runtime_kind);
             hydrate_thread_goal_if_available(c.as_ref(), &server_id, &key).await;
             Ok(key)
         })
     }
 
-    /// Register the directory where `saved_apps.rs` persists the app
-    /// index + per-app files. Platforms (iOS/Android) call this once at
-    /// process start with the same path they pass to `saved_apps_list`.
-    /// When set, the `show_widget` auto-upsert hook in the dynamic-tool
-    /// handler uses this directory to persist finalized widgets.
     pub fn set_saved_apps_directory(&self, directory: String) {
         let mut guard = self
             .inner
@@ -570,16 +617,25 @@ impl AppClient {
     ) -> Result<types::ThreadKey, ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
             let mut params = params;
+            let thread_id = params.thread_id.clone();
             params.developer_instructions = splice_local_runtime_developer_instructions(
                 c.as_ref(),
                 &server_id,
                 params.developer_instructions,
             );
             let params = convert_params::<_, upstream::ThreadForkParams>(params)?;
-            let response: upstream::ThreadForkResponse =
-                rpc(c.as_ref(), &server_id, req!(server_id, ThreadFork, params)).await?;
-            c.apply_thread_fork_response(&server_id, &response)
-                .map_err(ClientError::Serialization)
+            let (response, runtime_kind) = rpc_existing_thread::<upstream::ThreadForkResponse>(
+                c.as_ref(),
+                &server_id,
+                &thread_id,
+                || req!(server_id, ThreadFork, params.clone()),
+            )
+            .await?;
+            let key = c
+                .apply_thread_fork_response(&server_id, &response)
+                .map_err(ClientError::Serialization)?;
+            c.note_thread_runtime(key.clone(), runtime_kind);
+            Ok(key)
         })
     }
 
@@ -589,18 +645,19 @@ impl AppClient {
         params: types::AppArchiveThreadRequest,
     ) -> Result<(), ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
+            let thread_id = params.thread_id.clone();
             let key = types::ThreadKey {
                 server_id: server_id.clone(),
-                thread_id: params.thread_id.clone(),
+                thread_id: thread_id.clone(),
             };
-            // A second archive can race another device or a server-side prune.
-            // "Thread not found" means the requested removal is already complete;
-            // other RPC errors must still propagate, so auth/transport failures
-            // never silently erase a valid conversation.
-            match rpc::<upstream::ThreadArchiveResponse>(
+            // Do not assume Codex owns a thread listed by another runtime.
+            // Only consider an archive complete when the owning runtime
+            // acknowledges it, or every available runtime reports it missing.
+            match rpc_existing_thread::<upstream::ThreadArchiveResponse>(
                 c.as_ref(),
                 &server_id,
-                req!(server_id, ThreadArchive, params.into()),
+                &thread_id,
+                || req!(server_id, ThreadArchive, params.clone().into()),
             )
             .await
             {
@@ -608,15 +665,12 @@ impl AppClient {
                 Err(error) if is_missing_thread_rpc_error(&error) => {
                     tracing::info!(
                         server_id = %server_id,
-                        thread_id = %key.thread_id,
-                        "archive_thread: server thread already absent"
+                        thread_id = %thread_id,
+                        "archive_thread: all runtimes report the thread absent"
                     );
                 }
                 Err(error) => return Err(error),
             }
-            // The server acknowledgement and the local Rust reducer must agree.
-            // Otherwise Swift removes its visible row, but the Rust snapshot
-            // reintroduces the archived thread during the next refresh.
             c.app_store.remove_thread(&key);
             Ok(())
         })
@@ -628,10 +682,12 @@ impl AppClient {
         params: types::AppRenameThreadRequest,
     ) -> Result<(), ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
-            let _: upstream::ThreadSetNameResponse = rpc(
+            let thread_id = params.thread_id.clone();
+            let _ = rpc_existing_thread::<upstream::ThreadSetNameResponse>(
                 c.as_ref(),
                 &server_id,
-                req!(server_id, ThreadSetName, params.into()),
+                &thread_id,
+                || req!(server_id, ThreadSetName, params.clone().into()),
             )
             .await?;
             Ok(())
@@ -854,15 +910,18 @@ impl AppClient {
         params: types::AppReadThreadRequest,
     ) -> Result<types::ThreadKey, ClientError> {
         blocking_async!(self.rt, self.inner, |c| {
-            let response: upstream::ThreadReadResponse = rpc(
+            let thread_id = params.thread_id.clone();
+            let (response, runtime_kind) = rpc_existing_thread::<upstream::ThreadReadResponse>(
                 c.as_ref(),
                 &server_id,
-                req!(server_id, ThreadRead, params.into()),
+                &thread_id,
+                || req!(server_id, ThreadRead, params.clone().into()),
             )
             .await?;
             let key = c
                 .apply_thread_read_response(&server_id, &response)
                 .map_err(ClientError::Serialization)?;
+            c.note_thread_runtime(key.clone(), runtime_kind);
             hydrate_thread_goal_if_available(c.as_ref(), &server_id, &key).await;
             Ok(key)
         })
