@@ -81,7 +81,7 @@ enum LLog {
             ringLines.removeFirst(ringLines.count - ringLimit)
         }
         ringLock.unlock()
-        PersistentDiagnostics.writer.append(line)
+        PersistentDiagnostics.writer.appendPrepared(line, critical: level != .info && level != .debug)
     }
 
     #if DEBUG
@@ -114,7 +114,7 @@ enum LLog {
     }
 
     private static func timestamp() -> String {
-        ISO8601DateFormatter().string(from: Date())
+        Date().ISO8601Format()
     }
 
     private static func levelName(_ level: OSLogType) -> String {
@@ -132,8 +132,8 @@ enum LLog {
         }
     }
 
-    static func redact(_ input: String) -> String {
-        var output = input
+    // Compile credential masks once rather than for every streaming log line.
+    private static let redactionRules: [(NSRegularExpression, String)] = {
         let replacements: [(String, String)] = [
             (#"(ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}"#, "$1_[REDACTED]"),
             (#"github_pat_[A-Za-z0-9_]{20,}"#, "github_pat_[REDACTED]"),
@@ -141,16 +141,18 @@ enum LLog {
             (#"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}"#, "$1[REDACTED]"),
             (#"(?i)((?:api[_-]?key|token|password|secret|authorization)[\"']?\s*[:=]\s*[\"']?)[^\"'\s,}]{8,}"#, "$1[REDACTED]")
         ]
-        for (pattern, template) in replacements {
-            output = regexReplace(pattern: pattern, template: template, input: output)
+        return replacements.compactMap { pattern, replacement in
+            (try? NSRegularExpression(pattern: pattern)).map { ($0, replacement) }
+        }
+    }()
+
+    static func redact(_ input: String) -> String {
+        var output = input
+        for (regex, replacement) in redactionRules {
+            let range = NSRange(output.startIndex..<output.endIndex, in: output)
+            output = regex.stringByReplacingMatches(in: output, options: [], range: range, withTemplate: replacement)
         }
         return output
-    }
-
-    private static func regexReplace(pattern: String, template: String, input: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return input }
-        let range = NSRange(input.startIndex..<input.endIndex, in: input)
-        return regex.stringByReplacingMatches(in: input, options: [], range: range, withTemplate: template)
     }
 
     private static func resolveCodexHome() -> URL {

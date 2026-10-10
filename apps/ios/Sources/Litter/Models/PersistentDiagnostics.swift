@@ -7,6 +7,7 @@ import MetricKit
 final class DiagnosticsLogWriter: @unchecked Sendable {
     let directory: URL
     private let lock = NSLock()
+    private let loggingQueue = DispatchQueue(label: "alleycat.diagnostics.file-writes", qos: .utility)
     private let maxBytes: Int
     private let maxFiles: Int
     private var file: URL?
@@ -18,12 +19,32 @@ final class DiagnosticsLogWriter: @unchecked Sendable {
         self.maxFiles = maxFiles
     }
 
+    // High-volume debug/info writes are dispatched to a serial utility queue.
+    // Critical warnings/errors wait for preceding entries, preserving order.
+    func appendPrepared(_ line: String, critical: Bool) {
+        if critical {
+            loggingQueue.sync { appendLine(line, alreadyRedacted: true) }
+        } else {
+            loggingQueue.async { [self] in appendLine(line, alreadyRedacted: true) }
+        }
+    }
+
+    func drainDeferredWrites() {
+        loggingQueue.sync {}
+    }
+
+    // Direct calls keep their previous synchronous, redacted semantics.
     func append(_ line: String) {
+        appendLine(line, alreadyRedacted: false)
+    }
+
+    private func appendLine(_ line: String, alreadyRedacted: Bool) {
         lock.lock()
         defer { lock.unlock() }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let bounded = String(LLog.redact(line).prefix(min(16_384, max(1, (maxBytes - 1) / 4)))) + "\n"
+            let safeLine = alreadyRedacted ? line : LLog.redact(line)
+            let bounded = String(safeLine.prefix(min(16_384, max(1, (maxBytes - 1) / 4)))) + "\n"
             let data = Data(bounded.utf8)
             if file == nil || bytes + data.count > maxBytes {
                 let nextFile = directory.appendingPathComponent("session-\(UUID().uuidString).log")

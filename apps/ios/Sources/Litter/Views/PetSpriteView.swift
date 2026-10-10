@@ -188,14 +188,12 @@ struct PetSpriteView: View {
     @State private var atlas: PetSpriteAtlas?
     @State private var playbackState: PetAvatarState?
     @State private var frameIndex = 0
+    @State private var atlasRevision = 0
 
     var body: some View {
         let renderedState = playbackState ?? state
         let frames = atlas?.frames(for: renderedState) ?? []
-        let atlasSignature = atlas?.framesByRow.map { row in
-            row.map(\.index).map(String.init).joined(separator: ",")
-        }.joined(separator: "|") ?? ""
-
+        // Atlas version changes only when its spritesheet is decoded.
         GeometryReader { proxy in
             if let frame = frame(from: frames) {
                 Image(uiImage: frame.image)
@@ -208,8 +206,9 @@ struct PetSpriteView: View {
         .aspectRatio(CGFloat(petFrameWidth) / CGFloat(petFrameHeight), contentMode: .fit)
         .task(id: spritesheetBytes) {
             atlas = decodeAtlas(from: spritesheetBytes)
+            atlasRevision &+= 1
         }
-        .task(id: "\(state.rawValue)-\(reduceMotion)-\(atlasSignature)") {
+        .task(id: "\(state.rawValue)-\(reduceMotion)-\(atlasRevision)") {
             playbackState = state
             frameIndex = 0
             guard !reduceMotion else { return }
