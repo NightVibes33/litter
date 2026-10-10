@@ -13,6 +13,8 @@ on:
       - 'shared/rust-bridge/vendor/rquickjs-sys-0.9.0/quickjs/docs/**'
       - 'tools/scripts/package.json'
       - 'tools/scripts/package-lock.json'
+      - 'services/testflight-signup/**'
+      - 'services/push-proxy/**'
       - 'tools/scripts/build-sidestore-minimuxer.sh'
   workflow_dispatch:
 
@@ -35,6 +37,11 @@ jobs:
         run: brew install autoconf automake libtool cmake ninja pkgconf llvm
       - name: Build and run fixed Swift dependency graph
         run: swift run --package-path tools/swift-security-check DependencyCheck
+      - name: Save resolved Swift security graph
+        uses: actions/upload-artifact@v4
+        with:
+          name: swift-security-resolution
+          path: tools/swift-security-check/Package.resolved
       - name: Test hardened Feather archive destination validation
         run: swift test --package-path ThirdParty/Feather/Source/Zip
       - name: Verify locked dependency resolution
@@ -68,3 +75,21 @@ jobs:
         run: npm run test:security
       - name: Build documentation
         run: npm run build
+
+  services:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        service: [testflight-signup, push-proxy]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --ignore-scripts
+      - run: npm audit
+      - run: npx tsc --noEmit

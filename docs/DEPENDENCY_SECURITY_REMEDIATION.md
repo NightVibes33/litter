@@ -100,3 +100,8 @@ lockfile, audits both npm graphs, tests compatibility, and builds the site.
 These checks do not replace a full Feather app build or device acceptance.
 GitHub's private Dependabot endpoint remains inaccessible: independent inventory
 counts must not be presented as GitHub's remaining alert count.
+
+The Cloudflare signup and push-proxy services now have reproducible npm locks.
+Workers types move to major 5 to satisfy Wrangler's current peer requirement.
+Both full dependency audits report zero findings; CI also checks TypeScript
+with the installed graph. This is a build dependency compatibility update.

@@ -145,6 +145,7 @@ const parse = (input, options = {}) => {
 
     if (value === CHAR_LEFT_PARENTHESES) {
       block = push({ type: 'paren', nodes: [] });
+      if (stack.length >= 64) throw new RangeError("Brace AST exceeds safe nesting depth");
       stack.push(block);
       push({ type: 'text', value });
       continue;
@@ -211,6 +212,7 @@ const parse = (input, options = {}) => {
       };
 
       block = push(brace);
+      if (stack.length >= 64) throw new RangeError("Brace AST exceeds safe nesting depth");
       stack.push(block);
       push({ type: 'open', value });
       continue;
@@ -326,6 +328,7 @@ const parse = (input, options = {}) => {
   } while (stack.length > 0);
 
   push({ type: 'eos' });
+  require("./security-bounds").assertSafeInput(ast);
   return ast;
 };
 
