@@ -189,7 +189,13 @@ struct SessionsScreen: View {
                 }
             )) {
                 TextField("New session title", text: $renameDraft)
-                Button("Save") { Task { await submitRename() } }
+                Button("Save") {
+                    // The alert dismisses immediately; retain its inputs.
+                    guard let key = renamingThreadKey else { return }
+                    let title = renameDraft
+                    renamingThreadKey = nil
+                    Task { await submitRename(key: key, title: title) }
+                }
                 Button("Cancel", role: .cancel) {
                     renamingThreadKey = nil
                     renameCurrentTitle = ""
@@ -208,7 +214,11 @@ struct SessionsScreen: View {
                 presenting: archiveTargetThread
             ) { thread in
                 Button("Delete \"\(thread.sessionTitle)\"", role: .destructive) {
-                    Task { await confirmArchiveSession() }
+                    // Capture the key synchronously: dismissing the dialog
+                    // resets archiveTargetKey before an asynchronous Task runs.
+                    let key = thread.key
+                    archiveTargetKey = nil
+                    Task { await confirmArchiveSession(key: key) }
                 }
                 Button("Cancel", role: .cancel) { archiveTargetKey = nil }
             } message: { _ in
@@ -846,9 +856,8 @@ struct SessionsScreen: View {
         )
     }
 
-    private func submitRename() async {
-        guard let key = renamingThreadKey else { return }
-        let nextTitle = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func submitRename(key: ThreadKey, title: String) async {
+        let nextTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !nextTitle.isEmpty else { return }
         do {
             try await appModel.renameThread(
@@ -864,8 +873,7 @@ struct SessionsScreen: View {
         renameDraft = ""
     }
 
-    private func confirmArchiveSession() async {
-        guard let key = archiveTargetKey else { return }
+    private func confirmArchiveSession(key: ThreadKey) async {
         do {
             LLog.info("conversation", "session archive requested", fields: ["serverId": key.serverId, "threadId": key.threadId])
             try await appModel.client.archiveThread(
