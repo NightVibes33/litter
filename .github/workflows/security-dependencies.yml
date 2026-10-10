@@ -37,11 +37,15 @@ jobs:
         run: brew install autoconf automake libtool cmake ninja pkgconf llvm
       - name: Build and run fixed Swift dependency graph
         run: swift run --package-path tools/swift-security-check DependencyCheck
+      - name: Resolve Feather app packages with fixed dependencies
+        run: xcodebuild -resolvePackageDependencies -project ThirdParty/Feather/Source/Feather.xcodeproj -scheme Feather
       - name: Save resolved Swift security graph
         uses: actions/upload-artifact@v4
         with:
           name: swift-security-resolution
-          path: tools/swift-security-check/Package.resolved
+          path: |
+            tools/swift-security-check/Package.resolved
+            ThirdParty/Feather/Source/Feather.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
       - name: Test hardened Feather archive destination validation
         run: swift test --package-path ThirdParty/Feather/Source/Zip
       - name: Verify locked dependency resolution
