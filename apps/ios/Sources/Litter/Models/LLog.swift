@@ -74,7 +74,8 @@ enum LLog {
     }
 
     private static func record(level: OSLogType, subsystem: String, rendered: String) {
-        let line = "\(timestamp()) [\(levelName(level))] [\(subsystem)] \(redact(rendered))"
+        // emit() already redacted the rendered text; never scan it twice.
+        let line = "\(timestamp()) [\(levelName(level))] [\(subsystem)] \(rendered)"
         ringLock.lock()
         ringLines.append(line)
         if ringLines.count > ringLimit {

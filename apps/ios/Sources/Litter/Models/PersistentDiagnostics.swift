@@ -11,6 +11,7 @@ final class DiagnosticsLogWriter: @unchecked Sendable {
     private let maxBytes: Int
     private let maxFiles: Int
     private var file: URL?
+    private var activeHandle: FileHandle?
     private var bytes = 0
 
     init(directory: URL, maxBytes: Int = 2 * 1024 * 1024, maxFiles: Int = 10) {
@@ -42,22 +43,25 @@ final class DiagnosticsLogWriter: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let safeLine = alreadyRedacted ? line : LLog.redact(line)
             let bounded = String(safeLine.prefix(min(16_384, max(1, (maxBytes - 1) / 4)))) + "\n"
             let data = Data(bounded.utf8)
             if file == nil || bytes + data.count > maxBytes {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                // A dedicated handle is reused for the whole log segment.
+                // Reopening/seeking/closing the file on every message wastes
+                // significant CPU and flash I/O during verbose streaming.
+                try? activeHandle?.close()
+                activeHandle = nil
                 let nextFile = directory.appendingPathComponent("session-\(UUID().uuidString).log")
                 try Data().write(to: nextFile, options: .atomic)
                 file = nextFile
                 bytes = 0
+                activeHandle = try FileHandle(forWritingTo: nextFile)
                 trimFiles(extension: "log", keeping: maxFiles)
             }
-            guard let file else { return }
-            let handle = try FileHandle(forWritingTo: file)
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: data)
+            guard let activeHandle else { return }
+            try activeHandle.write(contentsOf: data)
             bytes += data.count
         } catch {
             // Logging failure must not crash the app or recursively invoke LLog.
