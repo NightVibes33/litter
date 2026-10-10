@@ -1,0 +1,1 @@
+Source pinned to facebook/starlark-rust commit 3bed1c40f93da22b8e251dd520dfb8d35bfe1fb7. Workspace dependencies resolved to that same immutable revision. Replaces derivative Debug derives with maintained derive_more Debug and preserves ignored fields. Existing compatible BLAKE3 range retained from this upstream revision.

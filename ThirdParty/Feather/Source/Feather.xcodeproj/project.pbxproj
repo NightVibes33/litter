@@ -188,7 +188,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				3371F5152DA91FDC00281AC6 /* XCLocalSwiftPackageReference "Zsign" */,
-				3371F6F52DA9EBA500281AC6 /* XCRemoteSwiftPackageReference "Zip" */,
+				3371F6F52DA9EBA500281AC6 /* XCLocalSwiftPackageReference "Zip" */,
 				33CF13372DB5ACFB0021D4C5 /* XCRemoteSwiftPackageReference "SWCompression" */,
 				3305BBAA2DB8944200660D45 /* XCRemoteSwiftPackageReference "vapor" */,
 				330F68FF2DC03DF400D8C35D /* XCLocalSwiftPackageReference "NimbleKit" */,
@@ -541,6 +541,11 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Zsign;
 		};
+
+        3371F6F52DA9EBA500281AC6 /* XCLocalSwiftPackageReference "Zip" */ = {
+            isa = XCLocalSwiftPackageReference;
+            relativePath = Zip;
+        };
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -549,7 +554,7 @@
 			repositoryURL = "https://github.com/vapor/vapor";
 			requirement = {
 				kind = exactVersion;
-				version = 4.104.0;
+				version = 4.122.2;
 			};
 		};
 		3346F8372DC6C68300C7D508 /* XCRemoteSwiftPackageReference "Nuke" */ = {
@@ -560,14 +565,7 @@
 				version = 12.8.0;
 			};
 		};
-		3371F6F52DA9EBA500281AC6 /* XCRemoteSwiftPackageReference "Zip" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/marmelroy/Zip";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.1.2;
-			};
-		};
+
 		339776052DC9D05C00642FFB /* XCRemoteSwiftPackageReference "LicensePlist" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/mono0926/LicensePlist";
@@ -631,7 +629,7 @@
 		};
 		3371F7312DA9ECDD00281AC6 /* Zip */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 3371F6F52DA9EBA500281AC6 /* XCRemoteSwiftPackageReference "Zip" */;
+			package = 3371F6F52DA9EBA500281AC6 /* XCLocalSwiftPackageReference "Zip" */;
 			productName = Zip;
 		};
 		339776062DC9D0F800642FFB /* LicensePlistBuildTool */ = {

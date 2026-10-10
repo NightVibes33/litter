@@ -16,7 +16,7 @@ serde_json = "1"
 
 # <--- post17.rs -->
 # iOS 17+ async operations: CoreDeviceProxy, XPCDevice, DVT, DebugProxy, ImageMounter
-idevice = { git = "https://github.com/jkcoxson/idevice", rev = "a714d35d95dc16769f8a54a6168ccec6338b73c7", features = ["full"] }
+idevice = { path = "../../../../vendor/idevice-0.1.56", features = ["afc", "core_device_proxy", "debug_proxy", "dvt", "heartbeat", "installation_proxy", "misagent", "mobile_image_mounter", "remote_pairing", "rsd", "tcp", "tss", "tunnel_tcp_stack", "usbmuxd", "xpc"] }
 plist = "1.7.1"
 # Async runtime: block_on for iOS 17+ JIT and DDI mount
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "net"] }
@@ -28,3 +28,12 @@ log = "0.4"
 [lib]
 crate-type = ["staticlib"]
 name = "rust_bridge"
+
+[patch.crates-io]
+paste = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/paste" }
+json = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/json" }
+ansi_term = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/ansi_term" }
+fxhash = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/fxhash" }
+atomic-polyfill = { path = "../../../../../../shared/rust-bridge/vendor/security-compat/atomic-polyfill" }
+
+atty = { path = "../../../../vendor/atty-compat" }

@@ -18,8 +18,6 @@
 use std::fmt;
 use std::fmt::Display;
 use std::ops::Deref;
-use std::sync::Arc;
-use std::sync::Mutex;
 
 use allocative::Allocative;
 use dupe::Clone_;
@@ -32,7 +30,6 @@ use pagable::PagableSerializer;
 
 use crate::cast::transmute;
 use crate::pagable::starlark_deserialize::StarlarkDeserializeContext;
-use crate::pagable::starlark_deserialize_context::HeapDeserializationState;
 use crate::pagable::starlark_deserialize_context::StarlarkDeserializerImpl;
 use crate::pagable::starlark_serialize::StarlarkSerializeContext;
 use crate::pagable::starlark_serialize_context::StarlarkSerializerImpl;
@@ -102,12 +99,7 @@ impl OwnedFrozenValue {
     /// use starlark::values::OwnedFrozenValue;
     /// let heap = FrozenHeap::new();
     /// let value = heap.alloc("test");
-    /// unsafe {
-    ///     OwnedFrozenValue::new(
-    ///         heap.into_ref_named(FrozenHeapName::User(Box::new("test"))),
-    ///         value,
-    ///     )
-    /// };
+    /// unsafe { OwnedFrozenValue::new(heap.into_ref_named(FrozenHeapName::user("test")), value) };
     /// ```
     pub unsafe fn new(owner: FrozenHeapRef, value: FrozenValue) -> Self {
         Self { owner, value }
@@ -223,7 +215,7 @@ impl PagableSerialize for OwnedFrozenValue {
         // serialization, so the offset maps may not exist yet when we
         // need to serialize the FrozenValue.
         let state = StarlarkSerializerImpl::get_or_create_state(serializer);
-        state.ensure_offset_maps_registered(&self.owner);
+        state.ensure_chunk_index_registered(&self.owner)?;
 
         let mut ctx = StarlarkSerializerImpl::new(serializer, state);
         ctx.serialize_frozen_value(self.value)
@@ -240,15 +232,10 @@ impl<'de> PagableDeserialize<'de> for OwnedFrozenValue {
         // Deserialize the owner heap ref.
         let owner = FrozenHeapRef::pagable_deserialize(deserializer)?;
 
-        // Get or create shared deserialization state.
-        // Use empty HeapDeserializationState since the owner heap is already
-        // fully deserialized — ensure_initialized will be a no-op.
-        let state = StarlarkDeserializerImpl::get_or_create_state(deserializer.as_dyn());
-        let mut ctx = StarlarkDeserializerImpl::new(
-            deserializer.as_dyn(),
-            state,
-            Arc::new(Mutex::new(HeapDeserializationState::empty())),
-        );
+        // Recover the page-in scope registered by the preceding owner heap so
+        // cross-heap pointer resolution can find it.
+        let mut ctx = StarlarkDeserializerImpl::recover_from_pagable(deserializer.as_dyn())
+            .map_err(|e: crate::Error| e.into_anyhow())?;
 
         // Deserialize the FrozenValue.
         let value = ctx
@@ -287,12 +274,7 @@ impl<T: for<'a> StarlarkValue<'a>> OwnedFrozenValueTyped<T> {
     /// use starlark::values::OwnedFrozenValue;
     /// let heap = FrozenHeap::new();
     /// let value = heap.alloc("test");
-    /// unsafe {
-    ///     OwnedFrozenValue::new(
-    ///         heap.into_ref_named(FrozenHeapName::User(Box::new("test"))),
-    ///         value,
-    ///     )
-    /// };
+    /// unsafe { OwnedFrozenValue::new(heap.into_ref_named(FrozenHeapName::user("test")), value) };
     /// ```
     pub unsafe fn new<'a>(owner: FrozenHeapRef, value: FrozenValueTyped<'a, T>) -> Self {
         // SAFETY: The caller has asserted that this heap ref keeps the value alive.

@@ -44,11 +44,48 @@ pub enum PagableError {
         actual_bytes: u32,
     },
 
-    /// Heap bases not registered for the heap a `FrozenValue` resolves to.
-    #[error("Heap bases not registered for heap {heap_id:?}")]
-    HeapBasesNotRegistered {
-        /// The HeapRefId whose bases were not found.
+    /// A value declared a zero `alloc_size`. Every arena value occupies at least
+    /// its header, so this is never valid and indicates a corrupt page-out stream.
+    #[error("Corrupted data: value {index} declared a zero alloc_size")]
+    ZeroAllocSize {
+        /// Index of the value in the heap.
+        index: usize,
+    },
+
+    /// A serialized heap reference has no binding in the current page-in scope.
+    #[error("Heap {heap_id:?} is not bound in this page-in scope")]
+    HeapNotBoundInPageInScope {
+        /// The logical heap identity whose binding was not found.
         heap_id: crate::pagable::heap_ref_id::HeapRefId,
+    },
+
+    /// An exact native heap allocation has no registered value for the serialized index.
+    #[error("Native heap {heap_id:?} has no registered value at index {value_index}")]
+    NativeHeapValueNotRegistered {
+        /// The logical identity of the native heap.
+        heap_id: crate::pagable::heap_ref_id::HeapRefId,
+        /// The serialized index that could not be resolved.
+        value_index: u32,
+    },
+
+    /// One root page-in encountered two live heap allocations with the same
+    /// logical heap identity.
+    #[error("Heap {heap_id:?} is already bound to a different heap in this page-in scope")]
+    ConflictingHeapBinding {
+        /// The ambiguous logical heap identity.
+        heap_id: crate::pagable::heap_ref_id::HeapRefId,
+    },
+
+    /// A frozen heap was registered with more than one serialization state.
+    #[error("Frozen heap is already registered with a different StarlarkSerState")]
+    HeapRegisteredWithDifferentSerState,
+
+    /// A `FrozenValue` being serialized points into a heap whose chunk index
+    /// was never registered, so its `value_index` cannot be resolved.
+    #[error("FrozenValue pointer {raw_ptr:#x} not found in any registered heap's chunk index")]
+    FrozenValueNotRegistered {
+        /// Payload address of the unresolved `FrozenValue`.
+        raw_ptr: usize,
     },
 
     /// A `StarlarkPagable`-derived enum was deserialized with an unknown variant tag.

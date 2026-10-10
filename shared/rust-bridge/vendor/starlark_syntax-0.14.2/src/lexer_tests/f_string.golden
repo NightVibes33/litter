@@ -1,0 +1,52 @@
+# @generated
+# To regenerate, run:
+# ```
+# STARLARK_RUST_REGENERATE_GOLDEN_TESTS=1 cargo test -p starlark --lib
+# ```
+
+Program:
+f"basic1 {stuff1}"
+f'basic2 {stuff2}'
+
+# Raw f-string
+
+fr'' fr"" fr'\'' fr"\"" fr'"' fr"'" fr'\n'
+
+Tokens:
+f-string start                 # f"
+f-string text "basic1 "        # basic1 
+f-string expression start '{'  # {
+identifier 'stuff1'            # stuff1
+f-string expression end '}'    # }
+f-string end                   # "
+new line                       # \n
+f-string start                 # f'
+f-string text "basic2 "        # basic2 
+f-string expression start '{'  # {
+identifier 'stuff2'            # stuff2
+f-string expression end '}'    # }
+f-string end                   # '
+new line                       # \n
+new line                       # \n
+comment ' Raw f-string'        # # Raw f-string
+new line                       # \n
+f-string start                 # fr'
+f-string end                   # '
+f-string start                 # fr"
+f-string end                   # "
+f-string start                 # fr'
+f-string text "'"              # \'
+f-string end                   # '
+f-string start                 # fr"
+f-string text "\""             # \"
+f-string end                   # "
+f-string start                 # fr'
+f-string text "\""             # "
+f-string end                   # '
+f-string start                 # fr"
+f-string text "'"              # '
+f-string end                   # "
+f-string start                 # fr'
+f-string text "\\n"            # \n
+f-string end                   # '
+new line                       #
