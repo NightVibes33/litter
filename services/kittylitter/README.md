@@ -2,17 +2,17 @@
 
 Distribution wrapper for the [alleycat](https://github.com/0xSero/alleycat) daemon.
 
-The next host release is 0.3.12. After its GitHub release is published, install and pair it:
+The next host release is 0.3.13. After its GitHub release is published, install and pair it:
 
 ```sh
-npx --yes https://github.com/0xSero/litter/releases/download/v0.3.12/kittylitter-npm-package.tar.gz
+npx --yes https://github.com/NightVibes33/litter/releases/download/v0.3.13/kittylitter-npm-package.tar.gz
 ```
 
 The GitHub release package supports the same platforms as the npm wrapper.
 Registry publishing currently fails because the `kittylitter` npm package is
 owned by another account; `npx kittylitter` still resolves the older 0.3.4 release.
 The pinned GitHub package above is the coordinated host candidate; it is not
-available until the 0.3.12 release finishes. The currently published fallback is
+available until the 0.3.13 release finishes. The currently published fallback is
 [0.3.10](https://github.com/0xSero/litter/releases/tag/v0.3.10).
 
 The wrapper passes its package version and Kittylitter application identity to
