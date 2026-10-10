@@ -1,0 +1,45 @@
+name: Thread lifecycle Rust checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/thread-lifecycle.yml'
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/codex/**'
+      - 'patches/codex/**'
+  pull_request:
+    paths:
+      - '.github/workflows/thread-lifecycle.yml'
+      - 'shared/rust-bridge/**'
+      - 'shared/third_party/codex/**'
+      - 'patches/codex/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.95.0
+
+      - name: Apply repository Codex compatibility patches
+        run: ./apps/ios/scripts/sync-codex.sh --preserve-current
+
+      - name: Check mobile client
+        working-directory: shared/rust-bridge
+        run: cargo check --locked -p codex-mobile-client --all-targets
+
+      - name: Run mobile client and Slingshot tests
+        working-directory: shared/rust-bridge
+        run: cargo test --locked -p codex-mobile-client -p codex-slingshot --lib
