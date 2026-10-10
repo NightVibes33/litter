@@ -7,10 +7,13 @@ use std::{
 
 pub use hickory_resolver as resolver;
 use hickory_resolver::{
-    TokioResolver,
-    config::{ResolverConfig, GOOGLE, CLOUDFLARE, QUAD9},
+    config::{ResolverConfig, CLOUDFLARE, GOOGLE, QUAD9},
     net::runtime::TokioRuntimeProvider,
-    proto::rr::{Name, RData, rdata::{A, AAAA}},
+    proto::rr::{
+        rdata::{A, AAAA},
+        Name, RData,
+    },
+    TokioResolver,
 };
 
 use rama_core::error::{ErrorContext, OpaqueError};
@@ -101,7 +104,9 @@ impl HickoryDns {
     /// To use the system configuration see: [`Self::new_system`].
     pub fn new_quad9() -> Self {
         tracing::trace!("create HickoryDns resolver using default quad9 config");
-        Self::builder().with_config(ResolverConfig::udp_and_tcp(&QUAD9)).build()
+        Self::builder()
+            .with_config(ResolverConfig::udp_and_tcp(&QUAD9))
+            .build()
     }
 
     #[cfg(any(target_family = "unix", target_os = "windows"))]
@@ -165,7 +170,11 @@ impl HickoryDnsBuilder {
         if let Some(options) = self.options {
             *resolver_builder.options_mut() = options;
         }
-        HickoryDns(Arc::new(resolver_builder.build().expect("valid DNS resolver configuration")))
+        HickoryDns(Arc::new(
+            resolver_builder
+                .build()
+                .expect("valid DNS resolver configuration"),
+        ))
     }
 }
 
@@ -176,11 +185,7 @@ impl DnsResolver for HickoryDns {
         let name = fqdn_from_domain(domain)?;
 
         let mut results = vec![];
-        let lookup = self
-            .0
-            .txt_lookup(name)
-            .await
-            .context("lookup TXT entry")?;
+        let lookup = self.0.txt_lookup(name).await.context("lookup TXT entry")?;
         for record in lookup.answers() {
             if let RData::TXT(txt) = &record.data {
                 for value in txt.txt_data.iter() {
@@ -200,7 +205,10 @@ impl DnsResolver for HickoryDns {
             .context("lookup IPv4 address(es)")?
             .answers()
             .iter()
-            .filter_map(|record| match &record.data { RData::A(A(ip)) => Some(*ip), _ => None })
+            .filter_map(|record| match &record.data {
+                RData::A(A(ip)) => Some(*ip),
+                _ => None,
+            })
             .collect())
     }
 
@@ -213,7 +221,10 @@ impl DnsResolver for HickoryDns {
             .context("lookup IPv6 address(es)")?
             .answers()
             .iter()
-            .filter_map(|record| match &record.data { RData::AAAA(AAAA(ip)) => Some(*ip), _ => None })
+            .filter_map(|record| match &record.data {
+                RData::AAAA(AAAA(ip)) => Some(*ip),
+                _ => None,
+            })
             .collect())
     }
 }

@@ -98,6 +98,7 @@ debug = 0
 codegen-units = 16
 
 [patch.crates-io]
+rama-core = { path = "vendor/rama-core-0.3.0-alpha.4" }
 opentelemetry-http = { path = "vendor/opentelemetry-http-0.32.0" }
 rama-dns = { path = "vendor/rama-dns-0.3.0-alpha.4" }
 rquickjs-sys = { path = "vendor/rquickjs-sys-0.9.0" }

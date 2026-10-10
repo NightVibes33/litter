@@ -6,6 +6,7 @@ on:
       - '.github/workflows/security-dependencies.yml'
       - 'ThirdParty/SideStore/**/Cargo.toml'
       - 'ThirdParty/SideStore/**/Cargo.lock'
+      - 'ThirdParty/SideStore/vendor/**'
       - 'tools/scripts/build-sidestore-minimuxer.sh'
   workflow_dispatch:
 

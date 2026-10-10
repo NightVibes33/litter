@@ -3,7 +3,7 @@
 This change follows the initial compatible dependency patch in PR #15. It does
 not claim to match or close every private GitHub Dependabot alert: that endpoint
 currently returns HTTP 403 to the repository connection. GitHub last reported
-36 alerts on the default branch. OSV package/version findings are a different
+32 alerts on the default branch after PR #15 (down from 36). OSV package/version findings are a different
 inventory and must not be presented as GitHub alert counts.
 
 ## Changes
@@ -25,6 +25,10 @@ Legacy atty consumers use a root-owned compatibility adapter backed by maintaine
 is-terminal; the vulnerable Windows raw-pointer implementation is removed from
 their dependency graph. This is a source replacement, not an upstream atty fix.
 
+RustBridge selects only its used device services. The pinned idevice snapshot
+has a small patch importing its existing RNG and Ed25519 signing trait directly
+so remote pairing does not accidentally require unused classic RSA generation.
+
 The macOS dependency workflow builds both actual iOS static libraries with
 locked resolution. The mobile workflow compiles all targets and runs existing
 mobile client and Slingshot tests. Local/path adapters also require source review;
@@ -32,18 +36,19 @@ a registry-version scanner alone cannot assess them.
 
 ## Remaining findings
 
-- RSA: `RUSTSEC-2023-0071` reports no patched release. It remains in SSH and
-  device-pairing dependency paths. Upgrading to another affected RSA release or
+- RSA: `RUSTSEC-2023-0071` reports no patched release. It remains in the SSH dependency path. Unused RustBridge classic
+  pairing-generation features are removed, and JWT uses its supported AWS-LC
+  backend instead of vulnerable RustCrypto RSA. Upgrading to another affected RSA release or
   hiding the advisory does not fix it; a cryptographic backend migration needs
   separate compatibility and timing-safety validation.
 - Maintenance advisories remain for legacy dependencies including ANSI Term,
   Atomic Polyfill, Derivative, Fxhash, Json, Paste, and Proc Macro Error 2. They
   require maintained parent-library replacements or reviewed compatibility
   patches. They are not suppressed here.
-- Standalone vendored-library lockfiles are scanned too, even though production
-  uses the root mobile lockfile. Their optional telemetry/DNS test graphs need
-  additional coordinated upgrades; they are retained rather than deleted to
-  hide findings.
+- Standalone vendored-library lockfiles are scanned too. Their optional
+  telemetry/DNS graphs now use fixed Hickory and OpenTelemetry versions through
+  the same compatibility adapters. Maintenance advisories remain in some of
+  these graphs; the lockfiles are retained rather than deleted to hide findings.
 
 Reproduce the complete tracked-lockfile registry inventory with:
 

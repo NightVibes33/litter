@@ -93,27 +93,26 @@ Android and Catalyst do not acquire the V8 production dependency. See
 
 ## P0 — dependency security
 
-RustSec was rerun on 2026-09-21 against both candidate lockfiles after updating
-Codex to 0.155.1 and applying compatible h2 0.4.16 and rustls 0.23.45 security
-patches. Five advisories remain in the shared mobile lock and four in the
-packaged Kittylitter lock. These are advisory counts, not affected-package counts.
+The 2026-10-10 security candidate upgrades the vulnerable Git, DNS, TLS,
+archive, AWS JSON, JWT, SSH, and telemetry dependency families, including the
+standalone vendor lockfiles. The registry inventory is reproducible with
+`tools/scripts/audit-rust-dependencies.py`; local compatibility adapters require
+source review in addition to registry checks.
 
-- Mobile: Hickory 0.25.2 through upstream Rama DNS retains
-  `RUSTSEC-2026-0119` and `RUSTSEC-2026-0118`. Moving to Hickory 0.26 requires
-  an upstream dependency/API change.
-- Packaged host: Iroh 0.98.2 and iroh-relay 0.98.0 pin Hickory exactly to
-  0.26.0-beta.4, retaining `RUSTSEC-2026-0120` and `RUSTSEC-2026-0119`.
-- Both: plist 1.9.0 through netdev/netwatch retains quick-xml 0.39.2 and
-  `RUSTSEC-2026-0195` / `RUSTSEC-2026-0194`; the fixed quick-xml 0.41 line
-  requires a compatible upstream plist contract.
-- Mobile: RSA 0.10.0-rc.18 retains `RUSTSEC-2023-0071`, with no patched
-  release reported by RustSec.
+The remaining inventory includes RSA `RUSTSEC-2023-0071` in the SSH dependency
+path, for which RustSec reports no patched release, and maintenance advisories
+for ANSI Term, Atomic Polyfill, Derivative, Fxhash, Json, Paste, and Proc Macro
+Error 2. RustBridge no longer enables unused classic RSA pairing-generation
+code; JWT uses the supported AWS-LC backend. See
+[`DEPENDENCY_SECURITY_REMEDIATION.md`](DEPENDENCY_SECURITY_REMEDIATION.md) for
+compatibility patches, validation, and outstanding backend/maintenance work.
 
-**Do not suppress these advisories.** Preserve these upstream upgrade tracks,
-rerun RustSec after compatibility changes, and verify network, SSH, MCP, and
-pairing on installed devices. A successful build is not physical-device network
-acceptance. Mobile uses Iroh 1.0.3 and Russh 0.62.6; the separately packaged host's
-Iroh version above must not be confused with the mobile dependency.
+**Do not suppress these advisories.** The private GitHub alert inventory is
+currently inaccessible to the repository connection. GitHub last reported
+32 open alerts after PR #15, down from 36; OSV package/version counts are not
+GitHub alert counts. Recheck GitHub after the next remediation is merged.
+Network, SSH, device pairing, and signing need installed-device acceptance;
+passing compilation alone is not that acceptance.
 
 ## P1 — incomplete user-visible behavior
 

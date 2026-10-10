@@ -14,7 +14,7 @@
  itertools = "0.14.0"
  jsonptr = { version = "0.7.1", default-features = false }
 -jsonwebtoken = "9.3.1"
-+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
++jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
  keyring = { version = "3.6", default-features = false }
  landlock = "0.4.4"
  lazy_static = "1"

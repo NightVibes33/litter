@@ -57,7 +57,7 @@ Released 2024-Sep-30
 - Update `opentelemetry` dependency version to 0.25
 - Starting with this version, this crate will align with `opentelemetry` crate
   on major,minor versions.
-  
+
 ## v0.13.0
 
 - **Breaking** Correct the misspelling of "webkpi" to "webpki" in features [#1842](https://github.com/open-telemetry/opentelemetry-rust/pull/1842)
