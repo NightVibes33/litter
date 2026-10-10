@@ -412,9 +412,9 @@ targets:
         excludes:
           - emexDE.modulemap
       - path: ../../ThirdParty/EmexDE/Source/Frameworks/CoreCompiler/CCBaseSwift.swift
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationObject.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationObject.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian
         headerVisibility: project
@@ -435,7 +435,7 @@ targets:
           - LindChain/ProcEnvironment/Shims/posix_spawn.m
           - LindChain/ProcEnvironment/Shims/proxy.m
           - LindChain/ProcEnvironment/Shims/README.txt
-          - LindChain/ProcEnvironment/Shims/vfork.c
+          - LindChain/ProcEnvironment/Shims/vfork.m
           - LindChain/ProcEnvironment/Surface/**/*.h
           - LindChain/Private/Frameworks/**
           - LindChain/OpenSSL.xcframework/**
@@ -515,15 +515,13 @@ targets:
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/LiveProcess/ResecureDecoder.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/ServiceKit/Service.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationObject.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationObject.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspaceInternal.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspaceInternal.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspace.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspace.m
-        headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/applicationmgmtd/LDEApplicationWorkspaceService.m
+      - path: ../../ThirdParty/EmexDE/Source/LiveProcess/LindChain/Services/bootstrapd/LDEApplicationWorkspaceService.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/IDEConsole/Utils.c
         headerVisibility: project
@@ -555,8 +553,6 @@ targets:
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/environment.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/libproc.m
-        headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/LSApplicationWorkspace.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/PEArchiveHandle.m
@@ -571,17 +567,13 @@ targets:
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/proxy.m
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Surface/extra/relax.c
-        headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Surface/trust/signing.c
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/fd.c
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/ktfp.c
-        headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Utils/vnode.c
         headerVisibility: project
-      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/vfork.c
+      - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/ProcEnvironment/Shims/vfork.m
         headerVisibility: project
       - path: ../../ThirdParty/EmexDE/Source/Nyxian/LindChain/Utils/CFTools.c
         headerVisibility: project
